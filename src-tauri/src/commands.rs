@@ -1,9 +1,8 @@
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::state::AppState;
 use crate::types::{
-    FocusLabel, FocusMode, HealthStatus, LabelRequest, PredictionRecord, SessionRecap,
-    SessionRecord,
+    FocusMode, HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord,
 };
 
 #[tauri::command]
