@@ -90,6 +90,54 @@ Global input capture and active-window detection require system permissions. If 
 3. Enable **Input Monitoring** for FocoFlow
 4. Click **Refresh permissions** in the app
 
+## Troubleshooting local dev
+
+### `No space left on device` during `npm run tauri:dev`
+
+The first Tauri/Rust build is large (often **3–8 GB** of compile artifacts). If your disk is full, you'll see errors like:
+
+```text
+rustc-LLVM ERROR: IO failure on output stream: No space left on device
+error: could not compile ...
+```
+
+**Fix:** free at least **5–10 GB**, then retry:
+
+```bash
+# Check free space (look at "Avail" on /System/Volumes/Data)
+df -h /System/Volumes/Data
+
+# Safe dev cache cleanup
+pip3 cache purge
+npm cache clean --force
+brew cleanup -s          # if you use Homebrew
+rm -rf src-tauri/target  # old Rust build artifacts in this repo
+
+# Retry
+npm run tauri:dev
+```
+
+Also empty **Trash** and check **System Settings → General → Storage** for large files.
+
+### `cargo: command not found` or `tauri: command not found`
+
+Install Rust and project deps:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+npm install
+cd frontend && npm install && cd ..
+```
+
+### First run is slow
+
+The first `tauri dev` compiles all Rust dependencies and can take **5–15 minutes**. Later runs are much faster.
+
+### App opens but capture stays idle
+
+Grant macOS **Accessibility** and **Input Monitoring** permissions, restart the app, then use **Refresh permissions** in the dashboard.
+
 ## CI
 
 `.github/workflows/ci.yml` runs Python tests, frontend typecheck/tests, and `cargo check` + `cargo test` for the Rust core.
