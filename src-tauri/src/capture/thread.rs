@@ -18,37 +18,35 @@ pub fn start_capture_thread(
     let poll_tx = event_tx.clone();
     thread::spawn(move || loop {
         if let Some(info) = get_active_window_info() {
-            let mut changed = false;
             let mut title_only = false;
+            if let Some(current) = poll_window
+                .read()
+                .ok()
+                .and_then(|g| g.clone())
             {
-                let guard = poll_window.read().ok();
-                if let Some(current) = guard.as_ref().and_then(|g| g.as_ref()) {
-                    changed = current.0 != info.app_name || current.1 != info.window_title;
-                    title_only = current.0 == info.app_name && current.1 != info.window_title;
-                } else {
-                    changed = true;
+                if current.0 == info.app_name && current.1 == info.window_title {
+                    continue;
                 }
+                title_only = current.0 == info.app_name && current.1 != info.window_title;
             }
 
-            if changed {
-                let now = timestamp_secs();
-                let _ = poll_tx.send(CaptureEvent {
-                    event_type: if title_only {
-                        AppEventType::WindowTitleChange
-                    } else {
-                        AppEventType::WindowFocusChange
-                    },
-                    timestamp_secs: now,
-                    app_name: info.app_name.clone(),
-                    window_title: info.window_title.clone(),
-                    mouse_x: 0,
-                    mouse_y: 0,
-                    mouse_speed: 0,
-                    idle_duration_ms: 0,
-                });
-                if let Ok(mut guard) = poll_window.write() {
-                    *guard = Some((info.app_name, info.window_title));
-                }
+            let now = timestamp_secs();
+            let _ = poll_tx.send(CaptureEvent {
+                event_type: if title_only {
+                    AppEventType::WindowTitleChange
+                } else {
+                    AppEventType::WindowFocusChange
+                },
+                timestamp_secs: now,
+                app_name: info.app_name.clone(),
+                window_title: info.window_title.clone(),
+                mouse_x: 0,
+                mouse_y: 0,
+                mouse_speed: 0,
+                idle_duration_ms: 0,
+            });
+            if let Ok(mut guard) = poll_window.write() {
+                *guard = Some((info.app_name, info.window_title));
             }
         }
         thread::sleep(Duration::from_millis(500));
