@@ -25,14 +25,15 @@ const buildSignals = (record: PredictionRecord | null) => {
   const level = riskLevel(record.distractionRisk);
   const signals = [
     `Focus state: ${focusStateLabel(record.focusState)}`,
+    `Thrash: ${(record.thrashScore * 100).toFixed(0)}% · Drift: ${(record.driftScore * 100).toFixed(0)}%`,
     `Risk level: ${level}`,
     `Focus score: ${formatScore(record.focusScore)}`,
   ];
 
   if (record.focusState === "PSEUDO_PRODUCTIVE") {
-    signals.push("Looks like busy-work drift. Pick one task and stay with it.");
-  } else if (level === "high") {
-    signals.push("Context-switch thrash detected. Snapback will help on return.");
+    signals.push("Drift detected — tab/title churn or scattered typing in a work app.");
+  } else if (record.thrashScore >= 0.6) {
+    signals.push("Context-switch thrash — jumping between apps/windows rapidly.");
   } else if (record.focusState === "DEEP_FOCUS") {
     signals.push("Deep work detected. Hyperfocus guardrail is watching.");
   } else if (level === "low") {

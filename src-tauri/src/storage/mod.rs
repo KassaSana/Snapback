@@ -186,6 +186,8 @@ impl Storage {
                 focus_score: row.get(1)?,
                 distraction_risk: row.get(2)?,
                 focus_state: row.get(3)?,
+                thrash_score: 0.0,
+                drift_score: 0.0,
                 timestamp: row.get(4)?,
             }))
         } else {
@@ -203,6 +205,8 @@ impl Storage {
                 focus_score: row.get(1)?,
                 distraction_risk: row.get(2)?,
                 focus_state: row.get(3)?,
+                thrash_score: 0.0,
+                drift_score: 0.0,
                 timestamp: row.get(4)?,
             })
         })?;

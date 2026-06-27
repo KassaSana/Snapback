@@ -32,6 +32,10 @@ pub struct PredictionRecord {
     pub focus_score: f64,
     pub distraction_risk: f64,
     pub focus_state: String,
+    #[serde(default)]
+    pub thrash_score: f64,
+    #[serde(default)]
+    pub drift_score: f64,
     pub timestamp: String,
 }
 

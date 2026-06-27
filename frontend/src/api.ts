@@ -8,6 +8,8 @@ export type PredictionRecord = {
   focusScore: number;
   distractionRisk: number;
   focusState: string;
+  thrashScore: number;
+  driftScore: number;
   timestamp: string;
 };
 
@@ -55,6 +57,8 @@ function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
     focusScore: Number(raw.focus_score ?? raw.focusScore ?? 0),
     distractionRisk: Number(raw.distraction_risk ?? raw.distractionRisk ?? 0),
     focusState: String(raw.focus_state ?? raw.focusState ?? "UNKNOWN"),
+    thrashScore: Number(raw.thrash_score ?? raw.thrashScore ?? 0),
+    driftScore: Number(raw.drift_score ?? raw.driftScore ?? 0),
     timestamp: String(raw.timestamp ?? ""),
   };
 }
