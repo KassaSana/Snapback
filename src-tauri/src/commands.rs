@@ -137,6 +137,8 @@ pub fn send_test_prediction(state: State<'_, AppState>) -> Result<PredictionReco
         focus_score: 72.0,
         distraction_risk: 0.28,
         focus_state: "PRODUCTIVE".to_string(),
+        thrash_score: 0.12,
+        drift_score: 0.18,
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
     state

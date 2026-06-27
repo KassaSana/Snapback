@@ -102,6 +102,8 @@ fn run_engine_loop(app: AppHandle) {
                     focus_score: scores.focus_score,
                     distraction_risk: scores.distraction_risk,
                     focus_state: scores.focus_state.clone(),
+                    thrash_score: scores.thrash_score,
+                    drift_score: scores.drift_score,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
 
