@@ -94,12 +94,27 @@ pub fn is_clearly_off_task(ctx: &AppContext) -> bool {
 ///
 /// `focus_state` comes from the classifier (`Option` = maybe not computed yet).
 /// `Option<&str>` is a maybe-present string slice — like `Optional[str]` in Python.
-pub fn snapback_on_task(ctx: &AppContext, focus_state: Option<&str>) -> bool {
+pub fn snapback_on_task(
+    ctx: &AppContext,
+    window_title: &str,
+    focus_state: Option<&str>,
+    session_goal: Option<&str>,
+) -> bool {
     if is_clearly_off_task(ctx) {
         return false;
     }
     if focus_state == Some("DISTRACTED") {
         return false;
+    }
+
+    if let Some(goal) = session_goal.filter(|g| !g.trim().is_empty()) {
+        let alignment = crate::engine::goal_alignment::alignment_score(goal, ctx, window_title);
+        if alignment >= 0.72 {
+            return true;
+        }
+        if alignment <= 0.35 {
+            return false;
+        }
     }
 
     if ctx.is_ide || ctx.is_productivity || ctx.is_terminal {
@@ -124,7 +139,7 @@ mod tests {
     fn cursor_is_ide_and_on_task() {
         let ctx = classify("Cursor", "classifier.rs — FocoFlow");
         assert!(ctx.is_ide);
-        assert!(snapback_on_task(&ctx, None));
+        assert!(snapback_on_task(&ctx, "classifier.rs — FocoFlow", None, None));
     }
 
     #[test]
@@ -132,22 +147,33 @@ mod tests {
         let ctx = classify("Google Chrome", "Rick Astley - YouTube");
         assert!(ctx.is_browser);
         assert!(ctx.title_is_distracting);
-        assert!(!snapback_on_task(&ctx, Some("PRODUCTIVE")));
+        assert!(!snapback_on_task(&ctx, "Rick Astley - YouTube", Some("PRODUCTIVE"), None));
     }
 
     #[test]
     fn classifier_distracted_overrides_slack() {
         let ctx = classify("Slack", "#general");
         assert!(ctx.is_communication);
-        assert!(snapback_on_task(&ctx, Some("PRODUCTIVE")));
-        assert!(!snapback_on_task(&ctx, Some("DISTRACTED")));
+        assert!(snapback_on_task(&ctx, "#general", Some("PRODUCTIVE"), None));
+        assert!(!snapback_on_task(&ctx, "#general", Some("DISTRACTED"), None));
     }
 
     #[test]
     fn generic_browser_needs_classifier_or_stays_off_task() {
         let ctx = classify("Google Chrome", "New Tab");
         assert!(ctx.is_browser);
-        assert!(!snapback_on_task(&ctx, None));
-        assert!(snapback_on_task(&ctx, Some("PRODUCTIVE")));
+        assert!(!snapback_on_task(&ctx, "New Tab", None, None));
+        assert!(snapback_on_task(&ctx, "New Tab", Some("PRODUCTIVE"), None));
+    }
+
+    #[test]
+    fn research_goal_makes_docs_browser_on_task() {
+        let ctx = classify("Google Chrome", "Rust documentation - std");
+        assert!(snapback_on_task(
+            &ctx,
+            "Rust documentation",
+            None,
+            Some("research tokio docs"),
+        ));
     }
 }

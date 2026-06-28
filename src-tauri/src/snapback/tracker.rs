@@ -41,6 +41,7 @@ pub struct ContextTracker {
     pending_snapback: Option<SnapbackEvent>,
     /// Latest label from the classifier — shared brain with the dashboard.
     latest_focus_state: Option<String>,
+    latest_session_goal: Option<String>,
 }
 
 impl ContextTracker {
@@ -57,6 +58,7 @@ impl ContextTracker {
             min_distraction_ms: 30_000,
             pending_snapback: None,
             latest_focus_state: None,
+            latest_session_goal: None,
         }
     }
 
@@ -65,8 +67,9 @@ impl ContextTracker {
     }
 
     /// Called ~once per second from the engine loop after `Classifier::predict`.
-    pub fn on_focus_state(&mut self, focus_state: &str) {
+    pub fn on_prediction_feedback(&mut self, focus_state: &str, session_goal: Option<&str>) {
         self.latest_focus_state = Some(focus_state.to_string());
+        self.latest_session_goal = session_goal.map(|g| g.to_string());
     }
 
     pub fn take_pending_snapback(&mut self) -> Option<SnapbackEvent> {
@@ -154,7 +157,12 @@ impl ContextTracker {
 
     fn is_on_task(&self, app_name: &str, window_title: &str) -> bool {
         let ctx = classify(app_name, window_title);
-        snapback_on_task(&ctx, self.latest_focus_state.as_deref())
+        snapback_on_task(
+            &ctx,
+            window_title,
+            self.latest_focus_state.as_deref(),
+            self.latest_session_goal.as_deref(),
+        )
     }
 
     fn build_snapback(&self, distraction_ms: u64) -> Option<SnapbackEvent> {
@@ -206,7 +214,7 @@ mod tests {
     fn leaving_ide_for_youtube_enters_distracted() {
         let mut tracker = ContextTracker::new();
         tracker.on_window_change("Cursor", "main.rs — FocoFlow");
-        tracker.on_focus_state("PRODUCTIVE");
+        tracker.on_prediction_feedback("PRODUCTIVE", None);
 
         tracker.on_window_change("Google Chrome", "Funny cats - YouTube");
 
@@ -217,7 +225,7 @@ mod tests {
     fn short_distraction_does_not_snapback() {
         let mut tracker = ContextTracker::new();
         tracker.on_window_change("Cursor", "main.rs");
-        tracker.on_focus_state("DEEP_FOCUS");
+        tracker.on_prediction_feedback("DEEP_FOCUS", None);
         tracker.on_window_change("Google Chrome", "YouTube");
         tracker.on_window_change("Cursor", "main.rs");
 
@@ -230,9 +238,9 @@ mod tests {
         let mut tracker = ContextTracker::new();
         tracker.min_distraction_ms = 0;
         tracker.on_window_change("Cursor", "lib.rs");
-        tracker.on_focus_state("PRODUCTIVE");
+        tracker.on_prediction_feedback("PRODUCTIVE", Some("implement the api"));
         tracker.on_window_change("Google Chrome", "YouTube");
-        tracker.on_focus_state("DISTRACTED");
+        tracker.on_prediction_feedback("DISTRACTED", Some("implement the api"));
         tracker.on_window_change("Slack", "#random");
 
         assert_eq!(tracker.state(), DistractionState::Distracted);
