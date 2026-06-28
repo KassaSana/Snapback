@@ -1,5 +1,6 @@
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use crate::engine::app_context::{classify, snapback_on_task};
 use crate::snapback::title_parser::{parse_window_title, ParsedTitle};
 use crate::types::ContextSnapshotDto;
 
@@ -38,6 +39,8 @@ pub struct ContextTracker {
     snapshot_interval_ms: u64,
     min_distraction_ms: u64,
     pending_snapback: Option<SnapbackEvent>,
+    /// Latest label from the classifier — shared brain with the dashboard.
+    latest_focus_state: Option<String>,
 }
 
 impl ContextTracker {
@@ -53,11 +56,17 @@ impl ContextTracker {
             snapshot_interval_ms: 30_000,
             min_distraction_ms: 30_000,
             pending_snapback: None,
+            latest_focus_state: None,
         }
     }
 
     pub fn state(&self) -> DistractionState {
         self.state
+    }
+
+    /// Called ~once per second from the engine loop after `Classifier::predict`.
+    pub fn on_focus_state(&mut self, focus_state: &str) {
+        self.latest_focus_state = Some(focus_state.to_string());
     }
 
     pub fn take_pending_snapback(&mut self) -> Option<SnapbackEvent> {
@@ -73,20 +82,20 @@ impl ContextTracker {
 
     pub fn on_window_change(&mut self, app_name: &str, window_title: &str) {
         let parsed = parse_window_title(app_name, window_title);
-        let was_productive = is_productive(&self.current.app_name, &self.current.window_title);
-        let now_productive = is_productive(app_name, window_title);
+        let was_on_task = self.is_on_task(&self.current.app_name, &self.current.window_title);
+        let now_on_task = self.is_on_task(app_name, window_title);
 
         if self.state == DistractionState::Focused && self.current.is_meaningful() {
             self.last_focus_snapshot = Some(self.current.clone());
         }
 
         match self.state {
-            DistractionState::Focused if !now_productive => {
+            DistractionState::Focused if was_on_task && !now_on_task => {
                 self.state = DistractionState::Distracted;
                 self.distraction_started = Some(Instant::now());
                 self.distraction_app = app_name.to_string();
             }
-            DistractionState::Distracted if now_productive => {
+            DistractionState::Distracted if now_on_task => {
                 let duration = self
                     .distraction_started
                     .map(|s| s.elapsed().as_millis() as u64)
@@ -99,7 +108,7 @@ impl ContextTracker {
                     self.focus_started = Instant::now();
                 }
             }
-            DistractionState::Recovering if was_productive && !now_productive => {
+            DistractionState::Recovering if was_on_task && !now_on_task => {
                 // switched away again while overlay visible
             }
             _ => {}
@@ -117,7 +126,7 @@ impl ContextTracker {
         if self.state == DistractionState::Focused
             && self.last_snapshot_at.elapsed().as_millis() as u64 >= self.snapshot_interval_ms
         {
-            if self.current.is_meaningful() {
+            if self.current.is_meaningful() && self.is_on_task(&self.current.app_name, &self.current.window_title) {
                 self.last_focus_snapshot = Some(self.current.clone());
             }
             self.last_snapshot_at = Instant::now();
@@ -141,6 +150,11 @@ impl ContextTracker {
             summary: self.current.parsed.summary.clone(),
             timestamp: self.current.timestamp.clone(),
         }
+    }
+
+    fn is_on_task(&self, app_name: &str, window_title: &str) -> bool {
+        let ctx = classify(app_name, window_title);
+        snapback_on_task(&ctx, self.latest_focus_state.as_deref())
     }
 
     fn build_snapback(&self, distraction_ms: u64) -> Option<SnapbackEvent> {
@@ -176,29 +190,52 @@ fn empty_snapshot() -> ContextSnapshot {
     }
 }
 
-fn is_productive(app_name: &str, window_title: &str) -> bool {
-    let name = app_name.to_lowercase();
-    let title = window_title.to_lowercase();
-    let productive = [
-        "code", "cursor", "xcode", "terminal", "iterm", "warp", "notion", "obsidian", "pages",
-        "word", "excel", "figma", "slack",
-    ];
-    let distracting = [
-        "youtube", "netflix", "twitter", "reddit", "instagram", "tiktok", "spotify", "steam",
-        "discord",
-    ];
-
-    if distracting.iter().any(|d| name.contains(d) || title.contains(d)) {
-        return false;
-    }
-    productive.iter().any(|p| name.contains(p))
-        || (!title.is_empty() && !name.is_empty())
-}
-
 #[allow(dead_code)]
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn leaving_ide_for_youtube_enters_distracted() {
+        let mut tracker = ContextTracker::new();
+        tracker.on_window_change("Cursor", "main.rs — FocoFlow");
+        tracker.on_focus_state("PRODUCTIVE");
+
+        tracker.on_window_change("Google Chrome", "Funny cats - YouTube");
+
+        assert_eq!(tracker.state(), DistractionState::Distracted);
+    }
+
+    #[test]
+    fn short_distraction_does_not_snapback() {
+        let mut tracker = ContextTracker::new();
+        tracker.on_window_change("Cursor", "main.rs");
+        tracker.on_focus_state("DEEP_FOCUS");
+        tracker.on_window_change("Google Chrome", "YouTube");
+        tracker.on_window_change("Cursor", "main.rs");
+
+        assert_eq!(tracker.state(), DistractionState::Focused);
+        assert!(tracker.take_pending_snapback().is_none());
+    }
+
+    #[test]
+    fn returning_to_slack_while_classifier_distracted_stays_distracted() {
+        let mut tracker = ContextTracker::new();
+        tracker.min_distraction_ms = 0;
+        tracker.on_window_change("Cursor", "lib.rs");
+        tracker.on_focus_state("PRODUCTIVE");
+        tracker.on_window_change("Google Chrome", "YouTube");
+        tracker.on_focus_state("DISTRACTED");
+        tracker.on_window_change("Slack", "#random");
+
+        assert_eq!(tracker.state(), DistractionState::Distracted);
+        assert!(tracker.take_pending_snapback().is_none());
+    }
 }

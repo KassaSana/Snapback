@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use chrono::{Datelike, Timelike, Utc};
 
+use crate::engine::app_context::classify;
 use crate::types::{CaptureEvent, EventType};
 
 #[derive(Debug, Clone)]
@@ -118,31 +119,6 @@ fn linear_slope(values: &[f64]) -> f64 {
     }
 }
 
-fn classify_app(app_name: &str) -> (bool, bool, bool, bool, bool) {
-    let name = app_name.to_lowercase();
-    let browsers = ["chrome", "msedge", "firefox", "brave", "opera", "safari"];
-    let ides = [
-        "code",
-        "cursor",
-        "devenv",
-        "idea",
-        "pycharm",
-        "clion",
-        "rider",
-        "xcode",
-    ];
-    let comm = ["slack", "discord", "teams", "outlook", "zoom", "messages"];
-    let ent = ["spotify", "steam", "vlc", "netflix", "youtube"];
-    let prod = ["word", "excel", "powerpnt", "notion", "obsidian", "pages"];
-
-    let is_browser = browsers.iter().any(|b| name.contains(b));
-    let is_ide = ides.iter().any(|b| name.contains(b));
-    let is_comm = comm.iter().any(|b| name.contains(b));
-    let is_ent = ent.iter().any(|b| name.contains(b));
-    let is_prod = prod.iter().any(|b| name.contains(b));
-    (is_browser, is_ide, is_comm, is_ent, is_prod)
-}
-
 pub struct FeatureExtractor {
     window_seconds: f64,
     long_window_seconds: f64,
@@ -152,6 +128,7 @@ pub struct FeatureExtractor {
     session_start_ts: Option<f64>,
     last_break_ts: Option<f64>,
     current_app_name: String,
+    current_window_title: String,
     current_app_start_ts: Option<f64>,
     focus_momentum: f64,
 }
@@ -167,6 +144,7 @@ impl FeatureExtractor {
             session_start_ts: None,
             last_break_ts: None,
             current_app_name: String::new(),
+            current_window_title: String::new(),
             current_app_start_ts: None,
             focus_momentum: 0.0,
         }
@@ -182,6 +160,7 @@ impl FeatureExtractor {
             self.session_start_ts = Some(now);
             self.last_break_ts = Some(now);
             self.current_app_name = event.app_name.clone();
+            self.current_window_title = event.window_title.clone();
             self.current_app_start_ts = Some(now);
         }
 
@@ -295,22 +274,9 @@ impl FeatureExtractor {
             .iter()
             .any(|e| e.event_type == EventType::WindowTitleChange);
 
-        let (is_browser, is_ide, is_comm, is_ent, is_prod) =
-            classify_app(&self.current_app_name);
-        let productivity_category = if is_ide {
-            "Building"
-        } else if is_prod {
-            "Writing"
-        } else if is_browser {
-            "Browsing"
-        } else if is_comm {
-            "Communicating"
-        } else if is_ent {
-            "Entertainment"
-        } else {
-            "Unknown"
-        }
-        .to_string();
+        let ctx = classify(&self.current_app_name, &self.current_window_title);
+        let productivity_category = ctx.productivity_category().to_string();
+        let is_ent = ctx.is_entertainment || ctx.title_is_distracting;
 
         let minutes_since_last_break = self
             .last_break_ts
@@ -343,13 +309,13 @@ impl FeatureExtractor {
             idle_time_30s,
             idle_event_count_5min: idle_events_5min.len(),
             longest_active_stretch_5min,
-            window_title_length: self.current_app_name.len(),
+            window_title_length: self.current_window_title.len(),
             window_title_changed_30s,
-            is_browser,
-            is_ide,
-            is_communication: is_comm,
+            is_browser: ctx.is_browser,
+            is_ide: ctx.is_ide,
+            is_communication: ctx.is_communication,
             is_entertainment: is_ent,
-            is_productivity: is_prod,
+            is_productivity: ctx.is_productivity,
             focus_momentum: self.focus_momentum,
             productivity_category,
             is_pseudo_productive: false,
@@ -385,7 +351,10 @@ impl FeatureExtractor {
     fn update_current_app(&mut self, event: &CaptureEvent, now: f64) {
         if event.event_type == EventType::WindowFocusChange {
             self.current_app_name = event.app_name.clone();
+            self.current_window_title = event.window_title.clone();
             self.current_app_start_ts = Some(now);
+        } else if event.event_type == EventType::WindowTitleChange {
+            self.current_window_title = event.window_title.clone();
         }
     }
 }
