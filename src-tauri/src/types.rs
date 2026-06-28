@@ -163,3 +163,48 @@ pub struct HealthStatus {
     pub capture_running: bool,
     pub permissions: PermissionStatus,
 }
+
+/// User override: treat apps/titles matching `pattern` as on-task or distracting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppRuleKind {
+    Allow,
+    Block,
+}
+
+impl AppRuleKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::Block => "block",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "allow" => Some(Self::Allow),
+            "block" => Some(Self::Block),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppRuleRecord {
+    pub id: i64,
+    /// Lowercase substring matched against app name and window title.
+    pub pattern: String,
+    pub rule_type: AppRuleKind,
+    pub note: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertAppRuleRequest {
+    pub pattern: String,
+    pub rule_type: AppRuleKind,
+    pub note: Option<String>,
+}

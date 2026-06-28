@@ -5,7 +5,8 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::types::{
-    ContextSnapshotDto, FocusLabel, PredictionRecord, SessionRecap, SessionRecord,
+    AppRuleKind, AppRuleRecord, ContextSnapshotDto, FocusLabel, PredictionRecord, SessionRecap,
+    SessionRecord,
 };
 
 #[derive(Debug, Error)]
@@ -14,6 +15,10 @@ pub enum StorageError {
     Sqlite(#[from] rusqlite::Error),
     #[error("session not found")]
     SessionNotFound,
+    #[error("app rule not found")]
+    AppRuleNotFound,
+    #[error("invalid app rule: {0}")]
+    InvalidAppRule(String),
 }
 
 pub struct Storage {
@@ -81,8 +86,121 @@ impl Storage {
                 summary TEXT NOT NULL,
                 timestamp TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS app_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pattern TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                rule_type TEXT NOT NULL CHECK (rule_type IN ('allow', 'block')),
+                note TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_app_rules_pattern
+                ON app_rules(pattern);
             ",
         )?;
+        Ok(())
+    }
+
+    fn normalize_app_rule_pattern(pattern: &str) -> Result<String, StorageError> {
+        let normalized = pattern.trim().to_lowercase();
+        if normalized.is_empty() {
+            return Err(StorageError::InvalidAppRule(
+                "pattern cannot be empty".to_string(),
+            ));
+        }
+        Ok(normalized)
+    }
+
+    fn map_app_rule_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AppRuleRecord> {
+        let rule_type_raw: String = row.get(2)?;
+        let rule_type = AppRuleKind::from_str(&rule_type_raw).ok_or_else(|| {
+            rusqlite::Error::InvalidColumnType(
+                2,
+                "rule_type".to_string(),
+                rusqlite::types::Type::Text,
+            )
+        })?;
+        Ok(AppRuleRecord {
+            id: row.get(0)?,
+            pattern: row.get(1)?,
+            rule_type,
+            note: row.get(3)?,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+        })
+    }
+
+    pub fn list_app_rules(&self) -> Result<Vec<AppRuleRecord>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, pattern, rule_type, note, created_at, updated_at
+             FROM app_rules
+             ORDER BY pattern ASC",
+        )?;
+        let rows = stmt.query_map([], Self::map_app_rule_row)?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    pub fn upsert_app_rule(
+        &self,
+        pattern: &str,
+        rule_type: AppRuleKind,
+        note: Option<&str>,
+    ) -> Result<AppRuleRecord, StorageError> {
+        let pattern = Self::normalize_app_rule_pattern(pattern)?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        self.conn.execute(
+            "INSERT INTO app_rules (pattern, rule_type, note, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT(pattern) DO UPDATE SET
+                rule_type = excluded.rule_type,
+                note = excluded.note,
+                updated_at = excluded.updated_at",
+            params![pattern, rule_type.as_str(), note, now],
+        )?;
+
+        self.get_app_rule_by_pattern(&pattern)?
+            .ok_or(StorageError::AppRuleNotFound)
+    }
+
+    pub fn get_app_rule(&self, id: i64) -> Result<AppRuleRecord, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, pattern, rule_type, note, created_at, updated_at
+             FROM app_rules WHERE id = ?1",
+        )?;
+        stmt.query_row(params![id], Self::map_app_rule_row)
+            .map_err(|err| match err {
+                rusqlite::Error::QueryReturnedNoRows => StorageError::AppRuleNotFound,
+                other => StorageError::Sqlite(other),
+            })
+    }
+
+    pub fn get_app_rule_by_pattern(
+        &self,
+        pattern: &str,
+    ) -> Result<Option<AppRuleRecord>, StorageError> {
+        let pattern = Self::normalize_app_rule_pattern(pattern)?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, pattern, rule_type, note, created_at, updated_at
+             FROM app_rules WHERE pattern = ?1 COLLATE NOCASE",
+        )?;
+        let mut rows = stmt.query(params![pattern])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Self::map_app_rule_row(row)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn delete_app_rule(&self, id: i64) -> Result<(), StorageError> {
+        let deleted = self
+            .conn
+            .execute("DELETE FROM app_rules WHERE id = ?1", params![id])?;
+        if deleted == 0 {
+            return Err(StorageError::AppRuleNotFound);
+        }
         Ok(())
     }
 
@@ -320,5 +438,41 @@ mod tests {
         assert_eq!(session.status, "ACTIVE");
         let stopped = storage.stop_session(&session.session_id).unwrap();
         assert_eq!(stopped.status, "COMPLETED");
+    }
+
+    #[test]
+    fn app_rules_crud() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+
+        let created = storage
+            .upsert_app_rule("Discord", AppRuleKind::Allow, Some("study group"))
+            .unwrap();
+        assert_eq!(created.pattern, "discord");
+        assert_eq!(created.rule_type, AppRuleKind::Allow);
+        assert_eq!(created.note.as_deref(), Some("study group"));
+
+        let listed = storage.list_app_rules().unwrap();
+        assert_eq!(listed.len(), 1);
+
+        let updated = storage
+            .upsert_app_rule("discord", AppRuleKind::Block, None)
+            .unwrap();
+        assert_eq!(updated.id, created.id);
+        assert_eq!(updated.rule_type, AppRuleKind::Block);
+        assert!(updated.note.is_none());
+
+        storage.delete_app_rule(created.id).unwrap();
+        assert!(storage.list_app_rules().unwrap().is_empty());
+    }
+
+    #[test]
+    fn app_rule_empty_pattern_is_rejected() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+        let err = storage
+            .upsert_app_rule("   ", AppRuleKind::Allow, None)
+            .unwrap_err();
+        assert!(matches!(err, StorageError::InvalidAppRule(_)));
     }
 }
