@@ -112,6 +112,7 @@ fn run_engine_loop(app: AppHandle) {
                 }
                 *state.latest_prediction.lock() = Some(record.clone());
                 let _ = app.emit("prediction", &record);
+                tracker.on_focus_state(&scores.focus_state);
                 last_prediction_at = now;
 
                 if scores.focus_state == "DEEP_FOCUS" {
