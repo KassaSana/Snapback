@@ -52,6 +52,28 @@ export type FocusLabel =
   | "PRODUCTIVE"
   | "DEEP_FOCUS";
 
+export type AppRuleKind = "allow" | "block";
+
+export type AppRuleRecord = {
+  id: number;
+  pattern: string;
+  ruleType: AppRuleKind;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function mapAppRule(raw: Record<string, unknown>): AppRuleRecord {
+  return {
+    id: Number(raw.id ?? 0),
+    pattern: String(raw.pattern ?? ""),
+    ruleType: String(raw.rule_type ?? raw.ruleType ?? "allow") as AppRuleKind,
+    note: (raw.note ?? null) as string | null,
+    createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
+    updatedAt: String(raw.updated_at ?? raw.updatedAt ?? ""),
+  };
+}
+
 function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
   return {
     sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
@@ -123,6 +145,17 @@ export const api = {
     return mapPrediction(raw);
   },
   refreshPermissions: () => invoke<PermissionStatus>("refresh_permissions"),
+  getAppRules: async () => {
+    const rows = await invoke<Record<string, unknown>[]>("get_app_rules");
+    return rows.map(mapAppRule);
+  },
+  upsertAppRule: async (pattern: string, ruleType: AppRuleKind, note?: string) => {
+    const raw = await invoke<Record<string, unknown>>("upsert_app_rule", {
+      request: { pattern, ruleType, note: note ?? null },
+    });
+    return mapAppRule(raw);
+  },
+  deleteAppRule: (id: number) => invoke("delete_app_rule", { id }),
   onPrediction: (handler: (record: PredictionRecord) => void) =>
     listen<Record<string, unknown>>("prediction", (event) => {
       handler(mapPrediction(event.payload));

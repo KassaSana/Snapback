@@ -2,7 +2,8 @@ use tauri::{Manager, State};
 
 use crate::state::AppState;
 use crate::types::{
-    FocusMode, HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord,
+    AppRuleRecord, FocusMode, HealthStatus, LabelRequest, PredictionRecord, SessionRecap,
+    SessionRecord, UpsertAppRuleRequest,
 };
 
 #[tauri::command]
@@ -156,4 +157,38 @@ pub fn refresh_permissions(state: State<'_, AppState>) -> Result<crate::types::P
     let status = crate::capture::check_permissions();
     *state.permissions.lock() = status.clone();
     Ok(status)
+}
+
+#[tauri::command]
+pub fn get_app_rules(state: State<'_, AppState>) -> Result<Vec<AppRuleRecord>, String> {
+    state
+        .storage
+        .lock()
+        .list_app_rules()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn upsert_app_rule(
+    state: State<'_, AppState>,
+    request: UpsertAppRuleRequest,
+) -> Result<AppRuleRecord, String> {
+    state
+        .storage
+        .lock()
+        .upsert_app_rule(
+            &request.pattern,
+            request.rule_type,
+            request.note.as_deref(),
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_app_rule(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state
+        .storage
+        .lock()
+        .delete_app_rule(id)
+        .map_err(|e| e.to_string())
 }
