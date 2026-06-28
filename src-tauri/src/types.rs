@@ -36,7 +36,13 @@ pub struct PredictionRecord {
     pub thrash_score: f64,
     #[serde(default)]
     pub drift_score: f64,
+    #[serde(default = "default_goal_alignment")]
+    pub goal_alignment: f64,
     pub timestamp: String,
+}
+
+fn default_goal_alignment() -> f64 {
+    0.5
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

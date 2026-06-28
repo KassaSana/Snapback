@@ -1,4 +1,6 @@
+use crate::engine::app_context::classify;
 use crate::engine::features::FeatureVector;
+use crate::engine::goal_alignment::{alignment_bias, alignment_score};
 use crate::types::FocusMode;
 
 #[derive(Debug, Clone)]
@@ -8,6 +10,7 @@ pub struct PredictionScores {
     pub focus_state: String,
     pub thrash_score: f64,
     pub drift_score: f64,
+    pub goal_alignment: f64,
 }
 
 const FOCUS_LEVELS: [f64; 4] = [25.0, 50.0, 75.0, 100.0];
@@ -72,9 +75,13 @@ fn deep_work_score(features: &FeatureVector, thrash: f64, drift: f64) -> f64 {
     )
 }
 
-fn heuristic_probas(features: &FeatureVector) -> ([f64; 4], f64, f64) {
+fn heuristic_probas(features: &FeatureVector, session_goal: Option<&str>) -> ([f64; 4], f64, f64) {
+    let ctx = classify(&features.app_name, &features.window_title);
+    let bias = alignment_bias(session_goal, &ctx, &features.window_title);
+
     let thrash = thrash_score(features);
-    let drift = drift_score(features);
+    let mut drift = drift_score(features);
+    drift = clamp(drift - bias * 0.25, 0.0, 1.0);
     let deep = deep_work_score(features, thrash, drift);
 
     let idle_time = features.idle_time_30s;
@@ -90,7 +97,7 @@ fn heuristic_probas(features: &FeatureVector) -> ([f64; 4], f64, f64) {
     distracted += (1.0 - (time_in_app / 120.0).min(1.0)) * 0.10;
     distracted += is_entertainment * 0.20;
     distracted += is_communication * 0.05;
-    distracted = clamp(distracted, 0.0, 1.0);
+    distracted = clamp(distracted - bias * 0.35, 0.0, 1.0);
 
     let pseudo = clamp(drift * (1.0 - distracted * 0.6), 0.0, 1.0);
     let remaining = (1.0 - distracted - pseudo).max(0.0);
@@ -104,7 +111,12 @@ fn heuristic_probas(features: &FeatureVector) -> ([f64; 4], f64, f64) {
     )
 }
 
-fn scores_from_probas(probas: [f64; 4], thrash: f64, drift: f64) -> PredictionScores {
+fn scores_from_probas(
+    probas: [f64; 4],
+    thrash: f64,
+    drift: f64,
+    goal_alignment: f64,
+) -> PredictionScores {
     let total: f64 = probas.iter().sum();
     let probas = if total <= 0.0 {
         [0.25, 0.25, 0.25, 0.25]
@@ -132,6 +144,7 @@ fn scores_from_probas(probas: [f64; 4], thrash: f64, drift: f64) -> PredictionSc
         focus_state,
         thrash_score: thrash,
         drift_score: drift,
+        goal_alignment,
     }
 }
 
@@ -148,9 +161,15 @@ impl Classifier {
         self.focus_mode = mode;
     }
 
-    pub fn predict(&self, features: &FeatureVector) -> PredictionScores {
-        let (probas, thrash, drift) = heuristic_probas(features);
-        let mut scores = scores_from_probas(probas, thrash, drift);
+    pub fn predict(&self, features: &FeatureVector, session_goal: Option<&str>) -> PredictionScores {
+        let ctx = classify(&features.app_name, &features.window_title);
+        let goal_alignment = session_goal
+            .filter(|g| !g.trim().is_empty())
+            .map(|g| alignment_score(g, &ctx, &features.window_title))
+            .unwrap_or(0.5);
+
+        let (probas, thrash, drift) = heuristic_probas(features, session_goal);
+        let mut scores = scores_from_probas(probas, thrash, drift, goal_alignment);
 
         #[cfg(feature = "onnx")]
         if let Some(onnx_scores) = self.try_onnx_predict(features) {
@@ -180,6 +199,8 @@ mod tests {
 
     fn stable_features() -> FeatureVector {
         FeatureVector {
+            app_name: "Cursor".to_string(),
+            window_title: "classifier.rs — FocoFlow".to_string(),
             context_switches_30s: 0,
             context_switches_5min: 1,
             unique_apps_5min: 1,
@@ -199,7 +220,7 @@ mod tests {
 
     #[test]
     fn stable_work_scores_low_thash_and_drift() {
-        let scores = Classifier::new(FocusMode::Normal).predict(&stable_features());
+        let scores = Classifier::new(FocusMode::Normal).predict(&stable_features(), None);
         assert!(scores.thrash_score < 0.35, "thrash={}", scores.thrash_score);
         assert!(scores.drift_score < 0.35, "drift={}", scores.drift_score);
         assert!(scores.distraction_risk < 0.5);
@@ -214,7 +235,7 @@ mod tests {
             is_entertainment: true,
             ..stable_features()
         };
-        let scores = Classifier::new(FocusMode::Normal).predict(&features);
+        let scores = Classifier::new(FocusMode::Normal).predict(&features, None);
         assert!(scores.thrash_score >= 0.75, "thrash={}", scores.thrash_score);
         assert_eq!(scores.focus_state, "DISTRACTED");
     }
@@ -230,19 +251,40 @@ mod tests {
             unique_apps_5min: 2,
             ..stable_features()
         };
-        let scores = Classifier::new(FocusMode::Normal).predict(&features);
+        let scores = Classifier::new(FocusMode::Normal).predict(&features, None);
         assert!(scores.drift_score >= 0.55, "drift={}", scores.drift_score);
         assert_eq!(scores.focus_state, "PSEUDO_PRODUCTIVE");
     }
 
     #[test]
     fn deep_focus_when_stable_and_settled() {
-        let scores = Classifier::new(FocusMode::Normal).predict(&stable_features());
+        let scores = Classifier::new(FocusMode::Normal).predict(&stable_features(), None);
         assert!(
             scores.focus_state == "DEEP_FOCUS" || scores.focus_state == "PRODUCTIVE",
             "state={}",
             scores.focus_state
         );
         assert!(scores.focus_score >= 60.0);
+    }
+
+    #[test]
+    fn coding_goal_reduces_penalty_in_ide() {
+        let features = FeatureVector {
+            context_switches_30s: 2,
+            window_title_changed_30s: true,
+            keystroke_interval_std: 0.7,
+            keystroke_count: 8,
+            is_ide: true,
+            app_name: "Cursor".to_string(),
+            window_title: "classifier.rs".to_string(),
+            ..stable_features()
+        };
+        let without_goal = Classifier::new(FocusMode::Normal).predict(&features, None);
+        let with_goal = Classifier::new(FocusMode::Normal).predict(
+            &features,
+            Some("implement the rust classifier feature"),
+        );
+        assert!(with_goal.goal_alignment > without_goal.goal_alignment);
+        assert!(with_goal.drift_score <= without_goal.drift_score);
     }
 }

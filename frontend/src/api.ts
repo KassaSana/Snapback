@@ -10,6 +10,7 @@ export type PredictionRecord = {
   focusState: string;
   thrashScore: number;
   driftScore: number;
+  goalAlignment: number;
   timestamp: string;
 };
 
@@ -59,6 +60,7 @@ function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
     focusState: String(raw.focus_state ?? raw.focusState ?? "UNKNOWN"),
     thrashScore: Number(raw.thrash_score ?? raw.thrashScore ?? 0),
     driftScore: Number(raw.drift_score ?? raw.driftScore ?? 0),
+    goalAlignment: Number(raw.goal_alignment ?? raw.goalAlignment ?? 0.5),
     timestamp: String(raw.timestamp ?? ""),
   };
 }

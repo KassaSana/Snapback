@@ -25,7 +25,7 @@ const buildSignals = (record: PredictionRecord | null) => {
   const level = riskLevel(record.distractionRisk);
   const signals = [
     `Focus state: ${focusStateLabel(record.focusState)}`,
-    `Thrash: ${(record.thrashScore * 100).toFixed(0)}% · Drift: ${(record.driftScore * 100).toFixed(0)}%`,
+    `Thrash: ${(record.thrashScore * 100).toFixed(0)}% · Drift: ${(record.driftScore * 100).toFixed(0)}% · Goal fit: ${(record.goalAlignment * 100).toFixed(0)}%`,
     `Risk level: ${level}`,
     `Focus score: ${formatScore(record.focusScore)}`,
   ];

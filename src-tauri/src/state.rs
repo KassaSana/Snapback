@@ -85,17 +85,19 @@ fn run_engine_loop(app: AppHandle) {
             if now - last_prediction_at >= 1.0 {
                 let focus_mode = *state.focus_mode.lock();
                 state.classifier.lock().set_focus_mode(focus_mode);
-                let scores = state.classifier.lock().predict(&features);
-                extractor.update_focus_score(scores.focus_score / 100.0, 0.2);
 
-                let session_id = state
-                    .storage
-                    .lock()
-                    .get_active_session()
-                    .ok()
-                    .flatten()
-                    .map(|s| s.session_id)
+                let active_session = state.storage.lock().get_active_session().ok().flatten();
+                let session_id = active_session
+                    .as_ref()
+                    .map(|s| s.session_id.clone())
                     .unwrap_or_else(|| "idle".to_string());
+                let session_goal = active_session.as_ref().map(|s| s.goal.as_str());
+
+                let scores = state
+                    .classifier
+                    .lock()
+                    .predict(&features, session_goal);
+                extractor.update_focus_score(scores.focus_score / 100.0, 0.2);
 
                 let record = PredictionRecord {
                     session_id: session_id.clone(),
@@ -104,6 +106,7 @@ fn run_engine_loop(app: AppHandle) {
                     focus_state: scores.focus_state.clone(),
                     thrash_score: scores.thrash_score,
                     drift_score: scores.drift_score,
+                    goal_alignment: scores.goal_alignment,
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
 
@@ -112,7 +115,7 @@ fn run_engine_loop(app: AppHandle) {
                 }
                 *state.latest_prediction.lock() = Some(record.clone());
                 let _ = app.emit("prediction", &record);
-                tracker.on_focus_state(&scores.focus_state);
+                tracker.on_prediction_feedback(&scores.focus_state, session_goal);
                 last_prediction_at = now;
 
                 if scores.focus_state == "DEEP_FOCUS" {
