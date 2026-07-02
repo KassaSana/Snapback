@@ -53,6 +53,9 @@ impl Storage {
                 focus_score REAL NOT NULL,
                 distraction_risk REAL NOT NULL,
                 focus_state TEXT NOT NULL,
+                thrash_score REAL NOT NULL DEFAULT 0.0,
+                drift_score REAL NOT NULL DEFAULT 0.0,
+                goal_alignment REAL NOT NULL DEFAULT 0.5,
                 timestamp TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
@@ -100,6 +103,23 @@ impl Storage {
                 ON app_rules(pattern);
             ",
         )?;
+
+        // Migration: older databases may have the original `predictions` schema without
+        // thrash/drift/goal_alignment. We add columns if missing.
+        for sql in [
+            "ALTER TABLE predictions ADD COLUMN thrash_score REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE predictions ADD COLUMN drift_score REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE predictions ADD COLUMN goal_alignment REAL NOT NULL DEFAULT 0.5",
+        ] {
+            if let Err(err) = self.conn.execute(sql, []) {
+                // SQLite error message for existing column varies, so we match substrings.
+                // Safe to ignore "duplicate column name", but fail for anything else.
+                if !err.to_string().to_lowercase().contains("duplicate column") {
+                    return Err(StorageError::Sqlite(err));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -281,12 +301,16 @@ impl Storage {
 
     pub fn save_prediction(&self, record: &PredictionRecord) -> Result<(), StorageError> {
         self.conn.execute(
-            "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, thrash_score, drift_score, goal_alignment, timestamp)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 record.session_id,
                 record.focus_score,
                 record.distraction_risk,
                 record.focus_state,
+                record.thrash_score,
+                record.drift_score,
+                record.goal_alignment,
                 record.timestamp,
             ],
         )?;
@@ -295,7 +319,8 @@ impl Storage {
 
     pub fn latest_prediction(&self) -> Result<Option<PredictionRecord>, StorageError> {
         let mut stmt = self.conn.prepare(
-            "SELECT session_id, focus_score, distraction_risk, focus_state, timestamp FROM predictions ORDER BY timestamp DESC LIMIT 1",
+            "SELECT session_id, focus_score, distraction_risk, focus_state, thrash_score, drift_score, goal_alignment, timestamp
+             FROM predictions ORDER BY timestamp DESC LIMIT 1",
         )?;
         let mut rows = stmt.query([])?;
         if let Some(row) = rows.next()? {
@@ -304,10 +329,10 @@ impl Storage {
                 focus_score: row.get(1)?,
                 distraction_risk: row.get(2)?,
                 focus_state: row.get(3)?,
-                thrash_score: 0.0,
-                drift_score: 0.0,
-                goal_alignment: 0.5,
-                timestamp: row.get(4)?,
+                thrash_score: row.get(4)?,
+                drift_score: row.get(5)?,
+                goal_alignment: row.get(6)?,
+                timestamp: row.get(7)?,
             }))
         } else {
             Ok(None)
@@ -316,7 +341,8 @@ impl Storage {
 
     pub fn recent_predictions(&self, limit: usize) -> Result<Vec<PredictionRecord>, StorageError> {
         let mut stmt = self.conn.prepare(
-            "SELECT session_id, focus_score, distraction_risk, focus_state, timestamp FROM predictions ORDER BY timestamp DESC LIMIT ?1",
+            "SELECT session_id, focus_score, distraction_risk, focus_state, thrash_score, drift_score, goal_alignment, timestamp
+             FROM predictions ORDER BY timestamp DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |row| {
             Ok(PredictionRecord {
@@ -324,10 +350,10 @@ impl Storage {
                 focus_score: row.get(1)?,
                 distraction_risk: row.get(2)?,
                 focus_state: row.get(3)?,
-                thrash_score: 0.0,
-                drift_score: 0.0,
-                goal_alignment: 0.5,
-                timestamp: row.get(4)?,
+                thrash_score: row.get(4)?,
+                drift_score: row.get(5)?,
+                goal_alignment: row.get(6)?,
+                timestamp: row.get(7)?,
             })
         })?;
         Ok(rows.filter_map(Result::ok).collect())
