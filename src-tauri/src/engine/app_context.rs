@@ -205,11 +205,7 @@ mod tests {
 
     #[test]
     fn cursor_is_ide_and_on_task() {
-<<<<<<< HEAD
-        let ctx = classify("Cursor", "classifier.rs — Snapback");
-=======
-        let ctx = classify("Cursor", "classifier.rs — FocoFlow", &[]);
->>>>>>> dd99d0b (applying personal app rules in classifier,snapback, engine cache)
+        let ctx = classify("Cursor", "classifier.rs — Snapback", &[]);
         assert!(ctx.is_ide);
         assert!(snapback_on_task(&ctx, "classifier.rs — Snapback", None, None));
     }

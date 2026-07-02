@@ -135,14 +135,14 @@ pub fn run_benchmark(args: BenchArgs) -> i32 {
 
     // Warmup
     for _ in 0..args.warmup {
-        let _ = classifier.predict(&features, goal);
+        let _ = classifier.predict(&features, goal, &[]);
     }
 
     // Timed runs
     let mut times: Vec<u128> = Vec::with_capacity(args.runs);
     for _ in 0..args.runs {
         let t0 = Instant::now();
-        let _ = classifier.predict(&features, goal);
+        let _ = classifier.predict(&features, goal, &[]);
         times.push(t0.elapsed().as_micros());
     }
     times.sort_unstable();
@@ -178,7 +178,7 @@ pub fn run_benchmark(args: BenchArgs) -> i32 {
         let mut last_report = Instant::now();
 
         while soak_start.elapsed().as_secs() < args.soak_seconds {
-            let _ = classifier.predict(&features, goal);
+            let _ = classifier.predict(&features, goal, &[]);
             iters += 1;
 
             if last_report.elapsed() >= Duration::from_secs(5) {
