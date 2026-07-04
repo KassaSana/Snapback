@@ -36,7 +36,7 @@ Fix these before trusting training exports or cutting releases.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Global hotkey labeling | Window-only Ctrl+Shift+1–4 | `tauri-plugin-global-shortcut` |
+| Global hotkey labeling | **Done** — Ctrl+Shift+1–4 system-wide | `src-tauri/src/label_shortcuts.rs` |
 | Remove/gate dev UI | ~~Send sample prediction~~ | **Done** — removed; Reload model in training panel |
 | Tray icon | **Done** — show/hide/quit; left-click toggles main window | `src-tauri/src/tray.rs` |
 | macOS permission probe | Approximate | May report OK before `rdev` fails — `capture/permissions.rs` |

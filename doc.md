@@ -29,7 +29,7 @@ Single source of truth for what's left. Keep it short; update after each session
 
 ### Next (P1 — product)
 - [x] **Close ONNX loop** — pipeline → export → reload in app; dev/release builds use `--features onnx`
-- [ ] **Global hotkey labeling** (`tauri-plugin-global-shortcut`)
+- [x] **Global hotkey labeling** (`tauri-plugin-global-shortcut` — Ctrl+Shift+1–4)
 - [x] **Tray icon** — show/hide/quit menu; left-click toggles window
 
 ### Later
