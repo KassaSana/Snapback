@@ -61,6 +61,8 @@ export type FocusLabel =
   | "PRODUCTIVE"
   | "DEEP_FOCUS";
 
+export type LabelSource = "manual" | "hotkey" | "survey" | "auto";
+
 export type AppRuleKind = "allow" | "block";
 
 export type AppRuleRecord = {
@@ -201,8 +203,13 @@ export const api = {
     const raw = await invoke<Record<string, unknown> | null>("get_active_session");
     return raw ? mapSession(raw) : null;
   },
-  submitLabel: (sessionId: string, label: FocusLabel, notes?: string) =>
-    invoke("submit_label", { request: { sessionId, label, notes } }),
+  submitLabel: (
+    sessionId: string,
+    label: FocusLabel,
+    notes?: string,
+    source: LabelSource = "manual",
+  ) =>
+    invoke("submit_label", { request: { sessionId, label, notes, source } }),
   getSessionRecap: async (sessionId: string) => {
     const raw = await invoke<Record<string, unknown>>("get_session_recap", { sessionId });
     return {

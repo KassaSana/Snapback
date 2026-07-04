@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::engine::features::FeatureVector;
 use crate::types::{
-    AppRuleKind, AppRuleRecord, ContextSnapshotDto, ExportTrainingResult, FocusLabel,
+    AppRuleKind, AppRuleRecord, ContextSnapshotDto, ExportTrainingResult, FocusLabel, LabelSource,
     PredictionRecord, SessionRecap, SessionRecord,
 };
 
@@ -549,14 +549,45 @@ impl Storage {
         &self,
         session_id: &str,
         label: FocusLabel,
+        source: LabelSource,
         notes: Option<&str>,
     ) -> Result<(), StorageError> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO labels (session_id, label, source, notes, timestamp) VALUES (?1, ?2, 'manual', ?3, ?4)",
-            params![session_id, label as i32, notes, timestamp],
+            "INSERT INTO labels (session_id, label, source, notes, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                session_id,
+                label as i32,
+                source.as_str(),
+                notes,
+                timestamp
+            ],
         )?;
         Ok(())
+    }
+
+    pub fn infer_session_label(recap: &SessionRecap) -> FocusLabel {
+        if recap.deep_focus_pct >= 50.0 && recap.avg_distraction_risk < 0.35 {
+            FocusLabel::DeepFocus
+        } else if recap.avg_distraction_risk >= 0.6 || recap.thrash_spikes >= 3 {
+            FocusLabel::Distracted
+        } else if recap.deep_focus_pct < 25.0 && recap.thrash_spikes >= 1 {
+            FocusLabel::PseudoProductive
+        } else {
+            FocusLabel::Productive
+        }
+    }
+
+    pub fn save_auto_session_label(&self, session_id: &str) -> Result<FocusLabel, StorageError> {
+        let recap = self.session_recap(session_id)?;
+        let label = Self::infer_session_label(&recap);
+        self.save_label(
+            session_id,
+            label,
+            LabelSource::Auto,
+            Some("inferred from session recap"),
+        )?;
+        Ok(label)
     }
 
     pub fn record_snapback(&self, session_id: &str, summary: &str) -> Result<(), StorageError> {
@@ -889,6 +920,32 @@ mod tests {
     }
 
     #[test]
+    fn infer_session_label_from_recap() {
+        let deep = SessionRecap {
+            session_id: "s".to_string(),
+            goal: "focus".to_string(),
+            duration_secs: 3600,
+            avg_focus_score: 80.0,
+            avg_distraction_risk: 0.2,
+            snapback_count: 0,
+            thrash_spikes: 0,
+            deep_focus_pct: 60.0,
+        };
+        assert_eq!(Storage::infer_session_label(&deep), FocusLabel::DeepFocus);
+
+        let distracted = SessionRecap {
+            avg_distraction_risk: 0.75,
+            thrash_spikes: 4,
+            deep_focus_pct: 10.0,
+            ..deep
+        };
+        assert_eq!(
+            Storage::infer_session_label(&distracted),
+            FocusLabel::Distracted
+        );
+    }
+
+    #[test]
     fn export_training_data_writes_csvs() {
         use crate::engine::features::FeatureVector;
 
@@ -906,7 +963,7 @@ mod tests {
             .save_feature_snapshot(&session.session_id, &features)
             .unwrap();
         storage
-            .save_label(&session.session_id, FocusLabel::Distracted, Some("youtube"))
+            .save_label(&session.session_id, FocusLabel::Distracted, LabelSource::Manual, Some("youtube"))
             .unwrap();
 
         let out_dir = dir.join("exports");

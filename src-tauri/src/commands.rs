@@ -52,11 +52,17 @@ pub fn start_session(
 
 #[tauri::command]
 pub fn stop_session(state: State<'_, AppState>, session_id: String) -> Result<SessionRecord, String> {
-    state
+    let record = state
         .storage
         .lock()
         .stop_session(&session_id)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if let Err(err) = state.storage.lock().save_auto_session_label(&session_id) {
+        log::warn!("failed to save automatic session label: {err}");
+    }
+
+    Ok(record)
 }
 
 #[tauri::command]
@@ -79,12 +85,14 @@ pub fn get_active_session(state: State<'_, AppState>) -> Result<Option<SessionRe
 
 #[tauri::command]
 pub fn submit_label(state: State<'_, AppState>, request: LabelRequest) -> Result<(), String> {
+    let source = crate::types::LabelSource::parse(request.source.as_deref());
     state
         .storage
         .lock()
         .save_label(
             &request.session_id,
             request.label,
+            source,
             request.notes.as_deref(),
         )
         .map_err(|e| e.to_string())

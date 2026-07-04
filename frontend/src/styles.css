@@ -471,6 +471,10 @@ h1 {
   line-height: 1.4;
 }
 
+.survey-card {
+  border-color: rgba(240, 107, 76, 0.35);
+}
+
 .rules-list {
   list-style: none;
   margin: 0;
