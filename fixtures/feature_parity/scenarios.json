@@ -1,0 +1,38 @@
+{
+  "scenarios": [
+    {
+      "name": "stable_typing",
+      "base_time": 1700000000.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 0.4, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 0.8, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 1.2, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 1.6, "type": "mouse_move", "app": "Cursor", "title": "main.rs — Snapback", "mouse_speed": 120 }
+      ],
+      "expect": {
+        "keystroke_count": 4,
+        "context_switches_30s": 0,
+        "is_ide": 1,
+        "time_in_current_app_min": 1
+      }
+    },
+    {
+      "name": "context_switching",
+      "base_time": 1700000000.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 1.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 2.0, "type": "window_focus_change", "app": "Google Chrome", "title": "YouTube - Rick Astley" },
+        { "offset_secs": 3.0, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 4.0, "type": "window_focus_change", "app": "Google Chrome", "title": "YouTube - Rick Astley" }
+      ],
+      "expect": {
+        "context_switches_30s": 4,
+        "unique_apps_5min_min": 2,
+        "is_entertainment": 1,
+        "is_browser": 1
+      }
+    }
+  ]
+}

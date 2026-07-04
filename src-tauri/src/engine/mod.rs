@@ -3,6 +3,7 @@ pub mod classifier;
 pub mod features;
 pub mod focus_modes;
 pub mod goal_alignment;
+pub mod parity;
 
 #[cfg(feature = "onnx")]
 pub mod onnx_model;
