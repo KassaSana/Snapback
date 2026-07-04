@@ -57,6 +57,7 @@ pub struct SessionRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContextSnapshotDto {
     pub app_name: String,
     pub window_title: String,

@@ -460,6 +460,31 @@ impl Storage {
         Ok(())
     }
 
+    pub fn list_context_snapshots(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<ContextSnapshotDto>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT app_name, window_title, file_hint, project_hint, summary, timestamp
+             FROM context_snapshots
+             WHERE session_id = ?1
+             ORDER BY timestamp ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![session_id, limit as i64], |row| {
+            Ok(ContextSnapshotDto {
+                app_name: row.get(0)?,
+                window_title: row.get(1)?,
+                file_hint: row.get(2)?,
+                project_hint: row.get(3)?,
+                summary: row.get(4)?,
+                timestamp: row.get(5)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
     pub fn save_feature_snapshot(
         &self,
         session_id: &str,
@@ -854,6 +879,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+
+        let listed = storage
+            .list_context_snapshots(&session.session_id, 10)
+            .unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].app_name, "Cursor");
+        assert_eq!(listed[0].file_hint, "state.rs");
     }
 
     #[test]

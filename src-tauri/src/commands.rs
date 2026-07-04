@@ -2,8 +2,8 @@ use tauri::{Manager, State};
 
 use crate::state::AppState;
 use crate::types::{
-    AppRuleRecord, ExportTrainingResult, FocusMode, HealthStatus, LabelRequest, PredictionRecord,
-    SessionRecap, SessionRecord, UpsertAppRuleRequest,
+    AppRuleRecord, ContextSnapshotDto, ExportTrainingResult, FocusMode, HealthStatus, LabelRequest,
+    PredictionRecord, SessionRecap, SessionRecord, UpsertAppRuleRequest,
 };
 
 #[tauri::command]
@@ -195,6 +195,34 @@ pub fn delete_app_rule(state: State<'_, AppState>, id: i64) -> Result<(), String
         .map_err(|e| e.to_string())?;
     state.reload_app_rules();
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_context_timeline(
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<ContextSnapshotDto>, String> {
+    let session_id = match session_id {
+        Some(id) => id,
+        None => {
+            let active = state
+                .storage
+                .lock()
+                .get_active_session()
+                .map_err(|e| e.to_string())?;
+            match active {
+                Some(session) => session.session_id,
+                None => return Ok(Vec::new()),
+            }
+        }
+    };
+
+    state
+        .storage
+        .lock()
+        .list_context_snapshots(&session_id, limit.unwrap_or(20))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
