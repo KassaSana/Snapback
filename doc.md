@@ -2,6 +2,8 @@
 
 Single source of truth for what's left. Keep it short; update after each session.
 
+**Details:** see [docs/ROADMAP.md](docs/ROADMAP.md) for full backlog and file paths.
+
 ### Done (on `master`)
 - [x] Rust toolchain + `cargo test` passing locally
 - [x] Persist full prediction fields (thrash / drift / goal alignment) in SQLite
@@ -16,15 +18,23 @@ Single source of truth for what's left. Keep it short; update after each session
 - [x] Snapback overlay UX polish (keyboard dismiss, no-focus-steal, positioning)
 - [x] Permission onboarding UX (capture failure status + OS-specific guidance)
 - [x] Labeling improvements (hotkeys, end-of-session survey, auto labels)
-- [x] Release packaging (icons, NSIS config, `docs/DEPLOYMENT.md`, build scripts)
+- [x] Release packaging (icons, cross-platform scripts, `docs/DEPLOYMENT.md`)
 
-### Now (highest leverage)
-- [ ] **Commit + push** session work from this machine (multiple short commits OK)
+### Now (P0 — data & ship confidence)
+- [ ] **Commit + push** uncommitted work from this machine
+- [ ] **Reset `FeatureExtractor` on session start/stop** — fix `seconds_since_session_start`
+- [ ] **Stop saving `session_id = "idle"`** feature/prediction rows
+- [ ] **CI hardening** — `npm run build`, `cargo test --features onnx`, Windows job
+- [ ] **Release CI** — GitHub Actions workflow for Windows/macOS installers on tag
 
-### Next (product)
-- [ ] **Global hotkey labeling** (`tauri-plugin-global-shortcut` — window hotkeys work today)
-- [ ] **Release CI** — GitHub Actions workflow to build Windows/macOS installers on tag
+### Next (P1 — product)
+- [ ] **Close ONNX loop** — pipeline → export → deploy; decide default feature flag
+- [ ] **Global hotkey labeling** (`tauri-plugin-global-shortcut`)
+- [ ] **Remove or gate** `send_test_prediction` dev button
+- [ ] **Tray icon** — implement quick controls or drop unused feature
 
 ### Later
-- [ ] Benchmark / ONNX model quality pass
+- [ ] ML: real CV in `train_baseline`, ONNX integration tests, parity in CI
+- [ ] Benchmark / ONNX model quality pass (`docs/BENCHMARK_RESULTS.md`)
+- [ ] Doc cleanup — archive stale TDD/ARCHITECTURE sections (see ROADMAP P4)
 - [ ] Linux distro packaging smoke test

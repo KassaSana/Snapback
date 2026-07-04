@@ -150,11 +150,15 @@ Grant macOS **Accessibility** and **Input Monitoring** permissions, restart the 
 
 ## Roadmap
 
+**Tracking:** [`doc.md`](doc.md) (short checklist) · [docs/ROADMAP.md](docs/ROADMAP.md) (full backlog) · [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (shipping)
+
 - [x] Collapse to Tauri desktop app
 - [x] Snapback overlay + SQLite persistence
 - [x] Focus modes + session recap + feedback labels
-- [ ] Ship ONNX inference in Rust (`--features onnx`)
-- [ ] Windows/Linux permission UX polish
+- [x] ONNX runtime wiring in Rust (`--features onnx`, heuristic fallback)
+- [ ] Close ONNX loop in CI + pipeline (see ROADMAP P0)
+- [ ] Release CI + session data fixes (see ROADMAP P0)
+- [ ] Global hotkey labeling
 - [ ] Workflow training ground (parked — revisit after core loop is sticky)
 
 ## License
