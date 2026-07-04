@@ -63,6 +63,26 @@ export type AppRuleRecord = {
   updatedAt: string;
 };
 
+export type ContextSnapshot = {
+  appName: string;
+  windowTitle: string;
+  fileHint: string;
+  projectHint: string;
+  summary: string;
+  timestamp: string;
+};
+
+function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapshot {
+  return {
+    appName: String(raw.app_name ?? raw.appName ?? ""),
+    windowTitle: String(raw.window_title ?? raw.windowTitle ?? ""),
+    fileHint: String(raw.file_hint ?? raw.fileHint ?? ""),
+    projectHint: String(raw.project_hint ?? raw.projectHint ?? ""),
+    summary: String(raw.summary ?? ""),
+    timestamp: String(raw.timestamp ?? ""),
+  };
+}
+
 function mapAppRule(raw: Record<string, unknown>): AppRuleRecord {
   return {
     id: Number(raw.id ?? 0),
@@ -174,6 +194,13 @@ export const api = {
     return mapAppRule(raw);
   },
   deleteAppRule: (id: number) => invoke("delete_app_rule", { id }),
+  getContextTimeline: async (sessionId?: string, limit = 20) => {
+    const rows = await invoke<Record<string, unknown>[]>("get_context_timeline", {
+      sessionId: sessionId ?? null,
+      limit,
+    });
+    return rows.map(mapContextSnapshot);
+  },
   exportTrainingData: async (sessionId?: string) => {
     const raw = await invoke<Record<string, unknown>>("export_training_data", {
       sessionId: sessionId ?? null,
