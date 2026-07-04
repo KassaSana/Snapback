@@ -87,6 +87,43 @@ impl FeatureVector {
             is_pseudo_productive: false,
         }
     }
+
+    /// Column order matches `ml.training_pipeline.default_feature_columns()`.
+    pub fn training_input(&self) -> [f32; 31] {
+        [
+            self.seconds_since_session_start as f32,
+            self.hour_of_day as f32,
+            self.day_of_week as f32,
+            self.minutes_since_last_break as f32,
+            self.keystroke_count as f32,
+            self.keystroke_rate as f32,
+            self.keystroke_interval_mean as f32,
+            self.keystroke_interval_std as f32,
+            self.keystroke_interval_trend as f32,
+            self.mouse_move_count as f32,
+            self.mouse_distance_pixels as f32,
+            self.mouse_speed_mean as f32,
+            self.mouse_speed_std as f32,
+            self.mouse_acceleration_mean as f32,
+            self.mouse_click_count as f32,
+            self.context_switches_30s as f32,
+            self.context_switches_5min as f32,
+            self.time_in_current_app as f32,
+            self.unique_apps_5min as f32,
+            self.idle_time_30s as f32,
+            self.idle_event_count_5min as f32,
+            self.longest_active_stretch_5min as f32,
+            self.window_title_length as f32,
+            f32::from(self.window_title_changed_30s),
+            f32::from(self.is_browser),
+            f32::from(self.is_ide),
+            f32::from(self.is_communication),
+            f32::from(self.is_entertainment),
+            f32::from(self.is_productivity),
+            self.focus_momentum as f32,
+            f32::from(self.is_pseudo_productive),
+        ]
+    }
 }
 
 fn mean(values: &[f64]) -> f64 {
