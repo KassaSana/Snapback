@@ -197,14 +197,28 @@ impl FeatureExtractor {
         self.focus_momentum = alpha * score + (1.0 - alpha) * self.focus_momentum;
     }
 
+    /// Clears rolling windows and aligns session-relative features with a focus session boundary.
+    pub fn reset_for_session(&mut self, session_start_ts: Option<f64>) {
+        self.session_start_ts = session_start_ts;
+        self.events_30s.clear();
+        self.events_5min.clear();
+        self.last_break_ts = session_start_ts;
+        self.current_app_name.clear();
+        self.current_window_title.clear();
+        self.current_app_start_ts = None;
+        self.focus_momentum = 0.0;
+    }
+
     pub fn update(&mut self, event: &CaptureEvent, rules: &[AppRuleRecord]) -> FeatureVector {
         let now = event.timestamp_secs;
-        if self.session_start_ts.is_none() {
-            self.session_start_ts = Some(now);
-            self.last_break_ts = Some(now);
+
+        if self.current_app_start_ts.is_none() && !event.app_name.is_empty() {
             self.current_app_name = event.app_name.clone();
             self.current_window_title = event.window_title.clone();
             self.current_app_start_ts = Some(now);
+            if self.last_break_ts.is_none() {
+                self.last_break_ts = Some(now);
+            }
         }
 
         self.events_30s.push_back(event.clone());
@@ -330,7 +344,10 @@ impl FeatureExtractor {
 
         FeatureVector {
             timestamp: now,
-            seconds_since_session_start: (now - self.session_start_ts.unwrap_or(now)) as i64,
+            seconds_since_session_start: self
+                .session_start_ts
+                .map(|start| (now - start) as i64)
+                .unwrap_or(0),
             hour_of_day: dt.hour(),
             day_of_week: dt.weekday().num_days_from_monday(),
             minutes_since_last_break,
@@ -407,5 +424,47 @@ impl FeatureExtractor {
 impl Default for FeatureExtractor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{CaptureEvent, EventType};
+
+    fn event_at(ts: f64, app: &str) -> CaptureEvent {
+        CaptureEvent {
+            event_type: EventType::WindowFocusChange,
+            timestamp_secs: ts,
+            app_name: app.to_string(),
+            window_title: format!("{app} — doc"),
+            mouse_x: 0,
+            mouse_y: 0,
+            mouse_speed: 0,
+            idle_duration_ms: 0,
+        }
+    }
+
+    #[test]
+    fn reset_for_session_clears_windows_and_sets_start_offset() {
+        let mut extractor = FeatureExtractor::new();
+        let rules = Vec::new();
+
+        extractor.update(&event_at(100.0, "Code"), &rules);
+        extractor.update(&event_at(105.0, "Code"), &rules);
+
+        extractor.reset_for_session(Some(200.0));
+        let features = extractor.update(&event_at(230.0, "Code"), &rules);
+
+        assert_eq!(features.seconds_since_session_start, 30);
+        assert_eq!(features.context_switches_30s, 1);
+    }
+
+    #[test]
+    fn seconds_since_session_start_is_zero_without_active_session() {
+        let mut extractor = FeatureExtractor::new();
+        let features = extractor.update(&event_at(50.0, "Code"), &[]);
+
+        assert_eq!(features.seconds_since_session_start, 0);
     }
 }
