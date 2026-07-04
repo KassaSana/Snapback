@@ -2,6 +2,8 @@
 
 This repo includes a built-in benchmark mode that prints **copy/paste-able metrics** you can cite in a resume (with the exact command used to produce them).
 
+**Latest recorded results:** [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md)
+
 ## Prereqs
 
 - Install **Rust** (includes `cargo`) via `rustup` for Windows.
@@ -23,7 +25,7 @@ cd src-tauri
 cargo run --release -- --benchmark --runs 20000 --warmup 2000 --goal "implement feature X"
 ```
 
-Example output (your values will differ):
+Example output (see [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for latest measured values):
 
 ```text
 SNAPBACK_BENCH v1
@@ -31,14 +33,16 @@ mode=inference
 runs=20000
 warmup=2000
 goal_present=false
-latency_us_p50=35
-latency_us_p95=62
-latency_us_p99=90
-mem_kib_before=12345
-mem_kib_after=12510
-cpu_pct_sample=0.80
-bench_elapsed_ms=980
+latency_us_p50=1
+latency_us_p95=1
+latency_us_p99=2
+mem_bytes_before=19017728
+mem_bytes_after=24002560
+cpu_pct_sample=0.00
+bench_elapsed_ms=664
 ```
+
+Memory fields are **bytes** (divide by 1,048,576 for MB).
 
 ## Reliability / soak run (crash-free runtime)
 
