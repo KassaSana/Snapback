@@ -9,7 +9,9 @@
     "typecheck": "npm run typecheck --prefix frontend",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:nsis": "tauri build --bundles nsis",
+    "icons:generate": "powershell -ExecutionPolicy Bypass -File tools/make-square-icon.ps1 && npx tauri icon app-icon-square.png"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
