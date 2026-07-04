@@ -10,6 +10,7 @@ import {
   riskLevel,
   type AppRuleKind,
   type AppRuleRecord,
+  type CaptureFailurePayload,
   type ContextSnapshot,
   type FocusLabel,
   type PredictionRecord,
@@ -56,6 +57,9 @@ export default function App() {
   const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline">("checking");
   const [captureRunning, setCaptureRunning] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
+  const [permissionSteps, setPermissionSteps] = useState<string[]>([]);
+  const [captureFailed, setCaptureFailed] = useState(false);
+  const [captureFailureReason, setCaptureFailureReason] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<PredictionRecord | null>(null);
   const [predictionHistory, setPredictionHistory] = useState<PredictionRecord[]>([]);
   const [sessionGoal, setSessionGoal] = useState("");
@@ -118,16 +122,32 @@ export default function App() {
     }
   }, []);
 
+  const applyHealth = useCallback((health: Awaited<ReturnType<typeof api.getHealth>>) => {
+    setHealthStatus(health.captureFailed ? "offline" : health.status === "degraded" ? "offline" : "online");
+    setCaptureRunning(health.captureRunning);
+    setCaptureFailed(health.captureFailed);
+    setCaptureFailureReason(health.captureFailureReason);
+    setPermissionMessage(health.permissions.message);
+    setPermissionSteps(health.permissions.setupSteps);
+  }, []);
+
+  const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
+    setCaptureFailed(true);
+    setCaptureRunning(false);
+    setCaptureFailureReason(payload.reason);
+    setPermissionMessage(payload.message);
+    setPermissionSteps(payload.setupSteps);
+    setHealthStatus("offline");
+  }, []);
+
   const refreshHealth = useCallback(async () => {
     try {
       const health = await api.getHealth();
-      setHealthStatus("online");
-      setCaptureRunning(health.captureRunning);
-      setPermissionMessage(health.permissions.message);
+      applyHealth(health);
     } catch {
       setHealthStatus("offline");
     }
-  }, []);
+  }, [applyHealth]);
 
   const refreshLatest = useCallback(async () => {
     try {
@@ -171,6 +191,11 @@ export default function App() {
   useEffect(() => {
     const unsubs: Array<Promise<() => void>> = [];
     unsubs.push(
+      api.onCaptureFailed((payload) => {
+        applyCaptureFailure(payload);
+      }),
+    );
+    unsubs.push(
       api.onPrediction((record) => {
         pushPrediction(record);
       }),
@@ -190,7 +215,7 @@ export default function App() {
     return () => {
       void Promise.all(unsubs).then((handlers) => handlers.forEach((off) => off()));
     };
-  }, [pushPrediction]);
+  }, [pushPrediction, applyCaptureFailure]);
 
   const handleStartSession = async () => {
     const goal = sessionGoal.trim();
@@ -286,8 +311,10 @@ export default function App() {
     try {
       const status = await api.refreshPermissions();
       setPermissionMessage(status.message);
+      setPermissionSteps(status.setupSteps);
+      await refreshHealth();
     } catch {
-      // ignore
+      setPermissionMessage("Could not refresh permissions.");
     }
   };
 
@@ -343,7 +370,9 @@ export default function App() {
           </div>
           <div className="status-pill">
             <span className="status-label">Capture</span>
-            <span className="status-value">{captureRunning ? "running" : "idle"}</span>
+            <span className={`status-value${captureFailed ? " status-alert" : ""}`}>
+              {captureFailed ? "failed" : captureRunning ? "running" : "idle"}
+            </span>
           </div>
         </div>
       </header>
@@ -668,16 +697,31 @@ export default function App() {
           {rulesStatus ? <p className="helper-text">{rulesStatus}</p> : null}
         </section>
 
-        <section className="card config-card">
+        <section className={`card config-card${captureFailed ? " config-card-alert" : ""}`}>
           <div className="card-header">
             <h2>Permissions</h2>
-            <span className="pill">local desktop</span>
+            <span className={`pill${captureFailed ? " pill-alert" : ""}`}>
+              {captureFailed ? "capture failed" : "local desktop"}
+            </span>
           </div>
+          {captureFailed ? (
+            <p className="helper-text alert">
+              Capture listener stopped
+              {captureFailureReason ? `: ${captureFailureReason}` : "."}
+            </p>
+          ) : null}
           <p className="helper-text">
             {permissionMessage ||
               "Snapback runs locally. Grant Accessibility + Input Monitoring on macOS."}
           </p>
-          <button className="secondary-button" onClick={handleRefreshPermissions}>
+          {permissionSteps.length > 0 ? (
+            <ol className="permission-steps">
+              {permissionSteps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          ) : null}
+          <button className="secondary-button" onClick={() => void handleRefreshPermissions()}>
             Refresh permissions
           </button>
         </section>

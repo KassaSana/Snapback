@@ -83,6 +83,16 @@ pub struct PermissionStatus {
     pub capture_available: bool,
     pub active_window_available: bool,
     pub message: String,
+    #[serde(default)]
+    pub setup_steps: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureFailurePayload {
+    pub reason: String,
+    pub message: String,
+    pub setup_steps: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +172,8 @@ impl FocusMode {
 pub struct HealthStatus {
     pub status: String,
     pub capture_running: bool,
+    pub capture_failed: bool,
+    pub capture_failure_reason: Option<String>,
     pub permissions: PermissionStatus,
 }
 
