@@ -2,6 +2,7 @@ mod capture;
 mod bench;
 mod commands;
 mod engine;
+mod label_shortcuts;
 mod snapback;
 mod state;
 mod storage;
@@ -69,6 +70,7 @@ pub fn run() {
             }
 
             tray::setup_tray(app)?;
+            label_shortcuts::setup_label_shortcuts(app)?;
 
             Ok(())
         })

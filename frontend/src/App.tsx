@@ -24,12 +24,6 @@ const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
 const TIMELINE_POLL_MS = 30_000;
 const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
-const LABEL_HOTKEYS: Record<string, FocusLabel> = {
-  "1": "DEEP_FOCUS",
-  "2": "PRODUCTIVE",
-  "3": "PSEUDO_PRODUCTIVE",
-  "4": "DISTRACTED",
-};
 const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
 
 const ruleKindLabel = (kind: AppRuleKind) => (kind === "allow" ? "Allow" : "Block");
@@ -249,28 +243,16 @@ export default function App() {
         setHyperfocusNote(payload.message);
       }),
     );
+    unsubs.push(
+      api.onLabelHotkey((payload) => {
+        setLabelStatus(payload.message);
+      }),
+    );
 
     return () => {
       void Promise.all(unsubs).then((handlers) => handlers.forEach((off) => off()));
     };
   }, [pushPrediction, applyCaptureFailure]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) {
-        return;
-      }
-      const label = LABEL_HOTKEYS[event.key];
-      if (!label) {
-        return;
-      }
-      event.preventDefault();
-      void handleLabel(label, "hotkey");
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [sessionId, handleLabel]);
 
   const handleStartSession = async () => {
     const goal = sessionGoal.trim();
@@ -546,8 +528,8 @@ export default function App() {
             <span className="pill">train the model</span>
           </div>
           <p className="helper-text">
-            One tap — was that moment actually focused? Hotkeys: Ctrl+Shift+1 deep, 2 focused,
-            3 drift, 4 distracted.
+            One tap — was that moment actually focused? Global hotkeys: Ctrl+Shift+1 deep, 2 focused,
+            3 drift, 4 distracted (works from any app during a session).
           </p>
           <div className="button-row feedback-row">
             <button className="secondary-button" onClick={() => void handleLabel("DEEP_FOCUS")}>

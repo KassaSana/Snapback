@@ -36,6 +36,13 @@ export type CaptureFailurePayload = {
   setupSteps: string[];
 };
 
+export type LabelHotkeyPayload = {
+  ok: boolean;
+  message: string;
+  label?: string;
+  sessionId?: string;
+};
+
 export type ClassifierStatus = {
   backend: string;
   onnxRuntimeEnabled: boolean;
@@ -294,6 +301,16 @@ export const api = {
     listen<Record<string, unknown>>("snapback", (event) => handler(event.payload)),
   onHyperfocus: (handler: (payload: { message: string }) => void) =>
     listen<{ message: string }>("hyperfocus", (event) => handler(event.payload)),
+  onLabelHotkey: (handler: (payload: LabelHotkeyPayload) => void) =>
+    listen<Record<string, unknown>>("label-hotkey", (event) => {
+      const raw = event.payload;
+      handler({
+        ok: Boolean(raw.ok ?? false),
+        message: String(raw.message ?? ""),
+        label: raw.label ? String(raw.label) : undefined,
+        sessionId: raw.sessionId ? String(raw.sessionId) : undefined,
+      });
+    }),
 };
 
 export const clamp = (value: number, min: number, max: number) =>
