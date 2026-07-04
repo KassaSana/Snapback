@@ -8,11 +8,11 @@
     "test": "npm run test --prefix frontend",
     "typecheck": "npm run typecheck --prefix frontend",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "tauri dev --features onnx",
     "setup": "npm install && npm install --prefix frontend",
-    "tauri:build": "tauri build",
-    "tauri:build:nsis": "tauri build --bundles nsis",
-    "tauri:build:dmg": "tauri build --bundles dmg",
+    "tauri:build": "tauri build --features onnx",
+    "tauri:build:nsis": "tauri build --features onnx --bundles nsis",
+    "tauri:build:dmg": "tauri build --features onnx --bundles dmg",
     "icons:generate": "node tools/make-square-icon.mjs && tauri icon app-icon-square.png"
   },
   "devDependencies": {

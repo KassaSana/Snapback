@@ -20,14 +20,7 @@ Fix these before trusting training exports or cutting releases.
 
 ### Close the ONNX loop
 
-ONNX is wired behind `--features onnx` but not validated end-to-end:
-
-- Not in default Cargo features → release builds use heuristics only
-- CI never builds/tests with `--features onnx`
-- `ml/pipeline_cli.py` stops at `model.json` — no automatic ONNX export or install into app data
-- `README.md` roadmap still lists ONNX as unchecked; `doc.md` marks wiring done
-
-- **Touch:** `src-tauri/Cargo.toml`, `.github/workflows/ci.yml`, `ml/pipeline_cli.py`, `ml/export_onnx.py`, `src-tauri/src/engine/onnx_model.rs`
+**Done (2026-07):** `pipeline_cli` exports `model.onnx` after XGBoost training; app resolves `model.onnx` from app data; `reload_classifier_model` command + UI; release/dev builds use `--features onnx`; health shows classifier backend.
 
 ### Release CI
 
@@ -44,7 +37,7 @@ ONNX is wired behind `--features onnx` but not validated end-to-end:
 | Item | Status | Notes |
 |------|--------|-------|
 | Global hotkey labeling | Window-only Ctrl+Shift+1–4 | `tauri-plugin-global-shortcut` |
-| Remove/gate dev UI | "Send sample prediction" in dashboard | `send_test_prediction` stub |
+| Remove/gate dev UI | ~~Send sample prediction~~ | **Done** — removed; Reload model in training panel |
 | Tray icon | `tray-icon` feature enabled, unused | Implement or drop from `Cargo.toml` |
 | macOS permission probe | Approximate | May report OK before `rdev` fails — `capture/permissions.rs` |
 | Training deploy UX | Export works; train/deploy is manual CLI | Model status UI or deploy-from-export path |

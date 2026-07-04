@@ -6,6 +6,9 @@ export const buildPipelineCommand = (outputDir: string) => {
     "python3 -m ml.pipeline_cli \\",
     `  --output-dir ${quotedDir} \\`,
     "  --skip-export",
+    "",
+    "# Pipeline writes model.onnx here when XGBoost trains successfully.",
+    "# Then click Reload model in Snapback (or restart the app).",
   ].join("\n");
 };
 
@@ -15,3 +18,6 @@ export const buildExportSummary = (
   outputDir: string,
 ) =>
   `Exported ${featureCount} features and ${labelCount} labels to ${outputDir}`;
+
+export const classifierBackendLabel = (backend: string) =>
+  backend === "onnx" ? "ONNX" : "Heuristic";

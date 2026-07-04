@@ -38,6 +38,18 @@ npm run tauri:build:nsis
 npm run tauri:build:dmg
 ```
 
+## ONNX training loop
+
+1. **Export** from the app: Focus Feedback → Export training data.
+2. **Train** from repo root (uses exported CSVs in app data):
+   ```bash
+   python3 -m ml.pipeline_cli --output-dir "<app-data>/exports/training" --skip-export
+   ```
+   Produces `model.json`, `metrics.json`, and `model.onnx` when XGBoost trains successfully.
+3. **Reload** in the app: Focus Feedback → Reload model (or restart Snapback).
+
+Dev and release builds use `--features onnx`. The header shows **Heuristic** until `model.onnx` is loaded.
+
 ## App icons
 
 Desktop icons are generated from a square source image:

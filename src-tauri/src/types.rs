@@ -199,12 +199,21 @@ impl FocusMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ClassifierStatus {
+    pub backend: String,
+    pub onnx_runtime_enabled: bool,
+    pub model_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthStatus {
     pub status: String,
     pub capture_running: bool,
     pub capture_failed: bool,
     pub capture_failure_reason: Option<String>,
     pub permissions: PermissionStatus,
+    pub classifier: ClassifierStatus,
 }
 
 /// User override: treat apps/titles matching `pattern` as on-task or distracting.
