@@ -13,6 +13,7 @@ const MOUSE_SAMPLE_INTERVAL: Duration = Duration::from_millis(50);
 
 pub fn start_capture_thread(
     event_tx: std::sync::mpsc::Sender<CaptureEvent>,
+    failure_tx: std::sync::mpsc::Sender<String>,
 ) -> thread::JoinHandle<()> {
     let last_window: Arc<RwLock<Option<(String, String)>>> = Arc::new(RwLock::new(None));
     let last_activity: Arc<RwLock<SystemTime>> = Arc::new(RwLock::new(SystemTime::now()));
@@ -163,6 +164,7 @@ pub fn start_capture_thread(
 
         if let Err(err) = rdev::listen(callback) {
             log::error!("capture thread stopped: {err:?}");
+            let _ = failure_tx.send(format!("{err:?}"));
         }
     })
 }

@@ -6,14 +6,15 @@ use crate::engine::{check_hyperfocus, Classifier, FeatureExtractor};
 use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
 use crate::types::{
-    AppRuleRecord, CaptureEvent, ContextSnapshotDto, EventType, FocusMode, PermissionStatus,
-    PredictionRecord, SnapbackPayload,
+    AppRuleRecord, CaptureEvent, CaptureFailurePayload, ContextSnapshotDto, EventType, FocusMode,
+    PermissionStatus, PredictionRecord, SnapbackPayload,
 };
 
 pub struct AppState {
     pub storage: parking_lot::Mutex<Storage>,
     pub permissions: parking_lot::Mutex<PermissionStatus>,
     pub capture_running: parking_lot::Mutex<bool>,
+    pub capture_failure_reason: parking_lot::Mutex<Option<String>>,
     pub focus_mode: parking_lot::Mutex<FocusMode>,
     pub classifier: parking_lot::Mutex<Classifier>,
     pub latest_prediction: parking_lot::Mutex<Option<PredictionRecord>>,
@@ -31,6 +32,7 @@ impl AppState {
             storage: parking_lot::Mutex::new(storage),
             permissions: parking_lot::Mutex::new(permissions),
             capture_running: parking_lot::Mutex::new(false),
+            capture_failure_reason: parking_lot::Mutex::new(None),
             focus_mode: parking_lot::Mutex::new(focus_mode),
             classifier: parking_lot::Mutex::new(Classifier::new(focus_mode)),
             latest_prediction: parking_lot::Mutex::new(None),
@@ -47,14 +49,75 @@ impl AppState {
     }
 
     pub fn start_engine(&self, app: AppHandle) -> Result<(), String> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        crate::capture::start_capture_thread(tx);
-        *self.event_rx.lock() = Some(rx);
-        *self.capture_running.lock() = true;
-
+        self.spawn_capture(&app)?;
         thread::spawn(move || run_engine_loop(app));
         Ok(())
     }
+
+    fn spawn_capture(&self, app: &AppHandle) -> Result<(), String> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (failure_tx, failure_rx) = std::sync::mpsc::channel();
+        crate::capture::start_capture_thread(tx, failure_tx);
+        *self.event_rx.lock() = Some(rx);
+        *self.capture_running.lock() = true;
+        *self.capture_failure_reason.lock() = None;
+        spawn_capture_failure_watcher(app.clone(), failure_rx);
+        Ok(())
+    }
+
+    pub fn build_health_status(&self) -> crate::types::HealthStatus {
+        let permissions = self.permissions.lock().clone();
+        let capture_running = *self.capture_running.lock();
+        let capture_failure_reason = self.capture_failure_reason.lock().clone();
+        let capture_failed = capture_failure_reason.is_some();
+
+        let status = if capture_failed {
+            "capture_failed".to_string()
+        } else if !permissions.capture_available || !permissions.active_window_available {
+            "degraded".to_string()
+        } else if capture_running {
+            "online".to_string()
+        } else {
+            "offline".to_string()
+        };
+
+        crate::types::HealthStatus {
+            status,
+            capture_running,
+            capture_failed,
+            capture_failure_reason,
+            permissions,
+        }
+    }
+
+    pub fn restart_capture_if_needed(&self, app: &AppHandle) -> Result<(), String> {
+        if *self.capture_running.lock() && self.capture_failure_reason.lock().is_none() {
+            return Ok(());
+        }
+        self.spawn_capture(app)
+    }
+}
+
+fn spawn_capture_failure_watcher(app: AppHandle, failure_rx: std::sync::mpsc::Receiver<String>) {
+    thread::spawn(move || {
+        if let Ok(reason) = failure_rx.recv() {
+            let Some(state) = app.try_state::<AppState>() else {
+                return;
+            };
+
+            *state.capture_running.lock() = false;
+            *state.capture_failure_reason.lock() = Some(reason.clone());
+            let permissions = crate::capture::capture_failure_message(&reason);
+            *state.permissions.lock() = permissions.clone();
+
+            let payload = CaptureFailurePayload {
+                reason,
+                message: permissions.message.clone(),
+                setup_steps: permissions.setup_steps.clone(),
+            };
+            let _ = app.emit("capture-failed", &payload);
+        }
+    });
 }
 
 fn run_engine_loop(app: AppHandle) {

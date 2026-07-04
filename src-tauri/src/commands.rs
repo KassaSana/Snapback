@@ -8,11 +8,7 @@ use crate::types::{
 
 #[tauri::command]
 pub fn get_health(state: State<'_, AppState>) -> HealthStatus {
-    HealthStatus {
-        status: "online".to_string(),
-        capture_running: *state.capture_running.lock(),
-        permissions: state.permissions.lock().clone(),
-    }
+    state.build_health_status()
 }
 
 #[tauri::command]
@@ -154,9 +150,17 @@ pub fn send_test_prediction(state: State<'_, AppState>) -> Result<PredictionReco
 }
 
 #[tauri::command]
-pub fn refresh_permissions(state: State<'_, AppState>) -> Result<crate::types::PermissionStatus, String> {
+pub fn refresh_permissions(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<crate::types::PermissionStatus, String> {
     let status = crate::capture::check_permissions();
     *state.permissions.lock() = status.clone();
+
+    if status.capture_available && status.active_window_available {
+        state.restart_capture_if_needed(&app)?;
+    }
+
     Ok(status)
 }
 

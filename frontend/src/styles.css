@@ -441,6 +441,36 @@ h1 {
   padding: 8px 0;
 }
 
+.helper-text.alert {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.status-value.status-alert {
+  color: #b42318;
+}
+
+.config-card-alert {
+  border-color: rgba(180, 35, 24, 0.35);
+}
+
+.pill-alert {
+  background: rgba(180, 35, 24, 0.12);
+  color: #b42318;
+}
+
+.permission-steps {
+  margin: 12px 0 16px;
+  padding-left: 20px;
+  color: var(--muted);
+  display: grid;
+  gap: 8px;
+}
+
+.permission-steps li {
+  line-height: 1.4;
+}
+
 .rules-list {
   list-style: none;
   margin: 0;

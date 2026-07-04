@@ -27,11 +27,20 @@ export type PermissionStatus = {
   captureAvailable: boolean;
   activeWindowAvailable: boolean;
   message: string;
+  setupSteps: string[];
+};
+
+export type CaptureFailurePayload = {
+  reason: string;
+  message: string;
+  setupSteps: string[];
 };
 
 export type HealthStatus = {
   status: string;
   captureRunning: boolean;
+  captureFailed: boolean;
+  captureFailureReason: string | null;
   permissions: PermissionStatus;
 };
 
@@ -80,6 +89,33 @@ function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapshot {
     projectHint: String(raw.project_hint ?? raw.projectHint ?? ""),
     summary: String(raw.summary ?? ""),
     timestamp: String(raw.timestamp ?? ""),
+  };
+}
+
+function mapPermissionStatus(raw: Record<string, unknown>): PermissionStatus {
+  return {
+    captureAvailable: Boolean(raw.capture_available ?? raw.captureAvailable ?? false),
+    activeWindowAvailable: Boolean(
+      raw.active_window_available ?? raw.activeWindowAvailable ?? false,
+    ),
+    message: String(raw.message ?? ""),
+    setupSteps: Array.isArray(raw.setup_steps ?? raw.setupSteps)
+      ? (raw.setup_steps ?? raw.setupSteps).map((step) => String(step))
+      : [],
+  };
+}
+
+function mapHealth(raw: Record<string, unknown>): HealthStatus {
+  return {
+    status: String(raw.status ?? "offline"),
+    captureRunning: Boolean(raw.capture_running ?? raw.captureRunning ?? false),
+    captureFailed: Boolean(raw.capture_failed ?? raw.captureFailed ?? false),
+    captureFailureReason: (raw.capture_failure_reason ??
+      raw.captureFailureReason ??
+      null) as string | null,
+    permissions: mapPermissionStatus(
+      (raw.permissions as Record<string, unknown>) ?? {},
+    ),
   };
 }
 
@@ -137,7 +173,10 @@ function mapExportTrainingResult(raw: Record<string, unknown>): ExportTrainingRe
 }
 
 export const api = {
-  getHealth: () => invoke<HealthStatus>("get_health"),
+  getHealth: async () => {
+    const raw = await invoke<Record<string, unknown>>("get_health");
+    return mapHealth(raw);
+  },
   getLatestPrediction: async () => {
     const raw = await invoke<Record<string, unknown> | null>("get_latest_prediction");
     return raw ? mapPrediction(raw) : null;
@@ -182,7 +221,10 @@ export const api = {
     const raw = await invoke<Record<string, unknown>>("send_test_prediction");
     return mapPrediction(raw);
   },
-  refreshPermissions: () => invoke<PermissionStatus>("refresh_permissions"),
+  refreshPermissions: async () => {
+    const raw = await invoke<Record<string, unknown>>("refresh_permissions");
+    return mapPermissionStatus(raw);
+  },
   getAppRules: async () => {
     const rows = await invoke<Record<string, unknown>[]>("get_app_rules");
     return rows.map(mapAppRule);
@@ -207,6 +249,17 @@ export const api = {
     });
     return mapExportTrainingResult(raw);
   },
+  onCaptureFailed: (handler: (payload: CaptureFailurePayload) => void) =>
+    listen<Record<string, unknown>>("capture-failed", (event) => {
+      const raw = event.payload;
+      handler({
+        reason: String(raw.reason ?? ""),
+        message: String(raw.message ?? ""),
+        setupSteps: Array.isArray(raw.setup_steps ?? raw.setupSteps)
+          ? (raw.setup_steps ?? raw.setupSteps).map((step) => String(step))
+          : [],
+      });
+    }),
   onPrediction: (handler: (record: PredictionRecord) => void) =>
     listen<Record<string, unknown>>("prediction", (event) => {
       handler(mapPrediction(event.payload));
