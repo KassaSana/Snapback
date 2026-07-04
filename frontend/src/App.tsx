@@ -10,6 +10,7 @@ import {
   riskLevel,
   type AppRuleKind,
   type AppRuleRecord,
+  type ContextSnapshot,
   type FocusLabel,
   type PredictionRecord,
   type SessionRecord,
@@ -18,6 +19,8 @@ import {
 import { buildExportSummary, buildPipelineCommand } from "./trainingHints";
 
 const HISTORY_LIMIT = 8;
+const TIMELINE_LIMIT = 20;
+const TIMELINE_POLL_MS = 30_000;
 const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
 const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
 
@@ -70,6 +73,22 @@ export default function App() {
   const [ruleKind, setRuleKind] = useState<AppRuleKind>("allow");
   const [ruleNote, setRuleNote] = useState("");
   const [rulesStatus, setRulesStatus] = useState<string | null>(null);
+  const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
+
+  const refreshContextTimeline = useCallback(async (sid?: string | null) => {
+    const id = sid ?? sessionId;
+    if (!id) {
+      setContextTimeline([]);
+      return;
+    }
+
+    try {
+      const rows = await api.getContextTimeline(id, TIMELINE_LIMIT);
+      setContextTimeline(rows);
+    } catch {
+      setContextTimeline([]);
+    }
+  }, [sessionId]);
 
   const pushPrediction = useCallback((record: PredictionRecord | null) => {
     if (!record) {
@@ -133,8 +152,21 @@ export default function App() {
       setSessionId(active.sessionId);
       setSessionGoal(active.goal);
       setFocusMode((active.focusMode as (typeof FOCUS_MODES)[number]) || "normal");
+      void refreshContextTimeline(active.sessionId);
     });
-  }, [refreshHealth, refreshLatest, refreshAppRules]);
+  }, [refreshHealth, refreshLatest, refreshAppRules, refreshContextTimeline]);
+
+  useEffect(() => {
+    if (!sessionId || sessionRecord?.status !== "ACTIVE") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshContextTimeline(sessionId);
+    }, TIMELINE_POLL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [sessionId, sessionRecord?.status, refreshContextTimeline]);
 
   useEffect(() => {
     const unsubs: Array<Promise<() => void>> = [];
@@ -169,6 +201,7 @@ export default function App() {
       setSessionId(record.sessionId);
       setSessionGoal(record.goal);
       setRecap(null);
+      void refreshContextTimeline(record.sessionId);
     } catch {
       // ignore
     }
@@ -181,6 +214,7 @@ export default function App() {
       setSessionRecord(record);
       const sessionRecap = await api.getSessionRecap(sessionId);
       setRecap(sessionRecap);
+      void refreshContextTimeline(sessionId);
     } catch {
       // ignore
     }
@@ -485,6 +519,51 @@ export default function App() {
               ))
             )}
           </ul>
+        </section>
+
+        <section className="card timeline-card">
+          <div className="card-header">
+            <h2>Context Timeline</h2>
+            <span className="pill">session trail</span>
+          </div>
+          <p className="helper-text">
+            Where you were working during this session — apps, files, and parsed summaries.
+          </p>
+          {!sessionId ? (
+            <p className="helper-text">Start a session to record context snapshots.</p>
+          ) : (
+            <>
+              <button
+                className="ghost-button"
+                onClick={() => void refreshContextTimeline(sessionId)}
+              >
+                Refresh timeline
+              </button>
+              <ol className="timeline-list">
+                {contextTimeline.length === 0 ? (
+                  <li className="timeline-empty">No context snapshots yet.</li>
+                ) : (
+                  contextTimeline.map((entry, index) => (
+                    <li
+                      key={`${entry.timestamp}-${entry.appName}-${index}`}
+                      className="timeline-item"
+                    >
+                      <div className="timeline-marker" aria-hidden="true" />
+                      <div className="timeline-body">
+                        <p className="timeline-time">{formatTime(entry.timestamp)}</p>
+                        <p className="timeline-summary">{entry.summary || entry.windowTitle}</p>
+                        <p className="timeline-meta">
+                          {entry.appName}
+                          {entry.fileHint ? ` · ${entry.fileHint}` : ""}
+                          {entry.projectHint ? ` · ${entry.projectHint}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))
+                )}
+              </ol>
+            </>
+          )}
         </section>
 
         {recap ? (
