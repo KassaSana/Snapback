@@ -12,17 +12,11 @@ Fix these before trusting training exports or cutting releases.
 
 ### Session ↔ feature extractor sync
 
-`FeatureExtractor` is created once at engine startup and never resets on `start_session` / `stop_session`. `seconds_since_session_start` is tied to the first capture event, not the active focus session.
-
-- **Impact:** Wrong session-relative features, labels, and training data.
-- **Touch:** `src-tauri/src/engine/features.rs`, `state.rs`, `commands.rs`
+**Done (2026-07):** `FeatureExtractor::reset_for_session` runs on session start/stop via `feature_session_epoch` in `AppState`. Engine loop resets tracker and session-relative features at boundaries.
 
 ### Stop persisting idle rows
 
-When no session is active, predictions and feature snapshots are saved with `session_id = "idle"`.
-
-- **Impact:** Pollutes ML export.
-- **Touch:** `src-tauri/src/state.rs` (only persist during active session, or filter on export)
+**Done (2026-07):** Predictions, feature snapshots, and snapback records persist only during an active focus session. Live UI still receives prediction events between sessions.
 
 ### Close the ONNX loop
 
@@ -37,22 +31,11 @@ ONNX is wired behind `--features onnx` but not validated end-to-end:
 
 ### Release CI
 
-Packaging works locally; no GitHub Actions release workflow.
-
-- **Touch:** `.github/workflows/release.yml` — tag `v*`, matrix Windows (NSIS) + macOS (DMG), upload artifacts
+**Done (2026-07):** `.github/workflows/release.yml` builds NSIS (Windows) and DMG (macOS) on `v*` tags and uploads release assets.
 
 ### CI hardening
 
-Current CI (Ubuntu only): Python unittest, frontend typecheck + 2 tests, `cargo check/test`.
-
-Missing:
-
-- `npm run build` (production frontend)
-- `cargo test --features onnx`
-- Windows job (compile capture/permission code)
-- Optional: `cargo clippy`, `cargo fmt --check`
-
-- **Touch:** `.github/workflows/ci.yml`
+**Done (2026-07):** `ci.yml` adds frontend production build, `cargo check/test --features onnx`, and a Windows `cargo test` job.
 
 ---
 

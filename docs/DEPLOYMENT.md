@@ -79,4 +79,4 @@ Then rebuild and tag the release.
 
 See `.github/workflows/ci.yml` — Python training tests, frontend checks, and `cargo check` / `cargo test`.
 
-Full release bundles are built locally or via a release workflow (not yet automated in CI).
+Full release bundles are built locally or via [`.github/workflows/release.yml`](../.github/workflows/release.yml) on `v*` tags.

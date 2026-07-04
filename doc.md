@@ -22,10 +22,10 @@ Single source of truth for what's left. Keep it short; update after each session
 
 ### Now (P0 — data & ship confidence)
 - [ ] **Commit + push** uncommitted work from this machine
-- [ ] **Reset `FeatureExtractor` on session start/stop** — fix `seconds_since_session_start`
-- [ ] **Stop saving `session_id = "idle"`** feature/prediction rows
-- [ ] **CI hardening** — `npm run build`, `cargo test --features onnx`, Windows job
-- [ ] **Release CI** — GitHub Actions workflow for Windows/macOS installers on tag
+- [x] **Reset `FeatureExtractor` on session start/stop** — fix `seconds_since_session_start`
+- [x] **Stop saving `session_id = "idle"`** feature/prediction rows
+- [x] **CI hardening** — `npm run build`, `cargo test --features onnx`, Windows job
+- [x] **Release CI** — GitHub Actions workflow for Windows/macOS installers on tag
 
 ### Next (P1 — product)
 - [ ] **Close ONNX loop** — pipeline → export → deploy; decide default feature flag
