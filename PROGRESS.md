@@ -9,6 +9,7 @@
 - **React UI:** Tauri `invoke`/`listen` instead of REST/WebSocket; focus modes, feedback labels, session recap.
 - **Python:** kept as offline training tool; added `ml/export_onnx.py`.
 - **CI:** dropped Java job; added `cargo check` + `cargo test`.
+- **Benchmarks:** added `--benchmark` CLI mode; recorded results in [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) (inference latency, 60 s soak, startup timing).
 
 ## Next milestones
 
@@ -16,5 +17,9 @@
 - Permissions UX polish (especially macOS onboarding + restart loop).
 - ONNX inference wiring in Rust (`--features onnx`) + fallback behavior.
 - Minimal local logs + export for debugging (no network tier).
+
+## Task tracker
+
+See [`doc.md`](doc.md) for the up-to-date implementation checklist.
 
 See [docs/archive/PROGRESS_full.md](docs/archive/PROGRESS_full.md) for the earlier session journal.
