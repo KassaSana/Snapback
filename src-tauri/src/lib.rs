@@ -86,6 +86,7 @@ pub fn run() {
             commands::get_app_rules,
             commands::upsert_app_rule,
             commands::delete_app_rule,
+            commands::get_context_timeline,
             commands::export_training_data,
         ])
         .build(tauri::generate_context!())
