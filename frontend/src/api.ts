@@ -36,12 +36,19 @@ export type CaptureFailurePayload = {
   setupSteps: string[];
 };
 
+export type ClassifierStatus = {
+  backend: string;
+  onnxRuntimeEnabled: boolean;
+  modelPath: string | null;
+};
+
 export type HealthStatus = {
   status: string;
   captureRunning: boolean;
   captureFailed: boolean;
   captureFailureReason: string | null;
   permissions: PermissionStatus;
+  classifier: ClassifierStatus;
 };
 
 export type SessionRecap = {
@@ -107,6 +114,14 @@ function mapPermissionStatus(raw: Record<string, unknown>): PermissionStatus {
   };
 }
 
+function mapClassifierStatus(raw: Record<string, unknown>): ClassifierStatus {
+  return {
+    backend: String(raw.backend ?? "heuristic"),
+    onnxRuntimeEnabled: Boolean(raw.onnx_runtime_enabled ?? raw.onnxRuntimeEnabled ?? false),
+    modelPath: (raw.model_path ?? raw.modelPath ?? null) as string | null,
+  };
+}
+
 function mapHealth(raw: Record<string, unknown>): HealthStatus {
   return {
     status: String(raw.status ?? "offline"),
@@ -117,6 +132,9 @@ function mapHealth(raw: Record<string, unknown>): HealthStatus {
       null) as string | null,
     permissions: mapPermissionStatus(
       (raw.permissions as Record<string, unknown>) ?? {},
+    ),
+    classifier: mapClassifierStatus(
+      (raw.classifier as Record<string, unknown>) ?? {},
     ),
   };
 }
@@ -224,9 +242,9 @@ export const api = {
     } satisfies SessionRecap;
   },
   setFocusMode: (mode: string) => invoke("set_focus_mode", { mode }),
-  sendTestPrediction: async () => {
-    const raw = await invoke<Record<string, unknown>>("send_test_prediction");
-    return mapPrediction(raw);
+  reloadClassifierModel: async () => {
+    const raw = await invoke<Record<string, unknown>>("reload_classifier_model");
+    return mapClassifierStatus(raw);
   },
   refreshPermissions: async () => {
     const raw = await invoke<Record<string, unknown>>("refresh_permissions");

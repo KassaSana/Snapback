@@ -156,7 +156,7 @@ Grant macOS **Accessibility** and **Input Monitoring** permissions, restart the 
 - [x] Snapback overlay + SQLite persistence
 - [x] Focus modes + session recap + feedback labels
 - [x] ONNX runtime wiring in Rust (`--features onnx`, heuristic fallback)
-- [ ] Close ONNX loop in CI + pipeline (see ROADMAP P0)
+- [x] Close ONNX loop — pipeline export, in-app reload, release builds with ONNX
 - [ ] Release CI + session data fixes (see ROADMAP P0)
 - [ ] Global hotkey labeling
 - [ ] Workflow training ground (parked — revisit after core loop is sticky)

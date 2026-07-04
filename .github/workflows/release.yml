@@ -56,7 +56,7 @@ jobs:
         run: npm run setup
 
       - name: Build installer
-        run: npm run tauri build -- ${{ matrix.args }}
+        run: npm run tauri build -- --features onnx ${{ matrix.args }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

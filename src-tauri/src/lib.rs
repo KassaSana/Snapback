@@ -81,7 +81,7 @@ pub fn run() {
             commands::get_session_recap,
             commands::set_focus_mode,
             commands::dismiss_snapback,
-            commands::send_test_prediction,
+            commands::reload_classifier_model,
             commands::refresh_permissions,
             commands::get_app_rules,
             commands::upsert_app_rule,

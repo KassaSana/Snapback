@@ -28,9 +28,9 @@ Single source of truth for what's left. Keep it short; update after each session
 - [x] **Release CI** — GitHub Actions workflow for Windows/macOS installers on tag
 
 ### Next (P1 — product)
-- [ ] **Close ONNX loop** — pipeline → export → deploy; decide default feature flag
+- [x] **Close ONNX loop** — pipeline → export → reload in app; dev/release builds use `--features onnx`
 - [ ] **Global hotkey labeling** (`tauri-plugin-global-shortcut`)
-- [ ] **Remove or gate** `send_test_prediction` dev button
+- [x] **Remove or gate** `send_test_prediction` dev button
 - [ ] **Tray icon** — implement quick controls or drop unused feature
 
 ### Later

@@ -721,7 +721,11 @@ impl Storage {
             )
         } else {
             (
-                format!("SELECT {columns} FROM feature_snapshots ORDER BY timestamp ASC"),
+                format!(
+                    "SELECT {columns} FROM feature_snapshots \
+                     WHERE session_id IS NOT NULL AND session_id != '' AND session_id != 'idle' \
+                     ORDER BY timestamp ASC"
+                ),
                 false,
             )
         };

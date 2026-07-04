@@ -119,11 +119,13 @@ class TestPipelineCliSkipExport(unittest.TestCase):
                 n_splits=2,
                 skip_train=False,
                 skip_export=True,
+                skip_onnx=False,
             )
 
             self.assertEqual(exit_code, 0)
             self.assertTrue(os.path.isfile(os.path.join(export_dir, "model.json")))
             self.assertTrue(os.path.isfile(os.path.join(export_dir, "metrics.json")))
+            self.assertFalse(os.path.isfile(os.path.join(export_dir, "model.onnx")))
 
     def test_skip_export_fails_when_csvs_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -136,6 +138,7 @@ class TestPipelineCliSkipExport(unittest.TestCase):
                 n_splits=2,
                 skip_train=False,
                 skip_export=True,
+                skip_onnx=False,
             )
             self.assertEqual(exit_code, 1)
 

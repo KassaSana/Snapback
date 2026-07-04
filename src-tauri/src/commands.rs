@@ -1,14 +1,15 @@
 use tauri::{Manager, State};
 
-use crate::state::AppState;
+use crate::state::{classifier_status, AppState};
 use crate::types::{
-    AppRuleRecord, ContextSnapshotDto, ExportTrainingResult, FocusMode, HealthStatus, LabelRequest,
-    PredictionRecord, SessionRecap, SessionRecord, UpsertAppRuleRequest,
+    AppRuleRecord, ClassifierStatus, ContextSnapshotDto, ExportTrainingResult, FocusMode,
+    HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord, UpsertAppRuleRequest,
 };
 
 #[tauri::command]
-pub fn get_health(state: State<'_, AppState>) -> HealthStatus {
-    state.build_health_status()
+pub fn get_health(app: tauri::AppHandle, state: State<'_, AppState>) -> HealthStatus {
+    let app_data_dir = app.path().app_data_dir().ok();
+    state.build_health_status(app_data_dir.as_deref())
 }
 
 #[tauri::command]
@@ -136,33 +137,13 @@ pub fn dismiss_snapback(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
 }
 
 #[tauri::command]
-pub fn send_test_prediction(state: State<'_, AppState>) -> Result<PredictionRecord, String> {
-    let session_id = state
-        .storage
-        .lock()
-        .get_active_session()
-        .ok()
-        .flatten()
-        .map(|s| s.session_id)
-        .unwrap_or_else(|| "demo-session".to_string());
-
-    let record = PredictionRecord {
-        session_id,
-        focus_score: 72.0,
-        distraction_risk: 0.28,
-        focus_state: "PRODUCTIVE".to_string(),
-        thrash_score: 0.12,
-        drift_score: 0.18,
-        goal_alignment: 0.82,
-        timestamp: chrono::Utc::now().to_rfc3339(),
-    };
-    state
-        .storage
-        .lock()
-        .save_prediction(&record)
-        .map_err(|e| e.to_string())?;
-    *state.latest_prediction.lock() = Some(record.clone());
-    Ok(record)
+pub fn reload_classifier_model(app: tauri::AppHandle) -> Result<ClassifierStatus, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    #[cfg(feature = "onnx")]
+    if let Some(path) = crate::engine::onnx_model::resolve_model_path(&app_data_dir) {
+        crate::engine::onnx_model::init(&path)?;
+    }
+    Ok(classifier_status(Some(&app_data_dir)))
 }
 
 #[tauri::command]

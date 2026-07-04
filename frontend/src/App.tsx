@@ -18,7 +18,7 @@ import {
   type SessionRecord,
   type SessionRecap,
 } from "./api";
-import { buildExportSummary, buildPipelineCommand } from "./trainingHints";
+import { buildExportSummary, buildPipelineCommand, classifierBackendLabel } from "./trainingHints";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
@@ -67,6 +67,8 @@ export default function App() {
   const [permissionSteps, setPermissionSteps] = useState<string[]>([]);
   const [captureFailed, setCaptureFailed] = useState(false);
   const [captureFailureReason, setCaptureFailureReason] = useState<string | null>(null);
+  const [classifierBackend, setClassifierBackend] = useState("heuristic");
+  const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<PredictionRecord | null>(null);
   const [predictionHistory, setPredictionHistory] = useState<PredictionRecord[]>([]);
   const [sessionGoal, setSessionGoal] = useState("");
@@ -80,6 +82,7 @@ export default function App() {
   const [surveyPending, setSurveyPending] = useState(false);
   const [trainingCommand, setTrainingCommand] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [modelReloadStatus, setModelReloadStatus] = useState<string | null>(null);
   const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
   const [rulePattern, setRulePattern] = useState("");
   const [ruleKind, setRuleKind] = useState<AppRuleKind>("allow");
@@ -137,6 +140,8 @@ export default function App() {
     setCaptureFailureReason(health.captureFailureReason);
     setPermissionMessage(health.permissions.message);
     setPermissionSteps(health.permissions.setupSteps);
+    setClassifierBackend(health.classifier.backend);
+    setClassifierModelPath(health.classifier.modelPath);
   }, []);
 
   const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
@@ -343,12 +348,20 @@ export default function App() {
     }
   };
 
-  const handleSendTestPrediction = async () => {
+  const handleReloadClassifierModel = async () => {
     try {
-      const record = await api.sendTestPrediction();
-      pushPrediction(record);
+      const status = await api.reloadClassifierModel();
+      setClassifierBackend(status.backend);
+      setClassifierModelPath(status.modelPath);
+      setModelReloadStatus(
+        status.backend === "onnx"
+          ? "Loaded trained ONNX model."
+          : status.modelPath
+            ? "Model file found but ONNX runtime is not active in this build."
+            : "No model.onnx found. Run the training pipeline first.",
+      );
     } catch {
-      // ignore
+      setModelReloadStatus("Could not reload classifier model.");
     }
   };
 
@@ -419,6 +432,10 @@ export default function App() {
               {captureFailed ? "failed" : captureRunning ? "running" : "idle"}
             </span>
           </div>
+          <div className="status-pill">
+            <span className="status-label">Classifier</span>
+            <span className="status-value">{classifierBackendLabel(classifierBackend)}</span>
+          </div>
         </div>
       </header>
 
@@ -454,9 +471,6 @@ export default function App() {
               <p className="meta-value">{prediction?.sessionId || "--"}</p>
             </div>
           </div>
-          <button className="ghost-button" onClick={handleSendTestPrediction}>
-            Send sample prediction
-          </button>
         </section>
 
         <section className="card session-card">
@@ -560,10 +574,22 @@ export default function App() {
             <div className="training-command-block">
               <p className="helper-text">Next step — train offline in your repo:</p>
               <pre className="training-command">{trainingCommand}</pre>
-              <button className="secondary-button" onClick={() => void handleCopyTrainingCommand()}>
-                Copy command
-              </button>
+              <div className="button-row">
+                <button className="secondary-button" onClick={() => void handleCopyTrainingCommand()}>
+                  Copy command
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => void handleReloadClassifierModel()}
+                >
+                  Reload model
+                </button>
+              </div>
               {copyStatus ? <p className="helper-text">{copyStatus}</p> : null}
+              {modelReloadStatus ? <p className="helper-text">{modelReloadStatus}</p> : null}
+              {classifierModelPath ? (
+                <p className="helper-text">Model path: {classifierModelPath}</p>
+              ) : null}
             </div>
           ) : null}
         </section>

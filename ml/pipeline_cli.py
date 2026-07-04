@@ -16,6 +16,7 @@ import sys
 from typing import List, Optional
 
 from .analyze_model import print_analysis
+from .export_onnx import try_export_onnx
 from .sqlite_export import default_app_db_path, export_training_csvs
 from .train_cli import run_training
 
@@ -29,6 +30,7 @@ def run_pipeline(
     n_splits: int,
     skip_train: bool,
     skip_export: bool = False,
+    skip_onnx: bool = False,
 ) -> int:
     os.makedirs(output_dir, exist_ok=True)
     features_path = os.path.join(output_dir, "features.csv")
@@ -93,6 +95,16 @@ def run_pipeline(
         print(f"  {key}: {value:.4f}")
 
     print_analysis(model_path=model_path, metrics_path=metrics_path)
+
+    onnx_path = os.path.join(output_dir, "model.onnx")
+    if skip_onnx:
+        print("Skipped ONNX export (--skip-onnx).")
+    else:
+        exported, message = try_export_onnx(model_path, onnx_path)
+        print(message)
+        if exported:
+            print("Reload the model in Snapback (Training panel) or restart the app.")
+
     print(f"\nArtifacts written to {output_dir}")
     return 0
 
@@ -131,6 +143,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Train from features.csv and labels.csv already in --output-dir.",
     )
+    parser.add_argument(
+        "--skip-onnx",
+        action="store_true",
+        help="Skip ONNX export after training.",
+    )
     return parser.parse_args(argv)
 
 
@@ -148,6 +165,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         n_splits=args.splits,
         skip_train=args.export_only,
         skip_export=args.skip_export,
+        skip_onnx=args.skip_onnx,
     )
 
 

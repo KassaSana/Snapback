@@ -5,7 +5,6 @@ pub mod focus_modes;
 pub mod goal_alignment;
 pub mod parity;
 
-#[cfg(feature = "onnx")]
 pub mod onnx_model;
 
 pub use app_context::{classify as classify_app_context, AppContext};

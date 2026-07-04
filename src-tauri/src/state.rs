@@ -69,7 +69,7 @@ impl AppState {
         Ok(())
     }
 
-    pub fn build_health_status(&self) -> crate::types::HealthStatus {
+    pub fn build_health_status(&self, app_data_dir: Option<&std::path::Path>) -> crate::types::HealthStatus {
         let permissions = self.permissions.lock().clone();
         let capture_running = *self.capture_running.lock();
         let capture_failure_reason = self.capture_failure_reason.lock().clone();
@@ -85,12 +85,15 @@ impl AppState {
             "offline".to_string()
         };
 
+        let classifier = classifier_status(app_data_dir);
+
         crate::types::HealthStatus {
             status,
             capture_running,
             capture_failed,
             capture_failure_reason,
             permissions,
+            classifier,
         }
     }
 
@@ -112,6 +115,26 @@ impl AppState {
     pub fn sync_feature_session_stop(&self) {
         *self.feature_session_start_ts.lock() = None;
         *self.feature_session_epoch.lock() += 1;
+    }
+}
+
+pub fn classifier_status(app_data_dir: Option<&std::path::Path>) -> crate::types::ClassifierStatus {
+    let model_path = app_data_dir.and_then(crate::engine::onnx_model::resolve_model_path);
+    #[cfg(feature = "onnx")]
+    let onnx_runtime_enabled = true;
+    #[cfg(not(feature = "onnx"))]
+    let onnx_runtime_enabled = false;
+
+    let backend = if onnx_runtime_enabled && crate::engine::onnx_model::is_loaded() {
+        "onnx".to_string()
+    } else {
+        "heuristic".to_string()
+    };
+
+    crate::types::ClassifierStatus {
+        backend,
+        onnx_runtime_enabled,
+        model_path: model_path.map(|path| path.display().to_string()),
     }
 }
 
