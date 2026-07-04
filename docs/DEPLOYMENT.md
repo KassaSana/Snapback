@@ -13,8 +13,7 @@
 ## Desktop build
 
 ```bash
-npm install
-cd frontend && npm install && cd ..
+npm run setup
 npm run tauri:build
 ```
 
@@ -27,12 +26,16 @@ Artifacts land in `src-tauri/target/release/bundle/`:
 | macOS | `dmg/Snapback_*_x64.dmg` | `macos/Snapback.app` |
 | Linux | `deb/`, `rpm/`, or `appimage/` | `appimage/` |
 
-### Faster Windows iteration
+### Platform-specific installers
 
-Build only the NSIS installer (skips MSI/WiX):
+Build only the primary installer for your OS (faster than `targets: all`):
 
 ```bash
+# Windows
 npm run tauri:build:nsis
+
+# macOS
+npm run tauri:build:dmg
 ```
 
 ## App icons
@@ -43,7 +46,7 @@ Desktop icons are generated from a square source image:
 npm run icons:generate
 ```
 
-This runs `tools/make-square-icon.ps1` (pads `app-icon.png` to 1024×1024) then `npx tauri icon app-icon-square.png`, populating `src-tauri/icons/`.
+This runs `tools/make-square-icon.mjs` (pads `app-icon.png` to 1024×1024) then `tauri icon app-icon-square.png`, populating `src-tauri/icons/`. Works on Windows and macOS.
 
 Commit the generated icons after changing branding.
 
