@@ -90,7 +90,8 @@ impl ContextTracker {
         }
     }
 
-    pub fn on_window_change(&mut self, app_name: &str, window_title: &str) {
+    /// Returns a snapshot to persist when the active window context changes.
+    pub fn on_window_change(&mut self, app_name: &str, window_title: &str) -> Option<ContextSnapshotDto> {
         let parsed = parse_window_title(app_name, window_title);
         let was_on_task = self.is_on_task(&self.current.app_name, &self.current.window_title);
         let now_on_task = self.is_on_task(app_name, window_title);
@@ -130,17 +131,32 @@ impl ContextTracker {
             parsed,
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
+
+        if self.current.is_meaningful() {
+            Some(snapshot_to_dto(&self.current))
+        } else {
+            None
+        }
     }
 
-    pub fn on_activity(&mut self) {
-        if self.state == DistractionState::Focused
-            && self.last_snapshot_at.elapsed().as_millis() as u64 >= self.snapshot_interval_ms
+    /// Returns a snapshot to persist on the 30s focused/on-task checkpoint.
+    pub fn on_activity(&mut self) -> Option<ContextSnapshotDto> {
+        if self.state != DistractionState::Focused
+            || (self.last_snapshot_at.elapsed().as_millis() as u64) < self.snapshot_interval_ms
         {
-            if self.current.is_meaningful() && self.is_on_task(&self.current.app_name, &self.current.window_title) {
-                self.last_focus_snapshot = Some(self.current.clone());
-            }
-            self.last_snapshot_at = Instant::now();
+            return None;
         }
+
+        let snapshot = if self.current.is_meaningful()
+            && self.is_on_task(&self.current.app_name, &self.current.window_title)
+        {
+            self.last_focus_snapshot = Some(self.current.clone());
+            Some(snapshot_to_dto(&self.current))
+        } else {
+            None
+        };
+        self.last_snapshot_at = Instant::now();
+        snapshot
     }
 
     pub fn focus_duration_secs(&self) -> u64 {
@@ -152,14 +168,7 @@ impl ContextTracker {
     }
 
     pub fn current_snapshot_dto(&self) -> ContextSnapshotDto {
-        ContextSnapshotDto {
-            app_name: self.current.app_name.clone(),
-            window_title: self.current.window_title.clone(),
-            file_hint: self.current.parsed.file_hint.clone(),
-            project_hint: self.current.parsed.project_hint.clone(),
-            summary: self.current.parsed.summary.clone(),
-            timestamp: self.current.timestamp.clone(),
-        }
+        snapshot_to_dto(&self.current)
     }
 
     fn is_on_task(&self, app_name: &str, window_title: &str) -> bool {
@@ -196,6 +205,17 @@ impl ContextSnapshot {
     }
 }
 
+fn snapshot_to_dto(snapshot: &ContextSnapshot) -> ContextSnapshotDto {
+    ContextSnapshotDto {
+        app_name: snapshot.app_name.clone(),
+        window_title: snapshot.window_title.clone(),
+        file_hint: snapshot.parsed.file_hint.clone(),
+        project_hint: snapshot.parsed.project_hint.clone(),
+        summary: snapshot.parsed.summary.clone(),
+        timestamp: snapshot.timestamp.clone(),
+    }
+}
+
 fn empty_snapshot() -> ContextSnapshot {
     ContextSnapshot {
         app_name: String::new(),
@@ -216,6 +236,14 @@ fn now_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn on_window_change_returns_snapshot_for_meaningful_context() {
+        let mut tracker = ContextTracker::new();
+        let snapshot = tracker.on_window_change("Cursor", "main.rs — Snapback");
+        assert!(snapshot.is_some());
+        assert_eq!(snapshot.unwrap().app_name, "Cursor");
+    }
 
     #[test]
     fn leaving_ide_for_youtube_enters_distracted() {
