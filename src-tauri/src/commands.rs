@@ -2,8 +2,8 @@ use tauri::{Manager, State};
 
 use crate::state::AppState;
 use crate::types::{
-    AppRuleRecord, FocusMode, HealthStatus, LabelRequest, PredictionRecord, SessionRecap,
-    SessionRecord, UpsertAppRuleRequest,
+    AppRuleRecord, ExportTrainingResult, FocusMode, HealthStatus, LabelRequest, PredictionRecord,
+    SessionRecap, SessionRecord, UpsertAppRuleRequest,
 };
 
 #[tauri::command]
@@ -195,4 +195,22 @@ pub fn delete_app_rule(state: State<'_, AppState>, id: i64) -> Result<(), String
         .map_err(|e| e.to_string())?;
     state.reload_app_rules();
     Ok(())
+}
+
+#[tauri::command]
+pub fn export_training_data(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+) -> Result<ExportTrainingResult, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    let output_dir = app_data_dir.join("exports").join("training");
+    state
+        .storage
+        .lock()
+        .export_training_data(&output_dir, session_id.as_deref())
+        .map_err(|e| e.to_string())
 }

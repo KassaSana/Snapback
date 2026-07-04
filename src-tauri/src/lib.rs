@@ -69,6 +69,7 @@ pub fn run() {
             commands::get_app_rules,
             commands::upsert_app_rule,
             commands::delete_app_rule,
+            commands::export_training_data,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Snapback");

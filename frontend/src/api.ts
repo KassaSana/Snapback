@@ -98,6 +98,24 @@ function mapSession(raw: Record<string, unknown>): SessionRecord {
   };
 }
 
+export type ExportTrainingResult = {
+  outputDir: string;
+  featuresPath: string;
+  labelsPath: string;
+  featureCount: number;
+  labelCount: number;
+};
+
+function mapExportTrainingResult(raw: Record<string, unknown>): ExportTrainingResult {
+  return {
+    outputDir: String(raw.output_dir ?? raw.outputDir ?? ""),
+    featuresPath: String(raw.features_path ?? raw.featuresPath ?? ""),
+    labelsPath: String(raw.labels_path ?? raw.labelsPath ?? ""),
+    featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
+    labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
+  };
+}
+
 export const api = {
   getHealth: () => invoke<HealthStatus>("get_health"),
   getLatestPrediction: async () => {
@@ -156,6 +174,12 @@ export const api = {
     return mapAppRule(raw);
   },
   deleteAppRule: (id: number) => invoke("delete_app_rule", { id }),
+  exportTrainingData: async (sessionId?: string) => {
+    const raw = await invoke<Record<string, unknown>>("export_training_data", {
+      sessionId: sessionId ?? null,
+    });
+    return mapExportTrainingResult(raw);
+  },
   onPrediction: (handler: (record: PredictionRecord) => void) =>
     listen<Record<string, unknown>>("prediction", (event) => {
       handler(mapPrediction(event.payload));

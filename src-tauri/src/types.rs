@@ -208,3 +208,13 @@ pub struct UpsertAppRuleRequest {
     pub rule_type: AppRuleKind,
     pub note: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportTrainingResult {
+    pub output_dir: String,
+    pub features_path: String,
+    pub labels_path: String,
+    pub feature_count: usize,
+    pub label_count: usize,
+}

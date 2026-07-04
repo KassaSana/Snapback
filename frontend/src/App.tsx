@@ -205,6 +205,23 @@ export default function App() {
     }
   };
 
+  const handleExportTrainingData = async () => {
+    try {
+      const result = await api.exportTrainingData(sessionId ?? undefined);
+      if (result.featureCount === 0 && result.labelCount === 0) {
+        setLabelStatus(
+          "No training data yet. Run a session and tap feedback, then export again.",
+        );
+        return;
+      }
+      setLabelStatus(
+        `Exported ${result.featureCount} features and ${result.labelCount} labels to ${result.outputDir}`,
+      );
+    } catch {
+      setLabelStatus("Could not export training data.");
+    }
+  };
+
   const handleSendTestPrediction = async () => {
     try {
       const record = await api.sendTestPrediction();
@@ -405,6 +422,9 @@ export default function App() {
             </button>
             <button className="secondary-button" onClick={() => void handleLabel("DISTRACTED")}>
               Distracted
+            </button>
+            <button className="secondary-button" onClick={() => void handleExportTrainingData()}>
+              Export training data
             </button>
           </div>
           {labelStatus ? <p className="helper-text">{labelStatus}</p> : null}
