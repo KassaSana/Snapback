@@ -126,6 +126,13 @@ fn run_engine_loop(app: AppHandle) {
                 if let Err(err) = state.storage.lock().save_prediction(&record) {
                     log::warn!("failed to save prediction: {err}");
                 }
+                if let Err(err) = state
+                    .storage
+                    .lock()
+                    .save_feature_snapshot(&session_id, &features)
+                {
+                    log::warn!("failed to save feature snapshot: {err}");
+                }
                 *state.latest_prediction.lock() = Some(record.clone());
                 let _ = app.emit("prediction", &record);
                 tracker.on_prediction_feedback(&scores.focus_state, session_goal);

@@ -4,6 +4,7 @@ use rusqlite::{params, Connection};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::engine::features::FeatureVector;
 use crate::types::{
     AppRuleKind, AppRuleRecord, ContextSnapshotDto, FocusLabel, PredictionRecord, SessionRecap,
     SessionRecord,
@@ -101,6 +102,47 @@ impl Storage {
 
             CREATE INDEX IF NOT EXISTS idx_app_rules_pattern
                 ON app_rules(pattern);
+
+            CREATE TABLE IF NOT EXISTS feature_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                timestamp REAL NOT NULL,
+                seconds_since_session_start INTEGER NOT NULL,
+                hour_of_day INTEGER NOT NULL,
+                day_of_week INTEGER NOT NULL,
+                minutes_since_last_break INTEGER NOT NULL,
+                keystroke_count INTEGER NOT NULL,
+                keystroke_rate REAL NOT NULL,
+                keystroke_interval_mean REAL NOT NULL,
+                keystroke_interval_std REAL NOT NULL,
+                keystroke_interval_trend REAL NOT NULL,
+                mouse_move_count INTEGER NOT NULL,
+                mouse_distance_pixels REAL NOT NULL,
+                mouse_speed_mean REAL NOT NULL,
+                mouse_speed_std REAL NOT NULL,
+                mouse_acceleration_mean REAL NOT NULL,
+                mouse_click_count INTEGER NOT NULL,
+                context_switches_30s INTEGER NOT NULL,
+                context_switches_5min INTEGER NOT NULL,
+                time_in_current_app INTEGER NOT NULL,
+                unique_apps_5min INTEGER NOT NULL,
+                idle_time_30s REAL NOT NULL,
+                idle_event_count_5min INTEGER NOT NULL,
+                longest_active_stretch_5min INTEGER NOT NULL,
+                window_title_length INTEGER NOT NULL,
+                window_title_changed_30s INTEGER NOT NULL,
+                is_browser INTEGER NOT NULL,
+                is_ide INTEGER NOT NULL,
+                is_communication INTEGER NOT NULL,
+                is_entertainment INTEGER NOT NULL,
+                is_productivity INTEGER NOT NULL,
+                focus_momentum REAL NOT NULL,
+                is_pseudo_productive INTEGER NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_feature_snapshots_session_ts
+                ON feature_snapshots(session_id, timestamp DESC);
             ",
         )?;
 
@@ -379,6 +421,66 @@ impl Storage {
         Ok(())
     }
 
+    pub fn save_feature_snapshot(
+        &self,
+        session_id: &str,
+        features: &FeatureVector,
+    ) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT INTO feature_snapshots (
+                session_id, timestamp,
+                seconds_since_session_start, hour_of_day, day_of_week, minutes_since_last_break,
+                keystroke_count, keystroke_rate, keystroke_interval_mean, keystroke_interval_std,
+                keystroke_interval_trend, mouse_move_count, mouse_distance_pixels, mouse_speed_mean,
+                mouse_speed_std, mouse_acceleration_mean, mouse_click_count,
+                context_switches_30s, context_switches_5min, time_in_current_app, unique_apps_5min,
+                idle_time_30s, idle_event_count_5min, longest_active_stretch_5min,
+                window_title_length, window_title_changed_30s,
+                is_browser, is_ide, is_communication, is_entertainment, is_productivity,
+                focus_momentum, is_pseudo_productive
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33
+            )",
+            params![
+                session_id,
+                features.timestamp,
+                features.seconds_since_session_start,
+                features.hour_of_day,
+                features.day_of_week,
+                features.minutes_since_last_break,
+                features.keystroke_count as i64,
+                features.keystroke_rate,
+                features.keystroke_interval_mean,
+                features.keystroke_interval_std,
+                features.keystroke_interval_trend,
+                features.mouse_move_count as i64,
+                features.mouse_distance_pixels,
+                features.mouse_speed_mean,
+                features.mouse_speed_std,
+                features.mouse_acceleration_mean,
+                features.mouse_click_count as i64,
+                features.context_switches_30s as i64,
+                features.context_switches_5min as i64,
+                features.time_in_current_app,
+                features.unique_apps_5min as i64,
+                features.idle_time_30s,
+                features.idle_event_count_5min as i64,
+                features.longest_active_stretch_5min,
+                features.window_title_length as i64,
+                i64::from(features.window_title_changed_30s),
+                i64::from(features.is_browser),
+                i64::from(features.is_ide),
+                i64::from(features.is_communication),
+                i64::from(features.is_entertainment),
+                i64::from(features.is_productivity),
+                features.focus_momentum,
+                i64::from(features.is_pseudo_productive),
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn save_label(
         &self,
         session_id: &str,
@@ -490,6 +592,44 @@ mod tests {
 
         storage.delete_app_rule(created.id).unwrap();
         assert!(storage.list_app_rules().unwrap().is_empty());
+    }
+
+    #[test]
+    fn feature_snapshot_round_trip() {
+        use crate::engine::features::FeatureVector;
+
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+        let session = storage.start_session("Train model", "normal").unwrap();
+
+        let features = FeatureVector {
+            timestamp: 1_700_000_000.0,
+            seconds_since_session_start: 120,
+            hour_of_day: 14,
+            day_of_week: 2,
+            minutes_since_last_break: 5,
+            keystroke_count: 8,
+            keystroke_rate: 2.5,
+            keystroke_interval_std: 0.2,
+            context_switches_30s: 1,
+            is_ide: true,
+            focus_momentum: 0.75,
+            ..FeatureVector::empty(1_700_000_000.0)
+        };
+
+        storage
+            .save_feature_snapshot(&session.session_id, &features)
+            .unwrap();
+
+        let count: i64 = storage
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM feature_snapshots WHERE session_id = ?1",
+                params![session.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
