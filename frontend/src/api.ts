@@ -101,6 +101,11 @@ function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapshot {
   };
 }
 
+function mapSetupSteps(raw: Record<string, unknown>): string[] {
+  const steps = raw.setup_steps ?? raw.setupSteps;
+  return Array.isArray(steps) ? steps.map((step: unknown) => String(step)) : [];
+}
+
 function mapPermissionStatus(raw: Record<string, unknown>): PermissionStatus {
   return {
     captureAvailable: Boolean(raw.capture_available ?? raw.captureAvailable ?? false),
@@ -108,9 +113,7 @@ function mapPermissionStatus(raw: Record<string, unknown>): PermissionStatus {
       raw.active_window_available ?? raw.activeWindowAvailable ?? false,
     ),
     message: String(raw.message ?? ""),
-    setupSteps: Array.isArray(raw.setup_steps ?? raw.setupSteps)
-      ? (raw.setup_steps ?? raw.setupSteps).map((step) => String(step))
-      : [],
+    setupSteps: mapSetupSteps(raw),
   };
 }
 
@@ -280,9 +283,7 @@ export const api = {
       handler({
         reason: String(raw.reason ?? ""),
         message: String(raw.message ?? ""),
-        setupSteps: Array.isArray(raw.setup_steps ?? raw.setupSteps)
-          ? (raw.setup_steps ?? raw.setupSteps).map((step) => String(step))
-          : [],
+        setupSteps: mapSetupSteps(raw),
       });
     }),
   onPrediction: (handler: (record: PredictionRecord) => void) =>
