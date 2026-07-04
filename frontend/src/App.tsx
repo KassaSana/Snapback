@@ -175,6 +175,31 @@ export default function App() {
     }
   }, [pushPrediction]);
 
+  const handleLabel = useCallback(
+    async (label: FocusLabel, source: LabelSource = "manual") => {
+      if (!sessionId) {
+        setLabelStatus("Start a session to save feedback.");
+        return;
+      }
+      try {
+        await api.submitLabel(sessionId, label, undefined, source);
+        const prefix =
+          source === "hotkey"
+            ? "Hotkey saved"
+            : source === "survey"
+              ? "Session rating saved"
+              : "Saved";
+        setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
+        if (source === "survey") {
+          setSurveyPending(false);
+        }
+      } catch {
+        setLabelStatus("Could not save feedback.");
+      }
+    },
+    [sessionId],
+  );
+
   useEffect(() => {
     void refreshHealth();
     void refreshLatest();
@@ -286,31 +311,6 @@ export default function App() {
       // ignore
     }
   };
-
-  const handleLabel = useCallback(
-    async (label: FocusLabel, source: LabelSource = "manual") => {
-      if (!sessionId) {
-        setLabelStatus("Start a session to save feedback.");
-        return;
-      }
-      try {
-        await api.submitLabel(sessionId, label, undefined, source);
-        const prefix =
-          source === "hotkey"
-            ? "Hotkey saved"
-            : source === "survey"
-              ? "Session rating saved"
-              : "Saved";
-        setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
-        if (source === "survey") {
-          setSurveyPending(false);
-        }
-      } catch {
-        setLabelStatus("Could not save feedback.");
-      }
-    },
-    [sessionId],
-  );
 
   const handleSkipSurvey = () => {
     setSurveyPending(false);
