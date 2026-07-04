@@ -13,6 +13,7 @@ import {
   type CaptureFailurePayload,
   type ContextSnapshot,
   type FocusLabel,
+  type LabelSource,
   type PredictionRecord,
   type SessionRecord,
   type SessionRecap,
@@ -23,6 +24,12 @@ const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
 const TIMELINE_POLL_MS = 30_000;
 const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
+const LABEL_HOTKEYS: Record<string, FocusLabel> = {
+  "1": "DEEP_FOCUS",
+  "2": "PRODUCTIVE",
+  "3": "PSEUDO_PRODUCTIVE",
+  "4": "DISTRACTED",
+};
 const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
 
 const ruleKindLabel = (kind: AppRuleKind) => (kind === "allow" ? "Allow" : "Block");
@@ -70,6 +77,7 @@ export default function App() {
   const [hyperfocusNote, setHyperfocusNote] = useState<string | null>(null);
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
+  const [surveyPending, setSurveyPending] = useState(false);
   const [trainingCommand, setTrainingCommand] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
@@ -217,6 +225,23 @@ export default function App() {
     };
   }, [pushPrediction, applyCaptureFailure]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) {
+        return;
+      }
+      const label = LABEL_HOTKEYS[event.key];
+      if (!label) {
+        return;
+      }
+      event.preventDefault();
+      void handleLabel(label, "hotkey");
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [sessionId, handleLabel]);
+
   const handleStartSession = async () => {
     const goal = sessionGoal.trim();
     if (!goal) return;
@@ -226,6 +251,7 @@ export default function App() {
       setSessionId(record.sessionId);
       setSessionGoal(record.goal);
       setRecap(null);
+      setSurveyPending(false);
       void refreshContextTimeline(record.sessionId);
     } catch {
       // ignore
@@ -239,6 +265,8 @@ export default function App() {
       setSessionRecord(record);
       const sessionRecap = await api.getSessionRecap(sessionId);
       setRecap(sessionRecap);
+      setSurveyPending(true);
+      setLabelStatus("Automatic session label saved. How did this session feel overall?");
       void refreshContextTimeline(sessionId);
     } catch {
       // ignore
@@ -254,17 +282,34 @@ export default function App() {
     }
   };
 
-  const handleLabel = async (label: FocusLabel) => {
-    if (!sessionId) {
-      setLabelStatus("Start a session to save feedback.");
-      return;
-    }
-    try {
-      await api.submitLabel(sessionId, label);
-      setLabelStatus(`Saved: ${focusStateLabel(label)}`);
-    } catch {
-      setLabelStatus("Could not save feedback.");
-    }
+  const handleLabel = useCallback(
+    async (label: FocusLabel, source: LabelSource = "manual") => {
+      if (!sessionId) {
+        setLabelStatus("Start a session to save feedback.");
+        return;
+      }
+      try {
+        await api.submitLabel(sessionId, label, undefined, source);
+        const prefix =
+          source === "hotkey"
+            ? "Hotkey saved"
+            : source === "survey"
+              ? "Session rating saved"
+              : "Saved";
+        setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
+        if (source === "survey") {
+          setSurveyPending(false);
+        }
+      } catch {
+        setLabelStatus("Could not save feedback.");
+      }
+    },
+    [sessionId],
+  );
+
+  const handleSkipSurvey = () => {
+    setSurveyPending(false);
+    setLabelStatus("Kept automatic session label.");
   };
 
   const handleExportTrainingData = async () => {
@@ -486,7 +531,10 @@ export default function App() {
             <h2>Focus Feedback</h2>
             <span className="pill">train the model</span>
           </div>
-          <p className="helper-text">One tap — was that moment actually focused?</p>
+          <p className="helper-text">
+            One tap — was that moment actually focused? Hotkeys: Ctrl+Shift+1 deep, 2 focused,
+            3 drift, 4 distracted.
+          </p>
           <div className="button-row feedback-row">
             <button className="secondary-button" onClick={() => void handleLabel("DEEP_FOCUS")}>
               Deep
@@ -594,6 +642,48 @@ export default function App() {
             </>
           )}
         </section>
+
+        {surveyPending && recap ? (
+          <section className="card survey-card">
+            <div className="card-header">
+              <h2>Session Check-in</h2>
+              <span className="pill">end of session</span>
+            </div>
+            <p className="helper-text">
+              We saved an automatic label from your recap. Override it if your gut says
+              different.
+            </p>
+            <div className="button-row feedback-row">
+              <button
+                className="secondary-button"
+                onClick={() => void handleLabel("DEEP_FOCUS", "survey")}
+              >
+                Deep
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => void handleLabel("PRODUCTIVE", "survey")}
+              >
+                Focused
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => void handleLabel("PSEUDO_PRODUCTIVE", "survey")}
+              >
+                Drift
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => void handleLabel("DISTRACTED", "survey")}
+              >
+                Distracted
+              </button>
+              <button className="ghost-button" onClick={handleSkipSurvey}>
+                Keep automatic label
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         {recap ? (
           <section className="card recap-card">

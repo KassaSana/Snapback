@@ -117,12 +117,42 @@ pub enum FocusLabel {
     DeepFocus = 2,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelSource {
+    Manual,
+    Hotkey,
+    Survey,
+    Auto,
+}
+
+impl LabelSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Hotkey => "hotkey",
+            Self::Survey => "survey",
+            Self::Auto => "auto",
+        }
+    }
+
+    pub fn parse(value: Option<&str>) -> Self {
+        match value.unwrap_or("manual").to_lowercase().as_str() {
+            "hotkey" => Self::Hotkey,
+            "survey" => Self::Survey,
+            "auto" => Self::Auto,
+            _ => Self::Manual,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LabelRequest {
     pub session_id: String,
     pub label: FocusLabel,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
