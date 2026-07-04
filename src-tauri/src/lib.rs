@@ -22,6 +22,16 @@ pub fn run_from_cli(args: Vec<String>) -> i32 {
         return bench::run_benchmark(bench_args);
     }
 
+    if let Some(idx) = args.iter().position(|a| a == "--feature-parity") {
+        let path = args
+            .get(idx + 1)
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from("fixtures/feature_parity/scenarios.json")
+            });
+        return crate::engine::parity::run_feature_parity(&path);
+    }
+
     run();
     0
 }
