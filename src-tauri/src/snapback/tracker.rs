@@ -64,6 +64,10 @@ impl ContextTracker {
         }
     }
 
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     pub fn set_app_rules(&mut self, rules: &[AppRuleRecord]) {
         self.latest_app_rules.clear();
         self.latest_app_rules.extend_from_slice(rules);

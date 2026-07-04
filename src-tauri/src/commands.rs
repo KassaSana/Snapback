@@ -43,11 +43,17 @@ pub fn start_session(
         .unwrap_or(FocusMode::Normal);
     *state.focus_mode.lock() = mode;
     state.classifier.lock().set_focus_mode(mode);
-    state
+    let record = state
         .storage
         .lock()
         .start_session(&goal, mode.as_str())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    let started_at = record
+        .started_at
+        .clone()
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    state.sync_feature_session_start(&started_at);
+    Ok(record)
 }
 
 #[tauri::command]
@@ -61,6 +67,8 @@ pub fn stop_session(state: State<'_, AppState>, session_id: String) -> Result<Se
     if let Err(err) = state.storage.lock().save_auto_session_label(&session_id) {
         log::warn!("failed to save automatic session label: {err}");
     }
+
+    state.sync_feature_session_stop();
 
     Ok(record)
 }

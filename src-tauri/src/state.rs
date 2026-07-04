@@ -20,6 +20,8 @@ pub struct AppState {
     pub latest_prediction: parking_lot::Mutex<Option<PredictionRecord>>,
     pub app_rules: parking_lot::Mutex<Vec<AppRuleRecord>>,
     pub snapback_dismiss_pending: parking_lot::Mutex<bool>,
+    pub feature_session_epoch: parking_lot::Mutex<u64>,
+    pub feature_session_start_ts: parking_lot::Mutex<Option<f64>>,
     event_rx: parking_lot::Mutex<Option<std::sync::mpsc::Receiver<CaptureEvent>>>,
 }
 
@@ -38,6 +40,8 @@ impl AppState {
             latest_prediction: parking_lot::Mutex::new(None),
             app_rules: parking_lot::Mutex::new(app_rules),
             snapback_dismiss_pending: parking_lot::Mutex::new(false),
+            feature_session_epoch: parking_lot::Mutex::new(0),
+            feature_session_start_ts: parking_lot::Mutex::new(None),
             event_rx: parking_lot::Mutex::new(None),
         }
     }
@@ -96,6 +100,19 @@ impl AppState {
         }
         self.spawn_capture(app)
     }
+
+    pub fn sync_feature_session_start(&self, started_at: &str) {
+        let start_ts = chrono::DateTime::parse_from_rfc3339(started_at)
+            .map(|dt| dt.timestamp() as f64)
+            .unwrap_or_else(|_| chrono::Utc::now().timestamp() as f64);
+        *self.feature_session_start_ts.lock() = Some(start_ts);
+        *self.feature_session_epoch.lock() += 1;
+    }
+
+    pub fn sync_feature_session_stop(&self) {
+        *self.feature_session_start_ts.lock() = None;
+        *self.feature_session_epoch.lock() += 1;
+    }
 }
 
 fn spawn_capture_failure_watcher(app: AppHandle, failure_rx: std::sync::mpsc::Receiver<String>) {
@@ -126,11 +143,22 @@ fn run_engine_loop(app: AppHandle) {
     let mut last_prediction_at = 0.0_f64;
     let mut deep_focus_started: Option<std::time::Instant> = None;
     let mut last_hyperfocus_alert_secs = 0_u64;
+    let mut last_feature_epoch = 0_u64;
 
     loop {
         let Some(state) = app.try_state::<AppState>() else {
             break;
         };
+
+        let feature_epoch = *state.feature_session_epoch.lock();
+        if feature_epoch != last_feature_epoch {
+            let session_start_ts = *state.feature_session_start_ts.lock();
+            extractor.reset_for_session(session_start_ts);
+            tracker.reset();
+            deep_focus_started = None;
+            last_hyperfocus_alert_secs = 0;
+            last_feature_epoch = feature_epoch;
+        }
 
         let events: Vec<CaptureEvent> = {
             let guard = state.event_rx.lock();
@@ -173,10 +201,6 @@ fn run_engine_loop(app: AppHandle) {
                 state.classifier.lock().set_focus_mode(focus_mode);
 
                 let active_session = state.storage.lock().get_active_session().ok().flatten();
-                let session_id = active_session
-                    .as_ref()
-                    .map(|s| s.session_id.clone())
-                    .unwrap_or_else(|| "idle".to_string());
                 let session_goal = active_session.as_ref().map(|s| s.goal.as_str());
 
                 let scores = state
@@ -186,7 +210,10 @@ fn run_engine_loop(app: AppHandle) {
                 extractor.update_focus_score(scores.focus_score / 100.0, 0.2);
 
                 let record = PredictionRecord {
-                    session_id: session_id.clone(),
+                    session_id: active_session
+                        .as_ref()
+                        .map(|s| s.session_id.clone())
+                        .unwrap_or_default(),
                     focus_score: scores.focus_score,
                     distraction_risk: scores.distraction_risk,
                     focus_state: scores.focus_state.clone(),
@@ -196,20 +223,23 @@ fn run_engine_loop(app: AppHandle) {
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 };
 
-                if let Err(err) = state.storage.lock().save_prediction(&record) {
-                    log::warn!("failed to save prediction: {err}");
-                }
-                if let Err(err) = state
-                    .storage
-                    .lock()
-                    .save_feature_snapshot(&session_id, &features)
-                {
-                    log::warn!("failed to save feature snapshot: {err}");
-                }
                 *state.latest_prediction.lock() = Some(record.clone());
                 let _ = app.emit("prediction", &record);
                 tracker.on_prediction_feedback(&scores.focus_state, session_goal);
                 last_prediction_at = now;
+
+                if let Some(session) = active_session {
+                    if let Err(err) = state.storage.lock().save_prediction(&record) {
+                        log::warn!("failed to save prediction: {err}");
+                    }
+                    if let Err(err) = state
+                        .storage
+                        .lock()
+                        .save_feature_snapshot(&session.session_id, &features)
+                    {
+                        log::warn!("failed to save feature snapshot: {err}");
+                    }
+                }
 
                 if scores.focus_state == "DEEP_FOCUS" {
                     if deep_focus_started.is_none() {
@@ -232,28 +262,31 @@ fn run_engine_loop(app: AppHandle) {
         }
 
         if let Some(snapback) = tracker.take_pending_snapback() {
-            let session_id = state
+            if let Some(session) = state
                 .storage
                 .lock()
                 .get_active_session()
                 .ok()
                 .flatten()
-                .map(|s| s.session_id)
-                .unwrap_or_else(|| "idle".to_string());
-            if let Err(err) = state.storage.lock().record_snapback(&session_id, &snapback.summary)
             {
-                log::warn!("failed to record snapback: {err}");
-            }
+                if let Err(err) = state
+                    .storage
+                    .lock()
+                    .record_snapback(&session.session_id, &snapback.summary)
+                {
+                    log::warn!("failed to record snapback: {err}");
+                }
 
-            let payload = SnapbackPayload {
-                summary: snapback.summary.clone(),
-                app_name: snapback.app_name,
-                window_title: snapback.window_title,
-                file_hint: snapback.file_hint,
-                distraction_duration_secs: snapback.distraction_duration_secs,
-            };
-            show_snapback_overlay(&app, &payload);
-            let _ = app.emit("snapback", &payload);
+                let payload = SnapbackPayload {
+                    summary: snapback.summary.clone(),
+                    app_name: snapback.app_name,
+                    window_title: snapback.window_title,
+                    file_hint: snapback.file_hint,
+                    distraction_duration_secs: snapback.distraction_duration_secs,
+                };
+                show_snapback_overlay(&app, &payload);
+                let _ = app.emit("snapback", &payload);
+            }
         }
 
         thread::sleep(std::time::Duration::from_millis(100));
