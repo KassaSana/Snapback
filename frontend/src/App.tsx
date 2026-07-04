@@ -15,6 +15,7 @@ import {
   type SessionRecord,
   type SessionRecap,
 } from "./api";
+import { buildExportSummary, buildPipelineCommand } from "./trainingHints";
 
 const HISTORY_LIMIT = 8;
 const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
@@ -62,6 +63,8 @@ export default function App() {
   const [hyperfocusNote, setHyperfocusNote] = useState<string | null>(null);
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
+  const [trainingCommand, setTrainingCommand] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
   const [rulePattern, setRulePattern] = useState("");
   const [ruleKind, setRuleKind] = useState<AppRuleKind>("allow");
@@ -206,19 +209,33 @@ export default function App() {
   };
 
   const handleExportTrainingData = async () => {
+    setCopyStatus(null);
     try {
       const result = await api.exportTrainingData(sessionId ?? undefined);
       if (result.featureCount === 0 && result.labelCount === 0) {
+        setTrainingCommand(null);
         setLabelStatus(
           "No training data yet. Run a session and tap feedback, then export again.",
         );
         return;
       }
-      setLabelStatus(
-        `Exported ${result.featureCount} features and ${result.labelCount} labels to ${result.outputDir}`,
-      );
+      setLabelStatus(buildExportSummary(result.featureCount, result.labelCount, result.outputDir));
+      setTrainingCommand(buildPipelineCommand(result.outputDir));
     } catch {
+      setTrainingCommand(null);
       setLabelStatus("Could not export training data.");
+    }
+  };
+
+  const handleCopyTrainingCommand = async () => {
+    if (!trainingCommand) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(trainingCommand);
+      setCopyStatus("Copied training command.");
+    } catch {
+      setCopyStatus("Select and copy the command manually.");
     }
   };
 
@@ -428,6 +445,16 @@ export default function App() {
             </button>
           </div>
           {labelStatus ? <p className="helper-text">{labelStatus}</p> : null}
+          {trainingCommand ? (
+            <div className="training-command-block">
+              <p className="helper-text">Next step — train offline in your repo:</p>
+              <pre className="training-command">{trainingCommand}</pre>
+              <button className="secondary-button" onClick={() => void handleCopyTrainingCommand()}>
+                Copy command
+              </button>
+              {copyStatus ? <p className="helper-text">{copyStatus}</p> : null}
+            </div>
+          ) : null}
         </section>
 
         <section className="card history-card">

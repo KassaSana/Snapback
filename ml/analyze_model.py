@@ -20,6 +20,14 @@ def feature_importance(model_path: str) -> List[tuple[str, float]]:
     columns = default_feature_columns()
 
     try:
+        with open(model_path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if isinstance(payload, dict) and payload.get("type") == "majority":
+            return []
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    try:
         import xgboost as xgb
     except ImportError as exc:
         raise RuntimeError("Install xgboost to analyze model importances.") from exc
@@ -48,6 +56,9 @@ def print_analysis(
         return
 
     pairs = feature_importance(model_path)
+    if not pairs:
+        print("Feature importances unavailable for this model type.")
+        return
     print(f"Top {top_n} feature importances:")
     for name, score in pairs[:top_n]:
         print(f"  {name}: {score:.4f}")
