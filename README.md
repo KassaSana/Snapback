@@ -74,14 +74,25 @@ npm run tauri:build
 
 ### Offline ML (optional)
 
+The `ml/` package is imported as `ml.something`, so every command below must run
+from the **repo root** — not from inside `ml/` — or you'll hit
+`ModuleNotFoundError: No module named 'ml'`. Also use `python3`/`pip3`; plain
+`python` isn't guaranteed to exist on macOS.
+
 ```bash
-cd ml
-python -m venv venv && source venv/bin/activate
-pip install xgboost skl2onnx onnx  # optional backends
+# From the repo root
+python3 -m venv .venv && source .venv/bin/activate
+pip install xgboost skl2onnx onnx  # optional backends, needed for real (non-majority) training
+
+# macOS only: xgboost needs the OpenMP runtime, which isn't bundled
+brew install libomp
+
+# Sanity check — should report OK, not import errors
+python3 -m unittest discover -s ml/tests -p "test_*.py"
 
 # Train from labeled feature CSVs, then export:
-python -m ml.train_cli --help
-python -m ml.export_onnx --model-path artifacts/model.json --output artifacts/model.onnx
+python3 -m ml.train_cli --help
+python3 -m ml.export_onnx --model-path artifacts/model.json --output artifacts/model.onnx
 
 # Run Rust with ONNX (when wired):
 # cd src-tauri && cargo build --features onnx

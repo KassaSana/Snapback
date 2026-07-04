@@ -59,6 +59,13 @@ fn drift_score(features: &FeatureVector) -> f64 {
 }
 
 /// Stable deep-work signal: low thrash/drift, sustained time, steady typing.
+///
+/// `focus_momentum` (an EMA of recent focus scores, see `FeatureExtractor`)
+/// adds hysteresis: a session that has *already* been in deep work is more
+/// likely to still be in deep work a second later than the instantaneous
+/// window-based signals alone would suggest. It ranked as a top-2 XGBoost
+/// feature importance (see ml/analyze_model.py) on a labeled training run
+/// but wasn't wired into any score before this change.
 fn deep_work_score(features: &FeatureVector, thrash: f64, drift: f64) -> f64 {
     let settled = (features.time_in_current_app as f64 / 180.0).min(1.0);
     let steady_typing = if features.keystroke_count >= 4 {
@@ -68,8 +75,13 @@ fn deep_work_score(features: &FeatureVector, thrash: f64, drift: f64) -> f64 {
     };
     let low_switch = (1.0 - (features.context_switches_30s as f64 / 2.0).min(1.0)).max(0.0);
     let stability = (1.0 - thrash) * (1.0 - drift);
+    let momentum = clamp(features.focus_momentum, 0.0, 1.0);
     clamp(
-        settled * 0.35 + steady_typing * 0.25 + low_switch * 0.20 + stability * 0.20,
+        settled * 0.30
+            + steady_typing * 0.20
+            + low_switch * 0.15
+            + stability * 0.20
+            + momentum * 0.15,
         0.0,
         1.0,
     )
@@ -101,6 +113,15 @@ fn heuristic_probas(
     } else {
         0.0
     };
+    // `is_productivity`/`is_ide` was the single highest-ranked feature in an
+    // XGBoost training run (see ml/analyze_model.py), but previously only
+    // affected drift_score's in-work-context multiplier — it had no direct
+    // effect on the distracted score without an explicit session goal.
+    let in_recognized_work_app = if (ctx.is_ide || ctx.is_productivity) && !ctx.personal_block {
+        1.0
+    } else {
+        0.0
+    };
 
     let mut distracted = 0.0;
     distracted += thrash * 0.30;
@@ -109,6 +130,7 @@ fn heuristic_probas(
     distracted += (1.0 - (time_in_app / 120.0).min(1.0)) * 0.10;
     distracted += is_entertainment * 0.20;
     distracted += is_communication * 0.05;
+    distracted -= in_recognized_work_app * 0.10;
     distracted = clamp(distracted - bias * 0.35, 0.0, 1.0);
 
     let pseudo = clamp(drift * (1.0 - distracted * 0.6), 0.0, 1.0);
@@ -310,6 +332,42 @@ mod tests {
         );
         assert!(with_goal.goal_alignment > without_goal.goal_alignment);
         assert!(with_goal.drift_score <= without_goal.drift_score);
+    }
+
+    #[test]
+    fn higher_focus_momentum_raises_deep_work_score() {
+        let low_momentum = stable_features();
+        let high_momentum = FeatureVector {
+            focus_momentum: 0.9,
+            ..stable_features()
+        };
+        let low_scores = Classifier::new(FocusMode::Normal).predict(&low_momentum, None, &[]);
+        let high_scores = Classifier::new(FocusMode::Normal).predict(&high_momentum, None, &[]);
+        assert!(
+            high_scores.focus_score >= low_scores.focus_score,
+            "high={} low={}",
+            high_scores.focus_score,
+            low_scores.focus_score
+        );
+    }
+
+    #[test]
+    fn recognized_work_app_reduces_distraction_without_a_goal() {
+        let ide_features = stable_features();
+        let unknown_app_features = FeatureVector {
+            is_ide: false,
+            is_productivity: false,
+            ..stable_features()
+        };
+        let ide_scores = Classifier::new(FocusMode::Normal).predict(&ide_features, None, &[]);
+        let unknown_scores =
+            Classifier::new(FocusMode::Normal).predict(&unknown_app_features, None, &[]);
+        assert!(
+            ide_scores.distraction_risk <= unknown_scores.distraction_risk,
+            "ide={} unknown={}",
+            ide_scores.distraction_risk,
+            unknown_scores.distraction_risk
+        );
     }
 
     #[test]
