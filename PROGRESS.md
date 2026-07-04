@@ -11,15 +11,22 @@
 - **CI:** dropped Java job; added `cargo check` + `cargo test`.
 - **Benchmarks:** added `--benchmark` CLI mode; recorded results in [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) (inference latency, 60 s soak, startup timing).
 
+## 2026-07 — Roadmap review
+
+- Full codebase audit captured in [docs/ROADMAP.md](docs/ROADMAP.md) (prioritized P0–P5).
+- Short session checklist lives in [`doc.md`](doc.md).
+- Key findings: session/feature-extractor desync, idle training rows, ONNX loop not closed in CI, release workflow missing.
+
 ## Next milestones
 
-- Release packaging polish (icons, versioning, Windows installer notes).
-- Permissions UX polish (especially macOS onboarding + restart loop).
-- ONNX inference wiring in Rust (`--features onnx`) + fallback behavior.
-- Minimal local logs + export for debugging (no network tier).
+See [`doc.md`](doc.md) (Now/Next/Later) and [docs/ROADMAP.md](docs/ROADMAP.md) for detail.
+
+**Immediate:** fix session-relative features, CI + release workflow, ONNX end-to-end.
 
 ## Task tracker
 
 See [`doc.md`](doc.md) for the up-to-date implementation checklist.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full prioritized backlog.
 
 See [docs/archive/PROGRESS_full.md](docs/archive/PROGRESS_full.md) for the earlier session journal.
