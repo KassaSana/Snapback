@@ -6,8 +6,8 @@ use crate::engine::{check_hyperfocus, Classifier, FeatureExtractor};
 use crate::snapback::ContextTracker;
 use crate::storage::Storage;
 use crate::types::{
-    AppRuleRecord, CaptureEvent, EventType, FocusMode, PermissionStatus, PredictionRecord,
-    SnapbackPayload,
+    AppRuleRecord, CaptureEvent, ContextSnapshotDto, EventType, FocusMode, PermissionStatus,
+    PredictionRecord, SnapbackPayload,
 };
 
 pub struct AppState {
@@ -84,13 +84,16 @@ fn run_engine_loop(app: AppHandle) {
             let app_rules = state.app_rules.lock().clone();
             tracker.set_app_rules(&app_rules);
 
-            if matches!(
+            let snapshot_to_save = if matches!(
                 event.event_type,
                 EventType::WindowFocusChange | EventType::WindowTitleChange
             ) {
-                tracker.on_window_change(&event.app_name, &event.window_title);
+                tracker.on_window_change(&event.app_name, &event.window_title)
             } else {
-                tracker.on_activity();
+                tracker.on_activity()
+            };
+            if let Some(snapshot) = snapshot_to_save {
+                persist_context_snapshot(&state, snapshot);
             }
 
             let features = extractor.update(&event, &app_rules);
@@ -184,6 +187,26 @@ fn run_engine_loop(app: AppHandle) {
         }
 
         thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+fn persist_context_snapshot(state: &AppState, snapshot: ContextSnapshotDto) {
+    let Some(session) = state
+        .storage
+        .lock()
+        .get_active_session()
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+
+    if let Err(err) = state
+        .storage
+        .lock()
+        .save_context_snapshot(&session.session_id, &snapshot)
+    {
+        log::warn!("failed to save context snapshot: {err}");
     }
 }
 

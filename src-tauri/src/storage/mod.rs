@@ -828,6 +828,35 @@ mod tests {
     }
 
     #[test]
+    fn context_snapshot_round_trip() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+        let session = storage.start_session("Write docs", "normal").unwrap();
+
+        let snapshot = ContextSnapshotDto {
+            app_name: "Cursor".to_string(),
+            window_title: "state.rs — Snapback".to_string(),
+            file_hint: "state.rs".to_string(),
+            project_hint: "Snapback".to_string(),
+            summary: "Editing state.rs in Snapback".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+        storage
+            .save_context_snapshot(&session.session_id, &snapshot)
+            .unwrap();
+
+        let count: i64 = storage
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM context_snapshots WHERE session_id = ?1",
+                params![session.session_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
     fn export_training_data_writes_csvs() {
         use crate::engine::features::FeatureVector;
 
