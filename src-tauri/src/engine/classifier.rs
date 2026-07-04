@@ -123,6 +123,15 @@ fn heuristic_probas(
     )
 }
 
+pub(crate) fn build_prediction_scores(
+    probas: [f64; 4],
+    thrash: f64,
+    drift: f64,
+    goal_alignment: f64,
+) -> PredictionScores {
+    scores_from_probas(probas, thrash, drift, goal_alignment)
+}
+
 fn scores_from_probas(
     probas: [f64; 4],
     thrash: f64,
@@ -189,7 +198,9 @@ impl Classifier {
         let mut scores = scores_from_probas(probas, thrash, drift, goal_alignment);
 
         #[cfg(feature = "onnx")]
-        if let Some(onnx_scores) = self.try_onnx_predict(features) {
+        if let Some(onnx_scores) =
+            crate::engine::onnx_model::predict(features, thrash, drift, goal_alignment)
+        {
             scores = onnx_scores;
         }
 
@@ -201,11 +212,6 @@ impl Classifier {
         }
 
         scores
-    }
-
-    #[cfg(feature = "onnx")]
-    fn try_onnx_predict(&self, features: &FeatureVector) -> Option<PredictionScores> {
-        crate::engine::onnx_model::predict(features)
     }
 }
 

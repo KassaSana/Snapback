@@ -51,6 +51,13 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
+            #[cfg(feature = "onnx")]
+            if let Some(model_path) = engine::onnx_model::resolve_model_path(&app_data_dir) {
+                match engine::onnx_model::init(&model_path) {
+                    Ok(()) => log::info!("loaded ONNX model from {}", model_path.display()),
+                    Err(err) => log::warn!("ONNX model load failed: {err}"),
+                }
+            }
             let storage = Storage::open(app_data_dir).expect("failed to open storage");
             let app_state = AppState::new(storage);
             app.manage(app_state);
