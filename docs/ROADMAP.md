@@ -38,7 +38,7 @@ Fix these before trusting training exports or cutting releases.
 |------|--------|-------|
 | Global hotkey labeling | Window-only Ctrl+Shift+1–4 | `tauri-plugin-global-shortcut` |
 | Remove/gate dev UI | ~~Send sample prediction~~ | **Done** — removed; Reload model in training panel |
-| Tray icon | `tray-icon` feature enabled, unused | Implement or drop from `Cargo.toml` |
+| Tray icon | **Done** — show/hide/quit; left-click toggles main window | `src-tauri/src/tray.rs` |
 | macOS permission probe | Approximate | May report OK before `rdev` fails — `capture/permissions.rs` |
 | Training deploy UX | Export works; train/deploy is manual CLI | Model status UI or deploy-from-export path |
 

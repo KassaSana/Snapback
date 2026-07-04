@@ -5,6 +5,7 @@ mod engine;
 mod snapback;
 mod state;
 mod storage;
+mod tray;
 mod types;
 
 use tauri::{Emitter, Manager};
@@ -66,6 +67,8 @@ pub fn run() {
             if let Some(state) = handle.try_state::<AppState>() {
                 let _ = state.start_engine(handle.clone());
             }
+
+            tray::setup_tray(app)?;
 
             Ok(())
         })
