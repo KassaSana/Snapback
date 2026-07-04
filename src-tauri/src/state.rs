@@ -3,7 +3,7 @@ use std::thread;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::engine::{check_hyperfocus, Classifier, FeatureExtractor};
-use crate::snapback::ContextTracker;
+use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
 use crate::types::{
     AppRuleRecord, CaptureEvent, ContextSnapshotDto, EventType, FocusMode, PermissionStatus,
@@ -18,6 +18,7 @@ pub struct AppState {
     pub classifier: parking_lot::Mutex<Classifier>,
     pub latest_prediction: parking_lot::Mutex<Option<PredictionRecord>>,
     pub app_rules: parking_lot::Mutex<Vec<AppRuleRecord>>,
+    pub snapback_dismiss_pending: parking_lot::Mutex<bool>,
     event_rx: parking_lot::Mutex<Option<std::sync::mpsc::Receiver<CaptureEvent>>>,
 }
 
@@ -34,6 +35,7 @@ impl AppState {
             classifier: parking_lot::Mutex::new(Classifier::new(focus_mode)),
             latest_prediction: parking_lot::Mutex::new(None),
             app_rules: parking_lot::Mutex::new(app_rules),
+            snapback_dismiss_pending: parking_lot::Mutex::new(false),
             event_rx: parking_lot::Mutex::new(None),
         }
     }
@@ -79,6 +81,11 @@ fn run_engine_loop(app: AppHandle) {
                 Vec::new()
             }
         };
+
+        if *state.snapback_dismiss_pending.lock() {
+            *state.snapback_dismiss_pending.lock() = false;
+            tracker.dismiss_recovery();
+        }
 
         for event in events {
             let app_rules = state.app_rules.lock().clone();
@@ -207,26 +214,5 @@ fn persist_context_snapshot(state: &AppState, snapshot: ContextSnapshotDto) {
         .save_context_snapshot(&session.session_id, &snapshot)
     {
         log::warn!("failed to save context snapshot: {err}");
-    }
-}
-
-fn show_snapback_overlay(app: &AppHandle, payload: &SnapbackPayload) {
-    if let Some(window) = app.get_webview_window("snapback") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        let _ = window.emit("snapback-data", payload);
-        return;
-    }
-
-    let url = tauri::WebviewUrl::App("snapback.html".into());
-    if let Ok(window) = tauri::WebviewWindowBuilder::new(app, "snapback", url)
-        .title("Snapback")
-        .inner_size(420.0, 220.0)
-        .always_on_top(true)
-        .decorations(true)
-        .resizable(false)
-        .build()
-    {
-        let _ = window.emit("snapback-data", payload);
     }
 }

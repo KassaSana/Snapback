@@ -115,7 +115,8 @@ pub fn set_focus_mode(state: State<'_, AppState>, mode: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn dismiss_snapback(app: tauri::AppHandle) -> Result<(), String> {
+pub fn dismiss_snapback(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    *state.snapback_dismiss_pending.lock() = true;
     if let Some(window) = app.get_webview_window("snapback") {
         let _ = window.hide();
     }
