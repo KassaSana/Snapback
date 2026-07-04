@@ -20,8 +20,12 @@ src-tauri/target/
 # ============================================
 # Python
 # ============================================
+# Training commands run from the repo root (see README), so the venv and
+# exported data/artifacts land at the top level, not under ml/.
+.venv/
 ml/venv/
 ml/__pycache__/
+__pycache__/
 ml/*.pyc
 ml/.pytest_cache/
 ml/.coverage
@@ -30,17 +34,21 @@ ml/dist/
 ml/build/
 ml/*.egg-info/
 
-# ML Models (too large for git)
+# ML Models (too large for git, and often personal/labeled)
 ml/models/*.pkl
 ml/models/*.pt
 ml/models/*.onnx
 ml/models/*.h5
 ml/checkpoints/
 ml/artifacts/
+/artifacts/
 
 # Training data
 ml/data/*.csv
 ml/data/*.parquet
+/data/*.csv
+/data/*.parquet
+/data/*.db
 
 # ============================================
 # Node / React

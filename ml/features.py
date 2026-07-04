@@ -18,40 +18,16 @@ from .event_schema import EventRecord, EventType
 MOUSE_MOVE_STRUCT = struct.Struct("<iiI")
 IDLE_STRUCT = struct.Struct("<I")
 
-BROWSERS = {
-    "chrome.exe",
-    "msedge.exe",
-    "firefox.exe",
-    "brave.exe",
-    "opera.exe",
-}
-IDES = {
-    "code.exe",
-    "devenv.exe",
-    "idea64.exe",
-    "pycharm64.exe",
-    "clion64.exe",
-    "rider64.exe",
-}
-COMMUNICATION = {
-    "slack.exe",
-    "discord.exe",
-    "teams.exe",
-    "outlook.exe",
-    "zoom.exe",
-}
-ENTERTAINMENT = {
-    "spotify.exe",
-    "steam.exe",
-    "vlc.exe",
-}
-PRODUCTIVITY = {
-    "winword.exe",
-    "excel.exe",
-    "powerpnt.exe",
-    "notion.exe",
-    "obsidian.exe",
-}
+# Keep these substring lists in sync with `src-tauri/src/engine/app_context.rs`.
+# Rust matches with a case-insensitive `contains()` against the raw app name
+# (macOS-style, e.g. "Cursor", "Google Chrome"), so we mirror that here instead
+# of matching literal Windows `.exe` names — otherwise Python and Rust disagree
+# on is_ide/is_browser/etc. for the exact same event.
+BROWSERS = ("chrome", "msedge", "firefox", "brave", "opera", "safari")
+IDES = ("code", "cursor", "devenv", "idea", "pycharm", "clion", "rider", "xcode")
+COMMUNICATION = ("slack", "discord", "teams", "outlook", "zoom", "messages")
+ENTERTAINMENT = ("spotify", "steam", "vlc", "netflix", "youtube")
+PRODUCTIVITY = ("word", "excel", "powerpnt", "notion", "obsidian", "pages", "figma")
 
 
 @dataclass(frozen=True)
@@ -237,11 +213,11 @@ def _idle_duration_ms(event: EventRecord) -> int:
 def _classify_app(app_name: str) -> Tuple[bool, bool, bool, bool, bool]:
     name = app_name.lower()
     return (
-        name in BROWSERS,
-        name in IDES,
-        name in COMMUNICATION,
-        name in ENTERTAINMENT,
-        name in PRODUCTIVITY,
+        any(token in name for token in BROWSERS),
+        any(token in name for token in IDES),
+        any(token in name for token in COMMUNICATION),
+        any(token in name for token in ENTERTAINMENT),
+        any(token in name for token in PRODUCTIVITY),
     )
 
 

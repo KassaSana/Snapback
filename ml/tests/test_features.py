@@ -1,7 +1,7 @@
 import unittest
 
 from ml.event_schema import EventRecord, EventType
-from ml.features import FeatureExtractor, MOUSE_MOVE_STRUCT, IDLE_STRUCT
+from ml.features import FeatureExtractor, MOUSE_MOVE_STRUCT, IDLE_STRUCT, _classify_app
 
 
 def make_event(event_type: EventType, ts_us: int, app_name: str, data_raw: bytes = b"") -> EventRecord:
@@ -63,6 +63,43 @@ class TestFeatureExtractor(unittest.TestCase):
         self.assertEqual(features.mouse_move_count, 2)
         self.assertGreater(features.mouse_speed_mean, 0.0)
         self.assertAlmostEqual(features.idle_time_30s, 10.0, places=2)
+
+    def test_classify_app_matches_rust_app_context_for_macos_names(self) -> None:
+        # These app names mirror src-tauri/src/engine/app_context.rs and its
+        # fixtures/feature_parity/scenarios.json fixtures. Python must agree
+        # with Rust's substring/case-insensitive classification, not just the
+        # legacy Windows .exe names.
+        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app("Cursor")
+        self.assertTrue(is_ide)
+        self.assertFalse(is_browser)
+
+        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app("Google Chrome")
+        self.assertTrue(is_browser)
+        self.assertFalse(is_ide)
+
+        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app("Safari")
+        self.assertTrue(is_browser)
+
+        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app("Slack")
+        self.assertTrue(is_comm)
+
+        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app("Spotify")
+        self.assertTrue(is_ent)
+
+        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app("Notion")
+        self.assertTrue(is_prod)
+
+    def test_extractor_classifies_macos_app_names(self) -> None:
+        extractor = FeatureExtractor(window_seconds=30)
+        events = [
+            make_event(EventType.WINDOW_FOCUS_CHANGE, 0, "Cursor"),
+            make_event(EventType.KEY_PRESS, 400_000, "Cursor"),
+        ]
+        for event in events:
+            features = extractor.update(event)
+
+        self.assertTrue(features.is_ide)
+        self.assertEqual(features.productivity_category, "Building")
 
 
 if __name__ == "__main__":

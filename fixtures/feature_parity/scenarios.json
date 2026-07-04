@@ -33,6 +33,50 @@
         "is_entertainment": 1,
         "is_browser": 1
       }
+    },
+    {
+      "name": "keystroke_rate_30s",
+      "base_time": 1700000100.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 4.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 8.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 12.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 16.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 20.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 24.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 28.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 30.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 50 }
+      ],
+      "expect": {
+        "keystroke_count": 8,
+        "keystroke_rate": 0.2666667
+      }
+    },
+    {
+      "name": "idle_recovery",
+      "base_time": 1700000200.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "idle_end", "app": "Cursor", "title": "main.rs", "idle_duration_ms": 10000 },
+        { "offset_secs": 5.0, "type": "idle_end", "app": "Cursor", "title": "main.rs", "idle_duration_ms": 5000 }
+      ],
+      "expect": {
+        "idle_time_30s": 15.0,
+        "idle_event_count_5min": 2
+      }
+    },
+    {
+      "name": "mouse_speed_steady",
+      "base_time": 1700000300.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 100 },
+        { "offset_secs": 1.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 200 },
+        { "offset_secs": 2.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 300 }
+      ],
+      "expect": {
+        "mouse_move_count": 3,
+        "mouse_speed_mean": 200.0
+      }
     }
   ]
 }
