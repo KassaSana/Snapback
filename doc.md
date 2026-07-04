@@ -30,8 +30,7 @@ Single source of truth for what's left. Keep it short; update after each session
 ### Next (P1 — product)
 - [x] **Close ONNX loop** — pipeline → export → reload in app; dev/release builds use `--features onnx`
 - [ ] **Global hotkey labeling** (`tauri-plugin-global-shortcut`)
-- [x] **Remove or gate** `send_test_prediction` dev button
-- [ ] **Tray icon** — implement quick controls or drop unused feature
+- [x] **Tray icon** — show/hide/quit menu; left-click toggles window
 
 ### Later
 - [ ] ML: real CV in `train_baseline`, ONNX integration tests, parity in CI
