@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection};
 use thiserror::Error;
@@ -6,9 +8,44 @@ use uuid::Uuid;
 
 use crate::engine::features::FeatureVector;
 use crate::types::{
-    AppRuleKind, AppRuleRecord, ContextSnapshotDto, FocusLabel, PredictionRecord, SessionRecap,
-    SessionRecord,
+    AppRuleKind, AppRuleRecord, ContextSnapshotDto, ExportTrainingResult, FocusLabel,
+    PredictionRecord, SessionRecap, SessionRecord,
 };
+
+const FEATURE_EXPORT_COLUMNS: &[&str] = &[
+    "timestamp",
+    "seconds_since_session_start",
+    "hour_of_day",
+    "day_of_week",
+    "minutes_since_last_break",
+    "keystroke_count",
+    "keystroke_rate",
+    "keystroke_interval_mean",
+    "keystroke_interval_std",
+    "keystroke_interval_trend",
+    "mouse_move_count",
+    "mouse_distance_pixels",
+    "mouse_speed_mean",
+    "mouse_speed_std",
+    "mouse_acceleration_mean",
+    "mouse_click_count",
+    "context_switches_30s",
+    "context_switches_5min",
+    "time_in_current_app",
+    "unique_apps_5min",
+    "idle_time_30s",
+    "idle_event_count_5min",
+    "longest_active_stretch_5min",
+    "window_title_length",
+    "window_title_changed_30s",
+    "is_browser",
+    "is_ide",
+    "is_communication",
+    "is_entertainment",
+    "is_productivity",
+    "focus_momentum",
+    "is_pseudo_productive",
+];
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -20,6 +57,8 @@ pub enum StorageError {
     AppRuleNotFound,
     #[error("invalid app rule: {0}")]
     InvalidAppRule(String),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 pub struct Storage {
@@ -552,6 +591,162 @@ impl Storage {
             deep_focus_pct: deep_pct,
         })
     }
+
+    fn table_exists(&self, name: &str) -> Result<bool, StorageError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            params![name],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    fn rfc3339_to_unix(ts: &str) -> f64 {
+        let normalized = ts.trim().replace('Z', "+00:00");
+        chrono::DateTime::parse_from_rfc3339(&normalized)
+            .map(|dt| dt.timestamp() as f64 + dt.timestamp_subsec_nanos() as f64 / 1_000_000_000.0)
+            .unwrap_or(0.0)
+    }
+
+    pub fn export_training_data(
+        &self,
+        output_dir: &Path,
+        session_id: Option<&str>,
+    ) -> Result<ExportTrainingResult, StorageError> {
+        fs::create_dir_all(output_dir)?;
+
+        let features_path = output_dir.join("features.csv");
+        let labels_path = output_dir.join("labels.csv");
+
+        let feature_count = if self.table_exists("feature_snapshots")? {
+            self.write_feature_export_csv(&features_path, session_id)?
+        } else {
+            Self::write_csv_header(&features_path, FEATURE_EXPORT_COLUMNS)?;
+            0
+        };
+
+        let label_count = if self.table_exists("labels")? {
+            self.write_label_export_csv(&labels_path, session_id)?
+        } else {
+            Self::write_csv_header(
+                &labels_path,
+                &["timestamp", "label", "source", "session_id", "notes"],
+            )?;
+            0
+        };
+
+        Ok(ExportTrainingResult {
+            output_dir: output_dir.display().to_string(),
+            features_path: features_path.display().to_string(),
+            labels_path: labels_path.display().to_string(),
+            feature_count,
+            label_count,
+        })
+    }
+
+    fn write_csv_header(path: &Path, headers: &[&str]) -> Result<(), StorageError> {
+        let mut file = File::create(path)?;
+        writeln!(file, "{}", headers.join(","))?;
+        Ok(())
+    }
+
+    fn write_feature_export_csv(
+        &self,
+        path: &Path,
+        session_id: Option<&str>,
+    ) -> Result<usize, StorageError> {
+        let columns = FEATURE_EXPORT_COLUMNS.join(", ");
+        let (query, filter): (String, bool) = if session_id.is_some() {
+            (
+                format!(
+                    "SELECT {columns} FROM feature_snapshots WHERE session_id = ?1 ORDER BY timestamp ASC"
+                ),
+                true,
+            )
+        } else {
+            (
+                format!("SELECT {columns} FROM feature_snapshots ORDER BY timestamp ASC"),
+                false,
+            )
+        };
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let mut rows = if filter {
+            stmt.query(params![session_id])?
+        } else {
+            stmt.query([])?
+        };
+
+        let mut file = File::create(path)?;
+        writeln!(file, "{}", FEATURE_EXPORT_COLUMNS.join(","))?;
+
+        let col_count = FEATURE_EXPORT_COLUMNS.len();
+        let mut count = 0;
+        while let Some(row) = rows.next()? {
+            let values: Vec<String> = (0..col_count)
+                .map(|idx| match row.get_ref(idx)? {
+                    rusqlite::types::ValueRef::Null => Ok(String::new()),
+                    rusqlite::types::ValueRef::Integer(v) => Ok(v.to_string()),
+                    rusqlite::types::ValueRef::Real(v) => Ok(v.to_string()),
+                    rusqlite::types::ValueRef::Text(v) => {
+                        Ok(String::from_utf8_lossy(v).into_owned())
+                    }
+                    rusqlite::types::ValueRef::Blob(v) => {
+                        Ok(String::from_utf8_lossy(v).into_owned())
+                    }
+                })
+                .collect::<Result<_, rusqlite::Error>>()?;
+            writeln!(file, "{}", values.join(","))?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    fn write_label_export_csv(
+        &self,
+        path: &Path,
+        session_id: Option<&str>,
+    ) -> Result<usize, StorageError> {
+        let (query, filter): (&str, bool) = if session_id.is_some() {
+            (
+                "SELECT timestamp, label, source, session_id, notes FROM labels WHERE session_id = ?1 ORDER BY timestamp ASC",
+                true,
+            )
+        } else {
+            (
+                "SELECT timestamp, label, source, session_id, notes FROM labels ORDER BY timestamp ASC",
+                false,
+            )
+        };
+
+        let mut stmt = self.conn.prepare(query)?;
+        let mut rows = if filter {
+            stmt.query(params![session_id])?
+        } else {
+            stmt.query([])?
+        };
+
+        let mut file = File::create(path)?;
+        writeln!(file, "timestamp,label,source,session_id,notes")?;
+
+        let mut count = 0;
+        while let Some(row) = rows.next()? {
+            let ts_raw: String = row.get(0)?;
+            let label: i32 = row.get(1)?;
+            let source: String = row.get(2)?;
+            let sid: String = row.get(3)?;
+            let notes: Option<String> = row.get(4)?;
+            let ts = Self::rfc3339_to_unix(&ts_raw);
+            let notes_cell = notes.unwrap_or_default().replace(',', " ");
+            writeln!(
+                file,
+                "{ts:.6},{label},{},{sid},{notes_cell}",
+                source.to_uppercase()
+            )?;
+            count += 1;
+        }
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
@@ -630,6 +825,38 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn export_training_data_writes_csvs() {
+        use crate::engine::features::FeatureVector;
+
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir.clone()).unwrap();
+        let session = storage.start_session("Export test", "normal").unwrap();
+
+        let features = FeatureVector {
+            timestamp: 1_700_000_000.0,
+            keystroke_rate: 2.5,
+            is_ide: true,
+            ..FeatureVector::empty(1_700_000_000.0)
+        };
+        storage
+            .save_feature_snapshot(&session.session_id, &features)
+            .unwrap();
+        storage
+            .save_label(&session.session_id, FocusLabel::Distracted, Some("youtube"))
+            .unwrap();
+
+        let out_dir = dir.join("exports");
+        let result = storage
+            .export_training_data(&out_dir, None)
+            .unwrap();
+
+        assert_eq!(result.feature_count, 1);
+        assert_eq!(result.label_count, 1);
+        assert!(std::path::Path::new(&result.features_path).exists());
+        assert!(std::path::Path::new(&result.labels_path).exists());
     }
 
     #[test]
