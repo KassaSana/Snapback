@@ -34,6 +34,26 @@ pub fn run_from_cli(args: Vec<String>) -> i32 {
         return crate::engine::parity::run_feature_parity(&path);
     }
 
+    if let Some(idx) = args.iter().position(|a| a == "--export-feature-parity-json") {
+        let path = args
+            .get(idx + 1)
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from("fixtures/feature_parity/scenarios.json")
+            });
+        let rules = Vec::new();
+        return match crate::engine::parity::export_feature_parity_json(&path, &rules) {
+            Ok(json) => {
+                print!("{json}");
+                0
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                1
+            }
+        };
+    }
+
     run();
     0
 }

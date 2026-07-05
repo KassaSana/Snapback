@@ -65,6 +65,7 @@ class EventRecord:
     window_handle: int
     data_raw: bytes
     reserved: int
+    window_title: str = ""
 
     STRUCT: ClassVar[struct.Struct] = struct.Struct("<QII24sI16sI")
 
