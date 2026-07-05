@@ -5,7 +5,12 @@ import unittest
 from ml.features import FeatureVector, write_features_csv
 from ml.dataset_builder import join_features_with_labels, read_features_csv, write_labeled_csv
 from ml.labeling import FocusLabel, LabelRecord, LabelSource
-from ml.training_pipeline import load_dataset, train_baseline
+from ml.training_pipeline import (
+    cross_validate_metrics,
+    load_dataset,
+    time_series_splits,
+    train_baseline,
+)
 
 
 def make_feature(timestamp: float, keystrokes: int) -> FeatureVector:
@@ -69,6 +74,45 @@ class TestTrainingPipeline(unittest.TestCase):
 
             self.assertIn("precision_at_10pct", result.metrics)
             self.assertIn("recall_distracted", result.metrics)
+
+    def test_time_series_splits_expands_train_window(self) -> None:
+        splits = list(time_series_splits(12, n_splits=3))
+        self.assertEqual(len(splits), 3)
+        train_idx, val_idx = splits[-1]
+        self.assertEqual(train_idx, list(range(0, 9)))
+        self.assertEqual(val_idx, list(range(9, 12)))
+
+    def test_train_baseline_uses_cross_validation_when_enough_rows(self) -> None:
+        features = [make_feature(float(i * 10), i % 5) for i in range(1, 13)]
+        labels = [
+            LabelRecord(
+                float(i * 10 + 5),
+                FocusLabel.DISTRACTED if i % 2 == 0 else FocusLabel.PRODUCTIVE,
+                LabelSource.HOTKEY,
+                "s1",
+            )
+            for i in range(1, 13)
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            feature_path = os.path.join(tmp, "features.csv")
+            dataset_path = os.path.join(tmp, "dataset.csv")
+
+            write_features_csv(feature_path, features)
+            feature_rows = read_features_csv(feature_path)
+            labeled_rows = join_features_with_labels(feature_rows, labels, label_window_seconds=15)
+            write_labeled_csv(dataset_path, labeled_rows)
+
+            dataset = load_dataset(dataset_path)
+            cv_metrics, cv_folds = cross_validate_metrics(dataset, backend="majority", n_splits=3)
+
+            self.assertGreater(cv_folds, 0)
+            self.assertIn("accuracy", cv_metrics)
+
+            result = train_baseline(dataset, backend="majority", n_splits=3)
+            self.assertGreater(result.metrics["cv_folds"], 0)
+            self.assertIn("cv_accuracy", result.metrics)
+            self.assertIn("in_sample_accuracy", result.metrics)
 
 
 if __name__ == "__main__":

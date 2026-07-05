@@ -49,7 +49,7 @@ Fix these before trusting training exports or cutting releases.
 | Item | Gap |
 |------|-----|
 | `ml/labeling.py` | Stub — app labels live in SQLite; Python side disconnected |
-| Cross-validation | `time_series_splits()` exists; `train_baseline()` doesn't use it |
+| Cross-validation | **Done** — `train_baseline()` uses `time_series_splits`; `precision_at_10pct` / `recall_distracted` are CV means when folds exist |
 | Majority classifier | Cannot export to ONNX |
 | ONNX tests | Import-only; no fixture model inference test |
 | Feature parity in CI | Rust `--feature-parity` vs Python CLI not compared |
