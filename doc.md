@@ -34,7 +34,7 @@ Single source of truth for what's left. Keep it short; update after each session
 
 ### Later
 - [x] ML: real CV in `train_baseline` (`time_series_splits` wired; reports `cv_*` + `in_sample_*` metrics)
-- [ ] ML: ONNX integration tests, parity in CI
+- [x] ML: ONNX integration tests, parity in CI
 - [ ] Benchmark / ONNX model quality pass (`docs/BENCHMARK_RESULTS.md`)
 - [ ] Doc cleanup — archive stale TDD/ARCHITECTURE sections (see ROADMAP P4)
 - [ ] Linux distro packaging smoke test
