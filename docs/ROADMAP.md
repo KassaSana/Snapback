@@ -51,7 +51,7 @@ Fix these before trusting training exports or cutting releases.
 | `ml/labeling.py` | Stub — app labels live in SQLite; Python side disconnected |
 | Cross-validation | **Done** — `train_baseline()` uses `time_series_splits`; `precision_at_10pct` / `recall_distracted` are CV means when folds exist |
 | Majority classifier | Cannot export to ONNX |
-| ONNX tests | Import-only; no fixture model inference test |
+| ONNX tests | **Done** — `fixtures/model.onnx` + Rust `cargo test --features onnx` integration test |
 | Feature parity in CI | Rust `--feature-parity` vs Python CLI not compared |
 | LSTM / lookahead | Documented in old TDD; not implemented (reactive ~1 Hz only) |
 

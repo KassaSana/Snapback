@@ -50,6 +50,11 @@ pub fn is_loaded() -> bool {
     model_slot().lock().is_some()
 }
 
+#[cfg(all(test, feature = "onnx"))]
+pub(crate) fn reset_model_for_tests() {
+    *model_slot().lock() = None;
+}
+
 #[cfg(feature = "onnx")]
 fn extract_probas(outputs: &ort::session::SessionOutputs) -> Option<[f64; 4]> {
     for value in outputs.values() {
@@ -128,12 +133,36 @@ pub fn predict(
 
 #[cfg(all(test, feature = "onnx"))]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
     fn predict_without_loaded_model_returns_none() {
+        reset_model_for_tests();
         let features = FeatureVector::empty(0.0);
         assert!(predict(&features, 0.1, 0.2, 0.5).is_none());
+    }
+
+    #[test]
+    fn fixture_model_predict_returns_productive_scores() {
+        reset_model_for_tests();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/model.onnx");
+        assert!(
+            path.is_file(),
+            "missing {}; run: python tools/generate_onnx_fixture.py",
+            path.display()
+        );
+
+        init(&path).expect("load fixtures/model.onnx");
+        assert!(is_loaded());
+
+        let mut features = FeatureVector::empty(1.0);
+        features.keystroke_count = 10;
+        let scores = predict(&features, 0.1, 0.2, 0.5).expect("onnx predict");
+        assert_eq!(scores.focus_state, "PRODUCTIVE");
+        assert!(scores.focus_score > 0.0);
+        assert!(scores.focus_score <= 100.0);
     }
 }
 
