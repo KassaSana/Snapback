@@ -213,6 +213,135 @@ class TrainingResult:
     metrics: Dict[str, float]
 
 
+def _subset(dataset: Dataset, indices: List[int]) -> Dataset:
+    return Dataset(
+        features=[dataset.features[i] for i in indices],
+        labels=[dataset.labels[i] for i in indices],
+        timestamps=[dataset.timestamps[i] for i in indices],
+    )
+
+
+def _predictions_from_probas(probas: List[List[float]]) -> List[int]:
+    return [int(max(range(len(row)), key=row.__getitem__)) for row in probas]
+
+
+def _classification_metrics(probas: List[List[float]], labels: List[int]) -> Dict[str, float]:
+    distracted_index = LABEL_VALUE_TO_INDEX[int(FocusLabel.DISTRACTED)]
+    predictions = _predictions_from_probas(probas)
+    return {
+        "accuracy": _accuracy_score(labels, predictions),
+        "precision_at_10pct": precision_at_k(probas, labels, distracted_index, 0.1),
+        "recall_distracted": recall_for_class(probas, labels, distracted_index, 0.7),
+    }
+
+
+def _fit_xgboost(train: Dataset) -> Optional[Tuple[object, Dict[int, int]]]:
+    if xgb is None:
+        raise RuntimeError("xgboost is not installed")
+
+    classes = sorted(set(train.labels))
+    if len(classes) < 2:
+        return None
+
+    label_to_class = {label: idx for idx, label in enumerate(classes)}
+    class_to_label = {idx: label for label, idx in label_to_class.items()}
+    y_train = [label_to_class[label] for label in train.labels]
+
+    model = xgb.XGBClassifier(
+        max_depth=6,
+        learning_rate=0.1,
+        n_estimators=100,
+        objective="multi:softprob",
+        num_class=len(classes),
+        eval_metric="mlogloss",
+    )
+    model.fit(train.features, y_train)
+    return model, class_to_label
+
+
+def _probas_xgboost(
+    model: object,
+    class_to_label: Dict[int, int],
+    features: List[List[float]],
+) -> List[List[float]]:
+    probas_raw = _to_list(model.predict_proba(features))
+    probas: List[List[float]] = []
+    for row in probas_raw:
+        full = [0.0, 0.0, 0.0, 0.0]
+        for idx, prob in enumerate(row):
+            original_label = class_to_label[idx]
+            full[original_label] = prob
+        probas.append(full)
+    return probas
+
+
+def _fit_backend_model(train: Dataset, backend: str) -> Optional[object]:
+    if backend == "majority":
+        return MajorityClassifier().fit(train.labels)
+    if backend == "xgboost":
+        fitted = _fit_xgboost(train)
+        return fitted[0] if fitted else None
+    raise ValueError(f"Unknown backend: {backend}")
+
+
+def _predict_proba(
+    model: object,
+    backend: str,
+    features: List[List[float]],
+    class_to_label: Optional[Dict[int, int]] = None,
+) -> List[List[float]]:
+    if backend == "majority":
+        return model.predict_proba(features)
+    if backend == "xgboost":
+        if class_to_label is None:
+            raise ValueError("class_to_label required for xgboost predictions")
+        return _probas_xgboost(model, class_to_label, features)
+    raise ValueError(f"Unknown backend: {backend}")
+
+
+def _evaluate_fold(train: Dataset, val: Dataset, backend: str) -> Optional[Dict[str, float]]:
+    if backend == "xgboost":
+        fitted = _fit_xgboost(train)
+        if fitted is None:
+            return None
+        model, class_to_label = fitted
+        probas = _probas_xgboost(model, class_to_label, val.features)
+        return _classification_metrics(probas, val.labels)
+
+    model = _fit_backend_model(train, backend)
+    if model is None:
+        return None
+    probas = _predict_proba(model, backend, val.features)
+    return _classification_metrics(probas, val.labels)
+
+
+def cross_validate_metrics(
+    dataset: Dataset,
+    backend: str,
+    n_splits: int,
+) -> Tuple[Dict[str, float], int]:
+    splits = list(time_series_splits(len(dataset.features), n_splits))
+    if not splits:
+        return {}, 0
+
+    fold_metrics: List[Dict[str, float]] = []
+    for train_idx, val_idx in splits:
+        train = _subset(dataset, train_idx)
+        val = _subset(dataset, val_idx)
+        metrics = _evaluate_fold(train, val, backend)
+        if metrics is not None:
+            fold_metrics.append(metrics)
+
+    if not fold_metrics:
+        return {}, 0
+
+    averaged = {
+        key: sum(metrics[key] for metrics in fold_metrics) / len(fold_metrics)
+        for key in fold_metrics[0]
+    }
+    return averaged, len(fold_metrics)
+
+
 def train_baseline(
     dataset: Dataset,
     backend: str = "auto",
@@ -224,50 +353,42 @@ def train_baseline(
     if backend == "auto":
         backend = "xgboost" if xgb is not None else "majority"
 
+    cv_metrics, cv_folds = cross_validate_metrics(dataset, backend, n_splits)
+
     if backend == "xgboost":
         if xgb is None:
             raise RuntimeError("xgboost is not installed")
 
-        classes = sorted(set(dataset.labels))
-        label_to_class = {label: idx for idx, label in enumerate(classes)}
-        class_to_label = {idx: label for label, idx in label_to_class.items()}
-
-        if len(classes) < 2:
+        fitted = _fit_xgboost(dataset)
+        if fitted is None:
             raise ValueError("Need at least two classes to train XGBoost")
-
-        X_train = dataset.features
-        y_train = [label_to_class[label] for label in dataset.labels]
-
-        model = xgb.XGBClassifier(
-            max_depth=6,
-            learning_rate=0.1,
-            n_estimators=100,
-            objective="multi:softprob",
-            num_class=len(classes),
-            eval_metric="mlogloss",
-        )
-        model.fit(X_train, y_train)
-
-        probas_raw = model.predict_proba(dataset.features)
-        probas_raw = _to_list(probas_raw)
-        probas = []
-        for row in probas_raw:
-            full = [0.0, 0.0, 0.0, 0.0]
-            for idx, prob in enumerate(row):
-                original_label = class_to_label[idx]
-                full[original_label] = prob
-            probas.append(full)
+        model, class_to_label = fitted
+        probas = _probas_xgboost(model, class_to_label, dataset.features)
     elif backend == "majority":
         model = MajorityClassifier().fit(dataset.labels)
         probas = model.predict_proba(dataset.features)
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
-    distracted_index = LABEL_VALUE_TO_INDEX[int(FocusLabel.DISTRACTED)]
-    metrics = {
-        "precision_at_10pct": precision_at_k(probas, dataset.labels, distracted_index, 0.1),
-        "recall_distracted": recall_for_class(probas, dataset.labels, distracted_index, 0.7),
-    }
+    in_sample = _classification_metrics(probas, dataset.labels)
+
+    if cv_folds > 0:
+        metrics = {
+            "cv_folds": float(cv_folds),
+            "cv_accuracy": cv_metrics["accuracy"],
+            "precision_at_10pct": cv_metrics["precision_at_10pct"],
+            "recall_distracted": cv_metrics["recall_distracted"],
+            "in_sample_accuracy": in_sample["accuracy"],
+            "in_sample_precision_at_10pct": in_sample["precision_at_10pct"],
+            "in_sample_recall_distracted": in_sample["recall_distracted"],
+        }
+    else:
+        metrics = {
+            "cv_folds": 0.0,
+            "precision_at_10pct": in_sample["precision_at_10pct"],
+            "recall_distracted": in_sample["recall_distracted"],
+            "in_sample_accuracy": in_sample["accuracy"],
+        }
 
     return TrainingResult(model=model, metrics=metrics)
 
