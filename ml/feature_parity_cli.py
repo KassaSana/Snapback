@@ -5,6 +5,7 @@ Usage (from repo root):
 
   python3 -m ml.feature_parity_cli
   python3 -m ml.feature_parity_cli --scenarios fixtures/feature_parity/scenarios.json
+  python3 -m ml.feature_parity_cli --python-only
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
+
+from ml.parity import run_python_scenarios
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,34 @@ def run_rust_feature_parity(scenarios_path: Path) -> subprocess.CompletedProcess
         text=True,
         check=False,
     )
+
+
+def export_rust_feature_parity(scenarios_path: Path) -> List[dict]:
+    manifest = repo_root() / "src-tauri" / "Cargo.toml"
+    completed = subprocess.run(
+        [
+            "cargo",
+            "run",
+            "--quiet",
+            "--manifest-path",
+            str(manifest),
+            "--",
+            "--export-feature-parity-json",
+            str(scenarios_path),
+        ],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        if completed.stdout:
+            print(completed.stdout, end="")
+        if completed.stderr:
+            print(completed.stderr, end="", file=sys.stderr)
+        raise RuntimeError("failed to export Rust feature parity JSON")
+
+    return json.loads(completed.stdout)
 
 
 def load_scenarios(path: Path) -> List[dict]:
@@ -116,12 +147,79 @@ def compare_exported_rust_results(
     return failures
 
 
-def run_cli(scenarios_path: Path, use_subprocess: bool) -> int:
+def compare_python_rust_results(
+    python_results: List[dict],
+    rust_results: List[dict],
+    tolerance: float = 1e-4,
+) -> List[ParityFailure]:
+    python_by_name = {item["name"]: item for item in python_results}
+    rust_by_name = {item["name"]: item for item in rust_results}
+    failures: List[ParityFailure] = []
+
+    for name in sorted(set(python_by_name) | set(rust_by_name)):
+        if name not in python_by_name:
+            failures.append(ParityFailure(name, "missing Python replay result"))
+            continue
+        if name not in rust_by_name:
+            failures.append(ParityFailure(name, "missing Rust replay result"))
+            continue
+
+        python_features = {
+            str(k): float(v) for k, v in python_by_name[name].get("features", {}).items()
+        }
+        rust_features = {
+            str(k): float(v) for k, v in rust_by_name[name].get("features", {}).items()
+        }
+
+        for key in sorted(set(python_features) | set(rust_features)):
+            if key not in python_features:
+                failures.append(ParityFailure(name, f"{key}: missing in Python"))
+                continue
+            if key not in rust_features:
+                failures.append(ParityFailure(name, f"{key}: missing in Rust"))
+                continue
+
+            python_value = python_features[key]
+            rust_value = rust_features[key]
+            if abs(python_value - rust_value) > tolerance:
+                failures.append(
+                    ParityFailure(
+                        name,
+                        f"{key}: python={python_value}, rust={rust_value}",
+                    )
+                )
+
+    return failures
+
+
+def run_python_expectations(scenarios_path: Path) -> List[ParityFailure]:
+    scenarios = {item["name"]: item for item in load_scenarios(scenarios_path)}
+    failures: List[ParityFailure] = []
+    for result in run_python_scenarios(scenarios_path):
+        name = str(result.get("name", ""))
+        scenario = scenarios.get(name)
+        if scenario is None:
+            failures.append(ParityFailure(name, "scenario missing from fixtures file"))
+            continue
+        features = {str(k): float(v) for k, v in result.get("features", {}).items()}
+        for message in check_expectations(scenario, features):
+            failures.append(ParityFailure(name, message))
+    return failures
+
+
+def run_cli(
+    scenarios_path: Path,
+    *,
+    python_only: bool = False,
+    rust_only: bool = False,
+) -> int:
     if not scenarios_path.is_file():
         print(f"Scenarios file not found: {scenarios_path}", file=sys.stderr)
         return 1
 
-    if use_subprocess:
+    failures: List[ParityFailure] = []
+
+    if rust_only:
         completed = run_rust_feature_parity(scenarios_path)
         if completed.returncode != 0:
             if completed.stdout:
@@ -129,34 +227,40 @@ def run_cli(scenarios_path: Path, use_subprocess: bool) -> int:
             if completed.stderr:
                 print(completed.stderr, end="", file=sys.stderr)
             return completed.returncode
-
         print(completed.stdout, end="")
         return 0
 
-    # Validate JSON expectations against exported Rust feature JSON (for tests).
-    manifest = repo_root() / "src-tauri" / "Cargo.toml"
-    export = subprocess.run(
-        [
-            "cargo",
-            "test",
-            "shared_scenarios_match_expectations",
-            "--quiet",
-            "--manifest-path",
-            str(manifest),
-            "--",
-            "--nocapture",
-        ],
-        cwd=repo_root(),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if export.returncode != 0:
-        print(export.stdout, end="")
-        print(export.stderr, end="", file=sys.stderr)
-        return export.returncode
+    failures.extend(run_python_expectations(scenarios_path))
+    if python_only:
+        return _report_failures(failures)
 
-    print("Rust feature parity scenarios passed.")
+    try:
+        python_results = run_python_scenarios(scenarios_path)
+        rust_results = export_rust_feature_parity(scenarios_path)
+    except RuntimeError:
+        return 1
+
+    failures.extend(compare_python_rust_results(python_results, rust_results))
+
+    completed = run_rust_feature_parity(scenarios_path)
+    if completed.returncode != 0:
+        if completed.stdout:
+            print(completed.stdout, end="")
+        if completed.stderr:
+            print(completed.stderr, end="", file=sys.stderr)
+        return completed.returncode
+    print(completed.stdout, end="")
+
+    return _report_failures(failures)
+
+
+def _report_failures(failures: List[ParityFailure]) -> int:
+    if failures:
+        for failure in failures:
+            print(f"FAIL: {failure.scenario}: {failure.message}", file=sys.stderr)
+        return 1
+
+    print("Python/Rust feature parity passed.")
     return 0
 
 
@@ -168,16 +272,25 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Path to shared parity scenarios JSON.",
     )
     parser.add_argument(
+        "--python-only",
+        action="store_true",
+        help="Validate Python replay against scenario expectations only.",
+    )
+    parser.add_argument(
         "--rust-only",
         action="store_true",
-        help="Run the Rust parity CLI (default).",
+        help="Run the Rust parity CLI only.",
     )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
-    return run_cli(Path(os.path.expanduser(args.scenarios)), use_subprocess=True)
+    return run_cli(
+        Path(os.path.expanduser(args.scenarios)),
+        python_only=args.python_only,
+        rust_only=args.rust_only,
+    )
 
 
 if __name__ == "__main__":

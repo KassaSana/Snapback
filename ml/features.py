@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import deque
 import csv
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 import os
 import struct
@@ -28,6 +28,19 @@ IDES = ("code", "cursor", "devenv", "idea", "pycharm", "clion", "rider", "xcode"
 COMMUNICATION = ("slack", "discord", "teams", "outlook", "zoom", "messages")
 ENTERTAINMENT = ("spotify", "steam", "vlc", "netflix", "youtube")
 PRODUCTIVITY = ("word", "excel", "powerpnt", "notion", "obsidian", "pages", "figma")
+DISTRACTING_TITLE_KEYWORDS = (
+    "youtube",
+    "netflix",
+    "twitter",
+    "reddit",
+    "instagram",
+    "tiktok",
+    "twitch",
+    "facebook",
+    "hulu",
+    "disney+",
+    "prime video",
+)
 
 
 @dataclass(frozen=True)
@@ -210,13 +223,16 @@ def _idle_duration_ms(event: EventRecord) -> int:
     return IDLE_STRUCT.unpack_from(event.data_raw)[0]
 
 
-def _classify_app(app_name: str) -> Tuple[bool, bool, bool, bool, bool]:
+def _classify_app(app_name: str, window_title: str = "") -> Tuple[bool, bool, bool, bool, bool]:
     name = app_name.lower()
+    title = window_title.lower()
+    title_is_distracting = any(keyword in title for keyword in DISTRACTING_TITLE_KEYWORDS)
+    is_entertainment = any(token in name for token in ENTERTAINMENT) or title_is_distracting
     return (
         any(token in name for token in BROWSERS),
         any(token in name for token in IDES),
         any(token in name for token in COMMUNICATION),
-        any(token in name for token in ENTERTAINMENT),
+        is_entertainment,
         any(token in name for token in PRODUCTIVITY),
     )
 
@@ -239,19 +255,32 @@ class FeatureExtractor:
         self.session_start_ts: Optional[float] = None
         self.last_break_ts: Optional[float] = None
         self.current_app_name: str = ""
+        self.current_window_title: str = ""
         self.current_app_start_ts: Optional[float] = None
         self.focus_momentum: float = 0.0
+
+    def reset_for_session(self, session_start_ts: Optional[float]) -> None:
+        self.session_start_ts = session_start_ts
+        self.events_30s.clear()
+        self.events_5min.clear()
+        self.last_break_ts = session_start_ts
+        self.current_app_name = ""
+        self.current_window_title = ""
+        self.current_app_start_ts = None
+        self.focus_momentum = 0.0
 
     def update_focus_score(self, score: float, alpha: float = 0.2) -> None:
         self.focus_momentum = alpha * score + (1 - alpha) * self.focus_momentum
 
     def update(self, event: EventRecord) -> FeatureVector:
         now = _event_time(event)
-        if self.session_start_ts is None:
-            self.session_start_ts = now
-            self.last_break_ts = now
+
+        if self.current_app_start_ts is None and event.app_name:
             self.current_app_name = event.app_name
+            self.current_window_title = event.window_title or event.app_name
             self.current_app_start_ts = now
+            if self.last_break_ts is None:
+                self.last_break_ts = now
 
         self.events_30s.append(event)
         self.events_5min.append(event)
@@ -265,12 +294,13 @@ class FeatureExtractor:
 
     def extract_features(self, now: Optional[float] = None) -> FeatureVector:
         if not self.events_5min:
-            timestamp = now or datetime.utcnow().timestamp()
+            timestamp = now or datetime.now(tz=timezone.utc).timestamp()
+            dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
             return FeatureVector(
                 timestamp=timestamp,
                 seconds_since_session_start=0,
-                hour_of_day=datetime.utcnow().hour,
-                day_of_week=datetime.utcnow().weekday(),
+                hour_of_day=dt.hour,
+                day_of_week=dt.weekday(),
                 minutes_since_last_break=0,
                 keystroke_count=0,
                 keystroke_rate=0.0,
@@ -361,7 +391,7 @@ class FeatureExtractor:
         idle_event_count_5min = len(idle_events_5min)
         idle_timestamps = sorted(_event_time(e) for e in idle_events_5min)
         if not idle_timestamps:
-            longest_active_stretch_5min = int(min(self.long_window_seconds, span_5min))
+            longest_active_stretch_5min = int(self.long_window_seconds)
         else:
             window_start = now_ts - self.long_window_seconds
             boundaries = [window_start] + idle_timestamps + [now_ts]
@@ -372,9 +402,12 @@ class FeatureExtractor:
         window_title_changed_30s = any(
             e.event_type == EventType.WINDOW_TITLE_CHANGE for e in self.events_30s
         )
-        window_title_length = 0
+        window_title_length = len(self.current_window_title.encode("utf-8"))
 
-        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app(self.current_app_name)
+        is_browser, is_ide, is_comm, is_ent, is_prod = _classify_app(
+            self.current_app_name,
+            self.current_window_title,
+        )
         productivity_category = "Unknown"
         if is_ide:
             productivity_category = "Building"
@@ -393,10 +426,14 @@ class FeatureExtractor:
         if self.last_break_ts is not None:
             minutes_since_last_break = int(max(0.0, (now_ts - self.last_break_ts) / 60.0))
 
-        dt = datetime.fromtimestamp(now_ts)
+        dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
+        seconds_since_session_start = 0
+        if self.session_start_ts is not None:
+            seconds_since_session_start = int(now_ts - self.session_start_ts)
+
         return FeatureVector(
             timestamp=now_ts,
-            seconds_since_session_start=int(now_ts - (self.session_start_ts or now_ts)),
+            seconds_since_session_start=seconds_since_session_start,
             hour_of_day=dt.hour,
             day_of_week=dt.weekday(),
             minutes_since_last_break=minutes_since_last_break,
@@ -446,4 +483,7 @@ class FeatureExtractor:
     def _update_current_app(self, event: EventRecord, now: float) -> None:
         if event.event_type == EventType.WINDOW_FOCUS_CHANGE:
             self.current_app_name = event.app_name
+            self.current_window_title = event.window_title or event.app_name
             self.current_app_start_ts = now
+        elif event.event_type == EventType.WINDOW_TITLE_CHANGE:
+            self.current_window_title = event.window_title or event.app_name
