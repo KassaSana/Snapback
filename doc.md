@@ -21,7 +21,7 @@ Single source of truth for what's left. Keep it short; update after each session
 - [x] Release packaging (icons, cross-platform scripts, `docs/DEPLOYMENT.md`)
 
 ### Now (P0 — data & ship confidence)
-- [ ] **Commit + push** uncommitted work from this machine
+- [x] **Commit + push** uncommitted work from this machine
 - [x] **Reset `FeatureExtractor` on session start/stop** — fix `seconds_since_session_start`
 - [x] **Stop saving `session_id = "idle"`** feature/prediction rows
 - [x] **CI hardening** — `npm run build`, `cargo test --features onnx`, Windows job
