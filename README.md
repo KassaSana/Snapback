@@ -84,7 +84,7 @@ from the **repo root** — not from inside `ml/` — or you'll hit
 ```bash
 # From the repo root
 python3 -m venv .venv && source .venv/bin/activate
-pip install xgboost skl2onnx onnx  # optional backends, needed for real (non-majority) training
+pip install -r ml/requirements-train.txt  # optional backends, needed for real (non-majority) training
 
 # macOS only: xgboost needs the OpenMP runtime, which isn't bundled
 brew install libomp
