@@ -1,44 +1,35 @@
 ## Snapback — work tracker
 
-Single source of truth for what's left. Keep it short; update after each session.
+**Session checklist only.** Keep this short — update at the start and end of each work session.
 
-**Details:** see [docs/ROADMAP.md](docs/ROADMAP.md) for full backlog and file paths.
+| Doc | Use for |
+|-----|---------|
+| **This file** | What am I doing *right now*? |
+| [docs/BACKLOG.md](docs/BACKLOG.md) | Full prioritized backlog (tiers, files, epics) |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Quick index + shipped history |
 
-### Done (on `master`)
-- [x] Rust toolchain + `cargo test` passing locally
-- [x] Persist full prediction fields (thrash / drift / goal alignment) in SQLite
-- [x] Feature snapshots during sessions (`save_feature_snapshot` in engine loop)
-- [x] App rules CRUD (SQLite + Tauri commands + UI)
-- [x] Training data export (`ml/sqlite_export.py`, in-app export command + UI)
-- [x] Feature parity fixtures + Rust validation (`--feature-parity`, `engine/parity.rs`)
-- [x] ONNX runtime wiring (behind `--features onnx`, heuristic fallback)
-- [x] Emit real capture signals: idle events + mouse speed (`capture/thread.rs`)
-- [x] Wire context snapshots during active sessions
-- [x] Context timeline UI (command + panel in `App.tsx`)
-- [x] Snapback overlay UX polish (keyboard dismiss, no-focus-steal, positioning)
-- [x] Permission onboarding UX (capture failure status + OS-specific guidance)
-- [x] Labeling improvements (hotkeys, end-of-session survey, auto labels)
-- [x] Release packaging (icons, cross-platform scripts, `docs/DEPLOYMENT.md`)
+### Now (Tier 0 — ship confidence)
+- [ ] **60-min smoke test** — capture → label → export → train → reload ONNX
+- [ ] **Tagged release dry run** — `v0.2.x` installer on Windows
+- [ ] **ONNX policy** — decide if heuristic overrides after ONNX are intentional (`classifier.rs:229-234`)
 
-### Now (P0 — data & ship confidence)
-- [x] **Commit + push** uncommitted work from this machine
-- [x] **Reset `FeatureExtractor` on session start/stop** — fix `seconds_since_session_start`
-- [x] **Stop saving `session_id = "idle"`** feature/prediction rows
-- [x] **CI hardening** — `npm run build`, `cargo test --features onnx`, Windows job
-- [x] **Release CI** — GitHub Actions workflow for Windows/macOS installers on tag
+### Next (Tier 1 — polish)
+- [ ] Session-gated persistence regression test (`state.rs`, `storage/mod.rs`)
+- [ ] Training deploy: surface ONNX-skip + missing Python deps (`training_deploy.rs`, `App.tsx`)
+- [ ] App rules UI: “Block affects scoring only” (`App.tsx`)
 
-### Next (P1 — product)
-- [x] **Close ONNX loop** — pipeline → export → reload in app; dev/release builds use `--features onnx`
-- [x] **Training deploy UX** — in-app train-from-export + 3-step deploy panel (export → train → reload)
-- [x] **Global hotkey labeling** (`tauri-plugin-global-shortcut` — Ctrl+Shift+1–4)
-- [x] **Tray icon** — show/hide/quit menu; left-click toggles window
-
-### Shipped (ML / quality)
-- [x] ML: real CV in `train_baseline` (`time_series_splits` wired; reports `cv_*` + `in_sample_*` metrics)
-- [x] ML: ONNX integration tests
-- [x] ML: feature parity in CI (`ml.feature_parity_cli`)
-- [x] Benchmark / ONNX model quality pass (`docs/BENCHMARK_RESULTS.md`)
-
-### Later (P4 — defer unless blocked)
-- [ ] **Doc cleanup** — archive stale TDD/ARCHITECTURE/SCHEMAS sections ([ROADMAP P4](docs/ROADMAP.md)); **not release-blocking**; do when docs slow you down, not before smoke test
+### Later
+- [ ] Doc reconciliation ([BACKLOG Tier 4](docs/BACKLOG.md#tier-4--documentation-reconciliation))
 - [ ] Linux distro packaging smoke test
+
+---
+
+### Done (shipped on `master`)
+- [x] Core loop: capture → features → classifier → SQLite → React → snapback overlay
+- [x] Session reset + no idle-row DB pollution
+- [x] ONNX loop + in-app training deploy (export → train → reload)
+- [x] CI hardening + release workflow (Windows/macOS on tag)
+- [x] Global hotkey labeling, tray icon, context timeline
+- [x] Feature parity CI, ONNX integration tests, real CV in training
+
+*Full shipped list and file paths: [docs/BACKLOG.md#shipped-do-not-re-do](docs/BACKLOG.md#shipped-do-not-re-do)*

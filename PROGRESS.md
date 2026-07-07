@@ -19,14 +19,18 @@
 
 ## Next milestones
 
-See [`doc.md`](doc.md) (Now/Next/Later) and [docs/ROADMAP.md](docs/ROADMAP.md) for detail.
+See [`doc.md`](doc.md) for what you're working on *this session*.
 
-**Immediate:** fix session-relative features, CI + release workflow, ONNX end-to-end.
+See [docs/BACKLOG.md](docs/BACKLOG.md) for the full prioritized backlog (Tier 0–5).
+
+**Immediate (2026-07):** 60-min smoke test, tagged release dry run, ONNX/heuristic policy decision.
 
 ## Task tracker
 
-See [`doc.md`](doc.md) for the up-to-date implementation checklist.
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full prioritized backlog.
+| File | Role |
+|------|------|
+| [`doc.md`](doc.md) | Short session checklist (Now / Next / Later) |
+| [docs/BACKLOG.md](docs/BACKLOG.md) | Master backlog with file paths and checkboxes |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Index + shipped history |
 
 See [docs/archive/PROGRESS_full.md](docs/archive/PROGRESS_full.md) for the earlier session journal.
