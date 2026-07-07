@@ -3,6 +3,7 @@
 Update this at the start and end of each work session. Keep it short.
 
 **Full backlog:** [docs/BACKLOG.md](docs/BACKLOG.md)  
+**Code health queue:** [docs/CODE_HEALTH_REVIEW.md](docs/CODE_HEALTH_REVIEW.md)  
 **Shipped history:** [docs/ROADMAP.md](docs/ROADMAP.md)
 
 ## Now
@@ -13,8 +14,9 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [ ] Training false-success: don't treat skipped ONNX export as deploy-ready (`training_deploy.rs`, `App.tsx`)
+- [ ] Enforce one ACTIVE session (`storage/mod.rs`, `commands.rs`)
 - [ ] Session-gated persistence regression test (`state.rs`, `storage/mod.rs`)
-- [ ] Training deploy: show ONNX-skip + missing Python deps (`training_deploy.rs`, `App.tsx`)
 - [ ] App rules UI: clarify that "Block" only affects scoring (`App.tsx`)
 
 ## Later

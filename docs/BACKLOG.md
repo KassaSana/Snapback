@@ -8,6 +8,7 @@ Last reviewed: 2026-07. Alpha is usable; main gaps are confidence (smoke test, p
 |------|------|
 | [`doc.md`](../doc.md) | What you're doing this session |
 | **This file** | Everything else, with file paths |
+| [`CODE_HEALTH_REVIEW.md`](CODE_HEALTH_REVIEW.md) | Review findings and fix queue |
 | [`ROADMAP.md`](ROADMAP.md) | Shipped history + tier summary |
 
 Pick one focus per week — don't try to clear every tier at once.
@@ -31,6 +32,8 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
 
 ## Tier 0 — Before beta
 
+See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review findings behind these items.
+
 ### Validation (no code)
 
 - [ ] 60-min smoke test: capture → label → snapback → export → train → reload
@@ -43,6 +46,7 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
 |------|-------|-------|
 | [ ] Fix macOS `probe_capture` | `capture/permissions.rs:128-131` | Checks active window, not `rdev` |
 | [ ] Windows/Linux probe | `permissions.rs:133-136` | Always returns `true` |
+| [ ] Capture restart lifecycle | `state.rs`, `capture/thread.rs` | Old capture threads are not stopped before respawn |
 | [ ] Probe vs capture-thread mismatch | `state.rs`, `App.tsx` | Probe OK but capture died |
 | [ ] Hotkey registration failures in UI | `label_shortcuts.rs`, `api.ts`, `App.tsx` | Only logged today |
 
@@ -54,6 +58,7 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
 | [ ] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
 | [ ] Windows ONNX dev setup | `BENCHMARK_RESULTS.md`, `DEPLOYMENT.md` | MSVC + `ort` linker pain |
 | [ ] Training deploy false success | `training_deploy.rs:212-217`, `App.tsx` | "Success" when ONNX export skipped |
+| [ ] Single ACTIVE session invariant | `storage/mod.rs`, `commands.rs` | Multiple ACTIVE sessions can exist |
 
 ### CI & release
 
@@ -96,6 +101,7 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
 
 **Data quality**
 
+- [ ] CSV-safe feature export (`storage/mod.rs`)
 - [ ] Test: no DB writes without active session (`state.rs`, `storage/mod.rs`)
 - [ ] More `FeatureExtractor` tests (idle, mouse, session boundaries)
 - [ ] Pre-export summary in UI
@@ -124,6 +130,9 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
 **Worth adding first:**
 
 - [ ] `focus_modes.rs` — hyperfocus thresholds
+- [ ] Training false-success branch
+- [ ] One ACTIVE session invariant
+- [ ] CSV escaping in feature export
 - [ ] Session-gated persistence
 - [ ] `FeatureExtractor` edge cases
 - [ ] Command harness for session start/stop
