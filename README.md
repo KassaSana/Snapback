@@ -39,14 +39,16 @@ The old 4-layer stack (C++ → ZeroMQ → Python service → Spring Boot → Web
 
 ```
 Snapback/
+├── doc.md                  # Session tracker (start here for planning)
 ├── src-tauri/              # Rust core (capture, engine, storage, snapback)
 ├── frontend/               # React dashboard + snapback.html overlay
 ├── ml/                     # Offline training + ONNX export
-├── docs/                   # Design reference (historical architecture docs)
-├── tools/generate_log.py   # Synthetic event log for training experiments
-├── samples/events_demo.bin # Demo binary log (legacy schema)
+├── docs/                   # Backlog, deployment, benchmarks, design refs
+├── tools/                  # Synthetic data, ONNX fixtures, quality benchmarks
 └── package.json            # Tauri scripts
 ```
+
+See [docs/README.md](docs/README.md) for a doc index. Legacy C++/Spring design docs are kept for reference — they don't describe the current app.
 
 ## Quick start
 
@@ -157,20 +159,15 @@ Grant macOS **Accessibility** and **Input Monitoring** permissions, restart the 
 
 ## CI
 
-`.github/workflows/ci.yml` runs Python tests, frontend typecheck/tests, and `cargo check` + `cargo test` for the Rust core.
+`.github/workflows/ci.yml`: Python unit tests, frontend test/typecheck/build, `cargo check` + `cargo test` (with and without `--features onnx` on Ubuntu), Windows `cargo test`, feature-parity job.
 
-## Roadmap
+Release installers: `.github/workflows/release.yml` on `v*` tags (Windows NSIS, macOS DMG).
 
-**Tracking:** [`doc.md`](doc.md) (session checklist) · [docs/BACKLOG.md](docs/BACKLOG.md) (master backlog) · [docs/ROADMAP.md](docs/ROADMAP.md) (index) · [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) (shipping)
+## Planning
 
-- [x] Collapse to Tauri desktop app
-- [x] Snapback overlay + SQLite persistence
-- [x] Focus modes + session recap + feedback labels
-- [x] ONNX runtime wiring in Rust (`--features onnx`, heuristic fallback)
-- [x] Close ONNX loop — pipeline export, in-app reload, release builds with ONNX
-- [x] Release CI + session data fixes
-- [x] Global hotkey labeling + tray + in-app training deploy
-- [ ] Ship confidence pass — smoke test, ONNX policy, installer dry run (see BACKLOG Tier 0)
+[`doc.md`](doc.md) · [docs/BACKLOG.md](docs/BACKLOG.md) · [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+Current focus: smoke test, release dry run, ONNX/heuristic policy (BACKLOG Tier 0).
 
 ## License
 

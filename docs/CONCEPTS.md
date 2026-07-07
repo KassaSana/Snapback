@@ -1,6 +1,8 @@
 # Snapback: Core Concepts Explained
 
-This document explains key computer science concepts used in Snapback, written for someone learning systems programming and ML engineering.
+> **Note:** Code samples below use C++ from the original capture engine. The ideas (races, ring buffers, state machines, ML pipelines) still apply; the implementation is now Rust in `src-tauri/`.
+
+This document explains CS concepts used in Snapback, written for someone learning systems programming and ML engineering.
 
 ---
 

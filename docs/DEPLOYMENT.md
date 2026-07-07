@@ -93,6 +93,6 @@ Then rebuild and tag the release.
 
 ## CI
 
-See `.github/workflows/ci.yml` — Python training tests, frontend checks, and `cargo check` / `cargo test`.
+`ci.yml`: Python tests, frontend test/typecheck/build, Rust check + test (ONNX on Ubuntu), Windows `cargo test`, feature parity.
 
-Full release bundles are built locally or via [`.github/workflows/release.yml`](../.github/workflows/release.yml) on `v*` tags.
+Release bundles: `release.yml` on `v*` tags (Windows NSIS, macOS DMG). Build locally with `npm run tauri:build` if you need Linux artifacts.

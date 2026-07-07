@@ -1,6 +1,10 @@
 # Snapback: Data Schemas and Models
 
-This document defines all data structures used across the system, from low-level C++ structs to high-level ML feature vectors.
+> **v0.2 note:** The live schema is SQLite in `src-tauri/src/storage/mod.rs`. Feature vectors are defined in `src-tauri/src/engine/features.rs` and mirrored in `ml/features.py`.
+>
+> **Below:** Original C++ binary event layout, PostgreSQL tables, and REST/WebSocket APIs from the pre-Tauri stack. Useful for field names and ideas; not the running system.
+
+This document defines data structures from the original multi-tier design.
 
 ## Table of Contents
 1. [Event Schema (C++ ↔ Python)](#event-schema-c-python)

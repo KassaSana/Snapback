@@ -1,215 +1,188 @@
-# Snapback — Master Backlog
+# Snapback backlog
 
-**Last audit:** 2026-07  
-**Status:** Usable alpha — core loop ships; remaining work is confidence, polish, tests, and doc reconciliation.
+Last reviewed: 2026-07. Alpha is usable; main gaps are confidence (smoke test, permissions, ONNX behavior), polish, tests, and stale docs.
 
-**How to use this file**
+**Planning docs**
 
-| File | Purpose | Update when |
-|------|---------|-------------|
-| [`doc.md`](../doc.md) | **Session tracker** — what you're doing *now* (5–15 lines) | Start/end of every work session |
-| **This file** | **Full backlog** — every gap, tier, and file path | After completing epics or quarterly audit |
-| [`docs/ROADMAP.md`](ROADMAP.md) | Short index + link here (legacy detail archived below) | Rarely |
+| File | Role |
+|------|------|
+| [`doc.md`](../doc.md) | What you're doing this session |
+| **This file** | Everything else, with file paths |
+| [`ROADMAP.md`](ROADMAP.md) | Shipped history + tier summary |
 
-**Workstreams** (pick one per week, not all tiers at once)
-
-- **A — Ship it:** smoke test → Tauri CI → tagged release → permissions honesty
-- **B — Trust the model:** ONNX policy → training UX → benchmarks → quality gate
-- **C — Can't break silently:** one regression test per session
-- **D — Docs stop lying:** when confusion blocks you, not before smoke test
+Pick one focus per week — don't try to clear every tier at once.
 
 ---
 
-## Current state (verified in code)
+## Where things stand
 
-```text
-capture (rdev + active window) → FeatureExtractor → classifier (heuristic + ONNX)
-  → SQLite (session-gated) → React UI + snapback overlay
+```
+capture → FeatureExtractor → classifier (heuristic / ONNX)
+  → SQLite (only during active sessions) → React UI + snapback overlay
   → export → pipeline_cli → model.onnx → reload in app
 ```
 
-- **21 Tauri commands** in `src-tauri/src/lib.rs` — all wired in `frontend/src/api.ts`
-- **~42 Rust tests**, **13 Python test files**, **2 frontend tests**
-- **CI:** Python, frontend build, Rust + ONNX, Windows, feature parity
-- **Release:** NSIS + DMG on `v*` tags (`.github/workflows/release.yml`)
+- 21 Tauri commands in `lib.rs`, all used from `frontend/src/api.ts`
+- ~42 Rust tests, 13 Python test files, 2 frontend tests
+- CI: Python, frontend, Rust (+ ONNX on Ubuntu), Windows `cargo test`, feature parity
+- Release: NSIS + DMG on `v*` tags
 
 ---
 
-## Tier 0 — Ship confidence
+## Tier 0 — Before beta
 
-Do before calling it beta.
+### Validation (no code)
 
-### 0.1 Real-world validation
+- [ ] 60-min smoke test: capture → label → snapback → export → train → reload
+- [ ] Tagged release dry run (`v0.2.x` installer on Windows)
+- [ ] Compare heuristic vs ONNX on the same session; note which you trust
 
-- [ ] **60-min session smoke test** — capture → predictions → label (UI + hotkeys) → snapback → stop → recap → export → train → reload
-- [ ] **Tagged release dry run** — `v0.2.x` tag → confirm Windows NSIS + macOS DMG install cleanly
-- [ ] **ONNX vs heuristic comparison** — same session, both backends; decide which you trust
+### Permissions & capture
 
-### 0.2 Permission & capture honesty
+| Task | Files | Issue |
+|------|-------|-------|
+| [ ] Fix macOS `probe_capture` | `capture/permissions.rs:128-131` | Checks active window, not `rdev` |
+| [ ] Windows/Linux probe | `permissions.rs:133-136` | Always returns `true` |
+| [ ] Probe vs capture-thread mismatch | `state.rs`, `App.tsx` | Probe OK but capture died |
+| [ ] Hotkey registration failures in UI | `label_shortcuts.rs`, `api.ts`, `App.tsx` | Only logged today |
 
-| Task | Files | Problem |
-|------|-------|---------|
-| [ ] Fix macOS `probe_capture` | `capture/permissions.rs:128-131` | Probe checks active window only, not `rdev` |
-| [ ] Windows/Linux probe | `permissions.rs:133-136` | `probe_capture()` always `true` on non-macOS |
-| [ ] Probe vs capture-thread mismatch UX | `state.rs`, `App.tsx` | User sees why probe OK but capture died |
-| [ ] Hotkey registration failure feedback | `label_shortcuts.rs`, `api.ts`, `App.tsx` | Failure only logged, not shown in UI |
+### ONNX behavior
 
-### 0.3 ONNX runtime truth
+| Task | Files | Issue |
+|------|-------|-------|
+| [ ] Decide ONNX + heuristic hybrid | `engine/classifier.rs:222-234` | Heuristic rules override ONNX `focus_state` |
+| [ ] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
+| [ ] Windows ONNX dev setup | `BENCHMARK_RESULTS.md`, `DEPLOYMENT.md` | MSVC + `ort` linker pain |
+| [ ] Training deploy false success | `training_deploy.rs:212-217`, `App.tsx` | "Success" when ONNX export skipped |
 
-| Task | Files | Problem |
-|------|-------|---------|
-| [ ] **Decide ONNX + heuristic hybrid policy** | `engine/classifier.rs:222-234` | ONNX output set, then heuristic rules still override `focus_state` |
-| [ ] Align training eval with production | `engine/classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
-| [ ] Windows ONNX dev ergonomics | `docs/BENCHMARK_RESULTS.md`, `docs/DEPLOYMENT.md` | Local MSVC + `ort` linker issues |
-| [ ] Training deploy partial-success clarity | `training_deploy.rs:212-217`, `App.tsx` | Success returned when ONNX export skipped |
+### CI & release
 
-### 0.4 CI / release gaps
-
-| Task | Files | Gap |
-|------|-------|-----|
-| [ ] Windows CI with ONNX | `.github/workflows/ci.yml` `rust-windows` | No `cargo test --features onnx` on Windows |
-| [ ] Tauri build smoke in CI | `ci.yml` | Never runs `tauri build` |
-| [ ] Python CI with ML deps | `ci.yml` python job | No `xgboost` / `onnxmltools` |
-| [ ] Classifier quality gate | `tools/benchmark_classifier_quality.py` | No automated regression thresholds |
-| [ ] Feature parity on Windows (optional) | `ci.yml` | Parity job Ubuntu-only |
+| Task | Files | Issue |
+|------|-------|-------|
+| [ ] Windows CI with ONNX | `ci.yml` `rust-windows` | No `--features onnx` |
+| [ ] Tauri build in CI | `ci.yml` | Never runs `tauri build` |
+| [ ] Python CI with ML deps | `ci.yml` | No xgboost/onnxmltools |
+| [ ] Classifier quality gate | `tools/benchmark_classifier_quality.py` | No regression thresholds |
+| [ ] Feature parity on Windows (optional) | `ci.yml` | Ubuntu only |
 
 ---
 
-## Tier 1 — Product polish
+## Tier 1 — Polish
 
-### 1.1 Training & model UX
+**Training & model**
 
-- [ ] Surface Python missing deps clearly (`training_deploy.rs`, `App.tsx`)
-- [ ] Model metadata in health UI (path, backend, train time, CV metrics)
-- [ ] Auto-copy trained model to `app_data_dir/model.onnx`
-- [ ] Fail fast when majority-classifier stub (`ml/export_onnx.py`)
-- [ ] Real-user training guide (min sessions, labels, when to retrain)
+- [ ] Clear errors for missing Python deps (`training_deploy.rs`, `App.tsx`)
+- [ ] Model info in health UI (path, backend, train time, CV metrics)
+- [ ] Copy trained model to `app_data_dir/model.onnx` after train
+- [ ] Fail fast on majority-classifier stub (`ml/export_onnx.py`)
+- [ ] Short guide: min sessions/labels, when to retrain
 
-### 1.2 Permissions & onboarding
+**Permissions**
 
-- [ ] First-run permission wizard (`App.tsx`, `permissions.rs`)
-- [ ] Separate “capture thread alive” vs “permissions OK” in health UI
-- [ ] Prominent Wayland warning before first session (Linux)
+- [ ] First-run permission wizard
+- [ ] Separate "capture alive" vs "permissions OK" in health
+- [ ] Wayland warning before first session (Linux)
 
-### 1.3 App rules honesty
+**App rules**
 
-- [ ] UI copy: “Block” affects scoring only, does not close apps (`App.tsx:882-951`)
-- [ ] Rule preview: “this window would match rule X”
-- *(vision)* Real block intervention → Tier 5
+- [ ] UI copy: "Block" affects scoring only (`App.tsx:882-951`)
+- [ ] Rule preview before save
 
-### 1.4 Snapback & overlay
+**Snapback**
 
-- [ ] Surface overlay window creation errors (`snapback/overlay.rs:19-31`)
+- [ ] Surface overlay creation errors (`snapback/overlay.rs:19-31`)
 - [ ] Type `onSnapback` payload (`api.ts:365-366`)
-- [ ] Event-driven context timeline refresh (today: 30s poll in `App.tsx`)
+- [ ] Event-driven timeline refresh (30s poll today)
 
-### 1.5 Session & data quality
+**Data quality**
 
-- [ ] Regression test: no DB writes without active session (`state.rs:254-265`, `storage/mod.rs`)
-- [ ] Extend `FeatureExtractor` tests (idle, mouse, session boundaries)
-- [ ] Pre-export summary in UI (session count, label count, feature rows)
-
----
-
-## Tier 2 — ML pipeline depth
-
-### 2.1 Labeling path
-
-- [ ] **Decide fate of `ml/labeling.py`** — stub `Labeler`; production labels live in Rust SQLite only
-  - Option A: keep as Python test types only
-  - Option B: bridge to SQLite export in training scripts
-  - Option C: delete stub, move types to `ml/types.py`
-- [ ] Label source parity (hotkey / survey / auto) in `sqlite_export.py`
-- [ ] Minimum dataset checks in `pipeline_cli.py` / `training_pipeline.py`
-
-### 2.2 Model quality & benchmarks
-
-- [ ] ONNX numbers in `docs/BENCHMARK_RESULTS.md`
-- [ ] Reconcile soak duration: `BENCHMARKS.md` says 3600s, results are 60s
-- [ ] Run `--classifier-eval` in CI (`engine/classifier_eval.rs`)
-- [ ] Document synthetic vs real labeled data strategy
-
-### 2.3 Legacy ML cleanup
-
-- [ ] Mark legacy C++ path: `event_log_reader.py`, `event_schema.py`, `metrics_report.py`, `generate_log.py`
-- [ ] Archive or delete C++ event log stack when safe
-- [ ] Cosmetic: rename drift (“Neural Focus” in `labeling.py`, `focoflow.db` filename)
+- [ ] Test: no DB writes without active session (`state.rs`, `storage/mod.rs`)
+- [ ] More `FeatureExtractor` tests (idle, mouse, session boundaries)
+- [ ] Pre-export summary in UI
 
 ---
 
-## Tier 3 — Test coverage
+## Tier 2 — ML pipeline
 
-### Rust — has tests
-
-`classifier.rs` (8), `app_context.rs` (8), `storage/mod.rs` (7), `features.rs` (2), `tracker.rs` (4), `goal_alignment.rs` (4), `training_deploy.rs` (3), `onnx_model.rs` (3+1), `parity.rs` (1), `capture/thread.rs` (2), `title_parser.rs` (1), `classifier_eval.rs` (1)
-
-### Rust — no tests yet
-
-`commands.rs`, `state.rs`, `focus_modes.rs`, `permissions.rs`, `label_shortcuts.rs`, `tray.rs`, `overlay.rs`, `bench.rs`
-
-### Highest-ROI tests to add
-
-- [ ] `focus_modes.rs` — `check_hyperfocus` thresholds and 600s alert interval
-- [ ] Session-gated persistence (`storage/mod.rs`)
-- [ ] `FeatureExtractor` — idle, mouse speed, context switches, title changes
-- [ ] Command harness — start/stop session syncs `feature_session_epoch`
-- [ ] `permissions.rs` — platform messages and setup steps
-- [ ] ONNX override policy (after Tier 0.3 decision)
-- [ ] Frontend `api.ts` mapper tests
-- [ ] E2E / Tauri WebDriver (later)
+- [ ] Decide what to do with `ml/labeling.py` (stub; real labels live in SQLite via Rust)
+- [ ] Label source parity in export (hotkey / survey / auto)
+- [ ] Minimum dataset checks in `pipeline_cli.py`
+- [ ] ONNX numbers in `BENCHMARK_RESULTS.md`
+- [ ] Align soak duration: `BENCHMARKS.md` says 3600s, results are 60s
+- [ ] `--classifier-eval` in CI
+- [ ] Document when synthetic vs real labeled data is enough
+- [ ] Mark or remove legacy C++ ML path (`event_log_reader.py`, etc.)
 
 ---
 
-## Tier 4 — Documentation reconciliation
+## Tier 3 — Tests
 
-Do when docs slow you down — **not before Tier 0 smoke test**.
+**Has tests:** `classifier.rs`, `app_context.rs`, `storage/mod.rs`, `features.rs`, `tracker.rs`, `goal_alignment.rs`, `training_deploy.rs`, `onnx_model.rs`, `parity.rs`, `capture/thread.rs`, `title_parser.rs`, `classifier_eval.rs`
 
-| Doc | Issue | Action |
-|-----|-------|--------|
-| [ ] `docs/ROADMAP.md` | Stale P0/P1 “open” items | Index only; detail lives here |
-| [ ] `PROGRESS.md` | “Immediate” items already done | Point to `doc.md` + this file |
-| [ ] `docs/ARCHITECTURE.md` | C++/ZeroMQ/Spring diagrams | v0.2 banner + archive legacy |
-| [ ] `docs/TECHNICAL_DESIGN_DOCUMENT.md` | LSTM / PostgreSQL vision | Banner + vision vs shipped table |
-| [ ] `docs/SCHEMAS.md` | PostgreSQL + Python `# TODO` fields Rust already has | Replace with SQLite schema from `storage/mod.rs` |
-| [ ] `docs/CONTEXT_RECOVERY_DESIGN.md` | C++ checkboxes all `[ ]` | Mark Rust items done |
-| [ ] `docs/METRICS.md` | C++ `benchmark.exe` | Point to `bench.rs` + `BENCHMARK_RESULTS.md` |
-| [ ] `docs/BENCHMARKS.md` | 3600s soak vs 60s reality | Align with actual runs |
+**No tests yet:** `commands.rs`, `state.rs`, `focus_modes.rs`, `permissions.rs`, `label_shortcuts.rs`, `tray.rs`, `overlay.rs`, `bench.rs`
 
----
+**Worth adding first:**
 
-## Tier 5 — Vision (defer)
-
-- [ ] App rules “block” as real intervention (today: scoring boost only in `classifier.rs:230`)
-- [ ] Analytics / charts (weekly trends, intervention history)
-- [ ] LSTM / 30–60s lookahead (engine is ~1 Hz reactive in `state.rs:222`)
-- [ ] Linux release packaging (AppImage/deb) — `release.yml` is Win + macOS only
-- [ ] Linux distro smoke test
-- [ ] Wayland capture (global hooks blocked)
-- [ ] VS Code extension / browser domain tracking
-- [ ] Model versioning (`model.onnx` overwritten; no metadata schema)
+- [ ] `focus_modes.rs` — hyperfocus thresholds
+- [ ] Session-gated persistence
+- [ ] `FeatureExtractor` edge cases
+- [ ] Command harness for session start/stop
+- [ ] `permissions.rs` platform messages
+- [ ] ONNX override tests (after Tier 0 decision)
+- [ ] `api.ts` mapper tests
+- [ ] E2E (later)
 
 ---
 
-## Tech debt register
+## Tier 4 — Documentation
 
-| Issue | Location | Severity |
-|-------|----------|----------|
-| Capture events dropped on full channel | `capture/thread.rs` (`let _ = event_tx.send`) | Medium |
-| Storage save failures only `log::warn!` | `state.rs:256-300` | Medium |
-| Mouse x/y/speed = 0 on non-mouse events | `capture/thread.rs:88-96` | Low |
-| 1 Hz prediction hardcoded | `state.rs:222` | By design |
-| Global shortcut capability not explicit | `capabilities/default.json` | Verify on clean install |
+Do this when stale docs slow you down — not before the smoke test.
+
+| Doc | Status | Action |
+|-----|--------|--------|
+| [x] `docs/README.md` | Added | Doc index |
+| [x] `docs/ROADMAP.md` | Updated | Index + shipped history |
+| [x] `PROGRESS.md` | Updated | July journal |
+| [x] `ARCHITECTURE.md` | Legacy C++ | Banner + v0.2 pointer |
+| [x] `TECHNICAL_DESIGN_DOCUMENT.md` | Legacy vision | Banner |
+| [x] `SCHEMAS.md` | PostgreSQL + TODOs | Banner; point to `storage/mod.rs` |
+| [x] `CONTEXT_RECOVERY_DESIGN.md` | C++ checkboxes | Rust status table + updated roadmap |
+| [x] `METRICS.md` | C++ benchmark.exe | Rewritten; points to `bench.rs` |
+| [x] `BENCHMARKS.md` | 3600s vs 60s soak | Default 60s; note on longer runs |
+| [x] `CONCEPTS.md` | C++ examples | Banner |
 
 ---
 
-## Shipped (do not re-do)
+## Tier 5 — Later
 
-Verified 2026-07 — see [`doc.md`](../doc.md) done list.
+- App rules "block" as real intervention (scoring boost only today)
+- Analytics / charts
+- LSTM / 30–60s lookahead (~1 Hz reactive engine for now)
+- Linux release packaging
+- Wayland capture
+- VS Code extension / browser domain tracking
+- Model versioning
 
-- Session ↔ `FeatureExtractor` reset (`feature_session_epoch`)
-- No idle-session DB pollution (engine gates on `get_active_session()`)
-- ONNX loop: export → `model.onnx` → `reload_classifier_model`
-- CI hardening + release workflow on tags
-- Global hotkey labeling, tray, in-app training deploy
-- Context timeline, snapback overlay polish, permissions UX
-- Feature parity fixtures + CI; real CV in `train_baseline`
+---
+
+## Tech debt
+
+| Issue | Where | Notes |
+|-------|-------|-------|
+| Events dropped on full channel | `capture/thread.rs` | `let _ = event_tx.send(...)` |
+| Save failures only warned | `state.rs:256-300` | No user feedback |
+| Mouse coords zero on key events | `capture/thread.rs:88-96` | Low impact |
+| 1 Hz prediction | `state.rs:222` | Intentional for now |
+| Shortcut capability unclear | `capabilities/default.json` | Verify clean install |
+
+---
+
+## Shipped (don't redo)
+
+- Session ↔ `FeatureExtractor` reset
+- No DB writes outside active sessions
+- ONNX export → reload
+- CI + release on tags
+- Hotkeys, tray, in-app training deploy
+- Context timeline, snapback overlay, permissions UX
+- Feature parity CI; CV in `train_baseline`

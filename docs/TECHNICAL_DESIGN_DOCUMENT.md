@@ -1,9 +1,13 @@
 # Snapback: Technical Design Document
 
-**Document Status:** Draft v1.0  
+> **v0.2 note:** This is the original design doc (C++ engine, LSTM, PostgreSQL, proactive blocking). The shipped app is a Tauri monolith with ~1 Hz reactive classification and SQLite. See [README.md](../README.md) and [BACKLOG.md](BACKLOG.md) for what actually exists.
+>
+> **Status below:** Draft v1.0, December 2025 — historical.
+
+**Document Status:** Draft v1.0 (historical)  
 **Authors:** Development Team  
 **Last Updated:** December 29, 2025  
-**Review Status:** Pending Architecture Review
+**Review Status:** Superseded by v0.2 implementation
 
 ---
 

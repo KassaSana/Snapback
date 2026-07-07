@@ -1,13 +1,8 @@
-# Benchmarks (resume-grade, defensible numbers)
+# Benchmarks
 
-This repo includes a built-in benchmark mode that prints **copy/paste-able metrics** you can cite in a resume (with the exact command used to produce them).
+Built-in `--benchmark` mode prints copy-paste metrics. Latest results: [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md).
 
-**Latest recorded results:** [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md)
-
-## Prereqs
-
-- Install **Rust** (includes `cargo`) via `rustup` for Windows.
-- From the repo root, run commands from `src-tauri/`.
+Run from `src-tauri/` unless noted.
 
 ## Inference latency benchmark (median / p95 / p99)
 
@@ -44,19 +39,16 @@ bench_elapsed_ms=664
 
 Memory fields are **bytes** (divide by 1,048,576 for MB).
 
-## Reliability / soak run (crash-free runtime)
+## Reliability / soak run
 
-Runs the same code path continuously and reports progress every 5 seconds. Cite only what you actually ran.
+Runs the classifier path continuously and reports every 5 seconds.
 
 ```powershell
 cd src-tauri
-cargo run --release -- --benchmark --soak-seconds 3600
+cargo run --release -- --benchmark --soak-seconds 60
 ```
 
-The final lines include:
-
-- `soak_seconds=...`
-- `soak_iters=...`
+Use whatever duration you actually ran when citing results. [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) records a **60 s** soak (43.9M iterations). For a longer run, increase `--soak-seconds` — e.g. 3600 for one hour.
 
 ## Startup timing (app launch)
 

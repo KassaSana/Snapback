@@ -1,5 +1,28 @@
 # Snapback: System Architecture
 
+> **v0.2 (current):** One Tauri app — `src-tauri/` (Rust) + `frontend/` (React). See [README.md](../README.md) for the real layout.
+>
+> **Below is the pre-rewrite design** (C++ capture → ZeroMQ → Python → Spring Boot). Kept for reference; not what's running today.
+
+---
+
+## Current architecture (v0.2)
+
+```
+Rust (Tauri)  — capture, features, classifier, SQLite, snapback overlay
+     ↕ invoke / events
+React         — dashboard, training panel, permissions
+Python (offline) — train on exported CSVs → model.onnx
+```
+
+Key modules: `capture/`, `engine/`, `storage/`, `snapback/`, `state.rs`, `commands.rs`.  
+Schema: `src-tauri/src/storage/mod.rs`.  
+Tasks: [BACKLOG.md](BACKLOG.md).
+
+---
+
+## Historical architecture (pre-v0.2)
+
 This document provides visual diagrams and component-level explanations of the Snapback architecture.
 
 ## Table of Contents
