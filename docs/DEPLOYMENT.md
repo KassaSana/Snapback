@@ -41,12 +41,16 @@ npm run tauri:build:dmg
 ## ONNX training loop
 
 1. **Export** from the app: Focus Feedback → Export training data.
-2. **Train** from repo root (uses exported CSVs in app data):
-   ```bash
-   python3 -m ml.pipeline_cli --output-dir "<app-data>/exports/training" --skip-export
-   ```
+2. **Train** (pick one):
+   - **In-app:** set your Snapback repo path once, then **Train from export** (runs `ml.pipeline_cli --skip-export` via Python).
+   - **CLI:** from repo root:
+     ```bash
+     python3 -m ml.pipeline_cli --output-dir "<app-data>/exports/training" --skip-export
+     ```
    Produces `model.json`, `metrics.json`, and `model.onnx` when XGBoost trains successfully.
-3. **Reload** in the app: Focus Feedback → Reload model (or restart Snapback).
+3. **Activate:** Focus Feedback → **Reload model** (auto-runs after successful in-app train).
+
+Repo path is saved in app data (`training_repo.txt`) or set via `SNAPBACK_REPO`. Python needs: `pip install xgboost onnxmltools onnx`.
 
 Dev and release builds use `--features onnx`. The header shows **Heuristic** until `model.onnx` is loaded.
 

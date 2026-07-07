@@ -3,6 +3,7 @@ pub mod classifier;
 pub mod features;
 pub mod focus_modes;
 pub mod goal_alignment;
+pub mod classifier_eval;
 pub mod parity;
 
 pub mod onnx_model;

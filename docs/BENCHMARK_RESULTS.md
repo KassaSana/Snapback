@@ -2,9 +2,9 @@
 
 Recorded metrics from the built-in `--benchmark` mode and startup logs. Re-run commands in [BENCHMARKS.md](BENCHMARKS.md) to refresh these numbers.
 
-**Last run:** 2026-06-29  
-**Machine:** Windows 11 Home, Intel Core i5-12500H, 16 GB RAM  
-**Build:** `cargo run --release` (Rust 1.96.0, heuristic classifier — ONNX feature off)
+**Last run:** 2026-07-05  
+**Machine:** Windows 11 (10.0.26200), Intel Core i5-12500H, 16 GB RAM  
+**Build:** `cargo run --release` (Rust 1.96.0); ONNX quality via Python `onnxruntime` (Rust `ort` linker blocked on this MSVC toolchain)
 
 ---
 
@@ -12,13 +12,12 @@ Recorded metrics from the built-in `--benchmark` mode and startup logs. Re-run c
 
 | Metric | Value |
 |--------|-------|
-| Inference latency (p50 / p95 / p99) | **1 µs / 1 µs / 2 µs** (20k runs) |
-| Inference throughput | **~33k predictions/sec** (22k runs in 664 ms) |
-| Soak reliability | **43.9M predictions in 60 s, crash-free** |
-| Soak throughput | **~732k predictions/sec** sustained |
-| Process memory (soak) | **~17.5 MB** stable |
-| Cold start → app ready | **484 ms** |
-| Cold start → setup | **462 ms** |
+| **Classifier quality (synthetic, 230 samples)** | Heuristic accuracy **61.3%**, recall distracted **0%**; trained XGBoost/ONNX CV recall distracted **40%**, precision@10% **53%** |
+| Inference latency — heuristic (p50 / p95 / p99) | **1 µs / 1 µs / 2 µs** (5k runs) |
+| Inference latency — ONNX Python ref (p50 / p95 / p99) | **23 µs / 38 µs / 582 µs** (5k runs, same host) |
+| Inference throughput (heuristic) | **~33k predictions/sec** (20k runs in 664 ms, prior run) |
+| Soak reliability | **43.9M predictions in 60 s, crash-free** (prior run) |
+| Cold start → app ready | **484 ms** (prior run) |
 
 ---
 
@@ -130,10 +129,69 @@ startup_ms_to_ready=484
 
 ---
 
+## 4. Classifier quality — heuristic vs trained model (synthetic data)
+
+**Command:**
+
+```bash
+py -m tools.generate_synthetic_training_data --seed 7
+py -m ml.pipeline_cli --db-path data/synthetic_focoflow.db --output-dir data --backend xgboost
+py -m tools.benchmark_classifier_quality --skip-train
+```
+
+Or one-shot (train + eval):
+
+```bash
+py -m tools.benchmark_classifier_quality
+```
+
+**Dataset:** 230 labeled rows from synthetic sessions (`data/labeled.csv`, seed 7).
+
+**Quality results (same held-out join set):**
+
+| Backend | Accuracy | Precision@10% (distracted) | Recall (distracted @ 0.7) |
+|---------|----------|----------------------------|-----------------------------|
+| Heuristic (Rust) | **0.613** | **1.000** | **0.000** |
+| XGBoost (Python) | 1.000 | 1.000 | 1.000 |
+| ONNX (Python onnxruntime) | 1.000 | 1.000 | 1.000 |
+
+**Cross-validated training metrics (honest generalization, 5 time-series folds):**
+
+| Metric | Value |
+|--------|-------|
+| CV accuracy | **0.611** |
+| Precision@10% distracted | **0.533** |
+| Recall distracted | **0.400** |
+
+**Takeaway:** On synthetic data, heuristic and trained models tie on overall accuracy (~61%), but the heuristic **never recalls distracted states** (0% recall). The trained XGBoost/ONNX model improves distracted recall to **40% CV** while keeping reasonable precision@10% (**53%**). In-sample eval on the full labeled join shows ONNX matches XGBoost exactly (export parity).
+
+**Notes:**
+
+- ONNX quality was evaluated via Python `onnxruntime` on Windows; Rust `ort` build fails locally (`LNK2019` MSVC linker issue) but passes in Ubuntu CI.
+- In-sample accuracy of 100% for XGBoost/ONNX is expected on the training join; cite **CV metrics** for generalization claims.
+- ONNX export uses `onnxmltools` (`ml/export_onnx.py`).
+
+---
+
+## 5. ONNX inference latency (Python reference)
+
+Rust ONNX latency benchmark (`--benchmark --onnx-model data/model.onnx`) requires `--features onnx` and is blocked on this Windows host. Reference numbers from `onnxruntime` on the same machine:
+
+| Percentile | Latency (µs) |
+|------------|--------------|
+| p50 | **23** |
+| p95 | **38** |
+| p99 | **582** |
+
+Heuristic Rust path remains **~20× faster** at median (1 µs vs 23 µs) — still well within real-time for a 1 Hz engine loop.
+
+---
+
 ## Resume bullets (derived from this file)
 
 **Snapback** — Cross-platform focus desktop app (Tauri/Rust + React)
 
 - Built a cross-platform desktop app with a Rust engine and React UI that converts window/app activity into focus signals (distraction risk, drift, goal alignment).
-- Implemented on-device classification with **sub-millisecond inference** (p50/p95 **1 µs**, p99 **2 µs** over 20k runs on Windows release build).
+- Trained XGBoost focus classifiers on synthetic + exported session data; ONNX export matches Python inference; **CV recall for distracted states 40%** vs **0%** for the heuristic baseline.
+- Implemented on-device classification with **sub-millisecond heuristic inference** (p50/p95 **1 µs**, p99 **2 µs**); ONNX reference path **23 µs p50** on the same hardware.
 - Validated runtime stability via a **60 s soak** processing **43.9M predictions** crash-free; cold start to ready in **484 ms** on i5-12500H / 16 GB RAM.

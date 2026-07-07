@@ -29,13 +29,16 @@ Single source of truth for what's left. Keep it short; update after each session
 
 ### Next (P1 — product)
 - [x] **Close ONNX loop** — pipeline → export → reload in app; dev/release builds use `--features onnx`
+- [x] **Training deploy UX** — in-app train-from-export + 3-step deploy panel (export → train → reload)
 - [x] **Global hotkey labeling** (`tauri-plugin-global-shortcut` — Ctrl+Shift+1–4)
 - [x] **Tray icon** — show/hide/quit menu; left-click toggles window
 
-### Later
+### Shipped (ML / quality)
 - [x] ML: real CV in `train_baseline` (`time_series_splits` wired; reports `cv_*` + `in_sample_*` metrics)
 - [x] ML: ONNX integration tests
 - [x] ML: feature parity in CI (`ml.feature_parity_cli`)
-- [ ] Benchmark / ONNX model quality pass (`docs/BENCHMARK_RESULTS.md`)
-- [ ] Doc cleanup — archive stale TDD/ARCHITECTURE sections (see ROADMAP P4)
+- [x] Benchmark / ONNX model quality pass (`docs/BENCHMARK_RESULTS.md`)
+
+### Later (P4 — defer unless blocked)
+- [ ] **Doc cleanup** — archive stale TDD/ARCHITECTURE/SCHEMAS sections ([ROADMAP P4](docs/ROADMAP.md)); **not release-blocking**; do when docs slow you down, not before smoke test
 - [ ] Linux distro packaging smoke test

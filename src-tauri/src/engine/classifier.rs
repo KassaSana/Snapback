@@ -14,7 +14,7 @@ pub struct PredictionScores {
 }
 
 const FOCUS_LEVELS: [f64; 4] = [25.0, 50.0, 75.0, 100.0];
-const STATE_LABELS: [&str; 4] = [
+pub(crate) const STATE_LABELS: [&str; 4] = [
     "DISTRACTED",
     "PSEUDO_PRODUCTIVE",
     "PRODUCTIVE",

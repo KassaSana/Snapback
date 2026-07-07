@@ -1,6 +1,7 @@
 use tauri::{Manager, State};
 
 use crate::state::{classifier_status, AppState};
+use crate::training_deploy::{TrainFromExportResult, TrainingDeployStatus};
 use crate::types::{
     AppRuleRecord, ClassifierStatus, ContextSnapshotDto, ExportTrainingResult, FocusMode,
     HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord, UpsertAppRuleRequest,
@@ -243,4 +244,22 @@ pub fn export_training_data(
         .lock()
         .export_training_data(&output_dir, session_id.as_deref())
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_training_deploy_status(app: tauri::AppHandle) -> Result<TrainingDeployStatus, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(crate::training_deploy::training_deploy_status(&app_data_dir))
+}
+
+#[tauri::command]
+pub fn set_training_repo_path(app: tauri::AppHandle, repo_path: String) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    crate::training_deploy::write_training_repo_path(&app_data_dir, std::path::Path::new(&repo_path))
+}
+
+#[tauri::command]
+pub fn train_from_export(app: tauri::AppHandle) -> Result<TrainFromExportResult, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    crate::training_deploy::train_from_export(&app_data_dir)
 }

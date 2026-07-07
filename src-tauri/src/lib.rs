@@ -6,6 +6,7 @@ mod label_shortcuts;
 mod snapback;
 mod state;
 mod storage;
+mod training_deploy;
 mod tray;
 mod types;
 
@@ -32,6 +33,10 @@ pub fn run_from_cli(args: Vec<String>) -> i32 {
                 std::path::PathBuf::from("fixtures/feature_parity/scenarios.json")
             });
         return crate::engine::parity::run_feature_parity(&path);
+    }
+
+    if let Some(idx) = args.iter().position(|a| a == "--classifier-eval") {
+        return crate::engine::classifier_eval::run_classifier_eval_cli(&args);
     }
 
     if let Some(idx) = args.iter().position(|a| a == "--export-feature-parity-json") {
@@ -113,6 +118,9 @@ pub fn run() {
             commands::delete_app_rule,
             commands::get_context_timeline,
             commands::export_training_data,
+            commands::get_training_deploy_status,
+            commands::set_training_repo_path,
+            commands::train_from_export,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Snapback");
