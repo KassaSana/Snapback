@@ -831,6 +831,45 @@ mod tests {
     }
 
     #[test]
+    fn starting_session_completes_previous_active() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+
+        let first = storage.start_session("First goal", "normal").unwrap();
+        let second = storage.start_session("Second goal", "deep").unwrap();
+
+        let first_after = storage.get_session(&first.session_id).unwrap();
+        assert_eq!(first_after.status, "COMPLETED");
+        assert!(first_after.ended_at.is_some());
+
+        assert_eq!(second.status, "ACTIVE");
+        let active = storage.get_active_session().unwrap().expect("active session");
+        assert_eq!(active.session_id, second.session_id);
+        assert_eq!(active.goal, "Second goal");
+    }
+
+    #[test]
+    fn prediction_requires_existing_session() {
+        use crate::types::PredictionRecord;
+
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+
+        let orphan = PredictionRecord {
+            session_id: "missing-session".to_string(),
+            focus_score: 50.0,
+            distraction_risk: 0.2,
+            focus_state: "PRODUCTIVE".to_string(),
+            thrash_score: 0.1,
+            drift_score: 0.1,
+            goal_alignment: 0.5,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        assert!(storage.save_prediction(&orphan).is_err());
+    }
+
+    #[test]
     fn app_rules_crud() {
         let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
         let storage = Storage::open(dir).unwrap();

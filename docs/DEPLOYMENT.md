@@ -50,7 +50,13 @@ npm run tauri:build:dmg
    Produces `model.json`, `metrics.json`, and `model.onnx` when XGBoost trains successfully.
 3. **Activate:** Focus Feedback → **Reload model** (auto-runs after successful in-app train).
 
-Repo path is saved in app data (`training_repo.txt`) or set via `SNAPBACK_REPO`. Python needs: `pip install xgboost onnxmltools onnx`.
+Repo path is saved in app data (`training_repo.txt`) or set via `SNAPBACK_REPO`. Python needs training deps:
+
+```bash
+pip install -r ml/requirements-train.txt
+```
+
+Without `xgboost` / `onnxmltools`, training may fall back to a majority-classifier stub and skip ONNX export.
 
 Dev and release builds use `--features onnx`. The header shows **Heuristic** until `model.onnx` is loaded.
 

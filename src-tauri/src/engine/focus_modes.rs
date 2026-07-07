@@ -34,18 +34,18 @@ mod tests {
 
     #[test]
     fn no_alert_before_hyperfocus_threshold() {
-        assert!(check_hyperfocus(FocusMode::Normal, 59 * 60, 0).is_none());
+        assert!(check_hyperfocus(FocusMode::Normal, 119 * 60, 0).is_none());
     }
 
     #[test]
     fn alerts_after_hyperfocus_threshold() {
-        let alert = check_hyperfocus(FocusMode::Normal, 90 * 60, 0).expect("alert");
-        assert!(alert.message.contains("90 minutes"));
-        assert_eq!(alert.focus_duration_secs, 90 * 60);
+        let alert = check_hyperfocus(FocusMode::Normal, 130 * 60, 0).expect("alert");
+        assert!(alert.message.contains("130 minutes"));
+        assert_eq!(alert.focus_duration_secs, 130 * 60);
     }
 
     #[test]
     fn suppresses_repeat_alerts_within_ten_minutes() {
-        assert!(check_hyperfocus(FocusMode::Normal, 90 * 60, 85 * 60).is_none());
+        assert!(check_hyperfocus(FocusMode::Normal, 130 * 60, 125 * 60).is_none());
     }
 }
