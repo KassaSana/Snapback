@@ -1,9 +1,0 @@
-{
-  "cv_folds": 5.0,
-  "cv_accuracy": 0.6105263157894736,
-  "precision_at_10pct": 0.5333333333333333,
-  "recall_distracted": 0.4,
-  "in_sample_accuracy": 1.0,
-  "in_sample_precision_at_10pct": 1.0,
-  "in_sample_recall_distracted": 1.0
-}
