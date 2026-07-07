@@ -70,6 +70,7 @@ impl Storage {
         std::fs::create_dir_all(&app_data_dir).ok();
         let db_path = app_data_dir.join("focoflow.db");
         let conn = Connection::open(db_path)?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let storage = Self { conn };
         storage.init_schema()?;
         Ok(storage)
@@ -310,6 +311,12 @@ impl Storage {
         goal: &str,
         focus_mode: &str,
     ) -> Result<SessionRecord, StorageError> {
+        let ended_at = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE sessions SET status = 'COMPLETED', ended_at = ?1 WHERE status = 'ACTIVE'",
+            params![ended_at],
+        )?;
+
         let session_id = Uuid::new_v4().to_string();
         let started_at = chrono::Utc::now().to_rfc3339();
         self.conn.execute(

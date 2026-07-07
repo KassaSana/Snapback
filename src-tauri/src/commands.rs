@@ -7,6 +7,12 @@ use crate::types::{
     HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord, UpsertAppRuleRequest,
 };
 
+const MAX_HISTORY_LIMIT: usize = 500;
+
+fn clamp_limit(limit: Option<usize>, default: usize) -> usize {
+    limit.unwrap_or(default).min(MAX_HISTORY_LIMIT)
+}
+
 #[tauri::command]
 pub fn get_health(app: tauri::AppHandle, state: State<'_, AppState>) -> HealthStatus {
     let app_data_dir = app.path().app_data_dir().ok();
@@ -29,7 +35,7 @@ pub fn get_prediction_history(
     state
         .storage
         .lock()
-        .recent_predictions(limit.unwrap_or(8))
+        .recent_predictions(clamp_limit(limit, 8))
         .map_err(|e| e.to_string())
 }
 
@@ -224,7 +230,7 @@ pub fn get_context_timeline(
     state
         .storage
         .lock()
-        .list_context_snapshots(&session_id, limit.unwrap_or(20))
+        .list_context_snapshots(&session_id, clamp_limit(limit, 20))
         .map_err(|e| e.to_string())
 }
 

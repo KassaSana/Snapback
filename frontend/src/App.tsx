@@ -84,6 +84,7 @@ export default function App() {
   const [repoPathInput, setRepoPathInput] = useState("");
   const [trainingInProgress, setTrainingInProgress] = useState(false);
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
+  const [deployMessageWarning, setDeployMessageWarning] = useState(false);
   const [showAdvancedCommand, setShowAdvancedCommand] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [modelReloadStatus, setModelReloadStatus] = useState<string | null>(null);
@@ -358,16 +359,23 @@ export default function App() {
   const handleTrainFromExport = async () => {
     setTrainingInProgress(true);
     setDeployMessage(null);
+    setDeployMessageWarning(false);
     setCopyStatus(null);
     try {
       const result = await api.trainFromExport();
       const metricsSummary = formatTrainingMetrics(result.metrics);
       const detail = metricsSummary ? ` ${metricsSummary}.` : "";
-      const messageParts = [`${result.message}${detail}`];
+      const deployNotReady = result.success && !result.onnxExported;
+      const messageParts = [
+        deployNotReady
+          ? `Deploy not ready: ${result.message}${detail}`
+          : `${result.message}${detail}`,
+      ];
       if (result.logTail) {
         messageParts.push(result.logTail);
       }
       setDeployMessage(messageParts.join("\n"));
+      setDeployMessageWarning(deployNotReady);
       await refreshDeployStatus();
       if (result.success && result.onnxExported) {
         try {
@@ -705,7 +713,13 @@ export default function App() {
                 SNAPBACK_REPO.
               </p>
             ) : null}
-            {deployMessage ? <p className="helper-text deploy-log">{deployMessage}</p> : null}
+            {deployMessage ? (
+              <p
+                className={`helper-text deploy-log${deployMessageWarning ? " alert" : ""}`}
+              >
+                {deployMessage}
+              </p>
+            ) : null}
             {modelReloadStatus ? <p className="helper-text">{modelReloadStatus}</p> : null}
             {classifierModelPath ? (
               <p className="helper-text">Model path: {classifierModelPath}</p>
@@ -885,8 +899,8 @@ export default function App() {
             <span className="pill">your overrides</span>
           </div>
           <p className="helper-text">
-            Match part of an app name or window title. Allow marks it as on-task for you; Block
-            treats it as a distraction.
+            Match part of an app name or window title. Allow marks matching windows as on-task for
+            you. Block raises distraction scoring for matches — it does not close or block apps.
           </p>
           <label className="field">
             <span>Pattern</span>
