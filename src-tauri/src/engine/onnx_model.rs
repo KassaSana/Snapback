@@ -50,7 +50,7 @@ pub fn is_loaded() -> bool {
     model_slot().lock().is_some()
 }
 
-#[cfg(all(test, feature = "onnx"))]
+#[cfg(feature = "onnx")]
 pub(crate) fn reset_model_for_tests() {
     *model_slot().lock() = None;
 }

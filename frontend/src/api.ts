@@ -192,6 +192,27 @@ export type ExportTrainingResult = {
   labelCount: number;
 };
 
+export type TrainingDeployStatus = {
+  exportDir: string;
+  featureCount: number;
+  labelCount: number;
+  hasExport: boolean;
+  modelOnnxExists: boolean;
+  metricsExists: boolean;
+  pythonAvailable: boolean;
+  repoPath: string | null;
+  repoConfigured: boolean;
+  pipelineCommand: string;
+};
+
+export type TrainFromExportResult = {
+  success: boolean;
+  message: string;
+  onnxExported: boolean;
+  metrics: Record<string, number> | null;
+  logTail: string;
+};
+
 function mapExportTrainingResult(raw: Record<string, unknown>): ExportTrainingResult {
   return {
     outputDir: String(raw.output_dir ?? raw.outputDir ?? ""),
@@ -199,6 +220,40 @@ function mapExportTrainingResult(raw: Record<string, unknown>): ExportTrainingRe
     labelsPath: String(raw.labels_path ?? raw.labelsPath ?? ""),
     featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
     labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
+  };
+}
+
+function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingDeployStatus {
+  return {
+    exportDir: String(raw.export_dir ?? raw.exportDir ?? ""),
+    featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
+    labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
+    hasExport: Boolean(raw.has_export ?? raw.hasExport ?? false),
+    modelOnnxExists: Boolean(raw.model_onnx_exists ?? raw.modelOnnxExists ?? false),
+    metricsExists: Boolean(raw.metrics_exists ?? raw.metricsExists ?? false),
+    pythonAvailable: Boolean(raw.python_available ?? raw.pythonAvailable ?? false),
+    repoPath: (raw.repo_path ?? raw.repoPath ?? null) as string | null,
+    repoConfigured: Boolean(raw.repo_configured ?? raw.repoConfigured ?? false),
+    pipelineCommand: String(raw.pipeline_command ?? raw.pipelineCommand ?? ""),
+  };
+}
+
+function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFromExportResult {
+  const metricsRaw = raw.metrics;
+  let metrics: Record<string, number> | null = null;
+  if (metricsRaw && typeof metricsRaw === "object" && !Array.isArray(metricsRaw)) {
+    metrics = {};
+    for (const [key, value] of Object.entries(metricsRaw as Record<string, unknown>)) {
+      metrics[key] = Number(value);
+    }
+  }
+
+  return {
+    success: Boolean(raw.success ?? false),
+    message: String(raw.message ?? ""),
+    onnxExported: Boolean(raw.onnx_exported ?? raw.onnxExported ?? false),
+    metrics,
+    logTail: String(raw.log_tail ?? raw.logTail ?? ""),
   };
 }
 
@@ -283,6 +338,16 @@ export const api = {
       sessionId: sessionId ?? null,
     });
     return mapExportTrainingResult(raw);
+  },
+  getTrainingDeployStatus: async () => {
+    const raw = await invoke<Record<string, unknown>>("get_training_deploy_status");
+    return mapTrainingDeployStatus(raw);
+  },
+  setTrainingRepoPath: (repoPath: string) =>
+    invoke("set_training_repo_path", { repoPath }),
+  trainFromExport: async () => {
+    const raw = await invoke<Record<string, unknown>>("train_from_export");
+    return mapTrainFromExportResult(raw);
   },
   onCaptureFailed: (handler: (payload: CaptureFailurePayload) => void) =>
     listen<Record<string, unknown>>("capture-failed", (event) => {

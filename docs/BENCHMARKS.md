@@ -75,3 +75,34 @@ cargo run
 
 Then cite: “cold start to ready: **X ms** on **<your machine>**”.
 
+## Classifier quality benchmark (heuristic vs ONNX vs XGBoost)
+
+Trains on synthetic data (or reuses `data/` artifacts), exports ONNX, and compares backends on the same labeled CSV.
+
+```powershell
+py -m tools.benchmark_classifier_quality
+```
+
+Reuse existing artifacts:
+
+```powershell
+py -m tools.benchmark_classifier_quality --skip-train
+```
+
+Writes `data/benchmark_quality.json` and prints a summary. See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) §4 for latest numbers.
+
+Individual Rust eval (when `ort` builds on your host):
+
+```powershell
+cd src-tauri
+cargo run --features onnx -- --classifier-eval ../data/labeled.csv --backend heuristic
+cargo run --features onnx -- --classifier-eval ../data/labeled.csv --backend onnx --model-onnx ../data/model.onnx
+```
+
+Dual latency benchmark (heuristic + ONNX in one run):
+
+```powershell
+cd src-tauri
+cargo run --release --features onnx -- --benchmark --runs 5000 --warmup 500 --onnx-model ../data/model.onnx
+```
+

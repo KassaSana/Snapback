@@ -12,6 +12,7 @@ pub struct BenchArgs {
     pub warmup: usize,
     pub soak_seconds: u64,
     pub goal: Option<String>,
+    pub onnx_model: Option<String>,
 }
 
 impl Default for BenchArgs {
@@ -21,6 +22,7 @@ impl Default for BenchArgs {
             warmup: 1_000,
             soak_seconds: 0,
             goal: None,
+            onnx_model: None,
         }
     }
 }
@@ -59,6 +61,7 @@ pub fn parse_bench_args(args: &[String]) -> BenchArgs {
         out.soak_seconds = soak;
     }
     out.goal = parse_string_flag(args, "--goal");
+    out.onnx_model = parse_string_flag(args, "--onnx-model");
 
     out
 }
@@ -123,6 +126,55 @@ fn current_process_cpu_percent(sys: &System) -> Option<f32> {
     Some(p.cpu_usage())
 }
 
+fn run_inference_benchmark(
+    classifier: &Classifier,
+    features: &FeatureVector,
+    goal: Option<&str>,
+    backend: &str,
+    runs: usize,
+    warmup: usize,
+    sys: &mut System,
+    mem0_bytes: u64,
+    bench_start: Instant,
+) {
+    for _ in 0..warmup {
+        let _ = classifier.predict(features, goal, &[]);
+    }
+
+    let mut times: Vec<u128> = Vec::with_capacity(runs);
+    for _ in 0..runs {
+        let t0 = Instant::now();
+        let _ = classifier.predict(features, goal, &[]);
+        times.push(t0.elapsed().as_micros());
+    }
+    times.sort_unstable();
+
+    refresh_current_process(sys);
+    std::thread::sleep(Duration::from_millis(200));
+    refresh_current_process(sys);
+
+    let mem1_bytes = current_process_bytes(sys).unwrap_or(0);
+    let cpu_pct = current_process_cpu_percent(sys).unwrap_or(0.0);
+
+    let p50 = pctl(&times, 50.0);
+    let p95 = pctl(&times, 95.0);
+    let p99 = pctl(&times, 99.0);
+
+    println!("SNAPBACK_BENCH v1");
+    println!("mode=inference");
+    println!("classifier_backend={backend}");
+    println!("runs={runs}");
+    println!("warmup={warmup}");
+    println!("goal_present={}", goal.is_some());
+    println!("latency_us_p50={p50}");
+    println!("latency_us_p95={p95}");
+    println!("latency_us_p99={p99}");
+    println!("mem_bytes_before={mem0_bytes}");
+    println!("mem_bytes_after={mem1_bytes}");
+    println!("cpu_pct_sample={cpu_pct:.2}");
+    println!("bench_elapsed_ms={}", bench_start.elapsed().as_millis());
+}
+
 pub fn run_benchmark(args: BenchArgs) -> i32 {
     let bench_start = Instant::now();
 
@@ -133,46 +185,45 @@ pub fn run_benchmark(args: BenchArgs) -> i32 {
     let features = stable_features();
     let goal = args.goal.as_deref();
 
-    // Warmup
-    for _ in 0..args.warmup {
-        let _ = classifier.predict(&features, goal, &[]);
+    #[cfg(feature = "onnx")]
+    crate::engine::onnx_model::reset_model_for_tests();
+
+    run_inference_benchmark(
+        &classifier,
+        &features,
+        goal,
+        "heuristic",
+        args.runs,
+        args.warmup,
+        &mut sys,
+        mem0_bytes,
+        bench_start,
+    );
+
+    #[cfg(feature = "onnx")]
+    if let Some(model_path) = args.onnx_model.as_deref() {
+        if crate::engine::onnx_model::init(std::path::Path::new(model_path)).is_ok() {
+            let onnx_start = Instant::now();
+            run_inference_benchmark(
+                &classifier,
+                &features,
+                goal,
+                "onnx",
+                args.runs,
+                args.warmup,
+                &mut sys,
+                mem0_bytes,
+                onnx_start,
+            );
+        } else {
+            eprintln!("failed to load onnx model: {model_path}");
+        }
     }
-
-    // Timed runs
-    let mut times: Vec<u128> = Vec::with_capacity(args.runs);
-    for _ in 0..args.runs {
-        let t0 = Instant::now();
-        let _ = classifier.predict(&features, goal, &[]);
-        times.push(t0.elapsed().as_micros());
-    }
-    times.sort_unstable();
-
-    // CPU usage needs two refreshes spaced apart.
-    refresh_current_process(&mut sys);
-    std::thread::sleep(Duration::from_millis(200));
-    refresh_current_process(&mut sys);
-
-    let mem1_bytes = current_process_bytes(&sys).unwrap_or(0);
-    let cpu_pct = current_process_cpu_percent(&sys).unwrap_or(0.0);
-
-    let p50 = pctl(&times, 50.0);
-    let p95 = pctl(&times, 95.0);
-    let p99 = pctl(&times, 99.0);
-
-    println!("SNAPBACK_BENCH v1");
-    println!("mode=inference");
-    println!("runs={}", args.runs);
-    println!("warmup={}", args.warmup);
-    println!("goal_present={}", goal.is_some());
-    println!("latency_us_p50={}", p50);
-    println!("latency_us_p95={}", p95);
-    println!("latency_us_p99={}", p99);
-    println!("mem_bytes_before={}", mem0_bytes);
-    println!("mem_bytes_after={}", mem1_bytes);
-    println!("cpu_pct_sample={:.2}", cpu_pct);
-    println!("bench_elapsed_ms={}", bench_start.elapsed().as_millis());
 
     if args.soak_seconds > 0 {
+        #[cfg(feature = "onnx")]
+        crate::engine::onnx_model::reset_model_for_tests();
+
         let soak_start = Instant::now();
         let mut iters: u64 = 0;
         let mut last_report = Instant::now();

@@ -17,8 +17,14 @@ import {
   type PredictionRecord,
   type SessionRecord,
   type SessionRecap,
+  type TrainingDeployStatus,
 } from "./api";
-import { buildExportSummary, buildPipelineCommand, classifierBackendLabel } from "./trainingHints";
+import {
+  buildExportSummary,
+  buildPipelineCommand,
+  classifierBackendLabel,
+  formatTrainingMetrics,
+} from "./trainingHints";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
@@ -74,7 +80,11 @@ export default function App() {
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
   const [surveyPending, setSurveyPending] = useState(false);
-  const [trainingCommand, setTrainingCommand] = useState<string | null>(null);
+  const [deployStatus, setDeployStatus] = useState<TrainingDeployStatus | null>(null);
+  const [repoPathInput, setRepoPathInput] = useState("");
+  const [trainingInProgress, setTrainingInProgress] = useState(false);
+  const [deployMessage, setDeployMessage] = useState<string | null>(null);
+  const [showAdvancedCommand, setShowAdvancedCommand] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [modelReloadStatus, setModelReloadStatus] = useState<string | null>(null);
   const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
@@ -126,6 +136,18 @@ export default function App() {
       setRulesStatus("Could not load app rules.");
     }
   }, []);
+
+  const refreshDeployStatus = useCallback(async () => {
+    try {
+      const status = await api.getTrainingDeployStatus();
+      setDeployStatus(status);
+      if (status.repoPath && !repoPathInput) {
+        setRepoPathInput(status.repoPath);
+      }
+    } catch {
+      setDeployStatus(null);
+    }
+  }, [repoPathInput]);
 
   const applyHealth = useCallback((health: Awaited<ReturnType<typeof api.getHealth>>) => {
     setHealthStatus(health.captureFailed ? "offline" : health.status === "degraded" ? "offline" : "online");
@@ -198,6 +220,7 @@ export default function App() {
     void refreshHealth();
     void refreshLatest();
     void refreshAppRules();
+    void refreshDeployStatus();
     void api.getActiveSession().then((active) => {
       if (!active) return;
       setSessionRecord(active);
@@ -206,7 +229,7 @@ export default function App() {
       setFocusMode((active.focusMode as (typeof FOCUS_MODES)[number]) || "normal");
       void refreshContextTimeline(active.sessionId);
     });
-  }, [refreshHealth, refreshLatest, refreshAppRules, refreshContextTimeline]);
+  }, [refreshHealth, refreshLatest, refreshAppRules, refreshContextTimeline, refreshDeployStatus]);
 
   useEffect(() => {
     if (!sessionId || sessionRecord?.status !== "ACTIVE") {
@@ -304,27 +327,81 @@ export default function App() {
     try {
       const result = await api.exportTrainingData(sessionId ?? undefined);
       if (result.featureCount === 0 && result.labelCount === 0) {
-        setTrainingCommand(null);
         setLabelStatus(
           "No training data yet. Run a session and tap feedback, then export again.",
         );
         return;
       }
       setLabelStatus(buildExportSummary(result.featureCount, result.labelCount, result.outputDir));
-      setTrainingCommand(buildPipelineCommand(result.outputDir));
+      setDeployMessage("Export ready — train from export or reload if you already trained.");
+      await refreshDeployStatus();
     } catch {
-      setTrainingCommand(null);
       setLabelStatus("Could not export training data.");
     }
   };
 
-  const handleCopyTrainingCommand = async () => {
-    if (!trainingCommand) {
+  const handleSaveRepoPath = async () => {
+    const trimmed = repoPathInput.trim();
+    if (!trimmed) {
+      setDeployMessage("Enter the folder that contains ml/pipeline_cli.py.");
       return;
     }
     try {
-      await navigator.clipboard.writeText(trainingCommand);
-      setCopyStatus("Copied training command.");
+      await api.setTrainingRepoPath(trimmed);
+      setDeployMessage("Saved repo path.");
+      await refreshDeployStatus();
+    } catch {
+      setDeployMessage("Could not save repo path. Pick the Snapback repo root.");
+    }
+  };
+
+  const handleTrainFromExport = async () => {
+    setTrainingInProgress(true);
+    setDeployMessage(null);
+    setCopyStatus(null);
+    try {
+      const result = await api.trainFromExport();
+      const metricsSummary = formatTrainingMetrics(result.metrics);
+      const detail = metricsSummary ? ` ${metricsSummary}.` : "";
+      const messageParts = [`${result.message}${detail}`];
+      if (result.logTail) {
+        messageParts.push(result.logTail);
+      }
+      setDeployMessage(messageParts.join("\n"));
+      await refreshDeployStatus();
+      if (result.success && result.onnxExported) {
+        try {
+          const status = await api.reloadClassifierModel();
+          setClassifierBackend(status.backend);
+          setClassifierModelPath(status.modelPath);
+          setModelReloadStatus(
+            status.backend === "onnx"
+              ? "Loaded trained ONNX model."
+              : status.modelPath
+                ? "Model file found but ONNX runtime is not active in this build."
+                : "No model.onnx found. Run the training pipeline first.",
+          );
+        } catch {
+          setModelReloadStatus("Training succeeded but reload failed — click Reload model.");
+        }
+      }
+    } catch (err) {
+      setDeployMessage(err instanceof Error ? err.message : "Training could not start.");
+    } finally {
+      setTrainingInProgress(false);
+    }
+  };
+
+  const handleCopyTrainingCommand = async () => {
+    const command = deployStatus
+      ? buildPipelineCommand(deployStatus.exportDir, deployStatus.pipelineCommand)
+      : null;
+    if (!command) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyStatus("Copied CLI command.");
     } catch {
       setCopyStatus("Select and copy the command manually.");
     }
@@ -552,28 +629,106 @@ export default function App() {
             </button>
           </div>
           {labelStatus ? <p className="helper-text">{labelStatus}</p> : null}
-          {trainingCommand ? (
-            <div className="training-command-block">
-              <p className="helper-text">Next step — train offline in your repo:</p>
-              <pre className="training-command">{trainingCommand}</pre>
-              <div className="button-row">
-                <button className="secondary-button" onClick={() => void handleCopyTrainingCommand()}>
-                  Copy command
-                </button>
-                <button
-                  className="secondary-button"
-                  onClick={() => void handleReloadClassifierModel()}
-                >
-                  Reload model
-                </button>
-              </div>
-              {copyStatus ? <p className="helper-text">{copyStatus}</p> : null}
-              {modelReloadStatus ? <p className="helper-text">{modelReloadStatus}</p> : null}
-              {classifierModelPath ? (
-                <p className="helper-text">Model path: {classifierModelPath}</p>
-              ) : null}
+
+          <div className="training-deploy-block">
+            <p className="deploy-title">Deploy trained model</p>
+            <ol className="deploy-steps">
+              <li className={deployStatus?.hasExport ? "deploy-step done" : "deploy-step"}>
+                <span className="deploy-step-label">Export</span>
+                <span className="deploy-step-detail">
+                  {deployStatus?.hasExport
+                    ? `${deployStatus.featureCount} features · ${deployStatus.labelCount} labels`
+                    : "Export training data above"}
+                </span>
+              </li>
+              <li
+                className={
+                  deployStatus?.modelOnnxExists || deployStatus?.metricsExists
+                    ? "deploy-step done"
+                    : "deploy-step"
+                }
+              >
+                <span className="deploy-step-label">Train</span>
+                <span className="deploy-step-detail">
+                  {deployStatus?.modelOnnxExists
+                    ? "model.onnx ready"
+                    : deployStatus?.metricsExists
+                      ? "model.json trained (ONNX pending)"
+                      : deployStatus?.pythonAvailable
+                        ? "Run train from export"
+                        : "Install Python 3 + xgboost"}
+                </span>
+              </li>
+              <li className={classifierBackend === "onnx" ? "deploy-step done" : "deploy-step"}>
+                <span className="deploy-step-label">Activate</span>
+                <span className="deploy-step-detail">
+                  {classifierBackend === "onnx"
+                    ? "ONNX classifier active"
+                    : deployStatus?.modelOnnxExists
+                      ? "Reload model to switch off heuristic"
+                      : "Reload after training"}
+                </span>
+              </li>
+            </ol>
+
+            <label className="field deploy-repo-field">
+              <span>Snapback repo path (for in-app training)</span>
+              <input
+                type="text"
+                placeholder="C:\Users\you\Projects\Snapback"
+                value={repoPathInput}
+                onChange={(event) => setRepoPathInput(event.target.value)}
+              />
+            </label>
+            <div className="button-row">
+              <button className="secondary-button" onClick={() => void handleSaveRepoPath()}>
+                Save repo path
+              </button>
+              <button
+                className="primary-button"
+                disabled={
+                  trainingInProgress ||
+                  !deployStatus?.hasExport ||
+                  !deployStatus.pythonAvailable
+                }
+                onClick={() => void handleTrainFromExport()}
+              >
+                {trainingInProgress ? "Training…" : "Train from export"}
+              </button>
+              <button className="secondary-button" onClick={() => void handleReloadClassifierModel()}>
+                Reload model
+              </button>
             </div>
-          ) : null}
+            {!deployStatus?.repoConfigured ? (
+              <p className="helper-text">
+                Point to your Snapback repo once (folder with ml/pipeline_cli.py), or set
+                SNAPBACK_REPO.
+              </p>
+            ) : null}
+            {deployMessage ? <p className="helper-text deploy-log">{deployMessage}</p> : null}
+            {modelReloadStatus ? <p className="helper-text">{modelReloadStatus}</p> : null}
+            {classifierModelPath ? (
+              <p className="helper-text">Model path: {classifierModelPath}</p>
+            ) : null}
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => setShowAdvancedCommand((current) => !current)}
+            >
+              {showAdvancedCommand ? "Hide CLI command" : "Show CLI command"}
+            </button>
+            {showAdvancedCommand && deployStatus ? (
+              <div className="training-command-block">
+                <pre className="training-command">
+                  {buildPipelineCommand(deployStatus.exportDir, deployStatus.pipelineCommand)}
+                </pre>
+                <button className="secondary-button" onClick={() => void handleCopyTrainingCommand()}>
+                  Copy CLI command
+                </button>
+                {copyStatus ? <p className="helper-text">{copyStatus}</p> : null}
+              </div>
+            ) : null}
+          </div>
         </section>
 
         <section className="card history-card">

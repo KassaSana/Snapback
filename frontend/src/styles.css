@@ -541,6 +541,68 @@ h1 {
   margin: 0;
 }
 
+.deploy-log {
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.training-deploy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.deploy-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.deploy-steps {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.deploy-step {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.deploy-step.done {
+  color: var(--text);
+}
+
+.deploy-step-label {
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+
+.deploy-step-detail {
+  color: var(--muted);
+}
+
+.deploy-repo-field {
+  margin-top: 0.25rem;
+}
+
+.link-button {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent, #7eb6ff);
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0;
+  text-decoration: underline;
+}
+
 .training-command-block {
   display: flex;
   flex-direction: column;
