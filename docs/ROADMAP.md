@@ -1,48 +1,38 @@
-# Snapback Roadmap
+# Roadmap
 
-> **Planning detail moved to [`docs/BACKLOG.md`](BACKLOG.md)** (master backlog, last audit 2026-07).  
-> **Session tracker:** [`doc.md`](../doc.md) — update that file every work session.
+Detail lives in [BACKLOG.md](BACKLOG.md). Session work in [`doc.md`](../doc.md).
 
-**Current state:** Usable alpha. Core loop works end-to-end. Remaining work is ship confidence (smoke test, permissions, ONNX policy), polish, tests, and doc cleanup.
+Alpha works end-to-end. What's left: smoke test, permissions honesty, ONNX policy, tests, doc cleanup.
 
----
+## Tiers (summary)
 
-## Quick links
+| Tier | Focus |
+|------|-------|
+| 0 | Smoke test, release dry run, permissions, ONNX policy, CI gaps |
+| 1 | Training UX, app rules copy, overlay errors, regression tests |
+| 2 | `labeling.py`, benchmarks, legacy ML cleanup |
+| 3 | `focus_modes`, commands, `api.ts` tests |
+| 4 | Legacy doc banners and reconciliation |
+| 5 | Real blocking, LSTM, Linux packaging, analytics |
 
-| Tier | Focus | Start here |
-|------|-------|------------|
-| **0** | Ship confidence | 60-min smoke test, release dry run |
-| **1** | Product polish | Training UX, app rules copy, overlay errors |
-| **2** | ML pipeline | `labeling.py` fate, benchmarks, legacy cleanup |
-| **3** | Tests | `focus_modes`, session persistence, `api.ts` |
-| **4** | Docs | SCHEMAS, ARCHITECTURE, PROGRESS reconciliation |
-| **5** | Vision | Real blocking, LSTM, Linux packaging, analytics |
+## Shipped (2026-06 → 2026-07)
 
-See [BACKLOG.md](BACKLOG.md) for every task, file path, and checkbox.
+| Item | Notes |
+|------|-------|
+| Tauri monolith | Replaced C++/Spring stack |
+| Session ↔ feature extractor sync | `feature_session_epoch` |
+| Session-gated persistence | No idle-row pollution |
+| ONNX loop | export → `model.onnx` → reload |
+| CI | frontend, Rust + ONNX, Windows, feature parity |
+| Release CI | `release.yml` on `v*` tags |
+| Training deploy | In-app export → train → reload |
+| Global hotkeys | Ctrl+Shift+1–4 |
+| Tray | show/hide/quit |
+| Feature parity CI | `ml.feature_parity_cli` |
+| Real CV | `time_series_splits` in `train_baseline` |
 
----
-
-## Shipped history (2026-06 → 2026-07)
-
-These were the original P0/P1 items — all done in code; see BACKLOG “Shipped” section for evidence.
-
-| Item | Status |
-|------|--------|
-| Session ↔ `FeatureExtractor` reset | **Done** — `feature_session_epoch` in `AppState` |
-| Stop persisting idle rows | **Done** — engine gates on `get_active_session()` |
-| Close ONNX loop | **Done** — `pipeline_cli` → `model.onnx` → `reload_classifier_model` |
-| CI hardening | **Done** — frontend build, Rust + ONNX, Windows job |
-| Release CI | **Done** — `release.yml` on `v*` tags |
-| Training deploy UX | **Done** — in-app export → train → reload panel |
-| Global hotkey labeling | **Done** — Ctrl+Shift+1–4 |
-| Tray icon | **Done** — show/hide/quit |
-| Feature parity in CI | **Done** — `ml.feature_parity_cli` |
-| Real CV in training | **Done** — `time_series_splits` in `train_baseline` |
-
-**Commands:** 21 registered in `src-tauri/src/lib.rs` (not 18).
-
----
+21 commands in `src-tauri/src/lib.rs`.
 
 ## Archive
 
-The detailed P0–P5 sections from the July codebase review live in [`docs/BACKLOG.md`](BACKLOG.md). Older session journal: [`docs/archive/PROGRESS_full.md`](archive/PROGRESS_full.md).
+Session journal: [archive/PROGRESS_full.md](archive/PROGRESS_full.md)

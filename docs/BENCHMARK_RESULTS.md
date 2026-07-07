@@ -1,6 +1,6 @@
 # Benchmark results
 
-Recorded metrics from the built-in `--benchmark` mode and startup logs. Re-run commands in [BENCHMARKS.md](BENCHMARKS.md) to refresh these numbers.
+Recorded from `--benchmark` and startup logs. Commands in [BENCHMARKS.md](BENCHMARKS.md).
 
 **Last run:** 2026-07-05  
 **Machine:** Windows 11 (10.0.26200), Intel Core i5-12500H, 16 GB RAM  

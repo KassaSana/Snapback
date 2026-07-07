@@ -1,6 +1,17 @@
 # Context Recovery System: Technical Design
 
-**Feature:** "Where Was I?" - Automatic work context recovery after distractions
+> **v0.2 status:** The snapback overlay is implemented in Rust/Tauri, not C++/Win32 as described below.
+>
+> | Planned (this doc) | Shipped (code) |
+> |--------------------|----------------|
+> | Context snapshots every 30s | `snapback/tracker.rs`, `storage/mod.rs` |
+> | Distraction state machine | `snapback/tracker.rs` (30s min distraction) |
+> | Overlay on return | `snapback/overlay.rs`, `frontend/public/snapback.html` |
+> | VS Code title parsing | `snapback/title_parser.rs` (partial) |
+> | Browser domain tracking | Not yet |
+> | VS Code extension | Not yet |
+
+**Feature:** "Where Was I?" — automatic work context recovery after distractions
 
 ---
 
@@ -693,37 +704,38 @@ Users should be able to customize the recovery behavior:
 
 ---
 
-## Implementation Roadmap
+## Implementation roadmap
+
+> **See the status table at the top.** Phases 1–3 are largely done in Rust. Phases 4–5 remain open.
 
 ### Phase 1: Basic Context Capture (Week 1)
-- [ ] Add ContextSnapshot struct to C++ codebase
-- [ ] Implement ContextHistory circular buffer
-- [ ] Capture snapshots every 30s during FOCUSED state
-- [ ] Parse VS Code window titles for file/line info
+- [x] Context snapshots during focus sessions — `ContextTracker`, `save_context_snapshot`
+- [x] Capture every 30s during productive work — `tracker.rs`
+- [x] Parse window titles for file info — `title_parser.rs`
 
 ### Phase 2: Distraction Detection (Week 1-2)
-- [ ] Implement distraction state machine
-- [ ] Track transitions between productive/distraction apps
-- [ ] Detect "return from distraction" events
-- [ ] Filter brief glances (<30s)
+- [x] Distraction state machine — `tracker.rs`
+- [x] Track productive ↔ distraction transitions
+- [x] Return-from-distraction detection
+- [x] Filter brief glances (<30s)
 
 ### Phase 3: Basic Overlay (Week 2)
-- [ ] Create Win32 overlay window
-- [ ] Display basic context (file, app, duration)
-- [ ] Auto-dismiss after 5 seconds
-- [ ] Dismiss on keypress
+- [x] Overlay window — `overlay.rs`, `snapback.html`
+- [x] Show file, app, duration
+- [x] Keyboard dismiss — `dismiss_snapback`
+- [ ] Auto-dismiss after 5 seconds (configurable timing may differ)
 
 ### Phase 4: Rich Context (Week 3)
-- [ ] Parse window titles for multiple IDEs
-- [ ] Generate activity descriptions
+- [ ] Parse titles for multiple IDEs (partial)
+- [x] Activity descriptions from window titles
 - [ ] Track recent activities (last 5 actions)
-- [ ] Add browser domain tracking
+- [ ] Browser domain tracking
 
 ### Phase 5: Polish (Week 4)
-- [ ] Electron overlay (if using Electron frontend)
+- [x] Tauri overlay (not Electron)
 - [ ] Configuration options UI
 - [ ] Analytics (track effectiveness)
-- [ ] Optional VS Code extension
+- [ ] VS Code extension
 
 ---
 
@@ -736,4 +748,4 @@ The Context Recovery System addresses a real pain point for knowledge workers:
 - **Respects** privacy (no content capture, local-only)
 - **Configurable** (timing, position, content)
 
-This feature differentiates Neural Focus from simple blockers—it doesn't just prevent distractions, it **helps you recover** when distractions happen.
+This feature differentiates Snapback from simple blockers — it doesn't just flag distractions, it helps you recover when they happen.

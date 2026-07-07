@@ -1,36 +1,37 @@
-# Snapback: Progress
+# Snapback — progress journal
 
-## 2026-06 — Tauri overhaul (v0.2)
+## 2026-06 — Tauri rewrite (v0.2)
 
-- **Rename / branding:** switched the product name to **Snapback** across UI, docs, and app metadata (kept `focoflow.db` for backwards compatibility).
-- Collapsed 4-layer architecture into **one Tauri desktop app** (`src-tauri/` + `frontend/`).
-- **Removed:** Java/Spring Boot backend, C++/ZeroMQ capture stack, Docker compose demo, inference bridge service.
-- **Rust core:** cross-platform capture (`rdev` + active window), rolling-window features, heuristic classifier, SQLite, snapback state machine + overlay window.
-- **React UI:** Tauri `invoke`/`listen` instead of REST/WebSocket; focus modes, feedback labels, session recap.
-- **Python:** kept as offline training tool; added `ml/export_onnx.py`.
-- **CI:** dropped Java job; added `cargo check` + `cargo test`.
-- **Benchmarks:** added `--benchmark` CLI mode; recorded results in [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) (inference latency, 60 s soak, startup timing).
+- Renamed product to **Snapback** (kept `focoflow.db` for existing installs).
+- Replaced the 4-layer stack (C++/ZeroMQ/Python service/Spring Boot) with one Tauri app: `src-tauri/` + `frontend/`.
+- Rust: capture via `rdev` + active window, rolling features, heuristic classifier, SQLite, snapback overlay.
+- React: `invoke`/`listen` instead of REST/WebSocket.
+- Python: offline training only; added `ml/export_onnx.py`.
+- CI: dropped Java; added `cargo check` + `cargo test`.
+- Benchmarks: `--benchmark` CLI; results in [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md).
 
-## 2026-07 — Roadmap review
+## 2026-07 — Ship-confidence pass
 
-- Full codebase audit captured in [docs/ROADMAP.md](docs/ROADMAP.md) (prioritized P0–P5).
-- Short session checklist lives in [`doc.md`](doc.md).
-- Key findings: session/feature-extractor desync, idle training rows, ONNX loop not closed in CI, release workflow missing.
+Closed the original P0/P1 backlog:
 
-## Next milestones
+- Session ↔ `FeatureExtractor` sync (`feature_session_epoch`)
+- Stop persisting rows outside active sessions
+- ONNX loop end-to-end (export → train → reload in app)
+- CI hardening (frontend build, `cargo test --features onnx`, Windows job)
+- Release workflow on `v*` tags (NSIS + DMG)
+- Global hotkey labeling, tray icon, in-app training deploy panel
+- Feature parity in CI; real CV in `train_baseline`
 
-See [`doc.md`](doc.md) for what you're working on *this session*.
+Reorganized docs:
 
-See [docs/BACKLOG.md](docs/BACKLOG.md) for the full prioritized backlog (Tier 0–5).
+- [`doc.md`](doc.md) — short session tracker
+- [docs/BACKLOG.md](docs/BACKLOG.md) — full task list
+- [docs/ROADMAP.md](docs/ROADMAP.md) — index + shipped history
 
-**Immediate (2026-07):** 60-min smoke test, tagged release dry run, ONNX/heuristic policy decision.
+## What's next
 
-## Task tracker
+See [`doc.md`](doc.md) for the current session. Full list: [docs/BACKLOG.md](docs/BACKLOG.md).
 
-| File | Role |
-|------|------|
-| [`doc.md`](doc.md) | Short session checklist (Now / Next / Later) |
-| [docs/BACKLOG.md](docs/BACKLOG.md) | Master backlog with file paths and checkboxes |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Index + shipped history |
+Immediate: 60-min smoke test, tagged release dry run, ONNX/heuristic policy call.
 
-See [docs/archive/PROGRESS_full.md](docs/archive/PROGRESS_full.md) for the earlier session journal.
+Older session notes: [docs/archive/PROGRESS_full.md](docs/archive/PROGRESS_full.md).
