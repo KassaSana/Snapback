@@ -6,6 +6,7 @@ Where to look, in order of usefulness:
 |-----|----------------|
 | [`doc.md`](../doc.md) | Session checklist — what you're doing today |
 | [`BACKLOG.md`](BACKLOG.md) | Full task list with file paths |
+| [`CODE_HEALTH_REVIEW.md`](CODE_HEALTH_REVIEW.md) | Code review findings and fix queue |
 | [`ROADMAP.md`](ROADMAP.md) | Shipped history + tier index |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Building installers, ONNX loop, release |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | How to run benchmarks |
