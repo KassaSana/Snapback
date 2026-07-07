@@ -46,9 +46,8 @@ ml/artifacts/
 # Training data
 ml/data/*.csv
 ml/data/*.parquet
-/data/*.csv
-/data/*.parquet
-/data/*.db
+/data/
+!/data/.gitkeep
 
 # ============================================
 # Node / React
