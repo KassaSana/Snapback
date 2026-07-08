@@ -10,8 +10,6 @@ import {
   riskLevel,
   type AppRuleKind,
   type AppRuleRecord,
-  type CaptureFailurePayload,
-  type ClassifierStatus,
   type ContextSnapshot,
   type PredictionRecord,
 } from "./api";
@@ -19,6 +17,7 @@ import { classifierBackendLabel } from "./trainingHints";
 import { buildAppRulePreview } from "./appRulePreview";
 import { summarizePermissions } from "./healthHints";
 import { shouldRefreshTimelineFromEvent } from "./timelineRefresh";
+import { useHealth } from "./useHealth";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { FOCUS_MODES, type FocusMode, useSession } from "./useSession";
 
@@ -65,17 +64,6 @@ const buildSignals = (record: PredictionRecord | null) => {
 };
 
 export default function App() {
-  const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline">("checking");
-  const [captureRunning, setCaptureRunning] = useState(false);
-  const [permissionCaptureAvailable, setPermissionCaptureAvailable] = useState(false);
-  const [activeWindowAvailable, setActiveWindowAvailable] = useState(false);
-  const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
-  const [permissionSteps, setPermissionSteps] = useState<string[]>([]);
-  const [captureFailed, setCaptureFailed] = useState(false);
-  const [captureFailureReason, setCaptureFailureReason] = useState<string | null>(null);
-  const [classifierBackend, setClassifierBackend] = useState("heuristic");
-  const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
-  const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<PredictionRecord | null>(null);
   const [predictionHistory, setPredictionHistory] = useState<PredictionRecord[]>([]);
   const [hyperfocusNote, setHyperfocusNote] = useState<string | null>(null);
@@ -91,11 +79,23 @@ export default function App() {
   const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
   const lastTimelineRefreshAtRef = useRef<number | null>(null);
 
-  const applyClassifierStatus = useCallback((status: ClassifierStatus) => {
-    setClassifierBackend(status.backend);
-    setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
-    setClassifierModelPath(status.modelPath);
-  }, []);
+  const {
+    activeWindowAvailable,
+    applyCaptureFailure,
+    applyClassifierStatus,
+    captureFailed,
+    captureFailureReason,
+    captureRunning,
+    classifierBackend,
+    classifierModelPath,
+    classifierOnnxRuntimeEnabled,
+    handleRefreshPermissions,
+    healthStatus,
+    permissionCaptureAvailable,
+    permissionMessage,
+    permissionSteps,
+    refreshHealth,
+  } = useHealth();
 
   const refreshContextTimeline = useCallback(async (sid?: string | null) => {
     if (!sid) {
@@ -208,36 +208,6 @@ export default function App() {
     }
   }, []);
 
-  const applyHealth = useCallback((health: Awaited<ReturnType<typeof api.getHealth>>) => {
-    setHealthStatus(health.captureFailed ? "offline" : health.status === "degraded" ? "offline" : "online");
-    setCaptureRunning(health.captureRunning);
-    setCaptureFailed(health.captureFailed);
-    setCaptureFailureReason(health.captureFailureReason);
-    setPermissionCaptureAvailable(health.permissions.captureAvailable);
-    setActiveWindowAvailable(health.permissions.activeWindowAvailable);
-    setPermissionMessage(health.permissions.message);
-    setPermissionSteps(health.permissions.setupSteps);
-    applyClassifierStatus(health.classifier);
-  }, [applyClassifierStatus]);
-
-  const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
-    setCaptureFailed(true);
-    setCaptureRunning(false);
-    setCaptureFailureReason(payload.reason);
-    setPermissionMessage(payload.message);
-    setPermissionSteps(payload.setupSteps);
-    setHealthStatus("offline");
-  }, []);
-
-  const refreshHealth = useCallback(async () => {
-    try {
-      const health = await api.getHealth();
-      applyHealth(health);
-    } catch {
-      setHealthStatus("offline");
-    }
-  }, [applyHealth]);
-
   const refreshLatest = useCallback(async () => {
     try {
       const latest = await api.getLatestPrediction();
@@ -308,19 +278,6 @@ export default function App() {
       void Promise.all(unsubs).then((handlers) => handlers.forEach((off) => off()));
     };
   }, [pushPrediction, applyCaptureFailure, refreshTimelineFromEvent, sessionId]);
-
-  const handleRefreshPermissions = async () => {
-    try {
-      const status = await api.refreshPermissions();
-      setPermissionCaptureAvailable(status.captureAvailable);
-      setActiveWindowAvailable(status.activeWindowAvailable);
-      setPermissionMessage(status.message);
-      setPermissionSteps(status.setupSteps);
-      await refreshHealth();
-    } catch {
-      setPermissionMessage("Could not refresh permissions.");
-    }
-  };
 
   const handleAddAppRule = async () => {
     const pattern = rulePattern.trim();
