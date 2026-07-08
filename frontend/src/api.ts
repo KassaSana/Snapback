@@ -40,6 +40,7 @@ export type SessionRecord = {
 
 export type PermissionStatus = {
   captureAvailable: boolean;
+  captureProbeConfirmed: boolean;
   activeWindowAvailable: boolean;
   message: string;
   setupSteps: string[];

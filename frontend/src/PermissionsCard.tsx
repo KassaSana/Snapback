@@ -1,6 +1,8 @@
 type PermissionsCardProps = {
   captureFailed: boolean;
   captureFailureReason: string | null;
+  captureProbeConfirmed: boolean;
+  captureRunning: boolean;
   onRefreshPermissions: () => void;
   permissionMessage: string | null;
   permissionSteps: string[];
@@ -9,6 +11,8 @@ type PermissionsCardProps = {
 export function PermissionsCard({
   captureFailed,
   captureFailureReason,
+  captureProbeConfirmed,
+  captureRunning,
   onRefreshPermissions,
   permissionMessage,
   permissionSteps,
@@ -18,7 +22,13 @@ export function PermissionsCard({
       <div className="card-header">
         <h2>Permissions</h2>
         <span className={`pill${captureFailed ? " pill-alert" : ""}`}>
-          {captureFailed ? "capture failed" : "local desktop"}
+          {captureFailed
+            ? "capture failed"
+            : captureRunning
+              ? "listener running"
+              : captureProbeConfirmed
+                ? "permissions ready"
+                : "probe only"}
         </span>
       </div>
       {captureFailed ? (

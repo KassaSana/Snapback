@@ -32,6 +32,9 @@ export function mapSetupSteps(raw: Record<string, unknown>): string[] {
 export function mapPermissionStatus(raw: Record<string, unknown>): PermissionStatus {
   return {
     captureAvailable: Boolean(raw.capture_available ?? raw.captureAvailable ?? false),
+    captureProbeConfirmed: Boolean(
+      raw.capture_probe_confirmed ?? raw.captureProbeConfirmed ?? false,
+    ),
     activeWindowAvailable: Boolean(
       raw.active_window_available ?? raw.activeWindowAvailable ?? false,
     ),

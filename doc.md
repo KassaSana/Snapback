@@ -16,6 +16,12 @@ Update this at the start and end of each work session. Keep it short.
 
 - [x] Training false-success: don't treat skipped ONNX export as deploy-ready (`training_deploy.rs`, `App.tsx`)
 - [x] Enforce one ACTIVE session (`storage/mod.rs`, `commands.rs`)
+- [x] Capture restart lifecycle: stop/join old workers before respawn (`state.rs`, `capture/thread.rs`)
+- [x] CSV-safe export + regression coverage (`storage/mod.rs`)
+- [x] Command-boundary validation + focused tests (`commands.rs`)
+- [x] Permission honesty + capture-alive health distinction (`capture/permissions.rs`, frontend health UI)
+- [x] CI gap fill: Windows ONNX, Python ML deps, Tauri build smoke (`.github/workflows/ci.yml`)
+- [x] Focused backend/frontend health tests (`permissions.rs`, `healthHints.ts`)
 - [x] App rules UI: clarify that "Block" only affects scoring (`App.tsx`)
 - [x] Session-gated persistence regression test (`state.rs`, `storage/mod.rs`)
 

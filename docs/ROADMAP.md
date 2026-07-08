@@ -2,13 +2,13 @@
 
 Detail lives in [BACKLOG.md](BACKLOG.md). Session work in [`doc.md`](../doc.md).
 
-Alpha works end-to-end. What's left: smoke test, permissions honesty, backend lifecycle/invariants, tests, and doc cleanup.
+Alpha works end-to-end. What's left: smoke test, permissions honesty, CI follow-through, focused tests, and final doc cleanup.
 
 ## Tiers (summary)
 
 | Tier | Focus |
 |------|-------|
-| 0 | Smoke test, release dry run, permissions, ONNX policy, CI gaps |
+| 0 | Smoke test, release dry run, permissions, CI gaps |
 | 1 | Training UX, overlay errors, regression tests |
 | 2 | `labeling.py`, benchmarks, legacy ML cleanup |
 | 3 | `focus_modes`, commands, capture/permission tests |
@@ -26,6 +26,8 @@ Alpha works end-to-end. What's left: smoke test, permissions honesty, backend li
 | CI | frontend, Rust + ONNX, Windows, feature parity |
 | Release CI | `release.yml` on `v*` tags |
 | Training deploy | In-app export → train → reload |
+| Correctness-first hardening | Training semantics, capture lifecycle, CSV export, command validation, dependency audits, permission honesty |
+| CI hardening | Windows ONNX checks, Python ML deps, Tauri build smoke |
 | Global hotkeys | Ctrl+Shift+1–4 |
 | Tray | show/hide/quit |
 | Feature parity CI | `ml.feature_parity_cli` |

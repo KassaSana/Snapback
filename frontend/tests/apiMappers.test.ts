@@ -15,6 +15,7 @@ const healthSnake = mapHealth({
   capture_failure_reason: null,
   permissions: {
     capture_available: true,
+    capture_probe_confirmed: false,
     active_window_available: false,
     message: "OK",
     setup_steps: ["Step one"],
@@ -29,6 +30,7 @@ const healthSnake = mapHealth({
 assert.equal(healthSnake.status, "online");
 assert.equal(healthSnake.captureRunning, true);
 assert.equal(healthSnake.permissions.captureAvailable, true);
+assert.equal(healthSnake.permissions.captureProbeConfirmed, false);
 assert.equal(healthSnake.permissions.setupSteps[0], "Step one");
 assert.equal(healthSnake.classifier.backend, "onnx");
 assert.equal(healthSnake.classifier.modelPath, "/data/model.onnx");
@@ -40,6 +42,7 @@ const healthCamel = mapHealth({
   captureFailureReason: "rdev",
   permissions: {
     captureAvailable: false,
+    captureProbeConfirmed: false,
     activeWindowAvailable: true,
     message: "Denied",
     setupSteps: [],

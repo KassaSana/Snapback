@@ -1,6 +1,6 @@
 # Snapback backlog
 
-Last reviewed: 2026-07. Alpha is usable; main gaps are confidence (smoke test, permissions, ONNX behavior), polish, tests, and stale docs.
+Last reviewed: 2026-07-08. Alpha is usable; main gaps are confidence (smoke test, permissions, ONNX behavior), polish, tests, and CI follow-through.
 
 **Planning docs**
 
@@ -24,8 +24,8 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
 ```
 
 - 21 Tauri commands in `lib.rs`, all used from `frontend/src/api.ts`
-- ~42 Rust tests, 13 Python test files, 6 frontend test files
-- CI: Python, frontend, Rust (+ ONNX on Ubuntu), Windows `cargo test`, feature parity
+- ~55 Rust tests, 13 Python test files, 6 frontend test files
+- CI: Python (+ ML deps), frontend, Rust (+ ONNX on Ubuntu/Windows), Tauri build smoke, feature parity, dependency audits
 - Release: NSIS + DMG on `v*` tags
 
 ---
@@ -46,7 +46,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 |------|-------|-------|
 | [ ] Fix macOS `probe_capture` | `capture/permissions.rs:128-131` | Checks active window, not `rdev` |
 | [ ] Windows/Linux probe | `permissions.rs:133-136` | Always returns `true` |
-| [ ] Capture restart lifecycle | `state.rs`, `capture/thread.rs` | Old capture threads are not stopped before respawn |
+| [x] Capture restart lifecycle | `state.rs`, `capture/thread.rs` | Capture now owns stop/join handles before respawn |
 | [ ] Probe vs capture-thread mismatch | `state.rs`, `App.tsx` | Probe OK but capture died |
 | [x] Hotkey registration failures in UI | `label_shortcuts.rs`, `api.ts`, `App.tsx` | Hotkey failures now surface in the UI with warning styling |
 
@@ -57,16 +57,16 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 | [x] Decide ONNX + heuristic hybrid | `engine/classifier.rs` | ONNX sets scores; guardrails override `focus_state` (documented + tested) |
 | [ ] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
 | [x] Windows ONNX dev setup | `tools/dev-onnx.mjs`, `DEPLOYMENT.md` | `load-dynamic` + pip `onnxruntime.dll` via `ORT_DYLIB_PATH` |
-| [ ] Training deploy false success | `training_deploy.rs:212-217`, `App.tsx` | UI now warns, but backend still returns `success=true` when ONNX export is skipped |
+| [x] Training deploy false success | `training_deploy.rs`, `App.tsx` | Result now distinguishes `trainingSucceeded` from `deployReady` |
 | [x] Single ACTIVE session invariant | `storage/mod.rs`, `commands.rs` | Starting a new session now completes any prior ACTIVE session |
 
 ### CI & release
 
 | Task | Files | Issue |
 |------|-------|-------|
-| [ ] Windows CI with ONNX | `ci.yml` `rust-windows` | No `--features onnx` |
-| [ ] Tauri build in CI | `ci.yml` | Never runs `tauri build` |
-| [ ] Python CI with ML deps | `ci.yml` | No xgboost/onnxmltools |
+| [x] Windows CI with ONNX | `ci.yml` `rust-windows` | Windows now checks/tests `--features onnx` with `ORT_DYLIB_PATH` |
+| [x] Tauri build in CI | `ci.yml` | Ubuntu now runs a non-bundled `tauri build` smoke check |
+| [x] Python CI with ML deps | `ci.yml` | Training deps now install in CI before Python tests |
 | [ ] Classifier quality gate | `tools/benchmark_classifier_quality.py` | No regression thresholds |
 | [ ] Feature parity on Windows (optional) | `ci.yml` | Ubuntu only |
 
@@ -101,7 +101,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 **Data quality**
 
-- [ ] CSV-safe feature export (`storage/mod.rs`)
+- [x] CSV-safe feature export (`storage/mod.rs`)
 - [x] Test: no DB writes without active session (`state.rs`, `storage/mod.rs`)
 - [ ] More `FeatureExtractor` tests (idle, mouse, session boundaries)
 - [ ] Pre-export summary in UI
@@ -125,18 +125,18 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 **Has tests:** `classifier.rs`, `app_context.rs`, `storage/mod.rs`, `state.rs`, `features.rs`, `tracker.rs`, `goal_alignment.rs`, `training_deploy.rs`, `onnx_model.rs`, `parity.rs`, `capture/thread.rs`, `title_parser.rs`, `classifier_eval.rs`
 
-**No tests yet:** `commands.rs`, `focus_modes.rs`, `permissions.rs`, `label_shortcuts.rs`, `tray.rs`, `overlay.rs`, `bench.rs`
+**No tests yet:** `label_shortcuts.rs`, `tray.rs`, `overlay.rs`, `bench.rs`
 
 **Worth adding first:**
 
-- [ ] `focus_modes.rs` — hyperfocus thresholds
-- [ ] Training false-success branch
+- [x] `focus_modes.rs` — hyperfocus thresholds
+- [x] Training false-success branch
 - [x] One ACTIVE session invariant
-- [ ] CSV escaping in feature export
+- [x] CSV escaping in feature export
 - [x] Session-gated persistence (`storage/mod.rs`, `state.rs`)
 - [ ] `FeatureExtractor` edge cases
-- [ ] Command harness for session start/stop
-- [ ] `permissions.rs` platform messages
+- [x] Command-boundary validation helpers
+- [x] `permissions.rs` message/probe honesty helpers
 - [x] ONNX override policy tests (`engine/classifier.rs`)
 - [x] `api.ts` mapper tests
 - [ ] E2E (later)

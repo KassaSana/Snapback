@@ -81,6 +81,7 @@ pub struct SnapbackPayload {
 #[serde(rename_all = "camelCase")]
 pub struct PermissionStatus {
     pub capture_available: bool,
+    pub capture_probe_confirmed: bool,
     pub active_window_available: bool,
     pub message: String,
     #[serde(default)]

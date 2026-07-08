@@ -5,19 +5,25 @@ import { summarizePermissions } from "../src/healthHints";
 assert.deepEqual(
   summarizePermissions({
     captureAvailable: true,
+    captureProbeConfirmed: false,
+    captureFailed: false,
+    captureRunning: false,
     activeWindowAvailable: true,
     message: "OK",
     setupSteps: [],
   }),
   {
-    label: "ready",
-    detail: "capture + active window access",
+    label: "partial",
+    detail: "probe only until listener starts",
   },
 );
 
 assert.deepEqual(
   summarizePermissions({
     captureAvailable: true,
+    captureProbeConfirmed: true,
+    captureFailed: false,
+    captureRunning: false,
     activeWindowAvailable: false,
     message: "Partial",
     setupSteps: [],
@@ -31,26 +37,32 @@ assert.deepEqual(
 assert.deepEqual(
   summarizePermissions({
     captureAvailable: false,
+    captureProbeConfirmed: false,
+    captureFailed: false,
+    captureRunning: true,
     activeWindowAvailable: true,
     message: "Partial",
     setupSteps: [],
   }),
   {
-    label: "partial",
-    detail: "active window access only",
+    label: "ready",
+    detail: "listener running + window access",
   },
 );
 
 assert.deepEqual(
   summarizePermissions({
     captureAvailable: false,
+    captureProbeConfirmed: false,
+    captureFailed: true,
+    captureRunning: false,
     activeWindowAvailable: false,
     message: "Blocked",
     setupSteps: [],
   }),
   {
     label: "blocked",
-    detail: "permissions required",
+    detail: "capture listener failed",
   },
 );
 

@@ -5,18 +5,48 @@ export type PermissionHealth = {
   detail: string;
 };
 
-export const summarizePermissions = (permissions: PermissionStatus): PermissionHealth => {
-  if (permissions.captureAvailable && permissions.activeWindowAvailable) {
+type PermissionHealthInput = PermissionStatus & {
+  captureFailed: boolean;
+  captureRunning: boolean;
+};
+
+export const summarizePermissions = (permissions: PermissionHealthInput): PermissionHealth => {
+  if (permissions.captureFailed) {
+    return {
+      label: "blocked",
+      detail: "capture listener failed",
+    };
+  }
+
+  if (permissions.captureRunning && permissions.activeWindowAvailable) {
     return {
       label: "ready",
-      detail: "capture + active window access",
+      detail: "listener running + window access",
+    };
+  }
+
+  if (permissions.captureRunning) {
+    return {
+      label: "partial",
+      detail: "listener running only",
+    };
+  }
+
+  if (
+    permissions.captureAvailable &&
+    permissions.activeWindowAvailable &&
+    !permissions.captureProbeConfirmed
+  ) {
+    return {
+      label: "partial",
+      detail: "probe only until listener starts",
     };
   }
 
   if (permissions.captureAvailable) {
     return {
       label: "partial",
-      detail: "capture access only",
+      detail: permissions.captureProbeConfirmed ? "capture access only" : "capture unverified",
     };
   }
 

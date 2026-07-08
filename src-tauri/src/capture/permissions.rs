@@ -3,25 +3,16 @@ use crate::types::PermissionStatus;
 pub fn check_permissions() -> PermissionStatus {
     let active_window_available = active_win_pos_rs::get_active_window().is_ok();
     let capture_available = probe_capture();
+    let capture_probe_confirmed = capture_probe_confirmed();
     let setup_steps =
         platform_setup_steps(!active_window_available, !capture_available);
 
-    let message = if let Some(msg) = capture_unavailable_message() {
-        msg
-    } else if !active_window_available && !capture_available {
-        platform_both_missing_message()
-    } else if !active_window_available {
-        "Active window detection unavailable. Grant Accessibility permission (see steps below)."
-            .to_string()
-    } else if !capture_available {
-        "Input capture unavailable. Grant Input Monitoring permission (see steps below)."
-            .to_string()
-    } else {
-        "Capture permissions look good.".to_string()
-    };
+    let message =
+        permission_message(active_window_available, capture_available, capture_probe_confirmed);
 
     PermissionStatus {
         capture_available,
+        capture_probe_confirmed,
         active_window_available,
         message,
         setup_steps,
@@ -39,6 +30,33 @@ pub fn capture_failure_message(reason: &str) -> PermissionStatus {
         "Capture listener exited — quit and relaunch Snapback after fixing permissions.".to_string(),
     );
     status
+}
+
+fn capture_probe_confirmed() -> bool {
+    false
+}
+
+fn permission_message(
+    active_window_available: bool,
+    capture_available: bool,
+    capture_probe_confirmed: bool,
+) -> String {
+    if let Some(msg) = capture_unavailable_message() {
+        msg
+    } else if capture_available && active_window_available && !capture_probe_confirmed {
+        "Permission probe passed, but global input capture is not confirmed until the listener starts."
+            .to_string()
+    } else if !active_window_available && !capture_available {
+        platform_both_missing_message()
+    } else if !active_window_available {
+        "Active window detection unavailable. Grant Accessibility permission (see steps below)."
+            .to_string()
+    } else if !capture_available {
+        "Input capture unavailable. Grant Input Monitoring permission (see steps below)."
+            .to_string()
+    } else {
+        "Capture permissions look good.".to_string()
+    }
 }
 
 fn capture_unavailable_message() -> Option<String> {
@@ -133,4 +151,23 @@ fn probe_capture() -> bool {
 #[cfg(not(target_os = "macos"))]
 fn probe_capture() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_message_marks_probe_only_state_as_unconfirmed() {
+        let message = permission_message(true, true, false);
+        assert!(message.contains("not confirmed until the listener starts"));
+    }
+
+    #[test]
+    fn capture_failure_message_prepends_restart_guidance() {
+        let status = capture_failure_message("listener died");
+        assert_eq!(status.message, "Input capture stopped: listener died");
+        assert!(!status.setup_steps.is_empty());
+        assert!(status.setup_steps[0].contains("Capture listener exited"));
+    }
 }

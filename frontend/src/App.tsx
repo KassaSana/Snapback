@@ -27,6 +27,7 @@ export default function App() {
     applyClassifierStatus,
     captureFailed,
     captureFailureReason,
+    captureProbeConfirmed,
     captureRunning,
     classifierBackend,
     classifierModelPath,
@@ -129,6 +130,7 @@ export default function App() {
       <AppHeader
         activeWindowAvailable={activeWindowAvailable}
         captureFailed={captureFailed}
+        captureProbeConfirmed={captureProbeConfirmed}
         captureRunning={captureRunning}
         classifierBackend={classifierBackend}
         classifierModelPath={classifierModelPath}
@@ -223,6 +225,8 @@ export default function App() {
         <PermissionsCard
           captureFailed={captureFailed}
           captureFailureReason={captureFailureReason}
+          captureProbeConfirmed={captureProbeConfirmed}
+          captureRunning={captureRunning}
           onRefreshPermissions={handleRefreshPermissions}
           permissionMessage={permissionMessage}
           permissionSteps={permissionSteps}

@@ -4,6 +4,7 @@ import { summarizePermissions } from "./healthHints";
 type AppHeaderProps = {
   activeWindowAvailable: boolean;
   captureFailed: boolean;
+  captureProbeConfirmed: boolean;
   captureRunning: boolean;
   classifierBackend: string;
   classifierModelPath: string | null;
@@ -26,6 +27,7 @@ const modelFileLabel = (path: string | null) => {
 export function AppHeader({
   activeWindowAvailable,
   captureFailed,
+  captureProbeConfirmed,
   captureRunning,
   classifierBackend,
   classifierModelPath,
@@ -37,6 +39,9 @@ export function AppHeader({
 }: AppHeaderProps) {
   const permissionHealth = summarizePermissions({
     captureAvailable: permissionCaptureAvailable,
+    captureFailed,
+    captureProbeConfirmed,
+    captureRunning,
     activeWindowAvailable,
     message: permissionMessage ?? "",
     setupSteps: permissionSteps,

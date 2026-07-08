@@ -6,6 +6,7 @@ export const useHealth = () => {
   const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline">("checking");
   const [captureRunning, setCaptureRunning] = useState(false);
   const [permissionCaptureAvailable, setPermissionCaptureAvailable] = useState(false);
+  const [captureProbeConfirmed, setCaptureProbeConfirmed] = useState(false);
   const [activeWindowAvailable, setActiveWindowAvailable] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [permissionSteps, setPermissionSteps] = useState<string[]>([]);
@@ -29,6 +30,7 @@ export const useHealth = () => {
     setCaptureFailed(health.captureFailed);
     setCaptureFailureReason(health.captureFailureReason);
     setPermissionCaptureAvailable(health.permissions.captureAvailable);
+    setCaptureProbeConfirmed(health.permissions.captureProbeConfirmed);
     setActiveWindowAvailable(health.permissions.activeWindowAvailable);
     setPermissionMessage(health.permissions.message);
     setPermissionSteps(health.permissions.setupSteps);
@@ -57,6 +59,7 @@ export const useHealth = () => {
     try {
       const status = await api.refreshPermissions();
       setPermissionCaptureAvailable(status.captureAvailable);
+      setCaptureProbeConfirmed(status.captureProbeConfirmed);
       setActiveWindowAvailable(status.activeWindowAvailable);
       setPermissionMessage(status.message);
       setPermissionSteps(status.setupSteps);
@@ -72,6 +75,7 @@ export const useHealth = () => {
     applyClassifierStatus,
     captureFailed,
     captureFailureReason,
+    captureProbeConfirmed,
     captureRunning,
     classifierBackend,
     classifierModelPath,

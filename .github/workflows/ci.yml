@@ -38,7 +38,9 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: python -m pip install --upgrade pip
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ml/requirements-train.txt
       - name: Run unit tests
         run: python -m unittest discover -s ml/tests -p "test_*.py"
 
@@ -100,16 +102,69 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - name: Install ONNX runtime
+        run: pip install -r ml/requirements-train.txt
+      - name: Resolve ONNX runtime DLL
+        shell: pwsh
+        run: |
+          $dll = python -c "import onnxruntime, pathlib; print(pathlib.Path(onnxruntime.__file__).parent / 'capi' / 'onnxruntime.dll')"
+          if (-not (Test-Path $dll)) {
+            throw 'onnxruntime.dll not found'
+          }
+          "ORT_DYLIB_PATH=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Check Rust core
         run: cargo check
+        working-directory: src-tauri
+      - name: Check Rust core (ONNX)
+        run: cargo check --features onnx
         working-directory: src-tauri
       - name: Run Rust unit tests
         run: cargo test
         working-directory: src-tauri
+      - name: Run Rust unit tests (ONNX)
+        run: cargo test --features onnx
+        working-directory: src-tauri
+
+  tauri-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            libx11-dev \
+            patchelf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install dependencies
+        run: |
+          npm run setup
+          pip install -r ml/requirements-train.txt
+      - name: Build Tauri app (no bundle)
+        run: npm run tauri build -- --features onnx --bundles none
 
   feature-parity:
     runs-on: ubuntu-latest
