@@ -28,6 +28,7 @@ import {
   formatTrainingMetrics,
   isDeployReady,
 } from "./trainingHints";
+import { buildAppRulePreview } from "./appRulePreview";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
@@ -503,6 +504,7 @@ export default function App() {
   const riskClass = riskLevel(riskValue);
   const sessionStatusLabel = sessionRecord ? sessionRecord.status.toLowerCase() : "idle";
   const trainFromExportHint = buildTrainFromExportHint(deployStatus);
+  const rulePreview = buildAppRulePreview(rulePattern, ruleKind, ruleNote);
   const canTrainFromExport =
     !trainingInProgress &&
     Boolean(
@@ -989,6 +991,7 @@ export default function App() {
               onChange={(event) => setRuleNote(event.target.value)}
             />
           </label>
+          {rulePreview ? <p className="rule-preview">{rulePreview}</p> : null}
           <button className="primary-button" onClick={() => void handleAddAppRule()}>
             Save rule
           </button>
