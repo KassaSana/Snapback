@@ -14,25 +14,16 @@ import {
   type ContextSnapshot,
   type FocusLabel,
   type LabelSource,
+  type ClassifierStatus,
   type PredictionRecord,
   type SessionRecord,
   type SessionRecap,
-  type TrainingDeployStatus,
 } from "./api";
-import {
-  buildExportSummary,
-  buildPipelineCommand,
-  buildTrainFromExportHint,
-  classifierBackendLabel,
-  classifyTrainDeployOutcome,
-  formatTrainingMetrics,
-  isDeployReady,
-} from "./trainingHints";
+import { classifierBackendLabel } from "./trainingHints";
 import { buildAppRulePreview } from "./appRulePreview";
 import { summarizePermissions } from "./healthHints";
-import {
-  shouldRefreshTimelineFromEvent,
-} from "./timelineRefresh";
+import { shouldRefreshTimelineFromEvent } from "./timelineRefresh";
+import { useTrainingDeploy } from "./useTrainingDeploy";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
@@ -102,14 +93,6 @@ export default function App() {
   const [labelStatusWarning, setLabelStatusWarning] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [surveyPending, setSurveyPending] = useState(false);
-  const [deployStatus, setDeployStatus] = useState<TrainingDeployStatus | null>(null);
-  const [repoPathInput, setRepoPathInput] = useState("");
-  const [trainingInProgress, setTrainingInProgress] = useState(false);
-  const [deployMessage, setDeployMessage] = useState<string | null>(null);
-  const [deployMessageWarning, setDeployMessageWarning] = useState(false);
-  const [showAdvancedCommand, setShowAdvancedCommand] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const [modelReloadStatus, setModelReloadStatus] = useState<string | null>(null);
   const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
   const [rulePattern, setRulePattern] = useState("");
   const [ruleKind, setRuleKind] = useState<AppRuleKind>("allow");
@@ -117,6 +100,39 @@ export default function App() {
   const [rulesStatus, setRulesStatus] = useState<string | null>(null);
   const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
   const lastTimelineRefreshAtRef = useRef<number | null>(null);
+
+  const applyClassifierStatus = useCallback((status: ClassifierStatus) => {
+    setClassifierBackend(status.backend);
+    setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
+    setClassifierModelPath(status.modelPath);
+  }, []);
+
+  const {
+    canTrainFromExport,
+    copyStatus,
+    deployMessage,
+    deployMessageWarning,
+    deployStatus,
+    handleCopyTrainingCommand,
+    handleExportTrainingData,
+    handleReloadClassifierModel,
+    handleSaveRepoPath,
+    handleTrainFromExport,
+    modelReloadStatus,
+    refreshDeployStatus,
+    repoPathInput,
+    setRepoPathInput,
+    setShowAdvancedCommand,
+    showAdvancedCommand,
+    trainingCommand,
+    trainFromExportHint,
+    trainingInProgress,
+  } = useTrainingDeploy({
+    sessionId,
+    setLabelStatus,
+    setLabelStatusWarning,
+    onClassifierStatusChange: applyClassifierStatus,
+  });
 
   const refreshContextTimeline = useCallback(async (sid?: string | null) => {
     const id = sid ?? sessionId;
@@ -176,18 +192,6 @@ export default function App() {
     }
   }, []);
 
-  const refreshDeployStatus = useCallback(async () => {
-    try {
-      const status = await api.getTrainingDeployStatus();
-      setDeployStatus(status);
-      if (status.repoPath && !repoPathInput) {
-        setRepoPathInput(status.repoPath);
-      }
-    } catch {
-      setDeployStatus(null);
-    }
-  }, [repoPathInput]);
-
   const applyHealth = useCallback((health: Awaited<ReturnType<typeof api.getHealth>>) => {
     setHealthStatus(health.captureFailed ? "offline" : health.status === "degraded" ? "offline" : "online");
     setCaptureRunning(health.captureRunning);
@@ -197,10 +201,8 @@ export default function App() {
     setActiveWindowAvailable(health.permissions.activeWindowAvailable);
     setPermissionMessage(health.permissions.message);
     setPermissionSteps(health.permissions.setupSteps);
-    setClassifierBackend(health.classifier.backend);
-    setClassifierOnnxRuntimeEnabled(health.classifier.onnxRuntimeEnabled);
-    setClassifierModelPath(health.classifier.modelPath);
-  }, []);
+    applyClassifierStatus(health.classifier);
+  }, [applyClassifierStatus]);
 
   const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
     setCaptureFailed(true);
@@ -375,120 +377,6 @@ export default function App() {
     setLabelStatus("Kept automatic session label.");
   };
 
-  const handleExportTrainingData = async () => {
-    setCopyStatus(null);
-    try {
-      const result = await api.exportTrainingData(sessionId ?? undefined);
-      if (result.featureCount === 0 && result.labelCount === 0) {
-        setLabelStatus(
-          "No training data yet. Run a session and tap feedback, then export again.",
-        );
-        return;
-      }
-      setLabelStatus(buildExportSummary(result.featureCount, result.labelCount, result.outputDir));
-      setDeployMessage("Export ready — train from export or reload if you already trained.");
-      await refreshDeployStatus();
-    } catch {
-      setLabelStatus("Could not export training data.");
-    }
-  };
-
-  const handleSaveRepoPath = async () => {
-    const trimmed = repoPathInput.trim();
-    if (!trimmed) {
-      setDeployMessage("Enter the folder that contains ml/pipeline_cli.py.");
-      return;
-    }
-    try {
-      await api.setTrainingRepoPath(trimmed);
-      setDeployMessage("Saved repo path.");
-      await refreshDeployStatus();
-    } catch {
-      setDeployMessage("Could not save repo path. Pick the Snapback repo root.");
-    }
-  };
-
-  const handleTrainFromExport = async () => {
-    setTrainingInProgress(true);
-    setDeployMessage(null);
-    setDeployMessageWarning(false);
-    setCopyStatus(null);
-    try {
-      const result = await api.trainFromExport();
-      const metricsSummary = formatTrainingMetrics(result.metrics);
-      const detail = metricsSummary ? ` ${metricsSummary}.` : "";
-      const outcome = classifyTrainDeployOutcome(result);
-      const deployNotReady = outcome === "trained-not-deployed";
-      const messageParts = [
-        deployNotReady
-          ? `Deploy not ready: ${result.message}${detail}`
-          : outcome === "failed"
-            ? result.message
-            : `${result.message}${detail}`,
-      ];
-      if (result.logTail) {
-        messageParts.push(result.logTail);
-      }
-      setDeployMessage(messageParts.join("\n"));
-      setDeployMessageWarning(deployNotReady || outcome === "failed");
-      await refreshDeployStatus();
-      if (isDeployReady(result)) {
-        try {
-          const status = await api.reloadClassifierModel();
-          setClassifierBackend(status.backend);
-          setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
-          setClassifierModelPath(status.modelPath);
-          setModelReloadStatus(
-            status.backend === "onnx"
-              ? "Loaded trained ONNX model."
-              : status.modelPath
-                ? "Model file found but ONNX runtime is not active in this build."
-                : "No model.onnx found. Run the training pipeline first.",
-          );
-        } catch {
-          setModelReloadStatus("Training succeeded but reload failed — click Reload model.");
-        }
-      }
-    } catch (err) {
-      setDeployMessage(err instanceof Error ? err.message : "Training could not start.");
-    } finally {
-      setTrainingInProgress(false);
-    }
-  };
-
-  const handleCopyTrainingCommand = async () => {
-    const command = deployStatus
-      ? buildPipelineCommand(deployStatus.exportDir, deployStatus.pipelineCommand)
-      : null;
-    if (!command) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopyStatus("Copied CLI command.");
-    } catch {
-      setCopyStatus("Select and copy the command manually.");
-    }
-  };
-
-  const handleReloadClassifierModel = async () => {
-    try {
-      const status = await api.reloadClassifierModel();
-      setClassifierBackend(status.backend);
-      setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
-      setClassifierModelPath(status.modelPath);
-      setModelReloadStatus(
-        status.backend === "onnx"
-          ? "Loaded trained ONNX model."
-          : status.modelPath
-            ? "Model file found but ONNX runtime is not active in this build."
-            : "No model.onnx found. Run the training pipeline first.",
-      );
-    } catch {
-      setModelReloadStatus("Could not reload classifier model.");
-    }
-  };
-
   const handleRefreshPermissions = async () => {
     try {
       const status = await api.refreshPermissions();
@@ -535,7 +423,6 @@ export default function App() {
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
   const riskClass = riskLevel(riskValue);
   const sessionStatusLabel = sessionRecord ? sessionRecord.status.toLowerCase() : "idle";
-  const trainFromExportHint = buildTrainFromExportHint(deployStatus);
   const rulePreview = buildAppRulePreview(rulePattern, ruleKind, ruleNote);
   const permissionHealth = summarizePermissions({
     captureAvailable: permissionCaptureAvailable,
@@ -543,11 +430,6 @@ export default function App() {
     message: permissionMessage ?? "",
     setupSteps: permissionSteps,
   });
-  const canTrainFromExport =
-    !trainingInProgress &&
-    Boolean(
-      deployStatus?.hasExport && deployStatus.repoConfigured && deployStatus.pythonAvailable,
-    );
   const classifierRuntimeLabel = classifierOnnxRuntimeEnabled
     ? "ONNX runtime enabled"
     : "ONNX runtime unavailable";
@@ -839,7 +721,7 @@ export default function App() {
             {showAdvancedCommand && deployStatus ? (
               <div className="training-command-block">
                 <pre className="training-command">
-                  {buildPipelineCommand(deployStatus.exportDir, deployStatus.pipelineCommand)}
+                  {trainingCommand}
                 </pre>
                 <button className="secondary-button" onClick={() => void handleCopyTrainingCommand()}>
                   Copy CLI command
