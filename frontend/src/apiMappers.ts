@@ -8,6 +8,7 @@ import type {
   PermissionStatus,
   PredictionRecord,
   SessionRecord,
+  SnapbackPayload,
   TrainFromExportResult,
   TrainingDeployStatus,
 } from "./api";
@@ -140,5 +141,17 @@ export function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFro
     onnxExported: Boolean(raw.onnx_exported ?? raw.onnxExported ?? false),
     metrics,
     logTail: String(raw.log_tail ?? raw.logTail ?? ""),
+  };
+}
+
+export function mapSnapbackPayload(raw: Record<string, unknown>): SnapbackPayload {
+  return {
+    summary: String(raw.summary ?? "Previous task"),
+    appName: String(raw.app_name ?? raw.appName ?? ""),
+    windowTitle: String(raw.window_title ?? raw.windowTitle ?? ""),
+    fileHint: String(raw.file_hint ?? raw.fileHint ?? ""),
+    distractionDurationSecs: Number(
+      raw.distraction_duration_secs ?? raw.distractionDurationSecs ?? 0,
+    ),
   };
 }

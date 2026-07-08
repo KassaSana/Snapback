@@ -11,6 +11,7 @@ import {
   mapPrediction,
   mapSession,
   mapSetupSteps,
+  mapSnapbackPayload,
   mapTrainFromExportResult,
   mapTrainingDeployStatus,
 } from "./apiMappers";
@@ -109,6 +110,14 @@ export type ContextSnapshot = {
   projectHint: string;
   summary: string;
   timestamp: string;
+};
+
+export type SnapbackPayload = {
+  summary: string;
+  appName: string;
+  windowTitle: string;
+  fileHint: string;
+  distractionDurationSecs: number;
 };
 
 export type ExportTrainingResult = {
@@ -245,8 +254,10 @@ export const api = {
     listen<Record<string, unknown>>("prediction", (event) => {
       handler(mapPrediction(event.payload));
     }),
-  onSnapback: (handler: (payload: Record<string, unknown>) => void) =>
-    listen<Record<string, unknown>>("snapback", (event) => handler(event.payload)),
+  onSnapback: (handler: (payload: SnapbackPayload) => void) =>
+    listen<Record<string, unknown>>("snapback", (event) => {
+      handler(mapSnapbackPayload(event.payload));
+    }),
   onHyperfocus: (handler: (payload: { message: string }) => void) =>
     listen<{ message: string }>("hyperfocus", (event) => handler(event.payload)),
   onLabelHotkey: (handler: (payload: LabelHotkeyPayload) => void) =>

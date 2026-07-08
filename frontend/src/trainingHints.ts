@@ -1,4 +1,7 @@
 /** Build the offline training command to run after in-app export. */
+import type { TrainFromExportResult } from "./api";
+
+export type TrainDeployOutcome = "failed" | "trained-not-deployed" | "deploy-ready";
 export const buildPipelineCommand = (outputDir: string, pipelineCommand?: string) => {
   if (pipelineCommand) {
     return pipelineCommand;
@@ -41,3 +44,18 @@ export const formatTrainingMetrics = (metrics: Record<string, number> | null) =>
   }
   return parts.length > 0 ? parts.join(" · ") : null;
 };
+
+export const classifyTrainDeployOutcome = (
+  result: TrainFromExportResult,
+): TrainDeployOutcome => {
+  if (!result.success) {
+    return "failed";
+  }
+  if (!result.onnxExported) {
+    return "trained-not-deployed";
+  }
+  return "deploy-ready";
+};
+
+export const isDeployReady = (result: TrainFromExportResult) =>
+  classifyTrainDeployOutcome(result) === "deploy-ready";

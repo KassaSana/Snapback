@@ -4,6 +4,7 @@ import {
   mapHealth,
   mapPrediction,
   mapSession,
+  mapSnapbackPayload,
   mapTrainFromExportResult,
 } from "../src/apiMappers";
 
@@ -103,5 +104,17 @@ const trainNotDeployed = mapTrainFromExportResult({
 
 assert.equal(trainNotDeployed.success, true);
 assert.equal(trainNotDeployed.onnxExported, false);
+
+const snapback = mapSnapbackPayload({
+  summary: "auth.ts — Snapback",
+  app_name: "Code",
+  window_title: "auth.ts - Snapback",
+  file_hint: "auth.ts",
+  distraction_duration_secs: 45,
+});
+
+assert.equal(snapback.summary, "auth.ts — Snapback");
+assert.equal(snapback.appName, "Code");
+assert.equal(snapback.distractionDurationSecs, 45);
 
 console.log("apiMappers.test.ts passed");
