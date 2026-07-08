@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect } from "react";
+﻿import { useAppEffects } from "./useAppEffects";
 
 import { api } from "./api";
 import { ActivityCards } from "./ActivityCards";
@@ -13,7 +13,7 @@ import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
 import { useHealth } from "./useHealth";
-import { HISTORY_LIMIT, TIMELINE_POLL_MS, useLiveData } from "./useLiveData";
+import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
 
@@ -108,73 +108,23 @@ export default function App() {
     setRulePattern,
   } = useAppRules();
 
-  useEffect(() => {
-    void refreshHealth();
-    void live.refreshLatest();
-    void refreshAppRules();
-    void refreshDeployStatus();
-    void hydrateActiveSession();
-  }, [hydrateActiveSession, refreshHealth, live.refreshLatest, refreshAppRules, refreshDeployStatus]);
-
-  useEffect(() => {
-    if (!sessionId || sessionRecord?.status !== "ACTIVE") {
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      void live.refreshContextTimeline(sessionId);
-    }, TIMELINE_POLL_MS);
-
-    return () => window.clearInterval(timer);
-  }, [sessionId, sessionRecord?.status, live.refreshContextTimeline]);
-
-  useEffect(() => {
-    const unsubs: Array<Promise<() => void>> = [];
-    unsubs.push(
-      api.onCaptureFailed((payload) => {
-        applyCaptureFailure(payload);
-      }),
-    );
-    unsubs.push(
-      api.onPrediction((record) => {
-        live.handlePrediction(record);
-        if (record.sessionId === sessionId && sessionRecord?.status === "ACTIVE") {
-          live.refreshTimelineFromEvent(record.sessionId);
-        }
-      }),
-    );
-    unsubs.push(
-      api.onSnapback((payload) => {
-        live.handleSnapback(payload);
-        if (sessionRecord?.status === "ACTIVE") {
-          live.refreshTimelineFromEvent(sessionId);
-        }
-      }),
-    );
-    unsubs.push(
-      api.onHyperfocus((payload) => {
-        live.handleHyperfocus(payload);
-      }),
-    );
-    unsubs.push(
-      api.onLabelHotkey((payload) => {
-        feedback.setLabelStatus(payload.message);
-        feedback.setLabelStatusWarning(!payload.ok);
-      }),
-    );
-
-    return () => {
-      void Promise.all(unsubs).then((handlers) => handlers.forEach((off) => off()));
-    };
-  }, [
-    applyCaptureFailure,
-    live.handleHyperfocus,
-    live.handlePrediction,
-    live.handleSnapback,
-    live.refreshTimelineFromEvent,
+  useAppEffects({
+    refreshHealth,
+    refreshLatest: live.refreshLatest,
+    refreshAppRules,
+    refreshDeployStatus,
+    hydrateActiveSession,
     sessionId,
-    sessionRecord?.status,
-  ]);
+    sessionStatus: sessionRecord?.status ?? null,
+    refreshContextTimeline: live.refreshContextTimeline,
+    applyCaptureFailure,
+    handlePrediction: live.handlePrediction,
+    handleSnapback: live.handleSnapback,
+    handleHyperfocus: live.handleHyperfocus,
+    refreshTimelineFromEvent: live.refreshTimelineFromEvent,
+    setLabelStatus: feedback.setLabelStatus,
+    setLabelStatusWarning: feedback.setLabelStatusWarning,
+  });
 
   return (
     <div className="app">
