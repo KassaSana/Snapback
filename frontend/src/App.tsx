@@ -29,6 +29,7 @@ import {
   isDeployReady,
 } from "./trainingHints";
 import { buildAppRulePreview } from "./appRulePreview";
+import { summarizePermissions } from "./healthHints";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
@@ -76,6 +77,8 @@ const buildSignals = (record: PredictionRecord | null) => {
 export default function App() {
   const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline">("checking");
   const [captureRunning, setCaptureRunning] = useState(false);
+  const [permissionCaptureAvailable, setPermissionCaptureAvailable] = useState(false);
+  const [activeWindowAvailable, setActiveWindowAvailable] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [permissionSteps, setPermissionSteps] = useState<string[]>([]);
   const [captureFailed, setCaptureFailed] = useState(false);
@@ -171,6 +174,8 @@ export default function App() {
     setCaptureRunning(health.captureRunning);
     setCaptureFailed(health.captureFailed);
     setCaptureFailureReason(health.captureFailureReason);
+    setPermissionCaptureAvailable(health.permissions.captureAvailable);
+    setActiveWindowAvailable(health.permissions.activeWindowAvailable);
     setPermissionMessage(health.permissions.message);
     setPermissionSteps(health.permissions.setupSteps);
     setClassifierBackend(health.classifier.backend);
@@ -462,6 +467,8 @@ export default function App() {
   const handleRefreshPermissions = async () => {
     try {
       const status = await api.refreshPermissions();
+      setPermissionCaptureAvailable(status.captureAvailable);
+      setActiveWindowAvailable(status.activeWindowAvailable);
       setPermissionMessage(status.message);
       setPermissionSteps(status.setupSteps);
       await refreshHealth();
@@ -505,6 +512,12 @@ export default function App() {
   const sessionStatusLabel = sessionRecord ? sessionRecord.status.toLowerCase() : "idle";
   const trainFromExportHint = buildTrainFromExportHint(deployStatus);
   const rulePreview = buildAppRulePreview(rulePattern, ruleKind, ruleNote);
+  const permissionHealth = summarizePermissions({
+    captureAvailable: permissionCaptureAvailable,
+    activeWindowAvailable,
+    message: permissionMessage ?? "",
+    setupSteps: permissionSteps,
+  });
   const canTrainFromExport =
     !trainingInProgress &&
     Boolean(
@@ -541,6 +554,15 @@ export default function App() {
             <span className={`status-value${captureFailed ? " status-alert" : ""}`}>
               {captureFailed ? "failed" : captureRunning ? "running" : "idle"}
             </span>
+          </div>
+          <div className="status-pill status-pill-stack">
+            <span className="status-label">Permissions</span>
+            <span
+              className={`status-value${permissionHealth.label === "blocked" ? " status-alert" : ""}`}
+            >
+              {permissionHealth.label}
+            </span>
+            <span className="status-detail">{permissionHealth.detail}</span>
           </div>
           <div className="status-pill">
             <span className="status-label">Classifier</span>
