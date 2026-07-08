@@ -24,7 +24,7 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
 ```
 
 - 21 Tauri commands in `lib.rs`, all used from `frontend/src/api.ts`
-- ~42 Rust tests, 13 Python test files, 2 frontend tests
+- ~42 Rust tests, 13 Python test files, 6 frontend test files
 - CI: Python, frontend, Rust (+ ONNX on Ubuntu), Windows `cargo test`, feature parity
 - Release: NSIS + DMG on `v*` tags
 
@@ -48,7 +48,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 | [ ] Windows/Linux probe | `permissions.rs:133-136` | Always returns `true` |
 | [ ] Capture restart lifecycle | `state.rs`, `capture/thread.rs` | Old capture threads are not stopped before respawn |
 | [ ] Probe vs capture-thread mismatch | `state.rs`, `App.tsx` | Probe OK but capture died |
-| [ ] Hotkey registration failures in UI | `label_shortcuts.rs`, `api.ts`, `App.tsx` | Only logged today |
+| [x] Hotkey registration failures in UI | `label_shortcuts.rs`, `api.ts`, `App.tsx` | Hotkey failures now surface in the UI with warning styling |
 
 ### ONNX behavior
 
@@ -57,8 +57,8 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 | [x] Decide ONNX + heuristic hybrid | `engine/classifier.rs` | ONNX sets scores; guardrails override `focus_state` (documented + tested) |
 | [ ] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
 | [x] Windows ONNX dev setup | `tools/dev-onnx.mjs`, `DEPLOYMENT.md` | `load-dynamic` + pip `onnxruntime.dll` via `ORT_DYLIB_PATH` |
-| [ ] Training deploy false success | `training_deploy.rs:212-217`, `App.tsx` | "Success" when ONNX export skipped |
-| [ ] Single ACTIVE session invariant | `storage/mod.rs`, `commands.rs` | Multiple ACTIVE sessions can exist |
+| [ ] Training deploy false success | `training_deploy.rs:212-217`, `App.tsx` | UI now warns, but backend still returns `success=true` when ONNX export is skipped |
+| [x] Single ACTIVE session invariant | `storage/mod.rs`, `commands.rs` | Starting a new session now completes any prior ACTIVE session |
 
 ### CI & release
 
@@ -76,8 +76,8 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 **Training & model**
 
-- [ ] Clear errors for missing Python deps (`training_deploy.rs`, `App.tsx`)
-- [ ] Model info in health UI (path, backend, train time, CV metrics)
+- [x] Clear errors for missing Python deps (`training_deploy.rs`, `App.tsx`)
+- [ ] Model info in health UI (path, backend shown; train time/CV metrics later)
 - [ ] Copy trained model to `app_data_dir/model.onnx` after train
 - [ ] Fail fast on majority-classifier stub (`ml/export_onnx.py`)
 - [ ] Short guide: min sessions/labels, when to retrain
@@ -85,19 +85,19 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 **Permissions**
 
 - [ ] First-run permission wizard
-- [ ] Separate "capture alive" vs "permissions OK" in health
+- [x] Separate "capture alive" vs "permissions OK" in health
 - [ ] Wayland warning before first session (Linux)
 
 **App rules**
 
-- [ ] UI copy: "Block" affects scoring only (`App.tsx:882-951`)
-- [ ] Rule preview before save
+- [x] UI copy: "Block" affects scoring only (`App.tsx:882-951`)
+- [x] Rule preview before save
 
 **Snapback**
 
 - [ ] Surface overlay creation errors (`snapback/overlay.rs:19-31`)
-- [ ] Type `onSnapback` payload (`api.ts:365-366`)
-- [ ] Event-driven timeline refresh (30s poll today)
+- [x] Type `onSnapback` payload (`api.ts:365-366`)
+- [x] Event-driven timeline refresh (30s poll today)
 
 **Data quality**
 
@@ -123,22 +123,22 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 ## Tier 3 — Tests
 
-**Has tests:** `classifier.rs`, `app_context.rs`, `storage/mod.rs`, `features.rs`, `tracker.rs`, `goal_alignment.rs`, `training_deploy.rs`, `onnx_model.rs`, `parity.rs`, `capture/thread.rs`, `title_parser.rs`, `classifier_eval.rs`
+**Has tests:** `classifier.rs`, `app_context.rs`, `storage/mod.rs`, `state.rs`, `features.rs`, `tracker.rs`, `goal_alignment.rs`, `training_deploy.rs`, `onnx_model.rs`, `parity.rs`, `capture/thread.rs`, `title_parser.rs`, `classifier_eval.rs`
 
-**No tests yet:** `commands.rs`, `state.rs`, `focus_modes.rs`, `permissions.rs`, `label_shortcuts.rs`, `tray.rs`, `overlay.rs`, `bench.rs`
+**No tests yet:** `commands.rs`, `focus_modes.rs`, `permissions.rs`, `label_shortcuts.rs`, `tray.rs`, `overlay.rs`, `bench.rs`
 
 **Worth adding first:**
 
 - [ ] `focus_modes.rs` — hyperfocus thresholds
 - [ ] Training false-success branch
-- [ ] One ACTIVE session invariant
+- [x] One ACTIVE session invariant
 - [ ] CSV escaping in feature export
 - [x] Session-gated persistence (`storage/mod.rs`, `state.rs`)
 - [ ] `FeatureExtractor` edge cases
 - [ ] Command harness for session start/stop
 - [ ] `permissions.rs` platform messages
 - [x] ONNX override policy tests (`engine/classifier.rs`)
-- [ ] `api.ts` mapper tests
+- [x] `api.ts` mapper tests
 - [ ] E2E (later)
 
 ---
@@ -194,4 +194,5 @@ Do this when stale docs slow you down — not before the smoke test.
 - CI + release on tags
 - Hotkeys, tray, in-app training deploy
 - Context timeline, snapback overlay, permissions UX
+- Frontend modularization: `App.tsx` split into hooks/components with visible error states and helper tests
 - Feature parity CI; CV in `train_baseline`

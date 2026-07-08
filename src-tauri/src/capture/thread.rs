@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -11,10 +12,25 @@ use crate::types::{CaptureEvent, EventType as AppEventType};
 const IDLE_THRESHOLD: Duration = Duration::from_secs(5);
 const MOUSE_SAMPLE_INTERVAL: Duration = Duration::from_millis(50);
 
+pub struct CaptureHandle {
+    stop_requested: Arc<AtomicBool>,
+    threads: Vec<thread::JoinHandle<()>>,
+}
+
+impl CaptureHandle {
+    pub fn stop_and_join(self) {
+        self.stop_requested.store(true, Ordering::Relaxed);
+        for thread in self.threads {
+            let _ = thread.join();
+        }
+    }
+}
+
 pub fn start_capture_thread(
     event_tx: std::sync::mpsc::Sender<CaptureEvent>,
     failure_tx: std::sync::mpsc::Sender<String>,
-) -> thread::JoinHandle<()> {
+) -> CaptureHandle {
+    let stop_requested = Arc::new(AtomicBool::new(false));
     let last_window: Arc<RwLock<Option<(String, String)>>> = Arc::new(RwLock::new(None));
     let last_activity: Arc<RwLock<SystemTime>> = Arc::new(RwLock::new(SystemTime::now()));
     let is_idle: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -23,17 +39,22 @@ pub fn start_capture_thread(
     let last_mouse_sample: Arc<RwLock<SystemTime>> =
         Arc::new(RwLock::new(SystemTime::now()));
 
-    start_idle_monitor(
+    let idle_thread = start_idle_monitor(
         event_tx.clone(),
         Arc::clone(&last_window),
         Arc::clone(&last_activity),
         Arc::clone(&is_idle),
         Arc::clone(&idle_started_at),
+        Arc::clone(&stop_requested),
     );
 
     let poll_window = Arc::clone(&last_window);
     let poll_tx = event_tx.clone();
-    thread::spawn(move || loop {
+    let poll_stop_requested = Arc::clone(&stop_requested);
+    let poll_thread = thread::spawn(move || loop {
+        if poll_stop_requested.load(Ordering::Relaxed) {
+            break;
+        }
         if let Some(info) = get_active_window_info() {
             let mut title_only = false;
             if let Some(current) = poll_window
@@ -69,7 +90,7 @@ pub fn start_capture_thread(
         thread::sleep(Duration::from_millis(500));
     });
 
-    thread::spawn(move || {
+    let listener_thread = thread::spawn(move || {
         let callback = move |event: Event| {
             let now = timestamp_secs();
             match event.event_type {
@@ -166,7 +187,12 @@ pub fn start_capture_thread(
             log::error!("capture thread stopped: {err:?}");
             let _ = failure_tx.send(format!("{err:?}"));
         }
-    })
+    });
+
+    CaptureHandle {
+        stop_requested,
+        threads: vec![idle_thread, poll_thread, listener_thread],
+    }
 }
 
 /// Polls for gaps in input activity and emits idle boundary events.
@@ -176,8 +202,12 @@ fn start_idle_monitor(
     last_activity: Arc<RwLock<SystemTime>>,
     is_idle: Arc<RwLock<bool>>,
     idle_started_at: Arc<RwLock<Option<SystemTime>>>,
-) {
+    stop_requested: Arc<AtomicBool>,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || loop {
+        if stop_requested.load(Ordering::Relaxed) {
+            break;
+        }
         thread::sleep(Duration::from_millis(500));
 
         let currently_idle = is_idle.read().ok().is_some_and(|g| *g);
@@ -214,7 +244,7 @@ fn start_idle_monitor(
             mouse_speed: 0,
             idle_duration_ms: 0,
         });
-    });
+    })
 }
 
 /// On resume from idle, emit `IdleEnd` with the full idle span before the activity event.
@@ -289,7 +319,12 @@ fn timestamp_secs() -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::mouse_speed_px_per_sec;
+    use super::{mouse_speed_px_per_sec, CaptureHandle};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::channel;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn mouse_speed_is_zero_without_prior_sample() {
@@ -301,5 +336,26 @@ mod tests {
         // 100px in 0.1s → 1000 px/s
         let prev = Some((0, 0, 0.0));
         assert_eq!(mouse_speed_px_per_sec(prev, 100, 0, 0.1), 1000);
+    }
+
+    #[test]
+    fn capture_handle_stop_and_join_stops_worker_threads() {
+        let stop_requested = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop_requested);
+        let (tx, rx) = channel();
+        let worker = thread::spawn(move || {
+            while !worker_stop.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(5));
+            }
+            let _ = tx.send(());
+        });
+
+        let handle = CaptureHandle {
+            stop_requested,
+            threads: vec![worker],
+        };
+        handle.stop_and_join();
+
+        assert!(rx.recv_timeout(Duration::from_secs(1)).is_ok());
     }
 }
