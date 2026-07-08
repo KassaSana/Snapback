@@ -11,24 +11,20 @@ import {
   type AppRuleKind,
   type AppRuleRecord,
   type CaptureFailurePayload,
-  type ContextSnapshot,
-  type FocusLabel,
-  type LabelSource,
   type ClassifierStatus,
+  type ContextSnapshot,
   type PredictionRecord,
-  type SessionRecord,
-  type SessionRecap,
 } from "./api";
 import { classifierBackendLabel } from "./trainingHints";
 import { buildAppRulePreview } from "./appRulePreview";
 import { summarizePermissions } from "./healthHints";
 import { shouldRefreshTimelineFromEvent } from "./timelineRefresh";
 import { useTrainingDeploy } from "./useTrainingDeploy";
+import { FOCUS_MODES, type FocusMode, useSession } from "./useSession";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
 const TIMELINE_POLL_MS = 30_000;
-const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
 const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
 
 const ruleKindLabel = (kind: AppRuleKind) => (kind === "allow" ? "Allow" : "Block");
@@ -82,17 +78,11 @@ export default function App() {
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<PredictionRecord | null>(null);
   const [predictionHistory, setPredictionHistory] = useState<PredictionRecord[]>([]);
-  const [sessionGoal, setSessionGoal] = useState("");
-  const [sessionRecord, setSessionRecord] = useState<SessionRecord | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [focusMode, setFocusMode] = useState<(typeof FOCUS_MODES)[number]>("normal");
-  const [recap, setRecap] = useState<SessionRecap | null>(null);
   const [hyperfocusNote, setHyperfocusNote] = useState<string | null>(null);
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
   const [labelStatusWarning, setLabelStatusWarning] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [surveyPending, setSurveyPending] = useState(false);
   const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
   const [rulePattern, setRulePattern] = useState("");
   const [ruleKind, setRuleKind] = useState<AppRuleKind>("allow");
@@ -106,6 +96,48 @@ export default function App() {
     setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
     setClassifierModelPath(status.modelPath);
   }, []);
+
+  const refreshContextTimeline = useCallback(async (sid?: string | null) => {
+    if (!sid) {
+      setContextTimeline([]);
+      return;
+    }
+
+    lastTimelineRefreshAtRef.current = Date.now();
+    try {
+      const rows = await api.getContextTimeline(sid, TIMELINE_LIMIT);
+      setContextTimeline(rows);
+    } catch {
+      setContextTimeline([]);
+    }
+  }, []);
+
+  const resetTimelineRefreshGate = useCallback(() => {
+    lastTimelineRefreshAtRef.current = null;
+  }, []);
+
+  const {
+    focusMode,
+    handleFocusModeChange,
+    handleLabel,
+    handleSkipSurvey,
+    handleStartSession,
+    handleStopSession,
+    hydrateActiveSession,
+    recap,
+    sessionGoal,
+    sessionId,
+    sessionRecord,
+    sessionStatusLabel,
+    setSessionGoal,
+    surveyPending,
+  } = useSession({
+    refreshContextTimeline,
+    resetTimelineRefreshGate,
+    setActionError,
+    setLabelStatus,
+    setLabelStatusWarning,
+  });
 
   const {
     canTrainFromExport,
@@ -133,22 +165,6 @@ export default function App() {
     setLabelStatusWarning,
     onClassifierStatusChange: applyClassifierStatus,
   });
-
-  const refreshContextTimeline = useCallback(async (sid?: string | null) => {
-    const id = sid ?? sessionId;
-    if (!id) {
-      setContextTimeline([]);
-      return;
-    }
-
-    lastTimelineRefreshAtRef.current = Date.now();
-    try {
-      const rows = await api.getContextTimeline(id, TIMELINE_LIMIT);
-      setContextTimeline(rows);
-    } catch {
-      setContextTimeline([]);
-    }
-  }, [sessionId]);
 
   const refreshTimelineFromEvent = useCallback((sid?: string | null) => {
     if (!sid || sessionRecord?.status !== "ACTIVE") {
@@ -235,47 +251,13 @@ export default function App() {
     }
   }, [pushPrediction]);
 
-  const handleLabel = useCallback(
-    async (label: FocusLabel, source: LabelSource = "manual") => {
-      if (!sessionId) {
-        setLabelStatus("Start a session to save feedback.");
-        return;
-      }
-      try {
-        await api.submitLabel(sessionId, label, undefined, source);
-        const prefix =
-          source === "hotkey"
-            ? "Hotkey saved"
-            : source === "survey"
-              ? "Session rating saved"
-              : "Saved";
-        setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
-        setLabelStatusWarning(false);
-        if (source === "survey") {
-          setSurveyPending(false);
-        }
-      } catch {
-        setLabelStatus("Could not save feedback.");
-        setLabelStatusWarning(true);
-      }
-    },
-    [sessionId],
-  );
-
   useEffect(() => {
     void refreshHealth();
     void refreshLatest();
     void refreshAppRules();
     void refreshDeployStatus();
-    void api.getActiveSession().then((active) => {
-      if (!active) return;
-      setSessionRecord(active);
-      setSessionId(active.sessionId);
-      setSessionGoal(active.goal);
-      setFocusMode((active.focusMode as (typeof FOCUS_MODES)[number]) || "normal");
-      void refreshContextTimeline(active.sessionId);
-    });
-  }, [refreshHealth, refreshLatest, refreshAppRules, refreshContextTimeline, refreshDeployStatus]);
+    void hydrateActiveSession();
+  }, [hydrateActiveSession, refreshHealth, refreshLatest, refreshAppRules, refreshDeployStatus]);
 
   useEffect(() => {
     if (!sessionId || sessionRecord?.status !== "ACTIVE") {
@@ -327,56 +309,6 @@ export default function App() {
     };
   }, [pushPrediction, applyCaptureFailure, refreshTimelineFromEvent, sessionId]);
 
-  const handleStartSession = async () => {
-    const goal = sessionGoal.trim();
-    if (!goal) return;
-    try {
-      const record = await api.startSession(goal, focusMode);
-      setSessionRecord(record);
-      setSessionId(record.sessionId);
-      setSessionGoal(record.goal);
-      setRecap(null);
-      setSurveyPending(false);
-      setActionError(null);
-      lastTimelineRefreshAtRef.current = null;
-      void refreshContextTimeline(record.sessionId);
-    } catch {
-      setActionError("Could not start session. Check capture permissions and try again.");
-    }
-  };
-
-  const handleStopSession = async () => {
-    if (!sessionId) return;
-    try {
-      const record = await api.stopSession(sessionId);
-      setSessionRecord(record);
-      const sessionRecap = await api.getSessionRecap(sessionId);
-      setRecap(sessionRecap);
-      setSurveyPending(true);
-      setLabelStatus("Automatic session label saved. How did this session feel overall?");
-      setLabelStatusWarning(false);
-      setActionError(null);
-      lastTimelineRefreshAtRef.current = null;
-      void refreshContextTimeline(sessionId);
-    } catch {
-      setActionError("Could not stop session or load recap.");
-    }
-  };
-
-  const handleFocusModeChange = async (mode: (typeof FOCUS_MODES)[number]) => {
-    setFocusMode(mode);
-    try {
-      await api.setFocusMode(mode);
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleSkipSurvey = () => {
-    setSurveyPending(false);
-    setLabelStatus("Kept automatic session label.");
-  };
-
   const handleRefreshPermissions = async () => {
     try {
       const status = await api.refreshPermissions();
@@ -422,7 +354,6 @@ export default function App() {
   const riskValue = prediction?.distractionRisk ?? null;
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
   const riskClass = riskLevel(riskValue);
-  const sessionStatusLabel = sessionRecord ? sessionRecord.status.toLowerCase() : "idle";
   const rulePreview = buildAppRulePreview(rulePattern, ruleKind, ruleNote);
   const permissionHealth = summarizePermissions({
     captureAvailable: permissionCaptureAvailable,
@@ -549,7 +480,7 @@ export default function App() {
             <select
               value={focusMode}
               onChange={(event) =>
-                void handleFocusModeChange(event.target.value as (typeof FOCUS_MODES)[number])
+                void handleFocusModeChange(event.target.value as FocusMode)
               }
             >
               {FOCUS_MODES.map((mode) => (
