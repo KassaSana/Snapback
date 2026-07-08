@@ -1,15 +1,10 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 
 import {
   api,
-  buildSignals,
   formatPercent,
   formatScore,
   formatTime,
-  riskLabel,
-  riskLevel,
-  type ContextSnapshot,
-  type PredictionRecord,
 } from "./api";
 import { classifierBackendLabel } from "./trainingHints";
 import { ActivityCards } from "./ActivityCards";
@@ -20,26 +15,19 @@ import { PermissionsCard } from "./PermissionsCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
-import { shouldRefreshTimelineFromEvent } from "./timelineRefresh";
 import { useAppRules } from "./useAppRules";
 import { useHealth } from "./useHealth";
+import { HISTORY_LIMIT, TIMELINE_POLL_MS, useLiveData } from "./useLiveData";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
 
-const HISTORY_LIMIT = 8;
-const TIMELINE_LIMIT = 20;
-const TIMELINE_POLL_MS = 30_000;
 
 export default function App() {
-  const [prediction, setPrediction] = useState<PredictionRecord | null>(null);
-  const [predictionHistory, setPredictionHistory] = useState<PredictionRecord[]>([]);
-  const [hyperfocusNote, setHyperfocusNote] = useState<string | null>(null);
-  const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
   const [labelStatusWarning, setLabelStatusWarning] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
-  const lastTimelineRefreshAtRef = useRef<number | null>(null);
+
+  const live = useLiveData();
 
   const {
     activeWindowAvailable,
@@ -59,25 +47,6 @@ export default function App() {
     refreshHealth,
   } = useHealth();
 
-  const refreshContextTimeline = useCallback(async (sid?: string | null) => {
-    if (!sid) {
-      setContextTimeline([]);
-      return;
-    }
-
-    lastTimelineRefreshAtRef.current = Date.now();
-    try {
-      const rows = await api.getContextTimeline(sid, TIMELINE_LIMIT);
-      setContextTimeline(rows);
-    } catch {
-      setContextTimeline([]);
-    }
-  }, []);
-
-  const resetTimelineRefreshGate = useCallback(() => {
-    lastTimelineRefreshAtRef.current = null;
-  }, []);
-
   const {
     focusMode,
     handleFocusModeChange,
@@ -94,8 +63,8 @@ export default function App() {
     setSessionGoal,
     surveyPending,
   } = useSession({
-    refreshContextTimeline,
-    resetTimelineRefreshGate,
+    refreshContextTimeline: live.refreshContextTimeline,
+    resetTimelineRefreshGate: live.resetTimelineRefreshGate,
     setActionError,
     setLabelStatus,
     setLabelStatusWarning,
@@ -145,59 +114,13 @@ export default function App() {
     setRulePattern,
   } = useAppRules();
 
-  const refreshTimelineFromEvent = useCallback((sid?: string | null) => {
-    if (!sid || sessionRecord?.status !== "ACTIVE") {
-      return;
-    }
-
-    const now = Date.now();
-    if (!shouldRefreshTimelineFromEvent(lastTimelineRefreshAtRef.current, now)) {
-      return;
-    }
-
-    lastTimelineRefreshAtRef.current = now;
-    void refreshContextTimeline(sid);
-  }, [refreshContextTimeline, sessionRecord?.status]);
-
-  const pushPrediction = useCallback((record: PredictionRecord | null) => {
-    if (!record) {
-      setPrediction(null);
-      return;
-    }
-
-    setPrediction(record);
-    setPredictionHistory((current) => {
-      const last = current[0];
-      const isDuplicate =
-        last &&
-        last.timestamp === record.timestamp &&
-        last.focusScore === record.focusScore &&
-        last.distractionRisk === record.distractionRisk;
-      const next = isDuplicate ? current : [record, ...current];
-      return next.slice(0, HISTORY_LIMIT);
-    });
-  }, []);
-
-  const refreshLatest = useCallback(async () => {
-    try {
-      const latest = await api.getLatestPrediction();
-      pushPrediction(latest);
-      const history = await api.getPredictionHistory(HISTORY_LIMIT);
-      if (history.length > 0) {
-        setPredictionHistory(history);
-      }
-    } catch {
-      pushPrediction(null);
-    }
-  }, [pushPrediction]);
-
   useEffect(() => {
     void refreshHealth();
-    void refreshLatest();
+    void live.refreshLatest();
     void refreshAppRules();
     void refreshDeployStatus();
     void hydrateActiveSession();
-  }, [hydrateActiveSession, refreshHealth, refreshLatest, refreshAppRules, refreshDeployStatus]);
+  }, [hydrateActiveSession, refreshHealth, live.refreshLatest, refreshAppRules, refreshDeployStatus]);
 
   useEffect(() => {
     if (!sessionId || sessionRecord?.status !== "ACTIVE") {
@@ -205,11 +128,11 @@ export default function App() {
     }
 
     const timer = window.setInterval(() => {
-      void refreshContextTimeline(sessionId);
+      void live.refreshContextTimeline(sessionId);
     }, TIMELINE_POLL_MS);
 
     return () => window.clearInterval(timer);
-  }, [sessionId, sessionRecord?.status, refreshContextTimeline]);
+  }, [sessionId, sessionRecord?.status, live.refreshContextTimeline]);
 
   useEffect(() => {
     const unsubs: Array<Promise<() => void>> = [];
@@ -220,21 +143,23 @@ export default function App() {
     );
     unsubs.push(
       api.onPrediction((record) => {
-        pushPrediction(record);
-        if (record.sessionId === sessionId) {
-          refreshTimelineFromEvent(record.sessionId);
+        live.handlePrediction(record);
+        if (record.sessionId === sessionId && sessionRecord?.status === "ACTIVE") {
+          live.refreshTimelineFromEvent(record.sessionId);
         }
       }),
     );
     unsubs.push(
       api.onSnapback((payload) => {
-        setSnapbackNote(`Snapback: ${payload.summary}`);
-        refreshTimelineFromEvent(sessionId);
+        live.handleSnapback(payload);
+        if (sessionRecord?.status === "ACTIVE") {
+          live.refreshTimelineFromEvent(sessionId);
+        }
       }),
     );
     unsubs.push(
       api.onHyperfocus((payload) => {
-        setHyperfocusNote(payload.message);
+        live.handleHyperfocus(payload);
       }),
     );
     unsubs.push(
@@ -247,12 +172,15 @@ export default function App() {
     return () => {
       void Promise.all(unsubs).then((handlers) => handlers.forEach((off) => off()));
     };
-  }, [pushPrediction, applyCaptureFailure, refreshTimelineFromEvent, sessionId]);
-
-  const signals = useMemo(() => buildSignals(prediction), [prediction]);
-  const riskValue = prediction?.distractionRisk ?? null;
-  const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
-  const riskClass = riskLevel(riskValue);
+  }, [
+    applyCaptureFailure,
+    live.handleHyperfocus,
+    live.handlePrediction,
+    live.handleSnapback,
+    live.refreshTimelineFromEvent,
+    sessionId,
+    sessionRecord?.status,
+  ]);
 
   return (
     <div className="app">
@@ -284,12 +212,12 @@ export default function App() {
 
       <main className="grid">
         <LiveStatusCards
-          hyperfocusNote={hyperfocusNote}
-          prediction={prediction}
-          riskBadgeLabel={riskBadgeLabel}
-          riskClass={riskClass}
-          signals={signals}
-          snapbackNote={snapbackNote}
+          hyperfocusNote={live.hyperfocusNote}
+          prediction={live.prediction}
+          riskBadgeLabel={live.riskBadgeLabel}
+          riskClass={live.riskClass}
+          signals={live.signals}
+          snapbackNote={live.snapbackNote}
         />
 
         <SessionControlCard
@@ -331,10 +259,10 @@ export default function App() {
         />
 
         <ActivityCards
-          contextTimeline={contextTimeline}
+          contextTimeline={live.contextTimeline}
           historyLimit={HISTORY_LIMIT}
-          predictionHistory={predictionHistory}
-          refreshContextTimeline={refreshContextTimeline}
+          predictionHistory={live.predictionHistory}
+          refreshContextTimeline={live.refreshContextTimeline}
           sessionId={sessionId}
         />
 
