@@ -25,7 +25,7 @@ import { summarizePermissions } from "./healthHints";
 import { shouldRefreshTimelineFromEvent } from "./timelineRefresh";
 import { useHealth } from "./useHealth";
 import { useTrainingDeploy } from "./useTrainingDeploy";
-import { FOCUS_MODES, type FocusMode, useSession } from "./useSession";
+import { useSession } from "./useSession";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
