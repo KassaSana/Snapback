@@ -2,6 +2,7 @@
 
 import {
   clamp,
+  focusStateLabel,
   formatPercent,
   formatScore,
   nextBackoffDelay,
@@ -22,6 +23,10 @@ assert.equal(riskLevel(0.1), "low");
 assert.equal(riskLabel(0.8), "High risk");
 assert.equal(riskLabel(0.5), "Medium risk");
 assert.equal(riskLabel(0.1), "Low risk");
+
+assert.equal(focusStateLabel("DEEP_FOCUS"), "Deep work");
+assert.equal(focusStateLabel("PSEUDO_PRODUCTIVE"), "Drift");
+assert.equal(focusStateLabel(null), "Unknown");
 
 assert.equal(nextBackoffDelay(0), 500);
 assert.equal(nextBackoffDelay(1), 1000);

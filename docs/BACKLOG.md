@@ -56,7 +56,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 |------|-------|-------|
 | [x] Decide ONNX + heuristic hybrid | `engine/classifier.rs` | ONNX sets scores; guardrails override `focus_state` (documented + tested) |
 | [ ] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
-| [ ] Windows ONNX dev setup | `BENCHMARK_RESULTS.md`, `DEPLOYMENT.md` | MSVC + `ort` linker pain |
+| [x] Windows ONNX dev setup | `tools/dev-onnx.mjs`, `DEPLOYMENT.md` | `load-dynamic` + pip `onnxruntime.dll` via `ORT_DYLIB_PATH` |
 | [ ] Training deploy false success | `training_deploy.rs:212-217`, `App.tsx` | "Success" when ONNX export skipped |
 | [ ] Single ACTIVE session invariant | `storage/mod.rs`, `commands.rs` | Multiple ACTIVE sessions can exist |
 
