@@ -251,17 +251,8 @@ fn run_engine_loop(app: AppHandle) {
                 tracker.on_prediction_feedback(&scores.focus_state, session_goal);
                 last_prediction_at = now;
 
-                if let Some(session) = active_session {
-                    if let Err(err) = state.storage.lock().save_prediction(&record) {
-                        log::warn!("failed to save prediction: {err}");
-                    }
-                    if let Err(err) = state
-                        .storage
-                        .lock()
-                        .save_feature_snapshot(&session.session_id, &features)
-                    {
-                        log::warn!("failed to save feature snapshot: {err}");
-                    }
+                if let Some(session) = active_session.as_ref() {
+                    persist_session_tick(&state.storage.lock(), session, &record, &features);
                 }
 
                 if scores.focus_state == "DEEP_FOCUS" {
@@ -316,6 +307,22 @@ fn run_engine_loop(app: AppHandle) {
     }
 }
 
+/// Persist prediction + feature rows only while a focus session is active.
+/// Live predictions still emit to the UI when no session is running.
+fn persist_session_tick(
+    storage: &Storage,
+    session: &crate::types::SessionRecord,
+    record: &PredictionRecord,
+    features: &crate::engine::features::FeatureVector,
+) {
+    if let Err(err) = storage.save_prediction(record) {
+        log::warn!("failed to save prediction: {err}");
+    }
+    if let Err(err) = storage.save_feature_snapshot(&session.session_id, features) {
+        log::warn!("failed to save feature snapshot: {err}");
+    }
+}
+
 fn persist_context_snapshot(state: &AppState, snapshot: ContextSnapshotDto) {
     let Some(session) = state
         .storage
@@ -333,5 +340,63 @@ fn persist_context_snapshot(state: &AppState, snapshot: ContextSnapshotDto) {
         .save_context_snapshot(&session.session_id, &snapshot)
     {
         log::warn!("failed to save context snapshot: {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::features::FeatureVector;
+    use crate::types::PredictionRecord;
+
+    fn temp_storage() -> Storage {
+        let dir = std::env::temp_dir().join(format!("snapback_state_test_{}", uuid::Uuid::new_v4()));
+        Storage::open(dir).unwrap()
+    }
+
+    fn sample_record(session_id: &str) -> PredictionRecord {
+        PredictionRecord {
+            session_id: session_id.to_string(),
+            focus_score: 80.0,
+            distraction_risk: 0.1,
+            focus_state: "DEEP_FOCUS".to_string(),
+            thrash_score: 0.05,
+            drift_score: 0.05,
+            goal_alignment: 0.7,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn persist_session_tick_writes_while_session_active() {
+        let storage = temp_storage();
+        let session = storage.start_session("Focus block", "normal").unwrap();
+        let features = FeatureVector {
+            keystroke_count: 6,
+            keystroke_rate: 2.0,
+            ..FeatureVector::empty(1_700_000_000.0)
+        };
+        let record = sample_record(&session.session_id);
+
+        persist_session_tick(&storage, &session, &record, &features);
+
+        assert_eq!(storage.prediction_count().unwrap(), 1);
+        assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn persist_session_tick_stops_after_session_stops() {
+        let storage = temp_storage();
+        let session = storage.start_session("Focus block", "normal").unwrap();
+        let features = FeatureVector::empty(1_700_000_000.0);
+        let record = sample_record(&session.session_id);
+
+        persist_session_tick(&storage, &session, &record, &features);
+        storage.stop_session(&session.session_id).unwrap();
+
+        persist_session_tick(&storage, &session, &record, &features);
+
+        assert_eq!(storage.prediction_count().unwrap(), 1);
+        assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
     }
 }

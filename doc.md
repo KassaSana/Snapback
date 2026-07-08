@@ -14,10 +14,10 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
-- [ ] Training false-success: don't treat skipped ONNX export as deploy-ready (`training_deploy.rs`, `App.tsx`)
-- [ ] Enforce one ACTIVE session (`storage/mod.rs`, `commands.rs`)
-- [ ] Session-gated persistence regression test (`state.rs`, `storage/mod.rs`)
-- [ ] App rules UI: clarify that "Block" only affects scoring (`App.tsx`)
+- [x] Training false-success: don't treat skipped ONNX export as deploy-ready (`training_deploy.rs`, `App.tsx`)
+- [x] Enforce one ACTIVE session (`storage/mod.rs`, `commands.rs`)
+- [x] App rules UI: clarify that "Block" only affects scoring (`App.tsx`)
+- [x] Session-gated persistence regression test (`state.rs`, `storage/mod.rs`)
 
 ## Later
 
