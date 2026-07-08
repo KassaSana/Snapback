@@ -23,7 +23,9 @@ import {
   buildExportSummary,
   buildPipelineCommand,
   classifierBackendLabel,
+  classifyTrainDeployOutcome,
   formatTrainingMetrics,
+  isDeployReady,
 } from "./trainingHints";
 
 const HISTORY_LIMIT = 8;
@@ -79,6 +81,8 @@ export default function App() {
   const [hyperfocusNote, setHyperfocusNote] = useState<string | null>(null);
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
+  const [labelStatusWarning, setLabelStatusWarning] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [surveyPending, setSurveyPending] = useState(false);
   const [deployStatus, setDeployStatus] = useState<TrainingDeployStatus | null>(null);
   const [repoPathInput, setRepoPathInput] = useState("");
@@ -207,6 +211,7 @@ export default function App() {
               ? "Session rating saved"
               : "Saved";
         setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
+        setLabelStatusWarning(false);
         if (source === "survey") {
           setSurveyPending(false);
         }
@@ -258,8 +263,7 @@ export default function App() {
     );
     unsubs.push(
       api.onSnapback((payload) => {
-        const summary = String(payload.summary ?? "Previous task");
-        setSnapbackNote(`Snapback: ${summary}`);
+        setSnapbackNote(`Snapback: ${payload.summary}`);
       }),
     );
     unsubs.push(
