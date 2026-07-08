@@ -1,4 +1,7 @@
 //! Evaluate heuristic vs ONNX classifiers against a labeled training CSV.
+//!
+//! Uses [`Classifier::predict`] end-to-end — including ONNX swap-in (when loaded)
+//! and post-model guardrails — so metrics match the live engine in `state.rs`.
 
 use std::collections::HashMap;
 use std::fs;

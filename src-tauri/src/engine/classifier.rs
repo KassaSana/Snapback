@@ -1,3 +1,25 @@
+//! Focus-state classifier: heuristic baseline, optional ONNX model, then safety guardrails.
+//!
+//! # Hybrid policy (production)
+//!
+//! Prediction runs in three stages. This is intentional — ONNX learns from labels;
+//! guardrails enforce product rules the model may miss or under-weight.
+//!
+//! 1. **Shared signals** — `heuristic_probas()` always runs. It computes thrash/drift
+//!    scores and a heuristic probability vector used when ONNX is unavailable.
+//! 2. **Model layer** — When `model.onnx` is loaded (`--features onnx`), ONNX class
+//!    probabilities replace the heuristic `focus_score`, `distraction_risk`, and
+//!    argmax `focus_state`. Thrash, drift, and goal alignment still come from stage 1.
+//! 3. **Guardrails** — [`apply_focus_guardrails`] may override **only** `focus_state`
+//!    (not numeric scores) when:
+//!    - `distraction_risk` meets the active [`FocusMode`] threshold, or
+//!    - thrash ≥ [`THRASH_DISTRACTED_THRESHOLD`], or
+//!    - the window matches a personal **block** app rule, or
+//!    - drift ≥ [`DRIFT_PSEUDO_THRESHOLD`] and state is not already `DEEP_FOCUS`.
+//!
+//! Training/eval (`classifier_eval.rs`) calls [`Classifier::predict`], so metrics include
+//! guardrails — the same path the live engine uses in `state.rs`.
+
 use crate::engine::app_context::classify;
 use crate::engine::features::FeatureVector;
 use crate::engine::goal_alignment::{alignment_bias, alignment_score};
@@ -13,13 +35,19 @@ pub struct PredictionScores {
     pub goal_alignment: f64,
 }
 
-const FOCUS_LEVELS: [f64; 4] = [25.0, 50.0, 75.0, 100.0];
 pub(crate) const STATE_LABELS: [&str; 4] = [
     "DISTRACTED",
     "PSEUDO_PRODUCTIVE",
     "PRODUCTIVE",
     "DEEP_FOCUS",
 ];
+
+/// Thrash at or above this value forces `DISTRACTED` regardless of model output.
+pub(crate) const THRASH_DISTRACTED_THRESHOLD: f64 = 0.75;
+/// Drift at or above this value forces `PSEUDO_PRODUCTIVE` unless already `DEEP_FOCUS`.
+pub(crate) const DRIFT_PSEUDO_THRESHOLD: f64 = 0.55;
+
+const FOCUS_LEVELS: [f64; 4] = [25.0, 50.0, 75.0, 100.0];
 
 fn clamp(value: f64, min: f64, max: f64) -> f64 {
     value.max(min).min(max)
@@ -191,6 +219,26 @@ fn scores_from_probas(
     }
 }
 
+/// Post-model safety rules. May upgrade distraction severity; never downgrades it.
+pub(crate) fn apply_focus_guardrails(
+    mut scores: PredictionScores,
+    thrash: f64,
+    drift: f64,
+    personal_block: bool,
+    focus_mode: FocusMode,
+) -> PredictionScores {
+    let threshold = focus_mode.risk_threshold();
+    if scores.distraction_risk >= threshold
+        || thrash >= THRASH_DISTRACTED_THRESHOLD
+        || personal_block
+    {
+        scores.focus_state = "DISTRACTED".to_string();
+    } else if drift >= DRIFT_PSEUDO_THRESHOLD && scores.focus_state != "DEEP_FOCUS" {
+        scores.focus_state = "PSEUDO_PRODUCTIVE".to_string();
+    }
+    scores
+}
+
 pub struct Classifier {
     focus_mode: FocusMode,
 }
@@ -217,23 +265,18 @@ impl Classifier {
             .unwrap_or(0.5);
 
         let (probas, thrash, drift) = heuristic_probas(features, session_goal, rules);
-        let mut scores = scores_from_probas(probas, thrash, drift, goal_alignment);
+        let scores = scores_from_probas(probas, thrash, drift, goal_alignment);
 
         #[cfg(feature = "onnx")]
-        if let Some(onnx_scores) =
+        let scores = if let Some(onnx_scores) =
             crate::engine::onnx_model::predict(features, thrash, drift, goal_alignment)
         {
-            scores = onnx_scores;
-        }
+            onnx_scores
+        } else {
+            scores
+        };
 
-        let threshold = self.focus_mode.risk_threshold();
-        if scores.distraction_risk >= threshold || thrash >= 0.75 || ctx.personal_block {
-            scores.focus_state = "DISTRACTED".to_string();
-        } else if drift >= 0.55 && scores.focus_state != "DEEP_FOCUS" {
-            scores.focus_state = "PSEUDO_PRODUCTIVE".to_string();
-        }
-
-        scores
+        apply_focus_guardrails(scores, thrash, drift, ctx.personal_block, self.focus_mode)
     }
 }
 
@@ -394,5 +437,104 @@ mod tests {
         let blocked_scores = Classifier::new(FocusMode::Normal).predict(&features, None, &rules);
         assert!(blocked_scores.distraction_risk >= default_scores.distraction_risk);
         assert_eq!(blocked_scores.focus_state, "DISTRACTED");
+    }
+
+    #[test]
+    fn guardrail_overrides_model_deep_focus_on_high_thrash() {
+        let onnx_like = build_prediction_scores([0.05, 0.05, 0.10, 0.80], 0.80, 0.10, 0.5);
+        assert_eq!(onnx_like.focus_state, "DEEP_FOCUS");
+
+        let final_scores = apply_focus_guardrails(
+            onnx_like,
+            0.80,
+            0.10,
+            false,
+            FocusMode::Normal,
+        );
+        assert_eq!(final_scores.focus_state, "DISTRACTED");
+        assert!((final_scores.focus_score - 91.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn guardrail_overrides_model_productive_on_personal_block() {
+        let onnx_like = build_prediction_scores([0.05, 0.10, 0.70, 0.15], 0.20, 0.10, 0.5);
+        assert_ne!(onnx_like.focus_state, "DISTRACTED");
+
+        let final_scores = apply_focus_guardrails(
+            onnx_like,
+            0.20,
+            0.10,
+            true,
+            FocusMode::Normal,
+        );
+        assert_eq!(final_scores.focus_state, "DISTRACTED");
+    }
+
+    #[test]
+    fn guardrail_promotes_pseudo_on_high_drift_but_preserves_deep_focus() {
+        let productive = build_prediction_scores([0.10, 0.15, 0.60, 0.15], 0.20, 0.60, 0.5);
+        let promoted = apply_focus_guardrails(productive, 0.20, 0.60, false, FocusMode::Normal);
+        assert_eq!(promoted.focus_state, "PSEUDO_PRODUCTIVE");
+
+        let deep = build_prediction_scores([0.05, 0.05, 0.10, 0.80], 0.20, 0.60, 0.5);
+        let preserved = apply_focus_guardrails(deep, 0.20, 0.60, false, FocusMode::Normal);
+        assert_eq!(preserved.focus_state, "DEEP_FOCUS");
+    }
+
+    #[test]
+    fn guardrail_uses_focus_mode_risk_threshold() {
+        let borderline = PredictionScores {
+            focus_score: 70.0,
+            distraction_risk: 0.72,
+            focus_state: "PRODUCTIVE".to_string(),
+            thrash_score: 0.1,
+            drift_score: 0.1,
+            goal_alignment: 0.5,
+        };
+
+        let normal = apply_focus_guardrails(
+            borderline.clone(),
+            0.1,
+            0.1,
+            false,
+            FocusMode::Normal,
+        );
+        assert_eq!(normal.focus_state, "DISTRACTED");
+
+        let recovery = apply_focus_guardrails(
+            borderline,
+            0.1,
+            0.1,
+            false,
+            FocusMode::Recovery,
+        );
+        assert_eq!(recovery.focus_state, "PRODUCTIVE");
+    }
+
+    #[cfg(feature = "onnx")]
+    #[test]
+    fn production_predict_applies_guardrails_after_onnx() {
+        use std::path::Path;
+
+        crate::engine::onnx_model::reset_model_for_tests();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/model.onnx");
+        if !path.is_file() {
+            return;
+        }
+        crate::engine::onnx_model::init(&path).expect("load fixtures/model.onnx");
+
+        let features = FeatureVector {
+            context_switches_30s: 5,
+            context_switches_5min: 12,
+            unique_apps_5min: 6,
+            is_entertainment: true,
+            app_name: "Google Chrome".to_string(),
+            window_title: "YouTube".to_string(),
+            ..FeatureVector::empty(0.0)
+        };
+
+        let scores = Classifier::new(FocusMode::Normal).predict(&features, None, &[]);
+        assert!(scores.thrash_score >= THRASH_DISTRACTED_THRESHOLD);
+        assert_eq!(scores.focus_state, "DISTRACTED");
     }
 }
