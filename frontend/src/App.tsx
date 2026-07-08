@@ -17,6 +17,7 @@ import { classifierBackendLabel } from "./trainingHints";
 import { ActivityCards } from "./ActivityCards";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
+import { PermissionsCard } from "./PermissionsCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
@@ -469,34 +470,13 @@ export default function App() {
           setRulePattern={setRulePattern}
         />
 
-        <section className={`card config-card${captureFailed ? " config-card-alert" : ""}`}>
-          <div className="card-header">
-            <h2>Permissions</h2>
-            <span className={`pill${captureFailed ? " pill-alert" : ""}`}>
-              {captureFailed ? "capture failed" : "local desktop"}
-            </span>
-          </div>
-          {captureFailed ? (
-            <p className="helper-text alert">
-              Capture listener stopped
-              {captureFailureReason ? `: ${captureFailureReason}` : "."}
-            </p>
-          ) : null}
-          <p className="helper-text">
-            {permissionMessage ||
-              "Snapback runs locally. Grant Accessibility + Input Monitoring on macOS."}
-          </p>
-          {permissionSteps.length > 0 ? (
-            <ol className="permission-steps">
-              {permissionSteps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          ) : null}
-          <button className="secondary-button" onClick={() => void handleRefreshPermissions()}>
-            Refresh permissions
-          </button>
-        </section>
+        <PermissionsCard
+          captureFailed={captureFailed}
+          captureFailureReason={captureFailureReason}
+          onRefreshPermissions={handleRefreshPermissions}
+          permissionMessage={permissionMessage}
+          permissionSteps={permissionSteps}
+        />
       </main>
     </div>
   );
