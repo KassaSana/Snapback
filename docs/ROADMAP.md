@@ -28,6 +28,7 @@ Alpha works end-to-end. What's left: smoke test, permissions honesty, CI follow-
 | Training deploy | In-app export → train → reload |
 | Correctness-first hardening | Training semantics, capture lifecycle, CSV export, command validation, dependency audits, permission honesty |
 | CI hardening | Windows ONNX checks, Python ML deps, Tauri build smoke |
+| Quality gate | Synthetic classifier benchmark now fails CI on conservative regression floors |
 | Global hotkeys | Ctrl+Shift+1–4 |
 | Tray | show/hide/quit |
 | Feature parity CI | `ml.feature_parity_cli` |

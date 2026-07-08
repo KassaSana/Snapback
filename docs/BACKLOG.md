@@ -67,7 +67,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 | [x] Windows CI with ONNX | `ci.yml` `rust-windows` | Windows now checks/tests `--features onnx` with `ORT_DYLIB_PATH` |
 | [x] Tauri build in CI | `ci.yml` | Ubuntu now runs a non-bundled `tauri build` smoke check |
 | [x] Python CI with ML deps | `ci.yml` | Training deps now install in CI before Python tests |
-| [ ] Classifier quality gate | `tools/benchmark_classifier_quality.py` | No regression thresholds |
+| [x] Classifier quality gate | `tools/benchmark_classifier_quality.py`, `ci.yml` | CI now enforces conservative CV floors + recall lift over heuristic |
 | [ ] Feature parity on Windows (optional) | `ci.yml` | Ubuntu only |
 
 ---

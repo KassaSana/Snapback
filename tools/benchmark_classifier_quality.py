@@ -27,6 +27,10 @@ MODEL_ONNX = DATA_DIR / "model.onnx"
 MODEL_JSON = DATA_DIR / "model.json"
 METRICS_JSON = DATA_DIR / "metrics.json"
 MANIFEST = REPO_ROOT / "src-tauri" / "Cargo.toml"
+DEFAULT_MIN_CV_ACCURACY = 0.55
+DEFAULT_MIN_CV_PRECISION_AT_10PCT = 0.45
+DEFAULT_MIN_CV_RECALL_DISTRACTED = 0.30
+DEFAULT_MIN_RECALL_LIFT = 0.20
 
 
 @dataclass
@@ -187,12 +191,66 @@ def build_report(
     }
 
 
+def evaluate_quality_gate(
+    report: dict,
+    *,
+    min_cv_accuracy: float,
+    min_cv_precision_at_10pct: float,
+    min_cv_recall_distracted: float,
+    min_recall_lift: float,
+) -> list[str]:
+    quality = report.get("classifier_quality", {})
+    heuristic = quality.get("heuristic_rust", {})
+    cv = quality.get("xgboost_training_metrics", {})
+
+    failures: list[str] = []
+    cv_accuracy = float(cv.get("cv_accuracy", 0.0))
+    cv_precision = float(cv.get("precision_at_10pct", 0.0))
+    cv_recall = float(cv.get("recall_distracted", 0.0))
+    heuristic_recall = float(heuristic.get("recall_distracted", 0.0))
+    recall_lift = cv_recall - heuristic_recall
+
+    if cv_accuracy < min_cv_accuracy:
+        failures.append(
+            f"cv_accuracy {cv_accuracy:.3f} < required {min_cv_accuracy:.3f}"
+        )
+    if cv_precision < min_cv_precision_at_10pct:
+        failures.append(
+            "precision_at_10pct "
+            f"{cv_precision:.3f} < required {min_cv_precision_at_10pct:.3f}"
+        )
+    if cv_recall < min_cv_recall_distracted:
+        failures.append(
+            "recall_distracted "
+            f"{cv_recall:.3f} < required {min_cv_recall_distracted:.3f}"
+        )
+    if recall_lift < min_recall_lift:
+        failures.append(
+            f"recall lift vs heuristic {recall_lift:.3f} < required {min_recall_lift:.3f}"
+        )
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark heuristic vs ONNX classifier quality")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--skip-train", action="store_true", help="Reuse existing data/ artifacts")
     parser.add_argument("--skip-latency", action="store_true", help="Skip release inference benchmark")
     parser.add_argument("--output-json", default=str(DATA_DIR / "benchmark_quality.json"))
+    parser.add_argument("--enforce-gate", action="store_true", help="Fail if quality floors regress")
+    parser.add_argument("--min-cv-accuracy", type=float, default=DEFAULT_MIN_CV_ACCURACY)
+    parser.add_argument(
+        "--min-cv-precision-at-10pct",
+        type=float,
+        default=DEFAULT_MIN_CV_PRECISION_AT_10PCT,
+    )
+    parser.add_argument(
+        "--min-cv-recall-distracted",
+        type=float,
+        default=DEFAULT_MIN_CV_RECALL_DISTRACTED,
+    )
+    parser.add_argument("--min-recall-lift", type=float, default=DEFAULT_MIN_RECALL_LIFT)
     args = parser.parse_args()
 
     if not args.skip_train:
@@ -247,6 +305,21 @@ def main() -> int:
     with open(output_json, "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2)
         handle.write("\n")
+
+    if args.enforce_gate:
+        failures = evaluate_quality_gate(
+            report,
+            min_cv_accuracy=args.min_cv_accuracy,
+            min_cv_precision_at_10pct=args.min_cv_precision_at_10pct,
+            min_cv_recall_distracted=args.min_cv_recall_distracted,
+            min_recall_lift=args.min_recall_lift,
+        )
+        if failures:
+            print("classifier quality gate failed:", file=sys.stderr)
+            for failure in failures:
+                print(f" - {failure}", file=sys.stderr)
+            return 1
+        print("classifier quality gate passed")
 
     print(json.dumps(report["classifier_quality"], indent=2))
     print(f"wrote {output_json}")
