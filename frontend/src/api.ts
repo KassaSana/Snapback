@@ -273,6 +273,7 @@ export const api = {
 };
 
 export {
+  buildSignals,
   clamp,
   focusStateLabel,
   formatPercent,
