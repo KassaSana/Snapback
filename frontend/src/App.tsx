@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   api,
@@ -30,6 +30,9 @@ import {
 } from "./trainingHints";
 import { buildAppRulePreview } from "./appRulePreview";
 import { summarizePermissions } from "./healthHints";
+import {
+  shouldRefreshTimelineFromEvent,
+} from "./timelineRefresh";
 
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
@@ -113,6 +116,7 @@ export default function App() {
   const [ruleNote, setRuleNote] = useState("");
   const [rulesStatus, setRulesStatus] = useState<string | null>(null);
   const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
+  const lastTimelineRefreshAtRef = useRef<number | null>(null);
 
   const refreshContextTimeline = useCallback(async (sid?: string | null) => {
     const id = sid ?? sessionId;
@@ -121,6 +125,7 @@ export default function App() {
       return;
     }
 
+    lastTimelineRefreshAtRef.current = Date.now();
     try {
       const rows = await api.getContextTimeline(id, TIMELINE_LIMIT);
       setContextTimeline(rows);
@@ -128,6 +133,20 @@ export default function App() {
       setContextTimeline([]);
     }
   }, [sessionId]);
+
+  const refreshTimelineFromEvent = useCallback((sid?: string | null) => {
+    if (!sid || sessionRecord?.status !== "ACTIVE") {
+      return;
+    }
+
+    const now = Date.now();
+    if (!shouldRefreshTimelineFromEvent(lastTimelineRefreshAtRef.current, now)) {
+      return;
+    }
+
+    lastTimelineRefreshAtRef.current = now;
+    void refreshContextTimeline(sid);
+  }, [refreshContextTimeline, sessionRecord?.status]);
 
   const pushPrediction = useCallback((record: PredictionRecord | null) => {
     if (!record) {
@@ -278,11 +297,15 @@ export default function App() {
     unsubs.push(
       api.onPrediction((record) => {
         pushPrediction(record);
+        if (record.sessionId === sessionId) {
+          refreshTimelineFromEvent(record.sessionId);
+        }
       }),
     );
     unsubs.push(
       api.onSnapback((payload) => {
         setSnapbackNote(`Snapback: ${payload.summary}`);
+        refreshTimelineFromEvent(sessionId);
       }),
     );
     unsubs.push(
@@ -300,7 +323,7 @@ export default function App() {
     return () => {
       void Promise.all(unsubs).then((handlers) => handlers.forEach((off) => off()));
     };
-  }, [pushPrediction, applyCaptureFailure]);
+  }, [pushPrediction, applyCaptureFailure, refreshTimelineFromEvent, sessionId]);
 
   const handleStartSession = async () => {
     const goal = sessionGoal.trim();
@@ -313,6 +336,7 @@ export default function App() {
       setRecap(null);
       setSurveyPending(false);
       setActionError(null);
+      lastTimelineRefreshAtRef.current = null;
       void refreshContextTimeline(record.sessionId);
     } catch {
       setActionError("Could not start session. Check capture permissions and try again.");
@@ -330,6 +354,7 @@ export default function App() {
       setLabelStatus("Automatic session label saved. How did this session feel overall?");
       setLabelStatusWarning(false);
       setActionError(null);
+      lastTimelineRefreshAtRef.current = null;
       void refreshContextTimeline(sessionId);
     } catch {
       setActionError("Could not stop session or load recap.");
