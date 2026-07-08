@@ -1,6 +1,5 @@
 ﻿import { useAppEffects } from "./useAppEffects";
 
-import { api } from "./api";
 import { ActivityCards } from "./ActivityCards";
 import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
@@ -16,7 +15,6 @@ import { useHealth } from "./useHealth";
 import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
-
 
 export default function App() {
   const feedback = useFeedback();
