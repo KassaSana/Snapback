@@ -1,5 +1,5 @@
 /** Build the offline training command to run after in-app export. */
-import type { TrainFromExportResult } from "./api";
+import type { TrainFromExportResult, TrainingDeployStatus } from "./api";
 
 export type TrainDeployOutcome = "failed" | "trained-not-deployed" | "deploy-ready";
 export const buildPipelineCommand = (outputDir: string, pipelineCommand?: string) => {
@@ -21,6 +21,19 @@ export const buildExportSummary = (
   outputDir: string,
 ) =>
   `Exported ${featureCount} features and ${labelCount} labels to ${outputDir}`;
+
+export const buildTrainFromExportHint = (status: TrainingDeployStatus | null) => {
+  if (!status?.hasExport) {
+    return "Export training data first to generate features and labels.";
+  }
+  if (!status.repoConfigured) {
+    return "Set your Snapback repo path first, or set SNAPBACK_REPO.";
+  }
+  if (!status.pythonAvailable) {
+    return "Install Python training deps: pip install -r ml/requirements-train.txt";
+  }
+  return null;
+};
 
 export const classifierBackendLabel = (backend: string) =>
   backend === "onnx" ? "ONNX" : "Heuristic";

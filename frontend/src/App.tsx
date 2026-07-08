@@ -22,6 +22,7 @@ import {
 import {
   buildExportSummary,
   buildPipelineCommand,
+  buildTrainFromExportHint,
   classifierBackendLabel,
   classifyTrainDeployOutcome,
   formatTrainingMetrics,
@@ -501,6 +502,12 @@ export default function App() {
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
   const riskClass = riskLevel(riskValue);
   const sessionStatusLabel = sessionRecord ? sessionRecord.status.toLowerCase() : "idle";
+  const trainFromExportHint = buildTrainFromExportHint(deployStatus);
+  const canTrainFromExport =
+    !trainingInProgress &&
+    Boolean(
+      deployStatus?.hasExport && deployStatus.repoConfigured && deployStatus.pythonAvailable,
+    );
   const classifierRuntimeLabel = classifierOnnxRuntimeEnabled
     ? "ONNX runtime enabled"
     : "ONNX runtime unavailable";
@@ -748,11 +755,7 @@ export default function App() {
               </button>
               <button
                 className="primary-button"
-                disabled={
-                  trainingInProgress ||
-                  !deployStatus?.hasExport ||
-                  !deployStatus.pythonAvailable
-                }
+                disabled={!canTrainFromExport}
                 onClick={() => void handleTrainFromExport()}
               >
                 {trainingInProgress ? "Training…" : "Train from export"}
@@ -761,10 +764,9 @@ export default function App() {
                 Reload model
               </button>
             </div>
-            {!deployStatus?.repoConfigured ? (
-              <p className="helper-text">
-                Point to your Snapback repo once (folder with ml/pipeline_cli.py), or set
-                SNAPBACK_REPO.
+            {trainFromExportHint ? (
+              <p className="helper-text alert">
+                {trainFromExportHint}
               </p>
             ) : null}
             {deployMessage ? (
