@@ -1,6 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import {
+  mapAppRule,
+  mapClassifierStatus,
+  mapContextSnapshot,
+  mapExportTrainingResult,
+  mapHealth,
+  mapPermissionStatus,
+  mapPrediction,
+  mapSession,
+  mapSetupSteps,
+  mapTrainFromExportResult,
+  mapTrainingDeployStatus,
+} from "./apiMappers";
+
 export type RiskLevel = "high" | "medium" | "low" | "unknown";
 
 export type PredictionRecord = {
@@ -97,93 +111,6 @@ export type ContextSnapshot = {
   timestamp: string;
 };
 
-function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapshot {
-  return {
-    appName: String(raw.app_name ?? raw.appName ?? ""),
-    windowTitle: String(raw.window_title ?? raw.windowTitle ?? ""),
-    fileHint: String(raw.file_hint ?? raw.fileHint ?? ""),
-    projectHint: String(raw.project_hint ?? raw.projectHint ?? ""),
-    summary: String(raw.summary ?? ""),
-    timestamp: String(raw.timestamp ?? ""),
-  };
-}
-
-function mapSetupSteps(raw: Record<string, unknown>): string[] {
-  const steps = raw.setup_steps ?? raw.setupSteps;
-  return Array.isArray(steps) ? steps.map((step: unknown) => String(step)) : [];
-}
-
-function mapPermissionStatus(raw: Record<string, unknown>): PermissionStatus {
-  return {
-    captureAvailable: Boolean(raw.capture_available ?? raw.captureAvailable ?? false),
-    activeWindowAvailable: Boolean(
-      raw.active_window_available ?? raw.activeWindowAvailable ?? false,
-    ),
-    message: String(raw.message ?? ""),
-    setupSteps: mapSetupSteps(raw),
-  };
-}
-
-function mapClassifierStatus(raw: Record<string, unknown>): ClassifierStatus {
-  return {
-    backend: String(raw.backend ?? "heuristic"),
-    onnxRuntimeEnabled: Boolean(raw.onnx_runtime_enabled ?? raw.onnxRuntimeEnabled ?? false),
-    modelPath: (raw.model_path ?? raw.modelPath ?? null) as string | null,
-  };
-}
-
-function mapHealth(raw: Record<string, unknown>): HealthStatus {
-  return {
-    status: String(raw.status ?? "offline"),
-    captureRunning: Boolean(raw.capture_running ?? raw.captureRunning ?? false),
-    captureFailed: Boolean(raw.capture_failed ?? raw.captureFailed ?? false),
-    captureFailureReason: (raw.capture_failure_reason ??
-      raw.captureFailureReason ??
-      null) as string | null,
-    permissions: mapPermissionStatus(
-      (raw.permissions as Record<string, unknown>) ?? {},
-    ),
-    classifier: mapClassifierStatus(
-      (raw.classifier as Record<string, unknown>) ?? {},
-    ),
-  };
-}
-
-function mapAppRule(raw: Record<string, unknown>): AppRuleRecord {
-  return {
-    id: Number(raw.id ?? 0),
-    pattern: String(raw.pattern ?? ""),
-    ruleType: String(raw.rule_type ?? raw.ruleType ?? "allow") as AppRuleKind,
-    note: (raw.note ?? null) as string | null,
-    createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
-    updatedAt: String(raw.updated_at ?? raw.updatedAt ?? ""),
-  };
-}
-
-function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
-  return {
-    sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
-    focusScore: Number(raw.focus_score ?? raw.focusScore ?? 0),
-    distractionRisk: Number(raw.distraction_risk ?? raw.distractionRisk ?? 0),
-    focusState: String(raw.focus_state ?? raw.focusState ?? "UNKNOWN"),
-    thrashScore: Number(raw.thrash_score ?? raw.thrashScore ?? 0),
-    driftScore: Number(raw.drift_score ?? raw.driftScore ?? 0),
-    goalAlignment: Number(raw.goal_alignment ?? raw.goalAlignment ?? 0.5),
-    timestamp: String(raw.timestamp ?? ""),
-  };
-}
-
-function mapSession(raw: Record<string, unknown>): SessionRecord {
-  return {
-    sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
-    goal: String(raw.goal ?? ""),
-    status: String(raw.status ?? ""),
-    focusMode: String(raw.focus_mode ?? raw.focusMode ?? "normal"),
-    startedAt: (raw.started_at ?? raw.startedAt ?? null) as string | null,
-    endedAt: (raw.ended_at ?? raw.endedAt ?? null) as string | null,
-  };
-}
-
 export type ExportTrainingResult = {
   outputDir: string;
   featuresPath: string;
@@ -212,50 +139,6 @@ export type TrainFromExportResult = {
   metrics: Record<string, number> | null;
   logTail: string;
 };
-
-function mapExportTrainingResult(raw: Record<string, unknown>): ExportTrainingResult {
-  return {
-    outputDir: String(raw.output_dir ?? raw.outputDir ?? ""),
-    featuresPath: String(raw.features_path ?? raw.featuresPath ?? ""),
-    labelsPath: String(raw.labels_path ?? raw.labelsPath ?? ""),
-    featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
-    labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
-  };
-}
-
-function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingDeployStatus {
-  return {
-    exportDir: String(raw.export_dir ?? raw.exportDir ?? ""),
-    featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
-    labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
-    hasExport: Boolean(raw.has_export ?? raw.hasExport ?? false),
-    modelOnnxExists: Boolean(raw.model_onnx_exists ?? raw.modelOnnxExists ?? false),
-    metricsExists: Boolean(raw.metrics_exists ?? raw.metricsExists ?? false),
-    pythonAvailable: Boolean(raw.python_available ?? raw.pythonAvailable ?? false),
-    repoPath: (raw.repo_path ?? raw.repoPath ?? null) as string | null,
-    repoConfigured: Boolean(raw.repo_configured ?? raw.repoConfigured ?? false),
-    pipelineCommand: String(raw.pipeline_command ?? raw.pipelineCommand ?? ""),
-  };
-}
-
-function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFromExportResult {
-  const metricsRaw = raw.metrics;
-  let metrics: Record<string, number> | null = null;
-  if (metricsRaw && typeof metricsRaw === "object" && !Array.isArray(metricsRaw)) {
-    metrics = {};
-    for (const [key, value] of Object.entries(metricsRaw as Record<string, unknown>)) {
-      metrics[key] = Number(value);
-    }
-  }
-
-  return {
-    success: Boolean(raw.success ?? false),
-    message: String(raw.message ?? ""),
-    onnxExported: Boolean(raw.onnx_exported ?? raw.onnxExported ?? false),
-    metrics,
-    logTail: String(raw.log_tail ?? raw.logTail ?? ""),
-  };
-}
 
 export const api = {
   getHealth: async () => {
@@ -378,66 +261,13 @@ export const api = {
     }),
 };
 
-export const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-export const formatPercent = (value: number | null | undefined) => {
-  if (value === null || value === undefined || Number.isNaN(value)) return "--";
-  const pct = clamp(value, 0, 1) * 100;
-  return `${pct.toFixed(1)}%`;
-};
-
-export const formatScore = (value: number | null | undefined) => {
-  if (value === null || value === undefined || Number.isNaN(value)) return "--";
-  const score = clamp(value, 0, 100);
-  return score.toFixed(1);
-};
-
-export const formatTime = (isoString: string | null | undefined) => {
-  if (!isoString) return "--";
-  const date = new Date(isoString);
-  if (Number.isNaN(date.getTime())) return "--";
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-};
-
-export const riskLevel = (risk: number | null | undefined): RiskLevel => {
-  if (risk === null || risk === undefined || Number.isNaN(risk)) return "unknown";
-  if (risk >= 0.7) return "high";
-  if (risk >= 0.4) return "medium";
-  return "low";
-};
-
-export const riskLabel = (risk: number | null | undefined) => {
-  const level = riskLevel(risk);
-  if (level === "high") return "High risk";
-  if (level === "medium") return "Medium risk";
-  if (level === "low") return "Low risk";
-  return "Unknown";
-};
-
-export const focusStateLabel = (state: string | null | undefined) => {
-  switch (state) {
-    case "DEEP_FOCUS":
-      return "Deep work";
-    case "PRODUCTIVE":
-      return "Productive";
-    case "PSEUDO_PRODUCTIVE":
-      return "Drift";
-    case "DISTRACTED":
-      return "Distracted";
-    default:
-      return "Unknown";
-  }
-};
-
-export const nextBackoffDelay = (attempt: number) => {
-  const safeAttempt = Math.max(0, attempt);
-  const baseMs = 500;
-  const maxMs = 10000;
-  const delay = baseMs * Math.pow(2, safeAttempt);
-  return Math.min(delay, maxMs);
-};
+export {
+  clamp,
+  focusStateLabel,
+  formatPercent,
+  formatScore,
+  formatTime,
+  nextBackoffDelay,
+  riskLabel,
+  riskLevel,
+} from "./utils";

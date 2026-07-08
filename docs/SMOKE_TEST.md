@@ -22,9 +22,9 @@ capture → features → classifier → UI
 ## Before you start
 
 - [ ] Close other focus trackers / heavy CPU apps
-- [ ] Python training deps installed: `pip install -r ml/requirements-train.txt`
+- [ ] Python training deps installed: `pip install -r ml/requirements-train.txt` (includes `onnxruntime` for Windows ONNX dev)
 - [ ] Repo path ready (your Snapback clone) for in-app training
-- [ ] Terminal for dev build: `npm run tauri:dev` (from repo root)
+- [ ] Terminal for dev build: `npm run tauri:dev` (from repo root; sets `ORT_DYLIB_PATH` on Windows)
 - [ ] Optional: [DB Browser for SQLite](https://sqlitebrowser.org/) to spot-check rows
 
 **Record:**
@@ -204,6 +204,7 @@ When passed, check off in [`doc.md`](../doc.md):
 | Symptom | Check |
 |---------|--------|
 | Capture failed | Windows privacy → input capture; restart app |
+| `LNK2019` / `__std_find_first_of` on `tauri:dev` | MSVC + static `ort` mismatch — repo now uses `load-dynamic`; run `cargo clean` then `npm run tauri:dev` again. Fallback: `npm run tauri:dev:heuristic` (no in-app ONNX) |
 | Predictions frozen | Capture thread died — Signals card + header |
 | Export 0 features | Session was active long enough? (~1 row/sec while running) |
 | Export 0 labels | Complete A5 |

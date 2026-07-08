@@ -41,6 +41,21 @@ export const riskLabel = (risk: number | null | undefined) => {
   return "Unknown";
 };
 
+export const focusStateLabel = (state: string | null | undefined) => {
+  switch (state) {
+    case "DEEP_FOCUS":
+      return "Deep work";
+    case "PRODUCTIVE":
+      return "Productive";
+    case "PSEUDO_PRODUCTIVE":
+      return "Drift";
+    case "DISTRACTED":
+      return "Distracted";
+    default:
+      return "Unknown";
+  }
+};
+
 export const nextBackoffDelay = (attempt: number) => {
   const safeAttempt = Math.max(0, attempt);
   const baseMs = 500;

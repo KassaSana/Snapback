@@ -60,6 +60,16 @@ Without `xgboost` / `onnxmltools`, training may fall back to a majority-classifi
 
 Dev and release builds use `--features onnx`. The header shows **Heuristic** until `model.onnx` is loaded.
 
+### Windows ONNX dev (`LNK2019` linker errors)
+
+Static linking to pyke's `onnxruntime.lib` can fail on some MSVC toolchains (`__std_find_first_of_trivial_pos_*`). The repo uses ort's **`load-dynamic`** feature instead: Rust loads `onnxruntime.dll` at runtime.
+
+1. `pip install onnxruntime` (included in `ml/requirements-train.txt`)
+2. `npm run tauri:dev` — sets `ORT_DYLIB_PATH` to pip's DLL via `tools/dev-onnx.mjs`
+3. Fallback (no ONNX in dev): `npm run tauri:dev:heuristic`
+
+Ubuntu CI still builds with `--features onnx`; Linux uses the normal ort download path.
+
 ## App icons
 
 Desktop icons are generated from a square source image:
