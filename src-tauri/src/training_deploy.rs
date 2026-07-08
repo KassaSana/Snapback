@@ -140,10 +140,40 @@ pub fn training_deploy_status(app_data_dir: &Path) -> TrainingDeployStatus {
 #[serde(rename_all = "camelCase")]
 pub struct TrainFromExportResult {
     pub success: bool,
+    pub training_succeeded: bool,
+    pub deploy_ready: bool,
     pub message: String,
     pub onnx_exported: bool,
     pub metrics: Option<HashMap<String, f64>>,
     pub log_tail: String,
+}
+
+fn build_train_from_export_result(
+    training_succeeded: bool,
+    onnx_exported: bool,
+    metrics: Option<HashMap<String, f64>>,
+    log_tail: String,
+) -> TrainFromExportResult {
+    let deploy_ready = training_succeeded && onnx_exported;
+    let message = if !training_succeeded {
+        "Training failed. Install deps: pip install xgboost onnxmltools onnx (see log)."
+            .to_string()
+    } else if deploy_ready {
+        "Training complete — model.onnx is ready. Reload model to activate.".to_string()
+    } else {
+        "Training finished but ONNX export was skipped (majority stub or missing export deps)."
+            .to_string()
+    };
+
+    TrainFromExportResult {
+        success: deploy_ready,
+        training_succeeded,
+        deploy_ready,
+        message,
+        onnx_exported,
+        metrics,
+        log_tail,
+    }
 }
 
 pub fn train_from_export(app_data_dir: &Path) -> Result<TrainFromExportResult, String> {
@@ -198,31 +228,20 @@ pub fn train_from_export(app_data_dir: &Path) -> Result<TrainFromExportResult, S
         .flatten();
 
     if !output.status.success() {
-        return Ok(TrainFromExportResult {
-            success: false,
-            message:
-                "Training failed. Install deps: pip install xgboost onnxmltools onnx (see log)."
-                    .to_string(),
+        return Ok(build_train_from_export_result(
+            false,
             onnx_exported,
             metrics,
             log_tail,
-        });
+        ));
     }
 
-    let message = if onnx_exported {
-        "Training complete — model.onnx is ready. Reload model to activate.".to_string()
-    } else {
-        "Training finished but ONNX export was skipped (majority stub or missing export deps)."
-            .to_string()
-    };
-
-    Ok(TrainFromExportResult {
-        success: true,
-        message,
+    Ok(build_train_from_export_result(
+        true,
         onnx_exported,
         metrics,
         log_tail,
-    })
+    ))
 }
 
 fn parse_metrics_json(path: &Path) -> Option<HashMap<String, f64>> {
@@ -270,5 +289,29 @@ mod tests {
         let command = build_pipeline_command(Path::new(r"C:\app data\exports\training"));
         assert!(command.contains("--output-dir"));
         assert!(command.contains(r#""C:\app data\exports\training""#));
+    }
+
+    #[test]
+    fn build_train_result_marks_deploy_ready_only_when_model_exists() {
+        let result = build_train_from_export_result(true, false, None, String::new());
+        assert!(result.training_succeeded);
+        assert!(!result.deploy_ready);
+        assert!(!result.success);
+        assert_eq!(
+            result.message,
+            "Training finished but ONNX export was skipped (majority stub or missing export deps)."
+        );
+    }
+
+    #[test]
+    fn build_train_result_reports_success_only_for_deployable_model() {
+        let result = build_train_from_export_result(true, true, None, String::new());
+        assert!(result.training_succeeded);
+        assert!(result.deploy_ready);
+        assert!(result.success);
+        assert_eq!(
+            result.message,
+            "Training complete — model.onnx is ready. Reload model to activate."
+        );
     }
 }

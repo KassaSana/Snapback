@@ -33,4 +33,5 @@ Update this at the start and end of each work session. Keep it short.
 - [x] ONNX loop + in-app training deploy
 - [x] CI + release workflow (Windows/macOS on tag)
 - [x] Global hotkey labeling, tray, context timeline
+- [x] Frontend cleanup: `App.tsx` split into hooks/components with clearer UI error feedback and helper tests
 - [x] Feature parity CI, ONNX tests, real CV in training

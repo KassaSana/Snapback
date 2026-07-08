@@ -1,6 +1,6 @@
 # Code Health Review
 
-Last reviewed: 2026-07-06
+Last reviewed: 2026-07-08
 
 Scope: Rust/Tauri backend, React frontend, Python ML pipeline, and cross-language training/deploy path.
 
@@ -15,7 +15,7 @@ Use this doc as the fix queue after the smoke test. The full planning backlog li
 | Area | Grade | Summary |
 |------|-------|---------|
 | Rust backend | B | Good architecture and tests in storage/classifier; weak capture lifecycle and session integrity |
-| Frontend | C+ | Functional but too centralized in `App.tsx`; many silent errors and thin tests |
+| Frontend | B | Major cleanup landed: `App.tsx` is split into hooks/components with visible error states; remaining gaps are mostly integration coverage and smoke-test confidence |
 | ML pipeline | B+ | Best-structured area; good unit tests, but optional dependency path is loose |
 | Train/deploy integration | C | Can report success when `model.onnx` was not produced |
 | Security | B | Reasonable for a local desktop app; training repo path is trusted code execution |
@@ -33,23 +33,17 @@ Start here. These are ordered for impact and learning value.
 2. **Training false-success**  
    `training_deploy.rs` can return `success: true` when Python exits 0 but `model.onnx` was skipped. The UI should treat this as "training ran, deploy not ready" and make the warning obvious.
 
-3. **Single ACTIVE session invariant**  
-   `storage.start_session()` always inserts a new ACTIVE session. Enforce one active session at a time or explicitly complete the old one.
-
-4. **Capture lifecycle**  
+3. **Capture lifecycle**  
    `restart_capture_if_needed()` can spawn new capture threads without stopping old ones. Add cancellation/handles before respawn.
 
-5. **Permission honesty**  
+4. **Permission honesty**  
    macOS `probe_capture()` checks active window access, not actual `rdev` input capture. The health UI can say capture is OK when Input Monitoring is blocked.
 
-6. **Training CSV escaping**  
+5. **Training CSV escaping**  
    Feature export joins values with commas. Window titles with commas can corrupt training CSVs.
 
-7. **Frontend error handling and split**  
-   `App.tsx` is large and has many bare `catch {}` blocks. Pull out hooks/components gradually and show user-visible errors.
-
-8. **Regression tests**  
-   Add one narrow test per fix: active-session invariant, CSV escaping, training false-success branch, `api.ts` mappers.
+6. **Regression tests**  
+   Add one narrow test per fix: CSV escaping, training false-success branch, capture restart behavior, and any command-boundary session checks you decide to add.
 
 ---
 
@@ -79,15 +73,15 @@ Start here. These are ordered for impact and learning value.
 
 ---
 
-### H3 — Multiple ACTIVE sessions are allowed
+### H3 — Multiple ACTIVE sessions were allowed
 
 **Files:** `src-tauri/src/storage/mod.rs`, `src-tauri/src/commands.rs`
 
-`start_session()` inserts a new ACTIVE session without checking for an existing one. `get_active_session()` returns only the newest.
+`start_session()` used to insert a new ACTIVE session without checking for an existing one. `get_active_session()` then returned only the newest.
 
-**Why it matters:** orphan ACTIVE sessions can accumulate. Predictions, labels, and recaps can attach to a different session than the user expects.
+**Why it mattered:** orphan ACTIVE sessions could accumulate. Predictions, labels, and recaps could attach to a different session than the user expected.
 
-**Good fix:** enforce one ACTIVE session. Either reject `start_session()` when one exists, or auto-complete the previous session before inserting a new one. Add a storage test.
+**Status:** fixed. Starting a new session now auto-completes the previous ACTIVE session, and storage tests cover the behavior.
 
 ---
 
@@ -107,11 +101,11 @@ If Python exits 0 but ONNX export is skipped, Rust returns `success: true` and `
 
 **Files:** `frontend/src/App.tsx`
 
-`App.tsx` is roughly 1,000 lines and has many bare `catch {}` blocks. Session start/stop, refresh, training status, and listener paths can fail with little or no feedback.
+`App.tsx` was roughly 1,000 lines and had many bare `catch {}` blocks. Session start/stop, refresh, training status, and listener paths could fail with little or no feedback.
 
-**Why it matters:** when something breaks, the user sees stale UI instead of an actionable error.
+**Why it mattered:** when something broke, the user saw stale UI instead of an actionable error.
 
-**Good fix:** add a small `setErrorBanner()` pattern first. Then split by feature: `useHealth`, `useSession`, `useTrainingDeploy`, and presentational cards.
+**Status:** largely fixed. The app now uses visible error/warning states and `App.tsx` has been split into focused hooks/components. Remaining frontend work is mostly validation and selective integration coverage.
 
 ---
 
@@ -209,9 +203,9 @@ Examples: unbounded `limit` in history/timeline commands, no max session goal le
 
 **Files:** `frontend/src/utils.ts`, `frontend/src/api.ts`, `frontend/tests/utils.test.ts`
 
-The app imports formatting helpers from `api.ts`, while tests cover `utils.ts`. That means tests can pass while the app code drifts.
+The app used to import formatting helpers from `api.ts`, while tests covered `utils.ts`. That meant tests could pass while the app code drifted.
 
-**Good fix:** keep one source of truth. Move pure helpers out of `api.ts` into one tested module, or delete `utils.ts` and test `api.ts` helpers directly.
+**Status:** fixed. Pure helpers now live in one tested module and `api.ts` re-exports the shared helpers the app imports.
 
 ---
 
@@ -250,10 +244,8 @@ Training deps are commented out. Users can run training and fall into majority-s
 
 | Test | Why |
 |------|-----|
-| `storage.start_session()` with existing active session | Locks session invariant |
 | Training result with `success=true`, `onnx_exported=false` | Locks deploy semantics |
 | Feature CSV title with comma/quote/newline | Protects ML exports |
-| `api.ts` mapper tests | Tests what frontend actually imports |
 | `focus_modes.rs` hyperfocus thresholds | Small, easy first Rust test |
 | Capture restart behavior | Prevents thread leak regressions |
 
@@ -277,17 +269,17 @@ Goal:
 - A missing `model.onnx` should produce a warning / not-deploy-ready state.
 - The app should not imply the ONNX model is active unless reload succeeds.
 
-### Task B — Enforce one active session
+### Task B — Fix capture lifecycle
 
 Files:
 
-- `src-tauri/src/storage/mod.rs`
-- `src-tauri/src/commands.rs`
+- `src-tauri/src/state.rs`
+- `src-tauri/src/capture/thread.rs`
 
 Goal:
 
-- Starting a session while another is ACTIVE should either reject or complete the prior one.
-- Add a unit test documenting the chosen behavior.
+- Stop old capture threads before respawn.
+- Add a test or other verification that restart does not leak duplicate workers.
 
 ### Task C — Make CSV export safe
 
@@ -300,20 +292,16 @@ Goal:
 - Use proper CSV escaping for `features.csv`.
 - Add a test with a comma/quote in `window_title`.
 
-### Task D — Begin frontend cleanup
+### Task D — Harden command/session inputs
 
 Files:
 
-- `frontend/src/App.tsx`
-- `frontend/src/api.ts`
-- `frontend/src/utils.ts`
-- `frontend/tests/*`
+- `src-tauri/src/commands.rs`
 
 Goal:
 
-- Remove dead utility duplication.
-- Add tests for the helpers the app actually imports.
-- Add visible error state for failed session/training actions.
+- Clamp user-provided limits for history/timeline commands.
+- Validate session goal length and other user-facing strings at the command boundary.
 
 ---
 

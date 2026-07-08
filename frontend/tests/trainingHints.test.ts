@@ -27,6 +27,8 @@ assert.match(
 assert.equal(
   classifyTrainDeployOutcome({
     success: true,
+    trainingSucceeded: true,
+    deployReady: false,
     onnxExported: false,
     message: "Skipped ONNX",
     metrics: null,
@@ -38,6 +40,8 @@ assert.equal(
 assert.equal(
   isDeployReady({
     success: true,
+    trainingSucceeded: true,
+    deployReady: true,
     onnxExported: true,
     message: "Done",
     metrics: null,
@@ -49,6 +53,8 @@ assert.equal(
 assert.equal(
   classifyTrainDeployOutcome({
     success: false,
+    trainingSucceeded: false,
+    deployReady: false,
     onnxExported: false,
     message: "Python missing",
     metrics: null,

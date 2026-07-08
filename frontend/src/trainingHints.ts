@@ -61,14 +61,14 @@ export const formatTrainingMetrics = (metrics: Record<string, number> | null) =>
 export const classifyTrainDeployOutcome = (
   result: TrainFromExportResult,
 ): TrainDeployOutcome => {
-  if (!result.success) {
-    return "failed";
-  }
-  if (!result.onnxExported) {
+  if (result.trainingSucceeded && !result.deployReady) {
     return "trained-not-deployed";
+  }
+  if (!result.trainingSucceeded) {
+    return "failed";
   }
   return "deploy-ready";
 };
 
 export const isDeployReady = (result: TrainFromExportResult) =>
-  classifyTrainDeployOutcome(result) === "deploy-ready";
+  result.deployReady && classifyTrainDeployOutcome(result) === "deploy-ready";

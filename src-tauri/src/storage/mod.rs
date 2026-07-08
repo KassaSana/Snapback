@@ -789,7 +789,7 @@ impl Storage {
                     }
                 })
                 .collect::<Result<_, rusqlite::Error>>()?;
-            writeln!(file, "{}", values.join(","))?;
+            write_csv_row(&mut file, &values)?;
             count += 1;
         }
         Ok(count)
@@ -830,16 +830,35 @@ impl Storage {
             let sid: String = row.get(3)?;
             let notes: Option<String> = row.get(4)?;
             let ts = Self::rfc3339_to_unix(&ts_raw);
-            let notes_cell = notes.unwrap_or_default().replace(',', " ");
-            writeln!(
-                file,
-                "{ts:.6},{label},{},{sid},{notes_cell}",
-                source.to_uppercase()
-            )?;
+            let values = [
+                format!("{ts:.6}"),
+                label.to_string(),
+                source.to_uppercase(),
+                sid,
+                notes.unwrap_or_default(),
+            ];
+            write_csv_row(&mut file, &values)?;
             count += 1;
         }
         Ok(count)
     }
+}
+
+fn csv_escape_cell(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+fn write_csv_row(file: &mut File, values: &[String]) -> Result<(), std::io::Error> {
+    let row = values
+        .iter()
+        .map(|value| csv_escape_cell(value))
+        .collect::<Vec<_>>()
+        .join(",");
+    writeln!(file, "{row}")
 }
 
 #[cfg(test)]
@@ -1113,6 +1132,36 @@ mod tests {
         assert_eq!(result.label_count, 1);
         assert!(std::path::Path::new(&result.features_path).exists());
         assert!(std::path::Path::new(&result.labels_path).exists());
+    }
+
+    #[test]
+    fn csv_escape_cell_quotes_commas_quotes_and_newlines() {
+        assert_eq!(csv_escape_cell("plain"), "plain");
+        assert_eq!(csv_escape_cell("hello,world"), "\"hello,world\"");
+        assert_eq!(csv_escape_cell("say \"hi\""), "\"say \"\"hi\"\"\"");
+        assert_eq!(csv_escape_cell("line1\nline2"), "\"line1\nline2\"");
+    }
+
+    #[test]
+    fn export_training_data_escapes_label_notes() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir.clone()).unwrap();
+        let session = storage.start_session("Export notes", "normal").unwrap();
+
+        storage
+            .save_label(
+                &session.session_id,
+                FocusLabel::Distracted,
+                LabelSource::Manual,
+                Some("hello, \"world\"\nline2"),
+            )
+            .unwrap();
+
+        let out_dir = dir.join("exports");
+        let result = storage.export_training_data(&out_dir, None).unwrap();
+        let labels = fs::read_to_string(&result.labels_path).unwrap();
+
+        assert!(labels.contains("\"hello, \"\"world\"\"\nline2\""));
     }
 
     #[test]

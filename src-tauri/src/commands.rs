@@ -8,9 +8,45 @@ use crate::types::{
 };
 
 const MAX_HISTORY_LIMIT: usize = 500;
+const MAX_SESSION_GOAL_LEN: usize = 280;
+const MAX_LABEL_NOTES_LEN: usize = 2_000;
+const MAX_APP_RULE_PATTERN_LEN: usize = 200;
+const MAX_APP_RULE_NOTE_LEN: usize = 500;
+const MAX_REPO_PATH_LEN: usize = 4_096;
 
 fn clamp_limit(limit: Option<usize>, default: usize) -> usize {
     limit.unwrap_or(default).min(MAX_HISTORY_LIMIT)
+}
+
+fn validate_required_text(name: &str, value: &str, max_len: usize) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{name} is required."));
+    }
+    if trimmed.chars().count() > max_len {
+        return Err(format!("{name} must be at most {max_len} characters."));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn validate_optional_text(
+    name: &str,
+    value: Option<String>,
+    max_len: usize,
+) -> Result<Option<String>, String> {
+    match value {
+        Some(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                Ok(None)
+            } else if trimmed.chars().count() > max_len {
+                Err(format!("{name} must be at most {max_len} characters."))
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
 }
 
 #[tauri::command]
@@ -45,6 +81,7 @@ pub fn start_session(
     goal: String,
     focus_mode: Option<String>,
 ) -> Result<SessionRecord, String> {
+    let goal = validate_required_text("Session goal", &goal, MAX_SESSION_GOAL_LEN)?;
     let mode = focus_mode
         .as_deref()
         .map(FocusMode::from_str)
@@ -101,16 +138,13 @@ pub fn get_active_session(state: State<'_, AppState>) -> Result<Option<SessionRe
 
 #[tauri::command]
 pub fn submit_label(state: State<'_, AppState>, request: LabelRequest) -> Result<(), String> {
+    let session_id = validate_required_text("Session ID", &request.session_id, 128)?;
+    let notes = validate_optional_text("Label notes", request.notes, MAX_LABEL_NOTES_LEN)?;
     let source = crate::types::LabelSource::parse(request.source.as_deref());
     state
         .storage
         .lock()
-        .save_label(
-            &request.session_id,
-            request.label,
-            source,
-            request.notes.as_deref(),
-        )
+        .save_label(&session_id, request.label, source, notes.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -182,13 +216,15 @@ pub fn upsert_app_rule(
     state: State<'_, AppState>,
     request: UpsertAppRuleRequest,
 ) -> Result<AppRuleRecord, String> {
+    let pattern = validate_required_text("App rule pattern", &request.pattern, MAX_APP_RULE_PATTERN_LEN)?;
+    let note = validate_optional_text("App rule note", request.note, MAX_APP_RULE_NOTE_LEN)?;
     let record = state
         .storage
         .lock()
         .upsert_app_rule(
-            &request.pattern,
+            &pattern,
             request.rule_type,
-            request.note.as_deref(),
+            note.as_deref(),
         )
         .map_err(|e| e.to_string())?;
     state.reload_app_rules();
@@ -260,6 +296,7 @@ pub fn get_training_deploy_status(app: tauri::AppHandle) -> Result<TrainingDeplo
 
 #[tauri::command]
 pub fn set_training_repo_path(app: tauri::AppHandle, repo_path: String) -> Result<(), String> {
+    let repo_path = validate_required_text("Repo path", &repo_path, MAX_REPO_PATH_LEN)?;
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     crate::training_deploy::write_training_repo_path(&app_data_dir, std::path::Path::new(&repo_path))
 }
@@ -268,4 +305,47 @@ pub fn set_training_repo_path(app: tauri::AppHandle, repo_path: String) -> Resul
 pub fn train_from_export(app: tauri::AppHandle) -> Result<TrainFromExportResult, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     crate::training_deploy::train_from_export(&app_data_dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_limit_uses_default_and_caps_large_values() {
+        assert_eq!(clamp_limit(None, 8), 8);
+        assert_eq!(clamp_limit(Some(20), 8), 20);
+        assert_eq!(clamp_limit(Some(10_000), 8), MAX_HISTORY_LIMIT);
+    }
+
+    #[test]
+    fn validate_required_text_trims_and_rejects_empty() {
+        assert_eq!(
+            validate_required_text("Session goal", "  Ship it  ", MAX_SESSION_GOAL_LEN).unwrap(),
+            "Ship it"
+        );
+        assert!(validate_required_text("Session goal", "   ", MAX_SESSION_GOAL_LEN).is_err());
+    }
+
+    #[test]
+    fn validate_required_text_rejects_too_long_values() {
+        let value = "a".repeat(MAX_SESSION_GOAL_LEN + 1);
+        assert!(validate_required_text("Session goal", &value, MAX_SESSION_GOAL_LEN).is_err());
+    }
+
+    #[test]
+    fn validate_optional_text_trims_blank_and_rejects_too_long_values() {
+        assert_eq!(
+            validate_optional_text("Label notes", Some("  note  ".to_string()), MAX_LABEL_NOTES_LEN)
+                .unwrap(),
+            Some("note".to_string())
+        );
+        assert_eq!(
+            validate_optional_text("Label notes", Some("   ".to_string()), MAX_LABEL_NOTES_LEN)
+                .unwrap(),
+            None
+        );
+        let long = "n".repeat(MAX_LABEL_NOTES_LEN + 1);
+        assert!(validate_optional_text("Label notes", Some(long), MAX_LABEL_NOTES_LEN).is_err());
+    }
 }

@@ -86,6 +86,8 @@ assert.equal(session.endedAt, null);
 
 const trainDeployed = mapTrainFromExportResult({
   success: true,
+  training_succeeded: true,
+  deploy_ready: true,
   message: "Training complete",
   onnx_exported: true,
   metrics: { cv_accuracy: 0.91 },
@@ -93,16 +95,22 @@ const trainDeployed = mapTrainFromExportResult({
 });
 
 assert.equal(trainDeployed.success, true);
+assert.equal(trainDeployed.trainingSucceeded, true);
+assert.equal(trainDeployed.deployReady, true);
 assert.equal(trainDeployed.onnxExported, true);
 assert.equal(trainDeployed.metrics?.cv_accuracy, 0.91);
 
 const trainNotDeployed = mapTrainFromExportResult({
-  success: true,
+  success: false,
+  trainingSucceeded: true,
+  deployReady: false,
   onnxExported: false,
   message: "Skipped ONNX export",
 });
 
-assert.equal(trainNotDeployed.success, true);
+assert.equal(trainNotDeployed.success, false);
+assert.equal(trainNotDeployed.trainingSucceeded, true);
+assert.equal(trainNotDeployed.deployReady, false);
 assert.equal(trainNotDeployed.onnxExported, false);
 
 const snapback = mapSnapbackPayload({

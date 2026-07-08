@@ -137,6 +137,10 @@ export function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFro
 
   return {
     success: Boolean(raw.success ?? false),
+    trainingSucceeded: Boolean(raw.training_succeeded ?? raw.trainingSucceeded ?? raw.success ?? false),
+    deployReady: Boolean(
+      raw.deploy_ready ?? raw.deployReady ?? raw.onnx_exported ?? raw.onnxExported ?? false,
+    ),
     message: String(raw.message ?? ""),
     onnxExported: Boolean(raw.onnx_exported ?? raw.onnxExported ?? false),
     metrics,

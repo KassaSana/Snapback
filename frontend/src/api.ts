@@ -143,6 +143,8 @@ export type TrainingDeployStatus = {
 
 export type TrainFromExportResult = {
   success: boolean;
+  trainingSucceeded: boolean;
+  deployReady: boolean;
   message: string;
   onnxExported: boolean;
   metrics: Record<string, number> | null;

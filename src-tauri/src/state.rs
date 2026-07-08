@@ -2,6 +2,7 @@ use std::thread;
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::capture::thread::CaptureHandle;
 use crate::engine::{check_hyperfocus, Classifier, FeatureExtractor};
 use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
@@ -23,6 +24,8 @@ pub struct AppState {
     pub feature_session_epoch: parking_lot::Mutex<u64>,
     pub feature_session_start_ts: parking_lot::Mutex<Option<f64>>,
     event_rx: parking_lot::Mutex<Option<std::sync::mpsc::Receiver<CaptureEvent>>>,
+    capture_handle: parking_lot::Mutex<Option<CaptureHandle>>,
+    capture_failure_watcher: parking_lot::Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 impl AppState {
@@ -43,6 +46,8 @@ impl AppState {
             feature_session_epoch: parking_lot::Mutex::new(0),
             feature_session_start_ts: parking_lot::Mutex::new(None),
             event_rx: parking_lot::Mutex::new(None),
+            capture_handle: parking_lot::Mutex::new(None),
+            capture_failure_watcher: parking_lot::Mutex::new(None),
         }
     }
 
@@ -59,14 +64,27 @@ impl AppState {
     }
 
     fn spawn_capture(&self, app: &AppHandle) -> Result<(), String> {
+        self.stop_capture_runtime();
         let (tx, rx) = std::sync::mpsc::channel();
         let (failure_tx, failure_rx) = std::sync::mpsc::channel();
-        crate::capture::start_capture_thread(tx, failure_tx);
+        let capture_handle = crate::capture::start_capture_thread(tx, failure_tx);
         *self.event_rx.lock() = Some(rx);
+        *self.capture_handle.lock() = Some(capture_handle);
         *self.capture_running.lock() = true;
         *self.capture_failure_reason.lock() = None;
-        spawn_capture_failure_watcher(app.clone(), failure_rx);
+        let watcher = spawn_capture_failure_watcher(app.clone(), failure_rx);
+        *self.capture_failure_watcher.lock() = Some(watcher);
         Ok(())
+    }
+
+    fn stop_capture_runtime(&self) {
+        *self.event_rx.lock() = None;
+        if let Some(handle) = self.capture_handle.lock().take() {
+            handle.stop_and_join();
+        }
+        if let Some(watcher) = self.capture_failure_watcher.lock().take() {
+            let _ = watcher.join();
+        }
     }
 
     pub fn build_health_status(&self, app_data_dir: Option<&std::path::Path>) -> crate::types::HealthStatus {
@@ -138,7 +156,10 @@ pub fn classifier_status(app_data_dir: Option<&std::path::Path>) -> crate::types
     }
 }
 
-fn spawn_capture_failure_watcher(app: AppHandle, failure_rx: std::sync::mpsc::Receiver<String>) {
+fn spawn_capture_failure_watcher(
+    app: AppHandle,
+    failure_rx: std::sync::mpsc::Receiver<String>,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         if let Ok(reason) = failure_rx.recv() {
             let Some(state) = app.try_state::<AppState>() else {
@@ -157,7 +178,7 @@ fn spawn_capture_failure_watcher(app: AppHandle, failure_rx: std::sync::mpsc::Re
             };
             let _ = app.emit("capture-failed", &payload);
         }
-    });
+    })
 }
 
 fn run_engine_loop(app: AppHandle) {
