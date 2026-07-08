@@ -54,7 +54,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 | Task | Files | Issue |
 |------|-------|-------|
-| [ ] Decide ONNX + heuristic hybrid | `engine/classifier.rs:222-234` | Heuristic rules override ONNX `focus_state` |
+| [x] Decide ONNX + heuristic hybrid | `engine/classifier.rs` | ONNX sets scores; guardrails override `focus_state` (documented + tested) |
 | [ ] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
 | [ ] Windows ONNX dev setup | `BENCHMARK_RESULTS.md`, `DEPLOYMENT.md` | MSVC + `ort` linker pain |
 | [ ] Training deploy false success | `training_deploy.rs:212-217`, `App.tsx` | "Success" when ONNX export skipped |
@@ -137,7 +137,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [ ] `FeatureExtractor` edge cases
 - [ ] Command harness for session start/stop
 - [ ] `permissions.rs` platform messages
-- [ ] ONNX override tests (after Tier 0 decision)
+- [x] ONNX override policy tests (`engine/classifier.rs`)
 - [ ] `api.ts` mapper tests
 - [ ] E2E (later)
 
