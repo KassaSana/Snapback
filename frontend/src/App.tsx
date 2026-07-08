@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect } from "react";
 
 import { api } from "./api";
 import { ActivityCards } from "./ActivityCards";
@@ -11,6 +11,7 @@ import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
+import { useFeedback } from "./useFeedback";
 import { useHealth } from "./useHealth";
 import { HISTORY_LIMIT, TIMELINE_POLL_MS, useLiveData } from "./useLiveData";
 import { useTrainingDeploy } from "./useTrainingDeploy";
@@ -18,9 +19,7 @@ import { useSession } from "./useSession";
 
 
 export default function App() {
-  const [labelStatus, setLabelStatus] = useState<string | null>(null);
-  const [labelStatusWarning, setLabelStatusWarning] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const feedback = useFeedback();
 
   const live = useLiveData();
 
@@ -60,9 +59,9 @@ export default function App() {
   } = useSession({
     refreshContextTimeline: live.refreshContextTimeline,
     resetTimelineRefreshGate: live.resetTimelineRefreshGate,
-    setActionError,
-    setLabelStatus,
-    setLabelStatusWarning,
+    setActionError: feedback.setActionError,
+    setLabelStatus: feedback.setLabelStatus,
+    setLabelStatusWarning: feedback.setLabelStatusWarning,
   });
 
   const {
@@ -87,8 +86,8 @@ export default function App() {
     trainingInProgress,
   } = useTrainingDeploy({
     sessionId,
-    setLabelStatus,
-    setLabelStatusWarning,
+    setLabelStatus: feedback.setLabelStatus,
+    setLabelStatusWarning: feedback.setLabelStatusWarning,
     onClassifierStatusChange: applyClassifierStatus,
   });
 
@@ -159,8 +158,8 @@ export default function App() {
     );
     unsubs.push(
       api.onLabelHotkey((payload) => {
-        setLabelStatus(payload.message);
-        setLabelStatusWarning(!payload.ok);
+        feedback.setLabelStatus(payload.message);
+        feedback.setLabelStatusWarning(!payload.ok);
       }),
     );
 
@@ -192,7 +191,7 @@ export default function App() {
         permissionSteps={permissionSteps}
       />
 
-      <ActionErrorBanner error={actionError} onDismiss={() => setActionError(null)} />
+      <ActionErrorBanner error={feedback.actionError} onDismiss={() => feedback.setActionError(null)} />
 
       <main className="grid">
         <LiveStatusCards
@@ -230,8 +229,8 @@ export default function App() {
           handleReloadClassifierModel={handleReloadClassifierModel}
           handleSaveRepoPath={handleSaveRepoPath}
           handleTrainFromExport={handleTrainFromExport}
-          labelStatus={labelStatus}
-          labelStatusWarning={labelStatusWarning}
+          labelStatus={feedback.labelStatus}
+          labelStatusWarning={feedback.labelStatusWarning}
           modelReloadStatus={modelReloadStatus}
           repoPathInput={repoPathInput}
           setRepoPathInput={setRepoPathInput}
