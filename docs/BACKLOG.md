@@ -102,7 +102,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 **Data quality**
 
 - [ ] CSV-safe feature export (`storage/mod.rs`)
-- [ ] Test: no DB writes without active session (`state.rs`, `storage/mod.rs`)
+- [x] Test: no DB writes without active session (`state.rs`, `storage/mod.rs`)
 - [ ] More `FeatureExtractor` tests (idle, mouse, session boundaries)
 - [ ] Pre-export summary in UI
 
@@ -133,7 +133,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [ ] Training false-success branch
 - [ ] One ACTIVE session invariant
 - [ ] CSV escaping in feature export
-- [ ] Session-gated persistence
+- [x] Session-gated persistence (`storage/mod.rs`, `state.rs`)
 - [ ] `FeatureExtractor` edge cases
 - [ ] Command harness for session start/stop
 - [ ] `permissions.rs` platform messages

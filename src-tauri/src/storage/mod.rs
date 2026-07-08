@@ -387,7 +387,32 @@ impl Storage {
         }
     }
 
+    fn ensure_active_session(&self, session_id: &str) -> Result<(), StorageError> {
+        if session_id.is_empty() || session_id == "idle" {
+            return Err(StorageError::SessionNotFound);
+        }
+
+        match self.get_session(session_id) {
+            Ok(session) if session.status == "ACTIVE" => Ok(()),
+            Ok(_) => Err(StorageError::SessionNotFound),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub fn prediction_count(&self) -> Result<i64, StorageError> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM predictions", [], |row| row.get(0))
+            .map_err(StorageError::from)
+    }
+
+    pub fn feature_snapshot_count(&self) -> Result<i64, StorageError> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM feature_snapshots", [], |row| row.get(0))
+            .map_err(StorageError::from)
+    }
+
     pub fn save_prediction(&self, record: &PredictionRecord) -> Result<(), StorageError> {
+        self.ensure_active_session(&record.session_id)?;
         self.conn.execute(
             "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, thrash_score, drift_score, goal_alignment, timestamp)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -497,6 +522,7 @@ impl Storage {
         session_id: &str,
         features: &FeatureVector,
     ) -> Result<(), StorageError> {
+        self.ensure_active_session(session_id)?;
         self.conn.execute(
             "INSERT INTO feature_snapshots (
                 session_id, timestamp,
@@ -867,6 +893,68 @@ mod tests {
         };
 
         assert!(storage.save_prediction(&orphan).is_err());
+    }
+
+    #[test]
+    fn session_gated_prediction_and_feature_persistence() {
+        use crate::engine::features::FeatureVector;
+        use crate::types::PredictionRecord;
+
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+
+        assert_eq!(storage.prediction_count().unwrap(), 0);
+        assert_eq!(storage.feature_snapshot_count().unwrap(), 0);
+
+        let features = FeatureVector {
+            keystroke_count: 4,
+            keystroke_rate: 1.5,
+            is_ide: true,
+            ..FeatureVector::empty(1_700_000_000.0)
+        };
+        let record = |session_id: &str| PredictionRecord {
+            session_id: session_id.to_string(),
+            focus_score: 72.0,
+            distraction_risk: 0.15,
+            focus_state: "PRODUCTIVE".to_string(),
+            thrash_score: 0.1,
+            drift_score: 0.1,
+            goal_alignment: 0.6,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+
+        assert!(storage.save_prediction(&record("")).is_err());
+        assert!(storage.save_prediction(&record("idle")).is_err());
+        assert!(storage
+            .save_feature_snapshot("", &features)
+            .is_err());
+        assert!(storage
+            .save_feature_snapshot("idle", &features)
+            .is_err());
+        assert_eq!(storage.prediction_count().unwrap(), 0);
+        assert_eq!(storage.feature_snapshot_count().unwrap(), 0);
+
+        let session = storage.start_session("Ship regression test", "normal").unwrap();
+        storage
+            .save_prediction(&record(&session.session_id))
+            .unwrap();
+        storage
+            .save_feature_snapshot(&session.session_id, &features)
+            .unwrap();
+        assert_eq!(storage.prediction_count().unwrap(), 1);
+        assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
+
+        storage.stop_session(&session.session_id).unwrap();
+        assert!(storage.get_active_session().unwrap().is_none());
+
+        assert!(storage
+            .save_prediction(&record(&session.session_id))
+            .is_err());
+        assert!(storage
+            .save_feature_snapshot(&session.session_id, &features)
+            .is_err());
+        assert_eq!(storage.prediction_count().unwrap(), 1);
+        assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
     }
 
     #[test]
