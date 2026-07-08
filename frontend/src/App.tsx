@@ -8,8 +8,6 @@ import {
   formatTime,
   riskLabel,
   riskLevel,
-  type AppRuleKind,
-  type AppRuleRecord,
   type ContextSnapshot,
   type PredictionRecord,
 } from "./api";
@@ -22,8 +20,8 @@ import { PermissionsCard } from "./PermissionsCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
-import { buildAppRulePreview } from "./appRulePreview";
 import { shouldRefreshTimelineFromEvent } from "./timelineRefresh";
+import { useAppRules } from "./useAppRules";
 import { useHealth } from "./useHealth";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
@@ -31,9 +29,6 @@ import { useSession } from "./useSession";
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
 const TIMELINE_POLL_MS = 30_000;
-const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
-
-const ruleKindLabel = (kind: AppRuleKind) => (kind === "allow" ? "Allow" : "Block");
 
 const buildSignals = (record: PredictionRecord | null) => {
   if (!record) {
@@ -69,11 +64,6 @@ export default function App() {
   const [labelStatus, setLabelStatus] = useState<string | null>(null);
   const [labelStatusWarning, setLabelStatusWarning] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
-  const [rulePattern, setRulePattern] = useState("");
-  const [ruleKind, setRuleKind] = useState<AppRuleKind>("allow");
-  const [ruleNote, setRuleNote] = useState("");
-  const [rulesStatus, setRulesStatus] = useState<string | null>(null);
   const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
   const lastTimelineRefreshAtRef = useRef<number | null>(null);
 
@@ -164,6 +154,23 @@ export default function App() {
     onClassifierStatusChange: applyClassifierStatus,
   });
 
+  const {
+    appRules,
+    handleAddAppRule,
+    handleDeleteAppRule,
+    refreshAppRules,
+    ruleKind,
+    ruleKindLabel,
+    ruleKinds,
+    ruleNote,
+    rulePattern,
+    rulePreview,
+    rulesStatus,
+    setRuleKind,
+    setRuleNote,
+    setRulePattern,
+  } = useAppRules();
+
   const refreshTimelineFromEvent = useCallback((sid?: string | null) => {
     if (!sid || sessionRecord?.status !== "ACTIVE") {
       return;
@@ -195,15 +202,6 @@ export default function App() {
       const next = isDuplicate ? current : [record, ...current];
       return next.slice(0, HISTORY_LIMIT);
     });
-  }, []);
-
-  const refreshAppRules = useCallback(async () => {
-    try {
-      const rules = await api.getAppRules();
-      setAppRules(rules);
-    } catch {
-      setRulesStatus("Could not load app rules.");
-    }
   }, []);
 
   const refreshLatest = useCallback(async () => {
@@ -277,39 +275,10 @@ export default function App() {
     };
   }, [pushPrediction, applyCaptureFailure, refreshTimelineFromEvent, sessionId]);
 
-  const handleAddAppRule = async () => {
-    const pattern = rulePattern.trim();
-    if (!pattern) {
-      setRulesStatus("Enter an app name or keyword (e.g. discord, notion).");
-      return;
-    }
-
-    try {
-      const saved = await api.upsertAppRule(pattern, ruleKind, ruleNote.trim() || undefined);
-      await refreshAppRules();
-      setRulePattern("");
-      setRuleNote("");
-      setRulesStatus(`Saved ${ruleKindLabel(saved.ruleType).toLowerCase()} rule for "${saved.pattern}".`);
-    } catch {
-      setRulesStatus("Could not save app rule.");
-    }
-  };
-
-  const handleDeleteAppRule = async (rule: AppRuleRecord) => {
-    try {
-      await api.deleteAppRule(rule.id);
-      setAppRules((current) => current.filter((entry) => entry.id !== rule.id));
-      setRulesStatus(`Removed rule for "${rule.pattern}".`);
-    } catch {
-      setRulesStatus("Could not delete app rule.");
-    }
-  };
-
   const signals = useMemo(() => buildSignals(prediction), [prediction]);
   const riskValue = prediction?.distractionRisk ?? null;
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
   const riskClass = riskLevel(riskValue);
-  const rulePreview = buildAppRulePreview(rulePattern, ruleKind, ruleNote);
 
   return (
     <div className="app">
@@ -408,7 +377,7 @@ export default function App() {
           handleDeleteAppRule={handleDeleteAppRule}
           ruleKind={ruleKind}
           ruleKindLabel={ruleKindLabel}
-          ruleKinds={APP_RULE_KINDS}
+          ruleKinds={ruleKinds}
           ruleNote={ruleNote}
           rulePattern={rulePattern}
           rulePreview={rulePreview}
