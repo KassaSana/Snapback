@@ -1,13 +1,8 @@
 ﻿import { useCallback, useEffect, useState } from "react";
 
-import {
-  api,
-  formatPercent,
-  formatScore,
-  formatTime,
-} from "./api";
-import { classifierBackendLabel } from "./trainingHints";
+import { api } from "./api";
 import { ActivityCards } from "./ActivityCards";
+import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
@@ -197,18 +192,7 @@ export default function App() {
         permissionSteps={permissionSteps}
       />
 
-      {actionError ? (
-        <div className="action-error-banner" role="alert">
-          <p>{actionError}</p>
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={() => setActionError(null)}
-          >
-            Dismiss
-          </button>
-        </div>
-      ) : null}
+      <ActionErrorBanner error={actionError} onDismiss={() => setActionError(null)} />
 
       <main className="grid">
         <LiveStatusCards
