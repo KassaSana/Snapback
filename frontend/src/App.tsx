@@ -36,6 +36,15 @@ const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
 
 const ruleKindLabel = (kind: AppRuleKind) => (kind === "allow" ? "Allow" : "Block");
 
+const modelFileLabel = (path: string | null) => {
+  if (!path) {
+    return "No model file";
+  }
+  const normalized = path.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments[segments.length - 1] ?? path;
+};
+
 const buildSignals = (record: PredictionRecord | null) => {
   if (!record) {
     return ["Waiting for live capture."];
@@ -70,6 +79,7 @@ export default function App() {
   const [captureFailed, setCaptureFailed] = useState(false);
   const [captureFailureReason, setCaptureFailureReason] = useState<string | null>(null);
   const [classifierBackend, setClassifierBackend] = useState("heuristic");
+  const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
   const [prediction, setPrediction] = useState<PredictionRecord | null>(null);
   const [predictionHistory, setPredictionHistory] = useState<PredictionRecord[]>([]);
@@ -162,6 +172,7 @@ export default function App() {
     setPermissionMessage(health.permissions.message);
     setPermissionSteps(health.permissions.setupSteps);
     setClassifierBackend(health.classifier.backend);
+    setClassifierOnnxRuntimeEnabled(health.classifier.onnxRuntimeEnabled);
     setClassifierModelPath(health.classifier.modelPath);
   }, []);
 
@@ -393,6 +404,7 @@ export default function App() {
         try {
           const status = await api.reloadClassifierModel();
           setClassifierBackend(status.backend);
+          setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
           setClassifierModelPath(status.modelPath);
           setModelReloadStatus(
             status.backend === "onnx"
@@ -431,6 +443,7 @@ export default function App() {
     try {
       const status = await api.reloadClassifierModel();
       setClassifierBackend(status.backend);
+      setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
       setClassifierModelPath(status.modelPath);
       setModelReloadStatus(
         status.backend === "onnx"
@@ -488,6 +501,15 @@ export default function App() {
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
   const riskClass = riskLevel(riskValue);
   const sessionStatusLabel = sessionRecord ? sessionRecord.status.toLowerCase() : "idle";
+  const classifierRuntimeLabel = classifierOnnxRuntimeEnabled
+    ? "ONNX runtime enabled"
+    : "ONNX runtime unavailable";
+  const activeModelLabel =
+    classifierBackend === "onnx"
+      ? modelFileLabel(classifierModelPath)
+      : classifierModelPath
+        ? `${modelFileLabel(classifierModelPath)} available`
+        : "Heuristic only";
 
   return (
     <div className="app">
@@ -514,6 +536,11 @@ export default function App() {
           <div className="status-pill">
             <span className="status-label">Classifier</span>
             <span className="status-value">{classifierBackendLabel(classifierBackend)}</span>
+          </div>
+          <div className="status-pill status-pill-stack">
+            <span className="status-label">Model</span>
+            <span className="status-value">{activeModelLabel}</span>
+            <span className="status-detail">{classifierRuntimeLabel}</span>
           </div>
         </div>
       </header>
