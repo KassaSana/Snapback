@@ -1,4 +1,6 @@
-﻿export type RiskLevel = "high" | "medium" | "low" | "unknown";
+﻿import type { PredictionRecord } from "./api";
+
+export type RiskLevel = "high" | "medium" | "low" | "unknown";
 
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
@@ -62,4 +64,30 @@ export const nextBackoffDelay = (attempt: number) => {
   const maxMs = 10000;
   const delay = baseMs * Math.pow(2, safeAttempt);
   return Math.min(delay, maxMs);
+};
+
+export const buildSignals = (record: PredictionRecord | null) => {
+  if (!record) {
+    return ["Waiting for live capture."];
+  }
+
+  const level = riskLevel(record.distractionRisk);
+  const signals = [
+    `Focus state: ${focusStateLabel(record.focusState)}`,
+    `Thrash: ${(record.thrashScore * 100).toFixed(0)}% · Drift: ${(record.driftScore * 100).toFixed(0)}% · Goal fit: ${(record.goalAlignment * 100).toFixed(0)}%`,
+    `Risk level: ${level}`,
+    `Focus score: ${formatScore(record.focusScore)}`,
+  ];
+
+  if (record.focusState === "PSEUDO_PRODUCTIVE") {
+    signals.push("Drift detected — tab/title churn or scattered typing in a work app.");
+  } else if (record.thrashScore >= 0.6) {
+    signals.push("Context-switch thrash — jumping between apps/windows rapidly.");
+  } else if (record.focusState === "DEEP_FOCUS") {
+    signals.push("Deep work detected. Hyperfocus guardrail is watching.");
+  } else if (level === "low") {
+    signals.push("Focus is stable. Keep momentum.");
+  }
+
+  return signals;
 };

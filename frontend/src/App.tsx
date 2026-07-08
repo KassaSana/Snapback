@@ -2,7 +2,7 @@
 
 import {
   api,
-  focusStateLabel,
+  buildSignals,
   formatPercent,
   formatScore,
   formatTime,
@@ -29,32 +29,6 @@ import { useSession } from "./useSession";
 const HISTORY_LIMIT = 8;
 const TIMELINE_LIMIT = 20;
 const TIMELINE_POLL_MS = 30_000;
-
-const buildSignals = (record: PredictionRecord | null) => {
-  if (!record) {
-    return ["Waiting for live capture."];
-  }
-
-  const level = riskLevel(record.distractionRisk);
-  const signals = [
-    `Focus state: ${focusStateLabel(record.focusState)}`,
-    `Thrash: ${(record.thrashScore * 100).toFixed(0)}% · Drift: ${(record.driftScore * 100).toFixed(0)}% · Goal fit: ${(record.goalAlignment * 100).toFixed(0)}%`,
-    `Risk level: ${level}`,
-    `Focus score: ${formatScore(record.focusScore)}`,
-  ];
-
-  if (record.focusState === "PSEUDO_PRODUCTIVE") {
-    signals.push("Drift detected — tab/title churn or scattered typing in a work app.");
-  } else if (record.thrashScore >= 0.6) {
-    signals.push("Context-switch thrash — jumping between apps/windows rapidly.");
-  } else if (record.focusState === "DEEP_FOCUS") {
-    signals.push("Deep work detected. Hyperfocus guardrail is watching.");
-  } else if (level === "low") {
-    signals.push("Focus is stable. Keep momentum.");
-  }
-
-  return signals;
-};
 
 export default function App() {
   const [prediction, setPrediction] = useState<PredictionRecord | null>(null);
