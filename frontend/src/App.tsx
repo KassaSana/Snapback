@@ -17,6 +17,7 @@ import { classifierBackendLabel } from "./trainingHints";
 import { ActivityCards } from "./ActivityCards";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
+import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { buildAppRulePreview } from "./appRulePreview";
@@ -399,58 +400,17 @@ export default function App() {
           snapbackNote={snapbackNote}
         />
 
-        <section className="card session-card">
-          <div className="card-header">
-            <h2>Session Control</h2>
-            <span className="session-status">{sessionStatusLabel}</span>
-          </div>
-          <label className="field">
-            <span>Focus goal</span>
-            <input
-              type="text"
-              placeholder="Ship the snapback overlay"
-              value={sessionGoal}
-              onChange={(event) => setSessionGoal(event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>Focus mode</span>
-            <select
-              value={focusMode}
-              onChange={(event) =>
-                void handleFocusModeChange(event.target.value as FocusMode)
-              }
-            >
-              {FOCUS_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {mode}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="button-row">
-            <button className="primary-button" onClick={handleStartSession}>
-              Start session
-            </button>
-            <button className="secondary-button" onClick={handleStopSession}>
-              Stop session
-            </button>
-          </div>
-          <div className="meta">
-            <div>
-              <p className="meta-label">Session ID</p>
-              <p className="meta-value">{sessionId || "--"}</p>
-            </div>
-            <div>
-              <p className="meta-label">Started</p>
-              <p className="meta-value">{formatTime(sessionRecord?.startedAt ?? null)}</p>
-            </div>
-            <div>
-              <p className="meta-label">Ended</p>
-              <p className="meta-value">{formatTime(sessionRecord?.endedAt ?? null)}</p>
-            </div>
-          </div>
-        </section>
+        <SessionControlCard
+          focusMode={focusMode}
+          handleFocusModeChange={handleFocusModeChange}
+          handleStartSession={handleStartSession}
+          handleStopSession={handleStopSession}
+          sessionGoal={sessionGoal}
+          sessionId={sessionId}
+          sessionRecord={sessionRecord}
+          sessionStatusLabel={sessionStatusLabel}
+          setSessionGoal={setSessionGoal}
+        />
 
         <TrainingDeployCard
           canTrainFromExport={canTrainFromExport}
