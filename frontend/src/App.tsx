@@ -15,7 +15,9 @@ import {
 } from "./api";
 import { classifierBackendLabel } from "./trainingHints";
 import { ActivityCards } from "./ActivityCards";
+import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
+import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { buildAppRulePreview } from "./appRulePreview";
 import { summarizePermissions } from "./healthHints";
@@ -388,39 +390,6 @@ export default function App() {
       ) : null}
 
       <main className="grid">
-        <section className="card live-card">
-          <div className="card-header">
-            <h2>Live Prediction</h2>
-            <span className={`risk-badge risk-${riskClass}`}>{riskBadgeLabel}</span>
-          </div>
-          <div className="metrics">
-            <div className="metric">
-              <p className="metric-label">Focus score</p>
-              <p className="metric-value">{formatScore(prediction?.focusScore ?? null)}</p>
-            </div>
-            <div className="metric">
-              <p className="metric-label">Distraction risk</p>
-              <p className="metric-value">{formatPercent(prediction?.distractionRisk ?? null)}</p>
-            </div>
-            <div className="metric">
-              <p className="metric-label">State</p>
-              <p className="metric-value state-value">
-                {focusStateLabel(prediction?.focusState ?? null)}
-              </p>
-            </div>
-          </div>
-          <div className="meta">
-            <div>
-              <p className="meta-label">Last update</p>
-              <p className="meta-value">{formatTime(prediction?.timestamp ?? null)}</p>
-            </div>
-            <div>
-              <p className="meta-label">Session</p>
-              <p className="meta-value">{prediction?.sessionId || "--"}</p>
-            </div>
-          </div>
-        </section>
-
         <section className="card session-card">
           <div className="card-header">
             <h2>Session Control</h2>
@@ -474,19 +443,14 @@ export default function App() {
           </div>
         </section>
 
-        <section className="card signals-card">
-          <div className="card-header">
-            <h2>Signals</h2>
-            <span className="pill">rolling 30s</span>
-          </div>
-          <ul className="signal-list">
-            {signals.map((signal, index) => (
-              <li key={`${signal}-${index}`}>{signal}</li>
-            ))}
-          </ul>
-          {hyperfocusNote ? <p className="helper-text alert">{hyperfocusNote}</p> : null}
-          {snapbackNote ? <p className="helper-text snapback">{snapbackNote}</p> : null}
-        </section>
+        <LiveStatusCards
+          hyperfocusNote={hyperfocusNote}
+          prediction={prediction}
+          riskBadgeLabel={riskBadgeLabel}
+          riskClass={riskClass}
+          signals={signals}
+          snapbackNote={snapbackNote}
+        />
 
         <TrainingDeployCard
           canTrainFromExport={canTrainFromExport}
@@ -522,78 +486,12 @@ export default function App() {
           sessionId={sessionId}
         />
 
-        {surveyPending && recap ? (
-          <section className="card survey-card">
-            <div className="card-header">
-              <h2>Session Check-in</h2>
-              <span className="pill">end of session</span>
-            </div>
-            <p className="helper-text">
-              We saved an automatic label from your recap. Override it if your gut says
-              different.
-            </p>
-            <div className="button-row feedback-row">
-              <button
-                className="secondary-button"
-                onClick={() => void handleLabel("DEEP_FOCUS", "survey")}
-              >
-                Deep
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => void handleLabel("PRODUCTIVE", "survey")}
-              >
-                Focused
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => void handleLabel("PSEUDO_PRODUCTIVE", "survey")}
-              >
-                Drift
-              </button>
-              <button
-                className="secondary-button"
-                onClick={() => void handleLabel("DISTRACTED", "survey")}
-              >
-                Distracted
-              </button>
-              <button className="ghost-button" onClick={handleSkipSurvey}>
-                Keep automatic label
-              </button>
-            </div>
-          </section>
-        ) : null}
-
-        {recap ? (
-          <section className="card recap-card">
-            <div className="card-header">
-              <h2>Session Recap</h2>
-              <span className="pill">summary</span>
-            </div>
-            <div className="meta">
-              <div>
-                <p className="meta-label">Duration</p>
-                <p className="meta-value">{Math.round(recap.durationSecs / 60)} min</p>
-              </div>
-              <div>
-                <p className="meta-label">Avg focus</p>
-                <p className="meta-value">{formatScore(recap.avgFocusScore)}</p>
-              </div>
-              <div>
-                <p className="meta-label">Deep work</p>
-                <p className="meta-value">{recap.deepFocusPct.toFixed(0)}%</p>
-              </div>
-              <div>
-                <p className="meta-label">Snapbacks</p>
-                <p className="meta-value">{recap.snapbackCount}</p>
-              </div>
-              <div>
-                <p className="meta-label">Thrash spikes</p>
-                <p className="meta-value">{recap.thrashSpikes}</p>
-              </div>
-            </div>
-          </section>
-        ) : null}
+        <SessionReviewCards
+          handleLabel={handleLabel}
+          handleSkipSurvey={handleSkipSurvey}
+          recap={recap}
+          surveyPending={surveyPending}
+        />
 
         <RulesCard
           appRules={appRules}
