@@ -122,7 +122,7 @@ class TestPipelineCliSkipExport(unittest.TestCase):
                 skip_onnx=False,
             )
 
-            self.assertEqual(exit_code, 0)
+            self.assertEqual(exit_code, 2)
             self.assertTrue(os.path.isfile(os.path.join(export_dir, "model.json")))
             self.assertTrue(os.path.isfile(os.path.join(export_dir, "metrics.json")))
             self.assertFalse(os.path.isfile(os.path.join(export_dir, "model.onnx")))

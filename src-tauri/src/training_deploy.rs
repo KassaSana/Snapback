@@ -200,6 +200,21 @@ fn build_train_from_export_result(
     }
 }
 
+fn build_training_failure_message(exit_code: Option<i32>, log_tail: &str) -> String {
+    let normalized = log_tail.to_lowercase();
+    if exit_code == Some(2) || normalized.contains("majority-classifier stub") || normalized.contains("majority stub") {
+        return "Training stopped because the current data only produced a majority-classifier stub. Capture more labeled sessions, then train again.".to_string();
+    }
+    if normalized.contains("xgboost is not installed")
+        || normalized.contains("install onnx export deps")
+        || normalized.contains("python not found")
+    {
+        return "Training failed. Install deps: pip install xgboost onnxmltools onnx (see log)."
+            .to_string();
+    }
+    "Training failed. Check the training log for details.".to_string()
+}
+
 pub fn train_from_export(app_data_dir: &Path) -> Result<TrainFromExportResult, String> {
     let status = training_deploy_status(app_data_dir);
     if !status.has_export {
@@ -252,12 +267,14 @@ pub fn train_from_export(app_data_dir: &Path) -> Result<TrainFromExportResult, S
         .flatten();
 
     if !output.status.success() {
-        return Ok(build_train_from_export_result(
+        let mut result = build_train_from_export_result(
             false,
             onnx_exported,
             metrics,
             log_tail,
-        ));
+        );
+        result.message = build_training_failure_message(output.status.code(), &result.log_tail);
+        return Ok(result);
     }
 
     let model_sync_error = if onnx_exported {
@@ -342,6 +359,28 @@ mod tests {
         assert_eq!(
             result.message,
             "Training complete — model.onnx is ready. Reload model to activate."
+        );
+    }
+
+    #[test]
+    fn build_training_failure_message_detects_majority_stub_exit() {
+        let message = build_training_failure_message(
+            Some(2),
+            "Training stopped: the dataset only produced a majority-classifier stub.",
+        );
+        assert!(message.contains("majority-classifier stub"));
+        assert!(message.contains("Capture more labeled sessions"));
+    }
+
+    #[test]
+    fn build_training_failure_message_detects_missing_deps() {
+        let message = build_training_failure_message(
+            Some(1),
+            "Install ONNX export deps: pip install xgboost onnx onnxmltools",
+        );
+        assert_eq!(
+            message,
+            "Training failed. Install deps: pip install xgboost onnxmltools onnx (see log)."
         );
     }
 

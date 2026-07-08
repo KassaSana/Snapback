@@ -104,6 +104,13 @@ def run_pipeline(
         print(message)
         if exported:
             print("Reload the model in Snapback (Training panel) or restart the app.")
+        elif "majority stub" in message.lower():
+            print(
+                "Training stopped: the dataset only produced a majority-classifier stub, "
+                "so there is no deployable ONNX model yet.",
+                file=sys.stderr,
+            )
+            return 2
 
     print(f"\nArtifacts written to {output_dir}")
     return 0
