@@ -15,6 +15,7 @@ import {
 } from "./api";
 import { classifierBackendLabel } from "./trainingHints";
 import { ActivityCards } from "./ActivityCards";
+import { AppHeader } from "./AppHeader";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
 import { PermissionsCard } from "./PermissionsCard";
@@ -22,7 +23,6 @@ import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { buildAppRulePreview } from "./appRulePreview";
-import { summarizePermissions } from "./healthHints";
 import { shouldRefreshTimelineFromEvent } from "./timelineRefresh";
 import { useHealth } from "./useHealth";
 import { useTrainingDeploy } from "./useTrainingDeploy";
@@ -34,15 +34,6 @@ const TIMELINE_POLL_MS = 30_000;
 const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
 
 const ruleKindLabel = (kind: AppRuleKind) => (kind === "allow" ? "Allow" : "Block");
-
-const modelFileLabel = (path: string | null) => {
-  if (!path) {
-    return "No model file";
-  }
-  const normalized = path.replace(/\\/g, "/");
-  const segments = normalized.split("/").filter(Boolean);
-  return segments[segments.length - 1] ?? path;
-};
 
 const buildSignals = (record: PredictionRecord | null) => {
   if (!record) {
@@ -319,64 +310,21 @@ export default function App() {
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
   const riskClass = riskLevel(riskValue);
   const rulePreview = buildAppRulePreview(rulePattern, ruleKind, ruleNote);
-  const permissionHealth = summarizePermissions({
-    captureAvailable: permissionCaptureAvailable,
-    activeWindowAvailable,
-    message: permissionMessage ?? "",
-    setupSteps: permissionSteps,
-  });
-  const classifierRuntimeLabel = classifierOnnxRuntimeEnabled
-    ? "ONNX runtime enabled"
-    : "ONNX runtime unavailable";
-  const activeModelLabel =
-    classifierBackend === "onnx"
-      ? modelFileLabel(classifierModelPath)
-      : classifierModelPath
-        ? `${modelFileLabel(classifierModelPath)} available`
-        : "Heuristic only";
 
   return (
     <div className="app">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">Snapback</p>
-          <h1>Live Focus Command Center</h1>
-          <p className="subtitle">
-            Measures how you work — deep focus, drift, and context-switch thrash — with snapback
-            recovery when you return.
-          </p>
-        </div>
-        <div className="status-stack">
-          <div className="status-pill">
-            <span className="status-label">App</span>
-            <span className="status-value">{healthStatus}</span>
-          </div>
-          <div className="status-pill">
-            <span className="status-label">Capture</span>
-            <span className={`status-value${captureFailed ? " status-alert" : ""}`}>
-              {captureFailed ? "failed" : captureRunning ? "running" : "idle"}
-            </span>
-          </div>
-          <div className="status-pill status-pill-stack">
-            <span className="status-label">Permissions</span>
-            <span
-              className={`status-value${permissionHealth.label === "blocked" ? " status-alert" : ""}`}
-            >
-              {permissionHealth.label}
-            </span>
-            <span className="status-detail">{permissionHealth.detail}</span>
-          </div>
-          <div className="status-pill">
-            <span className="status-label">Classifier</span>
-            <span className="status-value">{classifierBackendLabel(classifierBackend)}</span>
-          </div>
-          <div className="status-pill status-pill-stack">
-            <span className="status-label">Model</span>
-            <span className="status-value">{activeModelLabel}</span>
-            <span className="status-detail">{classifierRuntimeLabel}</span>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        activeWindowAvailable={activeWindowAvailable}
+        captureFailed={captureFailed}
+        captureRunning={captureRunning}
+        classifierBackend={classifierBackend}
+        classifierModelPath={classifierModelPath}
+        classifierOnnxRuntimeEnabled={classifierOnnxRuntimeEnabled}
+        healthStatus={healthStatus}
+        permissionCaptureAvailable={permissionCaptureAvailable}
+        permissionMessage={permissionMessage}
+        permissionSteps={permissionSteps}
+      />
 
       {actionError ? (
         <div className="action-error-banner" role="alert">
