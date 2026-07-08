@@ -59,6 +59,9 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
     captureFailureReason: (raw.capture_failure_reason ??
       raw.captureFailureReason ??
       null) as string | null,
+    overlayFailureReason: (raw.overlay_failure_reason ??
+      raw.overlayFailureReason ??
+      null) as string | null,
     permissions: mapPermissionStatus(
       (raw.permissions as Record<string, unknown>) ?? {},
     ),

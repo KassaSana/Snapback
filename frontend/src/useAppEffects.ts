@@ -4,6 +4,7 @@ import {
   api,
   type CaptureFailurePayload,
   type LabelHotkeyPayload,
+  type OverlayFailurePayload,
   type PredictionRecord,
   type SnapbackPayload,
 } from "./api";
@@ -22,6 +23,7 @@ type UseAppEffectsArgs = {
   refreshContextTimeline: (sid?: string | null) => void | Promise<void>;
 
   applyCaptureFailure: (payload: CaptureFailurePayload) => void;
+  applyOverlayFailure: (payload: OverlayFailurePayload) => void;
 
   handlePrediction: (record: PredictionRecord | null) => void;
   handleSnapback: (payload: SnapbackPayload) => void;
@@ -42,6 +44,7 @@ export const useAppEffects = ({
   sessionStatus,
   refreshContextTimeline,
   applyCaptureFailure,
+  applyOverlayFailure,
   handlePrediction,
   handleSnapback,
   handleHyperfocus,
@@ -77,6 +80,11 @@ export const useAppEffects = ({
       }),
     );
     unsubs.push(
+      api.onOverlayFailed((payload) => {
+        applyOverlayFailure(payload);
+      }),
+    );
+    unsubs.push(
       api.onPrediction((record) => {
         handlePrediction(record);
         if (record.sessionId === sessionId && sessionStatus === "ACTIVE") {
@@ -109,6 +117,7 @@ export const useAppEffects = ({
     };
   }, [
     applyCaptureFailure,
+    applyOverlayFailure,
     handleHyperfocus,
     handlePrediction,
     handleSnapback,

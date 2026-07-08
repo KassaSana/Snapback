@@ -98,6 +98,13 @@ pub struct CaptureFailurePayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OverlayFailurePayload {
+    pub reason: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionRecap {
     pub session_id: String,
     pub goal: String,
@@ -213,6 +220,7 @@ pub struct HealthStatus {
     pub capture_running: bool,
     pub capture_failed: bool,
     pub capture_failure_reason: Option<String>,
+    pub overlay_failure_reason: Option<String>,
     pub permissions: PermissionStatus,
     pub classifier: ClassifierStatus,
 }

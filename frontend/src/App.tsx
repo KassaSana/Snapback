@@ -25,6 +25,7 @@ export default function App() {
     activeWindowAvailable,
     applyCaptureFailure,
     applyClassifierStatus,
+    applyOverlayFailure,
     captureFailed,
     captureFailureReason,
     captureProbeConfirmed,
@@ -34,10 +35,12 @@ export default function App() {
     classifierOnnxRuntimeEnabled,
     handleRefreshPermissions,
     healthStatus,
+    overlayFailureReason,
     permissionCaptureAvailable,
     permissionMessage,
     permissionSteps,
     refreshHealth,
+    setOverlayFailureReason,
   } = useHealth();
 
   const {
@@ -117,6 +120,7 @@ export default function App() {
     sessionStatus: sessionRecord?.status ?? null,
     refreshContextTimeline: live.refreshContextTimeline,
     applyCaptureFailure,
+    applyOverlayFailure,
     handlePrediction: live.handlePrediction,
     handleSnapback: live.handleSnapback,
     handleHyperfocus: live.handleHyperfocus,
@@ -141,7 +145,13 @@ export default function App() {
         permissionSteps={permissionSteps}
       />
 
-      <ActionErrorBanner error={feedback.actionError} onDismiss={() => feedback.setActionError(null)} />
+      <ActionErrorBanner
+        error={feedback.actionError ?? overlayFailureReason}
+        onDismiss={() => {
+          feedback.setActionError(null);
+          setOverlayFailureReason(null);
+        }}
+      />
 
       <main className="grid">
         <LiveStatusCards

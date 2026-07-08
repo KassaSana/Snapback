@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react";
 
-import { api, type CaptureFailurePayload, type ClassifierStatus } from "./api";
+import {
+  api,
+  type CaptureFailurePayload,
+  type ClassifierStatus,
+  type OverlayFailurePayload,
+} from "./api";
 
 export const useHealth = () => {
   const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline">("checking");
@@ -12,6 +17,7 @@ export const useHealth = () => {
   const [permissionSteps, setPermissionSteps] = useState<string[]>([]);
   const [captureFailed, setCaptureFailed] = useState(false);
   const [captureFailureReason, setCaptureFailureReason] = useState<string | null>(null);
+  const [overlayFailureReason, setOverlayFailureReason] = useState<string | null>(null);
   const [classifierBackend, setClassifierBackend] = useState("heuristic");
   const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
@@ -29,6 +35,7 @@ export const useHealth = () => {
     setCaptureRunning(health.captureRunning);
     setCaptureFailed(health.captureFailed);
     setCaptureFailureReason(health.captureFailureReason);
+    setOverlayFailureReason(health.overlayFailureReason);
     setPermissionCaptureAvailable(health.permissions.captureAvailable);
     setCaptureProbeConfirmed(health.permissions.captureProbeConfirmed);
     setActiveWindowAvailable(health.permissions.activeWindowAvailable);
@@ -44,6 +51,10 @@ export const useHealth = () => {
     setPermissionMessage(payload.message);
     setPermissionSteps(payload.setupSteps);
     setHealthStatus("offline");
+  }, []);
+
+  const applyOverlayFailure = useCallback((payload: OverlayFailurePayload) => {
+    setOverlayFailureReason(payload.message);
   }, []);
 
   const refreshHealth = useCallback(async () => {
@@ -73,6 +84,7 @@ export const useHealth = () => {
     activeWindowAvailable,
     applyCaptureFailure,
     applyClassifierStatus,
+    applyOverlayFailure,
     captureFailed,
     captureFailureReason,
     captureProbeConfirmed,
@@ -82,9 +94,11 @@ export const useHealth = () => {
     classifierOnnxRuntimeEnabled,
     handleRefreshPermissions,
     healthStatus,
+    overlayFailureReason,
     permissionCaptureAvailable,
     permissionMessage,
     permissionSteps,
     refreshHealth,
+    setOverlayFailureReason,
   };
 };

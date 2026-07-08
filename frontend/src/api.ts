@@ -52,6 +52,11 @@ export type CaptureFailurePayload = {
   setupSteps: string[];
 };
 
+export type OverlayFailurePayload = {
+  reason: string;
+  message: string;
+};
+
 export type LabelHotkeyPayload = {
   ok: boolean;
   message: string;
@@ -70,6 +75,7 @@ export type HealthStatus = {
   captureRunning: boolean;
   captureFailed: boolean;
   captureFailureReason: string | null;
+  overlayFailureReason: string | null;
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
 };
@@ -251,6 +257,14 @@ export const api = {
         reason: String(raw.reason ?? ""),
         message: String(raw.message ?? ""),
         setupSteps: mapSetupSteps(raw),
+      });
+    }),
+  onOverlayFailed: (handler: (payload: OverlayFailurePayload) => void) =>
+    listen<Record<string, unknown>>("overlay-failed", (event) => {
+      const raw = event.payload;
+      handler({
+        reason: String(raw.reason ?? ""),
+        message: String(raw.message ?? ""),
       });
     }),
   onPrediction: (handler: (record: PredictionRecord) => void) =>

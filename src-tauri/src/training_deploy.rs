@@ -88,6 +88,30 @@ fn count_csv_rows(path: &Path) -> usize {
     content.lines().count().saturating_sub(1)
 }
 
+fn sync_trained_model_to_app_dir(app_data_dir: &Path, export_dir: &Path) -> Result<bool, String> {
+    let export_model = export_dir.join("model.onnx");
+    if !export_model.is_file() {
+        return Ok(false);
+    }
+
+    std::fs::create_dir_all(app_data_dir).map_err(|err| {
+        format!(
+            "Could not prepare app data directory {}: {err}",
+            app_data_dir.display()
+        )
+    })?;
+
+    let live_model = app_data_dir.join("model.onnx");
+    std::fs::copy(&export_model, &live_model).map_err(|err| {
+        format!(
+            "Could not copy trained model from {} to {}: {err}",
+            export_model.display(),
+            live_model.display()
+        )
+    })?;
+    Ok(true)
+}
+
 pub fn build_pipeline_command(output_dir: &Path) -> String {
     let quoted = format!("\"{}\"", output_dir.display());
     let python = if cfg!(windows) { "py -3" } else { "python3" };
@@ -236,12 +260,18 @@ pub fn train_from_export(app_data_dir: &Path) -> Result<TrainFromExportResult, S
         ));
     }
 
-    Ok(build_train_from_export_result(
-        true,
-        onnx_exported,
-        metrics,
-        log_tail,
-    ))
+    let model_sync_error = if onnx_exported {
+        sync_trained_model_to_app_dir(app_data_dir, &export).err()
+    } else {
+        None
+    };
+
+    let mut result = build_train_from_export_result(true, onnx_exported, metrics, log_tail);
+    if let Some(err) = model_sync_error {
+        result.message = format!("{} Warning: {err}", result.message);
+    }
+
+    Ok(result)
 }
 
 fn parse_metrics_json(path: &Path) -> Option<HashMap<String, f64>> {
@@ -313,5 +343,40 @@ mod tests {
             result.message,
             "Training complete — model.onnx is ready. Reload model to activate."
         );
+    }
+
+    #[test]
+    fn sync_trained_model_copies_export_into_app_data_dir() {
+        let temp = std::env::temp_dir().join(format!(
+            "snapback-model-sync-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let export = temp.join("exports").join("training");
+        let app_data = temp.join("app-data");
+        fs::create_dir_all(&export).unwrap();
+        fs::write(export.join("model.onnx"), b"onnx-bytes").unwrap();
+
+        let copied = sync_trained_model_to_app_dir(&app_data, &export).unwrap();
+
+        assert!(copied);
+        assert_eq!(fs::read(app_data.join("model.onnx")).unwrap(), b"onnx-bytes");
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn sync_trained_model_skips_when_export_missing() {
+        let temp = std::env::temp_dir().join(format!(
+            "snapback-model-sync-missing-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let export = temp.join("exports").join("training");
+        let app_data = temp.join("app-data");
+        fs::create_dir_all(&export).unwrap();
+
+        let copied = sync_trained_model_to_app_dir(&app_data, &export).unwrap();
+
+        assert!(!copied);
+        assert!(!app_data.join("model.onnx").exists());
+        let _ = fs::remove_dir_all(&temp);
     }
 }

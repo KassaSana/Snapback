@@ -23,6 +23,8 @@ Update this at the start and end of each work session. Keep it short.
 - [x] CI gap fill: Windows ONNX, Python ML deps, Tauri build smoke (`.github/workflows/ci.yml`)
 - [x] Focused backend/frontend health tests (`permissions.rs`, `healthHints.ts`)
 - [x] Classifier quality regression gate in CI (`tools/benchmark_classifier_quality.py`, `.github/workflows/ci.yml`)
+- [x] Surface snapback overlay creation failures in the UI (`snapback/overlay.rs`, `state.rs`, action banner plumbing)
+- [x] Copy trained ONNX model into app data after successful train (`training_deploy.rs`)
 - [x] App rules UI: clarify that "Block" only affects scoring (`App.tsx`)
 - [x] Session-gated persistence regression test (`state.rs`, `storage/mod.rs`)
 

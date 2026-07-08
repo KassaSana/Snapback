@@ -8,7 +8,7 @@ use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
 use crate::types::{
     AppRuleRecord, CaptureEvent, CaptureFailurePayload, ContextSnapshotDto, EventType, FocusMode,
-    PermissionStatus, PredictionRecord, SnapbackPayload,
+    OverlayFailurePayload, PermissionStatus, PredictionRecord, SnapbackPayload,
 };
 
 pub struct AppState {
@@ -16,6 +16,7 @@ pub struct AppState {
     pub permissions: parking_lot::Mutex<PermissionStatus>,
     pub capture_running: parking_lot::Mutex<bool>,
     pub capture_failure_reason: parking_lot::Mutex<Option<String>>,
+    pub overlay_failure_reason: parking_lot::Mutex<Option<String>>,
     pub focus_mode: parking_lot::Mutex<FocusMode>,
     pub classifier: parking_lot::Mutex<Classifier>,
     pub latest_prediction: parking_lot::Mutex<Option<PredictionRecord>>,
@@ -38,6 +39,7 @@ impl AppState {
             permissions: parking_lot::Mutex::new(permissions),
             capture_running: parking_lot::Mutex::new(false),
             capture_failure_reason: parking_lot::Mutex::new(None),
+            overlay_failure_reason: parking_lot::Mutex::new(None),
             focus_mode: parking_lot::Mutex::new(focus_mode),
             classifier: parking_lot::Mutex::new(Classifier::new(focus_mode)),
             latest_prediction: parking_lot::Mutex::new(None),
@@ -91,6 +93,7 @@ impl AppState {
         let permissions = self.permissions.lock().clone();
         let capture_running = *self.capture_running.lock();
         let capture_failure_reason = self.capture_failure_reason.lock().clone();
+        let overlay_failure_reason = self.overlay_failure_reason.lock().clone();
         let capture_failed = capture_failure_reason.is_some();
 
         let status = if capture_failed {
@@ -110,6 +113,7 @@ impl AppState {
             capture_running,
             capture_failed,
             capture_failure_reason,
+            overlay_failure_reason,
             permissions,
             classifier,
         }
@@ -319,7 +323,19 @@ fn run_engine_loop(app: AppHandle) {
                     file_hint: snapback.file_hint,
                     distraction_duration_secs: snapback.distraction_duration_secs,
                 };
-                show_snapback_overlay(&app, &payload);
+                if let Err(err) = show_snapback_overlay(&app, &payload) {
+                    log::warn!("failed to show snapback overlay: {err}");
+                    *state.overlay_failure_reason.lock() = Some(err.clone());
+                    let overlay_failure = OverlayFailurePayload {
+                        reason: err.clone(),
+                        message: format!(
+                            "Snapback detected a return to task, but the overlay window could not be shown. {err}"
+                        ),
+                    };
+                    let _ = app.emit("overlay-failed", &overlay_failure);
+                } else {
+                    *state.overlay_failure_reason.lock() = None;
+                }
                 let _ = app.emit("snapback", &payload);
             }
         }

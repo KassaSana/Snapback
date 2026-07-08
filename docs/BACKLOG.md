@@ -78,7 +78,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 - [x] Clear errors for missing Python deps (`training_deploy.rs`, `App.tsx`)
 - [ ] Model info in health UI (path, backend shown; train time/CV metrics later)
-- [ ] Copy trained model to `app_data_dir/model.onnx` after train
+- [x] Copy trained model to `app_data_dir/model.onnx` after train
 - [ ] Fail fast on majority-classifier stub (`ml/export_onnx.py`)
 - [ ] Short guide: min sessions/labels, when to retrain
 
@@ -95,7 +95,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 **Snapback**
 
-- [ ] Surface overlay creation errors (`snapback/overlay.rs:19-31`)
+- [x] Surface overlay creation errors (`snapback/overlay.rs`, `state.rs`, frontend health/event handling)
 - [x] Type `onSnapback` payload (`api.ts:365-366`)
 - [x] Event-driven timeline refresh (30s poll today)
 
