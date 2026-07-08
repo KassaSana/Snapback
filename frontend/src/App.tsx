@@ -390,6 +390,15 @@ export default function App() {
       ) : null}
 
       <main className="grid">
+        <LiveStatusCards
+          hyperfocusNote={hyperfocusNote}
+          prediction={prediction}
+          riskBadgeLabel={riskBadgeLabel}
+          riskClass={riskClass}
+          signals={signals}
+          snapbackNote={snapbackNote}
+        />
+
         <section className="card session-card">
           <div className="card-header">
             <h2>Session Control</h2>
@@ -442,15 +451,6 @@ export default function App() {
             </div>
           </div>
         </section>
-
-        <LiveStatusCards
-          hyperfocusNote={hyperfocusNote}
-          prediction={prediction}
-          riskBadgeLabel={riskBadgeLabel}
-          riskClass={riskClass}
-          signals={signals}
-          snapbackNote={snapbackNote}
-        />
 
         <TrainingDeployCard
           canTrainFromExport={canTrainFromExport}
