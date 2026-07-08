@@ -8,6 +8,7 @@ Where to look, in order of usefulness:
 | [`BACKLOG.md`](BACKLOG.md) | Full task list with file paths |
 | [`CODE_HEALTH_REVIEW.md`](CODE_HEALTH_REVIEW.md) | Code review findings and fix queue |
 | [`ROADMAP.md`](ROADMAP.md) | Shipped history + tier index |
+| [`SMOKE_TEST.md`](SMOKE_TEST.md) | 60-min ship-confidence checklist |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Building installers, ONNX loop, release |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | How to run benchmarks |
 | [`BENCHMARK_RESULTS.md`](BENCHMARK_RESULTS.md) | Last recorded numbers |

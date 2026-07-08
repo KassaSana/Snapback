@@ -8,7 +8,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Now
 
-- [ ] **60-min smoke test** — capture → label → export → train → reload ONNX
+- [ ] **60-min smoke test** — [checklist](docs/SMOKE_TEST.md): capture → label → export → train → reload ONNX
 - [ ] **Tagged release dry run** — `v0.2.x` installer on Windows
 - [x] **ONNX policy** — hybrid: ONNX sets scores; guardrails override `focus_state` (`classifier.rs`)
 

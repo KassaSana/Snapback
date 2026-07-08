@@ -36,7 +36,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 ### Validation (no code)
 
-- [ ] 60-min smoke test: capture → label → snapback → export → train → reload
+- [ ] 60-min smoke test: [SMOKE_TEST.md](SMOKE_TEST.md)
 - [ ] Tagged release dry run (`v0.2.x` installer on Windows)
 - [ ] Compare heuristic vs ONNX on the same session; note which you trust
 
