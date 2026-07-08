@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { buildExportSummary, buildPipelineCommand } from "../src/trainingHints";
+import { buildExportSummary, buildPipelineCommand, classifyTrainDeployOutcome, isDeployReady } from "../src/trainingHints";
 
 const outputDir = "/Users/me/Library/Application Support/com.snapback.app/exports/training";
 
@@ -16,6 +16,39 @@ assert.match(command, /--skip-export/);
 assert.match(
   command,
   /--output-dir "\/Users\/me\/Library\/Application Support\/com\.snapback\.app\/exports\/training"/,
+);
+
+assert.equal(
+  classifyTrainDeployOutcome({
+    success: true,
+    onnxExported: false,
+    message: "Skipped ONNX",
+    metrics: null,
+    logTail: "",
+  }),
+  "trained-not-deployed",
+);
+
+assert.equal(
+  isDeployReady({
+    success: true,
+    onnxExported: true,
+    message: "Done",
+    metrics: null,
+    logTail: "",
+  }),
+  true,
+);
+
+assert.equal(
+  classifyTrainDeployOutcome({
+    success: false,
+    onnxExported: false,
+    message: "Python missing",
+    metrics: null,
+    logTail: "",
+  }),
+  "failed",
 );
 
 console.log("trainingHints.test.ts passed");

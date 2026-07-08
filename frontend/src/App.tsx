@@ -217,6 +217,7 @@ export default function App() {
         }
       } catch {
         setLabelStatus("Could not save feedback.");
+        setLabelStatusWarning(true);
       }
     },
     [sessionId],
@@ -274,6 +275,7 @@ export default function App() {
     unsubs.push(
       api.onLabelHotkey((payload) => {
         setLabelStatus(payload.message);
+        setLabelStatusWarning(!payload.ok);
       }),
     );
 
@@ -292,9 +294,10 @@ export default function App() {
       setSessionGoal(record.goal);
       setRecap(null);
       setSurveyPending(false);
+      setActionError(null);
       void refreshContextTimeline(record.sessionId);
     } catch {
-      // ignore
+      setActionError("Could not start session. Check capture permissions and try again.");
     }
   };
 
@@ -307,9 +310,11 @@ export default function App() {
       setRecap(sessionRecap);
       setSurveyPending(true);
       setLabelStatus("Automatic session label saved. How did this session feel overall?");
+      setLabelStatusWarning(false);
+      setActionError(null);
       void refreshContextTimeline(sessionId);
     } catch {
-      // ignore
+      setActionError("Could not stop session or load recap.");
     }
   };
 
@@ -369,19 +374,22 @@ export default function App() {
       const result = await api.trainFromExport();
       const metricsSummary = formatTrainingMetrics(result.metrics);
       const detail = metricsSummary ? ` ${metricsSummary}.` : "";
-      const deployNotReady = result.success && !result.onnxExported;
+      const outcome = classifyTrainDeployOutcome(result);
+      const deployNotReady = outcome === "trained-not-deployed";
       const messageParts = [
         deployNotReady
           ? `Deploy not ready: ${result.message}${detail}`
-          : `${result.message}${detail}`,
+          : outcome === "failed"
+            ? result.message
+            : `${result.message}${detail}`,
       ];
       if (result.logTail) {
         messageParts.push(result.logTail);
       }
       setDeployMessage(messageParts.join("\n"));
-      setDeployMessageWarning(deployNotReady);
+      setDeployMessageWarning(deployNotReady || outcome === "failed");
       await refreshDeployStatus();
-      if (result.success && result.onnxExported) {
+      if (isDeployReady(result)) {
         try {
           const status = await api.reloadClassifierModel();
           setClassifierBackend(status.backend);
@@ -509,6 +517,19 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {actionError ? (
+        <div className="action-error-banner" role="alert">
+          <p>{actionError}</p>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => setActionError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       <main className="grid">
         <section className="card live-card">
@@ -640,7 +661,9 @@ export default function App() {
               Export training data
             </button>
           </div>
-          {labelStatus ? <p className="helper-text">{labelStatus}</p> : null}
+          {labelStatus ? (
+            <p className={`helper-text${labelStatusWarning ? " alert" : ""}`}>{labelStatus}</p>
+          ) : null}
 
           <div className="training-deploy-block">
             <p className="deploy-title">Deploy trained model</p>
