@@ -1,0 +1,44 @@
+[package]
+name = "snapback"
+version = "0.2.0"
+description = "Snapback — predictive focus management for ADHD brains"
+authors = ["Snapback"]
+edition = "2021"
+
+[lib]
+name = "snapback_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rdev = "0.5"
+active-win-pos-rs = "0.8"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+thiserror = "2"
+log = "0.4"
+env_logger = "0.11"
+sysinfo = "0.30"
+ort = { version = "2.0.0-rc.12", optional = true, default-features = false, features = ["download-binaries", "ndarray", "tls-native", "load-dynamic", "copy-dylibs", "api-24"] }
+ndarray = { version = "0.17", optional = true, features = ["std"] }
+tauri-plugin-global-shortcut = "2"
+csv = "1.4.0"
+
+[features]
+default = []
+onnx = ["dep:ort", "dep:ndarray"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

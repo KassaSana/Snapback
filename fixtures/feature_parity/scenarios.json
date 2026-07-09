@@ -1,0 +1,82 @@
+{
+  "scenarios": [
+    {
+      "name": "stable_typing",
+      "base_time": 1700000000.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 0.4, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 0.8, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 1.2, "type": "key_press", "app": "Cursor", "title": "main.rs — Snapback" },
+        { "offset_secs": 1.6, "type": "mouse_move", "app": "Cursor", "title": "main.rs — Snapback", "mouse_speed": 120 }
+      ],
+      "expect": {
+        "keystroke_count": 4,
+        "context_switches_30s": 0,
+        "is_ide": 1,
+        "time_in_current_app_min": 1
+      }
+    },
+    {
+      "name": "context_switching",
+      "base_time": 1700000000.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 1.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 2.0, "type": "window_focus_change", "app": "Google Chrome", "title": "YouTube - Rick Astley" },
+        { "offset_secs": 3.0, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 4.0, "type": "window_focus_change", "app": "Google Chrome", "title": "YouTube - Rick Astley" }
+      ],
+      "expect": {
+        "context_switches_30s": 4,
+        "unique_apps_5min_min": 2,
+        "is_entertainment": 1,
+        "is_browser": 1
+      }
+    },
+    {
+      "name": "keystroke_rate_30s",
+      "base_time": 1700000100.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 4.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 8.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 12.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 16.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 20.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 24.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 28.0, "type": "key_press", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 30.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 50 }
+      ],
+      "expect": {
+        "keystroke_count": 8,
+        "keystroke_rate": 0.2666667
+      }
+    },
+    {
+      "name": "idle_recovery",
+      "base_time": 1700000200.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "idle_end", "app": "Cursor", "title": "main.rs", "idle_duration_ms": 10000 },
+        { "offset_secs": 5.0, "type": "idle_end", "app": "Cursor", "title": "main.rs", "idle_duration_ms": 5000 }
+      ],
+      "expect": {
+        "idle_time_30s": 15.0,
+        "idle_event_count_5min": 2
+      }
+    },
+    {
+      "name": "mouse_speed_steady",
+      "base_time": 1700000300.0,
+      "events": [
+        { "offset_secs": 0.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 100 },
+        { "offset_secs": 1.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 200 },
+        { "offset_secs": 2.0, "type": "mouse_move", "app": "Cursor", "title": "main.rs", "mouse_speed": 300 }
+      ],
+      "expect": {
+        "mouse_move_count": 3,
+        "mouse_speed_mean": 200.0
+      }
+    }
+  ]
+}

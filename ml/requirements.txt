@@ -1,0 +1,5 @@
+# Offline training dependencies for Snapback.
+# The shipped desktop app runs inference in Rust (heuristic baseline, optional ONNX).
+#
+# For training, install:
+#   pip install -r ml/requirements-train.txt
