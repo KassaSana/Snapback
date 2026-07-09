@@ -343,6 +343,29 @@ mod tests {
     }
 
     #[test]
+    fn validate_required_text_accepts_exactly_max_len() {
+        // Boundary check: a value of exactly max_len must pass, not be
+        // rejected — the comparison is `> max_len`, so equality is the edge
+        // where an accidental `>=` would silently start rejecting valid input.
+        let value = "a".repeat(MAX_SESSION_GOAL_LEN);
+        assert!(validate_required_text("Session goal", &value, MAX_SESSION_GOAL_LEN).is_ok());
+    }
+
+    #[test]
+    fn validate_required_text_counts_unicode_chars_not_bytes() {
+        // These helpers use `.chars().count()`, not `.len()` (byte length).
+        // A multi-byte character like "é" (2 bytes in UTF-8) must count as
+        // ONE character toward the limit, not two — otherwise non-ASCII
+        // text would get rejected well before it actually hits the limit.
+        let value = "é".repeat(MAX_SESSION_GOAL_LEN);
+        assert_eq!(value.len(), MAX_SESSION_GOAL_LEN * 2, "sanity: é is 2 bytes in UTF-8");
+        assert!(validate_required_text("Session goal", &value, MAX_SESSION_GOAL_LEN).is_ok());
+
+        let too_long = "é".repeat(MAX_SESSION_GOAL_LEN + 1);
+        assert!(validate_required_text("Session goal", &too_long, MAX_SESSION_GOAL_LEN).is_err());
+    }
+
+    #[test]
     fn validate_optional_text_trims_blank_and_rejects_too_long_values() {
         assert_eq!(
             validate_optional_text(
@@ -360,5 +383,20 @@ mod tests {
         );
         let long = "n".repeat(MAX_LABEL_NOTES_LEN + 1);
         assert!(validate_optional_text("Label notes", Some(long), MAX_LABEL_NOTES_LEN).is_err());
+    }
+
+    #[test]
+    fn validate_optional_text_passes_through_none() {
+        // The `None` branch (field omitted entirely, as opposed to `Some("")`
+        // or `Some("   ")`) was never directly exercised.
+        assert_eq!(
+            validate_optional_text("Label notes", None, MAX_LABEL_NOTES_LEN).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn clamp_limit_passes_through_exactly_at_the_cap() {
+        assert_eq!(clamp_limit(Some(MAX_HISTORY_LIMIT), 8), MAX_HISTORY_LIMIT);
     }
 }
