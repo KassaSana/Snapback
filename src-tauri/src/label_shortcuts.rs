@@ -181,17 +181,29 @@ mod tests {
     }
 
     #[test]
-    fn focus_label_name_matches_the_storage_contract() {
-        // These strings are what get written to SQLite / exported CSVs
-        // (see FocusLabel round-tripping in storage/mod.rs), so a mismatch
-        // here would silently mislabel hotkey-submitted feedback.
-        assert_eq!(focus_label_name(FocusLabel::DeepFocus), "DEEP_FOCUS");
-        assert_eq!(focus_label_name(FocusLabel::Productive), "PRODUCTIVE");
-        assert_eq!(
-            focus_label_name(FocusLabel::PseudoProductive),
-            "PSEUDO_PRODUCTIVE"
-        );
-        assert_eq!(focus_label_name(FocusLabel::Distracted), "DISTRACTED");
+    fn focus_label_name_matches_serde_serialization() {
+        // `focus_label_name` populates the `label` field of the `label-hotkey`
+        // event payload. It must stay in lockstep with how the rest of the app
+        // stringifies `FocusLabel` — serde's SCREAMING_SNAKE_CASE form — so the
+        // string a consumer sees is the same regardless of which path produced
+        // it. Asserting against the serde output (rather than hardcoded
+        // literals) makes this catch drift if either side is renamed.
+        //
+        // Note: SQLite/CSV persistence stores the *integer* discriminant
+        // (`label as i32` in storage::save_label_at), not this string.
+        for label in [
+            FocusLabel::DeepFocus,
+            FocusLabel::Productive,
+            FocusLabel::PseudoProductive,
+            FocusLabel::Distracted,
+        ] {
+            let serde_form = serde_json::to_value(label)
+                .expect("FocusLabel serializes")
+                .as_str()
+                .expect("FocusLabel serializes to a JSON string")
+                .to_string();
+            assert_eq!(focus_label_name(label), serde_form);
+        }
     }
 
     #[test]
