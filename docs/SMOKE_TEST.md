@@ -38,7 +38,34 @@ capture → features → classifier → UI
 
 ---
 
-## Part A — Live session (~45 min)
+## Automated smoke harness (~5 min)
+
+Run this first when you want the lowest-effort confidence pass:
+
+```bash
+cargo run --features onnx --manifest-path src-tauri/Cargo.toml -- --smoke
+```
+
+What it verifies for you:
+
+- session-gated persistence stays blocked outside active sessions
+- seeded sessions export to `features.csv` and `labels.csv`
+- in-app training deploy path produces `model.onnx`
+- ONNX reload succeeds and runtime classifier status flips to `onnx`
+
+What it does **not** verify:
+
+- real capture health on your desktop
+- app/window switching behavior
+- global hotkeys from another focused app
+- snapback overlay UX
+- subjective trust in heuristic vs ONNX behavior
+
+Treat the harness as the automated contract check. Use the manual live pass below for the true OS- and UX-dependent slice.
+
+---
+
+## Part A — Manual live pass (~45 min)
 
 ### A1. Launch & health (5 min)
 
@@ -185,11 +212,12 @@ Skip if not triggered — note “snapback not exercised”.
 
 **Pass criteria (all required):**
 
-1. Session start/stop works; recap appears  
-2. Predictions + features persist **only** during active session  
-3. ≥ 4 labels saved  
-4. Export → train → `model.onnx` → classifier shows **ONNX**  
-5. No silent failures you had to discover via logs  
+1. `cargo run --features onnx --manifest-path src-tauri/Cargo.toml -- --smoke` exits successfully  
+2. Session start/stop works; recap appears  
+3. Predictions + features persist **only** during active session  
+4. ≥ 4 labels saved  
+5. Export → train → `model.onnx` → classifier shows **ONNX**  
+6. No silent failures you had to discover via logs  
 
 When passed, check off in [`doc.md`](../doc.md):
 

@@ -56,8 +56,17 @@ const TERMINALS: &[&str] = &["terminal", "iterm", "warp", "alacritty", "kitty", 
 
 /// Title keywords catch distractions inside browsers (e.g. “YouTube — Chrome”).
 const DISTRACTING_TITLE_KEYWORDS: &[&str] = &[
-    "youtube", "netflix", "twitter", "reddit", "instagram", "tiktok", "twitch",
-    "facebook", "hulu", "disney+", "prime video",
+    "youtube",
+    "netflix",
+    "twitter",
+    "reddit",
+    "instagram",
+    "tiktok",
+    "twitch",
+    "facebook",
+    "hulu",
+    "disney+",
+    "prime video",
 ];
 
 fn matches_rule_pattern(pattern: &str, app_name: &str, window_title: &str) -> bool {
@@ -207,7 +216,12 @@ mod tests {
     fn cursor_is_ide_and_on_task() {
         let ctx = classify("Cursor", "classifier.rs — Snapback", &[]);
         assert!(ctx.is_ide);
-        assert!(snapback_on_task(&ctx, "classifier.rs — Snapback", None, None));
+        assert!(snapback_on_task(
+            &ctx,
+            "classifier.rs — Snapback",
+            None,
+            None
+        ));
     }
 
     #[test]
@@ -215,7 +229,12 @@ mod tests {
         let ctx = classify("Google Chrome", "Rick Astley - YouTube", &[]);
         assert!(ctx.is_browser);
         assert!(ctx.title_is_distracting);
-        assert!(!snapback_on_task(&ctx, "Rick Astley - YouTube", Some("PRODUCTIVE"), None));
+        assert!(!snapback_on_task(
+            &ctx,
+            "Rick Astley - YouTube",
+            Some("PRODUCTIVE"),
+            None
+        ));
     }
 
     #[test]
@@ -231,7 +250,12 @@ mod tests {
         let rules = vec![block_rule("notion")];
         let ctx = classify("Notion", "Weekly plan", &rules);
         assert!(ctx.personal_block);
-        assert!(!snapback_on_task(&ctx, "Weekly plan", Some("PRODUCTIVE"), None));
+        assert!(!snapback_on_task(
+            &ctx,
+            "Weekly plan",
+            Some("PRODUCTIVE"),
+            None
+        ));
     }
 
     #[test]
@@ -247,7 +271,12 @@ mod tests {
         let ctx = classify("Slack", "#general", &[]);
         assert!(ctx.is_communication);
         assert!(snapback_on_task(&ctx, "#general", Some("PRODUCTIVE"), None));
-        assert!(!snapback_on_task(&ctx, "#general", Some("DISTRACTED"), None));
+        assert!(!snapback_on_task(
+            &ctx,
+            "#general",
+            Some("DISTRACTED"),
+            None
+        ));
     }
 
     #[test]

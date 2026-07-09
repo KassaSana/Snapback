@@ -20,7 +20,10 @@ pub fn parse_window_title(app_name: &str, window_title: &str) -> ParsedTitle {
 
     if lower_app.contains("code") || lower_app.contains("cursor") {
         let file = parts.first().unwrap_or(&title).trim();
-        let project = parts.get(parts.len().saturating_sub(2)).unwrap_or(&"").trim();
+        let project = parts
+            .get(parts.len().saturating_sub(2))
+            .unwrap_or(&"")
+            .trim();
         return ParsedTitle {
             file_hint: file.to_string(),
             project_hint: project.to_string(),

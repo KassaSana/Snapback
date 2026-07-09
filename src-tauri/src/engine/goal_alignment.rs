@@ -21,18 +21,46 @@ struct GoalProfile {
 }
 
 const CODING_KEYWORDS: &[&str] = &[
-    "code", "coding", "bug", "fix", "implement", "rust", "api", "refactor", "test", "debug",
-    "build", "feature", "compile", "merge", "pr", "pull request",
+    "code",
+    "coding",
+    "bug",
+    "fix",
+    "implement",
+    "rust",
+    "api",
+    "refactor",
+    "test",
+    "debug",
+    "build",
+    "feature",
+    "compile",
+    "merge",
+    "pr",
+    "pull request",
 ];
 const WRITING_KEYWORDS: &[&str] = &[
     "write", "writing", "report", "essay", "document", "blog", "draft", "paper", "notes",
 ];
 const DESIGN_KEYWORDS: &[&str] = &["design", "figma", "ui", "ux", "mockup", "wireframe"];
 const RESEARCH_KEYWORDS: &[&str] = &[
-    "research", "read", "reading", "learn", "study", "article", "docs", "documentation",
+    "research",
+    "read",
+    "reading",
+    "learn",
+    "study",
+    "article",
+    "docs",
+    "documentation",
 ];
 const COMMUNICATION_KEYWORDS: &[&str] = &[
-    "email", "meeting", "call", "slack", "message", "reply", "interview", "present",
+    "email",
+    "meeting",
+    "call",
+    "slack",
+    "message",
+    "reply",
+    "interview",
+    "present",
 ];
 
 fn goal_contains_any(goal: &str, keywords: &[&str]) -> bool {

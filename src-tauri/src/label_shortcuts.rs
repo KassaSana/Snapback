@@ -1,7 +1,5 @@
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_global_shortcut::{
-    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
-};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 use crate::state::AppState;
 use crate::types::{FocusLabel, LabelSource};
@@ -96,12 +94,12 @@ fn save_hotkey_label(app: &AppHandle, label: FocusLabel) {
         }
     };
 
-    if let Err(err) = state.storage.lock().save_label(
-        &session.session_id,
-        label,
-        LabelSource::Hotkey,
-        None,
-    ) {
+    if let Err(err) =
+        state
+            .storage
+            .lock()
+            .save_label(&session.session_id, label, LabelSource::Hotkey, None)
+    {
         log::warn!("failed to save hotkey label: {err}");
         let _ = app.emit(
             "label-hotkey",

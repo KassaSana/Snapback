@@ -163,7 +163,11 @@ fn feature_from_row(
                 .map(String::as_str)
                 .unwrap_or("0"),
         ) as i64,
-        keystroke_count: parse_usize(row.get("keystroke_count").map(String::as_str).unwrap_or("0")),
+        keystroke_count: parse_usize(
+            row.get("keystroke_count")
+                .map(String::as_str)
+                .unwrap_or("0"),
+        ),
         keystroke_rate: parse_f64(row.get("keystroke_rate").map(String::as_str).unwrap_or("0")),
         keystroke_interval_mean: parse_f64(
             row.get("keystroke_interval_mean")
@@ -190,8 +194,16 @@ fn feature_from_row(
                 .map(String::as_str)
                 .unwrap_or("0"),
         ),
-        mouse_speed_mean: parse_f64(row.get("mouse_speed_mean").map(String::as_str).unwrap_or("0")),
-        mouse_speed_std: parse_f64(row.get("mouse_speed_std").map(String::as_str).unwrap_or("0")),
+        mouse_speed_mean: parse_f64(
+            row.get("mouse_speed_mean")
+                .map(String::as_str)
+                .unwrap_or("0"),
+        ),
+        mouse_speed_std: parse_f64(
+            row.get("mouse_speed_std")
+                .map(String::as_str)
+                .unwrap_or("0"),
+        ),
         mouse_acceleration_mean: parse_f64(
             row.get("mouse_acceleration_mean")
                 .map(String::as_str)
@@ -329,11 +341,7 @@ fn precision_at_k_distraction(
     hits as f64 / top_k.len() as f64
 }
 
-fn recall_distracted_states(
-    distraction_scores: &[f64],
-    labels: &[usize],
-    threshold: f64,
-) -> f64 {
+fn recall_distracted_states(distraction_scores: &[f64], labels: &[usize], threshold: f64) -> f64 {
     let positives: Vec<usize> = labels
         .iter()
         .enumerate()
@@ -415,7 +423,9 @@ pub fn run_classifier_eval_cli(args: &[String]) -> i32 {
         .map(Path::new);
 
     let Some(path) = path else {
-        eprintln!("usage: --classifier-eval <labeled.csv> [--backend heuristic|onnx] [--model-onnx path]");
+        eprintln!(
+            "usage: --classifier-eval <labeled.csv> [--backend heuristic|onnx] [--model-onnx path]"
+        );
         return 1;
     };
 
@@ -469,7 +479,10 @@ pub fn run_classifier_eval_cli(args: &[String]) -> i32 {
             println!("backend={}", metrics.backend);
             println!("samples={}", metrics.samples);
             println!("accuracy={:.4}", metrics.accuracy);
-            println!("precision_at_10pct_distracted={:.4}", metrics.precision_at_10pct_distracted);
+            println!(
+                "precision_at_10pct_distracted={:.4}",
+                metrics.precision_at_10pct_distracted
+            );
             println!("recall_distracted={:.4}", metrics.recall_distracted);
             0
         }
@@ -499,13 +512,15 @@ mod tests {
             ("timestamp".to_string(), "1700000000".to_string()),
             ("keystroke_count".to_string(), "8".to_string()),
             ("app_name".to_string(), "Cursor".to_string()),
-            ("window_title".to_string(), "state.rs — Snapback".to_string()),
+            (
+                "window_title".to_string(),
+                "state.rs — Snapback".to_string(),
+            ),
             ("session_goal".to_string(), "Ship eval parity".to_string()),
             ("focus_mode".to_string(), "deep".to_string()),
         ]);
 
-        let (features, label, goal, focus_mode) =
-            feature_from_row(&row).expect("row should parse");
+        let (features, label, goal, focus_mode) = feature_from_row(&row).expect("row should parse");
         assert_eq!(label, 2);
         assert_eq!(features.app_name, "Cursor");
         assert_eq!(features.window_title, "state.rs — Snapback");
@@ -515,7 +530,8 @@ mod tests {
 
     #[test]
     fn parse_csv_handles_quoted_notes_and_context_columns() {
-        let dir = std::env::temp_dir().join(format!("classifier_eval_csv_{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("classifier_eval_csv_{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("labeled.csv");
         fs::write(

@@ -27,7 +27,10 @@ fn model_slot() -> &'static Mutex<Option<Session>> {
 pub fn resolve_model_path(app_data_dir: &Path) -> Option<PathBuf> {
     [
         app_data_dir.join("model.onnx"),
-        app_data_dir.join("exports").join("training").join("model.onnx"),
+        app_data_dir
+            .join("exports")
+            .join("training")
+            .join("model.onnx"),
     ]
     .into_iter()
     .find(|path| path.is_file())
@@ -35,7 +38,8 @@ pub fn resolve_model_path(app_data_dir: &Path) -> Option<PathBuf> {
 
 #[cfg(feature = "onnx")]
 pub fn init(path: &Path) -> Result<(), String> {
-    let bytes = std::fs::read(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let bytes =
+        std::fs::read(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     let session = Session::builder()
         .map_err(|err| err.to_string())?
         .commit_from_memory(&bytes)
@@ -95,12 +99,16 @@ pub fn predict(
     let session = guard.as_mut()?;
 
     let input_values = features.training_input();
-    let input = Tensor::from_array(([1usize, input_values.len()], input_values.to_vec()))
-        .ok()?;
+    let input = Tensor::from_array(([1usize, input_values.len()], input_values.to_vec())).ok()?;
     let outputs = session.run(ort::inputs![input]).ok()?;
     let probas = extract_probas(&outputs)?;
 
-    Some(build_prediction_scores(probas, thrash, drift, goal_alignment))
+    Some(build_prediction_scores(
+        probas,
+        thrash,
+        drift,
+        goal_alignment,
+    ))
 }
 
 #[cfg(not(feature = "onnx"))]

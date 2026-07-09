@@ -254,4 +254,3 @@ pub fn run_benchmark(args: BenchArgs) -> i32 {
 
     0
 }
-

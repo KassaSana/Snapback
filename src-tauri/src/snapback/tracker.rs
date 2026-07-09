@@ -95,7 +95,11 @@ impl ContextTracker {
     }
 
     /// Returns a snapshot to persist when the active window context changes.
-    pub fn on_window_change(&mut self, app_name: &str, window_title: &str) -> Option<ContextSnapshotDto> {
+    pub fn on_window_change(
+        &mut self,
+        app_name: &str,
+        window_title: &str,
+    ) -> Option<ContextSnapshotDto> {
         let parsed = parse_window_title(app_name, window_title);
         let was_on_task = self.is_on_task(&self.current.app_name, &self.current.window_title);
         let now_on_task = self.is_on_task(app_name, window_title);

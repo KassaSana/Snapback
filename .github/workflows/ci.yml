@@ -233,6 +233,8 @@ jobs:
         run: cargo run --quiet --manifest-path src-tauri/Cargo.toml -- --classifier-eval data/labeled.csv --backend heuristic
       - name: Run runtime classifier eval (ONNX)
         run: cargo run --quiet --features onnx --manifest-path src-tauri/Cargo.toml -- --classifier-eval data/labeled.csv --backend onnx --model-onnx data/model.onnx
+      - name: Run headless smoke harness
+        run: cargo run --quiet --features onnx --manifest-path src-tauri/Cargo.toml -- --smoke
 
   feature-parity:
     runs-on: ubuntu-latest

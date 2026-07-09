@@ -8,9 +8,7 @@ pub struct ActiveWindowInfo {
 pub fn get_active_window_info() -> Option<ActiveWindowInfo> {
     match active_win_pos_rs::get_active_window() {
         Ok(ActiveWindow {
-            app_name,
-            title,
-            ..
+            app_name, title, ..
         }) => Some(ActiveWindowInfo {
             app_name,
             window_title: title,

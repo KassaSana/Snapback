@@ -100,6 +100,19 @@ class TestDatasetBuilder(unittest.TestCase):
             self.assertEqual(len(joined), 1)
             self.assertEqual(joined[0]["label"], "")
 
+    def test_read_labels_csv_accepts_auto_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            label_path = os.path.join(tmp, "labels.csv")
+            with open(label_path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["timestamp", "label", "source", "session_id", "notes"])
+                writer.writerow([25.0, int(FocusLabel.PRODUCTIVE), "AUTO", "s1", "recap"])
+
+            label_rows = read_labels_csv(label_path)
+
+            self.assertEqual(len(label_rows), 1)
+            self.assertEqual(label_rows[0].source, LabelSource.AUTO)
+
 
 if __name__ == "__main__":
     unittest.main()

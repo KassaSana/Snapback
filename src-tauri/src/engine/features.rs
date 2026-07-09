@@ -3,9 +3,7 @@ use std::collections::VecDeque;
 use chrono::{Datelike, Timelike, Utc};
 
 use crate::engine::app_context::classify;
-use crate::types::{
-    AppRuleRecord, CaptureEvent, EventType,
-};
+use crate::types::{AppRuleRecord, CaptureEvent, EventType};
 
 #[derive(Debug, Clone)]
 pub struct FeatureVector {
@@ -138,7 +136,8 @@ fn std_dev(values: &[f64]) -> f64 {
         return 0.0;
     }
     let avg = mean(values);
-    let variance = values.iter().map(|v| (v - avg).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
+    let variance =
+        values.iter().map(|v| (v - avg).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
     variance.sqrt()
 }
 
@@ -234,7 +233,11 @@ impl FeatureExtractor {
             return FeatureVector::empty(now);
         }
 
-        let oldest_30s = self.events_30s.front().map(|e| e.timestamp_secs).unwrap_or(now);
+        let oldest_30s = self
+            .events_30s
+            .front()
+            .map(|e| e.timestamp_secs)
+            .unwrap_or(now);
         let span_30s = (self.window_seconds.min(now - oldest_30s)).max(1e-6);
 
         let keystrokes: Vec<&CaptureEvent> = self
@@ -243,10 +246,7 @@ impl FeatureExtractor {
             .filter(|e| e.event_type == EventType::KeyPress)
             .collect();
         let key_times: Vec<f64> = keystrokes.iter().map(|e| e.timestamp_secs).collect();
-        let intervals: Vec<f64> = key_times
-            .windows(2)
-            .map(|w| w[1] - w[0])
-            .collect();
+        let intervals: Vec<f64> = key_times.windows(2).map(|w| w[1] - w[0]).collect();
 
         let mouse_moves: Vec<&CaptureEvent> = self
             .events_30s
@@ -495,14 +495,7 @@ mod tests {
 
         extractor.update(&event_at(0.0, "Code"), &rules);
         extractor.update(
-            &event_with_type(
-                EventType::IdleEnd,
-                400.0,
-                "Code",
-                "Code — doc",
-                0,
-                300_000,
-            ),
+            &event_with_type(EventType::IdleEnd, 400.0, "Code", "Code — doc", 0, 300_000),
             &rules,
         );
         let features = extractor.update(&event_at(401.0, "Code"), &rules);

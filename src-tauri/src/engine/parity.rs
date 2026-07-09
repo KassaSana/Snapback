@@ -58,22 +58,13 @@ fn parse_event_type(raw: &str) -> Option<EventType> {
 
 pub fn training_column_values(features: &FeatureVector) -> HashMap<String, f64> {
     HashMap::from([
-        (
-            "timestamp".to_string(),
-            features.timestamp,
-        ),
+        ("timestamp".to_string(), features.timestamp),
         (
             "seconds_since_session_start".to_string(),
             features.seconds_since_session_start as f64,
         ),
-        (
-            "hour_of_day".to_string(),
-            features.hour_of_day as f64,
-        ),
-        (
-            "day_of_week".to_string(),
-            features.day_of_week as f64,
-        ),
+        ("hour_of_day".to_string(), features.hour_of_day as f64),
+        ("day_of_week".to_string(), features.day_of_week as f64),
         (
             "minutes_since_last_break".to_string(),
             features.minutes_since_last_break as f64,
@@ -160,27 +151,15 @@ pub fn training_column_values(features: &FeatureVector) -> HashMap<String, f64> 
         ),
         (
             "is_communication".to_string(),
-            if features.is_communication {
-                1.0
-            } else {
-                0.0
-            },
+            if features.is_communication { 1.0 } else { 0.0 },
         ),
         (
             "is_entertainment".to_string(),
-            if features.is_entertainment {
-                1.0
-            } else {
-                0.0
-            },
+            if features.is_entertainment { 1.0 } else { 0.0 },
         ),
         (
             "is_productivity".to_string(),
-            if features.is_productivity {
-                1.0
-            } else {
-                0.0
-            },
+            if features.is_productivity { 1.0 } else { 0.0 },
         ),
         ("focus_momentum".to_string(), features.focus_momentum),
         (
@@ -247,17 +226,14 @@ pub fn check_expectations(
     for (key, expected) in &scenario.expect {
         if key.ends_with("_min") {
             let base = key.trim_end_matches("_min");
-            let min = expected.as_f64().ok_or_else(|| {
-                format!("{}: expected number for {key}", scenario.name)
-            })?;
+            let min = expected
+                .as_f64()
+                .ok_or_else(|| format!("{}: expected number for {key}", scenario.name))?;
             let actual = features
                 .get(base)
                 .ok_or_else(|| format!("missing feature column '{base}'"))?;
             if *actual < min {
-                return Err(format!(
-                    "{}.{base}: {actual} < min {min}",
-                    scenario.name
-                ));
+                return Err(format!("{}.{base}: {actual} < min {min}", scenario.name));
             }
             continue;
         }
@@ -268,17 +244,14 @@ pub fn check_expectations(
 
         if let Some(min) = expected.get("min").and_then(|v| v.as_f64()) {
             if *actual < min {
-                return Err(format!(
-                    "{}.{key}: {actual} < min {min}",
-                    scenario.name
-                ));
+                return Err(format!("{}.{key}: {actual} < min {min}", scenario.name));
             }
             continue;
         }
 
-        let expected_num = expected.as_f64().ok_or_else(|| {
-            format!("{}: expected numeric value for {key}", scenario.name)
-        })?;
+        let expected_num = expected
+            .as_f64()
+            .ok_or_else(|| format!("{}: expected numeric value for {key}", scenario.name))?;
         if (*actual - expected_num).abs() > 1e-6 {
             return Err(format!(
                 "{}.{key}: expected {expected_num}, got {actual}",
@@ -337,8 +310,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn scenarios_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/feature_parity/scenarios.json")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/feature_parity/scenarios.json")
     }
 
     #[test]

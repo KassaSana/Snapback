@@ -57,11 +57,7 @@ struct PythonCommand {
 }
 
 fn find_python() -> Option<PythonCommand> {
-    let candidates: [(&str, &[&str]); 3] = [
-        ("py", &["-3"]),
-        ("python3", &[]),
-        ("python", &[]),
-    ];
+    let candidates: [(&str, &[&str]); 3] = [("py", &["-3"]), ("python3", &[]), ("python", &[])];
 
     for (program, prefix) in candidates {
         let mut cmd = Command::new(program);
@@ -171,7 +167,9 @@ pub fn training_deploy_status(app_data_dir: &Path) -> TrainingDeployStatus {
     let model_onnx_exists = export.join("model.onnx").is_file();
     let metrics_path = export.join("metrics.json");
     let metrics_exists = metrics_path.is_file();
-    let metrics = metrics_exists.then(|| parse_metrics_json(&metrics_path)).flatten();
+    let metrics = metrics_exists
+        .then(|| parse_metrics_json(&metrics_path))
+        .flatten();
     let repo_path = read_training_repo_path(app_data_dir);
 
     TrainingDeployStatus {
@@ -210,8 +208,7 @@ fn build_train_from_export_result(
 ) -> TrainFromExportResult {
     let deploy_ready = training_succeeded && onnx_exported;
     let message = if !training_succeeded {
-        "Training failed. Install deps: pip install xgboost onnxmltools onnx (see log)."
-            .to_string()
+        "Training failed. Install deps: pip install xgboost onnxmltools onnx (see log).".to_string()
     } else if deploy_ready {
         "Training complete — model.onnx is ready. Reload model to activate.".to_string()
     } else {
@@ -232,7 +229,10 @@ fn build_train_from_export_result(
 
 fn build_training_failure_message(exit_code: Option<i32>, log_tail: &str) -> String {
     let normalized = log_tail.to_lowercase();
-    if exit_code == Some(2) || normalized.contains("majority-classifier stub") || normalized.contains("majority stub") {
+    if exit_code == Some(2)
+        || normalized.contains("majority-classifier stub")
+        || normalized.contains("majority stub")
+    {
         return "Training stopped because the current data only produced a majority-classifier stub. Capture more labeled sessions, then train again.".to_string();
     }
     if normalized.contains("xgboost is not installed")
@@ -297,12 +297,7 @@ pub fn train_from_export(app_data_dir: &Path) -> Result<TrainFromExportResult, S
         .flatten();
 
     if !output.status.success() {
-        let mut result = build_train_from_export_result(
-            false,
-            onnx_exported,
-            metrics,
-            log_tail,
-        );
+        let mut result = build_train_from_export_result(false, onnx_exported, metrics, log_tail);
         result.message = build_training_failure_message(output.status.code(), &result.log_tail);
         return Ok(result);
     }
@@ -363,10 +358,8 @@ mod tests {
 
     #[test]
     fn count_label_breakdown_reads_exported_labels() {
-        let temp = std::env::temp_dir().join(format!(
-            "snapback-label-breakdown-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp =
+            std::env::temp_dir().join(format!("snapback-label-breakdown-{}", uuid::Uuid::new_v4()));
         let _ = fs::remove_dir_all(&temp);
         fs::create_dir_all(&temp).unwrap();
         let path = temp.join("labels.csv");
@@ -442,10 +435,8 @@ mod tests {
 
     #[test]
     fn sync_trained_model_copies_export_into_app_data_dir() {
-        let temp = std::env::temp_dir().join(format!(
-            "snapback-model-sync-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp =
+            std::env::temp_dir().join(format!("snapback-model-sync-test-{}", uuid::Uuid::new_v4()));
         let export = temp.join("exports").join("training");
         let app_data = temp.join("app-data");
         fs::create_dir_all(&export).unwrap();
@@ -454,7 +445,10 @@ mod tests {
         let copied = sync_trained_model_to_app_dir(&app_data, &export).unwrap();
 
         assert!(copied);
-        assert_eq!(fs::read(app_data.join("model.onnx")).unwrap(), b"onnx-bytes");
+        assert_eq!(
+            fs::read(app_data.join("model.onnx")).unwrap(),
+            b"onnx-bytes"
+        );
         let _ = fs::remove_dir_all(&temp);
     }
 

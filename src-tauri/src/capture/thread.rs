@@ -36,8 +36,7 @@ pub fn start_capture_thread(
     let is_idle: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
     let idle_started_at: Arc<RwLock<Option<SystemTime>>> = Arc::new(RwLock::new(None));
     let last_mouse: Arc<RwLock<Option<(i32, i32, f64)>>> = Arc::new(RwLock::new(None));
-    let last_mouse_sample: Arc<RwLock<SystemTime>> =
-        Arc::new(RwLock::new(SystemTime::now()));
+    let last_mouse_sample: Arc<RwLock<SystemTime>> = Arc::new(RwLock::new(SystemTime::now()));
 
     let idle_thread = start_idle_monitor(
         event_tx.clone(),
@@ -57,11 +56,7 @@ pub fn start_capture_thread(
         }
         if let Some(info) = get_active_window_info() {
             let mut title_only = false;
-            if let Some(current) = poll_window
-                .read()
-                .ok()
-                .and_then(|g| g.clone())
-            {
+            if let Some(current) = poll_window.read().ok().and_then(|g| g.clone()) {
                 if current.0 == info.app_name && current.1 == info.window_title {
                     continue;
                 }

@@ -60,12 +60,20 @@ fn thrash_score(features: &FeatureVector) -> f64 {
     let unique_apps = ((features.unique_apps_5min.saturating_sub(1)) as f64 / 5.0)
         .min(1.0)
         .max(0.0);
-    clamp(switches_30s * 0.45 + switches_5min * 0.25 + unique_apps * 0.30, 0.0, 1.0)
+    clamp(
+        switches_30s * 0.45 + switches_5min * 0.25 + unique_apps * 0.30,
+        0.0,
+        1.0,
+    )
 }
 
 /// Busy-work drift: churning tabs/titles or erratic typing while still in "work" apps.
 fn drift_score(features: &FeatureVector) -> f64 {
-    let title_churn = if features.window_title_changed_30s { 1.0 } else { 0.0 };
+    let title_churn = if features.window_title_changed_30s {
+        1.0
+    } else {
+        0.0
+    };
     let keystroke_chaos = if features.keystroke_count >= 3 {
         (features.keystroke_interval_std / 1.2).min(1.0)
     } else {
@@ -324,7 +332,11 @@ mod tests {
             ..stable_features()
         };
         let scores = Classifier::new(FocusMode::Normal).predict(&features, None, &[]);
-        assert!(scores.thrash_score >= 0.75, "thrash={}", scores.thrash_score);
+        assert!(
+            scores.thrash_score >= 0.75,
+            "thrash={}",
+            scores.thrash_score
+        );
         assert_eq!(scores.focus_state, "DISTRACTED");
     }
 
@@ -444,13 +456,7 @@ mod tests {
         let onnx_like = build_prediction_scores([0.05, 0.05, 0.10, 0.80], 0.80, 0.10, 0.5);
         assert_eq!(onnx_like.focus_state, "DEEP_FOCUS");
 
-        let final_scores = apply_focus_guardrails(
-            onnx_like,
-            0.80,
-            0.10,
-            false,
-            FocusMode::Normal,
-        );
+        let final_scores = apply_focus_guardrails(onnx_like, 0.80, 0.10, false, FocusMode::Normal);
         assert_eq!(final_scores.focus_state, "DISTRACTED");
         assert!((final_scores.focus_score - 91.25).abs() < 0.01);
     }
@@ -460,13 +466,7 @@ mod tests {
         let onnx_like = build_prediction_scores([0.05, 0.10, 0.70, 0.15], 0.20, 0.10, 0.5);
         assert_ne!(onnx_like.focus_state, "DISTRACTED");
 
-        let final_scores = apply_focus_guardrails(
-            onnx_like,
-            0.20,
-            0.10,
-            true,
-            FocusMode::Normal,
-        );
+        let final_scores = apply_focus_guardrails(onnx_like, 0.20, 0.10, true, FocusMode::Normal);
         assert_eq!(final_scores.focus_state, "DISTRACTED");
     }
 
@@ -492,22 +492,10 @@ mod tests {
             goal_alignment: 0.5,
         };
 
-        let normal = apply_focus_guardrails(
-            borderline.clone(),
-            0.1,
-            0.1,
-            false,
-            FocusMode::Normal,
-        );
+        let normal = apply_focus_guardrails(borderline.clone(), 0.1, 0.1, false, FocusMode::Normal);
         assert_eq!(normal.focus_state, "DISTRACTED");
 
-        let recovery = apply_focus_guardrails(
-            borderline,
-            0.1,
-            0.1,
-            false,
-            FocusMode::Recovery,
-        );
+        let recovery = apply_focus_guardrails(borderline, 0.1, 0.1, false, FocusMode::Recovery);
         assert_eq!(recovery.focus_state, "PRODUCTIVE");
     }
 

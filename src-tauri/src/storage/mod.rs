@@ -452,7 +452,9 @@ impl Storage {
 
     pub fn feature_snapshot_count(&self) -> Result<i64, StorageError> {
         self.conn
-            .query_row("SELECT COUNT(*) FROM feature_snapshots", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM feature_snapshots", [], |row| {
+                row.get(0)
+            })
             .map_err(StorageError::from)
     }
 
@@ -631,6 +633,17 @@ impl Storage {
         notes: Option<&str>,
     ) -> Result<(), StorageError> {
         let timestamp = chrono::Utc::now().to_rfc3339();
+        self.save_label_at(session_id, label, source, notes, &timestamp)
+    }
+
+    pub fn save_label_at(
+        &self,
+        session_id: &str,
+        label: FocusLabel,
+        source: LabelSource,
+        notes: Option<&str>,
+        timestamp: &str,
+    ) -> Result<(), StorageError> {
         self.conn.execute(
             "INSERT INTO labels (session_id, label, source, notes, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
@@ -936,7 +949,10 @@ mod tests {
         assert!(first_after.ended_at.is_some());
 
         assert_eq!(second.status, "ACTIVE");
-        let active = storage.get_active_session().unwrap().expect("active session");
+        let active = storage
+            .get_active_session()
+            .unwrap()
+            .expect("active session");
         assert_eq!(active.session_id, second.session_id);
         assert_eq!(active.goal, "Second goal");
     }
@@ -992,16 +1008,14 @@ mod tests {
 
         assert!(storage.save_prediction(&record("")).is_err());
         assert!(storage.save_prediction(&record("idle")).is_err());
-        assert!(storage
-            .save_feature_snapshot("", &features)
-            .is_err());
-        assert!(storage
-            .save_feature_snapshot("idle", &features)
-            .is_err());
+        assert!(storage.save_feature_snapshot("", &features).is_err());
+        assert!(storage.save_feature_snapshot("idle", &features).is_err());
         assert_eq!(storage.prediction_count().unwrap(), 0);
         assert_eq!(storage.feature_snapshot_count().unwrap(), 0);
 
-        let session = storage.start_session("Ship regression test", "normal").unwrap();
+        let session = storage
+            .start_session("Ship regression test", "normal")
+            .unwrap();
         storage
             .save_prediction(&record(&session.session_id))
             .unwrap();
@@ -1183,13 +1197,16 @@ mod tests {
             )
             .unwrap();
         storage
-            .save_label(&session.session_id, FocusLabel::Distracted, LabelSource::Manual, Some("youtube"))
+            .save_label(
+                &session.session_id,
+                FocusLabel::Distracted,
+                LabelSource::Manual,
+                Some("youtube"),
+            )
             .unwrap();
 
         let out_dir = dir.join("exports");
-        let result = storage
-            .export_training_data(&out_dir, None)
-            .unwrap();
+        let result = storage.export_training_data(&out_dir, None).unwrap();
 
         assert_eq!(result.feature_count, 1);
         assert_eq!(result.label_count, 1);

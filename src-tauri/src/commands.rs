@@ -4,7 +4,8 @@ use crate::state::{classifier_status, AppState};
 use crate::training_deploy::{TrainFromExportResult, TrainingDeployStatus};
 use crate::types::{
     AppRuleRecord, ClassifierStatus, ContextSnapshotDto, ExportTrainingResult, FocusMode,
-    HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord, UpsertAppRuleRequest,
+    HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord,
+    UpsertAppRuleRequest,
 };
 
 const MAX_HISTORY_LIMIT: usize = 500;
@@ -102,7 +103,10 @@ pub fn start_session(
 }
 
 #[tauri::command]
-pub fn stop_session(state: State<'_, AppState>, session_id: String) -> Result<SessionRecord, String> {
+pub fn stop_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<SessionRecord, String> {
     let record = state
         .storage
         .lock()
@@ -119,7 +123,10 @@ pub fn stop_session(state: State<'_, AppState>, session_id: String) -> Result<Se
 }
 
 #[tauri::command]
-pub fn get_session(state: State<'_, AppState>, session_id: String) -> Result<SessionRecord, String> {
+pub fn get_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<SessionRecord, String> {
     state
         .storage
         .lock()
@@ -216,16 +223,16 @@ pub fn upsert_app_rule(
     state: State<'_, AppState>,
     request: UpsertAppRuleRequest,
 ) -> Result<AppRuleRecord, String> {
-    let pattern = validate_required_text("App rule pattern", &request.pattern, MAX_APP_RULE_PATTERN_LEN)?;
+    let pattern = validate_required_text(
+        "App rule pattern",
+        &request.pattern,
+        MAX_APP_RULE_PATTERN_LEN,
+    )?;
     let note = validate_optional_text("App rule note", request.note, MAX_APP_RULE_NOTE_LEN)?;
     let record = state
         .storage
         .lock()
-        .upsert_app_rule(
-            &pattern,
-            request.rule_type,
-            note.as_deref(),
-        )
+        .upsert_app_rule(&pattern, request.rule_type, note.as_deref())
         .map_err(|e| e.to_string())?;
     state.reload_app_rules();
     Ok(record)
@@ -276,10 +283,7 @@ pub fn export_training_data(
     state: State<'_, AppState>,
     session_id: Option<String>,
 ) -> Result<ExportTrainingResult, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let output_dir = app_data_dir.join("exports").join("training");
     state
         .storage
@@ -291,14 +295,19 @@ pub fn export_training_data(
 #[tauri::command]
 pub fn get_training_deploy_status(app: tauri::AppHandle) -> Result<TrainingDeployStatus, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    Ok(crate::training_deploy::training_deploy_status(&app_data_dir))
+    Ok(crate::training_deploy::training_deploy_status(
+        &app_data_dir,
+    ))
 }
 
 #[tauri::command]
 pub fn set_training_repo_path(app: tauri::AppHandle, repo_path: String) -> Result<(), String> {
     let repo_path = validate_required_text("Repo path", &repo_path, MAX_REPO_PATH_LEN)?;
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    crate::training_deploy::write_training_repo_path(&app_data_dir, std::path::Path::new(&repo_path))
+    crate::training_deploy::write_training_repo_path(
+        &app_data_dir,
+        std::path::Path::new(&repo_path),
+    )
 }
 
 #[tauri::command]
@@ -336,8 +345,12 @@ mod tests {
     #[test]
     fn validate_optional_text_trims_blank_and_rejects_too_long_values() {
         assert_eq!(
-            validate_optional_text("Label notes", Some("  note  ".to_string()), MAX_LABEL_NOTES_LEN)
-                .unwrap(),
+            validate_optional_text(
+                "Label notes",
+                Some("  note  ".to_string()),
+                MAX_LABEL_NOTES_LEN
+            )
+            .unwrap(),
             Some("note".to_string())
         );
         assert_eq!(

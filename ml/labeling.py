@@ -21,6 +21,7 @@ class FocusLabel(IntEnum):
 
 class LabelSource(IntEnum):
     HOTKEY = 1
+    AUTO = 2
     TIMER = 2
     SURVEY = 3
     MANUAL = 4

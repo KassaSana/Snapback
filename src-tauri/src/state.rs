@@ -92,7 +92,10 @@ impl AppState {
         }
     }
 
-    pub fn build_health_status(&self, app_data_dir: Option<&std::path::Path>) -> crate::types::HealthStatus {
+    pub fn build_health_status(
+        &self,
+        app_data_dir: Option<&std::path::Path>,
+    ) -> crate::types::HealthStatus {
         let permissions = self.permissions.lock().clone();
         let capture_running = *self.capture_running.lock();
         let capture_failure_reason = self.capture_failure_reason.lock().clone();
@@ -315,13 +318,7 @@ fn run_engine_loop(app: AppHandle) {
         }
 
         if let Some(snapback) = tracker.take_pending_snapback() {
-            if let Some(session) = state
-                .storage
-                .lock()
-                .get_active_session()
-                .ok()
-                .flatten()
-            {
+            if let Some(session) = state.storage.lock().get_active_session().ok().flatten() {
                 if let Err(err) = state
                     .storage
                     .lock()
@@ -385,14 +382,12 @@ fn persist_session_tick(
     }
 }
 
-fn persist_context_snapshot(app: Option<&AppHandle>, state: &AppState, snapshot: ContextSnapshotDto) {
-    let Some(session) = state
-        .storage
-        .lock()
-        .get_active_session()
-        .ok()
-        .flatten()
-    else {
+fn persist_context_snapshot(
+    app: Option<&AppHandle>,
+    state: &AppState,
+    snapshot: ContextSnapshotDto,
+) {
+    let Some(session) = state.storage.lock().get_active_session().ok().flatten() else {
         return;
     };
 
@@ -402,7 +397,11 @@ fn persist_context_snapshot(app: Option<&AppHandle>, state: &AppState, snapshot:
         .save_context_snapshot(&session.session_id, &snapshot)
     {
         log::warn!("failed to save context snapshot: {err}");
-        record_persistence_failure(app, state, format!("Failed to save context snapshot: {err}"));
+        record_persistence_failure(
+            app,
+            state,
+            format!("Failed to save context snapshot: {err}"),
+        );
     } else {
         clear_persistence_failure(state);
     }
@@ -438,7 +437,8 @@ mod tests {
     use crate::types::PredictionRecord;
 
     fn temp_storage() -> Storage {
-        let dir = std::env::temp_dir().join(format!("snapback_state_test_{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("snapback_state_test_{}", uuid::Uuid::new_v4()));
         Storage::open(dir).unwrap()
     }
 
@@ -497,6 +497,9 @@ mod tests {
 
         let health = state.build_health_status(None);
         assert_eq!(health.status, "degraded");
-        assert_eq!(health.persistence_failure_reason.as_deref(), Some("disk full"));
+        assert_eq!(
+            health.persistence_failure_reason.as_deref(),
+            Some("disk full")
+        );
     }
 }

@@ -6,8 +6,11 @@ pub fn check_permissions() -> PermissionStatus {
     let capture_probe_confirmed = capture_probe_confirmed();
     let setup_steps = platform_setup_steps(!active_window_available, !capture_available);
 
-    let message =
-        permission_message(active_window_available, capture_available, capture_probe_confirmed);
+    let message = permission_message(
+        active_window_available,
+        capture_available,
+        capture_probe_confirmed,
+    );
 
     PermissionStatus {
         capture_available,
@@ -26,7 +29,8 @@ pub fn capture_failure_message(reason: &str) -> PermissionStatus {
     }
     status.setup_steps.insert(
         0,
-        "Capture listener exited — quit and relaunch Snapback after fixing permissions.".to_string(),
+        "Capture listener exited — quit and relaunch Snapback after fixing permissions."
+            .to_string(),
     );
     status
 }
@@ -158,7 +162,8 @@ fn platform_setup_steps(need_accessibility: bool, need_input: bool) -> Vec<Strin
         let mut steps = Vec::new();
         if need_accessibility {
             steps.push(
-                "System Settings → Privacy & Security → Accessibility → enable Snapback.".to_string(),
+                "System Settings → Privacy & Security → Accessibility → enable Snapback."
+                    .to_string(),
             );
         }
         if need_input {
@@ -168,7 +173,9 @@ fn platform_setup_steps(need_accessibility: bool, need_input: bool) -> Vec<Strin
             );
         }
         if need_accessibility || need_input {
-            steps.push("Quit Snapback completely, reopen it, then click Refresh permissions.".to_string());
+            steps.push(
+                "Quit Snapback completely, reopen it, then click Refresh permissions.".to_string(),
+            );
         }
         steps
     }
@@ -191,7 +198,11 @@ fn platform_setup_steps(need_accessibility: bool, need_input: bool) -> Vec<Strin
     {
         linux_setup_steps(need_accessibility, need_input)
     }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows"), not(target_os = "linux")))]
+    #[cfg(all(
+        not(target_os = "macos"),
+        not(target_os = "windows"),
+        not(target_os = "linux")
+    ))]
     {
         let mut steps = Vec::new();
         if need_accessibility || need_input {
@@ -247,7 +258,11 @@ fn non_macos_capture_available() -> bool {
         )
         .is_none()
     }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows"), not(target_os = "linux")))]
+    #[cfg(all(
+        not(target_os = "macos"),
+        not(target_os = "windows"),
+        not(target_os = "linux")
+    ))]
     {
         true
     }
