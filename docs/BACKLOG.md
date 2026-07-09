@@ -77,7 +77,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 **Training & model**
 
 - [x] Clear errors for missing Python deps (`training_deploy.rs`, `App.tsx`)
-- [ ] Model info in health UI (path, backend shown; train time/CV metrics later)
+- [x] Model info in health UI (path, backend shown; train time/CV metrics later) — `AppHeader.tsx` shows backend, model file, ONNX runtime status, and CV quality label
 - [x] Copy trained model to `app_data_dir/model.onnx` after train
 - [x] Fail fast on majority-classifier stub (`ml/export_onnx.py`) — `is_majority_stub` blocks ONNX export, `pipeline_cli.py` exits 2, `training_deploy.rs` surfaces a friendly message; tested in `ml/tests/test_export_onnx.py`
 - [ ] Short guide: min sessions/labels, when to retrain
@@ -104,28 +104,28 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [x] CSV-safe feature export (`storage/mod.rs`)
 - [x] Test: no DB writes without active session (`state.rs`, `storage/mod.rs`)
 - [x] More `FeatureExtractor` tests (idle, mouse, session boundaries)
-- [ ] Pre-export summary in UI
+- [x] Pre-export summary in UI — `TrainingDeployCard` shows exported feature/label counts and label balance before training
 
 ---
 
 ## Tier 2 — ML pipeline
 
-- [ ] Decide what to do with `ml/labeling.py` (stub; real labels live in SQLite via Rust)
-- [ ] Label source parity in export (hotkey / survey / auto)
-- [ ] Minimum dataset checks in `pipeline_cli.py`
+- [x] Decide what to do with `ml/labeling.py` — kept, documented: enums are the production contract, `Labeler`/`SessionMetadata` are an unused pre-SQLite stub used only by its own test
+- [x] Label source parity in export (hotkey / survey / auto) — Rust writes lowercase (`hotkey`/`manual`/`survey`/`auto`), `ml/dataset_builder._parse_source` upper-cases before enum lookup, round-trip verified
+- [x] Minimum dataset checks in `pipeline_cli.py` — `training_pipeline.validate_training_dataset` (`MIN_TRAINING_SAMPLES`, per-class minimum) raises `ValueError`, caught in `run_pipeline` as "Training blocked: …" with exit code 1
 - [ ] ONNX numbers in `BENCHMARK_RESULTS.md`
-- [ ] Align soak duration: `BENCHMARKS.md` says 3600s, results are 60s
-- [ ] `--classifier-eval` in CI
+- [x] Align soak duration: `BENCHMARKS.md` says 3600s, results are 60s — already reconciled (default 60s documented, note on running longer)
+- [x] `--classifier-eval` in CI — `ci.yml` `classifier-eval` job runs both heuristic and ONNX backends
 - [ ] Document when synthetic vs real labeled data is enough
-- [ ] Mark or remove legacy C++ ML path (`event_log_reader.py`, etc.)
+- [x] Mark or remove legacy C++ ML path (`event_log_reader.py`, etc.) — module-level banners added to `event_log_reader.py` and `event_schema.py` explaining they're unused by the live SQLite-based pipeline
 
 ---
 
 ## Tier 3 — Tests
 
-**Has tests:** `classifier.rs`, `app_context.rs`, `storage/mod.rs`, `state.rs`, `features.rs`, `tracker.rs`, `goal_alignment.rs`, `training_deploy.rs`, `onnx_model.rs`, `parity.rs`, `capture/thread.rs`, `title_parser.rs`, `classifier_eval.rs`
+**Has tests:** `classifier.rs`, `app_context.rs`, `storage/mod.rs`, `state.rs`, `features.rs`, `tracker.rs`, `goal_alignment.rs`, `training_deploy.rs`, `onnx_model.rs`, `parity.rs`, `capture/thread.rs`, `title_parser.rs`, `classifier_eval.rs`, `label_shortcuts.rs`, `overlay.rs` (pure geometry math extracted into `top_right_position`), `bench.rs` (CLI arg parsing)
 
-**No tests yet:** `label_shortcuts.rs`, `tray.rs`, `overlay.rs`, `bench.rs`
+**No tests yet:** `tray.rs` — thin Tauri glue (menu/window show-hide-toggle) with no pure logic to extract; would need a real window/tray runtime to exercise meaningfully
 
 **Worth adding first:**
 
@@ -179,7 +179,7 @@ Do this when stale docs slow you down — not before the smoke test.
 | Issue | Where | Notes |
 |-------|-------|-------|
 | ~~Events dropped on full channel~~ | `capture/thread.rs` | Bounded (`sync_channel`, cap 4096) + counted; surfaced via `HealthStatus.capture_events_dropped` and `PermissionsCard` |
-| Save failures only warned | `state.rs:256-300` | No user feedback |
+| ~~Save failures only warned~~ | `state.rs` | Already surfaced: `persist_session_tick` routes failures through `record_persistence_failure` → `HealthStatus.persistence_failure_reason` → UI |
 | Mouse coords zero on key events | `capture/thread.rs:88-96` | Low impact |
 | 1 Hz prediction | `state.rs:222` | Intentional for now |
 | Shortcut capability unclear | `capabilities/default.json` | Verify clean install |

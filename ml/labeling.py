@@ -1,8 +1,12 @@
 """
-Labeling workflow stub for Neural Focus.
+`FocusLabel`, `LabelSource`, and `LabelRecord` are the production label
+contract shared across the ML pipeline (training, dataset joins, exports) —
+the real app records labels via Rust/SQLite (`storage/mod.rs`), and those
+three types mirror that schema.
 
-This module records labels with timestamps and session metadata.
-Hotkey capture is intentionally left as a future integration point.
+`Labeler` and `SessionMetadata` below are an in-memory stub predating the
+SQLite-backed labeling flow; nothing in the live pipeline uses them, only
+`tests/test_labeling.py`. Safe to delete if that test is retired too.
 """
 
 from __future__ import annotations

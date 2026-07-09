@@ -139,3 +139,70 @@ fn focus_label_display(label: FocusLabel) -> &'static str {
         FocusLabel::Distracted => "Distracted",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_for_shortcut_maps_each_registered_digit() {
+        let modifiers = Modifiers::CONTROL | Modifiers::SHIFT;
+        assert_eq!(
+            label_for_shortcut(&Shortcut::new(Some(modifiers), Code::Digit1)),
+            Some(FocusLabel::DeepFocus)
+        );
+        assert_eq!(
+            label_for_shortcut(&Shortcut::new(Some(modifiers), Code::Digit2)),
+            Some(FocusLabel::Productive)
+        );
+        assert_eq!(
+            label_for_shortcut(&Shortcut::new(Some(modifiers), Code::Digit3)),
+            Some(FocusLabel::PseudoProductive)
+        );
+        assert_eq!(
+            label_for_shortcut(&Shortcut::new(Some(modifiers), Code::Digit4)),
+            Some(FocusLabel::Distracted)
+        );
+    }
+
+    #[test]
+    fn label_for_shortcut_ignores_unregistered_combinations() {
+        let modifiers = Modifiers::CONTROL | Modifiers::SHIFT;
+        // Digit5 was never registered as a label hotkey.
+        assert_eq!(
+            label_for_shortcut(&Shortcut::new(Some(modifiers), Code::Digit5)),
+            None
+        );
+        // Same digit without the Ctrl+Shift modifiers shouldn't match either.
+        assert_eq!(
+            label_for_shortcut(&Shortcut::new(Some(Modifiers::CONTROL), Code::Digit1)),
+            None
+        );
+    }
+
+    #[test]
+    fn focus_label_name_matches_the_storage_contract() {
+        // These strings are what get written to SQLite / exported CSVs
+        // (see FocusLabel round-tripping in storage/mod.rs), so a mismatch
+        // here would silently mislabel hotkey-submitted feedback.
+        assert_eq!(focus_label_name(FocusLabel::DeepFocus), "DEEP_FOCUS");
+        assert_eq!(focus_label_name(FocusLabel::Productive), "PRODUCTIVE");
+        assert_eq!(
+            focus_label_name(FocusLabel::PseudoProductive),
+            "PSEUDO_PRODUCTIVE"
+        );
+        assert_eq!(focus_label_name(FocusLabel::Distracted), "DISTRACTED");
+    }
+
+    #[test]
+    fn focus_label_display_is_human_readable_for_every_variant() {
+        for label in [
+            FocusLabel::DeepFocus,
+            FocusLabel::Productive,
+            FocusLabel::PseudoProductive,
+            FocusLabel::Distracted,
+        ] {
+            assert!(!focus_label_display(label).is_empty());
+        }
+    }
+}

@@ -254,3 +254,67 @@ pub fn run_benchmark(args: BenchArgs) -> i32 {
 
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(pairs: &[&str]) -> Vec<String> {
+        pairs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_bench_args_uses_defaults_when_no_flags_given() {
+        let parsed = parse_bench_args(&args(&[]));
+        let defaults = BenchArgs::default();
+        assert_eq!(parsed.runs, defaults.runs);
+        assert_eq!(parsed.warmup, defaults.warmup);
+        assert_eq!(parsed.soak_seconds, 0);
+        assert_eq!(parsed.goal, None);
+        assert_eq!(parsed.onnx_model, None);
+    }
+
+    #[test]
+    fn parse_bench_args_reads_every_flag() {
+        let parsed = parse_bench_args(&args(&[
+            "--runs",
+            "500",
+            "--warmup",
+            "50",
+            "--soak-seconds",
+            "120",
+            "--goal",
+            "Ship the release",
+            "--onnx-model",
+            "artifacts/model.onnx",
+        ]));
+
+        assert_eq!(parsed.runs, 500);
+        assert_eq!(parsed.warmup, 50);
+        assert_eq!(parsed.soak_seconds, 120);
+        assert_eq!(parsed.goal.as_deref(), Some("Ship the release"));
+        assert_eq!(parsed.onnx_model.as_deref(), Some("artifacts/model.onnx"));
+    }
+
+    #[test]
+    fn parse_bench_args_clamps_runs_to_at_least_one() {
+        // --runs 0 would make the benchmark loop do nothing useful, so it's
+        // floored to 1 rather than silently accepted.
+        let parsed = parse_bench_args(&args(&["--runs", "0"]));
+        assert_eq!(parsed.runs, 1);
+    }
+
+    #[test]
+    fn parse_bench_args_ignores_unparsable_numeric_values() {
+        // A non-numeric value after --runs must not panic; it should just
+        // fall back to the default instead of crashing the CLI.
+        let parsed = parse_bench_args(&args(&["--runs", "not-a-number"]));
+        assert_eq!(parsed.runs, BenchArgs::default().runs);
+    }
+
+    #[test]
+    fn parse_bench_args_ignores_a_flag_with_no_following_value() {
+        let parsed = parse_bench_args(&args(&["--goal"]));
+        assert_eq!(parsed.goal, None);
+    }
+}

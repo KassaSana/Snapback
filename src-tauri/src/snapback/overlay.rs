@@ -66,7 +66,53 @@ fn position_top_right(window: &WebviewWindow) {
 
     let monitor_pos = monitor.position();
     let monitor_size = monitor.size();
-    let x = monitor_pos.x + monitor_size.width as i32 - width - SCREEN_MARGIN;
-    let y = monitor_pos.y + SCREEN_MARGIN;
+    let (x, y) = top_right_position(
+        (monitor_pos.x, monitor_pos.y),
+        (monitor_size.width as i32, monitor_size.height as i32),
+        width,
+        SCREEN_MARGIN,
+    );
     let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Pulled out of `position_top_right` so the placement math can be tested
+/// without a real window/monitor — this is what puts the overlay in the
+/// corner instead of dead center or off-screen.
+fn top_right_position(
+    monitor_pos: (i32, i32),
+    monitor_size: (i32, i32),
+    window_width: i32,
+    margin: i32,
+) -> (i32, i32) {
+    let x = monitor_pos.0 + monitor_size.0 - window_width - margin;
+    let y = monitor_pos.1 + margin;
+    (x, y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn top_right_position_hugs_the_top_right_corner_with_margin() {
+        let (x, y) = top_right_position((0, 0), (1920, 1080), 420, 20);
+        assert_eq!(x, 1920 - 420 - 20);
+        assert_eq!(y, 20);
+    }
+
+    #[test]
+    fn top_right_position_accounts_for_a_non_origin_monitor() {
+        // A monitor to the right of the primary one, e.g. positioned at
+        // x=1920 in a multi-monitor layout.
+        let (x, y) = top_right_position((1920, 0), (2560, 1440), 420, 20);
+        assert_eq!(x, 1920 + 2560 - 420 - 20);
+        assert_eq!(y, 20);
+    }
+
+    #[test]
+    fn top_right_position_uses_the_configured_margin_and_width() {
+        let (x, y) = top_right_position((0, 0), (800, 600), OVERLAY_WIDTH as i32, SCREEN_MARGIN);
+        assert_eq!(x, 800 - OVERLAY_WIDTH as i32 - SCREEN_MARGIN);
+        assert_eq!(y, SCREEN_MARGIN);
+    }
 }

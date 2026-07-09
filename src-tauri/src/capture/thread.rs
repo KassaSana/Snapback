@@ -125,6 +125,7 @@ pub fn start_capture_thread(
                         &idle_started_at,
                     );
                     let (app, title) = read_window(&last_window);
+                    let (mouse_x, mouse_y) = read_last_mouse(&last_mouse);
                     send_event(
                         &event_tx,
                         &dropped_events,
@@ -133,8 +134,8 @@ pub fn start_capture_thread(
                             timestamp_secs: now,
                             app_name: app,
                             window_title: title,
-                            mouse_x: 0,
-                            mouse_y: 0,
+                            mouse_x,
+                            mouse_y,
                             mouse_speed: 0,
                             idle_duration_ms: 0,
                         },
@@ -150,6 +151,7 @@ pub fn start_capture_thread(
                         &idle_started_at,
                     );
                     let (app, title) = read_window(&last_window);
+                    let (mouse_x, mouse_y) = read_last_mouse(&last_mouse);
                     send_event(
                         &event_tx,
                         &dropped_events,
@@ -158,8 +160,8 @@ pub fn start_capture_thread(
                             timestamp_secs: now,
                             app_name: app,
                             window_title: title,
-                            mouse_x: 0,
-                            mouse_y: 0,
+                            mouse_x,
+                            mouse_y,
                             mouse_speed: 0,
                             idle_duration_ms: 0,
                         },
@@ -353,6 +355,16 @@ fn read_window(last_window: &Arc<RwLock<Option<(String, String)>>>) -> (String, 
         .unwrap_or_else(|| ("Unknown".to_string(), String::new()))
 }
 
+/// Last sampled cursor position, or `(0, 0)` before any `MouseMove` has been seen.
+fn read_last_mouse(last_mouse: &Arc<RwLock<Option<(i32, i32, f64)>>>) -> (i32, i32) {
+    last_mouse
+        .read()
+        .ok()
+        .and_then(|g| *g)
+        .map(|(x, y, _)| (x, y))
+        .unwrap_or((0, 0))
+}
+
 fn timestamp_secs() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -397,6 +409,25 @@ mod tests {
 
         assert_eq!(dropped.load(Ordering::Relaxed), 1);
         assert_eq!(rx.try_iter().count(), 1, "the first event was still delivered");
+    }
+
+    #[test]
+    fn read_last_mouse_defaults_to_origin_before_any_move() {
+        use super::read_last_mouse;
+        use std::sync::RwLock;
+
+        let last_mouse: Arc<RwLock<Option<(i32, i32, f64)>>> = Arc::new(RwLock::new(None));
+        assert_eq!(read_last_mouse(&last_mouse), (0, 0));
+    }
+
+    #[test]
+    fn read_last_mouse_returns_last_sampled_position() {
+        use super::read_last_mouse;
+        use std::sync::RwLock;
+
+        let last_mouse: Arc<RwLock<Option<(i32, i32, f64)>>> =
+            Arc::new(RwLock::new(Some((42, -7, 123.0))));
+        assert_eq!(read_last_mouse(&last_mouse), (42, -7));
     }
 
     #[test]

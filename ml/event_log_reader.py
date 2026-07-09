@@ -1,5 +1,9 @@
 """
-Read memory-mapped event logs produced by the C++ engine.
+LEGACY (pre-Rust/Tauri rewrite): reads memory-mapped event logs produced by
+the old C++ capture engine. The current app captures directly to SQLite
+(`storage/mod.rs`) and never produces this binary log format — nothing in
+the live `ml/pipeline_cli.py` → training path touches this module. Kept for
+reference/tests only; safe to delete once no one needs the old format.
 """
 
 from __future__ import annotations

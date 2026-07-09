@@ -1,5 +1,8 @@
 """
-Binary schema helpers for Neural Focus events and log headers.
+LEGACY (pre-Rust/Tauri rewrite): binary schema helpers for the old C++
+engine's event logs, used only by `event_log_reader.py` and its tests. The
+live capture path (`storage/mod.rs`) uses SQLite, not this binary format.
+Kept for reference/tests only; safe to delete once no one needs the old format.
 """
 
 from __future__ import annotations
