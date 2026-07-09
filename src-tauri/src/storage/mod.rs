@@ -110,9 +110,26 @@ pub struct Storage {
     conn: Connection,
 }
 
+/// Collect decoded rows, logging (instead of silently dropping) any row that
+/// fails to decode — e.g. schema drift or corruption. Skipping keeps the rest
+/// of the list usable; the log preserves the evidence.
+fn collect_rows_logging_dropped<T>(
+    rows: impl Iterator<Item = rusqlite::Result<T>>,
+    context: &str,
+) -> Vec<T> {
+    let mut out = Vec::new();
+    for row in rows {
+        match row {
+            Ok(value) => out.push(value),
+            Err(err) => log::warn!("storage: dropping undecodable {context} row: {err}"),
+        }
+    }
+    out
+}
+
 impl Storage {
     pub fn open(app_data_dir: PathBuf) -> Result<Self, StorageError> {
-        std::fs::create_dir_all(&app_data_dir).ok();
+        std::fs::create_dir_all(&app_data_dir)?;
         let db_path = app_data_dir.join("focoflow.db");
         let conn = Connection::open(db_path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -286,7 +303,7 @@ impl Storage {
              ORDER BY pattern ASC",
         )?;
         let rows = stmt.query_map([], Self::map_app_rule_row)?;
-        Ok(rows.filter_map(Result::ok).collect())
+        Ok(collect_rows_logging_dropped(rows, "app_rules"))
     }
 
     pub fn upsert_app_rule(
@@ -516,7 +533,7 @@ impl Storage {
                 timestamp: row.get(7)?,
             })
         })?;
-        Ok(rows.filter_map(Result::ok).collect())
+        Ok(collect_rows_logging_dropped(rows, "predictions"))
     }
 
     pub fn save_context_snapshot(
@@ -561,7 +578,7 @@ impl Storage {
                 timestamp: row.get(5)?,
             })
         })?;
-        Ok(rows.filter_map(Result::ok).collect())
+        Ok(collect_rows_logging_dropped(rows, "context_snapshots"))
     }
 
     pub fn save_feature_snapshot(

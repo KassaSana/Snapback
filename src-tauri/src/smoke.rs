@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use chrono::{Duration, Utc};
 use serde::Serialize;
@@ -483,6 +484,7 @@ fn build_feature(
 }
 
 fn load_onnx_backend(app_data_dir: &Path) -> Result<crate::types::ClassifierStatus, SmokeFailure> {
+    ensure_ort_dylib_path()?;
     let current = classifier_status(Some(app_data_dir));
     if !current.onnx_runtime_enabled {
         return Err(SmokeFailure::new(
@@ -654,6 +656,47 @@ fn print_report(report: &SmokeReport) {
 
 fn emit_stage(stage: &str, detail: &str) {
     println!("SNAPBACK_SMOKE_STAGE {stage}: {detail}");
+}
+
+fn ensure_ort_dylib_path() -> Result<(), SmokeFailure> {
+    if std::env::var_os("ORT_DYLIB_PATH")
+        .map(PathBuf::from)
+        .is_some_and(|path| path.is_file())
+    {
+        return Ok(());
+    }
+
+    for (program, prefix_args) in ort_python_candidates() {
+        let mut cmd = Command::new(program);
+        cmd.args(prefix_args).arg("-c").arg(
+            "import onnxruntime, pathlib; print(pathlib.Path(onnxruntime.__file__).parent / 'capi' / 'onnxruntime.dll')",
+        );
+        let Ok(output) = cmd.output() else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let dll_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if dll_path.is_empty() || !Path::new(&dll_path).is_file() {
+            continue;
+        }
+        std::env::set_var("ORT_DYLIB_PATH", &dll_path);
+        return Ok(());
+    }
+
+    Err(SmokeFailure::new(
+        "onnx",
+        "onnxruntime.dll not found. Install with: pip install onnxruntime, or set ORT_DYLIB_PATH.",
+    ))
+}
+
+fn ort_python_candidates() -> [(&'static str, &'static [&'static str]); 3] {
+    if cfg!(windows) {
+        [("py", &["-3"]), ("python3", &[]), ("python", &[])]
+    } else {
+        [("python3", &[]), ("python", &[]), ("py", &["-3"])]
+    }
 }
 
 #[cfg(test)]

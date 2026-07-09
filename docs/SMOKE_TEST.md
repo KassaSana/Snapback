@@ -46,6 +46,8 @@ Run this first when you want the lowest-effort confidence pass:
 cargo run --features onnx --manifest-path src-tauri/Cargo.toml -- --smoke
 ```
 
+On Windows, the harness auto-resolves `onnxruntime.dll` from `pip install onnxruntime` (same as `npm run tauri:dev`). If ONNX reload hangs or fails, set `ORT_DYLIB_PATH` explicitly to your `onnxruntime.dll` path.
+
 What it verifies for you:
 
 - session-gated persistence stays blocked outside active sessions

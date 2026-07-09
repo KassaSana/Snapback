@@ -51,7 +51,13 @@ fn capture_probe_confirmed() -> bool {
     {
         true
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        // probe_capture() performs a real hook install/uninstall, so its
+        // result is authoritative rather than inferred.
+        true
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         false
     }
@@ -246,9 +252,7 @@ fn probe_capture() -> bool {
 fn non_macos_capture_available() -> bool {
     #[cfg(target_os = "windows")]
     {
-        // Windows does not expose a separate permission preflight here, so the
-        // capture listener remains the source of truth after startup.
-        true
+        windows_input_hook_probe()
     }
     #[cfg(target_os = "linux")]
     {
@@ -266,6 +270,52 @@ fn non_macos_capture_available() -> bool {
     {
         true
     }
+}
+
+/// Preflight for Windows global input capture: install a low-level keyboard
+/// hook and immediately remove it. `SetWindowsHookExW` fails right at the call
+/// when hooks are unavailable (restricted session, hook table exhaustion, or
+/// another app blocking installation), so this confirms capture ability
+/// without receiving any events or leaving anything behind. Low-level hooks
+/// coexist, so probing while the real capture listener runs is safe.
+#[cfg(target_os = "windows")]
+fn windows_input_hook_probe() -> bool {
+    use std::ffi::c_void;
+
+    type HookProc = unsafe extern "system" fn(i32, usize, isize) -> isize;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SetWindowsHookExW(
+            id_hook: i32,
+            lpfn: HookProc,
+            hmod: *mut c_void,
+            thread_id: u32,
+        ) -> *mut c_void;
+        fn UnhookWindowsHookEx(hhk: *mut c_void) -> i32;
+        fn CallNextHookEx(hhk: *mut c_void, code: i32, wparam: usize, lparam: isize) -> isize;
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetModuleHandleW(module_name: *const u16) -> *mut c_void;
+    }
+
+    unsafe extern "system" fn probe_proc(code: i32, wparam: usize, lparam: isize) -> isize {
+        unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
+    }
+
+    const WH_KEYBOARD_LL: i32 = 13;
+
+    unsafe {
+        let module = GetModuleHandleW(std::ptr::null());
+        let hook = SetWindowsHookExW(WH_KEYBOARD_LL, probe_proc, module, 0);
+        if hook.is_null() {
+            return false;
+        }
+        UnhookWindowsHookEx(hook);
+    }
+    true
 }
 
 #[cfg(target_os = "macos")]
@@ -330,6 +380,18 @@ mod tests {
     fn linux_capture_message_allows_x11_sessions() {
         assert!(linux_capture_unavailable_message(false, true).is_none());
         assert!(linux_capture_unavailable_message(true, true).is_none());
+    }
+
+    /// The probe must not leak hook state: repeated runs should keep
+    /// returning the same answer. (No assertion on the value itself — CI
+    /// runners may legitimately disallow global hooks.)
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_hook_probe_is_repeatable() {
+        let first = windows_input_hook_probe();
+        for _ in 0..5 {
+            assert_eq!(windows_input_hook_probe(), first);
+        }
     }
 
     #[test]
