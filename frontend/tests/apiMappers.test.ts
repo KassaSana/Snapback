@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 
 import {
+  mapAppRule,
+  mapClassifierStatus,
+  mapContextSnapshot,
+  mapExportTrainingResult,
   mapHealth,
+  mapPermissionStatus,
   mapPrediction,
   mapSession,
+  mapSetupSteps,
   mapSnapbackPayload,
   mapTrainFromExportResult,
+  mapTrainingDeployStatus,
 } from "../src/apiMappers";
 
 const healthSnake = mapHealth({
@@ -133,5 +140,201 @@ const snapback = mapSnapbackPayload({
 assert.equal(snapback.summary, "auth.ts — Snapback");
 assert.equal(snapback.appName, "Code");
 assert.equal(snapback.distractionDurationSecs, 45);
+
+// --- mapTrainingDeployStatus: the most complex mapper, previously untested ---
+
+const deployEmpty = mapTrainingDeployStatus({});
+assert.deepEqual(deployEmpty.labelBreakdown, {});
+assert.equal(deployEmpty.metrics, null);
+assert.equal(deployEmpty.hasExport, false);
+assert.equal(deployEmpty.pipelineCommand, "");
+
+const deploySnake = mapTrainingDeployStatus({
+  export_dir: "/data/export",
+  feature_count: 120,
+  label_count: 40,
+  label_breakdown: { DEEP_FOCUS: 5, DISTRACTED: 2 },
+  has_export: true,
+  model_onnx_exists: true,
+  metrics_exists: true,
+  metrics: { cv_accuracy: 0.9 },
+  python_available: true,
+  repo_path: "/repo",
+  repo_configured: true,
+  pipeline_command: "python -m ml.pipeline_cli",
+});
+assert.equal(deploySnake.exportDir, "/data/export");
+assert.deepEqual(deploySnake.labelBreakdown, { DEEP_FOCUS: 5, DISTRACTED: 2 });
+assert.deepEqual(deploySnake.metrics, { cv_accuracy: 0.9 });
+assert.equal(deploySnake.repoPath, "/repo");
+
+const deployCamel = mapTrainingDeployStatus({
+  exportDir: "/data/export2",
+  featureCount: 10,
+  labelCount: 5,
+  labelBreakdown: { PRODUCTIVE: 3 },
+  hasExport: true,
+  modelOnnxExists: false,
+  metricsExists: false,
+  metrics: null,
+  pythonAvailable: false,
+  repoPath: null,
+  repoConfigured: false,
+  pipelineCommand: "",
+});
+assert.deepEqual(deployCamel.labelBreakdown, { PRODUCTIVE: 3 });
+assert.equal(deployCamel.metrics, null);
+assert.equal(deployCamel.repoPath, null);
+
+// The guard this mapper exists to enforce: `metrics` must be a plain object,
+// not an array or a primitive, or it silently coerces into garbage
+// (e.g. Object.entries on an array yields numeric-string keys). Rust never
+// sends this shape today, but nothing in TypeScript's type system stops a
+// malformed IPC payload from doing so at runtime — this is the one branch
+// where "what TypeScript expects" and "what actually arrived" can diverge.
+const deployMetricsArray = mapTrainingDeployStatus({ metrics: [1, 2, 3] });
+assert.equal(deployMetricsArray.metrics, null);
+
+const deployMetricsString = mapTrainingDeployStatus({ metrics: "not-an-object" });
+assert.equal(deployMetricsString.metrics, null);
+
+// --- mapSetupSteps: previously only exercised indirectly via mapHealth ---
+
+assert.deepEqual(mapSetupSteps({}), []);
+assert.deepEqual(mapSetupSteps({ setup_steps: ["Step one"] }), ["Step one"]);
+assert.deepEqual(mapSetupSteps({ setupSteps: ["Step two"] }), ["Step two"]);
+// A non-array value must degrade to [] rather than throwing when the
+// caller later calls .map()/.length on the result.
+assert.deepEqual(mapSetupSteps({ setup_steps: "oops" }), []);
+
+// --- mapPermissionStatus: previously only exercised indirectly via mapHealth ---
+
+const permissionsEmpty = mapPermissionStatus({});
+assert.equal(permissionsEmpty.captureAvailable, false);
+assert.equal(permissionsEmpty.message, "");
+assert.deepEqual(permissionsEmpty.setupSteps, []);
+
+const permissionsSnake = mapPermissionStatus({
+  capture_available: true,
+  capture_probe_confirmed: true,
+  active_window_available: true,
+  message: "OK",
+  setup_steps: ["Grant access"],
+});
+assert.equal(permissionsSnake.captureAvailable, true);
+assert.deepEqual(permissionsSnake.setupSteps, ["Grant access"]);
+
+const permissionsCamel = mapPermissionStatus({
+  captureAvailable: false,
+  captureProbeConfirmed: false,
+  activeWindowAvailable: false,
+  message: "Denied",
+  setupSteps: [],
+});
+assert.equal(permissionsCamel.message, "Denied");
+
+// --- mapClassifierStatus ---
+
+const classifierEmpty = mapClassifierStatus({});
+assert.equal(classifierEmpty.backend, "heuristic");
+assert.equal(classifierEmpty.onnxRuntimeEnabled, false);
+assert.equal(classifierEmpty.modelPath, null);
+
+const classifierSnake = mapClassifierStatus({
+  backend: "onnx",
+  onnx_runtime_enabled: true,
+  model_path: "/data/model.onnx",
+});
+assert.equal(classifierSnake.backend, "onnx");
+assert.equal(classifierSnake.modelPath, "/data/model.onnx");
+
+const classifierCamel = mapClassifierStatus({
+  backend: "heuristic",
+  onnxRuntimeEnabled: false,
+  modelPath: null,
+});
+assert.equal(classifierCamel.onnxRuntimeEnabled, false);
+
+// --- mapAppRule ---
+
+const appRuleEmpty = mapAppRule({});
+assert.equal(appRuleEmpty.id, 0);
+assert.equal(appRuleEmpty.ruleType, "allow");
+assert.equal(appRuleEmpty.note, null);
+
+const appRuleSnake = mapAppRule({
+  id: 7,
+  pattern: "youtube.com",
+  rule_type: "block",
+  note: "distracting",
+  created_at: "2026-07-01T00:00:00Z",
+  updated_at: "2026-07-02T00:00:00Z",
+});
+assert.equal(appRuleSnake.id, 7);
+assert.equal(appRuleSnake.ruleType, "block");
+assert.equal(appRuleSnake.note, "distracting");
+
+const appRuleCamel = mapAppRule({
+  id: 8,
+  pattern: "github.com",
+  ruleType: "allow",
+  note: null,
+  createdAt: "2026-07-03T00:00:00Z",
+  updatedAt: "2026-07-04T00:00:00Z",
+});
+assert.equal(appRuleCamel.ruleType, "allow");
+assert.equal(appRuleCamel.note, null);
+
+// --- mapContextSnapshot ---
+
+const contextEmpty = mapContextSnapshot({});
+assert.equal(contextEmpty.appName, "");
+assert.equal(contextEmpty.summary, "");
+
+const contextSnake = mapContextSnapshot({
+  app_name: "Code",
+  window_title: "auth.ts",
+  file_hint: "auth.ts",
+  project_hint: "Snapback",
+  summary: "Editing auth.ts",
+  timestamp: "2026-07-08T00:00:00Z",
+});
+assert.equal(contextSnake.appName, "Code");
+assert.equal(contextSnake.projectHint, "Snapback");
+
+const contextCamel = mapContextSnapshot({
+  appName: "Terminal",
+  windowTitle: "zsh",
+  fileHint: "",
+  projectHint: "",
+  summary: "Idle",
+  timestamp: "2026-07-08T00:01:00Z",
+});
+assert.equal(contextCamel.appName, "Terminal");
+
+// --- mapExportTrainingResult ---
+
+const exportEmpty = mapExportTrainingResult({});
+assert.equal(exportEmpty.outputDir, "");
+assert.equal(exportEmpty.featureCount, 0);
+
+const exportSnake = mapExportTrainingResult({
+  output_dir: "/data/export",
+  features_path: "/data/export/features.csv",
+  labels_path: "/data/export/labels.csv",
+  feature_count: 200,
+  label_count: 50,
+});
+assert.equal(exportSnake.outputDir, "/data/export");
+assert.equal(exportSnake.featureCount, 200);
+
+const exportCamel = mapExportTrainingResult({
+  outputDir: "/data/export2",
+  featuresPath: "/data/export2/features.csv",
+  labelsPath: "/data/export2/labels.csv",
+  featureCount: 300,
+  labelCount: 60,
+});
+assert.equal(exportCamel.labelCount, 60);
 
 console.log("apiMappers.test.ts passed");

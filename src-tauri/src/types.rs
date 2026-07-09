@@ -290,3 +290,116 @@ pub struct ExportTrainingResult {
     pub feature_count: usize,
     pub label_count: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_source_parse_recognizes_known_values_case_insensitively() {
+        assert_eq!(LabelSource::parse(Some("hotkey")), LabelSource::Hotkey);
+        assert_eq!(LabelSource::parse(Some("HOTKEY")), LabelSource::Hotkey);
+        assert_eq!(LabelSource::parse(Some("Survey")), LabelSource::Survey);
+        assert_eq!(LabelSource::parse(Some("AUTO")), LabelSource::Auto);
+        assert_eq!(LabelSource::parse(Some("manual")), LabelSource::Manual);
+    }
+
+    #[test]
+    fn label_source_parse_falls_back_to_manual_for_none_or_unknown() {
+        // This is the branch that matters most in production: it's what
+        // fires on a Rust/frontend field mismatch or a source string that
+        // predates a schema change. It must never panic.
+        assert_eq!(LabelSource::parse(None), LabelSource::Manual);
+        assert_eq!(LabelSource::parse(Some("")), LabelSource::Manual);
+        assert_eq!(LabelSource::parse(Some("bogus")), LabelSource::Manual);
+    }
+
+    #[test]
+    fn label_source_as_str_round_trips_through_parse() {
+        // LabelSource has no Serialize derive, so a serde-consistency check
+        // (like the one used for FocusMode/AppRuleKind below) isn't
+        // available here — round-tripping through parse() is the
+        // equivalent guarantee: as_str() output must always be reparsed
+        // back to the same variant.
+        for source in [
+            LabelSource::Manual,
+            LabelSource::Hotkey,
+            LabelSource::Survey,
+            LabelSource::Auto,
+        ] {
+            assert_eq!(LabelSource::parse(Some(source.as_str())), source);
+        }
+    }
+
+    #[test]
+    fn focus_mode_from_str_recognizes_known_values_case_insensitively() {
+        assert_eq!(FocusMode::from_str("deep"), FocusMode::Deep);
+        assert_eq!(FocusMode::from_str("DEEP"), FocusMode::Deep);
+        assert_eq!(FocusMode::from_str("recovery"), FocusMode::Recovery);
+        assert_eq!(FocusMode::from_str("normal"), FocusMode::Normal);
+    }
+
+    #[test]
+    fn focus_mode_from_str_falls_back_to_normal_for_unknown() {
+        assert_eq!(FocusMode::from_str(""), FocusMode::Normal);
+        assert_eq!(FocusMode::from_str("bogus"), FocusMode::Normal);
+    }
+
+    #[test]
+    fn focus_mode_as_str_matches_serde_serialization() {
+        // FocusMode derives Serialize with rename_all = "lowercase", so
+        // as_str() and serde's wire format must never drift apart —
+        // otherwise a value built in Rust and one deserialized from JSON
+        // could compare equal but print differently on each side.
+        for mode in [FocusMode::Deep, FocusMode::Normal, FocusMode::Recovery] {
+            let serde_form = serde_json::to_value(mode)
+                .expect("FocusMode serializes")
+                .as_str()
+                .expect("FocusMode serializes to a JSON string")
+                .to_string();
+            assert_eq!(mode.as_str(), serde_form);
+        }
+    }
+
+    #[test]
+    fn focus_mode_thresholds_and_hyperfocus_minutes_are_stable_per_variant() {
+        assert_eq!(FocusMode::Deep.risk_threshold(), 0.55);
+        assert_eq!(FocusMode::Normal.risk_threshold(), 0.7);
+        assert_eq!(FocusMode::Recovery.risk_threshold(), 0.85);
+
+        assert_eq!(FocusMode::Deep.hyperfocus_minutes(), 90);
+        assert_eq!(FocusMode::Normal.hyperfocus_minutes(), 120);
+        assert_eq!(FocusMode::Recovery.hyperfocus_minutes(), 45);
+    }
+
+    #[test]
+    fn app_rule_kind_from_str_recognizes_known_values_case_insensitively() {
+        assert_eq!(AppRuleKind::from_str("allow"), Some(AppRuleKind::Allow));
+        assert_eq!(AppRuleKind::from_str("ALLOW"), Some(AppRuleKind::Allow));
+        assert_eq!(AppRuleKind::from_str("block"), Some(AppRuleKind::Block));
+    }
+
+    #[test]
+    fn app_rule_kind_from_str_returns_none_for_unknown() {
+        // Note the asymmetry with LabelSource::parse/FocusMode::from_str
+        // above: those two fall back to a default *variant* on unknown
+        // input, but AppRuleKind::from_str returns None instead. Same
+        // lowercase-match-then-fallback shape, different failure
+        // semantics — an app rule with a garbled kind is treated as
+        // "absent," not silently coerced to "allow" or "block."
+        assert_eq!(AppRuleKind::from_str(""), None);
+        assert_eq!(AppRuleKind::from_str("bogus"), None);
+    }
+
+    #[test]
+    fn app_rule_kind_as_str_matches_serde_serialization() {
+        for kind in [AppRuleKind::Allow, AppRuleKind::Block] {
+            let serde_form = serde_json::to_value(kind)
+                .expect("AppRuleKind serializes")
+                .as_str()
+                .expect("AppRuleKind serializes to a JSON string")
+                .to_string();
+            assert_eq!(kind.as_str(), serde_form);
+        }
+    }
+}
