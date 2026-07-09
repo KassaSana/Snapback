@@ -328,4 +328,182 @@ mod tests {
                 .unwrap_or_else(|err| panic!("scenario {} failed: {err}", scenario.name));
         }
     }
+
+    fn scenario_with_expect(expect: HashMap<String, serde_json::Value>) -> Scenario {
+        Scenario {
+            name: "test-scenario".to_string(),
+            base_time: 0.0,
+            events: Vec::new(),
+            expect,
+        }
+    }
+
+    // check_expectations has three comparison modes (exact match, "_min"
+    // suffix, and {"min": ...} object) plus several error paths. The only
+    // existing test runs it against fixture scenarios that are curated to
+    // pass, so none of the failure branches below had ever executed.
+
+    #[test]
+    fn exact_match_passes_within_tolerance() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "keystroke_rate".to_string(),
+            serde_json::json!(5.0),
+        )]));
+        let features = HashMap::from([("keystroke_rate".to_string(), 5.0000001)]);
+        assert!(check_expectations(&scenario, &features).is_ok());
+    }
+
+    #[test]
+    fn exact_match_fails_outside_tolerance() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "keystroke_rate".to_string(),
+            serde_json::json!(5.0),
+        )]));
+        let features = HashMap::from([("keystroke_rate".to_string(), 6.0)]);
+        let err = check_expectations(&scenario, &features).unwrap_err();
+        assert!(err.contains("expected 5"), "unexpected message: {err}");
+        assert!(err.contains("got 6"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn exact_match_fails_on_missing_column() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "keystroke_rate".to_string(),
+            serde_json::json!(5.0),
+        )]));
+        let err = check_expectations(&scenario, &HashMap::new()).unwrap_err();
+        assert!(err.contains("missing feature column 'keystroke_rate'"));
+    }
+
+    #[test]
+    fn exact_match_fails_on_non_numeric_expected_value() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "keystroke_rate".to_string(),
+            serde_json::json!("fast"),
+        )]));
+        let features = HashMap::from([("keystroke_rate".to_string(), 5.0)]);
+        let err = check_expectations(&scenario, &features).unwrap_err();
+        assert!(err.contains("expected numeric value"));
+    }
+
+    #[test]
+    fn min_suffix_passes_at_and_above_threshold() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "mouse_speed_mean_min".to_string(),
+            serde_json::json!(10.0),
+        )]));
+        // Exactly at the threshold must pass — the comparison is `< min`,
+        // not `<= min`.
+        let at_threshold = HashMap::from([("mouse_speed_mean".to_string(), 10.0)]);
+        assert!(check_expectations(&scenario, &at_threshold).is_ok());
+
+        let above_threshold = HashMap::from([("mouse_speed_mean".to_string(), 10.5)]);
+        assert!(check_expectations(&scenario, &above_threshold).is_ok());
+    }
+
+    #[test]
+    fn min_suffix_fails_below_threshold() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "mouse_speed_mean_min".to_string(),
+            serde_json::json!(10.0),
+        )]));
+        let features = HashMap::from([("mouse_speed_mean".to_string(), 9.9)]);
+        let err = check_expectations(&scenario, &features).unwrap_err();
+        assert!(err.contains("9.9 < min 10"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn min_suffix_fails_on_missing_base_column() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "mouse_speed_mean_min".to_string(),
+            serde_json::json!(10.0),
+        )]));
+        let err = check_expectations(&scenario, &HashMap::new()).unwrap_err();
+        assert!(err.contains("missing feature column 'mouse_speed_mean'"));
+    }
+
+    #[test]
+    fn min_suffix_fails_on_non_numeric_expected_value() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "mouse_speed_mean_min".to_string(),
+            serde_json::json!("fast"),
+        )]));
+        let features = HashMap::from([("mouse_speed_mean".to_string(), 10.0)]);
+        let err = check_expectations(&scenario, &features).unwrap_err();
+        assert!(err.contains("expected number for mouse_speed_mean_min"));
+    }
+
+    #[test]
+    fn min_object_shape_passes_at_threshold_and_fails_below_it() {
+        let scenario = scenario_with_expect(HashMap::from([(
+            "focus_momentum".to_string(),
+            serde_json::json!({ "min": 0.5 }),
+        )]));
+        let passing = HashMap::from([("focus_momentum".to_string(), 0.5)]);
+        assert!(check_expectations(&scenario, &passing).is_ok());
+
+        let failing = HashMap::from([("focus_momentum".to_string(), 0.4)]);
+        let err = check_expectations(&scenario, &failing).unwrap_err();
+        assert!(err.contains("0.4 < min 0.5"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn parse_event_type_recognizes_every_known_variant() {
+        assert_eq!(parse_event_type("key_press"), Some(EventType::KeyPress));
+        assert_eq!(parse_event_type("key_release"), Some(EventType::KeyRelease));
+        assert_eq!(parse_event_type("mouse_move"), Some(EventType::MouseMove));
+        assert_eq!(parse_event_type("mouse_click"), Some(EventType::MouseClick));
+        assert_eq!(
+            parse_event_type("window_focus_change"),
+            Some(EventType::WindowFocusChange)
+        );
+        assert_eq!(
+            parse_event_type("window_title_change"),
+            Some(EventType::WindowTitleChange)
+        );
+        assert_eq!(parse_event_type("idle_start"), Some(EventType::IdleStart));
+        assert_eq!(parse_event_type("idle_end"), Some(EventType::IdleEnd));
+    }
+
+    #[test]
+    fn parse_event_type_returns_none_for_unknown_strings() {
+        assert_eq!(parse_event_type("keypress"), None); // missing underscore typo
+        assert_eq!(parse_event_type(""), None);
+        assert_eq!(parse_event_type("KEY_PRESS"), None); // wrong case
+    }
+
+    #[test]
+    fn replay_scenario_skips_unrecognized_event_types_instead_of_panicking() {
+        // A typo'd or future/unknown event type in a scenario fixture must
+        // be silently skipped by replay_scenario (via parse_event_type's
+        // None fallback), not cause a panic — this is the only test that
+        // actually feeds an unrecognized type through the full replay path.
+        let scenario = Scenario {
+            name: "unknown-event".to_string(),
+            base_time: 0.0,
+            events: vec![
+                ScenarioEvent {
+                    offset_secs: 0.0,
+                    event_type: "keyboard_smash".to_string(),
+                    app: "Code".to_string(),
+                    title: "main.rs".to_string(),
+                    mouse_speed: 0,
+                    idle_duration_ms: 0,
+                },
+                ScenarioEvent {
+                    offset_secs: 1.0,
+                    event_type: "key_press".to_string(),
+                    app: "Code".to_string(),
+                    title: "main.rs".to_string(),
+                    mouse_speed: 0,
+                    idle_duration_ms: 0,
+                },
+            ],
+            expect: HashMap::new(),
+        };
+
+        let features = replay_scenario(&scenario, &[]);
+        // Only the recognized key_press event should have been counted.
+        assert_eq!(features.keystroke_count, 1);
+    }
 }
