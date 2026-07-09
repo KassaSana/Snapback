@@ -1,6 +1,30 @@
 import assert from "node:assert/strict";
 
-import { summarizePermissions } from "../src/healthHints";
+import { summarizeAppHealth, summarizePermissions } from "../src/healthHints";
+
+assert.equal(
+  summarizeAppHealth({
+    status: "offline",
+    captureFailed: false,
+  }),
+  "offline",
+);
+
+assert.equal(
+  summarizeAppHealth({
+    status: "degraded",
+    captureFailed: false,
+  }),
+  "degraded",
+);
+
+assert.equal(
+  summarizeAppHealth({
+    status: "online",
+    captureFailed: true,
+  }),
+  "offline",
+);
 
 assert.deepEqual(
   summarizePermissions({
@@ -30,7 +54,7 @@ assert.deepEqual(
   }),
   {
     label: "partial",
-    detail: "capture access only",
+    detail: "permissions ready, listener idle",
   },
 );
 

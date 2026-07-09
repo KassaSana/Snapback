@@ -5,6 +5,21 @@ export type PermissionHealth = {
   detail: string;
 };
 
+export const summarizeAppHealth = (input: {
+  status: string;
+  captureFailed: boolean;
+}): "online" | "offline" | "degraded" => {
+  if (input.captureFailed || input.status === "capture_failed" || input.status === "offline") {
+    return "offline";
+  }
+
+  if (input.status === "degraded") {
+    return "degraded";
+  }
+
+  return "online";
+};
+
 type PermissionHealthInput = PermissionStatus & {
   captureFailed: boolean;
   captureRunning: boolean;
@@ -46,7 +61,7 @@ export const summarizePermissions = (permissions: PermissionHealthInput): Permis
   if (permissions.captureAvailable) {
     return {
       label: "partial",
-      detail: permissions.captureProbeConfirmed ? "capture access only" : "capture unverified",
+      detail: permissions.captureProbeConfirmed ? "permissions ready, listener idle" : "capture unverified",
     };
   }
 

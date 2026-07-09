@@ -47,7 +47,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 | [x] Fix macOS `probe_capture` | `capture/permissions.rs` | Uses macOS Accessibility + Input Monitoring preflight APIs instead of active-window inference |
 | [ ] Windows probe heuristic | `capture/permissions.rs` | Linux now rejects Wayland-only/no-X11 sessions; Windows still relies on listener startup as the source of truth |
 | [x] Capture restart lifecycle | `state.rs`, `capture/thread.rs` | Capture now owns stop/join handles before respawn |
-| [ ] Probe vs capture-thread mismatch | `state.rs`, `App.tsx` | Probe OK but capture died |
+| [x] Probe vs capture-thread mismatch | `state.rs`, `useHealth.ts`, `AppHeader.tsx` | App health now reflects offline/degraded/idle runtime state instead of collapsing listener-down states to online |
 | [x] Hotkey registration failures in UI | `label_shortcuts.rs`, `api.ts`, `App.tsx` | Hotkey failures now surface in the UI with warning styling |
 
 ### ONNX behavior

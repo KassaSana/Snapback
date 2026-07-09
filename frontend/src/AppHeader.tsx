@@ -69,7 +69,9 @@ export function AppHeader({
       <div className="status-stack">
         <div className="status-pill">
           <span className="status-label">App</span>
-          <span className="status-value">{healthStatus}</span>
+          <span className={`status-value${healthStatus === "online" ? "" : " status-alert"}`}>
+            {healthStatus}
+          </span>
         </div>
         <div className="status-pill">
           <span className="status-label">Capture</span>

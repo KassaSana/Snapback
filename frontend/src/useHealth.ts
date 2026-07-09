@@ -6,9 +6,12 @@ import {
   type ClassifierStatus,
   type OverlayFailurePayload,
 } from "./api";
+import { summarizeAppHealth } from "./healthHints";
 
 export const useHealth = () => {
-  const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline" | "degraded">(
+    "checking",
+  );
   const [captureRunning, setCaptureRunning] = useState(false);
   const [permissionCaptureAvailable, setPermissionCaptureAvailable] = useState(false);
   const [captureProbeConfirmed, setCaptureProbeConfirmed] = useState(false);
@@ -30,7 +33,10 @@ export const useHealth = () => {
 
   const applyHealth = useCallback((health: Awaited<ReturnType<typeof api.getHealth>>) => {
     setHealthStatus(
-      health.captureFailed ? "offline" : health.status === "degraded" ? "offline" : "online",
+      summarizeAppHealth({
+        status: health.status,
+        captureFailed: health.captureFailed,
+      }),
     );
     setCaptureRunning(health.captureRunning);
     setCaptureFailed(health.captureFailed);
