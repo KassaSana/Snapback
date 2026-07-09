@@ -83,3 +83,4 @@ frontend/.env.local
 # ============================================
 Thumbs.db
 desktop.ini
+src-tauri/target-smoke/
