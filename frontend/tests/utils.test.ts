@@ -6,6 +6,7 @@ import {
   focusStateLabel,
   formatPercent,
   formatScore,
+  formatTime,
   nextBackoffDelay,
   riskLabel,
   riskLevel,
@@ -17,9 +18,34 @@ assert.equal(clamp(-1, 0, 1), 0);
 assert.equal(formatPercent(0.5), "50.0%");
 assert.equal(formatScore(105), "100.0");
 
+// Defensive branches: malformed backend values must degrade to "--"
+// rather than rendering "NaN%" or "Invalid Date" in the UI.
+assert.equal(formatPercent(null), "--");
+assert.equal(formatPercent(undefined), "--");
+assert.equal(formatPercent(NaN), "--");
+assert.equal(formatScore(null), "--");
+assert.equal(formatScore(undefined), "--");
+assert.equal(formatScore(NaN), "--");
+
+// formatTime: assert the deterministic guard contract only. We do NOT
+// assert the formatted time for a valid date, because toLocaleTimeString
+// is timezone/locale-dependent and would make this test flaky in CI.
+assert.equal(formatTime(null), "--");
+assert.equal(formatTime(undefined), "--");
+assert.equal(formatTime(""), "--");
+assert.equal(formatTime("not-a-date"), "--");
+assert.notEqual(formatTime("2026-07-08T00:00:00Z"), "--");
+
 assert.equal(riskLevel(0.8), "high");
 assert.equal(riskLevel(0.5), "medium");
 assert.equal(riskLevel(0.1), "low");
+
+// Boundary values: riskLevel flips at exactly 0.7 and 0.4 (>=), and NaN
+// must fall through to "unknown". Bugs hide on the boundary, so pin it.
+assert.equal(riskLevel(0.7), "high");
+assert.equal(riskLevel(0.4), "medium");
+assert.equal(riskLevel(NaN), "unknown");
+assert.equal(riskLevel(null), "unknown");
 
 assert.equal(riskLabel(0.8), "High risk");
 assert.equal(riskLabel(0.5), "Medium risk");
