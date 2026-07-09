@@ -8,8 +8,13 @@ class TestBenchmarkClassifierQuality(unittest.TestCase):
         report = {
             "classifier_quality": {
                 "heuristic_rust": {"recall_distracted": 0.0},
+                "onnx": {
+                    "accuracy": 0.61,
+                    "precision_at_10pct_distracted": 0.53,
+                    "recall_distracted": 0.40,
+                },
                 "xgboost_training_metrics": {
-                    "cv_accuracy": 0.61,
+                    "cv_accuracy": 0.10,
                     "precision_at_10pct": 0.53,
                     "recall_distracted": 0.40,
                 },
@@ -30,8 +35,13 @@ class TestBenchmarkClassifierQuality(unittest.TestCase):
         report = {
             "classifier_quality": {
                 "heuristic_rust": {"recall_distracted": 0.15},
+                "onnx": {
+                    "accuracy": 0.50,
+                    "precision_at_10pct_distracted": 0.40,
+                    "recall_distracted": 0.25,
+                },
                 "xgboost_training_metrics": {
-                    "cv_accuracy": 0.50,
+                    "cv_accuracy": 0.90,
                     "precision_at_10pct": 0.40,
                     "recall_distracted": 0.25,
                 },
@@ -47,10 +57,10 @@ class TestBenchmarkClassifierQuality(unittest.TestCase):
         )
 
         self.assertEqual(len(failures), 4)
-        self.assertTrue(any("cv_accuracy" in failure for failure in failures))
-        self.assertTrue(any("precision_at_10pct" in failure for failure in failures))
-        self.assertTrue(any("recall_distracted" in failure for failure in failures))
-        self.assertTrue(any("recall lift vs heuristic" in failure for failure in failures))
+        self.assertTrue(any("runtime_accuracy" in failure for failure in failures))
+        self.assertTrue(any("runtime_precision_at_10pct" in failure for failure in failures))
+        self.assertTrue(any("runtime_recall_distracted" in failure for failure in failures))
+        self.assertTrue(any("runtime recall lift vs heuristic" in failure for failure in failures))
 
 
 if __name__ == "__main__":

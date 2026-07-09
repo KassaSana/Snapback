@@ -8,7 +8,8 @@ use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
 use crate::types::{
     AppRuleRecord, CaptureEvent, CaptureFailurePayload, ContextSnapshotDto, EventType, FocusMode,
-    OverlayFailurePayload, PermissionStatus, PredictionRecord, SnapbackPayload,
+    OverlayFailurePayload, PermissionStatus, PersistenceFailurePayload, PredictionRecord,
+    SnapbackPayload,
 };
 
 pub struct AppState {
@@ -17,6 +18,7 @@ pub struct AppState {
     pub capture_running: parking_lot::Mutex<bool>,
     pub capture_failure_reason: parking_lot::Mutex<Option<String>>,
     pub overlay_failure_reason: parking_lot::Mutex<Option<String>>,
+    pub persistence_failure_reason: parking_lot::Mutex<Option<String>>,
     pub focus_mode: parking_lot::Mutex<FocusMode>,
     pub classifier: parking_lot::Mutex<Classifier>,
     pub latest_prediction: parking_lot::Mutex<Option<PredictionRecord>>,
@@ -40,6 +42,7 @@ impl AppState {
             capture_running: parking_lot::Mutex::new(false),
             capture_failure_reason: parking_lot::Mutex::new(None),
             overlay_failure_reason: parking_lot::Mutex::new(None),
+            persistence_failure_reason: parking_lot::Mutex::new(None),
             focus_mode: parking_lot::Mutex::new(focus_mode),
             classifier: parking_lot::Mutex::new(Classifier::new(focus_mode)),
             latest_prediction: parking_lot::Mutex::new(None),
@@ -94,10 +97,13 @@ impl AppState {
         let capture_running = *self.capture_running.lock();
         let capture_failure_reason = self.capture_failure_reason.lock().clone();
         let overlay_failure_reason = self.overlay_failure_reason.lock().clone();
+        let persistence_failure_reason = self.persistence_failure_reason.lock().clone();
         let capture_failed = capture_failure_reason.is_some();
 
         let status = if capture_failed {
             "capture_failed".to_string()
+        } else if persistence_failure_reason.is_some() {
+            "degraded".to_string()
         } else if !permissions.capture_available || !permissions.active_window_available {
             "degraded".to_string()
         } else if capture_running {
@@ -114,6 +120,7 @@ impl AppState {
             capture_failed,
             capture_failure_reason,
             overlay_failure_reason,
+            persistence_failure_reason,
             permissions,
             classifier,
         }
@@ -239,7 +246,7 @@ fn run_engine_loop(app: AppHandle) {
                 tracker.on_activity()
             };
             if let Some(snapshot) = snapshot_to_save {
-                persist_context_snapshot(&state, snapshot);
+                persist_context_snapshot(Some(&app), &state, snapshot);
             }
 
             let features = extractor.update(&event, &app_rules);
@@ -277,7 +284,14 @@ fn run_engine_loop(app: AppHandle) {
                 last_prediction_at = now;
 
                 if let Some(session) = active_session.as_ref() {
-                    persist_session_tick(&state.storage.lock(), session, &record, &features);
+                    persist_session_tick(
+                        Some(&app),
+                        &state,
+                        &state.storage.lock(),
+                        session,
+                        &record,
+                        &features,
+                    );
                 }
 
                 if scores.focus_state == "DEEP_FOCUS" {
@@ -347,20 +361,31 @@ fn run_engine_loop(app: AppHandle) {
 /// Persist prediction + feature rows only while a focus session is active.
 /// Live predictions still emit to the UI when no session is running.
 fn persist_session_tick(
+    app: Option<&AppHandle>,
+    state: &AppState,
     storage: &Storage,
     session: &crate::types::SessionRecord,
     record: &PredictionRecord,
     features: &crate::engine::features::FeatureVector,
 ) {
+    let mut failure_reason: Option<String> = None;
     if let Err(err) = storage.save_prediction(record) {
         log::warn!("failed to save prediction: {err}");
+        failure_reason = Some(format!("Failed to save prediction row: {err}"));
     }
     if let Err(err) = storage.save_feature_snapshot(&session.session_id, features) {
         log::warn!("failed to save feature snapshot: {err}");
+        failure_reason = Some(format!("Failed to save feature snapshot: {err}"));
+    }
+
+    if let Some(reason) = failure_reason {
+        record_persistence_failure(app, state, reason);
+    } else {
+        clear_persistence_failure(state);
     }
 }
 
-fn persist_context_snapshot(state: &AppState, snapshot: ContextSnapshotDto) {
+fn persist_context_snapshot(app: Option<&AppHandle>, state: &AppState, snapshot: ContextSnapshotDto) {
     let Some(session) = state
         .storage
         .lock()
@@ -377,7 +402,33 @@ fn persist_context_snapshot(state: &AppState, snapshot: ContextSnapshotDto) {
         .save_context_snapshot(&session.session_id, &snapshot)
     {
         log::warn!("failed to save context snapshot: {err}");
+        record_persistence_failure(app, state, format!("Failed to save context snapshot: {err}"));
+    } else {
+        clear_persistence_failure(state);
     }
+}
+
+fn record_persistence_failure(app: Option<&AppHandle>, state: &AppState, reason: String) {
+    let mut guard = state.persistence_failure_reason.lock();
+    if guard.as_deref() == Some(reason.as_str()) {
+        return;
+    }
+    *guard = Some(reason.clone());
+    drop(guard);
+
+    let payload = PersistenceFailurePayload {
+        message: format!(
+            "Snapback could not save some local session data. Export/training may be incomplete until this is fixed. {reason}"
+        ),
+        reason,
+    };
+    if let Some(app) = app {
+        let _ = app.emit("persistence-failed", &payload);
+    }
+}
+
+fn clear_persistence_failure(state: &AppState) {
+    *state.persistence_failure_reason.lock() = None;
 }
 
 #[cfg(test)]
@@ -415,7 +466,8 @@ mod tests {
         };
         let record = sample_record(&session.session_id);
 
-        persist_session_tick(&storage, &session, &record, &features);
+        let state = AppState::new(temp_storage());
+        persist_session_tick(None, &state, &storage, &session, &record, &features);
 
         assert_eq!(storage.prediction_count().unwrap(), 1);
         assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
@@ -427,13 +479,24 @@ mod tests {
         let session = storage.start_session("Focus block", "normal").unwrap();
         let features = FeatureVector::empty(1_700_000_000.0);
         let record = sample_record(&session.session_id);
+        let state = AppState::new(temp_storage());
 
-        persist_session_tick(&storage, &session, &record, &features);
+        persist_session_tick(None, &state, &storage, &session, &record, &features);
         storage.stop_session(&session.session_id).unwrap();
 
-        persist_session_tick(&storage, &session, &record, &features);
+        persist_session_tick(None, &state, &storage, &session, &record, &features);
 
         assert_eq!(storage.prediction_count().unwrap(), 1);
         assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn health_status_surfaces_persistence_failures_as_degraded() {
+        let state = AppState::new(temp_storage());
+        *state.persistence_failure_reason.lock() = Some("disk full".to_string());
+
+        let health = state.build_health_status(None);
+        assert_eq!(health.status, "degraded");
+        assert_eq!(health.persistence_failure_reason.as_deref(), Some("disk full"));
     }
 }

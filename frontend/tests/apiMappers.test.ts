@@ -14,6 +14,7 @@ const healthSnake = mapHealth({
   capture_failed: false,
   capture_failure_reason: null,
   overlay_failure_reason: "Overlay window failed",
+  persistence_failure_reason: "Disk full",
   permissions: {
     capture_available: true,
     capture_probe_confirmed: false,
@@ -31,6 +32,7 @@ const healthSnake = mapHealth({
 assert.equal(healthSnake.status, "online");
 assert.equal(healthSnake.captureRunning, true);
 assert.equal(healthSnake.overlayFailureReason, "Overlay window failed");
+assert.equal(healthSnake.persistenceFailureReason, "Disk full");
 assert.equal(healthSnake.permissions.captureAvailable, true);
 assert.equal(healthSnake.permissions.captureProbeConfirmed, false);
 assert.equal(healthSnake.permissions.setupSteps[0], "Step one");
@@ -43,6 +45,7 @@ const healthCamel = mapHealth({
   captureFailed: true,
   captureFailureReason: "rdev",
   overlayFailureReason: null,
+  persistenceFailureReason: null,
   permissions: {
     captureAvailable: false,
     captureProbeConfirmed: false,

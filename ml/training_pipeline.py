@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+from collections import Counter
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -24,6 +25,9 @@ LABEL_VALUE_TO_INDEX = {
     int(FocusLabel.PRODUCTIVE): 2,
     int(FocusLabel.DEEP_FOCUS): 3,
 }
+
+MIN_TRAINING_SAMPLES = 8
+MIN_SAMPLES_PER_LABEL = 2
 
 
 def default_feature_columns() -> List[str]:
@@ -391,6 +395,31 @@ def train_baseline(
         }
 
     return TrainingResult(model=model, metrics=metrics)
+
+
+def validate_training_dataset(dataset: Dataset, n_splits: int = 5) -> None:
+    sample_count = len(dataset.features)
+    if sample_count == 0:
+        raise ValueError("dataset is empty")
+
+    min_required_samples = max(MIN_TRAINING_SAMPLES, n_splits + 1)
+    if sample_count < min_required_samples:
+        raise ValueError(
+            f"Need at least {min_required_samples} labeled samples to train reliably; found {sample_count}."
+        )
+
+    label_counts = Counter(dataset.labels)
+    if len(label_counts) < 2:
+        raise ValueError(
+            "Need at least two label classes before training. Add labels from more than one focus state."
+        )
+
+    smallest_class = min(label_counts.values())
+    if smallest_class < MIN_SAMPLES_PER_LABEL:
+        raise ValueError(
+            "Need at least "
+            f"{MIN_SAMPLES_PER_LABEL} samples in each label class before training."
+        )
 
 
 def save_model(model: object, path: str) -> None:

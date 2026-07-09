@@ -26,6 +26,7 @@ export default function App() {
     applyCaptureFailure,
     applyClassifierStatus,
     applyOverlayFailure,
+    applyPersistenceFailure,
     captureFailed,
     captureFailureReason,
     captureProbeConfirmed,
@@ -36,11 +37,13 @@ export default function App() {
     handleRefreshPermissions,
     healthStatus,
     overlayFailureReason,
+    persistenceFailureReason,
     permissionCaptureAvailable,
     permissionMessage,
     permissionSteps,
     refreshHealth,
     setOverlayFailureReason,
+    setPersistenceFailureReason,
   } = useHealth();
 
   const {
@@ -121,6 +124,7 @@ export default function App() {
     refreshContextTimeline: live.refreshContextTimeline,
     applyCaptureFailure,
     applyOverlayFailure,
+    applyPersistenceFailure,
     handlePrediction: live.handlePrediction,
     handleSnapback: live.handleSnapback,
     handleHyperfocus: live.handleHyperfocus,
@@ -137,6 +141,7 @@ export default function App() {
         captureProbeConfirmed={captureProbeConfirmed}
         captureRunning={captureRunning}
         classifierBackend={classifierBackend}
+        classifierMetrics={deployStatus?.metrics ?? null}
         classifierModelPath={classifierModelPath}
         classifierOnnxRuntimeEnabled={classifierOnnxRuntimeEnabled}
         healthStatus={healthStatus}
@@ -146,10 +151,11 @@ export default function App() {
       />
 
       <ActionErrorBanner
-        error={feedback.actionError ?? overlayFailureReason}
+        error={feedback.actionError ?? overlayFailureReason ?? persistenceFailureReason}
         onDismiss={() => {
           feedback.setActionError(null);
           setOverlayFailureReason(null);
+          setPersistenceFailureReason(null);
         }}
       />
 

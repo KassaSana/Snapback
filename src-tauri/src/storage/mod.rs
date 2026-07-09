@@ -45,6 +45,51 @@ const FEATURE_EXPORT_COLUMNS: &[&str] = &[
     "is_productivity",
     "focus_momentum",
     "is_pseudo_productive",
+    "session_id",
+    "session_goal",
+    "focus_mode",
+    "app_name",
+    "window_title",
+];
+
+const FEATURE_EXPORT_SELECT_COLUMNS: &[&str] = &[
+    "fs.timestamp",
+    "fs.seconds_since_session_start",
+    "fs.hour_of_day",
+    "fs.day_of_week",
+    "fs.minutes_since_last_break",
+    "fs.keystroke_count",
+    "fs.keystroke_rate",
+    "fs.keystroke_interval_mean",
+    "fs.keystroke_interval_std",
+    "fs.keystroke_interval_trend",
+    "fs.mouse_move_count",
+    "fs.mouse_distance_pixels",
+    "fs.mouse_speed_mean",
+    "fs.mouse_speed_std",
+    "fs.mouse_acceleration_mean",
+    "fs.mouse_click_count",
+    "fs.context_switches_30s",
+    "fs.context_switches_5min",
+    "fs.time_in_current_app",
+    "fs.unique_apps_5min",
+    "fs.idle_time_30s",
+    "fs.idle_event_count_5min",
+    "fs.longest_active_stretch_5min",
+    "fs.window_title_length",
+    "fs.window_title_changed_30s",
+    "fs.is_browser",
+    "fs.is_ide",
+    "fs.is_communication",
+    "fs.is_entertainment",
+    "fs.is_productivity",
+    "fs.focus_momentum",
+    "fs.is_pseudo_productive",
+    "fs.session_id",
+    "s.goal AS session_goal",
+    "s.focus_mode",
+    "COALESCE((SELECT cs.app_name FROM context_snapshots cs WHERE cs.session_id = fs.session_id AND CAST(strftime('%s', cs.timestamp) AS REAL) <= fs.timestamp ORDER BY CAST(strftime('%s', cs.timestamp) AS REAL) DESC LIMIT 1), '') AS app_name",
+    "COALESCE((SELECT cs.window_title FROM context_snapshots cs WHERE cs.session_id = fs.session_id AND CAST(strftime('%s', cs.timestamp) AS REAL) <= fs.timestamp ORDER BY CAST(strftime('%s', cs.timestamp) AS REAL) DESC LIMIT 1), '') AS window_title",
 ];
 
 #[derive(Debug, Error)]
@@ -744,20 +789,23 @@ impl Storage {
         path: &Path,
         session_id: Option<&str>,
     ) -> Result<usize, StorageError> {
-        let columns = FEATURE_EXPORT_COLUMNS.join(", ");
+        let columns = FEATURE_EXPORT_SELECT_COLUMNS.join(", ");
         let (query, filter): (String, bool) = if session_id.is_some() {
             (
                 format!(
-                    "SELECT {columns} FROM feature_snapshots WHERE session_id = ?1 ORDER BY timestamp ASC"
+                    "SELECT {columns} FROM feature_snapshots fs \
+                     LEFT JOIN sessions s ON s.session_id = fs.session_id \
+                     WHERE fs.session_id = ?1 ORDER BY fs.timestamp ASC"
                 ),
                 true,
             )
         } else {
             (
                 format!(
-                    "SELECT {columns} FROM feature_snapshots \
-                     WHERE session_id IS NOT NULL AND session_id != '' AND session_id != 'idle' \
-                     ORDER BY timestamp ASC"
+                    "SELECT {columns} FROM feature_snapshots fs \
+                     LEFT JOIN sessions s ON s.session_id = fs.session_id \
+                     WHERE fs.session_id IS NOT NULL AND fs.session_id != '' AND fs.session_id != 'idle' \
+                     ORDER BY fs.timestamp ASC"
                 ),
                 false,
             )
@@ -1120,6 +1168,21 @@ mod tests {
             .save_feature_snapshot(&session.session_id, &features)
             .unwrap();
         storage
+            .save_context_snapshot(
+                &session.session_id,
+                &ContextSnapshotDto {
+                    app_name: "Cursor".to_string(),
+                    window_title: "state.rs — Snapback".to_string(),
+                    file_hint: "state.rs".to_string(),
+                    project_hint: "Snapback".to_string(),
+                    summary: "Editing state.rs".to_string(),
+                    timestamp: chrono::DateTime::from_timestamp(1_700_000_000, 0)
+                        .unwrap()
+                        .to_rfc3339(),
+                },
+            )
+            .unwrap();
+        storage
             .save_label(&session.session_id, FocusLabel::Distracted, LabelSource::Manual, Some("youtube"))
             .unwrap();
 
@@ -1132,6 +1195,12 @@ mod tests {
         assert_eq!(result.label_count, 1);
         assert!(std::path::Path::new(&result.features_path).exists());
         assert!(std::path::Path::new(&result.labels_path).exists());
+        let features_csv = fs::read_to_string(&result.features_path).unwrap();
+        assert!(features_csv.contains("session_goal"));
+        assert!(features_csv.contains("focus_mode"));
+        assert!(features_csv.contains("app_name"));
+        assert!(features_csv.contains("Export test"));
+        assert!(features_csv.contains("Cursor"));
     }
 
     #[test]

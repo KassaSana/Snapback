@@ -38,7 +38,7 @@ assert.deepEqual(
   }),
   {
     label: "partial",
-    detail: "probe only until listener starts",
+    detail: "listener not confirmed yet",
   },
 );
 

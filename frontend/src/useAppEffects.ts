@@ -24,6 +24,7 @@ type UseAppEffectsArgs = {
 
   applyCaptureFailure: (payload: CaptureFailurePayload) => void;
   applyOverlayFailure: (payload: OverlayFailurePayload) => void;
+  applyPersistenceFailure: (payload: { reason: string; message: string }) => void;
 
   handlePrediction: (record: PredictionRecord | null) => void;
   handleSnapback: (payload: SnapbackPayload) => void;
@@ -45,6 +46,7 @@ export const useAppEffects = ({
   refreshContextTimeline,
   applyCaptureFailure,
   applyOverlayFailure,
+  applyPersistenceFailure,
   handlePrediction,
   handleSnapback,
   handleHyperfocus,
@@ -85,6 +87,11 @@ export const useAppEffects = ({
       }),
     );
     unsubs.push(
+      api.onPersistenceFailed((payload) => {
+        applyPersistenceFailure(payload);
+      }),
+    );
+    unsubs.push(
       api.onPrediction((record) => {
         handlePrediction(record);
         if (record.sessionId === sessionId && sessionStatus === "ACTIVE") {
@@ -118,6 +125,7 @@ export const useAppEffects = ({
   }, [
     applyCaptureFailure,
     applyOverlayFailure,
+    applyPersistenceFailure,
     handleHyperfocus,
     handlePrediction,
     handleSnapback,

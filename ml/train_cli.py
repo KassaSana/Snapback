@@ -16,7 +16,7 @@ from .dataset_builder import (
     read_labels_csv,
     write_labeled_csv,
 )
-from .training_pipeline import load_dataset, save_model, train_baseline
+from .training_pipeline import load_dataset, save_model, train_baseline, validate_training_dataset
 
 
 def run_training(
@@ -56,6 +56,7 @@ def run_training(
 
     try:
         dataset = load_dataset(dataset_path, feature_columns=feature_columns, label_column=label_column)
+        validate_training_dataset(dataset, n_splits=n_splits)
         result = train_baseline(dataset, backend=backend, n_splits=n_splits)
         if output_model_path:
             save_model(result.model, output_model_path)

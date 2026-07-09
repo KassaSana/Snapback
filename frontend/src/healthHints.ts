@@ -54,7 +54,7 @@ export const summarizePermissions = (permissions: PermissionHealthInput): Permis
   ) {
     return {
       label: "partial",
-      detail: "probe only until listener starts",
+      detail: "listener not confirmed yet",
     };
   }
 

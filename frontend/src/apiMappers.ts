@@ -62,6 +62,9 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
     overlayFailureReason: (raw.overlay_failure_reason ??
       raw.overlayFailureReason ??
       null) as string | null,
+    persistenceFailureReason: (raw.persistence_failure_reason ??
+      raw.persistenceFailureReason ??
+      null) as string | null,
     permissions: mapPermissionStatus(
       (raw.permissions as Record<string, unknown>) ?? {},
     ),
@@ -117,13 +120,29 @@ export function mapExportTrainingResult(raw: Record<string, unknown>): ExportTra
 }
 
 export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingDeployStatus {
+  const labelBreakdownRaw =
+    (raw.label_breakdown ?? raw.labelBreakdown ?? {}) as Record<string, unknown>;
+  const labelBreakdown: Record<string, number> = {};
+  for (const [key, value] of Object.entries(labelBreakdownRaw)) {
+    labelBreakdown[key] = Number(value);
+  }
+  const metricsRaw = (raw.metrics ?? null) as Record<string, unknown> | null;
+  let metrics: Record<string, number> | null = null;
+  if (metricsRaw && typeof metricsRaw === "object" && !Array.isArray(metricsRaw)) {
+    metrics = {};
+    for (const [key, value] of Object.entries(metricsRaw)) {
+      metrics[key] = Number(value);
+    }
+  }
   return {
     exportDir: String(raw.export_dir ?? raw.exportDir ?? ""),
     featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
     labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
+    labelBreakdown,
     hasExport: Boolean(raw.has_export ?? raw.hasExport ?? false),
     modelOnnxExists: Boolean(raw.model_onnx_exists ?? raw.modelOnnxExists ?? false),
     metricsExists: Boolean(raw.metrics_exists ?? raw.metricsExists ?? false),
+    metrics,
     pythonAvailable: Boolean(raw.python_available ?? raw.pythonAvailable ?? false),
     repoPath: (raw.repo_path ?? raw.repoPath ?? null) as string | null,
     repoConfigured: Boolean(raw.repo_configured ?? raw.repoConfigured ?? false),

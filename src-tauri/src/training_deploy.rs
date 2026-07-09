@@ -88,6 +88,29 @@ fn count_csv_rows(path: &Path) -> usize {
     content.lines().count().saturating_sub(1)
 }
 
+fn count_label_breakdown(path: &Path) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    let Ok(mut reader) = csv::Reader::from_path(path) else {
+        return counts;
+    };
+
+    for row in reader.deserialize::<HashMap<String, String>>().flatten() {
+        let Some(label_raw) = row.get("label").map(|value| value.trim()) else {
+            continue;
+        };
+        let label_name = match label_raw {
+            "-1" | "DISTRACTED" => "DISTRACTED",
+            "0" | "PSEUDO_PRODUCTIVE" => "PSEUDO_PRODUCTIVE",
+            "1" | "PRODUCTIVE" => "PRODUCTIVE",
+            "2" | "DEEP_FOCUS" => "DEEP_FOCUS",
+            _ => continue,
+        };
+        *counts.entry(label_name.to_string()).or_insert(0) += 1;
+    }
+
+    counts
+}
+
 fn sync_trained_model_to_app_dir(app_data_dir: &Path, export_dir: &Path) -> Result<bool, String> {
     let export_model = export_dir.join("model.onnx");
     if !export_model.is_file() {
@@ -126,9 +149,11 @@ pub struct TrainingDeployStatus {
     pub export_dir: String,
     pub feature_count: usize,
     pub label_count: usize,
+    pub label_breakdown: HashMap<String, usize>,
     pub has_export: bool,
     pub model_onnx_exists: bool,
     pub metrics_exists: bool,
+    pub metrics: Option<HashMap<String, f64>>,
     pub python_available: bool,
     pub repo_path: Option<String>,
     pub repo_configured: bool,
@@ -141,18 +166,23 @@ pub fn training_deploy_status(app_data_dir: &Path) -> TrainingDeployStatus {
     let labels_path = export.join("labels.csv");
     let feature_count = count_csv_rows(&features_path);
     let label_count = count_csv_rows(&labels_path);
+    let label_breakdown = count_label_breakdown(&labels_path);
     let has_export = feature_count > 0 && label_count > 0;
     let model_onnx_exists = export.join("model.onnx").is_file();
-    let metrics_exists = export.join("metrics.json").is_file();
+    let metrics_path = export.join("metrics.json");
+    let metrics_exists = metrics_path.is_file();
+    let metrics = metrics_exists.then(|| parse_metrics_json(&metrics_path)).flatten();
     let repo_path = read_training_repo_path(app_data_dir);
 
     TrainingDeployStatus {
         export_dir: export.display().to_string(),
         feature_count,
         label_count,
+        label_breakdown,
         has_export,
         model_onnx_exists,
         metrics_exists,
+        metrics,
         python_available: find_python().is_some(),
         repo_path: repo_path.as_ref().map(|path| path.display().to_string()),
         repo_configured: repo_path.is_some(),
@@ -328,6 +358,32 @@ mod tests {
         let path = temp.join("rows.csv");
         fs::write(&path, "a,b\n1,2\n3,4\n").unwrap();
         assert_eq!(count_csv_rows(&path), 2);
+        let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn count_label_breakdown_reads_exported_labels() {
+        let temp = std::env::temp_dir().join(format!(
+            "snapback-label-breakdown-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&temp).unwrap();
+        let path = temp.join("labels.csv");
+        fs::write(
+            &path,
+            "timestamp,label,source,session_id,notes\n\
+1,-1,manual,s1,\n\
+2,1,manual,s1,\n\
+3,1,manual,s1,\n\
+4,2,manual,s1,\n",
+        )
+        .unwrap();
+
+        let counts = count_label_breakdown(&path);
+        assert_eq!(counts.get("DISTRACTED"), Some(&1));
+        assert_eq!(counts.get("PRODUCTIVE"), Some(&2));
+        assert_eq!(counts.get("DEEP_FOCUS"), Some(&1));
         let _ = fs::remove_dir_all(&temp);
     }
 

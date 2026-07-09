@@ -30,6 +30,7 @@ sysinfo = "0.30"
 ort = { version = "2.0.0-rc.12", optional = true, default-features = false, features = ["download-binaries", "ndarray", "tls-native", "load-dynamic", "copy-dylibs", "api-24"] }
 ndarray = { version = "0.17", optional = true, features = ["std"] }
 tauri-plugin-global-shortcut = "2"
+csv = "1.4.0"
 
 [features]
 default = []

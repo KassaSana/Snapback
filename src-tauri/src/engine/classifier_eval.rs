@@ -4,7 +4,6 @@
 //! and post-model guardrails — so metrics match the live engine in `state.rs`.
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
 use crate::engine::classifier::{Classifier, STATE_LABELS};
@@ -88,33 +87,45 @@ fn focus_state_to_index(state: &str) -> Option<usize> {
         .position(|candidate| *candidate == state)
 }
 
-fn session_context(session_id: &str) -> (String, String, Option<String>) {
+fn session_context(session_id: &str) -> (String, String, Option<String>, FocusMode) {
     match session_id {
         "synthetic-deep-focus" => (
             "Cursor".to_string(),
             "main.rs — Snapback".to_string(),
             Some("Ship the feature parity fix".to_string()),
+            FocusMode::Deep,
         ),
         "synthetic-distracted" => (
             "Google Chrome".to_string(),
             "YouTube - Rick Astley".to_string(),
             Some("Write the quarterly report".to_string()),
+            FocusMode::Normal,
         ),
         "synthetic-drift" => (
             "Google Chrome".to_string(),
             "competitor pricing".to_string(),
             Some("Research competitor pricing".to_string()),
+            FocusMode::Normal,
         ),
         "synthetic-productive" => (
             "Notion".to_string(),
             "design doc".to_string(),
             Some("Draft the design doc".to_string()),
+            FocusMode::Normal,
         ),
-        _ => (String::new(), String::new(), None),
+        _ => (String::new(), String::new(), None, FocusMode::Normal),
     }
 }
 
-fn feature_from_row(row: &HashMap<String, String>) -> Option<(FeatureVector, i32, Option<String>)> {
+fn row_string(row: &HashMap<String, String>, key: &str) -> Option<String> {
+    row.get(key)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn feature_from_row(
+    row: &HashMap<String, String>,
+) -> Option<(FeatureVector, i32, Option<String>, FocusMode)> {
     let label_raw = row.get("label")?.trim();
     if label_raw.is_empty() {
         return None;
@@ -127,7 +138,14 @@ fn feature_from_row(row: &HashMap<String, String>) -> Option<(FeatureVector, i32
         .or_else(|| row.get("session_id"))
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
-    let (app_name, window_title, goal) = session_context(&session_id);
+    let (fallback_app_name, fallback_window_title, fallback_goal, fallback_focus_mode) =
+        session_context(&session_id);
+    let app_name = row_string(row, "app_name").unwrap_or(fallback_app_name);
+    let window_title = row_string(row, "window_title").unwrap_or(fallback_window_title);
+    let goal = row_string(row, "session_goal").or(fallback_goal);
+    let focus_mode = row_string(row, "focus_mode")
+        .map(|value| FocusMode::from_str(&value))
+        .unwrap_or(fallback_focus_mode);
 
     let timestamp = parse_f64(row.get("timestamp").map(String::as_str).unwrap_or("0"));
 
@@ -263,29 +281,27 @@ fn feature_from_row(row: &HashMap<String, String>) -> Option<(FeatureVector, i32
         }
     }
 
-    Some((features, label, goal))
+    Some((features, label, goal, focus_mode))
 }
 
 fn parse_csv(path: &Path) -> Result<Vec<HashMap<String, String>>, String> {
-    let raw = fs::read_to_string(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
-    let mut lines = raw.lines();
-    let header_line = lines
-        .next()
-        .ok_or_else(|| format!("empty csv: {}", path.display()))?;
-    let headers: Vec<String> = header_line.split(',').map(|s| s.trim().to_string()).collect();
-
+    let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .from_path(path)
+        .map_err(|err| format!("failed to open {}: {err}", path.display()))?;
+    let headers = reader
+        .headers()
+        .map_err(|err| format!("failed to read CSV headers from {}: {err}", path.display()))?
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
     let mut rows = Vec::new();
-    for line in lines {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let values: Vec<&str> = line.split(',').collect();
-        if values.len() != headers.len() {
-            continue;
-        }
+    for record in reader.records() {
+        let record = record
+            .map_err(|err| format!("failed to parse CSV row in {}: {err}", path.display()))?;
         let mut row = HashMap::new();
-        for (header, value) in headers.iter().zip(values.iter()) {
-            row.insert(header.clone(), (*value).to_string());
+        for (header, value) in headers.iter().zip(record.iter()) {
+            row.insert(header.clone(), value.to_string());
         }
         rows.push(row);
     }
@@ -340,7 +356,7 @@ pub fn evaluate_labeled_csv(path: &Path, backend: EvalBackend) -> Result<EvalMet
     }
 
     let rows = parse_csv(path)?;
-    let classifier = Classifier::new(FocusMode::Normal);
+    let mut classifier = Classifier::new(FocusMode::Normal);
     let rules = Vec::new();
 
     let mut labels = Vec::new();
@@ -348,13 +364,14 @@ pub fn evaluate_labeled_csv(path: &Path, backend: EvalBackend) -> Result<EvalMet
     let mut correct = 0usize;
 
     for row in rows {
-        let Some((features, label_value, goal)) = feature_from_row(&row) else {
+        let Some((features, label_value, goal, focus_mode)) = feature_from_row(&row) else {
             continue;
         };
         let Some(expected) = label_value_to_index(label_value) else {
             continue;
         };
 
+        classifier.set_focus_mode(focus_mode);
         let goal_ref = goal.as_deref();
         let scores = classifier.predict(&features, goal_ref, &rules);
         let Some(predicted) = focus_state_to_index(&scores.focus_state) else {
@@ -466,11 +483,61 @@ pub fn run_classifier_eval_cli(args: &[String]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn label_and_state_indices_align() {
         assert_eq!(label_value_to_index(-1), Some(0));
         assert_eq!(focus_state_to_index("DISTRACTED"), Some(0));
         assert_eq!(focus_state_to_index("DEEP_FOCUS"), Some(3));
+    }
+
+    #[test]
+    fn feature_from_row_prefers_exported_context_and_focus_mode() {
+        let row = HashMap::from([
+            ("label".to_string(), "2".to_string()),
+            ("timestamp".to_string(), "1700000000".to_string()),
+            ("keystroke_count".to_string(), "8".to_string()),
+            ("app_name".to_string(), "Cursor".to_string()),
+            ("window_title".to_string(), "state.rs — Snapback".to_string()),
+            ("session_goal".to_string(), "Ship eval parity".to_string()),
+            ("focus_mode".to_string(), "deep".to_string()),
+        ]);
+
+        let (features, label, goal, focus_mode) =
+            feature_from_row(&row).expect("row should parse");
+        assert_eq!(label, 2);
+        assert_eq!(features.app_name, "Cursor");
+        assert_eq!(features.window_title, "state.rs — Snapback");
+        assert_eq!(goal.as_deref(), Some("Ship eval parity"));
+        assert_eq!(focus_mode, FocusMode::Deep);
+    }
+
+    #[test]
+    fn parse_csv_handles_quoted_notes_and_context_columns() {
+        let dir = std::env::temp_dir().join(format!("classifier_eval_csv_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("labeled.csv");
+        fs::write(
+            &path,
+            "timestamp,label,label_notes,app_name,window_title,session_goal,focus_mode\n\
+1700000000,2,\"hello, \"\"world\"\"\nline2\",Cursor,\"state.rs, Snapback\",Ship eval parity,deep\n",
+        )
+        .unwrap();
+
+        let rows = parse_csv(&path).expect("csv should parse");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].get("app_name").map(String::as_str), Some("Cursor"));
+        assert_eq!(
+            rows[0].get("window_title").map(String::as_str),
+            Some("state.rs, Snapback")
+        );
+        assert_eq!(
+            rows[0].get("label_notes").map(String::as_str),
+            Some("hello, \"world\"\nline2")
+        );
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(&dir);
     }
 }

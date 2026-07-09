@@ -201,32 +201,38 @@ def evaluate_quality_gate(
 ) -> list[str]:
     quality = report.get("classifier_quality", {})
     heuristic = quality.get("heuristic_rust", {})
+    runtime = quality.get("onnx", {})
     cv = quality.get("xgboost_training_metrics", {})
 
     failures: list[str] = []
-    cv_accuracy = float(cv.get("cv_accuracy", 0.0))
-    cv_precision = float(cv.get("precision_at_10pct", 0.0))
-    cv_recall = float(cv.get("recall_distracted", 0.0))
+    runtime_accuracy = float(runtime.get("accuracy", cv.get("cv_accuracy", 0.0)))
+    runtime_precision = float(
+        runtime.get(
+            "precision_at_10pct_distracted",
+            cv.get("precision_at_10pct", 0.0),
+        )
+    )
+    runtime_recall = float(runtime.get("recall_distracted", cv.get("recall_distracted", 0.0)))
     heuristic_recall = float(heuristic.get("recall_distracted", 0.0))
-    recall_lift = cv_recall - heuristic_recall
+    recall_lift = runtime_recall - heuristic_recall
 
-    if cv_accuracy < min_cv_accuracy:
+    if runtime_accuracy < min_cv_accuracy:
         failures.append(
-            f"cv_accuracy {cv_accuracy:.3f} < required {min_cv_accuracy:.3f}"
+            f"runtime_accuracy {runtime_accuracy:.3f} < required {min_cv_accuracy:.3f}"
         )
-    if cv_precision < min_cv_precision_at_10pct:
+    if runtime_precision < min_cv_precision_at_10pct:
         failures.append(
-            "precision_at_10pct "
-            f"{cv_precision:.3f} < required {min_cv_precision_at_10pct:.3f}"
+            "runtime_precision_at_10pct "
+            f"{runtime_precision:.3f} < required {min_cv_precision_at_10pct:.3f}"
         )
-    if cv_recall < min_cv_recall_distracted:
+    if runtime_recall < min_cv_recall_distracted:
         failures.append(
-            "recall_distracted "
-            f"{cv_recall:.3f} < required {min_cv_recall_distracted:.3f}"
+            "runtime_recall_distracted "
+            f"{runtime_recall:.3f} < required {min_cv_recall_distracted:.3f}"
         )
     if recall_lift < min_recall_lift:
         failures.append(
-            f"recall lift vs heuristic {recall_lift:.3f} < required {min_recall_lift:.3f}"
+            f"runtime recall lift vs heuristic {recall_lift:.3f} < required {min_recall_lift:.3f}"
         )
 
     return failures

@@ -57,6 +57,11 @@ export type OverlayFailurePayload = {
   message: string;
 };
 
+export type PersistenceFailurePayload = {
+  reason: string;
+  message: string;
+};
+
 export type LabelHotkeyPayload = {
   ok: boolean;
   message: string;
@@ -76,6 +81,7 @@ export type HealthStatus = {
   captureFailed: boolean;
   captureFailureReason: string | null;
   overlayFailureReason: string | null;
+  persistenceFailureReason: string | null;
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
 };
@@ -139,9 +145,11 @@ export type TrainingDeployStatus = {
   exportDir: string;
   featureCount: number;
   labelCount: number;
+  labelBreakdown: Record<string, number>;
   hasExport: boolean;
   modelOnnxExists: boolean;
   metricsExists: boolean;
+  metrics: Record<string, number> | null;
   pythonAvailable: boolean;
   repoPath: string | null;
   repoConfigured: boolean;
@@ -261,6 +269,14 @@ export const api = {
     }),
   onOverlayFailed: (handler: (payload: OverlayFailurePayload) => void) =>
     listen<Record<string, unknown>>("overlay-failed", (event) => {
+      const raw = event.payload;
+      handler({
+        reason: String(raw.reason ?? ""),
+        message: String(raw.message ?? ""),
+      });
+    }),
+  onPersistenceFailed: (handler: (payload: PersistenceFailurePayload) => void) =>
+    listen<Record<string, unknown>>("persistence-failed", (event) => {
       const raw = event.payload;
       handler({
         reason: String(raw.reason ?? ""),

@@ -5,6 +5,7 @@ import {
   type CaptureFailurePayload,
   type ClassifierStatus,
   type OverlayFailurePayload,
+  type PersistenceFailurePayload,
 } from "./api";
 import { summarizeAppHealth } from "./healthHints";
 
@@ -21,6 +22,7 @@ export const useHealth = () => {
   const [captureFailed, setCaptureFailed] = useState(false);
   const [captureFailureReason, setCaptureFailureReason] = useState<string | null>(null);
   const [overlayFailureReason, setOverlayFailureReason] = useState<string | null>(null);
+  const [persistenceFailureReason, setPersistenceFailureReason] = useState<string | null>(null);
   const [classifierBackend, setClassifierBackend] = useState("heuristic");
   const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export const useHealth = () => {
     setCaptureFailed(health.captureFailed);
     setCaptureFailureReason(health.captureFailureReason);
     setOverlayFailureReason(health.overlayFailureReason);
+    setPersistenceFailureReason(health.persistenceFailureReason);
     setPermissionCaptureAvailable(health.permissions.captureAvailable);
     setCaptureProbeConfirmed(health.permissions.captureProbeConfirmed);
     setActiveWindowAvailable(health.permissions.activeWindowAvailable);
@@ -61,6 +64,11 @@ export const useHealth = () => {
 
   const applyOverlayFailure = useCallback((payload: OverlayFailurePayload) => {
     setOverlayFailureReason(payload.message);
+  }, []);
+
+  const applyPersistenceFailure = useCallback((payload: PersistenceFailurePayload) => {
+    setPersistenceFailureReason(payload.message);
+    setHealthStatus("degraded");
   }, []);
 
   const refreshHealth = useCallback(async () => {
@@ -91,6 +99,7 @@ export const useHealth = () => {
     applyCaptureFailure,
     applyClassifierStatus,
     applyOverlayFailure,
+    applyPersistenceFailure,
     captureFailed,
     captureFailureReason,
     captureProbeConfirmed,
@@ -101,10 +110,12 @@ export const useHealth = () => {
     handleRefreshPermissions,
     healthStatus,
     overlayFailureReason,
+    persistenceFailureReason,
     permissionCaptureAvailable,
     permissionMessage,
     permissionSteps,
     refreshHealth,
     setOverlayFailureReason,
+    setPersistenceFailureReason,
   };
 };

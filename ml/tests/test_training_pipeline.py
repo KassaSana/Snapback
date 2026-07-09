@@ -10,6 +10,7 @@ from ml.training_pipeline import (
     load_dataset,
     time_series_splits,
     train_baseline,
+    validate_training_dataset,
 )
 
 
@@ -113,6 +114,43 @@ class TestTrainingPipeline(unittest.TestCase):
             self.assertGreater(result.metrics["cv_folds"], 0)
             self.assertIn("cv_accuracy", result.metrics)
             self.assertIn("in_sample_accuracy", result.metrics)
+
+    def test_validate_training_dataset_rejects_too_few_rows(self) -> None:
+        dataset = load_dataset_fixture(sample_count=4, alternating_labels=True)
+        with self.assertRaisesRegex(ValueError, "labeled samples"):
+            validate_training_dataset(dataset, n_splits=3)
+
+    def test_validate_training_dataset_rejects_single_sample_class(self) -> None:
+        dataset = load_dataset_fixture(sample_count=8, alternating_labels=False, minority_tail=True)
+        with self.assertRaisesRegex(ValueError, "each label class"):
+            validate_training_dataset(dataset, n_splits=3)
+
+
+def load_dataset_fixture(
+    *,
+    sample_count: int,
+    alternating_labels: bool,
+    minority_tail: bool = False,
+):
+    features = [make_feature(float(i * 10), i % 5) for i in range(1, sample_count + 1)]
+    labels = []
+    for i in range(1, sample_count + 1):
+        if alternating_labels:
+            label = FocusLabel.DISTRACTED if i % 2 == 0 else FocusLabel.PRODUCTIVE
+        elif minority_tail and i == sample_count:
+            label = FocusLabel.DISTRACTED
+        else:
+            label = FocusLabel.PRODUCTIVE
+        labels.append(LabelRecord(float(i * 10 + 5), label, LabelSource.HOTKEY, "s1"))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        feature_path = os.path.join(tmp, "features.csv")
+        dataset_path = os.path.join(tmp, "dataset.csv")
+        write_features_csv(feature_path, features)
+        feature_rows = read_features_csv(feature_path)
+        labeled_rows = join_features_with_labels(feature_rows, labels, label_window_seconds=15)
+        write_labeled_csv(dataset_path, labeled_rows)
+        return load_dataset(dataset_path)
 
 
 if __name__ == "__main__":

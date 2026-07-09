@@ -28,7 +28,7 @@ export function PermissionsCard({
               ? "listener running"
               : captureProbeConfirmed
                 ? "permissions ready"
-                : "probe only"}
+                : "listener pending"}
         </span>
       </div>
       {captureFailed ? (

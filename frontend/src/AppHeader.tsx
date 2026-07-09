@@ -1,4 +1,4 @@
-import { classifierBackendLabel } from "./trainingHints";
+import { classifierBackendLabel, formatTrainingMetrics } from "./trainingHints";
 import { summarizePermissions } from "./healthHints";
 
 type AppHeaderProps = {
@@ -9,6 +9,7 @@ type AppHeaderProps = {
   classifierBackend: string;
   classifierModelPath: string | null;
   classifierOnnxRuntimeEnabled: boolean;
+  classifierMetrics: Record<string, number> | null;
   healthStatus: string;
   permissionCaptureAvailable: boolean;
   permissionMessage: string | null;
@@ -32,6 +33,7 @@ export function AppHeader({
   classifierBackend,
   classifierModelPath,
   classifierOnnxRuntimeEnabled,
+  classifierMetrics,
   healthStatus,
   permissionCaptureAvailable,
   permissionMessage,
@@ -49,6 +51,7 @@ export function AppHeader({
   const classifierRuntimeLabel = classifierOnnxRuntimeEnabled
     ? "ONNX runtime enabled"
     : "ONNX runtime unavailable";
+  const classifierQualityLabel = formatTrainingMetrics(classifierMetrics);
   const activeModelLabel =
     classifierBackend === "onnx"
       ? modelFileLabel(classifierModelPath)
@@ -95,7 +98,9 @@ export function AppHeader({
         <div className="status-pill status-pill-stack">
           <span className="status-label">Model</span>
           <span className="status-value">{activeModelLabel}</span>
-          <span className="status-detail">{classifierRuntimeLabel}</span>
+          <span className="status-detail">
+            {classifierQualityLabel ? `${classifierRuntimeLabel} · ${classifierQualityLabel}` : classifierRuntimeLabel}
+          </span>
         </div>
       </div>
     </header>

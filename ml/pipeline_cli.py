@@ -76,19 +76,23 @@ def run_pipeline(
     model_path = os.path.join(output_dir, "model.json")
     metrics_path = os.path.join(output_dir, "metrics.json")
 
-    metrics = run_training(
-        dataset_path=None,
-        features_path=features_path,
-        labels_path=labels_path,
-        output_dataset_path=dataset_path,
-        output_model_path=model_path,
-        output_metrics_path=metrics_path,
-        label_window_seconds=label_window_seconds,
-        backend=backend,
-        n_splits=n_splits,
-        feature_columns=None,
-        label_column="label",
-    )
+    try:
+        metrics = run_training(
+            dataset_path=None,
+            features_path=features_path,
+            labels_path=labels_path,
+            output_dataset_path=dataset_path,
+            output_model_path=model_path,
+            output_metrics_path=metrics_path,
+            label_window_seconds=label_window_seconds,
+            backend=backend,
+            n_splits=n_splits,
+            feature_columns=None,
+            label_column="label",
+        )
+    except ValueError as exc:
+        print(f"Training blocked: {exc}", file=sys.stderr)
+        return 1
 
     print("\nTraining metrics:")
     for key, value in metrics.items():

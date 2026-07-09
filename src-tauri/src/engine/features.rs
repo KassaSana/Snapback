@@ -432,17 +432,35 @@ mod tests {
     use super::*;
     use crate::types::{CaptureEvent, EventType};
 
-    fn event_at(ts: f64, app: &str) -> CaptureEvent {
+    fn event_with_type(
+        event_type: EventType,
+        ts: f64,
+        app: &str,
+        window_title: &str,
+        mouse_speed: u32,
+        idle_duration_ms: u32,
+    ) -> CaptureEvent {
         CaptureEvent {
-            event_type: EventType::WindowFocusChange,
+            event_type,
             timestamp_secs: ts,
             app_name: app.to_string(),
-            window_title: format!("{app} — doc"),
+            window_title: window_title.to_string(),
             mouse_x: 0,
             mouse_y: 0,
-            mouse_speed: 0,
-            idle_duration_ms: 0,
+            mouse_speed,
+            idle_duration_ms,
         }
+    }
+
+    fn event_at(ts: f64, app: &str) -> CaptureEvent {
+        event_with_type(
+            EventType::WindowFocusChange,
+            ts,
+            app,
+            &format!("{app} — doc"),
+            0,
+            0,
+        )
     }
 
     #[test]
@@ -452,12 +470,14 @@ mod tests {
 
         extractor.update(&event_at(100.0, "Code"), &rules);
         extractor.update(&event_at(105.0, "Code"), &rules);
+        extractor.update_focus_score(0.9, 1.0);
 
         extractor.reset_for_session(Some(200.0));
         let features = extractor.update(&event_at(230.0, "Code"), &rules);
 
         assert_eq!(features.seconds_since_session_start, 30);
         assert_eq!(features.context_switches_30s, 1);
+        assert_eq!(features.focus_momentum, 0.0);
     }
 
     #[test]
@@ -466,5 +486,78 @@ mod tests {
         let features = extractor.update(&event_at(50.0, "Code"), &[]);
 
         assert_eq!(features.seconds_since_session_start, 0);
+    }
+
+    #[test]
+    fn long_idle_event_resets_break_timer_and_counts_idle() {
+        let mut extractor = FeatureExtractor::new();
+        let rules = Vec::new();
+
+        extractor.update(&event_at(0.0, "Code"), &rules);
+        extractor.update(
+            &event_with_type(
+                EventType::IdleEnd,
+                400.0,
+                "Code",
+                "Code — doc",
+                0,
+                300_000,
+            ),
+            &rules,
+        );
+        let features = extractor.update(&event_at(401.0, "Code"), &rules);
+
+        assert_eq!(features.idle_event_count_5min, 1);
+        assert_eq!(features.idle_time_30s, 300.0);
+        assert_eq!(features.minutes_since_last_break, 0);
+    }
+
+    #[test]
+    fn mouse_events_update_speed_distance_and_click_counts() {
+        let mut extractor = FeatureExtractor::new();
+        let rules = Vec::new();
+
+        extractor.update(&event_at(0.0, "Code"), &rules);
+        extractor.update(
+            &event_with_type(EventType::MouseMove, 1.0, "Code", "Code — doc", 10, 0),
+            &rules,
+        );
+        extractor.update(
+            &event_with_type(EventType::MouseMove, 2.0, "Code", "Code — doc", 20, 0),
+            &rules,
+        );
+        let features = extractor.update(
+            &event_with_type(EventType::MouseClick, 2.5, "Code", "Code — doc", 0, 0),
+            &rules,
+        );
+
+        assert_eq!(features.mouse_move_count, 2);
+        assert_eq!(features.mouse_click_count, 1);
+        assert!((features.mouse_speed_mean - 15.0).abs() < 1e-6);
+        assert!((features.mouse_distance_pixels - 20.0).abs() < 1e-6);
+        assert!((features.mouse_acceleration_mean - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn window_title_changes_do_not_reset_current_app_timer() {
+        let mut extractor = FeatureExtractor::new();
+        let rules = Vec::new();
+
+        extractor.update(&event_at(100.0, "Code"), &rules);
+        let features = extractor.update(
+            &event_with_type(
+                EventType::WindowTitleChange,
+                105.0,
+                "Code",
+                "Code — renamed.rs",
+                0,
+                0,
+            ),
+            &rules,
+        );
+
+        assert!(features.window_title_changed_30s);
+        assert_eq!(features.time_in_current_app, 5);
+        assert_eq!(features.window_title, "Code — renamed.rs");
     }
 }

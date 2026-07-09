@@ -61,8 +61,7 @@ fn permission_message(
     if let Some(msg) = capture_unavailable_message() {
         msg
     } else if capture_available && active_window_available && !capture_probe_confirmed {
-        "Permission probe passed, but global input capture is not confirmed until the listener starts."
-            .to_string()
+        unconfirmed_listener_message().to_string()
     } else if !active_window_available && !capture_available {
         platform_both_missing_message()
     } else if !active_window_available {
@@ -72,6 +71,21 @@ fn permission_message(
         platform_input_permission_message().to_string()
     } else {
         "Capture permissions look good.".to_string()
+    }
+}
+
+fn unconfirmed_listener_message() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Permission preflight passed, but global input capture is not confirmed until the listener starts."
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Active-window access looks available, but Windows global input capture is not confirmed until the listener starts."
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        "Capture prerequisites look available, but global input capture is not confirmed until the listener starts."
     }
 }
 

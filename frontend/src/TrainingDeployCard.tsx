@@ -1,4 +1,9 @@
 import type { FocusLabel, TrainingDeployStatus } from "./api";
+import {
+  buildTrainingReadinessBlockers,
+  formatLabelBreakdown,
+  formatTrainingMetrics,
+} from "./trainingHints";
 
 type TrainingDeployCardProps = {
   canTrainFromExport: boolean;
@@ -51,6 +56,9 @@ export function TrainingDeployCard({
   trainingCommand,
   trainingInProgress,
 }: TrainingDeployCardProps) {
+  const readinessBlockers = buildTrainingReadinessBlockers(deployStatus);
+  const metricsSummary = deployStatus ? formatTrainingMetrics(deployStatus.metrics) : null;
+
   return (
     <section className="card feedback-card">
       <div className="card-header">
@@ -83,6 +91,27 @@ export function TrainingDeployCard({
       </div>
       {labelStatus ? (
         <p className={`helper-text${labelStatusWarning ? " alert" : ""}`}>{labelStatus}</p>
+      ) : null}
+      {deployStatus ? (
+        <div className="training-deploy-block">
+          <p className="deploy-title">Training readiness</p>
+          <p className="helper-text">
+            Exported rows: {deployStatus.featureCount} features and {deployStatus.labelCount} labels.
+          </p>
+          <p className="helper-text">
+            Label balance: {formatLabelBreakdown(deployStatus.labelBreakdown)}
+          </p>
+          {metricsSummary ? <p className="helper-text">Latest quality: {metricsSummary}</p> : null}
+          {readinessBlockers.length > 0 ? (
+            <ul className="permission-steps">
+              {readinessBlockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="helper-text">Ready to train from the current export.</p>
+          )}
+        </div>
       ) : null}
 
       <div className="training-deploy-block">

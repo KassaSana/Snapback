@@ -1,8 +1,11 @@
+import csv
 import os
 import sqlite3
 import tempfile
 import unittest
 
+from ml.features import FeatureVector, write_features_csv
+from ml.labeling import FocusLabel
 from ml.pipeline_cli import run_pipeline
 
 
@@ -99,8 +102,47 @@ def _create_aligned_test_db(path: str) -> None:
     conn.close()
 
 
+def _make_feature(timestamp: float, keystrokes: int) -> FeatureVector:
+    return FeatureVector(
+        timestamp=timestamp,
+        seconds_since_session_start=0,
+        hour_of_day=9,
+        day_of_week=1,
+        minutes_since_last_break=0,
+        keystroke_count=keystrokes,
+        keystroke_rate=1.0,
+        keystroke_interval_mean=0.5,
+        keystroke_interval_std=0.1,
+        keystroke_interval_trend=0.0,
+        mouse_move_count=0,
+        mouse_distance_pixels=0.0,
+        mouse_speed_mean=0.0,
+        mouse_speed_std=0.0,
+        mouse_acceleration_mean=0.0,
+        mouse_click_count=0,
+        context_switches_30s=0,
+        context_switches_5min=0,
+        time_in_current_app=0,
+        unique_apps_5min=1,
+        idle_time_30s=0.0,
+        idle_event_count_5min=0,
+        longest_active_stretch_5min=10,
+        window_title_length=10,
+        window_title_changed_30s=False,
+        is_browser=False,
+        is_ide=True,
+        is_communication=False,
+        is_entertainment=False,
+        is_productivity=False,
+        focus_momentum=0.0,
+        productivity_category="Building",
+        is_pseudo_productive=False,
+        recent_event_sequence=[1, 1, 1],
+    )
+
+
 class TestPipelineCliSkipExport(unittest.TestCase):
-    def test_skip_export_trains_from_existing_csvs(self) -> None:
+    def test_skip_export_blocks_too_small_dataset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = os.path.join(tmp, "focoflow.db")
             export_dir = os.path.join(tmp, "export")
@@ -122,9 +164,9 @@ class TestPipelineCliSkipExport(unittest.TestCase):
                 skip_onnx=False,
             )
 
-            self.assertEqual(exit_code, 2)
-            self.assertTrue(os.path.isfile(os.path.join(export_dir, "model.json")))
-            self.assertTrue(os.path.isfile(os.path.join(export_dir, "metrics.json")))
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(os.path.isfile(os.path.join(export_dir, "model.json")))
+            self.assertFalse(os.path.isfile(os.path.join(export_dir, "metrics.json")))
             self.assertFalse(os.path.isfile(os.path.join(export_dir, "model.onnx")))
 
     def test_skip_export_fails_when_csvs_missing(self) -> None:
@@ -141,6 +183,36 @@ class TestPipelineCliSkipExport(unittest.TestCase):
                 skip_onnx=False,
             )
             self.assertEqual(exit_code, 1)
+
+    def test_skip_export_trains_when_dataset_is_large_enough(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            features_path = os.path.join(tmp, "features.csv")
+            labels_path = os.path.join(tmp, "labels.csv")
+            features = [_make_feature(float(i * 10), i % 5) for i in range(1, 9)]
+            write_features_csv(features_path, features)
+
+            with open(labels_path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["timestamp", "label", "source", "session_id", "notes"])
+                for i in range(1, 9):
+                    label = FocusLabel.DISTRACTED if i % 2 == 0 else FocusLabel.PRODUCTIVE
+                    writer.writerow([float(i * 10 + 5), int(label), "HOTKEY", "s1", ""])
+
+            exit_code = run_pipeline(
+                db_path=os.path.join(tmp, "missing.db"),
+                output_dir=tmp,
+                session_id=None,
+                backend="majority",
+                label_window_seconds=300,
+                n_splits=3,
+                skip_train=False,
+                skip_export=True,
+                skip_onnx=True,
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(os.path.isfile(os.path.join(tmp, "model.json")))
+            self.assertTrue(os.path.isfile(os.path.join(tmp, "metrics.json")))
 
 
 if __name__ == "__main__":

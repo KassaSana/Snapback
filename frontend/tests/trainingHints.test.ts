@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 
 import {
+  buildTrainingReadinessBlockers,
   buildExportSummary,
   buildPipelineCommand,
   buildTrainFromExportHint,
   classifyTrainDeployOutcome,
+  formatLabelBreakdown,
   isDeployReady,
 } from "../src/trainingHints";
 
@@ -68,9 +70,11 @@ assert.equal(
     exportDir: outputDir,
     featureCount: 0,
     labelCount: 0,
+    labelBreakdown: {},
     hasExport: false,
     modelOnnxExists: false,
     metricsExists: false,
+    metrics: null,
     pythonAvailable: true,
     repoPath: null,
     repoConfigured: false,
@@ -84,9 +88,11 @@ assert.equal(
     exportDir: outputDir,
     featureCount: 12,
     labelCount: 3,
+    labelBreakdown: {},
     hasExport: true,
     modelOnnxExists: false,
     metricsExists: false,
+    metrics: null,
     pythonAvailable: true,
     repoPath: null,
     repoConfigured: false,
@@ -100,9 +106,11 @@ assert.equal(
     exportDir: outputDir,
     featureCount: 12,
     labelCount: 3,
+    labelBreakdown: {},
     hasExport: true,
     modelOnnxExists: false,
     metricsExists: false,
+    metrics: null,
     pythonAvailable: false,
     repoPath: "/repo",
     repoConfigured: true,
@@ -112,19 +120,76 @@ assert.equal(
 );
 
 assert.equal(
+  formatLabelBreakdown({
+    DEEP_FOCUS: 2,
+    PRODUCTIVE: 3,
+    DISTRACTED: 1,
+  }),
+  "deep focus 2 · productive 3 · distracted 1",
+);
+
+assert.equal(
   buildTrainFromExportHint({
     exportDir: outputDir,
     featureCount: 12,
     labelCount: 3,
+    labelBreakdown: {
+      PRODUCTIVE: 3,
+    },
     hasExport: true,
     modelOnnxExists: false,
     metricsExists: false,
+    metrics: null,
     pythonAvailable: true,
     repoPath: "/repo",
     repoConfigured: true,
     pipelineCommand: "",
   }),
   null,
+);
+
+assert.deepEqual(
+  buildTrainingReadinessBlockers({
+    exportDir: outputDir,
+    featureCount: 12,
+    labelCount: 3,
+    labelBreakdown: {
+      PRODUCTIVE: 3,
+    },
+    hasExport: true,
+    modelOnnxExists: false,
+    metricsExists: false,
+    metrics: null,
+    pythonAvailable: true,
+    repoPath: "/repo",
+    repoConfigured: true,
+    pipelineCommand: "",
+  }),
+  [
+    "Capture at least 8 labeled moments before training.",
+    "Label at least two different focus states.",
+  ],
+);
+
+assert.deepEqual(
+  buildTrainingReadinessBlockers({
+    exportDir: outputDir,
+    featureCount: 20,
+    labelCount: 10,
+    labelBreakdown: {
+      PRODUCTIVE: 6,
+      DISTRACTED: 4,
+    },
+    hasExport: true,
+    modelOnnxExists: false,
+    metricsExists: false,
+    metrics: null,
+    pythonAvailable: true,
+    repoPath: "/repo",
+    repoConfigured: true,
+    pipelineCommand: "",
+  }),
+  [],
 );
 
 console.log("trainingHints.test.ts passed");

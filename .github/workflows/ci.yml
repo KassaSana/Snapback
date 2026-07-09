@@ -197,6 +197,43 @@ jobs:
       - name: Run classifier quality gate
         run: python -m tools.benchmark_classifier_quality --skip-latency --enforce-gate
 
+  classifier-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            libx11-dev \
+            patchelf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install ML dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ml/requirements-train.txt
+      - name: Generate labeled dataset and ONNX artifacts
+        run: |
+          python -m tools.generate_synthetic_training_data --seed 7
+          python -m ml.pipeline_cli --db-path data/synthetic_focoflow.db --output-dir data --backend xgboost
+      - name: Run runtime classifier eval (heuristic)
+        run: cargo run --quiet --manifest-path src-tauri/Cargo.toml -- --classifier-eval data/labeled.csv --backend heuristic
+      - name: Run runtime classifier eval (ONNX)
+        run: cargo run --quiet --features onnx --manifest-path src-tauri/Cargo.toml -- --classifier-eval data/labeled.csv --backend onnx --model-onnx data/model.onnx
+
   feature-parity:
     runs-on: ubuntu-latest
     steps:
