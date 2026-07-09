@@ -164,7 +164,7 @@ jobs:
           npm run setup
           pip install -r ml/requirements-train.txt
       - name: Build Tauri app (no bundle)
-        run: npm run tauri build -- --features onnx --bundles none
+        run: npm run tauri build -- --features onnx --no-bundle
 
   classifier-quality:
     runs-on: ubuntu-latest
