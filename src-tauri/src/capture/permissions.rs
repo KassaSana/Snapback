@@ -4,8 +4,7 @@ pub fn check_permissions() -> PermissionStatus {
     let active_window_available = probe_active_window();
     let capture_available = probe_capture();
     let capture_probe_confirmed = capture_probe_confirmed();
-    let setup_steps =
-        platform_setup_steps(!active_window_available, !capture_available);
+    let setup_steps = platform_setup_steps(!active_window_available, !capture_available);
 
     let message =
         permission_message(active_window_available, capture_available, capture_probe_confirmed);
@@ -70,8 +69,7 @@ fn permission_message(
         "Active window detection unavailable. Grant Accessibility permission (see steps below)."
             .to_string()
     } else if !capture_available {
-        "Input capture unavailable. Grant Input Monitoring permission (see steps below)."
-            .to_string()
+        platform_input_permission_message().to_string()
     } else {
         "Capture permissions look good.".to_string()
     }
@@ -80,14 +78,46 @@ fn permission_message(
 fn capture_unavailable_message() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
-        if std::env::var("WAYLAND_DISPLAY").is_ok() && std::env::var("DISPLAY").is_err() {
-            return Some(
-                "Wayland-only session detected. Global input capture may be blocked; use X11 or a compatible compositor."
-                    .to_string(),
-            );
-        }
+        return linux_capture_unavailable_message(
+            std::env::var("WAYLAND_DISPLAY").is_ok(),
+            std::env::var("DISPLAY").is_ok(),
+        );
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn linux_capture_unavailable_message(
+    wayland_display_present: bool,
+    x11_display_present: bool,
+) -> Option<String> {
+    if wayland_display_present && !x11_display_present {
+        return Some(
+            "Wayland-only session detected. Global input capture is unavailable with the current rdev listener; use an X11 or XWayland-backed session."
+                .to_string(),
+        );
+    }
+    if !x11_display_present {
+        return Some(
+            "No X11 display detected. Global input capture requires an X11 session for the current rdev listener."
+                .to_string(),
+        );
     }
     None
+}
+
+fn platform_input_permission_message() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Input capture unavailable. Grant Input Monitoring permission (see steps below)."
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Input capture unavailable. Check platform setup steps below."
+    }
 }
 
 fn platform_both_missing_message() -> String {
@@ -143,22 +173,39 @@ fn platform_setup_steps(need_accessibility: bool, need_input: bool) -> Vec<Strin
         }
         steps
     }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[cfg(target_os = "linux")]
+    {
+        linux_setup_steps(need_accessibility, need_input)
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows"), not(target_os = "linux")))]
     {
         let mut steps = Vec::new();
         if need_accessibility || need_input {
             steps.push(
-                "On Wayland, global capture may be unavailable — try an X11 session if possible."
+                "Global capture support depends on your desktop session and input-device access."
                     .to_string(),
             );
-            steps.push(
-                "On X11, ensure your user can access the input device (some distros need `input` group)."
-                    .to_string(),
-            );
-            steps.push("Restart Snapback after changing session or groups.".to_string());
+            steps.push("Restart Snapback after changing session or permissions.".to_string());
         }
         steps
     }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_setup_steps(need_accessibility: bool, need_input: bool) -> Vec<String> {
+    let mut steps = Vec::new();
+    if need_accessibility || need_input {
+        steps.push(
+            "On Wayland, global capture is not supported by the current rdev listener — use an X11 or XWayland-backed session if possible."
+                .to_string(),
+        );
+        steps.push(
+            "On X11, ensure Snapback is launched with DISPLAY set and your user can access input devices if your distro requires it."
+                .to_string(),
+        );
+        steps.push("Restart Snapback after changing session or groups.".to_string());
+    }
+    steps
 }
 
 #[cfg(target_os = "macos")]
@@ -168,7 +215,28 @@ fn probe_capture() -> bool {
 
 #[cfg(not(target_os = "macos"))]
 fn probe_capture() -> bool {
-    true
+    non_macos_capture_available()
+}
+
+fn non_macos_capture_available() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // Windows does not expose a separate permission preflight here, so the
+        // capture listener remains the source of truth after startup.
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_capture_unavailable_message(
+            std::env::var("WAYLAND_DISPLAY").is_ok(),
+            std::env::var("DISPLAY").is_ok(),
+        )
+        .is_none()
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows"), not(target_os = "linux")))]
+    {
+        true
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -209,6 +277,30 @@ mod tests {
     fn permission_message_marks_confirmed_probe_as_ready() {
         let message = permission_message(true, true, true);
         assert_eq!(message, "Capture permissions look good.");
+    }
+
+    #[test]
+    fn linux_capture_message_flags_wayland_without_x11() {
+        let message = linux_capture_unavailable_message(true, false);
+        assert!(message.is_some());
+        assert!(message
+            .expect("wayland-only should block capture")
+            .contains("Wayland-only session detected"));
+    }
+
+    #[test]
+    fn linux_capture_message_flags_missing_display() {
+        let message = linux_capture_unavailable_message(false, false);
+        assert!(message.is_some());
+        assert!(message
+            .expect("missing DISPLAY should block capture")
+            .contains("No X11 display detected"));
+    }
+
+    #[test]
+    fn linux_capture_message_allows_x11_sessions() {
+        assert!(linux_capture_unavailable_message(false, true).is_none());
+        assert!(linux_capture_unavailable_message(true, true).is_none());
     }
 
     #[test]

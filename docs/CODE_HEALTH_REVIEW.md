@@ -57,7 +57,7 @@ Start here. These are ordered for impact and learning value.
 
 **Why it mattered:** the app could show a healthy permission state, then capture fail after launch.
 
-**Status:** fixed on macOS. The app now preflights Accessibility with `AXIsProcessTrusted()` and Input Monitoring with `CGPreflightListenEventAccess()` instead of inferring both from active-window access.
+**Status:** fixed on macOS. The app now preflights Accessibility with `AXIsProcessTrusted()` and Input Monitoring with `CGPreflightListenEventAccess()` instead of inferring both from active-window access. Linux also now rejects Wayland-only and no-`DISPLAY` sessions up front; Windows still relies on listener startup as the final source of truth.
 
 ---
 
