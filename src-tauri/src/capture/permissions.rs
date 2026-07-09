@@ -1,7 +1,7 @@
 use crate::types::PermissionStatus;
 
 pub fn check_permissions() -> PermissionStatus {
-    let active_window_available = active_win_pos_rs::get_active_window().is_ok();
+    let active_window_available = probe_active_window();
     let capture_available = probe_capture();
     let capture_probe_confirmed = capture_probe_confirmed();
     let setup_steps =
@@ -32,8 +32,26 @@ pub fn capture_failure_message(reason: &str) -> PermissionStatus {
     status
 }
 
+fn probe_active_window() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        macos_accessibility_trusted()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        active_win_pos_rs::get_active_window().is_ok()
+    }
+}
+
 fn capture_probe_confirmed() -> bool {
-    false
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
 }
 
 fn permission_message(
@@ -145,12 +163,36 @@ fn platform_setup_steps(need_accessibility: bool, need_input: bool) -> Vec<Strin
 
 #[cfg(target_os = "macos")]
 fn probe_capture() -> bool {
-    active_win_pos_rs::get_active_window().is_ok()
+    macos_input_monitoring_trusted()
 }
 
 #[cfg(not(target_os = "macos"))]
 fn probe_capture() -> bool {
     true
+}
+
+#[cfg(target_os = "macos")]
+fn macos_accessibility_trusted() -> bool {
+    use std::ffi::c_uchar;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        fn AXIsProcessTrusted() -> c_uchar;
+    }
+
+    unsafe { AXIsProcessTrusted() != 0 }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_input_monitoring_trusted() -> bool {
+    use std::ffi::c_uchar;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGPreflightListenEventAccess() -> c_uchar;
+    }
+
+    unsafe { CGPreflightListenEventAccess() != 0 }
 }
 
 #[cfg(test)]
@@ -161,6 +203,12 @@ mod tests {
     fn permission_message_marks_probe_only_state_as_unconfirmed() {
         let message = permission_message(true, true, false);
         assert!(message.contains("not confirmed until the listener starts"));
+    }
+
+    #[test]
+    fn permission_message_marks_confirmed_probe_as_ready() {
+        let message = permission_message(true, true, true);
+        assert_eq!(message, "Capture permissions look good.");
     }
 
     #[test]

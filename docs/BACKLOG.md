@@ -44,7 +44,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 | Task | Files | Issue |
 |------|-------|-------|
-| [ ] Fix macOS `probe_capture` | `capture/permissions.rs:128-131` | Checks active window, not `rdev` |
+| [x] Fix macOS `probe_capture` | `capture/permissions.rs` | Uses macOS Accessibility + Input Monitoring preflight APIs instead of active-window inference |
 | [ ] Windows/Linux probe | `permissions.rs:133-136` | Always returns `true` |
 | [x] Capture restart lifecycle | `state.rs`, `capture/thread.rs` | Capture now owns stop/join handles before respawn |
 | [ ] Probe vs capture-thread mismatch | `state.rs`, `App.tsx` | Probe OK but capture died |

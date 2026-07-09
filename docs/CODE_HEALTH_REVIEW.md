@@ -53,11 +53,11 @@ Start here. These are ordered for impact and learning value.
 
 **Files:** `src-tauri/src/capture/permissions.rs`
 
-`probe_capture()` on macOS checks `active_win_pos_rs::get_active_window()`. That verifies active-window access, not global input capture through `rdev`. Accessibility permission can pass while Input Monitoring is denied.
+`probe_capture()` used to check `active_win_pos_rs::get_active_window()`, which only verified active-window access. That meant Accessibility could pass while Input Monitoring was still denied.
 
-**Why it matters:** the app can show a healthy permission state, then capture fails after launch.
+**Why it mattered:** the app could show a healthy permission state, then capture fail after launch.
 
-**Good fix:** separate active-window status from input-capture status. If a real short `rdev` probe is impractical, make the UI honest: "capture status unknown until listener starts" and rely on the capture-failed event.
+**Status:** fixed on macOS. The app now preflights Accessibility with `AXIsProcessTrusted()` and Input Monitoring with `CGPreflightListenEventAccess()` instead of inferring both from active-window access.
 
 ---
 
