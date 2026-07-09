@@ -14,6 +14,12 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Windows capture probe honesty: real `SetWindowsHookExW` preflight (`capture/permissions.rs`)
+- [x] Storage robustness: propagate dir-creation errors, log (don't silently drop) undecodable rows (`storage/mod.rs`)
+- [x] Training subprocess timeout: bounded wait + kill instead of blocking forever (`training_deploy.rs`)
+- [x] Bounded capture event channel + drop counting surfaced in health/UI (`capture/thread.rs`, `state.rs`, `PermissionsCard.tsx`)
+- [x] Startup errors: propagate/log instead of panicking (`lib.rs`)
+- [x] Fix stale `ml/tests/test_train_cli.py` fixtures broken by the new min-sample training guard from the prior commit (`ml/training_pipeline.py` `MIN_TRAINING_SAMPLES`)
 - [x] Training false-success: don't treat skipped ONNX export as deploy-ready (`training_deploy.rs`, `App.tsx`)
 - [x] Enforce one ACTIVE session (`storage/mod.rs`, `commands.rs`)
 - [x] Capture restart lifecycle: stop/join old workers before respawn (`state.rs`, `capture/thread.rs`)

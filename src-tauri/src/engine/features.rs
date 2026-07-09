@@ -532,6 +532,61 @@ mod tests {
     }
 
     #[test]
+    fn events_older_than_30s_window_drop_out_of_30s_features_but_stay_in_5min() {
+        let mut extractor = FeatureExtractor::new();
+        let rules = Vec::new();
+
+        extractor.update(&event_at(0.0, "A"), &rules);
+        extractor.update(&event_at(1.0, "B"), &rules);
+        // 39s after the first event: both earlier WindowFocusChange events
+        // are older than the 30s window and must be trimmed from it, while
+        // the 5-minute window still holds all three.
+        let features = extractor.update(&event_at(40.0, "C"), &rules);
+
+        assert_eq!(
+            features.context_switches_30s, 1,
+            "only the just-arrived event should remain in the 30s window"
+        );
+        assert_eq!(
+            features.context_switches_5min, 3,
+            "the 5-minute window has a much longer retention, so nothing is trimmed yet"
+        );
+    }
+
+    #[test]
+    fn longest_active_stretch_uses_the_largest_gap_between_idle_boundaries() {
+        let mut extractor = FeatureExtractor::new();
+        let rules = Vec::new();
+
+        extractor.update(&event_at(0.0, "Code"), &rules);
+        extractor.update(
+            &event_with_type(EventType::IdleStart, 100.0, "Code", "Code — doc", 0, 0),
+            &rules,
+        );
+        extractor.update(
+            &event_with_type(EventType::IdleStart, 250.0, "Code", "Code — doc", 0, 0),
+            &rules,
+        );
+        // Boundaries within the trailing 300s window: [0, 100, 250, 300].
+        // Gaps are 100, 150, 50 — the longest active stretch is 150s.
+        let features = extractor.update(&event_at(300.0, "Code"), &rules);
+
+        assert_eq!(features.longest_active_stretch_5min, 150);
+    }
+
+    #[test]
+    fn extract_features_before_any_event_returns_empty_vector() {
+        let extractor = FeatureExtractor::new();
+
+        let features = extractor.extract_features(0.0, &[]);
+
+        assert_eq!(features.keystroke_count, 0);
+        assert_eq!(features.mouse_move_count, 0);
+        assert_eq!(features.app_name, "");
+        assert_eq!(features.timestamp, 0.0);
+    }
+
+    #[test]
     fn window_title_changes_do_not_reset_current_app_timer() {
         let mut extractor = FeatureExtractor::new();
         let rules = Vec::new();

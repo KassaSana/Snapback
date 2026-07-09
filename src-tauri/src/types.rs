@@ -229,6 +229,9 @@ pub struct HealthStatus {
     pub capture_failure_reason: Option<String>,
     pub overlay_failure_reason: Option<String>,
     pub persistence_failure_reason: Option<String>,
+    /// Capture events dropped since capture last (re)started because the
+    /// engine loop wasn't draining the bounded event channel fast enough.
+    pub capture_events_dropped: u64,
     pub permissions: PermissionStatus,
     pub classifier: ClassifierStatus,
 }

@@ -1,4 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -11,6 +12,21 @@ use crate::types::{CaptureEvent, EventType as AppEventType};
 /// No keyboard/mouse input for this long → emit `IdleStart`.
 const IDLE_THRESHOLD: Duration = Duration::from_secs(5);
 const MOUSE_SAMPLE_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Bound on in-flight capture events. At worst-case mouse-move sampling
+/// (~20/s) this absorbs several minutes of a stalled engine loop before
+/// anything is dropped, while keeping memory bounded if the loop ever wedges.
+pub const CAPTURE_CHANNEL_CAPACITY: usize = 4096;
+
+/// Send an event without blocking; if the channel is full, count the drop
+/// instead of discarding it invisibly. A full channel means the engine loop
+/// is stalled, and capture events are inherently lossy in that case anyway —
+/// what matters is that the drop is observable via `dropped`.
+fn send_event(tx: &SyncSender<CaptureEvent>, dropped: &AtomicU64, event: CaptureEvent) {
+    if tx.try_send(event).is_err() {
+        dropped.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 pub struct CaptureHandle {
     stop_requested: Arc<AtomicBool>,
@@ -27,8 +43,9 @@ impl CaptureHandle {
 }
 
 pub fn start_capture_thread(
-    event_tx: std::sync::mpsc::Sender<CaptureEvent>,
+    event_tx: SyncSender<CaptureEvent>,
     failure_tx: std::sync::mpsc::Sender<String>,
+    dropped_events: Arc<AtomicU64>,
 ) -> CaptureHandle {
     let stop_requested = Arc::new(AtomicBool::new(false));
     let last_window: Arc<RwLock<Option<(String, String)>>> = Arc::new(RwLock::new(None));
@@ -40,6 +57,7 @@ pub fn start_capture_thread(
 
     let idle_thread = start_idle_monitor(
         event_tx.clone(),
+        Arc::clone(&dropped_events),
         Arc::clone(&last_window),
         Arc::clone(&last_activity),
         Arc::clone(&is_idle),
@@ -49,6 +67,7 @@ pub fn start_capture_thread(
 
     let poll_window = Arc::clone(&last_window);
     let poll_tx = event_tx.clone();
+    let poll_dropped = Arc::clone(&dropped_events);
     let poll_stop_requested = Arc::clone(&stop_requested);
     let poll_thread = thread::spawn(move || loop {
         if poll_stop_requested.load(Ordering::Relaxed) {
@@ -64,20 +83,24 @@ pub fn start_capture_thread(
             }
 
             let now = timestamp_secs();
-            let _ = poll_tx.send(CaptureEvent {
-                event_type: if title_only {
-                    AppEventType::WindowTitleChange
-                } else {
-                    AppEventType::WindowFocusChange
+            send_event(
+                &poll_tx,
+                &poll_dropped,
+                CaptureEvent {
+                    event_type: if title_only {
+                        AppEventType::WindowTitleChange
+                    } else {
+                        AppEventType::WindowFocusChange
+                    },
+                    timestamp_secs: now,
+                    app_name: info.app_name.clone(),
+                    window_title: info.window_title.clone(),
+                    mouse_x: 0,
+                    mouse_y: 0,
+                    mouse_speed: 0,
+                    idle_duration_ms: 0,
                 },
-                timestamp_secs: now,
-                app_name: info.app_name.clone(),
-                window_title: info.window_title.clone(),
-                mouse_x: 0,
-                mouse_y: 0,
-                mouse_speed: 0,
-                idle_duration_ms: 0,
-            });
+            );
             if let Ok(mut guard) = poll_window.write() {
                 *guard = Some((info.app_name, info.window_title));
             }
@@ -95,42 +118,52 @@ pub fn start_capture_thread(
                     }
                     note_activity(
                         &event_tx,
+                        &dropped_events,
                         &last_window,
                         &last_activity,
                         &is_idle,
                         &idle_started_at,
                     );
                     let (app, title) = read_window(&last_window);
-                    let _ = event_tx.send(CaptureEvent {
-                        event_type: AppEventType::KeyPress,
-                        timestamp_secs: now,
-                        app_name: app,
-                        window_title: title,
-                        mouse_x: 0,
-                        mouse_y: 0,
-                        mouse_speed: 0,
-                        idle_duration_ms: 0,
-                    });
+                    send_event(
+                        &event_tx,
+                        &dropped_events,
+                        CaptureEvent {
+                            event_type: AppEventType::KeyPress,
+                            timestamp_secs: now,
+                            app_name: app,
+                            window_title: title,
+                            mouse_x: 0,
+                            mouse_y: 0,
+                            mouse_speed: 0,
+                            idle_duration_ms: 0,
+                        },
+                    );
                 }
                 EventType::ButtonPress(_) => {
                     note_activity(
                         &event_tx,
+                        &dropped_events,
                         &last_window,
                         &last_activity,
                         &is_idle,
                         &idle_started_at,
                     );
                     let (app, title) = read_window(&last_window);
-                    let _ = event_tx.send(CaptureEvent {
-                        event_type: AppEventType::MouseClick,
-                        timestamp_secs: now,
-                        app_name: app,
-                        window_title: title,
-                        mouse_x: 0,
-                        mouse_y: 0,
-                        mouse_speed: 0,
-                        idle_duration_ms: 0,
-                    });
+                    send_event(
+                        &event_tx,
+                        &dropped_events,
+                        CaptureEvent {
+                            event_type: AppEventType::MouseClick,
+                            timestamp_secs: now,
+                            app_name: app,
+                            window_title: title,
+                            mouse_x: 0,
+                            mouse_y: 0,
+                            mouse_speed: 0,
+                            idle_duration_ms: 0,
+                        },
+                    );
                 }
                 EventType::MouseMove { x, y } => {
                     let should_sample = last_mouse_sample
@@ -148,6 +181,7 @@ pub fn start_capture_thread(
 
                     note_activity(
                         &event_tx,
+                        &dropped_events,
                         &last_window,
                         &last_activity,
                         &is_idle,
@@ -163,16 +197,20 @@ pub fn start_capture_thread(
                     }
 
                     let (app, title) = read_window(&last_window);
-                    let _ = event_tx.send(CaptureEvent {
-                        event_type: AppEventType::MouseMove,
-                        timestamp_secs: now,
-                        app_name: app,
-                        window_title: title,
-                        mouse_x: ix,
-                        mouse_y: iy,
-                        mouse_speed: speed,
-                        idle_duration_ms: 0,
-                    });
+                    send_event(
+                        &event_tx,
+                        &dropped_events,
+                        CaptureEvent {
+                            event_type: AppEventType::MouseMove,
+                            timestamp_secs: now,
+                            app_name: app,
+                            window_title: title,
+                            mouse_x: ix,
+                            mouse_y: iy,
+                            mouse_speed: speed,
+                            idle_duration_ms: 0,
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -192,7 +230,8 @@ pub fn start_capture_thread(
 
 /// Polls for gaps in input activity and emits idle boundary events.
 fn start_idle_monitor(
-    event_tx: std::sync::mpsc::Sender<CaptureEvent>,
+    event_tx: SyncSender<CaptureEvent>,
+    dropped_events: Arc<AtomicU64>,
     last_window: Arc<RwLock<Option<(String, String)>>>,
     last_activity: Arc<RwLock<SystemTime>>,
     is_idle: Arc<RwLock<bool>>,
@@ -229,22 +268,27 @@ fn start_idle_monitor(
         }
 
         let (app, title) = read_window(&last_window);
-        let _ = event_tx.send(CaptureEvent {
-            event_type: AppEventType::IdleStart,
-            timestamp_secs: timestamp_secs(),
-            app_name: app,
-            window_title: title,
-            mouse_x: 0,
-            mouse_y: 0,
-            mouse_speed: 0,
-            idle_duration_ms: 0,
-        });
+        send_event(
+            &event_tx,
+            &dropped_events,
+            CaptureEvent {
+                event_type: AppEventType::IdleStart,
+                timestamp_secs: timestamp_secs(),
+                app_name: app,
+                window_title: title,
+                mouse_x: 0,
+                mouse_y: 0,
+                mouse_speed: 0,
+                idle_duration_ms: 0,
+            },
+        );
     })
 }
 
 /// On resume from idle, emit `IdleEnd` with the full idle span before the activity event.
 fn note_activity(
-    event_tx: &std::sync::mpsc::Sender<CaptureEvent>,
+    event_tx: &SyncSender<CaptureEvent>,
+    dropped_events: &Arc<AtomicU64>,
     last_window: &Arc<RwLock<Option<(String, String)>>>,
     last_activity: &Arc<RwLock<SystemTime>>,
     is_idle: &Arc<RwLock<bool>>,
@@ -262,16 +306,20 @@ fn note_activity(
             .unwrap_or(0);
 
         let (app, title) = read_window(last_window);
-        let _ = event_tx.send(CaptureEvent {
-            event_type: AppEventType::IdleEnd,
-            timestamp_secs: timestamp_secs(),
-            app_name: app,
-            window_title: title,
-            mouse_x: 0,
-            mouse_y: 0,
-            mouse_speed: 0,
-            idle_duration_ms: duration_ms,
-        });
+        send_event(
+            event_tx,
+            dropped_events,
+            CaptureEvent {
+                event_type: AppEventType::IdleEnd,
+                timestamp_secs: timestamp_secs(),
+                app_name: app,
+                window_title: title,
+                mouse_x: 0,
+                mouse_y: 0,
+                mouse_speed: 0,
+                idle_duration_ms: duration_ms,
+            },
+        );
 
         if let Ok(mut guard) = is_idle.write() {
             *guard = false;
@@ -320,6 +368,36 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    fn dummy_event() -> crate::types::CaptureEvent {
+        crate::types::CaptureEvent {
+            event_type: crate::types::EventType::KeyPress,
+            timestamp_secs: 0.0,
+            app_name: String::new(),
+            window_title: String::new(),
+            mouse_x: 0,
+            mouse_y: 0,
+            mouse_speed: 0,
+            idle_duration_ms: 0,
+        }
+    }
+
+    #[test]
+    fn send_event_counts_drops_without_blocking_when_channel_is_full() {
+        use super::send_event;
+        use std::sync::atomic::AtomicU64;
+
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let dropped = AtomicU64::new(0);
+
+        send_event(&tx, &dropped, dummy_event());
+        // Channel capacity is 1 and it's now full; this must return
+        // immediately (not block) and count the drop instead.
+        send_event(&tx, &dropped, dummy_event());
+
+        assert_eq!(dropped.load(Ordering::Relaxed), 1);
+        assert_eq!(rx.try_iter().count(), 1, "the first event was still delivered");
+    }
 
     #[test]
     fn mouse_speed_is_zero_without_prior_sample() {

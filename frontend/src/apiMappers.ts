@@ -65,6 +65,9 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
     persistenceFailureReason: (raw.persistence_failure_reason ??
       raw.persistenceFailureReason ??
       null) as string | null,
+    captureEventsDropped: Number(
+      raw.capture_events_dropped ?? raw.captureEventsDropped ?? 0,
+    ),
     permissions: mapPermissionStatus(
       (raw.permissions as Record<string, unknown>) ?? {},
     ),

@@ -33,14 +33,14 @@ def _parse_label(value: str) -> FocusLabel:
     value = value.strip()
     if value.isdigit() or (value.startswith("-") and value[1:].isdigit()):
         return FocusLabel(int(value))
-    return FocusLabel[value]
+    return FocusLabel[value.upper()]
 
 
 def _parse_source(value: str) -> LabelSource:
     value = value.strip()
     if value.isdigit():
         return LabelSource(int(value))
-    return LabelSource[value]
+    return LabelSource[value.upper()]
 
 
 def read_labels_csv(path: str) -> List[LabelRecord]:

@@ -27,6 +27,7 @@ export default function App() {
     applyClassifierStatus,
     applyOverlayFailure,
     applyPersistenceFailure,
+    captureEventsDropped,
     captureFailed,
     captureFailureReason,
     captureProbeConfirmed,
@@ -239,6 +240,7 @@ export default function App() {
         />
 
         <PermissionsCard
+          captureEventsDropped={captureEventsDropped}
           captureFailed={captureFailed}
           captureFailureReason={captureFailureReason}
           captureProbeConfirmed={captureProbeConfirmed}

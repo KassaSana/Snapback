@@ -30,8 +30,8 @@ Start here. These are ordered for impact and learning value.
 1. **60-minute smoke test**  
    No code first. Run capture → label → snapback → export → train → reload and write down exactly where the app feels unreliable.
 
-2. **Permission honesty**  
-   `probe_capture()` still does not prove the global input listener will stay healthy. Make the UI honest about what is confirmed versus inferred.
+2. **Permission honesty** — done  
+   `probe_capture()` on Windows now does a real `SetWindowsHookExW` install/uninstall preflight instead of assuming capture is available (`capture/permissions.rs`).
 
 3. **Probe vs capture-alive mismatch**  
    The app should distinguish "permission probe passed" from "capture listener is alive" so refresh/recovery state is more trustworthy.
@@ -153,7 +153,7 @@ The loop clones app rules per event, locks storage multiple times per prediction
 
 Capture uses an unbounded `mpsc` channel. If the engine loop stalls, memory can grow.
 
-**Good fix:** use a bounded channel with a clear drop policy, or keep unbounded but emit metrics/warnings when backlog grows.
+**Status:** fixed. Channel is now a bounded `sync_channel` (capacity 4096, `CAPTURE_CHANNEL_CAPACITY`); sends use `try_send` and count drops instead of blocking or growing unbounded. The drop count is surfaced via `HealthStatus.capture_events_dropped` and shown in `PermissionsCard` when non-zero.
 
 ---
 
@@ -165,7 +165,7 @@ Some row readers use `filter_map(Result::ok)`, which drops rows that fail to des
 
 **Why it matters:** corruption or schema drift becomes invisible.
 
-**Good fix:** collect `Result<Vec<_>, _>` and surface the first row error.
+**Status:** fixed. Row collection now goes through `collect_rows_logging_dropped`, which logs a `warn!` per undecodable row (with table context) instead of discarding silently.
 
 ---
 
@@ -175,7 +175,7 @@ Some row readers use `filter_map(Result::ok)`, which drops rows that fail to des
 
 The schema declares relationships, but SQLite needs `PRAGMA foreign_keys = ON` per connection.
 
-**Good fix:** enable the pragma in `Storage::open()` after connecting. Add a test for orphan prevention if practical.
+**Status:** already fixed prior to this review pass — `Storage::open()` runs `PRAGMA foreign_keys = ON;` right after connecting (`storage/mod.rs:118`).
 
 ---
 
@@ -185,7 +185,7 @@ The schema declares relationships, but SQLite needs `PRAGMA foreign_keys = ON` p
 
 `Command::output()` can block indefinitely.
 
-**Good fix:** add a timeout or run training as a tracked background task with status polling.
+**Status:** fixed. `run_with_timeout()` spawns the process, drains stdout/stderr on background threads, and polls with a 10-minute deadline (`TRAINING_TIMEOUT`); on timeout the process is killed and a clear error is returned instead of hanging.
 
 ---
 
@@ -225,15 +225,15 @@ The real app stores labels through Rust/SQLite. `Labeler` is a stub used only by
 
 Training deps are commented out. Users can run training and fall into majority-stub / ONNX-skipped paths.
 
-**Good fix:** create a real optional requirements file, such as `ml/requirements-train.txt`, with `xgboost`, `onnx`, and `onnxmltools`.
+**Status:** fixed. `ml/requirements-train.txt` exists with pinned `xgboost`, `onnx`, and `onnxmltools`, and CI installs it before running Python tests.
 
 ---
 
 ## Low-priority notes
 
-- Startup `expect()` calls in `lib.rs` can abort release builds if app data or Tauri build setup fails.
+- ~~Startup `expect()` calls in `lib.rs` can abort release builds if app data or Tauri build setup fails.~~ Fixed: `setup()` errors now propagate via `?` through Tauri's normal error path, and the final `.build()` failure is logged (`log::error!` + `eprintln!`) before a clean `process::exit(1)` instead of panicking.
 - Permission status can go stale until refresh or capture failure.
-- `let _ = send(...)` patterns hide dropped capture/overlay events.
+- `let _ = send(...)` patterns hide dropped capture/overlay events. Capture-side sends (`capture/thread.rs`) now go through `send_event()`, which counts drops (see M4); overlay/emit sends elsewhere are still fire-and-forget.
 - `KeyRelease` exists in `types.rs` but capture only emits key press.
 - Feature/prediction/context tables have no retention policy.
 - Legacy C++ ML modules remain in `ml/`; docs now mark these as historical.

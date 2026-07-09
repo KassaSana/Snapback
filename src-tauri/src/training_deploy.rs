@@ -1,10 +1,73 @@
 //! In-app training deploy: status, repo path, and Python pipeline spawn.
 
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+
+/// Training runs an external Python pipeline we don't control; cap how long
+/// we'll wait so a stalled `pip install` or a runaway script can't block the
+/// app forever. 10 minutes comfortably covers a real training run on the
+/// synthetic/dev-sized datasets this app produces.
+const TRAINING_TIMEOUT: Duration = Duration::from_secs(600);
+
+#[derive(Debug)]
+struct TrainingOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+/// Run `cmd` to completion, or kill it and return an error once `timeout`
+/// elapses. Stdout/stderr are drained on background threads so a chatty
+/// process can't deadlock on a full pipe buffer while we're polling.
+fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<TrainingOutput, String> {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .map_err(|err| format!("Failed to run training: {err}"))?;
+
+    let mut stdout_pipe = child.stdout.take().expect("stdout was piped");
+    let mut stderr_pipe = child.stderr.take().expect("stderr was piped");
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "Training timed out after {}s and was stopped.",
+                        timeout.as_secs()
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Err(err) => return Err(format!("Failed to poll training process: {err}")),
+        }
+    };
+
+    Ok(TrainingOutput {
+        status,
+        stdout: stdout_handle.join().unwrap_or_default(),
+        stderr: stderr_handle.join().unwrap_or_default(),
+    })
+}
 
 pub fn export_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("exports").join("training")
@@ -272,9 +335,7 @@ pub fn train_from_export(app_data_dir: &Path) -> Result<TrainFromExportResult, S
         .arg(&export)
         .arg("--skip-export");
 
-    let output = cmd
-        .output()
-        .map_err(|err| format!("Failed to run training: {err}"))?;
+    let output = run_with_timeout(cmd, TRAINING_TIMEOUT)?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -333,6 +394,40 @@ fn parse_metrics_json(path: &Path) -> Option<HashMap<String, f64>> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn run_with_timeout_captures_output_of_completed_process() {
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args(["/C", "echo hello"]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args(["-c", "echo hello"]);
+            c
+        };
+        let output = run_with_timeout(cmd, Duration::from_secs(5)).unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("hello"));
+    }
+
+    #[test]
+    fn run_with_timeout_kills_process_that_outlives_deadline() {
+        // A portable "sleep 6s" that doesn't need a console/stdin, unlike
+        // Windows' `timeout` command.
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("ping");
+            c.args(["-n", "7", "127.0.0.1"]);
+            c
+        } else {
+            let mut c = Command::new("sleep");
+            c.arg("6");
+            c
+        };
+        let result = run_with_timeout(cmd, Duration::from_millis(200));
+        let err = result.expect_err("expected a timeout error");
+        assert!(err.contains("timed out"), "unexpected error: {err}");
+    }
 
     #[test]
     fn is_training_repo_checks_pipeline_cli() {

@@ -1,8 +1,10 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::thread;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::capture::thread::CaptureHandle;
+use crate::capture::thread::{CaptureHandle, CAPTURE_CHANNEL_CAPACITY};
 use crate::engine::{check_hyperfocus, Classifier, FeatureExtractor};
 use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
@@ -29,6 +31,7 @@ pub struct AppState {
     event_rx: parking_lot::Mutex<Option<std::sync::mpsc::Receiver<CaptureEvent>>>,
     capture_handle: parking_lot::Mutex<Option<CaptureHandle>>,
     capture_failure_watcher: parking_lot::Mutex<Option<thread::JoinHandle<()>>>,
+    capture_events_dropped: parking_lot::Mutex<Arc<AtomicU64>>,
 }
 
 impl AppState {
@@ -53,6 +56,7 @@ impl AppState {
             event_rx: parking_lot::Mutex::new(None),
             capture_handle: parking_lot::Mutex::new(None),
             capture_failure_watcher: parking_lot::Mutex::new(None),
+            capture_events_dropped: parking_lot::Mutex::new(Arc::new(AtomicU64::new(0))),
         }
     }
 
@@ -70,9 +74,12 @@ impl AppState {
 
     fn spawn_capture(&self, app: &AppHandle) -> Result<(), String> {
         self.stop_capture_runtime();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::sync_channel(CAPTURE_CHANNEL_CAPACITY);
         let (failure_tx, failure_rx) = std::sync::mpsc::channel();
-        let capture_handle = crate::capture::start_capture_thread(tx, failure_tx);
+        let dropped_events = Arc::new(AtomicU64::new(0));
+        let capture_handle =
+            crate::capture::start_capture_thread(tx, failure_tx, Arc::clone(&dropped_events));
+        *self.capture_events_dropped.lock() = dropped_events;
         *self.event_rx.lock() = Some(rx);
         *self.capture_handle.lock() = Some(capture_handle);
         *self.capture_running.lock() = true;
@@ -116,6 +123,7 @@ impl AppState {
         };
 
         let classifier = classifier_status(app_data_dir);
+        let capture_events_dropped = self.capture_events_dropped.lock().load(Ordering::Relaxed);
 
         crate::types::HealthStatus {
             status,
@@ -124,6 +132,7 @@ impl AppState {
             capture_failure_reason,
             overlay_failure_reason,
             persistence_failure_reason,
+            capture_events_dropped,
             permissions,
             classifier,
         }

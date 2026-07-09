@@ -78,10 +78,7 @@ pub fn run() {
                 log::info!("startup_ms_to_setup={}", t0.elapsed().as_millis());
             }
 
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("failed to resolve app data dir");
+            let app_data_dir = app.path().app_data_dir()?;
             #[cfg(feature = "onnx")]
             if let Some(model_path) = engine::onnx_model::resolve_model_path(&app_data_dir) {
                 match engine::onnx_model::init(&model_path) {
@@ -89,7 +86,7 @@ pub fn run() {
                     Err(err) => log::warn!("ONNX model load failed: {err}"),
                 }
             }
-            let storage = Storage::open(app_data_dir).expect("failed to open storage");
+            let storage = Storage::open(app_data_dir)?;
             let app_state = AppState::new(storage);
             app.manage(app_state);
 
@@ -126,8 +123,18 @@ pub fn run() {
             commands::set_training_repo_path,
             commands::train_from_export,
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building Snapback");
+        .build(tauri::generate_context!());
+    let app = match app {
+        Ok(app) => app,
+        Err(err) => {
+            // panic = "abort" in the release profile turns a plain .expect()
+            // here into a silent crash with no message on Windows. Logging
+            // first gives users something to report instead of nothing.
+            log::error!("Snapback failed to start: {err}");
+            eprintln!("Snapback failed to start: {err}");
+            std::process::exit(1);
+        }
+    };
 
     let handle = app.handle().clone();
     app.run(move |_app_handle, event| {

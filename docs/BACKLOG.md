@@ -79,7 +79,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [x] Clear errors for missing Python deps (`training_deploy.rs`, `App.tsx`)
 - [ ] Model info in health UI (path, backend shown; train time/CV metrics later)
 - [x] Copy trained model to `app_data_dir/model.onnx` after train
-- [ ] Fail fast on majority-classifier stub (`ml/export_onnx.py`)
+- [x] Fail fast on majority-classifier stub (`ml/export_onnx.py`) — `is_majority_stub` blocks ONNX export, `pipeline_cli.py` exits 2, `training_deploy.rs` surfaces a friendly message; tested in `ml/tests/test_export_onnx.py`
 - [ ] Short guide: min sessions/labels, when to retrain
 
 **Permissions**
@@ -103,7 +103,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 - [x] CSV-safe feature export (`storage/mod.rs`)
 - [x] Test: no DB writes without active session (`state.rs`, `storage/mod.rs`)
-- [ ] More `FeatureExtractor` tests (idle, mouse, session boundaries)
+- [x] More `FeatureExtractor` tests (idle, mouse, session boundaries)
 - [ ] Pre-export summary in UI
 
 ---
@@ -134,7 +134,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [x] One ACTIVE session invariant
 - [x] CSV escaping in feature export
 - [x] Session-gated persistence (`storage/mod.rs`, `state.rs`)
-- [ ] `FeatureExtractor` edge cases
+- [x] `FeatureExtractor` edge cases — 30s-window trim vs. 5min retention, longest-active-stretch gap calc, cold-start `extract_features`
 - [x] Command-boundary validation helpers
 - [x] `permissions.rs` message/probe honesty helpers
 - [x] ONNX override policy tests (`engine/classifier.rs`)
@@ -178,7 +178,7 @@ Do this when stale docs slow you down — not before the smoke test.
 
 | Issue | Where | Notes |
 |-------|-------|-------|
-| Events dropped on full channel | `capture/thread.rs` | `let _ = event_tx.send(...)` |
+| ~~Events dropped on full channel~~ | `capture/thread.rs` | Bounded (`sync_channel`, cap 4096) + counted; surfaced via `HealthStatus.capture_events_dropped` and `PermissionsCard` |
 | Save failures only warned | `state.rs:256-300` | No user feedback |
 | Mouse coords zero on key events | `capture/thread.rs:88-96` | Low impact |
 | 1 Hz prediction | `state.rs:222` | Intentional for now |

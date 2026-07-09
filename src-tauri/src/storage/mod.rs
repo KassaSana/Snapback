@@ -944,6 +944,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn list_app_rules_skips_undecodable_rows() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+
+        storage
+            .upsert_app_rule("github.com", AppRuleKind::Allow, None)
+            .unwrap();
+        // Simulate schema drift (e.g. an older/newer app version writing a
+        // rule_type this build doesn't know) by bypassing the CHECK
+        // constraint just for this insert, the way a foreign process editing
+        // the DB file directly could.
+        storage
+            .conn
+            .execute_batch("PRAGMA ignore_check_constraints = ON;")
+            .unwrap();
+        storage
+            .conn
+            .execute(
+                "INSERT INTO app_rules (pattern, rule_type, note, created_at, updated_at)
+                 VALUES ('drifted.example', 'bogus_kind', NULL, '2026-01-01', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+        storage
+            .conn
+            .execute_batch("PRAGMA ignore_check_constraints = OFF;")
+            .unwrap();
+
+        let rules = storage.list_app_rules().unwrap();
+        assert_eq!(rules.len(), 1, "bad row skipped, good row kept");
+        assert_eq!(rules[0].pattern, "github.com");
+    }
+
+    #[test]
     fn session_lifecycle() {
         let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
         let storage = Storage::open(dir).unwrap();

@@ -106,7 +106,7 @@ class TestDatasetBuilder(unittest.TestCase):
             with open(label_path, "w", newline="", encoding="utf-8") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(["timestamp", "label", "source", "session_id", "notes"])
-                writer.writerow([25.0, int(FocusLabel.PRODUCTIVE), "AUTO", "s1", "recap"])
+                writer.writerow([25.0, int(FocusLabel.PRODUCTIVE), "auto", "s1", "recap"])
 
             label_rows = read_labels_csv(label_path)
 

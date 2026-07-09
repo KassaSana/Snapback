@@ -659,6 +659,10 @@ fn emit_stage(stage: &str, detail: &str) {
 }
 
 fn ensure_ort_dylib_path() -> Result<(), SmokeFailure> {
+    if !cfg!(windows) {
+        return Ok(());
+    }
+
     if std::env::var_os("ORT_DYLIB_PATH")
         .map(PathBuf::from)
         .is_some_and(|path| path.is_file())

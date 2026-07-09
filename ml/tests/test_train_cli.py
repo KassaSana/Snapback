@@ -48,13 +48,27 @@ def make_feature(timestamp: float, keystrokes: int) -> FeatureVector:
     )
 
 
+
+# training_pipeline.MIN_TRAINING_SAMPLES requires at least 8 labeled rows
+# (and at least 2 samples per label class) before it will train at all, so
+# fixtures below use 8 feature/label pairs alternating between two classes.
+def make_alternating_features_and_labels() -> tuple[list[FeatureVector], list[LabelRecord]]:
+    features = [make_feature(10.0 * (i + 1), 5 + i) for i in range(8)]
+    labels = [
+        LabelRecord(
+            10.0 * (i + 1) + 5.0,
+            FocusLabel.PRODUCTIVE if i % 2 == 0 else FocusLabel.DISTRACTED,
+            LabelSource.HOTKEY,
+            "s1",
+        )
+        for i in range(8)
+    ]
+    return features, labels
+
+
 class TestTrainCli(unittest.TestCase):
     def test_run_training_with_dataset(self) -> None:
-        features = [make_feature(10.0, 5), make_feature(20.0, 6), make_feature(30.0, 7)]
-        labels = [
-            LabelRecord(25.0, FocusLabel.PRODUCTIVE, LabelSource.HOTKEY, "s1"),
-            LabelRecord(35.0, FocusLabel.DISTRACTED, LabelSource.HOTKEY, "s1"),
-        ]
+        features, labels = make_alternating_features_and_labels()
 
         with tempfile.TemporaryDirectory() as tmp:
             feature_path = os.path.join(tmp, "features.csv")
@@ -87,7 +101,7 @@ class TestTrainCli(unittest.TestCase):
             self.assertTrue(os.path.exists(metrics_path))
 
     def test_run_training_with_features_and_labels(self) -> None:
-        features = [make_feature(10.0, 5), make_feature(20.0, 6), make_feature(30.0, 7)]
+        features, labels = make_alternating_features_and_labels()
 
         with tempfile.TemporaryDirectory() as tmp:
             feature_path = os.path.join(tmp, "features.csv")
@@ -97,7 +111,10 @@ class TestTrainCli(unittest.TestCase):
             with open(labels_path, "w", newline="", encoding="utf-8") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(["timestamp", "label", "source", "session_id", "notes"])
-                writer.writerow([25.0, int(FocusLabel.PRODUCTIVE), "HOTKEY", "s1", ""])
+                for label in labels:
+                    writer.writerow(
+                        [label.timestamp, int(label.label), label.source.name, label.session_id, ""]
+                    )
 
             model_path = os.path.join(tmp, "model.json")
             metrics_path = os.path.join(tmp, "metrics.json")

@@ -1,4 +1,5 @@
 type PermissionsCardProps = {
+  captureEventsDropped: number;
   captureFailed: boolean;
   captureFailureReason: string | null;
   captureProbeConfirmed: boolean;
@@ -9,6 +10,7 @@ type PermissionsCardProps = {
 };
 
 export function PermissionsCard({
+  captureEventsDropped,
   captureFailed,
   captureFailureReason,
   captureProbeConfirmed,
@@ -41,6 +43,12 @@ export function PermissionsCard({
         {permissionMessage ||
           "Snapback runs locally. Grant Accessibility + Input Monitoring on macOS."}
       </p>
+      {captureEventsDropped > 0 ? (
+        <p className="helper-text alert">
+          {captureEventsDropped} capture event{captureEventsDropped === 1 ? "" : "s"} dropped —
+          the engine loop fell behind. If this keeps growing, restart Snapback.
+        </p>
+      ) : null}
       {permissionSteps.length > 0 ? (
         <ol className="permission-steps">
           {permissionSteps.map((step) => (
