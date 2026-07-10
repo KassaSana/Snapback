@@ -675,3 +675,39 @@ h1 {
     justify-content: flex-start;
   }
 }
+
+/* First-run permission wizard */
+.wizard-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(14, 17, 22, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.wizard {
+  max-width: 520px;
+  width: 100%;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.wizard h2 {
+  margin-top: 0;
+}
+
+.wizard-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.wizard-footnote {
+  margin-top: 12px;
+  color: var(--muted);
+}

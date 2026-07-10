@@ -6,6 +6,7 @@ import { AppHeader } from "./AppHeader";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
 import { PermissionsCard } from "./PermissionsCard";
+import { PermissionWizard } from "./PermissionWizard";
 import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
@@ -142,6 +143,15 @@ export default function App() {
 
   return (
     <div className="app">
+      <PermissionWizard
+        healthChecked={healthStatus !== "checking"}
+        captureProbeConfirmed={captureProbeConfirmed}
+        captureRunning={captureRunning}
+        permissionMessage={permissionMessage}
+        permissionSteps={permissionSteps}
+        onRefreshPermissions={handleRefreshPermissions}
+      />
+
       <AppHeader
         activeWindowAvailable={activeWindowAvailable}
         captureFailed={captureFailed}

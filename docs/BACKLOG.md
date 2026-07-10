@@ -84,7 +84,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 
 **Permissions**
 
-- [ ] First-run permission wizard
+- [x] First-run permission wizard — modal on first launch guides capture-permission setup, auto-dismisses once capture works, remembers acknowledgement in localStorage (`PermissionWizard.tsx`, `permissionWizardState.ts`, `App.tsx`)
 - [x] Separate "capture alive" vs "permissions OK" in health
 - [x] Wayland warning before first session (Linux) — probe emits a Wayland-only hard-blocker that wins over all other permission messages (`capture/permissions.rs`), and session start surfaces a capture-not-ready warning (`healthHints.ts` `sessionStartCaptureWarning`, `useSession.ts`)
 

@@ -14,6 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] First-run permission wizard: modal guides capture-permission setup on first launch, auto-dismisses once capture works, remembers via localStorage (`PermissionWizard.tsx`, `permissionWizardState.ts`)
 - [x] Align classifier eval with production: Rust `--classifier-eval` is guardrail-aware; Python onnxruntime evals labeled raw-model (`production_aligned=False`); CI quality gate warns when judging raw-model numbers (`classifier_quality.py`, `tools/benchmark_classifier_quality.py`)
 - [x] Windows capture probe honesty: real `SetWindowsHookExW` preflight (`capture/permissions.rs`)
 - [x] Storage robustness: propagate dir-creation errors, log (don't silently drop) undecodable rows (`storage/mod.rs`)
