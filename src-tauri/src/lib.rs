@@ -2,6 +2,7 @@ mod bench;
 mod capture;
 mod commands;
 mod engine;
+mod events;
 mod label_shortcuts;
 mod smoke;
 mod snapback;
@@ -11,7 +12,7 @@ mod training_deploy;
 mod tray;
 mod types;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 use state::AppState;
 use storage::Storage;
@@ -142,7 +143,7 @@ pub fn run() {
             if let Some(t0) = PROCESS_START.get() {
                 log::info!("startup_ms_to_ready={}", t0.elapsed().as_millis());
             }
-            let _ = handle.emit("snapback://ready", ());
+            crate::events::emit_or_log(&handle, "snapback://ready", ());
         }
     });
 }

@@ -2,10 +2,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::capture::thread::{CaptureHandle, CAPTURE_CHANNEL_CAPACITY};
 use crate::engine::{evaluate_hyperfocus, Classifier, FeatureExtractor};
+use crate::events::emit_or_log;
 use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
 use crate::types::{
@@ -199,7 +200,7 @@ fn spawn_capture_failure_watcher(
                 message: permissions.message.clone(),
                 setup_steps: permissions.setup_steps.clone(),
             };
-            let _ = app.emit("capture-failed", &payload);
+            emit_or_log(&app, "capture-failed", &payload);
         }
     })
 }
@@ -291,7 +292,7 @@ fn run_engine_loop(app: AppHandle) {
                 };
 
                 *state.latest_prediction.lock() = Some(record.clone());
-                let _ = app.emit("prediction", &record);
+                emit_or_log(&app, "prediction", &record);
                 tracker.on_prediction_feedback(&scores.focus_state, session_goal);
                 last_prediction_at = now;
 
@@ -329,7 +330,7 @@ fn run_engine_loop(app: AppHandle) {
                 );
                 last_hyperfocus_alert_secs = next_alert_secs;
                 if let Some(alert) = alert {
-                    let _ = app.emit("hyperfocus", &alert);
+                    emit_or_log(&app, "hyperfocus", &alert);
                 }
             }
         }
@@ -360,11 +361,11 @@ fn run_engine_loop(app: AppHandle) {
                             "Snapback detected a return to task, but the overlay window could not be shown. {err}"
                         ),
                     };
-                    let _ = app.emit("overlay-failed", &overlay_failure);
+                    emit_or_log(&app, "overlay-failed", &overlay_failure);
                 } else {
                     *state.overlay_failure_reason.lock() = None;
                 }
-                let _ = app.emit("snapback", &payload);
+                emit_or_log(&app, "snapback", &payload);
             }
         }
 
@@ -439,7 +440,7 @@ fn record_persistence_failure(app: Option<&AppHandle>, state: &AppState, reason:
         reason,
     };
     if let Some(app) = app {
-        let _ = app.emit("persistence-failed", &payload);
+        emit_or_log(app, "persistence-failed", &payload);
     }
 }
 
