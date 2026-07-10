@@ -235,7 +235,7 @@ Training deps are commented out. Users can run training and fall into majority-s
 - ~~Permission status can go stale until refresh or capture failure.~~ Fixed: `useAppEffects` now polls `refreshHealth` every `HEALTH_POLL_MS` (5s) while capture isn't confirmed running (`healthPoll.ts`), so the app auto-recovers when permissions are granted after launch and stops polling once capture is up.
 - `let _ = send(...)` patterns hide dropped capture/overlay events. Capture-side sends (`capture/thread.rs`) now go through `send_event()`, which counts drops (see M4); overlay/emit sends elsewhere are still fire-and-forget.
 - `KeyRelease` exists in `types.rs` but capture only emits key press.
-- ~~Feature/prediction/context tables have no retention policy.~~ Partly addressed: `Storage::open()` now prunes `predictions` and `context_snapshots` older than `DEFAULT_RETENTION_DAYS` (90) via `prune_runtime_data` (`storage/mod.rs`). Training data (`feature_snapshots`) and `labels` are deliberately retained so old sessions stay trainable.
+- ~~Feature/prediction/context tables have no retention policy.~~ Addressed: `Storage::open()` prunes `predictions` and `context_snapshots` older than `DEFAULT_RETENTION_DAYS` (90) via `prune_runtime_data`, then runs `VACUUM` to reclaim disk when the prune was large (`should_vacuum`, ≥500 rows) (`storage/mod.rs`). Training data (`feature_snapshots`) and `labels` are deliberately retained so old sessions stay trainable.
 - Legacy C++ ML modules remain in `ml/`; docs now mark these as historical.
 
 ---

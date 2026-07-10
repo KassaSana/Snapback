@@ -110,6 +110,18 @@ impl PruneSummary {
     }
 }
 
+/// Minimum rows a prune must delete before a `VACUUM` is worth its cost.
+/// `VACUUM` rewrites the whole DB file, so tiny prunes aren't worth it — a
+/// normal startup deletes little (only rows past the retention window) and
+/// should skip it.
+const VACUUM_MIN_DELETED_ROWS: usize = 500;
+
+/// Whether a prune that removed `rows_deleted` rows justifies a `VACUUM` to
+/// reclaim the freed disk pages.
+pub fn should_vacuum(rows_deleted: usize) -> bool {
+    rows_deleted >= VACUUM_MIN_DELETED_ROWS
+}
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("database error: {0}")]
@@ -157,12 +169,24 @@ impl Storage {
         // Self-maintain on open so the DB doesn't grow without bound over a long
         // install. A prune failure must not stop the app from starting.
         match storage.prune_runtime_data(chrono::Utc::now(), DEFAULT_RETENTION_DAYS) {
-            Ok(summary) if summary.total() > 0 => log::info!(
-                "storage: pruned {} rows older than {DEFAULT_RETENTION_DAYS}d on open (predictions={}, context_snapshots={})",
-                summary.total(),
-                summary.predictions_deleted,
-                summary.context_snapshots_deleted,
-            ),
+            Ok(summary) if summary.total() > 0 => {
+                log::info!(
+                    "storage: pruned {} rows older than {DEFAULT_RETENTION_DAYS}d on open (predictions={}, context_snapshots={})",
+                    summary.total(),
+                    summary.predictions_deleted,
+                    summary.context_snapshots_deleted,
+                );
+                // Only reclaim disk after a big prune — VACUUM rewrites the file.
+                if should_vacuum(summary.total()) {
+                    match storage.vacuum() {
+                        Ok(()) => log::info!(
+                            "storage: VACUUM reclaimed disk after pruning {} rows",
+                            summary.total()
+                        ),
+                        Err(err) => log::warn!("storage: VACUUM after prune failed: {err}"),
+                    }
+                }
+            }
             Ok(_) => {}
             Err(err) => log::warn!("storage: startup retention prune failed: {err}"),
         }
@@ -540,6 +564,14 @@ impl Storage {
             predictions_deleted,
             context_snapshots_deleted,
         })
+    }
+
+    /// Reclaim disk pages freed by deletes. `VACUUM` rewrites the database file,
+    /// so callers should gate it behind [`should_vacuum`] rather than running it
+    /// on every open.
+    pub fn vacuum(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch("VACUUM")?;
+        Ok(())
     }
 
     pub fn save_prediction(&self, record: &PredictionRecord) -> Result<(), StorageError> {
@@ -1209,6 +1241,42 @@ mod tests {
         assert_eq!(storage.list_context_snapshots(&sid, 100).unwrap().len(), 1);
         // Feature snapshot (training data) is untouched.
         assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn should_vacuum_only_past_threshold() {
+        assert!(!should_vacuum(0));
+        assert!(!should_vacuum(VACUUM_MIN_DELETED_ROWS - 1));
+        assert!(should_vacuum(VACUUM_MIN_DELETED_ROWS));
+        assert!(should_vacuum(VACUUM_MIN_DELETED_ROWS + 1000));
+    }
+
+    #[test]
+    fn vacuum_preserves_data_and_keeps_db_writable() {
+        use crate::types::PredictionRecord;
+
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+        let session = storage.start_session("Vacuum test", "normal").unwrap();
+
+        let prediction = || PredictionRecord {
+            session_id: session.session_id.clone(),
+            focus_score: 60.0,
+            distraction_risk: 0.3,
+            focus_state: "PRODUCTIVE".to_string(),
+            thrash_score: 0.1,
+            drift_score: 0.1,
+            goal_alignment: 0.5,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        };
+        storage.save_prediction(&prediction()).unwrap();
+
+        storage.vacuum().unwrap();
+
+        // Data survives and the connection is still usable after the rewrite.
+        assert_eq!(storage.prediction_count().unwrap(), 1);
+        storage.save_prediction(&prediction()).unwrap();
+        assert_eq!(storage.prediction_count().unwrap(), 2);
     }
 
     #[test]

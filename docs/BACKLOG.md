@@ -68,7 +68,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 | [x] Tauri build in CI | `ci.yml` | Ubuntu now runs a non-bundled `tauri build` smoke check |
 | [x] Python CI with ML deps | `ci.yml` | Training deps now install in CI before Python tests |
 | [x] Classifier quality gate | `tools/benchmark_classifier_quality.py`, `ci.yml` | CI now enforces conservative CV floors + recall lift over heuristic |
-| [ ] Feature parity on Windows (optional) | `ci.yml` | Ubuntu only |
+| [x] Feature parity on Windows (optional) | `ci.yml` | `feature-parity-windows` job runs `ml.feature_parity_cli` on windows-latest |
 
 ---
 
