@@ -8,10 +8,12 @@ import {
   type PredictionRecord,
   type SnapbackPayload,
 } from "./api";
+import { HEALTH_POLL_MS, shouldPollHealth } from "./healthPoll";
 import { TIMELINE_POLL_MS } from "./useLiveData";
 
 type UseAppEffectsArgs = {
   refreshHealth: () => void | Promise<void>;
+  captureRunning: boolean;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
   refreshDeployStatus: () => void | Promise<void>;
@@ -37,6 +39,7 @@ type UseAppEffectsArgs = {
 
 export const useAppEffects = ({
   refreshHealth,
+  captureRunning,
   refreshLatest,
   refreshAppRules,
   refreshDeployStatus,
@@ -73,6 +76,20 @@ export const useAppEffects = ({
 
     return () => window.clearInterval(timer);
   }, [sessionId, sessionStatus, refreshContextTimeline]);
+
+  // Keep re-checking health until capture is confirmed up, so the app recovers
+  // on its own when permissions are granted after launch.
+  useEffect(() => {
+    if (!shouldPollHealth(captureRunning)) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshHealth();
+    }, HEALTH_POLL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [captureRunning, refreshHealth]);
 
   useEffect(() => {
     const unsubs: Array<Promise<() => void>> = [];

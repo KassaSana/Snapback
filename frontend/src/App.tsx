@@ -123,6 +123,7 @@ export default function App() {
 
   useAppEffects({
     refreshHealth,
+    captureRunning,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
     refreshDeployStatus,

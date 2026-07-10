@@ -14,6 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Auto-recover permissions: poll health every 5s while capture isn't running so granting permission after launch is noticed without manual refresh (`healthPoll.ts`, `useAppEffects.ts`)
 - [x] DB retention policy: `Storage::open()` prunes predictions + context snapshots older than 90d (`DEFAULT_RETENTION_DAYS`), keeps training data/labels (`storage/mod.rs` `prune_runtime_data`)
 - [x] First-run permission wizard: modal guides capture-permission setup on first launch, auto-dismisses once capture works, remembers via localStorage (`PermissionWizard.tsx`, `permissionWizardState.ts`)
 - [x] Align classifier eval with production: Rust `--classifier-eval` is guardrail-aware; Python onnxruntime evals labeled raw-model (`production_aligned=False`); CI quality gate warns when judging raw-model numbers (`classifier_quality.py`, `tools/benchmark_classifier_quality.py`)

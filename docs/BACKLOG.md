@@ -180,7 +180,7 @@ Do this when stale docs slow you down — not before the smoke test.
 |-------|-------|-------|
 | ~~Events dropped on full channel~~ | `capture/thread.rs` | Bounded (`sync_channel`, cap 4096) + counted; surfaced via `HealthStatus.capture_events_dropped` and `PermissionsCard` |
 | ~~Save failures only warned~~ | `state.rs` | Already surfaced: `persist_session_tick` routes failures through `record_persistence_failure` → `HealthStatus.persistence_failure_reason` → UI |
-| Mouse coords zero on key events | `capture/thread.rs:88-96` | Low impact |
+| ~~Mouse coords zero on key events~~ | `capture/thread.rs` | Fixed: key/click events now read `read_last_mouse`; only window-change poll events send 0 (correct — not pointer events) |
 | 1 Hz prediction | `state.rs:222` | Intentional for now |
 | Shortcut capability unclear | `capabilities/default.json` | Verify clean install |
 
