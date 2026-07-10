@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { summarizeAppHealth, summarizePermissions } from "../src/healthHints";
+import {
+  sessionStartCaptureWarning,
+  summarizeAppHealth,
+  summarizePermissions,
+} from "../src/healthHints";
 
 assert.equal(
   summarizeAppHealth({
@@ -159,5 +163,61 @@ assert.deepEqual(
   }),
   { label: "blocked", detail: "permissions required" },
 );
+
+// sessionStartCaptureWarning: healthy capture -> no warning.
+assert.equal(
+  sessionStartCaptureWarning({
+    captureRunning: true,
+    captureFailed: false,
+    permissionCaptureAvailable: true,
+    activeWindowAvailable: true,
+  }),
+  null,
+);
+
+// A hard capture failure is the highest-priority reason, even if other flags
+// would also warn.
+{
+  const warning = sessionStartCaptureWarning({
+    captureRunning: false,
+    captureFailed: true,
+    permissionCaptureAvailable: false,
+    activeWindowAvailable: false,
+  });
+  assert.ok(warning?.includes("input capture has failed"));
+}
+
+// No capture permission (e.g. Wayland-only Linux) -> mentions the Wayland case.
+{
+  const warning = sessionStartCaptureWarning({
+    captureRunning: false,
+    captureFailed: false,
+    permissionCaptureAvailable: false,
+    activeWindowAvailable: true,
+  });
+  assert.ok(warning?.includes("Wayland"));
+}
+
+// Capture allowed but no active-window access.
+{
+  const warning = sessionStartCaptureWarning({
+    captureRunning: true,
+    captureFailed: false,
+    permissionCaptureAvailable: true,
+    activeWindowAvailable: false,
+  });
+  assert.ok(warning?.includes("active-window access"));
+}
+
+// Permissions fine but capture hasn't come up yet.
+{
+  const warning = sessionStartCaptureWarning({
+    captureRunning: false,
+    captureFailed: false,
+    permissionCaptureAvailable: true,
+    activeWindowAvailable: true,
+  });
+  assert.ok(warning?.includes("capture isn't running yet"));
+}
 
 console.log("healthHints.test.ts passed");

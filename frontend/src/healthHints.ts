@@ -5,6 +5,41 @@ export type PermissionHealth = {
   detail: string;
 };
 
+export type SessionCaptureReadiness = {
+  captureRunning: boolean;
+  captureFailed: boolean;
+  permissionCaptureAvailable: boolean;
+  activeWindowAvailable: boolean;
+};
+
+/**
+ * Warning to show when a session is started while capture is compromised, or
+ * `null` when capture looks healthy. The session still starts (warn, don't
+ * block) — this just tells the user up front that the session may not record
+ * anything, which is easy to miss if they didn't notice the header status.
+ *
+ * Ordered worst-first so the single most important reason is surfaced: a hard
+ * capture failure, then no capture permission (e.g. a Wayland-only Linux
+ * session), then missing active-window access, then capture simply not up yet.
+ */
+export const sessionStartCaptureWarning = (
+  readiness: SessionCaptureReadiness,
+): string | null => {
+  if (readiness.captureFailed) {
+    return "Session started, but input capture has failed — it won't record activity until you fix permissions and restart Snapback.";
+  }
+  if (!readiness.permissionCaptureAvailable) {
+    return "Session started, but input capture isn't available (check permissions — e.g. a Wayland-only Linux session needs X11/XWayland). It may not record activity.";
+  }
+  if (!readiness.activeWindowAvailable) {
+    return "Session started, but active-window access isn't available. It may not record which apps and files you work in.";
+  }
+  if (!readiness.captureRunning) {
+    return "Session started, but capture isn't running yet. It may not record the first moments until capture comes up.";
+  }
+  return null;
+};
+
 export const summarizeAppHealth = (input: {
   status: string;
   captureFailed: boolean;

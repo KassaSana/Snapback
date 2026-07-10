@@ -68,6 +68,12 @@ export default function App() {
     setActionError: feedback.setActionError,
     setLabelStatus: feedback.setLabelStatus,
     setLabelStatusWarning: feedback.setLabelStatusWarning,
+    captureReadiness: {
+      captureRunning,
+      captureFailed,
+      permissionCaptureAvailable,
+      activeWindowAvailable,
+    },
   });
 
   const {

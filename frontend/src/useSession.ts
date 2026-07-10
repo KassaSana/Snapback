@@ -8,6 +8,7 @@ import {
   type SessionRecap,
   type SessionRecord,
 } from "./api";
+import { sessionStartCaptureWarning, type SessionCaptureReadiness } from "./healthHints";
 
 export const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
 export type FocusMode = (typeof FOCUS_MODES)[number];
@@ -18,6 +19,8 @@ type UseSessionArgs = {
   setActionError: (value: string | null) => void;
   setLabelStatus: (value: string | null) => void;
   setLabelStatusWarning: (value: boolean) => void;
+  /** Current capture health, used to warn if a session starts while capture is down. */
+  captureReadiness?: SessionCaptureReadiness | null;
 };
 
 export const useSession = ({
@@ -26,6 +29,7 @@ export const useSession = ({
   setActionError,
   setLabelStatus,
   setLabelStatusWarning,
+  captureReadiness,
 }: UseSessionArgs) => {
   const [sessionGoal, setSessionGoal] = useState("");
   const [sessionRecord, setSessionRecord] = useState<SessionRecord | null>(null);
@@ -88,13 +92,18 @@ export const useSession = ({
       setSessionGoal(record.goal);
       setRecap(null);
       setSurveyPending(false);
-      setActionError(null);
+      // Warn (but don't block) if capture is compromised at start — the session
+      // record exists, but it may not record activity. `null` clears the banner.
+      setActionError(
+        captureReadiness ? sessionStartCaptureWarning(captureReadiness) : null,
+      );
       resetTimelineRefreshGate();
       void refreshContextTimeline(record.sessionId);
     } catch {
       setActionError("Could not start session. Check capture permissions and try again.");
     }
   }, [
+    captureReadiness,
     focusMode,
     refreshContextTimeline,
     resetTimelineRefreshGate,
