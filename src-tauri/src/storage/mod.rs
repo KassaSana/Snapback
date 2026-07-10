@@ -92,6 +92,24 @@ const FEATURE_EXPORT_SELECT_COLUMNS: &[&str] = &[
     "COALESCE((SELECT cs.window_title FROM context_snapshots cs WHERE cs.session_id = fs.session_id AND CAST(strftime('%s', cs.timestamp) AS REAL) <= fs.timestamp ORDER BY CAST(strftime('%s', cs.timestamp) AS REAL) DESC LIMIT 1), '') AS window_title",
 ];
 
+/// How long runtime/display rows (predictions, context snapshots) are kept
+/// before `prune_runtime_data` deletes them on startup. Training data
+/// (feature snapshots) and labels are never pruned.
+pub const DEFAULT_RETENTION_DAYS: i64 = 90;
+
+/// Rows removed by a retention pass, per table.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PruneSummary {
+    pub predictions_deleted: usize,
+    pub context_snapshots_deleted: usize,
+}
+
+impl PruneSummary {
+    pub fn total(&self) -> usize {
+        self.predictions_deleted + self.context_snapshots_deleted
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("database error: {0}")]
@@ -135,6 +153,20 @@ impl Storage {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let storage = Self { conn };
         storage.init_schema()?;
+
+        // Self-maintain on open so the DB doesn't grow without bound over a long
+        // install. A prune failure must not stop the app from starting.
+        match storage.prune_runtime_data(chrono::Utc::now(), DEFAULT_RETENTION_DAYS) {
+            Ok(summary) if summary.total() > 0 => log::info!(
+                "storage: pruned {} rows older than {DEFAULT_RETENTION_DAYS}d on open (predictions={}, context_snapshots={})",
+                summary.total(),
+                summary.predictions_deleted,
+                summary.context_snapshots_deleted,
+            ),
+            Ok(_) => {}
+            Err(err) => log::warn!("storage: startup retention prune failed: {err}"),
+        }
+
         Ok(storage)
     }
 
@@ -473,6 +505,41 @@ impl Storage {
                 row.get(0)
             })
             .map_err(StorageError::from)
+    }
+
+    /// Delete runtime/display rows older than `retention_days`.
+    ///
+    /// Prunes only `predictions` and `context_snapshots` — regenerable runtime
+    /// signal used for live status and the timeline. `feature_snapshots` (the
+    /// training data), `labels`, and `sessions` are deliberately kept so old
+    /// sessions stay trainable and reviewable. A non-positive `retention_days`
+    /// disables pruning and returns an empty summary.
+    ///
+    /// `now` is passed in rather than read here so the retention window is
+    /// deterministic and testable.
+    pub fn prune_runtime_data(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+        retention_days: i64,
+    ) -> Result<PruneSummary, StorageError> {
+        if retention_days <= 0 {
+            return Ok(PruneSummary::default());
+        }
+        let cutoff = (now - chrono::Duration::days(retention_days)).to_rfc3339();
+        // `datetime()` normalizes RFC3339 values so the comparison is correct
+        // even if some rows were written with a different offset or precision.
+        let predictions_deleted = self.conn.execute(
+            "DELETE FROM predictions WHERE datetime(timestamp) < datetime(?1)",
+            params![cutoff],
+        )?;
+        let context_snapshots_deleted = self.conn.execute(
+            "DELETE FROM context_snapshots WHERE datetime(timestamp) < datetime(?1)",
+            params![cutoff],
+        )?;
+        Ok(PruneSummary {
+            predictions_deleted,
+            context_snapshots_deleted,
+        })
     }
 
     pub fn save_prediction(&self, record: &PredictionRecord) -> Result<(), StorageError> {
@@ -1087,6 +1154,88 @@ mod tests {
             .is_err());
         assert_eq!(storage.prediction_count().unwrap(), 1);
         assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn prune_runtime_data_removes_old_rows_but_keeps_training_data() {
+        use crate::engine::features::FeatureVector;
+        use crate::types::PredictionRecord;
+
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+        let session = storage.start_session("Long-lived install", "normal").unwrap();
+        let sid = session.session_id.clone();
+
+        let now = chrono::Utc::now();
+        let old = (now - chrono::Duration::days(100)).to_rfc3339();
+        let fresh = now.to_rfc3339();
+
+        let prediction = |ts: &str| PredictionRecord {
+            session_id: sid.clone(),
+            focus_score: 60.0,
+            distraction_risk: 0.3,
+            focus_state: "PRODUCTIVE".to_string(),
+            thrash_score: 0.1,
+            drift_score: 0.1,
+            goal_alignment: 0.5,
+            timestamp: ts.to_string(),
+        };
+        storage.save_prediction(&prediction(&old)).unwrap();
+        storage.save_prediction(&prediction(&fresh)).unwrap();
+
+        let context = |ts: &str| ContextSnapshotDto {
+            app_name: "Cursor".to_string(),
+            window_title: "mod.rs".to_string(),
+            file_hint: String::new(),
+            project_hint: String::new(),
+            summary: String::new(),
+            timestamp: ts.to_string(),
+        };
+        storage.save_context_snapshot(&sid, &context(&old)).unwrap();
+        storage.save_context_snapshot(&sid, &context(&fresh)).unwrap();
+
+        // Training data must survive pruning regardless of age.
+        storage
+            .save_feature_snapshot(&sid, &FeatureVector::empty(1_700_000_000.0))
+            .unwrap();
+
+        let summary = storage.prune_runtime_data(now, DEFAULT_RETENTION_DAYS).unwrap();
+        assert_eq!(summary.predictions_deleted, 1);
+        assert_eq!(summary.context_snapshots_deleted, 1);
+        assert_eq!(summary.total(), 2);
+
+        // The fresh rows remain; the old ones are gone.
+        assert_eq!(storage.prediction_count().unwrap(), 1);
+        assert_eq!(storage.list_context_snapshots(&sid, 100).unwrap().len(), 1);
+        // Feature snapshot (training data) is untouched.
+        assert_eq!(storage.feature_snapshot_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn prune_runtime_data_disabled_when_retention_non_positive() {
+        use crate::types::PredictionRecord;
+
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+        let session = storage.start_session("Keep everything", "normal").unwrap();
+
+        storage
+            .save_prediction(&PredictionRecord {
+                session_id: session.session_id.clone(),
+                focus_score: 60.0,
+                distraction_risk: 0.3,
+                focus_state: "PRODUCTIVE".to_string(),
+                thrash_score: 0.1,
+                drift_score: 0.1,
+                goal_alignment: 0.5,
+                timestamp: (chrono::Utc::now() - chrono::Duration::days(9999)).to_rfc3339(),
+            })
+            .unwrap();
+
+        // Retention of 0 disables pruning: even an ancient row stays.
+        let summary = storage.prune_runtime_data(chrono::Utc::now(), 0).unwrap();
+        assert_eq!(summary.total(), 0);
+        assert_eq!(storage.prediction_count().unwrap(), 1);
     }
 
     #[test]
