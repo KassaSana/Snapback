@@ -9,6 +9,7 @@ Where to look, in order of usefulness:
 | [`CODE_HEALTH_REVIEW.md`](CODE_HEALTH_REVIEW.md) | Code review findings and fix queue |
 | [`ROADMAP.md`](ROADMAP.md) | Shipped history + tier index |
 | [`SMOKE_TEST.md`](SMOKE_TEST.md) | 60-min ship-confidence checklist |
+| [`TRAINING_GUIDE.md`](TRAINING_GUIDE.md) | How much data to train, when to retrain, synthetic vs. real |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Building installers, ONNX loop, release |
 | [`BENCHMARKS.md`](BENCHMARKS.md) | How to run benchmarks |
 | [`BENCHMARK_RESULTS.md`](BENCHMARK_RESULTS.md) | Last recorded numbers |

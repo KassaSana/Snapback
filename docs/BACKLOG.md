@@ -80,13 +80,13 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [x] Model info in health UI (path, backend shown; train time/CV metrics later) — `AppHeader.tsx` shows backend, model file, ONNX runtime status, and CV quality label
 - [x] Copy trained model to `app_data_dir/model.onnx` after train
 - [x] Fail fast on majority-classifier stub (`ml/export_onnx.py`) — `is_majority_stub` blocks ONNX export, `pipeline_cli.py` exits 2, `training_deploy.rs` surfaces a friendly message; tested in `ml/tests/test_export_onnx.py`
-- [ ] Short guide: min sessions/labels, when to retrain
+- [x] Short guide: min sessions/labels, when to retrain — [TRAINING_GUIDE.md](TRAINING_GUIDE.md)
 
 **Permissions**
 
 - [ ] First-run permission wizard
 - [x] Separate "capture alive" vs "permissions OK" in health
-- [ ] Wayland warning before first session (Linux)
+- [x] Wayland warning before first session (Linux) — probe emits a Wayland-only hard-blocker that wins over all other permission messages (`capture/permissions.rs`), and session start surfaces a capture-not-ready warning (`healthHints.ts` `sessionStartCaptureWarning`, `useSession.ts`)
 
 **App rules**
 
@@ -113,10 +113,10 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [x] Decide what to do with `ml/labeling.py` — kept, documented: enums are the production contract, `Labeler`/`SessionMetadata` are an unused pre-SQLite stub used only by its own test
 - [x] Label source parity in export (hotkey / survey / auto) — Rust writes lowercase (`hotkey`/`manual`/`survey`/`auto`), `ml/dataset_builder._parse_source` upper-cases before enum lookup, round-trip verified
 - [x] Minimum dataset checks in `pipeline_cli.py` — `training_pipeline.validate_training_dataset` (`MIN_TRAINING_SAMPLES`, per-class minimum) raises `ValueError`, caught in `run_pipeline` as "Training blocked: …" with exit code 1
-- [ ] ONNX numbers in `BENCHMARK_RESULTS.md`
+- [x] ONNX numbers in `BENCHMARK_RESULTS.md` — quality (§4: accuracy/precision@10%/recall vs heuristic + XGBoost) and latency (§5: p50/p95/p99) recorded
 - [x] Align soak duration: `BENCHMARKS.md` says 3600s, results are 60s — already reconciled (default 60s documented, note on running longer)
 - [x] `--classifier-eval` in CI — `ci.yml` `classifier-eval` job runs both heuristic and ONNX backends
-- [ ] Document when synthetic vs real labeled data is enough
+- [x] Document when synthetic vs real labeled data is enough — [TRAINING_GUIDE.md § Synthetic vs. real labeled data](TRAINING_GUIDE.md#synthetic-vs-real-labeled-data)
 - [x] Mark or remove legacy C++ ML path (`event_log_reader.py`, etc.) — module-level banners added to `event_log_reader.py` and `event_schema.py` explaining they're unused by the live SQLite-based pipeline
 
 ---
