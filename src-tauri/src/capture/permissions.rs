@@ -7,6 +7,7 @@ pub fn check_permissions() -> PermissionStatus {
     let setup_steps = platform_setup_steps(!active_window_available, !capture_available);
 
     let message = permission_message(
+        capture_unavailable_message(),
         active_window_available,
         capture_available,
         capture_probe_confirmed,
@@ -63,12 +64,19 @@ fn capture_probe_confirmed() -> bool {
     }
 }
 
+/// `capture_unavailable` is the platform's hard-blocker message (e.g. a
+/// Wayland-only or no-DISPLAY Linux session), passed in rather than read from
+/// the environment here so this stays a pure function of its inputs — the
+/// caller (`check_permissions`) owns the environment probe. Keeping it a
+/// parameter is what lets the tests below exercise the confirmed/unconfirmed
+/// branches deterministically on any host, including a headless CI runner.
 fn permission_message(
+    capture_unavailable: Option<String>,
     active_window_available: bool,
     capture_available: bool,
     capture_probe_confirmed: bool,
 ) -> String {
-    if let Some(msg) = capture_unavailable_message() {
+    if let Some(msg) = capture_unavailable {
         msg
     } else if capture_available && active_window_available && !capture_probe_confirmed {
         unconfirmed_listener_message().to_string()
@@ -348,14 +356,30 @@ mod tests {
 
     #[test]
     fn permission_message_marks_probe_only_state_as_unconfirmed() {
-        let message = permission_message(true, true, false);
+        let message = permission_message(None, true, true, false);
         assert!(message.contains("not confirmed until the listener starts"));
     }
 
     #[test]
     fn permission_message_marks_confirmed_probe_as_ready() {
-        let message = permission_message(true, true, true);
+        let message = permission_message(None, true, true, true);
         assert_eq!(message, "Capture permissions look good.");
+    }
+
+    #[test]
+    fn permission_message_prioritizes_a_hard_capture_blocker() {
+        // When the platform reports capture is fundamentally unavailable
+        // (e.g. a Wayland-only Linux session), that message wins over every
+        // other branch regardless of the probe booleans. Injecting it keeps
+        // this deterministic on any host instead of depending on whether the
+        // CI runner happens to have a DISPLAY set.
+        let message = permission_message(
+            Some("Wayland-only session detected.".to_string()),
+            true,
+            true,
+            true,
+        );
+        assert_eq!(message, "Wayland-only session detected.");
     }
 
     #[test]

@@ -11,4 +11,4 @@ pub mod onnx_model;
 pub use app_context::{classify as classify_app_context, AppContext};
 pub use classifier::{Classifier, PredictionScores};
 pub use features::{FeatureExtractor, FeatureVector};
-pub use focus_modes::{check_hyperfocus, HyperfocusAlert};
+pub use focus_modes::evaluate_hyperfocus;

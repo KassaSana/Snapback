@@ -5,7 +5,7 @@ use std::thread;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::capture::thread::{CaptureHandle, CAPTURE_CHANNEL_CAPACITY};
-use crate::engine::{check_hyperfocus, Classifier, FeatureExtractor};
+use crate::engine::{evaluate_hyperfocus, Classifier, FeatureExtractor};
 use crate::snapback::{show_snapback_overlay, ContextTracker};
 use crate::storage::Storage;
 use crate::types::{
@@ -306,7 +306,8 @@ fn run_engine_loop(app: AppHandle) {
                     );
                 }
 
-                if scores.focus_state == "DEEP_FOCUS" {
+                let is_deep = scores.focus_state == "DEEP_FOCUS";
+                if is_deep {
                     if deep_focus_started.is_none() {
                         deep_focus_started = Some(std::time::Instant::now());
                     }
@@ -314,14 +315,21 @@ fn run_engine_loop(app: AppHandle) {
                     deep_focus_started = None;
                 }
 
-                if let Some(started) = deep_focus_started {
-                    let deep_secs = started.elapsed().as_secs();
-                    if let Some(alert) =
-                        check_hyperfocus(focus_mode, deep_secs, last_hyperfocus_alert_secs)
-                    {
-                        let _ = app.emit("hyperfocus", &alert);
-                        last_hyperfocus_alert_secs = deep_secs;
-                    }
+                // `evaluate_hyperfocus` owns the alert-clock bookkeeping,
+                // including resetting it to 0 when the streak ends, so the
+                // streak timer and alert clock stay in sync across streaks.
+                let deep_secs = deep_focus_started
+                    .map(|started| started.elapsed().as_secs())
+                    .unwrap_or(0);
+                let (alert, next_alert_secs) = evaluate_hyperfocus(
+                    is_deep,
+                    deep_secs,
+                    last_hyperfocus_alert_secs,
+                    focus_mode,
+                );
+                last_hyperfocus_alert_secs = next_alert_secs;
+                if let Some(alert) = alert {
+                    let _ = app.emit("hyperfocus", &alert);
                 }
             }
         }

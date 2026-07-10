@@ -5,8 +5,10 @@ import {
   buildExportSummary,
   buildPipelineCommand,
   buildTrainFromExportHint,
+  classifierBackendLabel,
   classifyTrainDeployOutcome,
   formatLabelBreakdown,
+  formatTrainingMetrics,
   isDeployReady,
 } from "../src/trainingHints";
 
@@ -191,5 +193,47 @@ assert.deepEqual(
   }),
   [],
 );
+
+// buildPipelineCommand: when the backend already provides a ready command,
+// it must be returned verbatim rather than rebuilding the default script.
+assert.equal(
+  buildPipelineCommand(outputDir, "python3 -m ml.pipeline_cli --custom"),
+  "python3 -m ml.pipeline_cli --custom",
+);
+
+// classifierBackendLabel: only "onnx" maps to "ONNX"; anything else is Heuristic.
+assert.equal(classifierBackendLabel("onnx"), "ONNX");
+assert.equal(classifierBackendLabel("heuristic"), "Heuristic");
+assert.equal(classifierBackendLabel(""), "Heuristic");
+
+// formatTrainingMetrics: null in, null out (no metrics to show).
+assert.equal(formatTrainingMetrics(null), null);
+
+// Prefers cross-validated keys and formats each as a percentage.
+assert.equal(
+  formatTrainingMetrics({
+    cv_accuracy: 0.912,
+    precision_at_10pct: 0.8,
+    recall_distracted: 0.75,
+  }),
+  "accuracy 91.2% · precision@10% 80.0% · recall distracted 75.0%",
+);
+
+// Falls back to the in_sample_* keys when the cv_* keys are absent.
+assert.equal(
+  formatTrainingMetrics({
+    in_sample_accuracy: 0.5,
+    in_sample_precision_at_10pct: 0.6,
+    in_sample_recall_distracted: 0.4,
+  }),
+  "accuracy 50.0% · precision@10% 60.0% · recall distracted 40.0%",
+);
+
+// Only includes the parts that are present; unknown/empty metrics -> null.
+assert.equal(
+  formatTrainingMetrics({ cv_accuracy: 0.88 }),
+  "accuracy 88.0%",
+);
+assert.equal(formatTrainingMetrics({ unrelated_metric: 1 }), null);
 
 console.log("trainingHints.test.ts passed");
