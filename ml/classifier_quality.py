@@ -1,4 +1,18 @@
-"""Evaluate ONNX classifier quality from labeled CSV (Python/onnxruntime)."""
+"""Evaluate ONNX classifier quality from labeled CSV (Python/onnxruntime).
+
+These evaluators score the *raw model* — a plain argmax over the model's
+class probabilities. They deliberately do NOT apply the heuristic guardrails
+(high-risk / thrash / drift / app-block overrides) that the live engine layers
+on top of the model in `src-tauri/src/engine/classifier.rs`. That makes them a
+useful diagnostic for isolating model quality, but their numbers are NOT what a
+user experiences at runtime.
+
+The production-aligned evaluator is the Rust `--classifier-eval` path
+(`src-tauri/src/engine/classifier_eval.rs`), which runs `Classifier::predict`
+end to end, guardrails included. Every result here is tagged
+`production_aligned=False` so callers can never mistake a raw-model number for a
+runtime number.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +37,9 @@ class ClassifierEval:
     accuracy: float
     precision_at_10pct_distracted: float
     recall_distracted: float
+    # Raw-model evaluators here never apply the runtime guardrails, so this is
+    # always False. The Rust `--classifier-eval` path sets it True.
+    production_aligned: bool = False
 
 
 def _predictions_to_indices(probas: List[List[float]]) -> List[int]:
@@ -105,11 +122,12 @@ def evaluate_xgboost_model(labeled_csv: str, model_json: str) -> ClassifierEval:
     )
 
 
-def eval_to_dict(eval_result: ClassifierEval) -> Dict[str, float | int | str]:
+def eval_to_dict(eval_result: ClassifierEval) -> Dict[str, float | int | str | bool]:
     return {
         "backend": eval_result.backend,
         "samples": eval_result.samples,
         "accuracy": round(eval_result.accuracy, 4),
         "precision_at_10pct_distracted": round(eval_result.precision_at_10pct_distracted, 4),
         "recall_distracted": round(eval_result.recall_distracted, 4),
+        "production_aligned": eval_result.production_aligned,
     }

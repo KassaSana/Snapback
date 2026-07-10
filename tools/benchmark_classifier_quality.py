@@ -40,6 +40,10 @@ class ClassifierEval:
     accuracy: float
     precision_at_10pct_distracted: float
     recall_distracted: float
+    # True only for the Rust `--classifier-eval` path, which runs the model
+    # through `Classifier::predict` with the same guardrails as the live engine.
+    # The Python onnxruntime fallback is raw-model, so it stays False.
+    production_aligned: bool = False
 
 
 def run_command(cmd: list[str], *, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
@@ -72,6 +76,8 @@ def parse_classifier_eval(output: str) -> ClassifierEval:
         accuracy=float(fields.get("accuracy", "0")),
         precision_at_10pct_distracted=float(fields.get("precision_at_10pct_distracted", "0")),
         recall_distracted=float(fields.get("recall_distracted", "0")),
+        # The Rust classifier-eval CLI runs the full guardrail pipeline.
+        production_aligned=True,
     )
 
 
@@ -191,6 +197,14 @@ def build_report(
     }
 
 
+def onnx_eval_is_production_aligned(report: dict) -> bool:
+    """True when the ONNX record the gate judges came from the guardrail-aware
+    Rust evaluator. False means the gate ran on raw-model (pre-guardrail)
+    numbers that do not reflect what the live engine produces."""
+    onnx = report.get("classifier_quality", {}).get("onnx", {})
+    return bool(onnx.get("production_aligned", False))
+
+
 def evaluate_quality_gate(
     report: dict,
     *,
@@ -283,8 +297,14 @@ def main() -> int:
             accuracy=py_onnx.accuracy,
             precision_at_10pct_distracted=py_onnx.precision_at_10pct_distracted,
             recall_distracted=py_onnx.recall_distracted,
+            # Raw-model argmax with no guardrails: not what the live engine does.
+            production_aligned=False,
         )
-        notes.append("ONNX quality evaluated via Python onnxruntime (Rust ort linker unavailable on this host).")
+        notes.append(
+            "ONNX quality evaluated via Python onnxruntime (Rust ort linker unavailable on this "
+            "host). These are raw-model numbers WITHOUT the runtime guardrails, so the quality "
+            "gate is not production-aligned on this run."
+        )
 
     xgboost_direct = eval_to_dict(evaluate_xgboost_model(str(LABELED_CSV), str(MODEL_JSON)))
     xgboost_metrics = load_xgboost_metrics(METRICS_JSON)
@@ -313,6 +333,12 @@ def main() -> int:
         handle.write("\n")
 
     if args.enforce_gate:
+        if not onnx_eval_is_production_aligned(report):
+            print(
+                "warning: quality gate is judging RAW-MODEL numbers (no runtime guardrails); "
+                "the guardrail-aware Rust classifier-eval was unavailable on this host.",
+                file=sys.stderr,
+            )
         failures = evaluate_quality_gate(
             report,
             min_cv_accuracy=args.min_cv_accuracy,
@@ -325,7 +351,8 @@ def main() -> int:
             for failure in failures:
                 print(f" - {failure}", file=sys.stderr)
             return 1
-        print("classifier quality gate passed")
+        aligned = "production-aligned" if onnx_eval_is_production_aligned(report) else "raw-model"
+        print(f"classifier quality gate passed ({aligned})")
 
     print(json.dumps(report["classifier_quality"], indent=2))
     print(f"wrote {output_json}")

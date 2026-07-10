@@ -55,7 +55,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 | Task | Files | Issue |
 |------|-------|-------|
 | [x] Decide ONNX + heuristic hybrid | `engine/classifier.rs` | ONNX sets scores; guardrails override `focus_state` (documented + tested) |
-| [ ] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py` | CV metrics may not match runtime |
+| [x] Align eval with production | `classifier_eval.rs`, `ml/classifier_quality.py`, `tools/benchmark_classifier_quality.py` | Rust `--classifier-eval` is the guardrail-aware production evaluator; Python onnxruntime evals are labeled raw-model (`production_aligned=False`), and the quality gate warns loudly when it judged raw-model numbers instead of silently passing them off as runtime |
 | [x] Windows ONNX dev setup | `tools/dev-onnx.mjs`, `DEPLOYMENT.md` | `load-dynamic` + pip `onnxruntime.dll` via `ORT_DYLIB_PATH` |
 | [x] Training deploy false success | `training_deploy.rs`, `App.tsx` | Result now distinguishes `trainingSucceeded` from `deployReady` |
 | [x] Single ACTIVE session invariant | `storage/mod.rs`, `commands.rs` | Starting a new session now completes any prior ACTIVE session |

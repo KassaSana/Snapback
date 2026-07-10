@@ -1,6 +1,9 @@
 import unittest
 
-from tools.benchmark_classifier_quality import evaluate_quality_gate
+from tools.benchmark_classifier_quality import (
+    evaluate_quality_gate,
+    onnx_eval_is_production_aligned,
+)
 
 
 class TestBenchmarkClassifierQuality(unittest.TestCase):
@@ -61,6 +64,21 @@ class TestBenchmarkClassifierQuality(unittest.TestCase):
         self.assertTrue(any("runtime_precision_at_10pct" in failure for failure in failures))
         self.assertTrue(any("runtime_recall_distracted" in failure for failure in failures))
         self.assertTrue(any("runtime recall lift vs heuristic" in failure for failure in failures))
+
+
+    def test_production_aligned_flag_true_for_rust_onnx_eval(self) -> None:
+        report = {"classifier_quality": {"onnx": {"production_aligned": True}}}
+        self.assertTrue(onnx_eval_is_production_aligned(report))
+
+    def test_production_aligned_flag_false_for_raw_model_fallback(self) -> None:
+        report = {"classifier_quality": {"onnx": {"production_aligned": False}}}
+        self.assertFalse(onnx_eval_is_production_aligned(report))
+
+    def test_production_aligned_flag_defaults_false_when_absent(self) -> None:
+        # A report missing the flag (e.g. an older run) must not be mistaken
+        # for production-aligned.
+        report = {"classifier_quality": {"onnx": {"accuracy": 0.9}}}
+        self.assertFalse(onnx_eval_is_production_aligned(report))
 
 
 if __name__ == "__main__":
