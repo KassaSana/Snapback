@@ -77,10 +77,12 @@ cargo run --features onnx --manifest-path src-tauri/Cargo.toml -- --smoke
 
 ### 3. Frontend integration tests for critical flows
 
-- [ ] Add or strengthen React tests for session start/stop error handling.
-- [ ] Add tests for training failure, training success, and "trained but not deploy-ready" states.
-- [ ] Add tests for visible action errors and recovery paths.
-- [ ] Add tests for health and permission messages that block or warn before session start.
+- [x] Add or strengthen React tests for session start/stop error handling. (`errorRecovery.test.tsx` start-failure → visible alert; `sessionFlow.test.tsx` success paths)
+- [x] Add tests for training failure, training success, and "trained but not deploy-ready" states. (`trainingDeploy.test.tsx`: hard failure → message + no reload, deploy-ready → reload, trained-not-deployable → warning + no reload)
+- [x] Add tests for visible action errors and recovery paths. (`errorRecovery.test.tsx`: error banner appears via `role="alert"`, Dismiss clears it)
+- [x] Add tests for health and permission messages that block or warn before session start. (`errorRecovery.test.tsx`: capture-unavailable warning surfaces on start without blocking it)
+
+Status: critical UI flows now have integration tests against a mocked Tauri boundary — session start success/failure + dismiss recovery, all three training outcomes (failed / not-deploy-ready / deploy-ready) including the reload-gating guarantee, and the pre-session capture-unavailable warning. Deeper permission-degradation state coverage (denied/unknown/degraded/dropped-event/no-events) is item #4.
 
 Why third: the user experiences failures through the UI. Good backend behavior still feels broken if the frontend hides or mislabels it.
 

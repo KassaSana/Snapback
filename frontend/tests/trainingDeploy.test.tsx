@@ -106,6 +106,26 @@ describe("Training / deploy card", () => {
     expect(boundary.invoke).not.toHaveBeenCalledWith("reload_classifier_model");
   });
 
+  it("surfaces a failure message and does not reload when training fails", async () => {
+    boundary.state.trainResult = {
+      success: false,
+      training_succeeded: false,
+      deploy_ready: false,
+      onnx_exported: false,
+      message: "Python 3 not found",
+      metrics: null,
+      log_tail: "",
+    };
+    render(<App />);
+
+    const trainButton = await screen.findByRole("button", { name: "Train from export" });
+    await waitFor(() => expect(trainButton).not.toBeDisabled());
+    fireEvent.click(trainButton);
+
+    expect(await screen.findByText(/Python 3 not found/i)).toBeInTheDocument();
+    expect(boundary.invoke).not.toHaveBeenCalledWith("reload_classifier_model");
+  });
+
   it("reloads the classifier when training is deploy-ready", async () => {
     boundary.state.trainResult = {
       success: true,
