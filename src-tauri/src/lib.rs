@@ -91,13 +91,26 @@ pub fn run() {
             let app_state = AppState::new(storage);
             app.manage(app_state);
 
+            // E2E/WebDriver mode: skip global input capture and global hotkeys.
+            // These install OS-level hooks that both can't be tested through a
+            // WebDriver (no real input) and interfere with UI automation, wedging
+            // the app. The UI, IPC, and session lifecycle still work fully.
+            let e2e_mode = std::env::var_os("SNAPBACK_E2E").is_some();
+            if e2e_mode {
+                log::info!("SNAPBACK_E2E set: skipping global capture and shortcuts");
+            }
+
             let handle = app.handle().clone();
-            if let Some(state) = handle.try_state::<AppState>() {
-                let _ = state.start_engine(handle.clone());
+            if !e2e_mode {
+                if let Some(state) = handle.try_state::<AppState>() {
+                    let _ = state.start_engine(handle.clone());
+                }
             }
 
             tray::setup_tray(app)?;
-            label_shortcuts::setup_label_shortcuts(app)?;
+            if !e2e_mode {
+                label_shortcuts::setup_label_shortcuts(app)?;
+            }
 
             Ok(())
         })

@@ -175,13 +175,18 @@ Possible initial targets:
 
 ### 6. One real Tauri/WebDriver E2E happy path
 
-- [~] Add a Tauri-driver/WebDriver test that launches the built app. **Scaffolded** (`e2e/session.spec.mjs`, Mocha + selenium-webdriver + `tauri-driver`) — spec/JSON/YAML validated, but **not yet run green on a real desktop** (can't launch a windowed app in the current environment).
-- [~] Verify the dashboard renders. (asserts the `Session Control` heading)
-- [~] Start a session. (dismiss first-run wizard → type goal → `Start session` → status pill `active`)
-- [~] Stop the session. (`Stop session` → status pill `completed`)
-- [~] Verify the UI reflects the completed session. (same assertion as above)
+- [x] Add a Tauri-driver/WebDriver test that launches the built app. (`e2e/session.spec.mjs`, Mocha + selenium-webdriver + `tauri-driver`)
+- [x] Verify the dashboard renders. (asserts the `Session Control` heading)
+- [x] Start a session. (wait for app-ready → type goal into the React input → `Start session` → status pill `active`)
+- [x] Stop the session. (`Stop session` → status pill `completed`)
+- [x] Verify the UI reflects the completed session.
 
-Status: `[~]` = **scaffolded and syntactically verified, awaiting first real run.** Prereqs + run steps in [`e2e/README.md`](../e2e/README.md). CI job `.github/workflows/e2e.yml` is `workflow_dispatch`-only (manual, non-gating) until it runs reliably. First real run is bring-up work: expect to tweak the binary path, driver versions, or waits. **This is the honest gap between "wrote an E2E" and "have a passing E2E" — the code exists; the green checkmark is earned on a machine with a display.**
+Status: **Green and stable — verified on a real Windows desktop (3/3 runs, ~12s each).** Prereqs + run steps in [`e2e/README.md`](../e2e/README.md). CI job `.github/workflows/e2e.yml` is `workflow_dispatch`-only (manual, non-gating) — the local desktop run is proven; the CI-runner path (msedgedriver setup on the runner image) is the remaining unproven piece.
+
+Three real bugs surfaced and fixed during bring-up:
+- **App froze under automation** → global input capture + hotkeys (`SetWindowsHookExW`/rdev) fight WebDriver. Fix: `SNAPBACK_E2E=1` skips them at startup (`src-tauri/src/lib.rs`); can't test real OS input through WebDriver anyway.
+- **`Start` silently no-op'd** → `sendKeys` sets the DOM value but not React's controlled-input state (`sessionGoal` stayed empty). Fix: set via the native value setter + reset React's `_valueTracker` + dispatch `input` (`setReactInputValue`).
+- **Flaky "checking" state** → interacting before React was interactive. Fix: gate on the App health pill leaving `checking` before any interaction.
 
 Why sixth: this catches issues that unit and mocked integration tests cannot catch: boot failures, packaging problems, IPC wiring, missing assets, and real-shell UI bugs.
 

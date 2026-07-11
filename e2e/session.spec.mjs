@@ -38,8 +38,38 @@ let driver;
 let tauriDriver;
 
 const byButton = (text) => By.xpath(`//button[normalize-space()='${text}']`);
+
+/** Set a React controlled input's value so onChange fires (see call site).
+ *  Resets React's internal `_valueTracker` so React is forced to register the
+ *  change even if the tracker already holds a value. */
+async function setReactInputValue(element, value) {
+  await driver.executeScript(
+    "const input = arguments[0], value = arguments[1];" +
+      "const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;" +
+      "setter.call(input, value);" +
+      "if (input._valueTracker) { input._valueTracker.setValue(''); }" +
+      "input.dispatchEvent(new Event('input', { bubbles: true }));",
+    element,
+    value,
+  );
+}
 const bySessionStatus = (text) =>
   By.xpath(`//span[contains(@class,'session-status') and normalize-space()='${text}']`);
+
+/** The App health pill text ("checking" until the first get_health resolves). */
+async function appHealthText() {
+  try {
+    return await driver
+      .findElement(
+        By.xpath(
+          "//span[@class='status-label' and normalize-space()='App']/following-sibling::span[contains(@class,'status-value')]",
+        ),
+      )
+      .getAttribute("textContent");
+  } catch {
+    return null;
+  }
+}
 
 /** The first-run wizard modal covers the UI when capture isn't confirmed (as on
  *  a fresh CI machine). Dismiss it so the dashboard is interactable. */
@@ -67,8 +97,12 @@ describe("Snapback session happy path (WebDriver E2E)", function () {
       );
     }
 
+    // The app is launched by tauri-driver and inherits this env: E2E mode skips
+    // global input capture / hotkeys, which otherwise wedge the app under
+    // automation (global OS hooks vs. WebDriver).
     tauriDriver = spawn(tauriDriverPath, [], {
       stdio: [null, process.stdout, process.stderr],
+      env: { ...process.env, SNAPBACK_E2E: "1" },
     });
     // Give tauri-driver a moment to bind its port before connecting.
     await new Promise((r) => setTimeout(r, 2000));
@@ -80,6 +114,28 @@ describe("Snapback session happy path (WebDriver E2E)", function () {
       })
       .usingServer(WEBDRIVER_URL)
       .build();
+
+    // Fail fast instead of hanging on the driver's 5-min renderer timeout.
+    await driver.manage().setTimeouts({ script: 20000, pageLoad: 30000 });
+
+    // Wait for the shell, then clear the first-run wizard so the dashboard is
+    // visible and interactable for every test below.
+    await driver.wait(
+      until.elementLocated(By.xpath("//h2[normalize-space()='Session Control']")),
+      WAIT_MS,
+    );
+    // Wait until the app is actually interactive: the first health load has
+    // resolved (status leaves "checking"). Interacting before React is ready is
+    // racy under automation — inputs/clicks silently no-op.
+    await driver.wait(
+      async () => {
+        const t = await appHealthText();
+        return t !== null && t !== "checking";
+      },
+      WAIT_MS,
+      "app never became interactive (health stuck on 'checking')",
+    );
+    await dismissFirstRunWizard();
   });
 
   after(async function () {
@@ -92,21 +148,25 @@ describe("Snapback session happy path (WebDriver E2E)", function () {
   });
 
   it("renders the dashboard", async function () {
-    const heading = await driver.wait(
-      until.elementLocated(By.xpath("//h2[normalize-space()='Session Control']")),
-      WAIT_MS,
+    const heading = await driver.findElement(
+      By.xpath("//h2[normalize-space()='Session Control']"),
     );
-    expect(await heading.getText()).to.equal("Session Control");
+    // textContent is robust to the element being visually covered.
+    expect(await heading.getAttribute("textContent")).to.contain("Session Control");
   });
 
   it("starts a session with a goal", async function () {
-    await dismissFirstRunWizard();
-
     const goal = await driver.findElement(
       By.css('input[placeholder="Ship the snapback overlay"]'),
     );
-    await goal.clear();
-    await goal.sendKeys("E2E happy path");
+    await goal.click();
+    // Set the value through React's tracked native setter and fire an `input`
+    // event, so the controlled component's onChange runs and `sessionGoal`
+    // state updates. Plain `sendKeys` sets only the DOM value, which React's
+    // value tracker ignores — the input *looks* filled but state stays empty,
+    // so Start would no-op on a "blank" goal.
+    await setReactInputValue(goal, "E2E happy path");
+    await driver.sleep(300); // let React commit the state update before clicking
 
     await driver.findElement(byButton("Start session")).click();
 

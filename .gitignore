@@ -33,6 +33,7 @@ ml/htmlcov/
 .coverage
 htmlcov/
 frontend/coverage/
+e2e/drivers/
 ml/dist/
 ml/build/
 ml/*.egg-info/

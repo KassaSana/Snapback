@@ -7,11 +7,11 @@ This is the only test that exercises app boot, IPC wiring, asset embedding, and 
 real window — the layers the Vitest component tests (which mock the Tauri
 boundary) can't reach. See [`docs/TEST_BACKLOG.md`](../docs/TEST_BACKLOG.md) §6.
 
-> ⚠️ **Status: scaffolded, not yet run green.** It was written to the Tauri
-> WebDriver spec but has **not** been executed on a real desktop in this repo's
-> environment. Treat the first run as bring-up: expect to adjust the binary path,
-> driver versions, or waits. It is intentionally **not** part of the push CI gate
-> (see `.github/workflows/e2e.yml`, `workflow_dispatch` only).
+> ✅ **Status: green on a real Windows desktop** (3/3 runs, ~12s each) with Edge +
+> matching `msedgedriver`. It is intentionally **not** part of the push CI gate
+> (see `.github/workflows/e2e.yml`, `workflow_dispatch` only) — the CI-runner
+> path (setting up `msedgedriver` on the runner image) is the one piece not yet
+> proven. Run it locally with the steps below.
 
 ## Prerequisites
 
@@ -54,6 +54,10 @@ Overrides:
 
 ## Notes
 
+- The spec launches the app with **`SNAPBACK_E2E=1`**, which skips global input
+  capture and global hotkeys. Those install OS-level hooks that can't be tested
+  through WebDriver (no real input) and interfere with UI automation (they wedge
+  the app). The UI, IPC, and session lifecycle still work fully.
 - The session **starts even without capture permissions** on a CI runner
   (warn-don't-block), so the happy path does not depend on real input capture.
 - If the first-run wizard covers the screen, `dismissFirstRunWizard()` clicks
