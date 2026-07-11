@@ -57,11 +57,13 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 ### 2. Release-grade smoke harness assertions
 
-- [ ] Tighten the headless smoke harness so pass/fail checks are explicit and easy to diagnose.
-- [ ] Assert seeded sessions, features, and labels exist.
-- [ ] Assert export produces the expected training artifacts.
-- [ ] Assert training produces a deployable ONNX model when dependencies are present.
-- [ ] Assert classifier status flips to ONNX after reload.
+- [x] Tighten the headless smoke harness so pass/fail checks are explicit and easy to diagnose. (extracted `check_export_thresholds` + `check_train_outcome` pure functions with named-guarantee diagnostics; unit-tested without ONNX)
+- [x] Assert seeded sessions, features, and labels exist. (`seed_smoke_sessions_exports_enough_rows`; runtime `run_smoke` seed/export stages)
+- [x] Assert export produces the expected training artifacts. (`check_export_thresholds` unit test + `run_smoke` `has_export` check)
+- [x] Assert training produces a deployable ONNX model when dependencies are present. (`check_train_outcome` unit-tests the pass/fail logic; the actual train+ONNX run stays in `run_smoke` behind `--features onnx`)
+- [x] Assert classifier status flips to ONNX after reload. (`run_smoke` `load_onnx_backend` asserts backend == "onnx" post-reload; requires the ONNX toolchain)
+
+Status: the smoke harness's pass/fail decisions are now pure, named functions covered by `cargo test` (no ONNX/Python needed), so a regression in the check *logic* is caught in normal CI. The full end-to-end train→ONNX→reload path still requires `cargo run --features onnx -- --smoke` with Python + onnxruntime present — that part is exercised on demand, not in the unit suite.
 
 Why second: this verifies the whole product pipeline in one place.
 

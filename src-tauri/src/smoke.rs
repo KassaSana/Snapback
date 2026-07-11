@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::engine::features::FeatureVector;
 use crate::state::classifier_status;
 use crate::storage::Storage;
-use crate::training_deploy::{self, training_deploy_status};
+use crate::training_deploy::{self, training_deploy_status, TrainFromExportResult};
 use crate::types::{ContextSnapshotDto, FocusLabel, LabelSource, PredictionRecord};
 
 const SMOKE_SESSION_COUNT: usize = 4;
@@ -174,24 +174,7 @@ fn run_smoke(app_data_dir: &Path, report: &mut SmokeReport) -> Result<(), SmokeF
     let export = storage
         .export_training_data(&export_dir, None)
         .map_err(|err| SmokeFailure::new("export", err.to_string()))?;
-    if export.feature_count < MIN_EXPECTED_FEATURE_ROWS {
-        return Err(SmokeFailure::new(
-            "export",
-            format!(
-                "Expected at least {MIN_EXPECTED_FEATURE_ROWS} exported feature rows, found {}.",
-                export.feature_count
-            ),
-        ));
-    }
-    if export.label_count < MIN_EXPECTED_LABEL_ROWS {
-        return Err(SmokeFailure::new(
-            "export",
-            format!(
-                "Expected at least {MIN_EXPECTED_LABEL_ROWS} exported label rows, found {}.",
-                export.label_count
-            ),
-        ));
-    }
+    check_export_thresholds(export.feature_count, export.label_count)?;
     let deploy_status = training_deploy_status(app_data_dir);
     if !deploy_status.has_export {
         return Err(SmokeFailure::new(
@@ -210,31 +193,12 @@ fn run_smoke(app_data_dir: &Path, report: &mut SmokeReport) -> Result<(), SmokeF
     emit_stage("train", "running train_from_export");
     let train = training_deploy::train_from_export(app_data_dir)
         .map_err(|err| SmokeFailure::new("train", err))?;
-    if !train.training_succeeded {
-        return Err(SmokeFailure::new(
-            "train",
-            format!("{} Log tail:\n{}", train.message, train.log_tail),
-        ));
-    }
-    if !train.deploy_ready || !train.onnx_exported {
-        return Err(SmokeFailure::new(
-            "train",
-            format!("{} Log tail:\n{}", train.message, train.log_tail),
-        ));
-    }
     let post_train_status = training_deploy_status(app_data_dir);
-    if !post_train_status.model_onnx_exists {
-        return Err(SmokeFailure::new(
-            "train",
-            "Training reported success, but export_dir/model.onnx was missing afterward.",
-        ));
-    }
-    if !post_train_status.metrics_exists {
-        return Err(SmokeFailure::new(
-            "train",
-            "Training reported success, but metrics.json was missing afterward.",
-        ));
-    }
+    check_train_outcome(
+        &train,
+        post_train_status.model_onnx_exists,
+        post_train_status.metrics_exists,
+    )?;
     report.pass(
         "train",
         format!(
@@ -262,6 +226,67 @@ fn run_smoke(app_data_dir: &Path, report: &mut SmokeReport) -> Result<(), SmokeF
         "Validated session lifecycle, export, training, and ONNX reload in {}.",
         app_data_dir.display()
     );
+    Ok(())
+}
+
+/// Exported CSVs must carry at least the deterministic minimums the seed
+/// produces. A shortfall means export dropped rows or the seed changed.
+fn check_export_thresholds(feature_count: usize, label_count: usize) -> Result<(), SmokeFailure> {
+    if feature_count < MIN_EXPECTED_FEATURE_ROWS {
+        return Err(SmokeFailure::new(
+            "export",
+            format!(
+                "Expected at least {MIN_EXPECTED_FEATURE_ROWS} exported feature rows, found {feature_count}."
+            ),
+        ));
+    }
+    if label_count < MIN_EXPECTED_LABEL_ROWS {
+        return Err(SmokeFailure::new(
+            "export",
+            format!(
+                "Expected at least {MIN_EXPECTED_LABEL_ROWS} exported label rows, found {label_count}."
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// A release-grade training run must succeed, be deploy-ready with an exported
+/// ONNX model, and leave both `model.onnx` and `metrics.json` on disk. Each
+/// failure names exactly which guarantee broke so a failing smoke run is easy
+/// to diagnose.
+fn check_train_outcome(
+    train: &TrainFromExportResult,
+    model_onnx_exists: bool,
+    metrics_exists: bool,
+) -> Result<(), SmokeFailure> {
+    if !train.training_succeeded {
+        return Err(SmokeFailure::new(
+            "train",
+            format!("Training did not succeed: {} Log tail:\n{}", train.message, train.log_tail),
+        ));
+    }
+    if !train.deploy_ready || !train.onnx_exported {
+        return Err(SmokeFailure::new(
+            "train",
+            format!(
+                "Training was not deploy-ready (deploy_ready={}, onnx_exported={}): {} Log tail:\n{}",
+                train.deploy_ready, train.onnx_exported, train.message, train.log_tail
+            ),
+        ));
+    }
+    if !model_onnx_exists {
+        return Err(SmokeFailure::new(
+            "train",
+            "Training reported success, but export_dir/model.onnx was missing afterward.",
+        ));
+    }
+    if !metrics_exists {
+        return Err(SmokeFailure::new(
+            "train",
+            "Training reported success, but metrics.json was missing afterward.",
+        ));
+    }
     Ok(())
 }
 
@@ -723,5 +748,72 @@ mod tests {
             .unwrap();
         assert!(export.feature_count >= MIN_EXPECTED_FEATURE_ROWS);
         assert!(export.label_count >= MIN_EXPECTED_LABEL_ROWS);
+    }
+
+    fn train_result(succeeded: bool, deploy_ready: bool, onnx_exported: bool) -> TrainFromExportResult {
+        TrainFromExportResult {
+            success: succeeded,
+            training_succeeded: succeeded,
+            deploy_ready,
+            message: "smoke".to_string(),
+            onnx_exported,
+            metrics: None,
+            log_tail: String::new(),
+        }
+    }
+
+    #[test]
+    fn check_export_thresholds_passes_at_minimums_and_fails_below() {
+        assert!(check_export_thresholds(MIN_EXPECTED_FEATURE_ROWS, MIN_EXPECTED_LABEL_ROWS).is_ok());
+
+        let feat_err =
+            check_export_thresholds(MIN_EXPECTED_FEATURE_ROWS - 1, MIN_EXPECTED_LABEL_ROWS)
+                .unwrap_err();
+        assert_eq!(feat_err.stage, "export");
+        assert!(feat_err.detail.contains("feature rows"), "detail: {}", feat_err.detail);
+
+        let label_err =
+            check_export_thresholds(MIN_EXPECTED_FEATURE_ROWS, MIN_EXPECTED_LABEL_ROWS - 1)
+                .unwrap_err();
+        assert!(label_err.detail.contains("label rows"), "detail: {}", label_err.detail);
+    }
+
+    #[test]
+    fn check_train_outcome_passes_only_when_fully_deployable() {
+        assert!(check_train_outcome(&train_result(true, true, true), true, true).is_ok());
+    }
+
+    #[test]
+    fn check_train_outcome_names_each_broken_guarantee() {
+        let not_trained =
+            check_train_outcome(&train_result(false, false, false), true, true).unwrap_err();
+        assert!(not_trained.detail.contains("did not succeed"), "detail: {}", not_trained.detail);
+
+        let not_deployable =
+            check_train_outcome(&train_result(true, false, false), true, true).unwrap_err();
+        assert!(not_deployable.detail.contains("deploy-ready"), "detail: {}", not_deployable.detail);
+
+        let no_model =
+            check_train_outcome(&train_result(true, true, true), false, true).unwrap_err();
+        assert!(no_model.detail.contains("model.onnx"), "detail: {}", no_model.detail);
+
+        let no_metrics =
+            check_train_outcome(&train_result(true, true, true), true, false).unwrap_err();
+        assert!(no_metrics.detail.contains("metrics.json"), "detail: {}", no_metrics.detail);
+    }
+
+    #[test]
+    fn verify_session_gate_passes_and_records_a_check_on_fresh_storage() {
+        let dir =
+            std::env::temp_dir().join(format!("snapback-smoke-gate-{}", uuid::Uuid::new_v4()));
+        let storage = Storage::open(dir.clone()).unwrap();
+        let mut report = SmokeReport::new(&dir);
+
+        verify_session_gate(&storage, &mut report).expect("gate should pass on fresh storage");
+
+        assert!(
+            report.checks.iter().any(|c| c.stage == "session_gate" && c.ok),
+            "expected a passing session_gate check to be recorded",
+        );
     }
 }
