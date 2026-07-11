@@ -139,7 +139,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [x] `permissions.rs` message/probe honesty helpers
 - [x] ONNX override policy tests (`engine/classifier.rs`)
 - [x] `api.ts` mapper tests
-- [x] Component/integration tests — Vitest + jsdom + React Testing Library; renders the full app against a mocked Tauri boundary and asserts wizard/health (`App.test.tsx`), session start/stop (`sessionFlow.test.tsx`), and training/deploy incl. the H4 "trained but not deploy-ready" warning + reload gating (`trainingDeploy.test.tsx`) (`vite.config.ts` `test`, `tests/setup.ts`)
+- [x] Component/integration tests — Vitest + jsdom + React Testing Library; renders the full app against a mocked Tauri boundary and asserts wizard/health (`App.test.tsx`), session start/stop (`sessionFlow.test.tsx`), training/deploy incl. the H4 "trained but not deploy-ready" warning + reload gating (`trainingDeploy.test.tsx`), and app-rules add/delete (`appRulesFlow.test.tsx`) (`vite.config.ts` `test`, `tests/setup.ts`)
 - [ ] Full WebDriver E2E via `tauri-driver` (later) — drives the built binary in CI
 
 ---
