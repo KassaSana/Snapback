@@ -36,10 +36,14 @@ Goal: reach B+ by strengthening integration/system coverage, then approach A- by
 
 ### 1. Rust command/session lifecycle tests
 
-- [ ] Add or strengthen tests for start session, stop session, and active-session invariants.
-- [ ] Verify empty or invalid goals are rejected at the command boundary.
-- [ ] Verify predictions/context/labels persist only when a session is active.
-- [ ] Verify labels attach to the intended session/time window.
+- [x] Add or strengthen tests for start session, stop session, and active-session invariants.
+- [x] Verify empty or invalid goals are rejected at the command boundary.
+- [x] Verify predictions/context/labels persist only when a session is active. (storage `session_gated_prediction_and_feature_persistence`, `prediction_requires_existing_session`)
+- [x] Verify labels attach to the intended session.
+
+Status: command-boundary tests now cover trimmed session goals, blank-goal rejection, **too-long-goal rejection with state left untouched**, focus-mode application, automatic completion of the previous active session, stop-session feature-state reset, **stop-unknown-session error**, automatic end-of-session labels, manual/survey label submission, **blank/too-long label-notes rejection**, and **cross-session label isolation** (a label lands only on its intended session) through the command path.
+
+Known limitation: stopping an already-COMPLETED session re-runs `save_auto_session_label`, writing a duplicate AUTO label. Low impact (the UI doesn't offer re-stop); left unasserted and noted for a future fix.
 
 Why first: this protects the product's core promise. If session state is wrong, every downstream feature becomes suspicious.
 

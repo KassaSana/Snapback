@@ -82,9 +82,16 @@ pub fn start_session(
     goal: String,
     focus_mode: Option<String>,
 ) -> Result<SessionRecord, String> {
+    start_session_for_state(&state, &goal, focus_mode.as_deref())
+}
+
+fn start_session_for_state(
+    state: &AppState,
+    goal: &str,
+    focus_mode: Option<&str>,
+) -> Result<SessionRecord, String> {
     let goal = validate_required_text("Session goal", &goal, MAX_SESSION_GOAL_LEN)?;
     let mode = focus_mode
-        .as_deref()
         .map(FocusMode::from_str)
         .unwrap_or(FocusMode::Normal);
     *state.focus_mode.lock() = mode;
@@ -107,6 +114,10 @@ pub fn stop_session(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<SessionRecord, String> {
+    stop_session_for_state(&state, &session_id)
+}
+
+fn stop_session_for_state(state: &AppState, session_id: &str) -> Result<SessionRecord, String> {
     let record = state
         .storage
         .lock()
@@ -145,6 +156,10 @@ pub fn get_active_session(state: State<'_, AppState>) -> Result<Option<SessionRe
 
 #[tauri::command]
 pub fn submit_label(state: State<'_, AppState>, request: LabelRequest) -> Result<(), String> {
+    submit_label_for_state(&state, request)
+}
+
+fn submit_label_for_state(state: &AppState, request: LabelRequest) -> Result<(), String> {
     let session_id = validate_required_text("Session ID", &request.session_id, 128)?;
     let notes = validate_optional_text("Label notes", request.notes, MAX_LABEL_NOTES_LEN)?;
     let source = crate::types::LabelSource::parse(request.source.as_deref());
@@ -337,6 +352,13 @@ pub fn train_from_export(app: tauri::AppHandle) -> Result<TrainFromExportResult,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::Storage;
+
+    fn temp_app_state() -> AppState {
+        let dir =
+            std::env::temp_dir().join(format!("snapback_commands_test_{}", uuid::Uuid::new_v4()));
+        AppState::new(Storage::open(dir).unwrap())
+    }
 
     #[test]
     fn clamp_limit_uses_default_and_caps_large_values() {
@@ -416,5 +438,207 @@ mod tests {
     #[test]
     fn clamp_limit_passes_through_exactly_at_the_cap() {
         assert_eq!(clamp_limit(Some(MAX_HISTORY_LIMIT), 8), MAX_HISTORY_LIMIT);
+    }
+
+    #[test]
+    fn start_session_command_core_trims_goal_sets_mode_and_completes_previous_active() {
+        let state = temp_app_state();
+
+        let first = start_session_for_state(&state, "  First goal  ", None).unwrap();
+        assert_eq!(first.goal, "First goal");
+        assert_eq!(first.status, "ACTIVE");
+        assert_eq!(first.focus_mode, "normal");
+        assert_eq!(*state.focus_mode.lock(), FocusMode::Normal);
+        assert_eq!(*state.feature_session_epoch.lock(), 1);
+        assert!(state.feature_session_start_ts.lock().is_some());
+
+        let second = start_session_for_state(&state, "  Deep work  ", Some("deep")).unwrap();
+        assert_eq!(second.goal, "Deep work");
+        assert_eq!(second.status, "ACTIVE");
+        assert_eq!(second.focus_mode, "deep");
+        assert_eq!(*state.focus_mode.lock(), FocusMode::Deep);
+        assert_eq!(*state.feature_session_epoch.lock(), 2);
+        assert!(state.feature_session_start_ts.lock().is_some());
+
+        let storage = state.storage.lock();
+        let first_after = storage.get_session(&first.session_id).unwrap();
+        assert_eq!(first_after.status, "COMPLETED");
+        assert!(first_after.ended_at.is_some());
+
+        let active = storage
+            .get_active_session()
+            .unwrap()
+            .expect("new session should be active");
+        assert_eq!(active.session_id, second.session_id);
+    }
+
+    #[test]
+    fn start_session_command_core_rejects_blank_goal_without_changing_state() {
+        let state = temp_app_state();
+
+        let err = start_session_for_state(&state, "   ", Some("deep")).unwrap_err();
+
+        assert_eq!(err, "Session goal is required.");
+        assert_eq!(*state.focus_mode.lock(), FocusMode::Normal);
+        assert_eq!(*state.feature_session_epoch.lock(), 0);
+        assert!(state.feature_session_start_ts.lock().is_none());
+        assert!(state.storage.lock().get_active_session().unwrap().is_none());
+    }
+
+    #[test]
+    fn stop_session_command_core_completes_session_and_resets_feature_session() {
+        let state = temp_app_state();
+        let session = start_session_for_state(&state, "Wrap up", Some("recovery")).unwrap();
+        assert!(state.feature_session_start_ts.lock().is_some());
+
+        let stopped = stop_session_for_state(&state, &session.session_id).unwrap();
+
+        assert_eq!(stopped.session_id, session.session_id);
+        assert_eq!(stopped.status, "COMPLETED");
+        assert!(stopped.ended_at.is_some());
+        assert_eq!(*state.feature_session_epoch.lock(), 2);
+        assert!(state.feature_session_start_ts.lock().is_none());
+        assert!(state.storage.lock().get_active_session().unwrap().is_none());
+
+        let out_dir = std::env::temp_dir().join(format!(
+            "snapback_commands_export_{}",
+            uuid::Uuid::new_v4()
+        ));
+        let export = state
+            .storage
+            .lock()
+            .export_training_data(&out_dir, Some(&session.session_id))
+            .unwrap();
+        assert_eq!(export.label_count, 1);
+        let labels = std::fs::read_to_string(export.labels_path).unwrap();
+        assert!(labels.contains(",AUTO,"));
+        assert!(labels.contains("inferred from session recap"));
+    }
+
+    #[test]
+    fn submit_label_command_core_trims_session_id_and_notes() {
+        let state = temp_app_state();
+        let session = start_session_for_state(&state, "Label flow", None).unwrap();
+
+        submit_label_for_state(
+            &state,
+            LabelRequest {
+                session_id: format!("  {}  ", session.session_id),
+                label: crate::types::FocusLabel::Productive,
+                notes: Some("  steady focus  ".to_string()),
+                source: Some("survey".to_string()),
+            },
+        )
+        .unwrap();
+
+        let out_dir = std::env::temp_dir().join(format!(
+            "snapback_commands_labels_{}",
+            uuid::Uuid::new_v4()
+        ));
+        let export = state
+            .storage
+            .lock()
+            .export_training_data(&out_dir, Some(&session.session_id))
+            .unwrap();
+        assert_eq!(export.label_count, 1);
+        let labels = std::fs::read_to_string(export.labels_path).unwrap();
+        assert!(labels.contains(",1,SURVEY,"));
+        assert!(labels.contains("steady focus"));
+        assert!(!labels.contains("  steady focus  "));
+    }
+
+    #[test]
+    fn start_session_command_core_rejects_too_long_goal_without_changing_state() {
+        let state = temp_app_state();
+        let goal = "a".repeat(MAX_SESSION_GOAL_LEN + 1);
+
+        let err = start_session_for_state(&state, &goal, Some("deep")).unwrap_err();
+
+        assert!(err.contains("at most"), "unexpected error: {err}");
+        // A rejected command must leave session/feature state untouched.
+        assert_eq!(*state.focus_mode.lock(), FocusMode::Normal);
+        assert_eq!(*state.feature_session_epoch.lock(), 0);
+        assert!(state.feature_session_start_ts.lock().is_none());
+        assert!(state.storage.lock().get_active_session().unwrap().is_none());
+    }
+
+    #[test]
+    fn stop_session_command_core_errors_on_unknown_session() {
+        let state = temp_app_state();
+        // No session started; stopping a bogus id must error, not panic or
+        // silently succeed.
+        assert!(stop_session_for_state(&state, "does-not-exist").is_err());
+        assert!(state.storage.lock().get_active_session().unwrap().is_none());
+    }
+
+    #[test]
+    fn submit_label_command_core_rejects_blank_session_id() {
+        let state = temp_app_state();
+        let err = submit_label_for_state(
+            &state,
+            LabelRequest {
+                session_id: "   ".to_string(),
+                label: crate::types::FocusLabel::Productive,
+                notes: None,
+                source: Some("manual".to_string()),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err, "Session ID is required.");
+    }
+
+    #[test]
+    fn submit_label_command_core_rejects_too_long_notes() {
+        let state = temp_app_state();
+        let session = start_session_for_state(&state, "Notes bound", None).unwrap();
+        let notes = "n".repeat(MAX_LABEL_NOTES_LEN + 1);
+
+        let err = submit_label_for_state(
+            &state,
+            LabelRequest {
+                session_id: session.session_id,
+                label: crate::types::FocusLabel::Productive,
+                notes: Some(notes),
+                source: Some("manual".to_string()),
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("at most"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn submit_label_command_core_attaches_label_to_intended_session_only() {
+        let state = temp_app_state();
+        let a = start_session_for_state(&state, "Session A", None).unwrap();
+        // Starting B auto-completes A (no auto-label is written on auto-complete).
+        let b = start_session_for_state(&state, "Session B", None).unwrap();
+
+        submit_label_for_state(
+            &state,
+            LabelRequest {
+                session_id: a.session_id.clone(),
+                label: crate::types::FocusLabel::Productive,
+                notes: None,
+                source: Some("manual".to_string()),
+            },
+        )
+        .unwrap();
+
+        let storage = state.storage.lock();
+        let export_a = storage
+            .export_training_data(
+                &std::env::temp_dir().join(format!("snapback_intended_a_{}", uuid::Uuid::new_v4())),
+                Some(&a.session_id),
+            )
+            .unwrap();
+        let export_b = storage
+            .export_training_data(
+                &std::env::temp_dir().join(format!("snapback_intended_b_{}", uuid::Uuid::new_v4())),
+                Some(&b.session_id),
+            )
+            .unwrap();
+
+        assert_eq!(export_a.label_count, 1, "label should attach to session A");
+        assert_eq!(export_b.label_count, 0, "session B must not receive A's label");
     }
 }

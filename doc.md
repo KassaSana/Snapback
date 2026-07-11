@@ -14,6 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Command/session lifecycle tests (TEST_BACKLOG #1): too-long goal rejection + state untouched, stop-unknown-session error, label notes/blank validation, cross-session label isolation (`commands.rs` `*_command_core_*`)
 - [x] Analytics / insights — Insights card (stat tiles + single-series SVG focus-trend bar chart) consuming `get_session_history`; backend `get_session_history` → `SessionSummary[]` + `storage.list_recent_sessions` (`InsightsCard.tsx`, `insightsMetrics.ts`, `useInsights.ts`, `commands.rs`, `storage/mod.rs`)
 
 - [x] Component/integration test layer: Vitest + jsdom + RTL against a mocked Tauri boundary — wizard/health (`App.test.tsx`), session start/stop (`sessionFlow.test.tsx`), training/deploy incl. "trained but not deploy-ready" warning + reload gating (`trainingDeploy.test.tsx`), app-rules add/delete (`appRulesFlow.test.tsx`)
