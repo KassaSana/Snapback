@@ -8,6 +8,7 @@ Last reviewed: 2026-07-08. Alpha is usable; main gaps are confidence (smoke test
 |------|------|
 | [`doc.md`](../doc.md) | What you're doing this session |
 | **This file** | Everything else, with file paths |
+| [`TEST_BACKLOG.md`](TEST_BACKLOG.md) | Testing confidence roadmap |
 | [`CODE_HEALTH_REVIEW.md`](CODE_HEALTH_REVIEW.md) | Review findings and fix queue |
 | [`ROADMAP.md`](ROADMAP.md) | Shipped history + tier summary |
 

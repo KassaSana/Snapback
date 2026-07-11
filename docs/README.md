@@ -6,6 +6,7 @@ Where to look, in order of usefulness:
 |-----|----------------|
 | [`doc.md`](../doc.md) | Session checklist — what you're doing today |
 | [`BACKLOG.md`](BACKLOG.md) | Full task list with file paths |
+| [`TEST_BACKLOG.md`](TEST_BACKLOG.md) | Testing confidence roadmap |
 | [`CODE_HEALTH_REVIEW.md`](CODE_HEALTH_REVIEW.md) | Code review findings and fix queue |
 | [`ROADMAP.md`](ROADMAP.md) | Shipped history + tier index |
 | [`SMOKE_TEST.md`](SMOKE_TEST.md) | 60-min ship-confidence checklist |
