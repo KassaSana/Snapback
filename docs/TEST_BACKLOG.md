@@ -50,6 +50,7 @@ Goal: reach B+ by strengthening integration/system coverage, then approach A- by
 | Frontend coverage | report-only (no gate) | `npm run test:coverage` | not gated | v8 provider |
 | Python ML | export / dataset / training / ONNX | `py -m unittest discover -s ml/tests` | `python` | 14 files |
 | Python coverage | report-only (no gate) | `py -m coverage run -m unittest discover -s ml/tests -p "test_*.py"` then `py -m coverage report` | not gated | 72% prod; `.coveragerc` |
+| Rust coverage | report-only (no gate) | `cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only` | not gated | 69% line; needs `cargo-llvm-cov` |
 | Classifier quality gate | CV floors + recall lift over heuristic | `py -m tools.benchmark_classifier_quality --enforce-gate` | `classifier-quality` | synthetic data |
 | Classifier eval | heuristic vs ONNX, production-aligned | `cargo run -- --classifier-eval <csv>` | `classifier-eval` | guardrail-aware |
 | Feature parity | Rust vs Python feature vectors match | `py -m ml.feature_parity_cli` | `feature-parity(-windows)` | |
@@ -147,8 +148,18 @@ npm run test
 
 - [x] Add frontend coverage reporting with Vitest. (`@vitest/coverage-v8`, `npm run test:coverage`, config in `vite.config.ts`; `frontend/coverage/` gitignored)
 - [x] Consider Python coverage with `coverage.py`. (`.coveragerc` scopes to `ml/`, excludes tests; `py -m coverage run -m unittest discover -s ml/tests -p "test_*.py" && py -m coverage report`. Baseline **72%** production. `pip install coverage`; report-only, not gating CI)
-- [ ] Consider Rust coverage with `cargo llvm-cov`. (follow-up)
+- [x] Consider Rust coverage with `cargo llvm-cov`. (`cargo install cargo-llvm-cov` + `rustup component add llvm-tools-preview`; `cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only`. Baseline **69% line**. Report-only, not gating CI)
 - [x] Start with reporting only, then add thresholds after the numbers are understood. (no thresholds set yet; not gating CI)
+
+**Coverage baselines (report-only, no gates):**
+
+| Layer | Command | Baseline | Blind spots |
+|-------|---------|----------|-------------|
+| Frontend (component suite) | `npm run test:coverage` | 82.9% stmts / 72.9% branch | pure-logic modules read low (covered by the `tsx` suite, not vitest) |
+| Python (`ml/`) | `py -m coverage run -m unittest discover -s ml/tests -p "test_*.py"` → `py -m coverage report` | 72% prod | onnxruntime/xgboost eval paths (run in CI classifier jobs) |
+| Rust (`src-tauri/`) | `cargo llvm-cov --manifest-path src-tauri/Cargo.toml --summary-only` | 69% line | Tauri runtime glue — `lib.rs`/`main.rs`/`tray.rs` (0%), `state.rs` (41%), `overlay`/`capture` — only reachable by a real-app E2E (item #6) |
+
+All three tell the same story: **core/pure logic is well covered; the assembled-app + OS-facing layers are the gap, and closing them is what the WebDriver E2E (#6) is for.**
 
 Baseline (component suite, `test:coverage`): **82.9% stmts / 72.9% branch** overall. UI/hooks are strong (App 100%, cards 90–100%, `useInsights`/`useFeedback`/`healthPoll`/`insightsMetrics` 100%). The low readings — `timelineRefresh` (18%), `utils` (47%), `apiMappers` (76%), `healthHints` (66%) — are **artefacts of the two-runner split**: these pure-logic modules are exercised by the `tsx tests/*.test.ts` scripts, which vitest doesn't instrument. Before setting thresholds, either unify runners (move the tsx logic tests into vitest) or exclude the tsx-covered modules from the vitest coverage `include` so the number reflects the integration layer honestly.
 

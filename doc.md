@@ -14,6 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Rust coverage reporting (TEST_BACKLOG #5): `cargo llvm-cov` baseline 69% line; **coverage trio complete** (frontend 83% / Python 72% / Rust 69%), all report-only — blind spots are the Tauri runtime glue (→ E2E #6)
 - [x] Python coverage reporting (TEST_BACKLOG #5 follow-up): `.coveragerc` scopes to `ml/`, excludes tests; `py -m coverage run/report`; baseline 72% production (report-only, not gated)
 - [x] Test-doc cleanup (TEST_BACKLOG #7): three-kinds-of-smoke section + test matrix (what runs where), reconciled stale BACKLOG counts (22 commands, ~166 Rust / 14 Python / 16 frontend tests), CI job list matches `ci.yml`
 - [x] Frontend coverage reporting (TEST_BACKLOG #5): `@vitest/coverage-v8` + `npm run test:coverage` (report-only, no thresholds); baseline 82.9% stmts / 72.9% branch on the component suite (`vite.config.ts`, `frontend/coverage/` gitignored)
