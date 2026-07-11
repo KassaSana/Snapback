@@ -31,6 +31,7 @@ DEFAULT_MIN_CV_ACCURACY = 0.55
 DEFAULT_MIN_CV_PRECISION_AT_10PCT = 0.45
 DEFAULT_MIN_CV_RECALL_DISTRACTED = 0.30
 DEFAULT_MIN_RECALL_LIFT = 0.20
+DEFAULT_COMMAND_TIMEOUT_SECS = 300
 
 
 @dataclass
@@ -46,14 +47,29 @@ class ClassifierEval:
     production_aligned: bool = False
 
 
-def run_command(cmd: list[str], *, cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def run_command(
+    cmd: list[str],
+    *,
+    cwd: Path = REPO_ROOT,
+    timeout_secs: int = DEFAULT_COMMAND_TIMEOUT_SECS,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_secs,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if exc.stdout:
+            print(exc.stdout, end="")
+        if exc.stderr:
+            print(exc.stderr, end="", file=sys.stderr)
+        raise RuntimeError(
+            f"command timed out after {timeout_secs}s: {' '.join(cmd)}"
+        ) from exc
     if completed.returncode != 0:
         if completed.stdout:
             print(completed.stdout, end="")
