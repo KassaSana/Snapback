@@ -97,11 +97,13 @@ npm run typecheck
 
 ### 4. Health and permission degradation tests
 
-- [ ] Test capture unavailable, denied, unknown, degraded, and unsupported states.
-- [ ] Test dropped-event warnings.
-- [ ] Test no-events-received warnings.
-- [ ] Test active-window unavailable messaging.
-- [ ] Test recovery behavior when capture health improves after launch.
+- [x] Test capture unavailable, denied, degraded, and unsupported states. (Rust `permission_message` branches: active-window-only, input-only, both-missing, hard-blocker; frontend capture-failed state with reason in `healthDegradation.test.tsx`)
+- [x] Test dropped-event warnings. (`healthDegradation.test.tsx` — PermissionsCard surfaces `captureEventsDropped > 0`)
+- [ ] Test no-events-received warnings. **Not implemented in the app** — there is currently no "capture running but no events flowing" warning to test. Deferred until that warning exists (small feature, out of scope for a test-only increment).
+- [x] Test active-window unavailable messaging. (`permission_message_flags_active_window_unavailable`)
+- [~] Test recovery behavior when capture health improves after launch. Partly covered: `healthPoll.shouldPollHealth` (unit) drives the re-poll-until-capture-up recovery, and `useAppEffects` refreshes on mount + session complete. A full timer-driven "poll fires → health improves → UI recovers" integration test needs fake timers and is deferred.
+
+Note: "unknown" is not a distinct app state — health resolves to online/offline/degraded (`summarizeAppHealth`, already tested in `healthHints.test.ts`).
 
 Why fourth: OS-facing features fail in messy ways. The app should make those failures visible and actionable.
 

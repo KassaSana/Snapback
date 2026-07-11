@@ -14,6 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Health/permission degradation tests (TEST_BACKLOG #4): Rust `permission_message` degraded branches (active-window/input/both-missing), frontend dropped-events warning + capture-failed state (`permissions.rs`, `healthDegradation.test.tsx`)
 - [x] Frontend error/recovery tests (TEST_BACKLOG #3): session-start failure → visible alert + dismiss, training hard-failure → message + no reload, capture-unavailable warning before session start (`errorRecovery.test.tsx`, `trainingDeploy.test.tsx`)
 - [x] Smoke harness assertions (TEST_BACKLOG #2): extracted `check_export_thresholds` + `check_train_outcome` pure diagnosable checks, unit-tested without ONNX (`smoke.rs`)
 - [x] Command/session lifecycle tests (TEST_BACKLOG #1): too-long goal rejection + state untouched, stop-unknown-session error, label notes/blank validation, cross-session label isolation (`commands.rs` `*_command_core_*`)

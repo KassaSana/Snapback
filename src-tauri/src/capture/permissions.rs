@@ -367,6 +367,40 @@ mod tests {
     }
 
     #[test]
+    fn permission_message_flags_active_window_unavailable() {
+        // Capture input is fine but active-window detection is not: the user
+        // needs Accessibility. This branch is platform-independent.
+        let message = permission_message(None, false, true, true);
+        assert_eq!(
+            message,
+            "Active window detection unavailable. Grant Accessibility permission (see steps below)."
+        );
+    }
+
+    #[test]
+    fn permission_message_flags_input_capture_unavailable() {
+        // Active window is readable but global input capture is denied.
+        let message = permission_message(None, true, false, false);
+        assert!(
+            message.contains("Input capture unavailable"),
+            "unexpected message: {message}"
+        );
+    }
+
+    #[test]
+    fn permission_message_both_missing_is_distinct_from_partial_and_healthy() {
+        // Neither capability available must produce its own message, not be
+        // confused with a single-missing case or the healthy case. Asserting
+        // distinctness keeps this deterministic across platform-specific copy.
+        let both = permission_message(None, false, false, false);
+        let active_only = permission_message(None, false, true, true);
+        let input_only = permission_message(None, true, false, false);
+        assert_ne!(both, "Capture permissions look good.");
+        assert_ne!(both, active_only);
+        assert_ne!(both, input_only);
+    }
+
+    #[test]
     fn permission_message_prioritizes_a_hard_capture_blocker() {
         // When the platform reports capture is fundamentally unavailable
         // (e.g. a Wayland-only Linux session), that message wins over every
