@@ -12,6 +12,17 @@ export default defineConfig({
     environment: "jsdom",
     include: ["tests/**/*.test.tsx"],
     setupFiles: ["tests/setup.ts"],
+    coverage: {
+      // Report-only for now (no thresholds). NOTE: this measures the vitest
+      // component suite only. Pure-logic modules (insightsMetrics, healthPoll,
+      // permissionWizardState, apiMappers, utils, …) are covered by the
+      // `tsx tests/*.test.ts` scripts, so their numbers here read artificially
+      // low. See docs/TEST_BACKLOG.md #5.
+      provider: "v8",
+      reporter: ["text", "html"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/main.tsx", "src/vite-env.d.ts"],
+    },
   },
   clearScreen: false,
   server: {

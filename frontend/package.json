@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "tsx tests/utils.test.ts && tsx tests/apiMappers.test.ts && tsx tests/trainingHints.test.ts && tsx tests/appRulePreview.test.ts && tsx tests/healthHints.test.ts && tsx tests/timelineRefresh.test.ts && tsx tests/permissionWizardState.test.ts && tsx tests/healthPoll.test.ts && tsx tests/insightsMetrics.test.ts",
     "test:components": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test": "npm run test:unit && npm run test:components"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
+    "@vitest/coverage-v8": "^3.2.7",
     "jsdom": "^29.1.1",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",

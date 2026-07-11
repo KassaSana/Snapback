@@ -118,10 +118,12 @@ npm run test
 
 ### 5. Coverage reporting
 
-- [ ] Add frontend coverage reporting with Vitest.
-- [ ] Consider Python coverage with `coverage.py`.
-- [ ] Consider Rust coverage with `cargo llvm-cov`.
-- [ ] Start with reporting only, then add thresholds after the numbers are understood.
+- [x] Add frontend coverage reporting with Vitest. (`@vitest/coverage-v8`, `npm run test:coverage`, config in `vite.config.ts`; `frontend/coverage/` gitignored)
+- [ ] Consider Python coverage with `coverage.py`. (follow-up)
+- [ ] Consider Rust coverage with `cargo llvm-cov`. (follow-up)
+- [x] Start with reporting only, then add thresholds after the numbers are understood. (no thresholds set yet; not gating CI)
+
+Baseline (component suite, `test:coverage`): **82.9% stmts / 72.9% branch** overall. UI/hooks are strong (App 100%, cards 90–100%, `useInsights`/`useFeedback`/`healthPoll`/`insightsMetrics` 100%). The low readings — `timelineRefresh` (18%), `utils` (47%), `apiMappers` (76%), `healthHints` (66%) — are **artefacts of the two-runner split**: these pure-logic modules are exercised by the `tsx tests/*.test.ts` scripts, which vitest doesn't instrument. Before setting thresholds, either unify runners (move the tsx logic tests into vitest) or exclude the tsx-covered modules from the vitest coverage `include` so the number reflects the integration layer honestly.
 
 Why fifth: coverage helps reveal forgotten areas, but it should not lead the strategy.
 

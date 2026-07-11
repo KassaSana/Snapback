@@ -14,6 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Frontend coverage reporting (TEST_BACKLOG #5): `@vitest/coverage-v8` + `npm run test:coverage` (report-only, no thresholds); baseline 82.9% stmts / 72.9% branch on the component suite (`vite.config.ts`, `frontend/coverage/` gitignored)
 - [x] Health/permission degradation tests (TEST_BACKLOG #4): Rust `permission_message` degraded branches (active-window/input/both-missing), frontend dropped-events warning + capture-failed state (`permissions.rs`, `healthDegradation.test.tsx`)
 - [x] Frontend error/recovery tests (TEST_BACKLOG #3): session-start failure → visible alert + dismiss, training hard-failure → message + no reload, capture-unavailable warning before session start (`errorRecovery.test.tsx`, `trainingDeploy.test.tsx`)
 - [x] Smoke harness assertions (TEST_BACKLOG #2): extracted `check_export_thresholds` + `check_train_outcome` pure diagnosable checks, unit-tested without ONNX (`smoke.rs`)
