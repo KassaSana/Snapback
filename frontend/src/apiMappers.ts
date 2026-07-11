@@ -7,7 +7,9 @@ import type {
   HealthStatus,
   PermissionStatus,
   PredictionRecord,
+  SessionRecap,
   SessionRecord,
+  SessionSummary,
   SnapbackPayload,
   TrainFromExportResult,
   TrainingDeployStatus,
@@ -109,6 +111,26 @@ export function mapSession(raw: Record<string, unknown>): SessionRecord {
     focusMode: String(raw.focus_mode ?? raw.focusMode ?? "normal"),
     startedAt: (raw.started_at ?? raw.startedAt ?? null) as string | null,
     endedAt: (raw.ended_at ?? raw.endedAt ?? null) as string | null,
+  };
+}
+
+export function mapSessionRecap(raw: Record<string, unknown>): SessionRecap {
+  return {
+    sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
+    goal: String(raw.goal ?? ""),
+    durationSecs: Number(raw.duration_secs ?? raw.durationSecs ?? 0),
+    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
+    avgDistractionRisk: Number(raw.avg_distraction_risk ?? raw.avgDistractionRisk ?? 0),
+    snapbackCount: Number(raw.snapback_count ?? raw.snapbackCount ?? 0),
+    thrashSpikes: Number(raw.thrash_spikes ?? raw.thrashSpikes ?? 0),
+    deepFocusPct: Number(raw.deep_focus_pct ?? raw.deepFocusPct ?? 0),
+  };
+}
+
+export function mapSessionSummary(raw: Record<string, unknown>): SessionSummary {
+  return {
+    record: mapSession((raw.record ?? {}) as Record<string, unknown>),
+    recap: mapSessionRecap((raw.recap ?? {}) as Record<string, unknown>),
   };
 }
 

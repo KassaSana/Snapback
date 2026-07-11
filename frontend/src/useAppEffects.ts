@@ -14,6 +14,7 @@ import { TIMELINE_POLL_MS } from "./useLiveData";
 type UseAppEffectsArgs = {
   refreshHealth: () => void | Promise<void>;
   captureRunning: boolean;
+  refreshInsights: () => void | Promise<void>;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
   refreshDeployStatus: () => void | Promise<void>;
@@ -40,6 +41,7 @@ type UseAppEffectsArgs = {
 export const useAppEffects = ({
   refreshHealth,
   captureRunning,
+  refreshInsights,
   refreshLatest,
   refreshAppRules,
   refreshDeployStatus,
@@ -62,8 +64,24 @@ export const useAppEffects = ({
     void refreshLatest();
     void refreshAppRules();
     void refreshDeployStatus();
+    void refreshInsights();
     void hydrateActiveSession();
-  }, [hydrateActiveSession, refreshHealth, refreshLatest, refreshAppRules, refreshDeployStatus]);
+  }, [
+    hydrateActiveSession,
+    refreshHealth,
+    refreshLatest,
+    refreshAppRules,
+    refreshDeployStatus,
+    refreshInsights,
+  ]);
+
+  // A completed session adds a new row to history — refresh insights so the
+  // chart and tiles pick it up without a manual reload.
+  useEffect(() => {
+    if (sessionStatus === "COMPLETED") {
+      void refreshInsights();
+    }
+  }, [sessionStatus, refreshInsights]);
 
   useEffect(() => {
     if (!sessionId || sessionStatus !== "ACTIVE") {

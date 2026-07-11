@@ -10,6 +10,8 @@ import {
   mapPermissionStatus,
   mapPrediction,
   mapSession,
+  mapSessionRecap,
+  mapSessionSummary,
   mapSetupSteps,
   mapSnapbackPayload,
   mapTrainFromExportResult,
@@ -96,6 +98,11 @@ export type SessionRecap = {
   snapbackCount: number;
   thrashSpikes: number;
   deepFocusPct: number;
+};
+
+export type SessionSummary = {
+  record: SessionRecord;
+  recap: SessionRecap;
 };
 
 export type FocusLabel =
@@ -205,16 +212,11 @@ export const api = {
     invoke("submit_label", { request: { sessionId, label, notes, source } }),
   getSessionRecap: async (sessionId: string) => {
     const raw = await invoke<Record<string, unknown>>("get_session_recap", { sessionId });
-    return {
-      sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
-      goal: String(raw.goal ?? ""),
-      durationSecs: Number(raw.duration_secs ?? raw.durationSecs ?? 0),
-      avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
-      avgDistractionRisk: Number(raw.avg_distraction_risk ?? raw.avgDistractionRisk ?? 0),
-      snapbackCount: Number(raw.snapback_count ?? raw.snapbackCount ?? 0),
-      thrashSpikes: Number(raw.thrash_spikes ?? raw.thrashSpikes ?? 0),
-      deepFocusPct: Number(raw.deep_focus_pct ?? raw.deepFocusPct ?? 0),
-    } satisfies SessionRecap;
+    return mapSessionRecap(raw);
+  },
+  getSessionHistory: async (limit = 20) => {
+    const rows = await invoke<Record<string, unknown>[]>("get_session_history", { limit });
+    return rows.map(mapSessionSummary);
   },
   setFocusMode: (mode: string) => invoke("set_focus_mode", { mode }),
   reloadClassifierModel: async () => {

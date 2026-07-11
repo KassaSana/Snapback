@@ -14,8 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
-- [ ] **Analytics / insights (2/2): frontend** — Insights card + charts consuming `get_session_history` (dataviz skill)
-- [x] Analytics / insights (1/2): backend — `get_session_history` command returns `SessionSummary[]` (session record + recap), `storage.list_recent_sessions` newest-first + capped (`commands.rs`, `storage/mod.rs`, `types.rs`)
+- [x] Analytics / insights — Insights card (stat tiles + single-series SVG focus-trend bar chart) consuming `get_session_history`; backend `get_session_history` → `SessionSummary[]` + `storage.list_recent_sessions` (`InsightsCard.tsx`, `insightsMetrics.ts`, `useInsights.ts`, `commands.rs`, `storage/mod.rs`)
 
 - [x] Component/integration test layer: Vitest + jsdom + RTL against a mocked Tauri boundary — wizard/health (`App.test.tsx`), session start/stop (`sessionFlow.test.tsx`), training/deploy incl. "trained but not deploy-ready" warning + reload gating (`trainingDeploy.test.tsx`), app-rules add/delete (`appRulesFlow.test.tsx`)
 - [x] Emit failures no longer silent: Tauri event emits routed through `events::emit_or_log` (warns on failure) instead of `let _ = app.emit(...)` (`events.rs`, `state.rs`, `lib.rs`, `label_shortcuts.rs`)

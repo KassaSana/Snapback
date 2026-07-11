@@ -3,6 +3,7 @@
 import { ActivityCards } from "./ActivityCards";
 import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
+import { InsightsCard } from "./InsightsCard";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
 import { PermissionsCard } from "./PermissionsCard";
@@ -13,6 +14,7 @@ import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
 import { useHealth } from "./useHealth";
+import { useInsights } from "./useInsights";
 import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
@@ -21,6 +23,8 @@ export default function App() {
   const feedback = useFeedback();
 
   const live = useLiveData();
+
+  const { sessionHistory, refreshInsights } = useInsights();
 
   const {
     activeWindowAvailable,
@@ -124,6 +128,7 @@ export default function App() {
   useAppEffects({
     refreshHealth,
     captureRunning,
+    refreshInsights,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
     refreshDeployStatus,
@@ -224,6 +229,8 @@ export default function App() {
           trainingCommand={trainingCommand}
           trainingInProgress={trainingInProgress}
         />
+
+        <InsightsCard sessionHistory={sessionHistory} />
 
         <ActivityCards
           contextTimeline={live.contextTimeline}

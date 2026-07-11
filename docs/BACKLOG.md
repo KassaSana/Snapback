@@ -166,7 +166,7 @@ Do this when stale docs slow you down — not before the smoke test.
 ## Tier 5 — Later
 
 - App rules "block" as real intervention (scoring boost only today)
-- Analytics / charts — **in progress**: backend landed (`get_session_history` command → `SessionSummary[]`, `storage.list_recent_sessions`); frontend insights card + charts next
+- [x] Analytics / charts — Insights card: stat tiles (sessions, avg focus, deep focus %, snapbacks) + single-series SVG focus-trend bar chart from `get_session_history`; refreshes on mount + session complete (`InsightsCard.tsx`, `insightsMetrics.ts`, `useInsights.ts`, backend `get_session_history`)
 - LSTM / 30–60s lookahead (~1 Hz reactive engine for now)
 - Linux release packaging
 - Wayland capture
