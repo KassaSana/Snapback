@@ -8,7 +8,7 @@ import {
   type PredictionRecord,
   type SnapbackPayload,
 } from "./api";
-import { HEALTH_POLL_MS, shouldPollHealth } from "./healthPoll";
+import { CAPTURE_STALL_RECHECK_MS, HEALTH_POLL_MS, shouldPollHealth } from "./healthPoll";
 import { TIMELINE_POLL_MS } from "./useLiveData";
 
 type UseAppEffectsArgs = {
@@ -107,6 +107,19 @@ export const useAppEffects = ({
     }, HEALTH_POLL_MS);
 
     return () => window.clearInterval(timer);
+  }, [captureRunning, refreshHealth]);
+
+  // When capture comes up, re-check once past the stall grace window so a
+  // running-but-silent listener surfaces without a manual refresh.
+  useEffect(() => {
+    if (!captureRunning) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void refreshHealth();
+    }, CAPTURE_STALL_RECHECK_MS);
+
+    return () => window.clearTimeout(timer);
   }, [captureRunning, refreshHealth]);
 
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HEALTH_POLL_MS } from "../src/healthPoll";
+import { CAPTURE_STALL_RECHECK_MS, HEALTH_POLL_MS } from "../src/healthPoll";
 import { FIRST_RUN_ACK_KEY } from "../src/permissionWizardState";
 
 const boundary = vi.hoisted(() => {
@@ -128,6 +128,32 @@ describe("Health degradation visibility", () => {
       });
 
       expect(card.getByText("listener running")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("re-checks after launch and surfaces a stall that appears past the grace window", async () => {
+    vi.useFakeTimers();
+    try {
+      window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
+      // Capture is up and looks fine at launch (grace not elapsed yet).
+      boundary.state.health = health({ capture_running: true, capture_stalled: false });
+      render(<App />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const card = within(permissionsCard());
+      expect(card.queryByText(/hasn't received any input events/i)).not.toBeInTheDocument();
+
+      // Backend now reports the listener stalled (grace elapsed, still no events).
+      boundary.state.health = health({ capture_running: true, capture_stalled: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CAPTURE_STALL_RECHECK_MS);
+      });
+
+      expect(card.getByText(/hasn't received any input events/i)).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

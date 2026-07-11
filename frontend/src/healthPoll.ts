@@ -12,3 +12,11 @@ export const HEALTH_POLL_MS = 5000;
  * failure) carry state changes, so continuous polling would be wasted work.
  */
 export const shouldPollHealth = (captureRunning: boolean): boolean => !captureRunning;
+
+/**
+ * After capture starts, re-check health once past the stall grace window so a
+ * dead-on-arrival listener (running, but never delivering events) surfaces on
+ * its own instead of waiting for a manual refresh. Slightly longer than the
+ * backend's NO_EVENTS_GRACE (15s) so the stall flag has settled.
+ */
+export const CAPTURE_STALL_RECHECK_MS = 16000;

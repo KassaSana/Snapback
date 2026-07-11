@@ -14,6 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Stall warning actually surfaces: one-shot health re-check `CAPTURE_STALL_RECHECK_MS` (16s) after capture comes up, so a running-but-silent listener warns without manual refresh (`healthPoll.ts`, `useAppEffects.ts`, tested)
 - [x] Capture-health pair (TEST_BACKLOG #4 deferrals): "no events received" stall detection (`capture_stalled` via `is_capture_stalled`, 15s grace) with PermissionsCard warning + backend counter; timer-driven recovery test (poll picks up capture coming up after launch) (`state.rs`, `PermissionsCard.tsx`, `healthDegradation.test.tsx`)
 - [x] Rust coverage reporting (TEST_BACKLOG #5): `cargo llvm-cov` baseline 69% line; **coverage trio complete** (frontend 83% / Python 72% / Rust 69%), all report-only — blind spots are the Tauri runtime glue (→ E2E #6)
 - [x] Python coverage reporting (TEST_BACKLOG #5 follow-up): `.coveragerc` scopes to `ml/`, excludes tests; `py -m coverage run/report`; baseline 72% production (report-only, not gated)
