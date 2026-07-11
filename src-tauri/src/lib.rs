@@ -111,6 +111,7 @@ pub fn run() {
             commands::get_active_session,
             commands::submit_label,
             commands::get_session_recap,
+            commands::get_session_history,
             commands::set_focus_mode,
             commands::dismiss_snapback,
             commands::reload_classifier_model,

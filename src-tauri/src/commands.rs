@@ -4,7 +4,7 @@ use crate::state::{classifier_status, AppState};
 use crate::training_deploy::{TrainFromExportResult, TrainingDeployStatus};
 use crate::types::{
     AppRuleRecord, ClassifierStatus, ContextSnapshotDto, ExportTrainingResult, FocusMode,
-    HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord,
+    HealthStatus, LabelRequest, PredictionRecord, SessionRecap, SessionRecord, SessionSummary,
     UpsertAppRuleRequest,
 };
 
@@ -165,6 +165,24 @@ pub fn get_session_recap(
         .lock()
         .session_recap(&session_id)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_session_history(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<SessionSummary>, String> {
+    let limit = clamp_limit(limit, 20);
+    let storage = state.storage.lock();
+    let sessions = storage.list_recent_sessions(limit).map_err(|e| e.to_string())?;
+    let mut summaries = Vec::with_capacity(sessions.len());
+    for record in sessions {
+        let recap = storage
+            .session_recap(&record.session_id)
+            .map_err(|e| e.to_string())?;
+        summaries.push(SessionSummary { record, recap });
+    }
+    Ok(summaries)
 }
 
 #[tauri::command]

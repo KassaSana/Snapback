@@ -14,6 +14,9 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [ ] **Analytics / insights (2/2): frontend** — Insights card + charts consuming `get_session_history` (dataviz skill)
+- [x] Analytics / insights (1/2): backend — `get_session_history` command returns `SessionSummary[]` (session record + recap), `storage.list_recent_sessions` newest-first + capped (`commands.rs`, `storage/mod.rs`, `types.rs`)
+
 - [x] Component/integration test layer: Vitest + jsdom + RTL against a mocked Tauri boundary — wizard/health (`App.test.tsx`), session start/stop (`sessionFlow.test.tsx`), training/deploy incl. "trained but not deploy-ready" warning + reload gating (`trainingDeploy.test.tsx`), app-rules add/delete (`appRulesFlow.test.tsx`)
 - [x] Emit failures no longer silent: Tauri event emits routed through `events::emit_or_log` (warns on failure) instead of `let _ = app.emit(...)` (`events.rs`, `state.rs`, `lib.rs`, `label_shortcuts.rs`)
 - [x] Auto-recover permissions: poll health every 5s while capture isn't running so granting permission after launch is noticed without manual refresh (`healthPoll.ts`, `useAppEffects.ts`)

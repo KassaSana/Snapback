@@ -505,6 +505,27 @@ impl Storage {
         }
     }
 
+    /// Most recent sessions, newest first, for the history/insights view.
+    pub fn list_recent_sessions(&self, limit: usize) -> Result<Vec<SessionRecord>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, goal, status, focus_mode, started_at, ended_at
+             FROM sessions
+             ORDER BY started_at DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok(SessionRecord {
+                session_id: row.get(0)?,
+                goal: row.get(1)?,
+                status: row.get(2)?,
+                focus_mode: row.get(3)?,
+                started_at: row.get(4)?,
+                ended_at: row.get(5)?,
+            })
+        })?;
+        Ok(collect_rows_logging_dropped(rows, "sessions"))
+    }
+
     fn ensure_active_session(&self, session_id: &str) -> Result<(), StorageError> {
         if session_id.is_empty() || session_id == "idle" {
             return Err(StorageError::SessionNotFound);
@@ -1304,6 +1325,38 @@ mod tests {
         let summary = storage.prune_runtime_data(chrono::Utc::now(), 0).unwrap();
         assert_eq!(summary.total(), 0);
         assert_eq!(storage.prediction_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn list_recent_sessions_orders_newest_first_and_caps() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+
+        // Starting a new session auto-completes the previous one, so these are
+        // three distinct rows with three distinct started_at values.
+        storage.start_session("First goal", "normal").unwrap();
+        storage.start_session("Second goal", "deep").unwrap();
+        let third = storage.start_session("Third goal", "recovery").unwrap();
+
+        let all = storage.list_recent_sessions(20).unwrap();
+        assert_eq!(all.len(), 3);
+        // Newest first.
+        assert_eq!(all[0].session_id, third.session_id);
+        assert_eq!(all[0].goal, "Third goal");
+        assert_eq!(all[0].status, "ACTIVE");
+        assert_eq!(all[2].goal, "First goal");
+
+        // Limit caps the result.
+        let limited = storage.list_recent_sessions(2).unwrap();
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0].session_id, third.session_id);
+    }
+
+    #[test]
+    fn list_recent_sessions_empty_when_no_sessions() {
+        let dir = std::env::temp_dir().join(format!("focoflow_test_{}", Uuid::new_v4()));
+        let storage = Storage::open(dir).unwrap();
+        assert!(storage.list_recent_sessions(20).unwrap().is_empty());
     }
 
     #[test]

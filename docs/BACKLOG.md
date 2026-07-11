@@ -166,7 +166,7 @@ Do this when stale docs slow you down — not before the smoke test.
 ## Tier 5 — Later
 
 - App rules "block" as real intervention (scoring boost only today)
-- Analytics / charts
+- Analytics / charts — **in progress**: backend landed (`get_session_history` command → `SessionSummary[]`, `storage.list_recent_sessions`); frontend insights card + charts next
 - LSTM / 30–60s lookahead (~1 Hz reactive engine for now)
 - Linux release packaging
 - Wayland capture

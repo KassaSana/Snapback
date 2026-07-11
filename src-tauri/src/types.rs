@@ -123,6 +123,14 @@ pub struct SessionRecap {
     pub deep_focus_pct: f64,
 }
 
+/// A past session paired with its computed recap, for the insights/history view.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSummary {
+    pub record: SessionRecord,
+    pub recap: SessionRecap,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FocusLabel {
