@@ -175,11 +175,13 @@ Possible initial targets:
 
 ### 6. One real Tauri/WebDriver E2E happy path
 
-- [ ] Add a Tauri-driver/WebDriver test that launches the built app.
-- [ ] Verify the dashboard renders.
-- [ ] Start a session.
-- [ ] Stop the session.
-- [ ] Verify the UI reflects the completed session.
+- [~] Add a Tauri-driver/WebDriver test that launches the built app. **Scaffolded** (`e2e/session.spec.mjs`, Mocha + selenium-webdriver + `tauri-driver`) — spec/JSON/YAML validated, but **not yet run green on a real desktop** (can't launch a windowed app in the current environment).
+- [~] Verify the dashboard renders. (asserts the `Session Control` heading)
+- [~] Start a session. (dismiss first-run wizard → type goal → `Start session` → status pill `active`)
+- [~] Stop the session. (`Stop session` → status pill `completed`)
+- [~] Verify the UI reflects the completed session. (same assertion as above)
+
+Status: `[~]` = **scaffolded and syntactically verified, awaiting first real run.** Prereqs + run steps in [`e2e/README.md`](../e2e/README.md). CI job `.github/workflows/e2e.yml` is `workflow_dispatch`-only (manual, non-gating) until it runs reliably. First real run is bring-up work: expect to tweak the binary path, driver versions, or waits. **This is the honest gap between "wrote an E2E" and "have a passing E2E" — the code exists; the green checkmark is earned on a machine with a display.**
 
 Why sixth: this catches issues that unit and mocked integration tests cannot catch: boot failures, packaging problems, IPC wiring, missing assets, and real-shell UI bugs.
 
