@@ -24,10 +24,11 @@ capture → FeatureExtractor → classifier (heuristic / ONNX)
   → export → pipeline_cli → model.onnx → reload in app
 ```
 
-- 21 Tauri commands in `lib.rs`, all used from `frontend/src/api.ts`
-- ~55 Rust tests, 13 Python test files, 6 frontend test files
-- CI: Python (+ ML deps), frontend, Rust (+ ONNX on Ubuntu/Windows), Tauri build smoke, feature parity, dependency audits
+- 22 Tauri commands in `lib.rs`, all used from `frontend/src/api.ts`
+- ~166 Rust tests, 14 Python test files, 16 frontend test files (9 tsx pure-logic + 7 Vitest component)
+- CI (10 jobs): security-audit, python (+ ML deps), frontend (+ Vitest components), rust, rust-windows (ONNX), tauri-build (non-bundled smoke), classifier-quality gate, classifier-eval + headless `--smoke` harness, feature-parity, feature-parity-windows
 - Release: NSIS + DMG on `v*` tags
+- Test matrix (what runs where): [TEST_BACKLOG.md § Test matrix](TEST_BACKLOG.md#test-matrix--what-runs-where)
 
 ---
 

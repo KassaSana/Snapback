@@ -32,6 +32,33 @@ The main weakness is assembled-app confidence. The pieces are fairly well tested
 
 Goal: reach B+ by strengthening integration/system coverage, then approach A- by adding one real desktop E2E path.
 
+## The three kinds of "smoke"
+
+"Smoke test" means three different things in this repo — keep them straight:
+
+- **Automated (headless) smoke** — `cargo run --features onnx -- --smoke`. Seeds deterministic sessions, then runs export → train → ONNX reload in-process and asserts each stage. Runs in CI (classifier-eval job). No human, no real window.
+- **Manual smoke** — [SMOKE_TEST.md](SMOKE_TEST.md). A ~60-minute human checklist driving the *real* desktop app (capture → label → snapback → export → train → reload). Human only; not automated.
+- **Release smoke** — tag `v0.2.x`, let the release workflow build the NSIS/DMG installer, then install and launch it on a real machine. Human + tag.
+
+## Test matrix — what runs where
+
+| Suite | Checks | Local command | In CI | Notes |
+|-------|--------|---------------|-------|-------|
+| Rust unit | core logic, storage, commands, smoke checks | `cargo test --manifest-path src-tauri/Cargo.toml` | `rust`, `rust-windows` | ~166 tests |
+| Frontend pure-logic | mappers, hints, geometry, poll/wizard state | `npm run test:unit` (in `frontend/`) | `frontend` | 9 `tsx` scripts |
+| Frontend component | UI flows vs mocked Tauri boundary | `npm run test:components` | `frontend` | 7 Vitest + jsdom |
+| Frontend coverage | report-only (no gate) | `npm run test:coverage` | not gated | v8 provider |
+| Python ML | export / dataset / training / ONNX | `py -m unittest discover -s ml/tests` | `python` | 14 files |
+| Python coverage | report-only (no gate) | `py -m coverage run -m unittest discover -s ml/tests -p "test_*.py"` then `py -m coverage report` | not gated | 72% prod; `.coveragerc` |
+| Classifier quality gate | CV floors + recall lift over heuristic | `py -m tools.benchmark_classifier_quality --enforce-gate` | `classifier-quality` | synthetic data |
+| Classifier eval | heuristic vs ONNX, production-aligned | `cargo run -- --classifier-eval <csv>` | `classifier-eval` | guardrail-aware |
+| Feature parity | Rust vs Python feature vectors match | `py -m ml.feature_parity_cli` | `feature-parity(-windows)` | |
+| Headless smoke | seed → export → train → ONNX reload | `cargo run --features onnx -- --smoke` | `classifier-eval` | needs onnx + Python |
+| Tauri build smoke | app compiles & bundles | `npm run tauri build -- --no-bundle` | `tauri-build` | non-bundled |
+| Manual smoke | real desktop happy path | [SMOKE_TEST.md](SMOKE_TEST.md) | — | human only |
+| Release dry run | installer on Windows | tag `v0.2.x` | release workflow | human + tag |
+| WebDriver E2E | real app boot + session | not built yet | — | roadmap #6 |
+
 ## Recommended order
 
 ### 1. Rust command/session lifecycle tests
@@ -119,7 +146,7 @@ npm run test
 ### 5. Coverage reporting
 
 - [x] Add frontend coverage reporting with Vitest. (`@vitest/coverage-v8`, `npm run test:coverage`, config in `vite.config.ts`; `frontend/coverage/` gitignored)
-- [ ] Consider Python coverage with `coverage.py`. (follow-up)
+- [x] Consider Python coverage with `coverage.py`. (`.coveragerc` scopes to `ml/`, excludes tests; `py -m coverage run -m unittest discover -s ml/tests -p "test_*.py" && py -m coverage report`. Baseline **72%** production. `pip install coverage`; report-only, not gating CI)
 - [ ] Consider Rust coverage with `cargo llvm-cov`. (follow-up)
 - [x] Start with reporting only, then add thresholds after the numbers are understood. (no thresholds set yet; not gating CI)
 
@@ -149,10 +176,10 @@ Concept: end-to-end testing. Use sparingly because it is slower and more fragile
 
 ### 7. Test documentation cleanup
 
-- [ ] Update docs so they clearly distinguish automated smoke, manual smoke, and release smoke.
-- [ ] Keep CI descriptions aligned with the workflow file.
-- [ ] Add or update a test matrix: local, CI, manual, release-only.
-- [ ] Remove stale testing claims from backlog/status docs.
+- [x] Update docs so they clearly distinguish automated smoke, manual smoke, and release smoke. (§ The three kinds of "smoke" above)
+- [x] Keep CI descriptions aligned with the workflow file. (BACKLOG "Where things stand" now lists all 10 CI jobs by name, matching `ci.yml`)
+- [x] Add or update a test matrix: local, CI, manual, release-only. (§ Test matrix — what runs where)
+- [x] Remove stale testing claims from backlog/status docs. (BACKLOG updated: 22 commands, ~166 Rust / 14 Python / 16 frontend test files — was "21 commands, ~55 Rust, 13 Python, 6 frontend")
 
 Why last: docs should reflect the test reality after the test reality changes.
 

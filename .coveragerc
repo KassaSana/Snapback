@@ -1,0 +1,14 @@
+# Python coverage config for the ml package (report-only, no CI gate).
+# Run from repo root:
+#   py -m coverage run -m unittest discover -s ml/tests -p "test_*.py"
+#   py -m coverage report
+[run]
+source = ml
+omit =
+    ml/tests/*
+    ml/__init__.py
+
+[report]
+# Show production-code coverage; test files are excluded via omit above.
+skip_covered = False
+precision = 0

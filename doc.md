@@ -14,6 +14,8 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
+- [x] Python coverage reporting (TEST_BACKLOG #5 follow-up): `.coveragerc` scopes to `ml/`, excludes tests; `py -m coverage run/report`; baseline 72% production (report-only, not gated)
+- [x] Test-doc cleanup (TEST_BACKLOG #7): three-kinds-of-smoke section + test matrix (what runs where), reconciled stale BACKLOG counts (22 commands, ~166 Rust / 14 Python / 16 frontend tests), CI job list matches `ci.yml`
 - [x] Frontend coverage reporting (TEST_BACKLOG #5): `@vitest/coverage-v8` + `npm run test:coverage` (report-only, no thresholds); baseline 82.9% stmts / 72.9% branch on the component suite (`vite.config.ts`, `frontend/coverage/` gitignored)
 - [x] Health/permission degradation tests (TEST_BACKLOG #4): Rust `permission_message` degraded branches (active-window/input/both-missing), frontend dropped-events warning + capture-failed state (`permissions.rs`, `healthDegradation.test.tsx`)
 - [x] Frontend error/recovery tests (TEST_BACKLOG #3): session-start failure → visible alert + dismiss, training hard-failure → message + no reload, capture-unavailable warning before session start (`errorRecovery.test.tsx`, `trainingDeploy.test.tsx`)

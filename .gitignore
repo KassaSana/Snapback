@@ -30,6 +30,8 @@ ml/*.pyc
 ml/.pytest_cache/
 ml/.coverage
 ml/htmlcov/
+.coverage
+htmlcov/
 frontend/coverage/
 ml/dist/
 ml/build/
