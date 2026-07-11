@@ -14,7 +14,7 @@ Update this at the start and end of each work session. Keep it short.
 
 ## Next
 
-- [x] Component/integration test layer: Vitest + jsdom + RTL; `App.test.tsx` renders the whole app against a mocked Tauri boundary and asserts first-run wizard + health flows (`vite.config.ts`, `tests/setup.ts`, `tests/App.test.tsx`)
+- [x] Component/integration test layer: Vitest + jsdom + RTL against a mocked Tauri boundary — first-run wizard + health flows (`App.test.tsx`) and session start/stop flow driving real handlers (`sessionFlow.test.tsx`)
 - [x] Emit failures no longer silent: Tauri event emits routed through `events::emit_or_log` (warns on failure) instead of `let _ = app.emit(...)` (`events.rs`, `state.rs`, `lib.rs`, `label_shortcuts.rs`)
 - [x] Auto-recover permissions: poll health every 5s while capture isn't running so granting permission after launch is noticed without manual refresh (`healthPoll.ts`, `useAppEffects.ts`)
 - [x] DB retention policy: `Storage::open()` prunes predictions + context snapshots older than 90d (`DEFAULT_RETENTION_DAYS`), then `VACUUM`s to reclaim disk after a large prune (`should_vacuum`, ≥500 rows); keeps training data/labels (`storage/mod.rs`)

@@ -139,7 +139,7 @@ See [CODE_HEALTH_REVIEW.md](CODE_HEALTH_REVIEW.md) for the latest code review fi
 - [x] `permissions.rs` message/probe honesty helpers
 - [x] ONNX override policy tests (`engine/classifier.rs`)
 - [x] `api.ts` mapper tests
-- [x] Component/integration tests — Vitest + jsdom + React Testing Library; `App.test.tsx` renders the full app against a mocked Tauri boundary and asserts wizard/health flows (`vite.config.ts` `test`, `tests/setup.ts`, `tests/App.test.tsx`)
+- [x] Component/integration tests — Vitest + jsdom + React Testing Library; renders the full app against a mocked Tauri boundary and asserts wizard/health flows (`App.test.tsx`) and session start/stop flow (`sessionFlow.test.tsx`) (`vite.config.ts` `test`, `tests/setup.ts`)
 - [ ] Full WebDriver E2E via `tauri-driver` (later) — drives the built binary in CI
 
 ---
