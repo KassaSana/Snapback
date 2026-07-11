@@ -24,6 +24,7 @@ export const useHealth = () => {
   const [overlayFailureReason, setOverlayFailureReason] = useState<string | null>(null);
   const [persistenceFailureReason, setPersistenceFailureReason] = useState<string | null>(null);
   const [captureEventsDropped, setCaptureEventsDropped] = useState(0);
+  const [captureStalled, setCaptureStalled] = useState(false);
   const [classifierBackend, setClassifierBackend] = useState("heuristic");
   const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
@@ -47,6 +48,7 @@ export const useHealth = () => {
     setOverlayFailureReason(health.overlayFailureReason);
     setPersistenceFailureReason(health.persistenceFailureReason);
     setCaptureEventsDropped(health.captureEventsDropped);
+    setCaptureStalled(health.captureStalled);
     setPermissionCaptureAvailable(health.permissions.captureAvailable);
     setCaptureProbeConfirmed(health.permissions.captureProbeConfirmed);
     setActiveWindowAvailable(health.permissions.activeWindowAvailable);
@@ -58,6 +60,7 @@ export const useHealth = () => {
   const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
     setCaptureFailed(true);
     setCaptureRunning(false);
+    setCaptureStalled(false);
     setCaptureFailureReason(payload.reason);
     setPermissionMessage(payload.message);
     setPermissionSteps(payload.setupSteps);
@@ -107,6 +110,7 @@ export const useHealth = () => {
     captureFailureReason,
     captureProbeConfirmed,
     captureRunning,
+    captureStalled,
     classifierBackend,
     classifierModelPath,
     classifierOnnxRuntimeEnabled,

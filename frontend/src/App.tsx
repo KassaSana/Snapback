@@ -37,6 +37,7 @@ export default function App() {
     captureFailureReason,
     captureProbeConfirmed,
     captureRunning,
+    captureStalled,
     classifierBackend,
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
@@ -269,6 +270,7 @@ export default function App() {
           captureFailureReason={captureFailureReason}
           captureProbeConfirmed={captureProbeConfirmed}
           captureRunning={captureRunning}
+          captureStalled={captureStalled}
           onRefreshPermissions={handleRefreshPermissions}
           permissionMessage={permissionMessage}
           permissionSteps={permissionSteps}

@@ -85,6 +85,7 @@ export type HealthStatus = {
   overlayFailureReason: string | null;
   persistenceFailureReason: string | null;
   captureEventsDropped: number;
+  captureStalled: boolean;
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
 };

@@ -240,6 +240,10 @@ pub struct HealthStatus {
     /// Capture events dropped since capture last (re)started because the
     /// engine loop wasn't draining the bounded event channel fast enough.
     pub capture_events_dropped: u64,
+    /// Capture claims to be running, but no input events have arrived within the
+    /// startup grace period — the listener/poll pipeline is likely blocked even
+    /// though permissions look fine.
+    pub capture_stalled: bool,
     pub permissions: PermissionStatus,
     pub classifier: ClassifierStatus,
 }

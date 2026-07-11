@@ -33,7 +33,16 @@ pub struct AppState {
     capture_handle: parking_lot::Mutex<Option<CaptureHandle>>,
     capture_failure_watcher: parking_lot::Mutex<Option<thread::JoinHandle<()>>>,
     capture_events_dropped: parking_lot::Mutex<Arc<AtomicU64>>,
+    /// Count of capture events the engine loop has consumed since capture last
+    /// (re)started. Used with `capture_started_at` to detect a stalled listener.
+    capture_events_received: AtomicU64,
+    capture_started_at: parking_lot::Mutex<Option<std::time::Instant>>,
 }
+
+/// How long capture may run with zero events before we call it stalled. The
+/// poll thread emits an initial window-focus event within ~500ms of a healthy
+/// start, so silence past this grace means the pipeline is blocked.
+const NO_EVENTS_GRACE: std::time::Duration = std::time::Duration::from_secs(15);
 
 impl AppState {
     pub fn new(storage: Storage) -> Self {
@@ -58,6 +67,8 @@ impl AppState {
             capture_handle: parking_lot::Mutex::new(None),
             capture_failure_watcher: parking_lot::Mutex::new(None),
             capture_events_dropped: parking_lot::Mutex::new(Arc::new(AtomicU64::new(0))),
+            capture_events_received: AtomicU64::new(0),
+            capture_started_at: parking_lot::Mutex::new(None),
         }
     }
 
@@ -81,6 +92,8 @@ impl AppState {
         let capture_handle =
             crate::capture::start_capture_thread(tx, failure_tx, Arc::clone(&dropped_events));
         *self.capture_events_dropped.lock() = dropped_events;
+        self.capture_events_received.store(0, Ordering::Relaxed);
+        *self.capture_started_at.lock() = Some(std::time::Instant::now());
         *self.event_rx.lock() = Some(rx);
         *self.capture_handle.lock() = Some(capture_handle);
         *self.capture_running.lock() = true;
@@ -91,6 +104,7 @@ impl AppState {
     }
 
     fn stop_capture_runtime(&self) {
+        *self.capture_started_at.lock() = None;
         *self.event_rx.lock() = None;
         if let Some(handle) = self.capture_handle.lock().take() {
             handle.stop_and_join();
@@ -125,6 +139,14 @@ impl AppState {
 
         let classifier = classifier_status(app_data_dir);
         let capture_events_dropped = self.capture_events_dropped.lock().load(Ordering::Relaxed);
+        let capture_events_received = self.capture_events_received.load(Ordering::Relaxed);
+        let capture_uptime = self.capture_started_at.lock().as_ref().map(|s| s.elapsed());
+        let capture_stalled = is_capture_stalled(
+            capture_running,
+            capture_events_received,
+            capture_uptime,
+            NO_EVENTS_GRACE,
+        );
 
         crate::types::HealthStatus {
             status,
@@ -134,6 +156,7 @@ impl AppState {
             overlay_failure_reason,
             persistence_failure_reason,
             capture_events_dropped,
+            capture_stalled,
             permissions,
             classifier,
         }
@@ -158,6 +181,20 @@ impl AppState {
         *self.feature_session_start_ts.lock() = None;
         *self.feature_session_epoch.lock() += 1;
     }
+}
+
+/// Capture is stalled when it claims to be running but has received zero events
+/// past the startup grace period. `capture_uptime` is `None` when capture isn't
+/// started; passing time in keeps this a pure, testable decision.
+fn is_capture_stalled(
+    capture_running: bool,
+    events_received: u64,
+    capture_uptime: Option<std::time::Duration>,
+    grace: std::time::Duration,
+) -> bool {
+    capture_running
+        && events_received == 0
+        && capture_uptime.map(|uptime| uptime >= grace).unwrap_or(false)
 }
 
 pub fn classifier_status(app_data_dir: Option<&std::path::Path>) -> crate::types::ClassifierStatus {
@@ -240,6 +277,12 @@ fn run_engine_loop(app: AppHandle) {
                 Vec::new()
             }
         };
+
+        if !events.is_empty() {
+            state
+                .capture_events_received
+                .fetch_add(events.len() as u64, Ordering::Relaxed);
+        }
 
         if *state.snapback_dismiss_pending.lock() {
             *state.snapback_dismiss_pending.lock() = false;
@@ -458,6 +501,23 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("snapback_state_test_{}", uuid::Uuid::new_v4()));
         Storage::open(dir).unwrap()
+    }
+
+    #[test]
+    fn capture_stalled_only_after_grace_with_no_events() {
+        use std::time::Duration;
+        let grace = Duration::from_secs(15);
+
+        // Running, no events, past grace → stalled.
+        assert!(is_capture_stalled(true, 0, Some(Duration::from_secs(20)), grace));
+        // Still within grace → not yet (startup silence is normal).
+        assert!(!is_capture_stalled(true, 0, Some(Duration::from_secs(5)), grace));
+        // Events have arrived → healthy regardless of uptime.
+        assert!(!is_capture_stalled(true, 3, Some(Duration::from_secs(60)), grace));
+        // Capture not running → never stalled.
+        assert!(!is_capture_stalled(false, 0, Some(Duration::from_secs(60)), grace));
+        // Capture not started (no uptime) → not stalled.
+        assert!(!is_capture_stalled(true, 0, None, grace));
     }
 
     fn sample_record(session_id: &str) -> PredictionRecord {

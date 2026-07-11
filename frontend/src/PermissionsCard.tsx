@@ -4,6 +4,7 @@ type PermissionsCardProps = {
   captureFailureReason: string | null;
   captureProbeConfirmed: boolean;
   captureRunning: boolean;
+  captureStalled: boolean;
   onRefreshPermissions: () => void;
   permissionMessage: string | null;
   permissionSteps: string[];
@@ -15,6 +16,7 @@ export function PermissionsCard({
   captureFailureReason,
   captureProbeConfirmed,
   captureRunning,
+  captureStalled,
   onRefreshPermissions,
   permissionMessage,
   permissionSteps,
@@ -43,6 +45,12 @@ export function PermissionsCard({
         {permissionMessage ||
           "Snapback runs locally. Grant Accessibility + Input Monitoring on macOS."}
       </p>
+      {captureStalled ? (
+        <p className="helper-text alert">
+          Capture is running but hasn't received any input events — the listener may be blocked.
+          Try Refresh permissions, or restart Snapback.
+        </p>
+      ) : null}
       {captureEventsDropped > 0 ? (
         <p className="helper-text alert">
           {captureEventsDropped} capture event{captureEventsDropped === 1 ? "" : "s"} dropped —

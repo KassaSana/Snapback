@@ -127,9 +127,9 @@ npm run typecheck
 
 - [x] Test capture unavailable, denied, degraded, and unsupported states. (Rust `permission_message` branches: active-window-only, input-only, both-missing, hard-blocker; frontend capture-failed state with reason in `healthDegradation.test.tsx`)
 - [x] Test dropped-event warnings. (`healthDegradation.test.tsx` — PermissionsCard surfaces `captureEventsDropped > 0`)
-- [ ] Test no-events-received warnings. **Not implemented in the app** — there is currently no "capture running but no events flowing" warning to test. Deferred until that warning exists (small feature, out of scope for a test-only increment).
+- [x] Test no-events-received warnings. **Now implemented + tested.** Backend tracks `capture_events_received` + `capture_started_at`; `is_capture_stalled` flags "running but zero events past a 15s grace" (`state.rs`, unit-tested). Surfaced via `HealthStatus.capture_stalled` → PermissionsCard warning; frontend covered in `healthDegradation.test.tsx`.
 - [x] Test active-window unavailable messaging. (`permission_message_flags_active_window_unavailable`)
-- [~] Test recovery behavior when capture health improves after launch. Partly covered: `healthPoll.shouldPollHealth` (unit) drives the re-poll-until-capture-up recovery, and `useAppEffects` refreshes on mount + session complete. A full timer-driven "poll fires → health improves → UI recovers" integration test needs fake timers and is deferred.
+- [x] Test recovery behavior when capture health improves after launch. Timer-driven integration test in `healthDegradation.test.tsx`: capture down at launch → background health poll fires → UI pill flips "listener pending" → "listener running" (uses fake timers + `act`).
 
 Note: "unknown" is not a distinct app state — health resolves to online/offline/degraded (`summarizeAppHealth`, already tested in `healthHints.test.ts`).
 

@@ -70,6 +70,7 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
     captureEventsDropped: Number(
       raw.capture_events_dropped ?? raw.captureEventsDropped ?? 0,
     ),
+    captureStalled: Boolean(raw.capture_stalled ?? raw.captureStalled ?? false),
     permissions: mapPermissionStatus(
       (raw.permissions as Record<string, unknown>) ?? {},
     ),

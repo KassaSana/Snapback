@@ -1,6 +1,7 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { HEALTH_POLL_MS } from "../src/healthPoll";
 import { FIRST_RUN_ACK_KEY } from "../src/permissionWizardState";
 
 const boundary = vi.hoisted(() => {
@@ -85,5 +86,50 @@ describe("Health degradation visibility", () => {
     const card = within(permissionsCard());
     expect(await card.findByText("capture failed")).toBeInTheDocument();
     expect(card.getByText(/Capture listener stopped/i)).toHaveTextContent("listener died");
+  });
+
+  it("warns when capture is running but receiving no events (stalled)", async () => {
+    boundary.state.health = health({ capture_stalled: true });
+    render(<App />);
+
+    const card = within(permissionsCard());
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
+    expect(await card.findByText(/hasn't received any input events/i)).toBeInTheDocument();
+  });
+
+  it("recovers the UI when capture comes up after launch", async () => {
+    vi.useFakeTimers();
+    try {
+      // Wizard acknowledged; capture is down at launch (listener pending).
+      window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
+      boundary.state.health = health({
+        capture_running: false,
+        permissions: {
+          capture_available: true,
+          capture_probe_confirmed: false,
+          active_window_available: true,
+          message: "",
+          setup_steps: [],
+        },
+      });
+      render(<App />);
+      // Flush the mount health load (state updates must run inside act).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const card = within(permissionsCard());
+      expect(card.getByText("listener pending")).toBeInTheDocument();
+
+      // Capture comes up after launch; the background health poll should notice.
+      boundary.state.health = health({ capture_running: true });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEALTH_POLL_MS);
+      });
+
+      expect(card.getByText("listener running")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
