@@ -1,11 +1,15 @@
 # Packaging and release decisions
 
-## Current state (Phase 9 partial)
+## Current state
 
 - **Unsigned Windows ZIP** via CPack (`scripts/package_windows.ps1`)
 - **Optional IExpress self-extractor** when `iexpress` is available
 - **Bundled frontend** copied beside `snapback.exe` for demo/release
-- **CI:** headless tests on 3 OSes, ASan, TSan, feature-parity fixtures, ONNX smoke, production-smoke workflow
+- **CI:** headless tests on 3 OSes, ASan/UBSan, TSan, feature-parity fixtures, ONNX smoke, production-smoke workflow
+- **Release:** a tag-driven workflow (`.github/workflows/release.yml`) builds + tests the
+  Windows package and publishes it to GitHub Releases on a `v*` tag
+
+Signing the installer is the next step (Roadmap Tier 0.4); see below.
 
 ## Authenticode signing (next step)
 

@@ -76,22 +76,26 @@ from. We're porting **today's** single-binary v0.2 app.
 
 ## Where to start
 
-Follow [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) for the full phased playbook and
-**phase status table**. New work should target the **parity-first backlog** there
-(feature-parity fixtures, retention prune, IPC audit) before shipping/platform polish.
+The Rust→C++ port is **complete** — the phase playbook that got us here is archived in
+[docs/PORT_HISTORY.md](docs/PORT_HISTORY.md) as a teaching record. New work comes from
+[docs/ROADMAP.md](docs/ROADMAP.md); start at **Tier 0** (the last parity/CI gaps) before
+reaching for shipping or platform polish.
 
 ## Status (2026-07-12)
 
-The port is **past the scaffold stage**. The Windows demo path runs end-to-end:
-capture → engine → SQLite → webview IPC → reused React UI. ONNX is optional and verified.
+The port runs end-to-end on Windows: capture → engine → SQLite → webview IPC → reused React
+UI. ONNX is optional and verified. CI guards it on three OSes with ASan/UBSan/TSan; a
+tag-driven release workflow packages Windows builds.
 
 | Area | Status |
 |------|--------|
-| Phases 0–7 (types → ONNX) | **Done** — ~74 headless tests green |
-| Phase 6 parity (auto-label, export filter) | **Done** |
-| Phase 8 (overlay, tray, ContextTracker) | **Partial** — Windows yes; macOS/Linux hooks pending |
-| Phase 9 (CI, packaging, parity fixtures) | **Partial** — CI + unsigned ZIP; signed installer + shared fixtures in progress |
+| Core pipeline (types → storage → engine → app → IPC → ONNX) | **Done** — ~74 headless tests green |
+| Windows capture / overlay / tray | **Done** |
+| Linux capture (evdev) | **Done** — real evdev with polling fallback |
+| macOS capture / overlay / tray | **Polling only** — native `CGEventTap` + tray are Roadmap Tier 0.3 / Tier 3.1 |
+| Packaging / CI | **Partial** — CI + tag release + unsigned ZIP; signed installer is Roadmap Tier 0.4 |
 | Perf / safety hardening | **Done** — WAL, stmt cache, two-lock split, interning, ASan/TSan, concurrent tests |
 
-**Next parity-first items:** feature-parity JSON harness, storage retention prune on open,
-Unicode validation parity, IPC contract test, cross-language CI job. See BUILD_PLAN status table.
+**Do next (Roadmap Tier 0):** feature-parity fixture harness + dual-language CI, storage
+retention prune on open, native macOS capture, signed installer. See
+[docs/ROADMAP.md](docs/ROADMAP.md).

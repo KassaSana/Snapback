@@ -1,45 +1,17 @@
-# BUILD_PLAN.md — porting Snapback from Rust to C++, phase by phase
+# PORT_HISTORY.md — how Snapback was ported from Rust to C++
 
-This is the playbook. Work it **top to bottom**. Each phase is sized so it compiles,
-tests green, and (where relevant) runs before you move on. Do not jump ahead —
-later phases assume earlier ones are solid.
+> **This port is complete.** The phase-by-phase playbook below drove the Rust→C++ rewrite
+> from an empty scaffold to an app that runs end-to-end (capture → engine → SQLite → webview
+> IPC → reused React UI). It's kept as a **teaching record** — the ordering rationale and the
+> `Learn:` / C++-vs-Rust notes are the reason the project exists. For what's left to build,
+> see [ROADMAP.md](ROADMAP.md); this file is history, not a live TODO.
 
-The Rust source at `../Snapback/src-tauri/src/` is the spec. For every phase, the
-"Rust reference" line tells you which file to read and port.
+The Rust source at `../Snapback/src-tauri/src/` was the spec. For every phase, the
+"Rust reference" line names the file that was read and ported.
 
-> **How to run each phase (the work loop):** write the code → write/adjust the
-> doctest → explain it to Kassa (bold takeaway + bullets) → suggest a one-line
-> commit message. Never run git yourself.
-
----
-
-## Phase status (2026-07-12)
-
-| Phase | Status | Evidence / notes |
-|-------|--------|------------------|
-| **0** Toolchain | **Done** | CMake, doctest, FetchContent, MSVC builds |
-| **1** Types + JSON | **Done** | [`tests/test_types.cpp`](tests/test_types.cpp) |
-| **2** Storage | **Done** | CRUD, recap, export, auto-label, session filter — [`tests/test_storage.cpp`](tests/test_storage.cpp) |
-| **3** Engine | **Partial** | Heuristic + features ported; **shared feature-parity fixtures** still to wire |
-| **4** Capture | **Partial** | Windows hooks + ring buffer stress tests; macOS/Linux native taps **open** |
-| **5** App state | **Done** | Two-lock persist, synthetic tick tests — [`tests/test_app_state.cpp`](tests/test_app_state.cpp) |
-| **6** Webview IPC | **Done** | All commands bound; live demo on Windows |
-| **7** ONNX | **Done** | Optional backend + fixture model — [`tests/test_onnx.cpp`](tests/test_onnx.cpp) |
-| **8** Overlay / tray / permissions | **Partial** | Windows overlay + tray; ContextTracker wired; POSIX capture = window polling |
-| **9** Packaging / CI / parity sign-off | **Partial** | 8 CI jobs (incl. TSan), unsigned ZIP, benchmark docs; signed installer + dual parity CI **open** |
-
-**Hardening (cross-cutting, done):** exception guard on hook callback, stmt cache + reset,
-SPSC + AppState concurrency tests, WindowedEvent interning, [`docs/benchmarking.md`](benchmarking.md).
-
-**Parity-first backlog (do next):**
-1. Feature-parity fixture harness (`fixtures/feature_parity/scenarios.json`)
-2. Storage retention prune on open (90-day predictions + context_snapshots)
-3. Unicode char-count validation in command bridge
-4. IPC contract audit test (frontend ↔ C++ ↔ Rust handler names)
-5. Classifier/rule fixture scenarios
-6. Deep session-lifecycle smoke (auto-label path)
-7. Signed installer + auto-update decision doc
-8. macOS CGEventTap + Linux evdev capture (replace polling fallback)
+> **The work loop each phase followed:** write the code → write/adjust the doctest →
+> explain it to Kassa (bold takeaway + bullets) → suggest a one-line commit message.
+> Never run git.
 
 ---
 

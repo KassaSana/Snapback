@@ -38,10 +38,11 @@ gave you for free.
 | SQLite storage: migrations, sessions, predictions, recaps, CSV export | ✅ |
 | Heuristic classifier + optional ONNX Runtime backend | ✅ ONNX behind `SNAPBACK_ONNX` |
 | Windows: input hooks, active-window enrichment, overlay, tray | ✅ |
-| macOS `CGEventTap` + Linux `evdev` capture (polling fallback otherwise) | ✅ |
+| Linux capture: real `evdev` hook (polling fallback otherwise) | ✅ |
+| macOS capture: active-window polling today; native `CGEventTap` | 🔜 [Roadmap Tier 0.3](docs/ROADMAP.md) |
 | Feature-parity + IPC-contract tests against the Rust fixtures | ✅ |
 | CI on Windows/macOS/Linux + ASan, UBSan, TSan; tag-driven release | ✅ |
-| Signed installer, deeper GUI automation | 🔜 In progress — see [docs/PACKAGING.md](docs/PACKAGING.md) |
+| Signed installer, macOS/Linux tray & overlay, deeper GUI automation | 🔜 See [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 The desktop app is gated behind `SNAPBACK_BUILD_APP=ON`; the headless core builds and
 tests without it.
