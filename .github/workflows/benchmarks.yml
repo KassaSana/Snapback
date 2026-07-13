@@ -1,0 +1,56 @@
+name: Benchmarks (manual)
+
+# A longer, production-like benchmark replay. Manual-only (workflow_dispatch) so it
+# never runs automatically on push/PR — it can't "spin forever" because it only fires
+# when you ask, is bounded by SNAPBACK_BENCH_MINUTES, and has job + step timeouts.
+# Results are uploaded as an artifact so you can diff runs over time.
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Simulated minutes to replay"
+        required: false
+        default: "480"
+
+concurrency:
+  group: benchmarks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  benchmark:
+    name: Benchmark replay (${{ github.event.inputs.minutes }} min)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_BENCHMARKS=ON
+
+      - name: Build benchmark
+        run: cmake --build build --config Release --target snapback_benchmarks --parallel 4
+
+      - name: Run benchmark
+        timeout-minutes: 20
+        env:
+          SNAPBACK_BENCH_MINUTES: ${{ github.event.inputs.minutes }}
+        run: |
+          mkdir -p bench-results
+          ./build/snapback_benchmarks | tee "bench-results/benchmark-${{ github.event.inputs.minutes }}min.txt"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: bench-results/*.txt
+          if-no-files-found: warn

@@ -1,0 +1,56 @@
+name: Production Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * 1"
+
+# A scheduled run must never pile up on top of a manual one, and vice versa.
+concurrency:
+  group: production-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-unsigned-package:
+    name: Windows unsigned package
+    runs-on: windows-latest
+    # Hard ceiling: packaging + GUI smoke must never hang the runner indefinitely.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build unsigned Windows package
+        shell: pwsh
+        run: .\scripts\package_windows.ps1
+
+      - name: Run GUI smoke
+        shell: pwsh
+        # Tight cap: this step launches the GUI, so it's the most likely to hang if the
+        # smoke script's own watchdog ever fails to close the window.
+        timeout-minutes: 8
+        run: .\scripts\gui_smoke_windows.ps1 -BuildDir build-windows-package -NoBuild
+
+      - name: Validate packaged ZIP
+        shell: pwsh
+        run: .\scripts\validate_windows_package.ps1 -PackageZip build-windows-package\Snapback-0.2.0-win64.zip
+
+      - name: Upload unsigned package
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapback-windows-unsigned
+          path: |
+            build-windows-package/*.zip
+            build-windows-package/*.exe
+          if-no-files-found: error

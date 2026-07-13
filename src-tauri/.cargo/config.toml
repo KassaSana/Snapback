@@ -1,3 +1,0 @@
-[build]
-# Keep build artifacts in-repo so dev builds reuse them and avoid temp-dir disk issues.
-target-dir = "target"

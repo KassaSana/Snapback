@@ -1,0 +1,49 @@
+{
+  "scenarios": [
+    {
+      "name": "stable_work_productive",
+      "base_time": 1700001000.0,
+      "focus_mode": "normal",
+      "events": [
+        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Cursor", "title": "classifier.cpp - Snapback" },
+        { "offset_secs": 1.0, "type": "key_press", "app": "Cursor", "title": "classifier.cpp - Snapback" },
+        { "offset_secs": 2.0, "type": "key_press", "app": "Cursor", "title": "classifier.cpp - Snapback" },
+        { "offset_secs": 3.0, "type": "mouse_move", "app": "Cursor", "title": "classifier.cpp - Snapback", "mouse_speed": 40 }
+      ],
+      "expect": {
+        "focus_state": "PRODUCTIVE",
+        "distraction_risk_max": 0.55
+      }
+    },
+    {
+      "name": "thrash_distraction",
+      "base_time": 1700002000.0,
+      "focus_mode": "normal",
+      "events": [
+        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 0.5, "type": "window_focus_change", "app": "Discord", "title": "chat" },
+        { "offset_secs": 1.0, "type": "window_focus_change", "app": "Google Chrome", "title": "YouTube" },
+        { "offset_secs": 1.5, "type": "window_focus_change", "app": "Slack", "title": "general" },
+        { "offset_secs": 2.0, "type": "window_focus_change", "app": "Notion", "title": "notes" },
+        { "offset_secs": 2.5, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" }
+      ],
+      "expect": {
+        "focus_state": "DISTRACTED",
+        "thrash_score_min": 0.75
+      }
+    },
+    {
+      "name": "personal_block_rule",
+      "base_time": 1700003000.0,
+      "focus_mode": "normal",
+      "rules": [{ "pattern": "notion", "rule_type": "block" }],
+      "events": [
+        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Notion", "title": "Weekly plan" },
+        { "offset_secs": 1.0, "type": "key_press", "app": "Notion", "title": "Weekly plan" }
+      ],
+      "expect": {
+        "focus_state": "DISTRACTED"
+      }
+    }
+  ]
+}

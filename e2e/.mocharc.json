@@ -1,4 +1,0 @@
-{
-  "spec": "*.spec.mjs",
-  "timeout": 120000
-}

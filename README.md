@@ -1,174 +1,104 @@
-# Snapback
+# Snapback (C++ port in progress)
 
-**Predictive focus management for ADHD brains — one local desktop app.**
+**A staged C++ port of Snapback's Rust/Tauri core.**
 
-Snapback measures not just *whether* you're working, but *how*: deep work, drift, context-switch thrash. When you return from a distraction, the **snapback overlay** shows where you left off so context switches hurt less.
+This repository is no longer just a directory sketch. The core pipeline is wired:
+CMake configures, the shared core/capture/app libraries build, and the doctest
+suite passes for the real ports (`types` JSON parity, SQLite storage, feature
+extraction, classifier guardrails, Windows capture scaffolding, app state,
+IPC dispatch, context tracking, training export/deploy orchestration,
+`title_parser`, and `app_context`).
 
-![Status](https://img.shields.io/badge/status-alpha-yellow)
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+The Windows demo path is live enough to build behind `SNAPBACK_BUILD_APP=ON`.
+The remaining hardening work is installer signing, deeper GUI automation, and
+real macOS/Linux keyboard/mouse hooks beyond active-window polling.
 
-## Branding note
+The original lives at `../Snapback` (Rust + Tauri + React). The React frontend is
+reused **unchanged** here: the system webview loads the same built assets.
 
-- **Snapback** is the product/app name.
-- **snapback overlay** refers to the in-app context-recovery feature.
-- **Compatibility**: the local SQLite filename is still `focoflow.db` to avoid breaking existing installs.
+> ⚠️ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first. It maps every Rust module
+> to its C++ counterpart and is honest about what you gain and lose.
 
-## Architecture (v0.2)
+## The one-paragraph pitch
 
-```
-Rust core (Tauri) — capture + features + classifier + SQLite + snapback overlay
-        ↕ invoke / events
-React dashboard (Vite + TypeScript)
+Tauri (Rust) is not a library you swap out — it's the *frame* of the app: it gives
+you the window, the system webview, the frontend↔backend IPC, installers, tray,
+and a security model, all for free. In C++ you assemble that yourself, mostly from
+[`webview/webview`](https://github.com/webview/webview) (same system webviews Tauri
+uses). The backend pieces — SQLite, ONNX Runtime, feature math — are actually
+*easier* in C++ because SQLite and ONNX Runtime are C/C++ libraries first. The
+part you re-solve by hand is **global input capture** (per-OS hooks) and everything
+Tauri gave you for free.
 
-Python (offline only) — train on labeled sessions → export ONNX
-```
-
-The old 4-layer stack (C++ → ZeroMQ → Python service → Spring Boot → WebSocket) has been removed. One signed desktop binary, local-first, no network API tier.
-
-## Features
-
-- **Live focus states:** `DEEP_FOCUS`, `PRODUCTIVE`, `PSEUDO_PRODUCTIVE` (drift), `DISTRACTED`
-- **Snapback overlay:** "You were editing auth.ts in Snapback" when you return from distraction
-- **Focus modes:** deep / normal / recovery (different risk thresholds + hyperfocus guardrails)
-- **One-tap feedback:** label moments to build a personal training set
-- **Session recap:** duration, avg focus, deep-work %, snapback count, thrash spikes
-- **SQLite persistence:** sessions, predictions, labels, context snapshots
-
-## Project structure
+## Layout
 
 ```
-Snapback/
-├── doc.md                  # Session tracker (start here for planning)
-├── src-tauri/              # Rust core (capture, engine, storage, snapback)
-├── frontend/               # React dashboard + snapback.html overlay
-├── ml/                     # Offline training + ONNX export
-├── docs/                   # Backlog, deployment, benchmarks, design refs
-├── tools/                  # Synthetic data, ONNX fixtures, quality benchmarks
-└── package.json            # Tauri scripts
+snapbackCplusplus/
+├── README.md              # you are here
+├── docs/                  # architecture, build plan, system design (see docs/)
+├── CMakeLists.txt         # json/doctest/sqlite/capture now; webview is fetched once the app target is enabled
+├── src/
+│   ├── main.cpp           # entry point (Rust: lib.rs / main.rs)
+│   ├── types.hpp          # shared structs/enums (Rust: types.rs)
+│   ├── app/               # state + webview IPC bridge (Rust: state.rs, commands.rs)
+│   ├── capture/           # global hooks + active window + ring buffer (Rust: capture/)
+│   ├── engine/            # features, classifier, onnx, app_context (Rust: engine/)
+│   ├── storage/           # SQLite persistence (Rust: storage/)
+│   └── snapback/          # context recovery: tracker, title parser, overlay (Rust: snapback/)
+├── tests/                 # doctest-based unit tests
+└── frontend/README.md     # note: reuse ../Snapback/frontend build output as-is
 ```
 
-See [docs/README.md](docs/README.md) for a doc index. Legacy C++/Spring design docs are kept for reference — they don't describe the current app.
+## Current Status
 
-## Quick start
+- Phase 0: toolchain + test target working
+- Phase 1: `types.hpp/.cpp` implemented with camelCase wire-format tests
+- Phase 2: SQLite storage opens, migrates, persists core rows, recaps, and exports CSVs
+- Phase 3: feature extraction, app-context rules, and heuristic classifier are implemented
+- Phase 4: capture backend compiles, Windows active-window lookup/event enrichment is implemented, and ring buffer tests cover drop behavior
+- Phase 5: app state and the engine tick persist predictions, feature snapshots, gated context snapshots, and snapback payloads
+- Phase 6: webview IPC bindings are wired to the reused frontend contract
+- Phase 7: ONNX backend is optional and reports through health/classifier status
+- Phase 8: Windows overlay/tray are wired; macOS/Linux report real permission status and poll active-window context where platform tools allow
+- Reused frontend copied into `frontend/`
+- App target remains gated behind `SNAPBACK_BUILD_APP=ON`
+- CI, bundled frontend assets, and unsigned Windows ZIP packaging are wired
+- Phase 9 (CI, packaging, parity fixtures) | **Partial** — feature-parity + IPC contract tests, retention prune, TSan; signed installer doc in [`docs/PACKAGING.md`](docs/PACKAGING.md)
+- macOS CGEventTap + Linux evdev capture | **Done** (with polling fallback when taps unavailable)
 
-### Prerequisites
+## Build The Current Core
 
-- **Rust** 1.77+ ([rustup](https://rustup.rs))
-- **Node.js** 18+
-- **macOS:** grant **Accessibility** + **Input Monitoring** to Snapback in System Settings
+For the full testing plan, see [docs/testing_strategy.md](docs/testing_strategy.md).
 
-### Dev
-
-```bash
-npm install
-cd frontend && npm install && cd ..
-
-# Run the desktop app (Rust + Vite)
-npm run tauri:dev
+```powershell
+cmake -S . -B build
+cmake --build build --target snapback_tests --config Debug
+ctest --test-dir build -C Debug --output-on-failure
 ```
 
-### Build
+Or run the local mock/headless + frontend suite:
 
-```bash
-npm run tauri:build
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\test_local.ps1
 ```
 
-### Offline ML (optional)
+Run repeatable core-loop benchmarks:
 
-The `ml/` package is imported as `ml.something`, so every command below must run
-from the **repo root** — not from inside `ml/` — or you'll hit
-`ModuleNotFoundError: No module named 'ml'`. Also use `python3`/`pip3`; plain
-`python` isn't guaranteed to exist on macOS.
-
-```bash
-# From the repo root
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r ml/requirements-train.txt  # optional backends, needed for real (non-majority) training
-
-# macOS only: xgboost needs the OpenMP runtime, which isn't bundled
-brew install libomp
-
-# Sanity check — should report OK, not import errors
-python3 -m unittest discover -s ml/tests -p "test_*.py"
-
-# Train from labeled feature CSVs, then export:
-python3 -m ml.train_cli --help
-python3 -m ml.export_onnx --model-path artifacts/model.json --output artifacts/model.onnx
-
-# Run Rust with ONNX (when wired):
-# cd src-tauri && cargo build --features onnx
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run_benchmarks.ps1
 ```
 
-## Permissions (macOS)
+See [docs/benchmarking.md](docs/benchmarking.md) for what the trace measures and
+how to compare results.
 
-Global input capture and active-window detection require system permissions. If capture shows as idle:
+## Build The Desktop App
 
-1. Open **System Settings → Privacy & Security**
-2. Enable **Accessibility** for Snapback
-3. Enable **Input Monitoring** for Snapback
-4. Click **Refresh permissions** in the app
+For the Windows demo workflow, use [docs/windows_demo.md](docs/windows_demo.md).
 
-## Troubleshooting local dev
-
-### `No space left on device` during `npm run tauri:dev`
-
-The first Tauri/Rust build is large (often **3–8 GB** of compile artifacts). If your disk is full, you'll see errors like:
-
-```text
-rustc-LLVM ERROR: IO failure on output stream: No space left on device
-error: could not compile ...
+```powershell
+cmake -S . -B build -DSNAPBACK_BUILD_APP=ON
+cmake --build build --config Release
 ```
 
-**Fix:** free at least **5–10 GB**, then retry:
-
-```bash
-# Check free space (look at "Avail" on /System/Volumes/Data)
-df -h /System/Volumes/Data
-
-# Safe dev cache cleanup
-pip3 cache purge
-npm cache clean --force
-brew cleanup -s          # if you use Homebrew
-rm -rf src-tauri/target  # old Rust build artifacts in this repo
-
-# Retry
-npm run tauri:dev
-```
-
-Also empty **Trash** and check **System Settings → General → Storage** for large files.
-
-### `cargo: command not found` or `tauri: command not found`
-
-Install Rust and project deps:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-npm install
-cd frontend && npm install && cd ..
-```
-
-### First run is slow
-
-The first `tauri dev` compiles all Rust dependencies and can take **5–15 minutes**. Later runs are much faster.
-
-### App opens but capture stays idle
-
-Grant macOS **Accessibility** and **Input Monitoring** permissions, restart the app, then use **Refresh permissions** in the dashboard.
-
-## CI
-
-`.github/workflows/ci.yml`: Python unit tests, frontend test/typecheck/build, `cargo check` + `cargo test` (with and without `--features onnx` on Ubuntu), Windows `cargo test`, feature-parity job.
-
-Release installers: `.github/workflows/release.yml` on `v*` tags (Windows NSIS, macOS DMG).
-
-## Planning
-
-[`doc.md`](doc.md) · [docs/BACKLOG.md](docs/BACKLOG.md) · [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
-
-Current focus: smoke test, release dry run, ONNX/heuristic policy (BACKLOG Tier 0).
-
-## License
-
-MIT
+The app target loads bundled `frontend/dist` assets when present. Set
+`SNAPBACK_FRONTEND_URL=http://127.0.0.1:5173` only for Vite-based development.

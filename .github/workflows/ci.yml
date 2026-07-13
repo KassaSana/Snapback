@@ -1,291 +1,289 @@
-name: ci
+name: CI
+
+# Guards the Rust -> C++ port. Coverage:
+#   - portable core (core + capture + app-lib + tests) on Windows / macOS / Linux
+#   - AddressSanitizer + UBSan on the manual-memory paths (ring buffer, locks, RAII)
+#   - the ONNX inference backend (vendored runtime + fixture model)
+#   - the benchmark harness (short smoke run)
+#   - the reused React frontend (typecheck + tests + build)
+#   - the Windows desktop app (no-launch integration smoke)
+#   - docs invariants
+#
+# Anti-hang guarantees: every job has `timeout-minutes`, the riskiest steps have their
+# own step timeout, ctest uses `--timeout`/`--no-tests=error`, the GUI app is never
+# launched, and `concurrency` cancels superseded runs so nothing piles up.
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: "4"
 
 jobs:
-  security-audit:
+  # ---------------------------------------------------------------------------
+  # Portable core on all three OSes: pure logic, no webview, no ONNX. Must stay
+  # green everywhere (the capture/app sources are #if-guarded per platform).
+  # ---------------------------------------------------------------------------
+  cpp-headless:
+    name: C++ headless tests / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure core
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
+
+      - name: Build C++ tests
+        run: cmake --build build --target snapback_tests --config Release
+
+      - name: Run CTest
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
+
+  # ---------------------------------------------------------------------------
+  # AddressSanitizer + UBSan (Linux/clang). Highest-value guard for the SPSC ring
+  # buffer, lock discipline, and RAII — the places Rust's borrow checker used to
+  # protect us and we now uphold by hand.
+  # ---------------------------------------------------------------------------
+  sanitizers:
+    name: Sanitizers (asan+ubsan)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CC: clang
+      CXX: clang++
+      # Leak detection off: third-party statics (sqlite) and singletons report benign
+      # "still reachable"; we want real memory errors + UB, not those.
+      ASAN_OPTIONS: detect_leaks=0:abort_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: taiki-e/install-action@cargo-audit
-      - name: Audit root npm dependencies
-        run: npm audit --package-lock-only --audit-level=high
-      - name: Audit frontend npm dependencies
-        run: npm audit --package-lock-only --audit-level=high
-        working-directory: frontend
-      - name: Audit Rust dependencies
-        # quick-xml 0.30.0 is pulled in by xcb as a build dependency via
-        # active-win-pos-rs. Keep this ignore narrow and revisit when xcb ships
-        # a quick-xml >=0.41 update.
-        run: cargo audit --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
-        working-directory: src-tauri
-      - name: Audit Python training dependencies
-        run: |
-          python -m pip install --upgrade pip pip-audit
-          pip-audit -r ml/requirements-train.txt --progress-spinner off
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  python:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r ml/requirements-train.txt
-      - name: Run unit tests
-        run: python -m unittest discover -s ml/tests -p "test_*.py"
+      - name: Configure (sanitized)
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
 
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Install dependencies
-        run: npm ci
-        working-directory: frontend
-      - name: Run tests
-        run: npm run test
-        working-directory: frontend
-      - name: Run typecheck
-        run: npm run typecheck
-        working-directory: frontend
-      - name: Production build
-        run: npm run build
-        working-directory: frontend
+      - name: Build tests
+        run: cmake --build build --target snapback_tests
 
-  rust:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev \
-            libx11-dev \
-            patchelf
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Check Rust core
-        run: cargo check
-        working-directory: src-tauri
-      - name: Check Rust core (ONNX)
-        run: cargo check --features onnx
-        working-directory: src-tauri
-      - name: Run Rust unit tests
-        run: cargo test
-        working-directory: src-tauri
-      - name: Run Rust unit tests (ONNX)
-        # Rust ONNX inference currently hangs inside ort::Session::run on Ubuntu
-        # runners. Windows still runs the full ONNX test suite; Ubuntu keeps the
-        # feature compile/test coverage while skipping only the two inference
-        # tests that exercise that upstream runtime path.
-        run: cargo test --features onnx -- --skip production_predict_applies_guardrails_after_onnx --skip fixture_model_predict_returns_productive_scores
-        working-directory: src-tauri
+      - name: Run CTest (sanitized)
+        run: ctest --test-dir build --output-on-failure --timeout 300 --no-tests=error
 
-  rust-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Install ONNX runtime
-        run: pip install -r ml/requirements-train.txt
-      - name: Resolve ONNX runtime DLL
-        shell: pwsh
-        run: |
-          $dll = python -c "import onnxruntime, pathlib; print(pathlib.Path(onnxruntime.__file__).parent / 'capi' / 'onnxruntime.dll')"
-          if (-not (Test-Path $dll)) {
-            throw 'onnxruntime.dll not found'
-          }
-          "ORT_DYLIB_PATH=$dll" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Check Rust core
-        run: cargo check
-        working-directory: src-tauri
-      - name: Check Rust core (ONNX)
-        run: cargo check --features onnx
-        working-directory: src-tauri
-      - name: Run Rust unit tests
-        run: cargo test
-        working-directory: src-tauri
-      - name: Run Rust unit tests (ONNX)
-        run: cargo test --features onnx
-        working-directory: src-tauri
-
-  tauri-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev \
-            libx11-dev \
-            patchelf
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Install dependencies
-        run: |
-          npm run setup
-          pip install -r ml/requirements-train.txt
-      - name: Build Tauri app (no bundle)
-        run: npm run tauri build -- --features onnx --no-bundle
-
-  classifier-quality:
+  # ---------------------------------------------------------------------------
+  # ThreadSanitizer (Linux/clang). Runs the concurrency tests — the SPSC ring stress
+  # (test_ring_buffer.cpp) and the AppState reader/writer race test (test_app_state.cpp)
+  # — under TSan to catch data races in the hand-rolled acquire/release ring and lock-order
+  # bugs in the two-mutex state split. RelWithDebInfo keeps TSan fast enough for the
+  # 500k-iteration ring test; the 600s ctest timeout is the safety net.
+  # ---------------------------------------------------------------------------
+  thread-sanitizer:
+    name: ThreadSanitizer
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CC: clang
+      CXX: clang++
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev \
-            libx11-dev \
-            patchelf
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Install ML dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r ml/requirements-train.txt
-      - name: Run classifier quality gate
-        run: python -m tools.benchmark_classifier_quality --skip-latency --enforce-gate
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  classifier-eval:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev \
-            libx11-dev \
-            patchelf
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Install ML dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r ml/requirements-train.txt
-      - name: Generate labeled dataset and ONNX artifacts
-        run: |
-          python -m tools.generate_synthetic_training_data --seed 7
-          python -m ml.pipeline_cli --db-path data/synthetic_focoflow.db --output-dir data --backend xgboost
-      - name: Run runtime classifier eval (heuristic)
-        run: cargo run --quiet --manifest-path src-tauri/Cargo.toml -- --classifier-eval data/labeled.csv --backend heuristic
-      - name: Run runtime classifier eval (ONNX)
-        run: |
-          timeout 8m cargo run --quiet --features onnx --manifest-path src-tauri/Cargo.toml -- --classifier-eval data/labeled.csv --backend onnx --model-onnx data/model.onnx \
-            || echo "::warning::Rust ONNX classifier eval timed out or failed on Ubuntu; classifier-quality falls back to Python onnxruntime for the quality gate."
-      - name: Run headless smoke harness
-        timeout-minutes: 10
-        run: cargo run --quiet --features onnx --manifest-path src-tauri/Cargo.toml -- --smoke
+      - name: Configure (tsan)
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
 
+      - name: Build tests
+        run: cmake --build build --target snapback_tests
+
+      - name: Run CTest (tsan)
+        run: ctest --test-dir build --output-on-failure --timeout 600 --no-tests=error
+
+  # ---------------------------------------------------------------------------
+  # Feature-parity fixtures: shared JSON scenarios replayed through FeatureExtractor
+  # and classifier guardrails. Guards drift from ../Snapback/fixtures/feature_parity.
+  # ---------------------------------------------------------------------------
   feature-parity:
+    name: Feature parity fixtures
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev \
-            libx11-dev \
-            patchelf
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Run Python/Rust feature parity
-        run: python -m ml.feature_parity_cli
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  feature-parity-windows:
+      - name: Configure core
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
+
+      - name: Build C++ tests
+        run: cmake --build build --target snapback_tests
+
+      - name: Run feature parity + IPC contract tests
+        run: ./build/snapback_tests --test-case="*parity*" --test-case="*IPC contract*"
+
+  # ---------------------------------------------------------------------------
+  # ONNX backend: vendor the runtime, build with SNAPBACK_ONNX=ON, run tests. The
+  # ONNX fixture test loads fixtures/model.onnx and asserts backend() == "onnx".
+  # ---------------------------------------------------------------------------
+  onnx-windows:
+    name: ONNX backend / windows
     runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      ORT_VERSION: "1.20.1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Vendor ONNX Runtime
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $zip = "onnxruntime-win-x64-$env:ORT_VERSION.zip"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/$zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath third_party -Force
+          Move-Item "third_party/onnxruntime-win-x64-$env:ORT_VERSION" third_party/onnxruntime
+          if (-not (Test-Path third_party/onnxruntime/lib/onnxruntime.dll)) { throw "onnxruntime.dll missing" }
+
+      - name: Configure (ONNX on)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_ONNX=ON
+
+      - name: Build tests
+        run: cmake --build build --config Release --target snapback_tests
+
+      - name: Run CTest (incl. ONNX fixture)
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
+
+  # ---------------------------------------------------------------------------
+  # Benchmark smoke: the harness still builds and completes on a short trace.
+  # Bounded by SNAPBACK_BENCH_MINUTES and a step timeout so it can't run away.
+  # ---------------------------------------------------------------------------
+  benchmark-smoke:
+    name: Benchmark smoke / linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (benchmarks on)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_BENCHMARKS=ON
+
+      - name: Build benchmark
+        run: cmake --build build --config Release --target snapback_benchmarks
+
+      - name: Run short benchmark
+        timeout-minutes: 3
+        env:
+          SNAPBACK_BENCH_MINUTES: "5"
+        run: ./build/snapback_benchmarks
+
+  # ---------------------------------------------------------------------------
+  # Reused React frontend: typecheck, unit/component tests, production build.
+  # ---------------------------------------------------------------------------
+  frontend-mock:
+    name: Frontend mock tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        timeout-minutes: 8
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Unit and component tests
+        working-directory: frontend
+        run: npm run test
+
+      - name: Build frontend assets
+        working-directory: frontend
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Windows desktop app: build + no-launch integration smoke (never starts the
+  # GUI, which would hang). Depends on the core + frontend passing first.
+  # ---------------------------------------------------------------------------
+  windows-desktop-integration:
+    name: Windows desktop integration smoke
+    runs-on: windows-latest
+    timeout-minutes: 40
+    needs: [cpp-headless, frontend-mock]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          workspaces: src-tauri
-      - name: Run Python/Rust feature parity
-        run: python -m ml.feature_parity_cli
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run Windows demo no-launch smoke
+        shell: pwsh
+        timeout-minutes: 30
+        run: .\scripts\windows_demo.ps1 -NoLaunch
+
+      - name: Upload demo logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-demo-logs
+          path: |
+            .demo/*.log
+            build-windows-demo/**/*.log
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Docs invariants.
+  # ---------------------------------------------------------------------------
+  docs-smoke:
+    name: Docs smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure Windows demo runbook is linked
+        run: |
+          grep -q "docs/windows_demo.md" README.md
+          test -f docs/windows_demo.md

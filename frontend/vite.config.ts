@@ -5,6 +5,7 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   plugins: [react()],
+  base: "./",
   // Component/integration tests only. The lightweight `tsx tests/*.test.ts`
   // scripts are intentionally excluded (they're pure-logic, no DOM), so vitest
   // owns `.test.tsx` and the tsx runner owns `.test.ts`.
