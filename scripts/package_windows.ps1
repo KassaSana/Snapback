@@ -22,6 +22,17 @@ function Require-Command {
     }
 }
 
+# $ErrorActionPreference = "Stop" only makes *cmdlets* terminate; native executables
+# (npm, cmake, ctest, cpack, ...) just set $LASTEXITCODE and the script sails past a
+# failure. Route every external command through this so a red build can't be packaged.
+function Invoke-Native {
+    param([Parameter(Mandatory = $true)][scriptblock]$Command)
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed (exit $LASTEXITCODE): $Command"
+    }
+}
+
 function Sign-ReleaseBinary {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -44,23 +55,23 @@ Require-Command npm
 Push-Location $FrontendDir
 try {
     if (-not (Test-Path "node_modules") -and -not $SkipNpmInstall) {
-        npm ci
+        Invoke-Native { npm ci }
     }
-    npm run typecheck
-    npm run test
-    npm run build
+    Invoke-Native { npm run typecheck }
+    Invoke-Native { npm run test }
+    Invoke-Native { npm run build }
 } finally {
     Pop-Location
 }
 
-cmake -S $RepoRoot -B $BuildPath -G "Visual Studio 17 2022" -A x64 -DSNAPBACK_BUILD_APP=ON -DSNAPBACK_ONNX=OFF
-cmake --build $BuildPath --config $Config --target snapback_tests
-ctest --test-dir $BuildPath -C $Config --output-on-failure
-cmake --build $BuildPath --config $Config --target snapback
+Invoke-Native { cmake -S $RepoRoot -B $BuildPath -G "Visual Studio 17 2022" -A x64 -DSNAPBACK_BUILD_APP=ON -DSNAPBACK_ONNX=OFF }
+Invoke-Native { cmake --build $BuildPath --config $Config --target snapback_tests }
+Invoke-Native { ctest --test-dir $BuildPath -C $Config --output-on-failure }
+Invoke-Native { cmake --build $BuildPath --config $Config --target snapback }
 
 Push-Location $BuildPath
 try {
-    cpack -G ZIP -C $Config
+    Invoke-Native { cpack -G ZIP -C $Config }
     $zip = Get-ChildItem -LiteralPath $BuildPath -Filter "Snapback-*-win64.zip" |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
@@ -73,7 +84,9 @@ try {
         $iexpress = Get-Command iexpress -ErrorAction SilentlyContinue
         if ($iexpress) {
             $installerScript = Join-Path $RepoRoot "scripts\install_windows_package.ps1"
-            $installerExe = Join-Path $BuildPath "Snapback-0.2.0-win64-installer.exe"
+            # Derive the installer name from the ZIP CPack actually produced so the version
+            # can never drift from the hardcoded one when it bumps (e.g. "Snapback-0.2.0-win64").
+            $installerExe = Join-Path $BuildPath "$($zip.BaseName)-installer.exe"
             $sedPath = Join-Path $BuildPath "snapback-installer.sed"
             $zipName = Split-Path -Leaf $zip.FullName
             $installerScriptName = Split-Path -Leaf $installerScript
@@ -119,7 +132,7 @@ SourceFiles1=$scriptDirEscaped
 [SourceFiles1]
 %FILE1%=
 "@ | Set-Content -LiteralPath $sedPath -Encoding ASCII
-            & $iexpress.Source /N /Q $sedPath
+            Invoke-Native { & $iexpress.Source /N /Q $sedPath }
             if (-not (Test-Path $installerExe)) {
                 throw "IExpress did not produce $installerExe"
             }
@@ -131,7 +144,7 @@ SourceFiles1=$scriptDirEscaped
 
     if ($TryNsis) {
         if (Get-Command makensis -ErrorAction SilentlyContinue) {
-            cpack -G NSIS -C $Config
+            Invoke-Native { cpack -G NSIS -C $Config }
         } else {
             Write-Warning "NSIS/makensis was not found; skipped unsigned NSIS installer."
         }
@@ -147,7 +160,9 @@ SourceFiles1=$scriptDirEscaped
             throw "snapback.exe was not found for signing under $BuildPath."
         }
         Sign-ReleaseBinary -Path $exe -Certificate $SignCertificate
-        if (Test-Path $installerExe) {
+        # $installerExe is $null when IExpress was skipped/absent; Test-Path $null throws
+        # under ErrorActionPreference=Stop, so short-circuit on the null first.
+        if ($installerExe -and (Test-Path $installerExe)) {
             Sign-ReleaseBinary -Path $installerExe -Certificate $SignCertificate
         }
     }
