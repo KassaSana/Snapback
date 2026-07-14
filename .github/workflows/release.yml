@@ -9,6 +9,9 @@ name: Release
 #
 # Manual runs (workflow_dispatch) build + upload the artifact but skip the Release
 # step, so you can smoke a candidate without publishing.
+#
+# Optional signing: set the SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT repository secret
+# on a Windows runner that has the matching Authenticode certificate installed.
 
 on:
   push:
@@ -30,9 +33,10 @@ defaults:
 jobs:
   # ---------------------------------------------------------------------------
   # Build the Windows package. package_windows.ps1 runs the frontend suite, the
-  # C++ tests (ctest), builds the Release app, and produces the ZIP + unsigned
-  # IExpress installer. It fails hard on any non-zero exit, so a red build can't
-  # be released.
+  # C++ tests (ctest), builds the Release app, and produces the ZIP + IExpress
+  # installer. If SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT is configured, the EXE
+  # artifacts are Authenticode-signed before upload. It fails hard on any non-zero
+  # exit, so a red build can't be released.
   # ---------------------------------------------------------------------------
   windows-package:
     name: Windows package
@@ -51,7 +55,17 @@ jobs:
 
       - name: Build Windows package
         timeout-minutes: 40
-        run: .\scripts\package_windows.ps1
+        env:
+          SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT: ${{ secrets.SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $packageArgs = @()
+          if ($env:SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT) {
+            Write-Host "Signing Windows release artifacts with the configured certificate."
+            $packageArgs += @("-SignCertificate", $env:SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT)
+          } else {
+            Write-Host "No signing certificate configured; building unsigned Windows artifacts."
+          }
+          .\scripts\package_windows.ps1 @packageArgs
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4

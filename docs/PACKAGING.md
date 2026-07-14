@@ -8,10 +8,10 @@
 - **CI:** headless tests on 3 OSes, ASan/UBSan, TSan, feature-parity fixtures, ONNX smoke, production-smoke workflow
 - **Release:** a tag-driven workflow (`.github/workflows/release.yml`) builds + tests the
   Windows package and publishes it to GitHub Releases on a `v*` tag
+- **Signing hook:** release builds sign EXE artifacts when
+  `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` is configured
 
-Signing the installer is the next step (Roadmap Tier 0.4); see below.
-
-## Authenticode signing (next step)
+## Authenticode signing
 
 Release builds should be signed so Windows SmartScreen does not warn on first run.
 
@@ -19,22 +19,39 @@ Release builds should be signed so Windows SmartScreen does not warn on first ru
 
 1. A code-signing certificate (EV recommended for immediate SmartScreen trust)
 2. `signtool.exe` from the Windows SDK on the packaging machine
-3. `SignTool` timestamp server (e.g. `http://timestamp.digicert.com`)
+3. The certificate installed in the Windows certificate store for the runner user
+4. `SignTool` timestamp server (the script uses `http://timestamp.digicert.com`)
+
+For EV certificates, use a self-hosted Windows release runner with the vendor token/HSM
+available to that runner. GitHub-hosted runners usually cannot access a physical EV token.
 
 ### Usage
 
-`scripts/package_windows.ps1` accepts an optional certificate:
+`scripts/package_windows.ps1` accepts an optional certificate thumbprint:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 `
-  -SignCertificate "Cert:\CurrentUser\My\THUMBPRINT_HERE"
+  -SignCertificate "THUMBPRINT_HERE"
 ```
 
 When `-SignCertificate` is set, the script signs:
 
 - `snapback.exe`
-- the CPack ZIP installer (if Authenticode supports the container — exe is always signed)
 - the IExpress installer exe when produced
+
+The ZIP package itself is not Authenticode-signed; Windows trust is established by signing
+the executable content and installer executable.
+
+### GitHub Release workflow
+
+Set this repository secret:
+
+- `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT`: the SHA-1 thumbprint of the installed signing
+  certificate
+
+When the secret is present, `.github/workflows/release.yml` passes it to
+`scripts/package_windows.ps1 -SignCertificate`. When the secret is absent, the workflow
+still builds and uploads unsigned artifacts.
 
 ### What we do not sign yet
 

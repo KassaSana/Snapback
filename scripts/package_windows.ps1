@@ -44,6 +44,9 @@ function Sign-ReleaseBinary {
     }
     & $signtool.Source sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
         /sha1 $Certificate $Path
+    if ($LASTEXITCODE -ne 0) {
+        throw "signtool failed (exit $LASTEXITCODE): $Path"
+    }
     Write-Host "Signed $Path"
 }
 
