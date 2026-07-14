@@ -13,6 +13,14 @@ endif()
 
 include(FetchContent)
 
+# Vendored deps (e.g. doctest v2.4.11) still declare cmake_minimum_required(VERSION <3.5).
+# CMake 4.x removed compatibility with that floor, so FetchContent's sub-configure hard-fails
+# on newer runner images (GitHub's windows-latest/macos-latest) while older CMake (Linux,
+# local) only warns. This raises the effective policy floor for those subprojects without
+# patching their files — the durable form of CMake's own "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+# suggestion. Our own cmake_minimum_required above (3.20) is unaffected.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 # --- Always fetched: header-only deps used by the core lib and the tests. ---
 FetchContent_Declare(nlohmann_json
   GIT_REPOSITORY https://github.com/nlohmann/json
@@ -55,6 +63,7 @@ add_library(snapback_core STATIC
   src/types.cpp
   src/engine/app_context.cpp
   src/engine/classifier.cpp
+  src/engine/feature_parity.cpp
   src/engine/features.cpp
   src/engine/onnx_model.cpp
   src/storage/storage.cpp
@@ -127,6 +136,9 @@ target_compile_definitions(snapback_tests PRIVATE
   SNAPBACK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 copy_onnxruntime_dll(snapback_tests)
 add_test(NAME snapback_tests COMMAND snapback_tests)
+
+add_executable(snapback_feature_parity_export tools/feature_parity_export.cpp)
+target_link_libraries(snapback_feature_parity_export PRIVATE snapback_core)
 
 if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_benchmarks benchmarks/bench_snapback.cpp)

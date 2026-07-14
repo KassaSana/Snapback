@@ -31,6 +31,17 @@ The C++ suite is mostly mock/headless by design: synthetic capture events drive
 storage, classifier, tracker, app-state, command dispatch, training status, tray,
 and overlay formatting. This is where most regressions should be caught.
 
+Feature parity against the Rust source of truth:
+
+```powershell
+python .\scripts\run_feature_parity_dual.py
+```
+
+This script builds the small `snapback_feature_parity_export` tool, runs the
+original Rust/Python parity CLI from `../Snapback`, exports Rust and C++ feature
+vectors for the same `fixtures/feature_parity/scenarios.json`, and compares every
+training column within `1e-6`.
+
 ## 2. Integrated Cross-System Tests
 
 Goal: prove the portable C++ core builds and behaves on all supported runner OSes,
@@ -41,6 +52,7 @@ GitHub Actions workflow: `.github/workflows/ci.yml`
 Jobs:
 
 - `cpp-headless`: Windows, macOS, and Linux CMake + CTest
+- `feature-parity`: Rust/Python parity plus Rust-vs-C++ vector diff
 - `frontend-mock`: npm install, typecheck, tests, and build
 - `windows-desktop-integration`: runs `scripts/windows_demo.ps1 -NoLaunch`
 - `docs-smoke`: catches broken demo runbook linkage

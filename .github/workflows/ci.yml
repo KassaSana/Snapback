@@ -125,24 +125,52 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Feature-parity fixtures: shared JSON scenarios replayed through FeatureExtractor
-  # and classifier guardrails. Guards drift from ../Snapback/fixtures/feature_parity.
+  # and diffed against the live Rust source-of-truth extractor.
   # ---------------------------------------------------------------------------
   feature-parity:
-    name: Feature parity fixtures
+    name: Rust/C++ feature parity fixtures
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
-      - name: Checkout
+      - name: Checkout C++ port
         uses: actions/checkout@v4
 
-      - name: Configure core
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
+      - name: Checkout Rust source of truth
+        uses: actions/checkout@v4
+        with:
+          repository: KassaSana/Snapback
+          ref: master
+          path: rust-source
 
-      - name: Build C++ tests
-        run: cmake --build build --target snapback_tests
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Run feature parity + IPC contract tests
-        run: ./build/snapback_tests --test-case="*parity*" --test-case="*IPC contract*"
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-source/src-tauri
+
+      - name: Install Rust Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libxdo-dev \
+            libx11-dev \
+            patchelf
+
+      - name: Run dual-language feature parity
+        run: python scripts/run_feature_parity_dual.py --rust-repo rust-source --build-dir build-parity
 
   # ---------------------------------------------------------------------------
   # ONNX backend: vendor the runtime, build with SNAPBACK_ONNX=ON, run tests. The
