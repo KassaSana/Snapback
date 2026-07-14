@@ -163,8 +163,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: KassaSana/Snapback
-          ref: master
+          # master now carries the C++ port. main-fresh preserves the Rust/Tauri
+          # source-of-truth layout needed by the parity harness.
+          ref: main-fresh
           path: rust-source
+
+      - name: Verify Rust source checkout
+        run: |
+          test -f rust-source/ml/feature_parity_cli.py
+          test -f rust-source/src-tauri/Cargo.toml
+          test -f rust-source/fixtures/feature_parity/scenarios.json
 
       - name: Setup Python
         uses: actions/setup-python@v5

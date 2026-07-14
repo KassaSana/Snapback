@@ -41,7 +41,9 @@ This script builds the small `snapback_feature_parity_export` tool, runs the
 original Rust/Python parity CLI from `../Snapback`, exports Rust and C++ feature
 vectors for the same `fixtures/feature_parity/scenarios.json`, and compares every
 training column within `1e-6`. On CI/macOS/Linux, use `python` instead of the
-Windows `py` launcher.
+Windows `py` launcher. CI checks out the Rust source-of-truth layout from the
+`main-fresh` branch into `rust-source`; the current `master` branch contains the
+C++ port, so it cannot be used as the Rust parity input.
 
 ## 2. Integrated Cross-System Tests
 
