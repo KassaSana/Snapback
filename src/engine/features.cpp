@@ -202,7 +202,8 @@ FeatureVector FeatureExtractor::extract(double now, const std::vector<AppRuleRec
     out.app_name = current_app_name_;
     out.window_title = current_window_title_;
     out.productivity_category = ctx.productivity_category();
-    out.seconds_since_session_start() = session_start_secs_ ? std::max(0.0, now - *session_start_secs_) : 0.0;
+    out.seconds_since_session_start() =
+        session_start_secs_ ? std::floor(std::max(0.0, now - *session_start_secs_)) : 0.0;
     out.minutes_since_last_break() = last_break_secs_
                                          ? std::floor(std::max(0.0, (now - *last_break_secs_) / 60.0))
                                          : 0.0;
@@ -219,7 +220,8 @@ FeatureVector FeatureExtractor::extract(double now, const std::vector<AppRuleRec
     out.mouse_click_count() = static_cast<double>(mouse_clicks);
     out.context_switches_30s() = static_cast<double>(context_switches_30s);
     out.context_switches_5min() = static_cast<double>(context_switches_5min);
-    out.time_in_current_app() = current_app_start_secs_ ? std::max(0.0, now - *current_app_start_secs_) : 0.0;
+    out.time_in_current_app() =
+        current_app_start_secs_ ? std::floor(std::max(0.0, now - *current_app_start_secs_)) : 0.0;
     out.unique_apps_5min() = static_cast<double>(unique_apps.size());
     out.idle_time_30s() = idle_time_30s;
     out.idle_event_count_5min() = static_cast<double>(idle_count_5min);
