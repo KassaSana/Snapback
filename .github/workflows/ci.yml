@@ -5,6 +5,7 @@ name: CI
 #   - AddressSanitizer + UBSan on the manual-memory paths (ring buffer, locks, RAII)
 #   - the ONNX inference backend (vendored runtime + fixture model)
 #   - the benchmark harness (short smoke run)
+#   - frontend dependency vulnerability audit
 #   - the reused React frontend (typecheck + tests + build)
 #   - the Windows desktop app (no-launch integration smoke)
 #   - docs invariants
@@ -35,6 +36,29 @@ env:
   CMAKE_BUILD_PARALLEL_LEVEL: "4"
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Dependency vulnerability audit. This checks the committed frontend lockfile
+  # against npm's advisory database and fails on high/critical vulnerabilities.
+  # ---------------------------------------------------------------------------
+  security-audit:
+    name: Security audit / frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Audit frontend npm dependencies
+        working-directory: frontend
+        run: npm audit --package-lock-only --audit-level=high
+
   # ---------------------------------------------------------------------------
   # Portable core on all three OSes: pure logic, no webview, no ONNX. Must stay
   # green everywhere (the capture/app sources are #if-guarded per platform).

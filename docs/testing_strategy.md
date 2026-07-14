@@ -53,6 +53,7 @@ GitHub Actions workflow: `.github/workflows/ci.yml`
 Jobs:
 
 - `cpp-headless`: Windows, macOS, and Linux CMake + CTest
+- `security-audit`: frontend `npm audit` against the committed lockfile
 - `feature-parity`: Rust/Python parity plus Rust-vs-C++ vector diff
 - `frontend-mock`: npm install, typecheck, tests, and build
 - `windows-desktop-integration`: runs `scripts/windows_demo.ps1 -NoLaunch`
