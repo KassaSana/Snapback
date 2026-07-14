@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the Tauri boundary so the real api.ts + useSession run end to end.
 const boundary = vi.hoisted(() => {
-  const state: { health: Record<string, unknown> } = { health: {} };
+  const state: { health: Record<string, unknown>; settings: Record<string, unknown> } = {
+    health: {},
+    settings: {},
+  };
 
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
     switch (cmd) {
@@ -11,6 +14,8 @@ const boundary = vi.hoisted(() => {
         return state.health;
       case "refresh_permissions":
         return (state.health.permissions as Record<string, unknown>) ?? {};
+      case "get_settings":
+        return state.settings;
       case "start_session":
         return {
           session_id: "sess-42",
@@ -71,6 +76,7 @@ beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
+  boundary.state.settings = { default_focus_mode: "normal" };
 });
 
 afterEach(() => {
@@ -97,6 +103,43 @@ describe("Session start/stop flow", () => {
     // UI reflects the active session.
     expect(await screen.findByText("sess-42")).toBeInTheDocument();
     expect(await screen.findByText("active")).toBeInTheDocument();
+  });
+
+  it("uses the persisted default focus mode for a new session", async () => {
+    boundary.state.settings = { default_focus_mode: "deep" };
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+
+    const select = screen.getByLabelText("Focus mode") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("deep"));
+
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("start_session", {
+        goal: "Write tests",
+        focusMode: "deep",
+      }),
+    );
+  });
+
+  it("persists focus mode changes through the settings command", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+
+    const select = screen.getByLabelText("Focus mode") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "recovery" } });
+
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("set_focus_mode", {
+        mode: "recovery",
+      }),
+    );
+    expect(select.value).toBe("recovery");
   });
 
   it("does not start a session when the goal is empty", async () => {

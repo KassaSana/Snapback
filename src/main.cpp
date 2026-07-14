@@ -100,7 +100,7 @@ int main() {
     // Heap-allocate AppState: it embeds the 64K-slot capture ring buffer inline (~5 MB),
     // which blows the default 1 MB stack if placed as a local. The tests do the same via
     // make_unique. A unique_ptr keeps ownership + lifetime clear.
-    auto state = std::make_unique<AppState>(std::move(*storage));
+    auto state = std::make_unique<AppState>(std::move(*storage), data_dir);
     state->start_engine();
 
     webview::webview w(/*debug=*/true, nullptr);

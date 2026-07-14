@@ -8,6 +8,7 @@ import {
   mapHealth,
   mapPermissionStatus,
   mapPrediction,
+  mapSettings,
   mapSession,
   mapSetupSteps,
   mapSnapbackPayload,
@@ -99,6 +100,15 @@ const session = mapSession({
 assert.equal(session.sessionId, "sess-2");
 assert.equal(session.focusMode, "deep");
 assert.equal(session.endedAt, null);
+
+const settingsSnake = mapSettings({ default_focus_mode: "deep" });
+assert.equal(settingsSnake.defaultFocusMode, "deep");
+
+const settingsCamel = mapSettings({ defaultFocusMode: "recovery" });
+assert.equal(settingsCamel.defaultFocusMode, "recovery");
+
+const settingsUnknown = mapSettings({ defaultFocusMode: "bogus" });
+assert.equal(settingsUnknown.defaultFocusMode, "normal");
 
 const trainDeployed = mapTrainFromExportResult({
   success: true,

@@ -14,6 +14,14 @@
 
 namespace snapback {
 
+AppState::AppState(Storage storage, std::filesystem::path app_data_dir)
+    : storage_(std::move(storage)), app_data_dir_(std::move(app_data_dir)) {
+    if (!app_data_dir_.empty()) {
+        settings_ = load_app_settings(app_data_dir_);
+    }
+    focus_mode_ = settings_.default_focus_mode;
+}
+
 std::string AppState::now_rfc3339() {
     const std::time_t now = std::time(nullptr);
     std::tm tm{};
@@ -191,6 +199,15 @@ ExportTrainingResult AppState::export_training_data(
 void AppState::set_focus_mode(FocusMode mode) {
     std::lock_guard lock(mutex_);
     focus_mode_ = mode;
+    settings_.default_focus_mode = mode;
+    if (!app_data_dir_.empty()) {
+        save_app_settings(app_data_dir_, settings_);
+    }
+}
+
+AppSettings AppState::settings() const {
+    std::lock_guard lock(mutex_);
+    return settings_;
 }
 
 std::vector<AppRuleRecord> AppState::app_rules() {

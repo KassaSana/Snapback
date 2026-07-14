@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <thread>
 
+#include "app/settings.hpp"
 #include "app/state.hpp"
 
 using namespace snapback;
@@ -126,6 +127,26 @@ TEST_CASE("AppState labels and export training data") {
     CHECK(scoped_features.find("Export from app state") != std::string::npos);
     CHECK(scoped_features.find("Other session") == std::string::npos);
     (void)other_session;
+}
+
+TEST_CASE("AppState persists default focus mode settings") {
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+
+    auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
+    CHECK(state->settings().default_focus_mode == FocusMode::Normal);
+
+    state->set_focus_mode(FocusMode::Deep);
+    CHECK(state->settings().default_focus_mode == FocusMode::Deep);
+
+    const auto raw = read_file(temp.path / kSettingsFileName);
+    CHECK(raw.find("\"defaultFocusMode\": \"deep\"") != std::string::npos);
+
+    auto storage2 = Storage::open_memory();
+    REQUIRE(storage2);
+    auto reloaded = std::make_unique<AppState>(std::move(*storage2), temp.path);
+    CHECK(reloaded->settings().default_focus_mode == FocusMode::Deep);
 }
 
 TEST_CASE("AppState fires a snapback payload on return from a long distraction") {

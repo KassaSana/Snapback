@@ -19,6 +19,7 @@
 #include "engine/classifier.hpp"
 #include "engine/features.hpp"
 #include "snapback/tracker.hpp"
+#include "app/settings.hpp"
 #include "storage/storage.hpp"
 #include "types.hpp"
 
@@ -26,7 +27,7 @@ namespace snapback {
 
 class AppState {
 public:
-    explicit AppState(Storage storage) : storage_(std::move(storage)) {}
+    explicit AppState(Storage storage, std::filesystem::path app_data_dir = {});
 
     // Rust: AppState::start_engine — spawn capture + the engine tick thread.
     void start_engine();
@@ -60,6 +61,7 @@ public:
         const std::filesystem::path& out_dir,
         const std::optional<std::string>& session_id = std::nullopt);
     void set_focus_mode(FocusMode mode);
+    AppSettings settings() const;
 
     // App rules (allow/block overrides). The CRUD methods keep the cached rule set
     // (app_rules_) in sync so the live classifier sees changes immediately.
@@ -108,6 +110,7 @@ private:
     mutable std::mutex mutex_;
     mutable std::mutex storage_mutex_;
     Storage storage_;
+    std::filesystem::path app_data_dir_;
     CaptureThread capture_;
     FeatureExtractor features_;
     Classifier classifier_;
@@ -117,6 +120,7 @@ private:
     std::vector<AppRuleRecord> app_rules_;  // cached; passed to the live classifier
     std::optional<PredictionRecord> latest_prediction_;
     std::optional<SnapbackPayload> latest_snapback_;
+    AppSettings settings_;
     FocusMode focus_mode_ = FocusMode::Normal;
     double last_prediction_secs_ = -1.0;
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event

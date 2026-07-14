@@ -9,6 +9,7 @@ import {
   mapHealth,
   mapPermissionStatus,
   mapPrediction,
+  mapSettings,
   mapSession,
   mapSessionRecap,
   mapSessionSummary,
@@ -165,6 +166,10 @@ export type TrainingDeployStatus = {
   pipelineCommand: string;
 };
 
+export type AppSettings = {
+  defaultFocusMode: string;
+};
+
 export type TrainFromExportResult = {
   success: boolean;
   trainingSucceeded: boolean;
@@ -218,6 +223,10 @@ export const api = {
   getSessionHistory: async (limit = 20) => {
     const rows = await invoke<Record<string, unknown>[]>("get_session_history", { limit });
     return rows.map(mapSessionSummary);
+  },
+  getSettings: async () => {
+    const raw = await invoke<Record<string, unknown> | null>("get_settings");
+    return mapSettings(raw ?? {});
   },
   setFocusMode: (mode: string) => invoke("set_focus_mode", { mode }),
   reloadClassifierModel: async () => {

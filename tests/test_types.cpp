@@ -171,6 +171,22 @@ TEST_CASE("SessionRecord optional timestamps round-trip as null when absent") {
     CHECK(back.focus_mode == "deep");
 }
 
+TEST_CASE("AppSettings serializes default focus mode as camelCase") {
+    AppSettings settings;
+    settings.default_focus_mode = FocusMode::Recovery;
+
+    json j = settings;
+    CHECK(j.contains("defaultFocusMode"));
+    CHECK_FALSE(j.contains("default_focus_mode"));
+    CHECK(j["defaultFocusMode"].get<std::string>() == "recovery");
+
+    auto back = j.get<AppSettings>();
+    CHECK(back.default_focus_mode == FocusMode::Recovery);
+
+    auto missing = json::object().get<AppSettings>();
+    CHECK(missing.default_focus_mode == FocusMode::Normal);
+}
+
 TEST_CASE("LabelRequest carries the nested camelCase arg shape") {
     json j = json::parse(R"({"sessionId":"s1","label":"DEEP_FOCUS","source":"hotkey"})");
     auto req = j.get<LabelRequest>();

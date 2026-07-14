@@ -319,6 +319,15 @@ void from_json(const json& j, ExportTrainingResult& v) {
     v.label_count = get_or<std::uint64_t>(j, "labelCount", 0);
 }
 
+// ---- AppSettings -----------------------------------------------------------
+
+void to_json(json& j, const AppSettings& v) {
+    j = json{{"defaultFocusMode", v.default_focus_mode}};
+}
+void from_json(const json& j, AppSettings& v) {
+    v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
+}
+
 // ---- Failure payloads ------------------------------------------------------
 
 void to_json(json& j, const CaptureFailurePayload& v) {

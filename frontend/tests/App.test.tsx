@@ -14,6 +14,8 @@ const boundary = vi.hoisted(() => {
         return state.health;
       case "refresh_permissions":
         return (state.health.permissions as Record<string, unknown>) ?? {};
+      case "get_settings":
+        return { default_focus_mode: "normal" };
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":

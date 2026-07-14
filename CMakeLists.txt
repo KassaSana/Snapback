@@ -119,6 +119,7 @@ endif()
 # --- app state: ties capture + engine + storage together. ---
 add_library(snapback_app STATIC
   src/app/frontend_assets.cpp
+  src/app/settings.cpp
   src/app/state.cpp
   src/app/training_deploy.cpp
 )

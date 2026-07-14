@@ -13,6 +13,14 @@ import { sessionStartCaptureWarning, type SessionCaptureReadiness } from "./heal
 export const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
 export type FocusMode = (typeof FOCUS_MODES)[number];
 
+const normalizeFocusMode = (
+  value: string | null | undefined,
+  fallback: FocusMode = "normal",
+): FocusMode => {
+  const mode = String(value ?? "").toLowerCase();
+  return FOCUS_MODES.includes(mode as FocusMode) ? (mode as FocusMode) : fallback;
+};
+
 type UseSessionArgs = {
   refreshContextTimeline: (sid?: string | null) => void | Promise<void>;
   resetTimelineRefreshGate: () => void;
@@ -39,15 +47,21 @@ export const useSession = ({
   const [surveyPending, setSurveyPending] = useState(false);
 
   const hydrateActiveSession = useCallback(async () => {
-    const active = await api.getActiveSession();
+    const [settings, active] = await Promise.all([
+      api.getSettings().catch(() => null),
+      api.getActiveSession(),
+    ]);
+    const defaultFocusMode = normalizeFocusMode(settings?.defaultFocusMode);
+
     if (!active) {
+      setFocusMode(defaultFocusMode);
       return;
     }
 
     setSessionRecord(active);
     setSessionId(active.sessionId);
     setSessionGoal(active.goal);
-    setFocusMode((active.focusMode as FocusMode) || "normal");
+    setFocusMode(normalizeFocusMode(active.focusMode, defaultFocusMode));
     void refreshContextTimeline(active.sessionId);
   }, [refreshContextTimeline]);
 

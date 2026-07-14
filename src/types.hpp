@@ -254,6 +254,12 @@ struct ExportTrainingResult {
     std::uint64_t label_count{};
 };
 
+// New C++ settings DTO. Persisted in app-data/settings.json and exposed to the
+// frontend with camelCase keys.
+struct AppSettings {
+    FocusMode default_focus_mode{FocusMode::Normal};
+};
+
 // Rust: CaptureFailurePayload / OverlayFailurePayload / PersistenceFailurePayload.
 struct CaptureFailurePayload {
     std::string reason;
@@ -309,6 +315,8 @@ void to_json(json& j, const LabelRequest& v);
 void from_json(const json& j, LabelRequest& v);
 void to_json(json& j, const ExportTrainingResult& v);
 void from_json(const json& j, ExportTrainingResult& v);
+void to_json(json& j, const AppSettings& v);
+void from_json(const json& j, AppSettings& v);
 void to_json(json& j, const CaptureFailurePayload& v);
 void from_json(const json& j, CaptureFailurePayload& v);
 void to_json(json& j, const OverlayFailurePayload& v);

@@ -92,6 +92,7 @@ inline void register_commands(webview::webview& w, AppState& state,
         state.set_focus_mode(focus_mode_from_string(a.at("mode").get<std::string>()));
         return json(nullptr);
     });
+    bind_cmd(w, "get_settings", [&state](const json&) { return json(state.settings()); });
     bind_cmd(w, "dismiss_snapback", [&state](const json&) {
         state.dismiss_snapback();
         // Bind callbacks run on the UI thread, so hiding the native overlay is safe here.

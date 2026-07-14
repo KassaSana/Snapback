@@ -1,4 +1,5 @@
 import type {
+  AppSettings,
   AppRuleKind,
   AppRuleRecord,
   ClassifierStatus,
@@ -14,6 +15,21 @@ import type {
   TrainFromExportResult,
   TrainingDeployStatus,
 } from "./api";
+
+const FOCUS_MODE_VALUES = new Set(["deep", "normal", "recovery"]);
+
+function normalizeFocusMode(value: unknown): string {
+  const mode = String(value ?? "normal").toLowerCase();
+  return FOCUS_MODE_VALUES.has(mode) ? mode : "normal";
+}
+
+export function mapSettings(raw: Record<string, unknown>): AppSettings {
+  return {
+    defaultFocusMode: normalizeFocusMode(
+      raw.default_focus_mode ?? raw.defaultFocusMode,
+    ),
+  };
+}
 
 export function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapshot {
   return {
