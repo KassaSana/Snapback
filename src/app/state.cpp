@@ -402,6 +402,14 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
         }
     }
 
+    // AFK freeze: while idle we skip ingest + prediction so an empty window doesn't get
+    // scored as "distracted" and idle minutes don't dilute the feature windows. Context
+    // snapshots (window changes) still persist so the recovery timeline stays intact.
+    if (idle_) {
+        if (job.context_snapshot) return job;
+        return std::nullopt;
+    }
+
     // Always ingest (cheap bookkeeping); defer the O(window) extract() until we actually
     // produce a prediction. ~99% of events are throttled, so this skips almost all scans.
     features_.ingest(event);

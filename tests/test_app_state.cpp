@@ -75,6 +75,21 @@ TEST_CASE("AppState idle wiring goes AFK after the threshold and wakes on input"
     CHECK_FALSE(state->is_idle());
 }
 
+TEST_CASE("AppState freezes prediction generation while idle") {
+    auto state = make_state();
+    // A normal event produces a prediction.
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0));
+    CHECK(state->latest_prediction().has_value());
+
+    // Force AFK, then the next event must NOT overwrite/produce a prediction.
+    state->update_idle_for_test(0, true);
+    state->update_idle_for_test(kDefaultIdleThresholdMs, false);
+    REQUIRE(state->is_idle());
+    const auto before = state->latest_prediction()->timestamp;
+    state->process_event_for_test(ev(EventType::KeyPress, 100.0));
+    CHECK(state->latest_prediction()->timestamp == before);  // unchanged: no new prediction
+}
+
 TEST_CASE("AppState starts and stops sessions through storage") {
     auto state = make_state();
     auto session = state->start_session("Ship phase five", FocusMode::Deep);
