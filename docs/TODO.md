@@ -12,6 +12,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Done
 
+- [x] **1.4a** Notification payload builders (`app/notification.hpp`) — distraction + hyperfocus.
 - [x] **2.2b** Expose `AppState::focus_summary()` over recent predictions.
 - [x] **2.2a** Focus summary aggregation (`engine/focus_summary.hpp`) — avg/peak/streak math.
 - [x] **4.6** Dependabot config (`.github/dependabot.yml`) — github-actions + frontend npm.
@@ -25,6 +26,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Next up (from ROADMAP suggested sequence)
 
+- [ ] **1.4b** Win32 toast delivery consuming `NotificationPayload`.
 - [ ] **4.1b** Logger file sink + rotation.
 - [ ] **2.6b** Wire Pomodoro timer into AppState + IPC commands.
-- [ ] **2.4b** Gate the snapback nag through `should_nag`.
+- [ ] **2.4b** Gate the distraction nag through `should_nag`.
