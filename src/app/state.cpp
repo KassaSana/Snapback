@@ -35,6 +35,39 @@ std::string AppState::now_rfc3339() {
     return out.str();
 }
 
+std::int64_t AppState::steady_now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+bool AppState::is_input_event(EventType type) {
+    return type == EventType::KeyPress || type == EventType::KeyRelease ||
+           type == EventType::MouseMove || type == EventType::MouseClick;
+}
+
+IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_input) {
+    // on_activity resets the clock (and wakes us); poll then checks the threshold. A tick
+    // with input can only ever wake us, never sleep us; a tick without input can only sleep.
+    IdleTransition edge = IdleTransition::None;
+    if (had_input) edge = idle_detector_.on_activity(now_ms);
+    if (const auto poll_edge = idle_detector_.poll(now_ms); poll_edge != IdleTransition::None) {
+        edge = poll_edge;
+    }
+    idle_ = idle_detector_.state() == IdleState::Idle;
+    return edge;
+}
+
+bool AppState::is_idle() const {
+    std::lock_guard lock(mutex_);
+    return idle_;
+}
+
+IdleTransition AppState::update_idle_for_test(std::int64_t now_ms, bool had_input) {
+    std::lock_guard lock(mutex_);
+    return update_idle_unlocked(now_ms, had_input);
+}
+
 void AppState::start_engine() {
     bool expected = false;
     if (!engine_running_.compare_exchange_strong(expected, true)) return;
@@ -303,11 +336,17 @@ void AppState::engine_tick() {
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
     std::vector<PersistJob> jobs;
+    IdleTransition idle_edge = IdleTransition::None;
     {
         std::lock_guard lock(mutex_);
+        bool had_input = false;
         while (auto ev = capture_.next_event()) {
+            if (is_input_event(ev->event_type)) had_input = true;
             if (auto job = compute_event(*ev)) jobs.push_back(std::move(*job));
         }
+        // Idle timing runs off the tick's monotonic clock, not event timestamps: true AFK
+        // means no events arrive at all, so we must measure wall time, not the last event.
+        idle_edge = update_idle_unlocked(steady_now_ms(), had_input);
         hook = emit_hook_;
         if (prediction_dirty_) {
             pred_to_emit = latest_prediction_;
@@ -327,6 +366,8 @@ void AppState::engine_tick() {
     }
 
     if (!hook) return;
+    if (idle_edge == IdleTransition::WentIdle) hook("idle", "{\"idle\":true}");
+    if (idle_edge == IdleTransition::WokeUp) hook("idle", "{\"idle\":false}");
     if (pred_to_emit) hook("prediction", nlohmann::json(*pred_to_emit).dump());
     if (snap_to_emit) hook("snapback", nlohmann::json(*snap_to_emit).dump());
 }

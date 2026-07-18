@@ -18,6 +18,7 @@
 #include "capture/capture_thread.hpp"
 #include "engine/classifier.hpp"
 #include "engine/features.hpp"
+#include "engine/idle_detector.hpp"
 #include "snapback/tracker.hpp"
 #include "app/settings.hpp"
 #include "storage/storage.hpp"
@@ -84,6 +85,14 @@ public:
     // Test/headless seam: run one captured event through the same prediction path.
     void process_event_for_test(const CaptureEvent& event);
 
+    // True once the user has gone AFK (no input for the idle threshold). Flips back on
+    // the next real input. The engine tick maintains it; the frontend gets an "idle" event.
+    bool is_idle() const;
+
+    // Test/headless seam for the idle wiring: apply one idle-detection step at `now_ms`
+    // (had_input = an input event was seen since the last step) and return the edge.
+    IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
+
 private:
     // A tick's writes, computed under mutex_ (no storage I/O) and flushed later under
     // storage_mutex_. Keeping persistence out of the state lock is what stops a disk
@@ -103,6 +112,11 @@ private:
     void persist(const PersistJob& job);
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
     static std::string now_rfc3339();
+    static std::int64_t steady_now_ms();  // monotonic clock for idle timing
+    static bool is_input_event(EventType type);  // key/mouse = real user activity
+    // Advance the idle state machine one step. Requires mutex_. Returns the transition
+    // edge so the tick loop can emit it. Sets idle_ from the resulting state.
+    IdleTransition update_idle_unlocked(std::int64_t now_ms, bool had_input);
 
     // Lock order (deadlock-free): always acquire mutex_ BEFORE storage_mutex_, never the
     // reverse. mutex_ guards in-memory state; storage_mutex_ serializes all storage_ access
@@ -115,6 +129,7 @@ private:
     FeatureExtractor features_;
     Classifier classifier_;
     ContextTracker context_tracker_;
+    IdleDetector idle_detector_;
 
     std::optional<SessionRecord> active_session_;
     std::vector<AppRuleRecord> app_rules_;  // cached; passed to the live classifier
@@ -125,6 +140,7 @@ private:
     double last_prediction_secs_ = -1.0;
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event
     bool prediction_dirty_ = false;  // a new prediction awaits emission this tick
+    bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
 
     EmitHook emit_hook_;
     std::thread engine_thread_;

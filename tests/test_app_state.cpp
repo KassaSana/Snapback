@@ -56,6 +56,25 @@ std::string read_file(const std::filesystem::path& path) {
 
 }  // namespace
 
+TEST_CASE("AppState idle wiring goes AFK after the threshold and wakes on input") {
+    auto state = make_state();
+    const std::int64_t t = kDefaultIdleThresholdMs;
+
+    // First step seeds the clock; input keeps us active.
+    CHECK(state->update_idle_for_test(0, /*had_input=*/true) == IdleTransition::None);
+    CHECK_FALSE(state->is_idle());
+
+    // No input across the threshold -> AFK, exactly one WentIdle edge.
+    CHECK(state->update_idle_for_test(t - 1, false) == IdleTransition::None);
+    CHECK(state->update_idle_for_test(t, false) == IdleTransition::WentIdle);
+    CHECK(state->is_idle());
+    CHECK(state->update_idle_for_test(t + 500, false) == IdleTransition::None);  // no repeat
+
+    // Input wakes us.
+    CHECK(state->update_idle_for_test(t + 600, true) == IdleTransition::WokeUp);
+    CHECK_FALSE(state->is_idle());
+}
+
 TEST_CASE("AppState starts and stops sessions through storage") {
     auto state = make_state();
     auto session = state->start_session("Ship phase five", FocusMode::Deep);
