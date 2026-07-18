@@ -12,6 +12,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Done
 
+- [x] **4.1a** Leveled logger core (`util/logger.hpp`) — levels, filtering, injectable clock.
 - [x] **2.4a** Confidence calibration helpers (`engine/confidence.hpp`) — gate low-conf nags.
 - [x] **2.6a** Pomodoro / focus-timer core state machine (`engine/pomodoro.hpp`) + doctest.
 - [x] **1.5c** Freeze prediction generation while idle (no AFK pollution of feature windows).
@@ -21,5 +22,5 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Next up (from ROADMAP suggested sequence)
 
-- [ ] **4.1** Structured leveled logger.
+- [ ] **4.1b** Logger file sink + rotation.
 - [ ] **4.6** Dependabot config.
