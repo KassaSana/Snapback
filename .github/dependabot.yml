@@ -1,0 +1,16 @@
+# Dependabot keeps our two live dependency surfaces patched. Roadmap 4.6.
+# The C++ core pulls deps via CMake FetchContent (pinned in CMakeLists.txt), which
+# Dependabot can't track, so only the ecosystems that have manifests are listed here:
+#   - github-actions: the workflows under .github/workflows
+#   - npm: the reused React frontend
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"

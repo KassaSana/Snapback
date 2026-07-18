@@ -12,6 +12,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Done
 
+- [x] **4.6** Dependabot config (`.github/dependabot.yml`) — github-actions + frontend npm.
 - [x] **4.1a** Leveled logger core (`util/logger.hpp`) — levels, filtering, injectable clock.
 - [x] **2.4a** Confidence calibration helpers (`engine/confidence.hpp`) — gate low-conf nags.
 - [x] **2.6a** Pomodoro / focus-timer core state machine (`engine/pomodoro.hpp`) + doctest.
@@ -23,4 +24,5 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Next up (from ROADMAP suggested sequence)
 
 - [ ] **4.1b** Logger file sink + rotation.
-- [ ] **4.6** Dependabot config.
+- [ ] **2.6b** Wire Pomodoro timer into AppState + IPC commands.
+- [ ] **2.4b** Gate the snapback nag through `should_nag`.
