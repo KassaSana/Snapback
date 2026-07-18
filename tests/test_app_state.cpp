@@ -75,6 +75,20 @@ TEST_CASE("AppState idle wiring goes AFK after the threshold and wakes on input"
     CHECK_FALSE(state->is_idle());
 }
 
+TEST_CASE("AppState focus_summary aggregates persisted predictions") {
+    auto state = make_state();
+    auto session = state->start_session("Write tests", FocusMode::Deep);
+    // Drive a few events far enough apart to clear the 1s prediction throttle.
+    for (int i = 0; i < 4; ++i) {
+        state->process_event_for_test(ev(EventType::KeyPress, 1.0 + i * 2.0));
+    }
+    const auto summary = state->focus_summary(100);
+    CHECK(summary.sample_count >= 1);
+    CHECK(summary.avg_focus_score >= 0.0);
+    CHECK(summary.peak_focus_score >= summary.avg_focus_score);
+    state->stop_session(session.session_id);
+}
+
 TEST_CASE("AppState freezes prediction generation while idle") {
     auto state = make_state();
     // A normal event produces a prediction.

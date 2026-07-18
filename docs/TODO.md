@@ -12,6 +12,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Done
 
+- [x] **2.2b** Expose `AppState::focus_summary()` over recent predictions.
 - [x] **2.2a** Focus summary aggregation (`engine/focus_summary.hpp`) — avg/peak/streak math.
 - [x] **4.6** Dependabot config (`.github/dependabot.yml`) — github-actions + frontend npm.
 - [x] **4.1a** Leveled logger core (`util/logger.hpp`) — levels, filtering, injectable clock.

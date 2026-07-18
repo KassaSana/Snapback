@@ -214,6 +214,11 @@ std::vector<PredictionRecord> AppState::prediction_history(std::size_t limit) {
     return storage_.recent_predictions(limit);
 }
 
+FocusSummary AppState::focus_summary(std::size_t limit) {
+    std::lock_guard lock(storage_mutex_);
+    return summarize_predictions(storage_.recent_predictions(limit));
+}
+
 std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
     std::lock_guard lock(storage_mutex_);
     std::vector<SessionSummary> out;

@@ -18,6 +18,7 @@
 #include "capture/capture_thread.hpp"
 #include "engine/classifier.hpp"
 #include "engine/features.hpp"
+#include "engine/focus_summary.hpp"
 #include "engine/idle_detector.hpp"
 #include "snapback/tracker.hpp"
 #include "app/settings.hpp"
@@ -57,6 +58,8 @@ public:
     void dismiss_snapback();
     SessionRecap session_recap(const std::string& session_id);
     std::vector<PredictionRecord> prediction_history(std::size_t limit);
+    // Aggregate the most recent `limit` predictions into recap stats (avg/peak/streak).
+    FocusSummary focus_summary(std::size_t limit = 200);
     std::vector<SessionSummary> session_history(std::size_t limit);
     ExportTrainingResult export_training_data(
         const std::filesystem::path& out_dir,
