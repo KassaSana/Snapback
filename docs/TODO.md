@@ -12,6 +12,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Done
 
+- [x] **2.2a** Focus summary aggregation (`engine/focus_summary.hpp`) — avg/peak/streak math.
 - [x] **4.6** Dependabot config (`.github/dependabot.yml`) — github-actions + frontend npm.
 - [x] **4.1a** Leveled logger core (`util/logger.hpp`) — levels, filtering, injectable clock.
 - [x] **2.4a** Confidence calibration helpers (`engine/confidence.hpp`) — gate low-conf nags.
