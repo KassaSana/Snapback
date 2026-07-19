@@ -23,8 +23,11 @@ These come from Kassa's standing preferences. Follow them on every change:
    commit message. Do not skip the explanation.
 3. **Explanations are ADHD-friendly:** lead with a **bold one-line takeaway**, then
    short scannable bullets. No walls of text.
-4. **Never run git.** No `add`/`commit`/`push`. Suggest a short one-liner commit
-   message and let Kassa run it. (Commit style: terse, e.g. `feat: SPSC ring buffer`.)
+4. **Claude commits; Kassa pushes.** Claude runs `git add`/`git commit` with a terse
+   one-liner (e.g. `feat: SPSC ring buffer`) under Kassa's identity
+   (KassaSana / kassaplayz@gmail.com). **Never push.** **ABSOLUTELY NO AI attribution,
+   ever** — no `Co-Authored-By`, no "Generated with Claude", no AI footprint of any kind
+   in any commit message. Non-negotiable.
 5. **Teach the C++ vs Rust delta.** Whenever the port touches something Rust did for
    free (ownership, `Result`, `Option`, `Send`/`Sync`, trait dispatch), name what
    Rust guaranteed and how we uphold it here (RAII, `std::optional`,
@@ -81,21 +84,26 @@ The Rust→C++ port is **complete** — the phase playbook that got us here is a
 [docs/ROADMAP.md](docs/ROADMAP.md); start at **Tier 0** (the last parity/CI gaps) before
 reaching for shipping or platform polish.
 
-## Status (2026-07-12)
+## Status (2026-07-19)
 
 The port runs end-to-end on Windows: capture → engine → SQLite → webview IPC → reused React
-UI. ONNX is optional and verified. CI guards it on three OSes with ASan/UBSan/TSan; a
-tag-driven release workflow packages Windows builds.
+UI. ONNX is optional and verified. CI guards it on three OSes with ASan/UBSan/TSan (plus a
+dual-language Rust/C++ feature-parity job); a tag-driven release workflow packages Windows
+builds with optional Authenticode signing. This table is a summary — **the single source
+of truth for open work is [docs/ROADMAP.md](docs/ROADMAP.md)**; when they disagree, the
+roadmap wins.
 
 | Area | Status |
 |------|--------|
-| Core pipeline (types → storage → engine → app → IPC → ONNX) | **Done** — ~74 headless tests green |
+| Core pipeline (types → storage → engine → app → IPC → ONNX) | **Done** — 22 headless test suites green |
 | Windows capture / overlay / tray | **Done** |
 | Linux capture (evdev) | **Done** — real evdev with polling fallback |
 | macOS capture / overlay / tray | **Polling only** — native `CGEventTap` + tray are Roadmap Tier 0.3 / Tier 3.1 |
-| Packaging / CI | **Partial** — CI + tag release + unsigned ZIP; signed installer is Roadmap Tier 0.4 |
+| Packaging / CI | **Partial** — CI + parity job + tag release + signing wired; cert itself is Roadmap 0.4b |
+| Idle/AFK, pomodoro, confidence gating, retention prune | **Done (backend)** — pomodoro/focus-summary UI are Roadmap 0.7 / 0.8 |
+| Logger / notifications | **Built, not wired** — adoption + real-event trigger are Roadmap 0.5 / 0.6 |
 | Perf / safety hardening | **Done** — WAL, stmt cache, two-lock split, interning, ASan/TSan, concurrent tests |
 
-**Do next (Roadmap Tier 0):** feature-parity fixture harness + dual-language CI, storage
-retention prune on open, native macOS capture, signed installer. See
-[docs/ROADMAP.md](docs/ROADMAP.md).
+**Do next (Roadmap Tier 0):** close the wiring gaps — adopt the logger (0.5), fire the
+toast on real distractions (0.6), pomodoro UI (0.7), expose focus summary (0.8) — then
+native macOS capture (0.3). See [docs/ROADMAP.md](docs/ROADMAP.md).
