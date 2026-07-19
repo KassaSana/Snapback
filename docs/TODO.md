@@ -27,6 +27,6 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Next up (from ROADMAP suggested sequence)
 
 - [x] **1.4b** Win32 toast delivery consuming `NotificationPayload` via the existing tray icon.
-- [ ] **4.1b** Logger file sink + rotation.
+- [x] **4.1b** Logger file sink + rotation (`RotatingFileStream`, bounded backups).
 - [ ] **2.6b** Wire Pomodoro timer into AppState + IPC commands.
 - [ ] **2.4b** Gate the distraction nag through `should_nag`.
