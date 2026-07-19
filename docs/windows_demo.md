@@ -22,6 +22,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -NoLaunch
 # Pop a sample native snapback overlay immediately on launch.
 powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -OverlayTest
 
+# Send a sample Windows notification through the tray icon on launch.
+$env:SNAPBACK_NOTIFICATION_TEST = "1"
+powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1
+
 # Reuse an already-running Vite server.
 powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -UseVite -SkipFrontend
 ```
@@ -36,6 +40,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -UseVite -Sk
    - `SNAPBACK_DATA_DIR=.demo/data`
    - optional `SNAPBACK_FRONTEND_URL=http://127.0.0.1:5173` when `-UseVite` is passed
    - optional `SNAPBACK_OVERLAY_TEST=1`
+   - optional `SNAPBACK_NOTIFICATION_TEST=1`
 
 The `.demo/data` folder keeps demo sessions, labels, exports, and `focoflow.db`
 away from your normal `%APPDATA%\snapback` data.
@@ -120,6 +125,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate_windows_package.ps1
 - `SNAPBACK_DATA_DIR` overrides the SQLite/app-data folder. Without it, Windows
   uses `%APPDATA%\snapback`.
 - `SNAPBACK_OVERLAY_TEST=1` shows a sample native overlay on startup.
+- `SNAPBACK_NOTIFICATION_TEST=1` shows a sample Windows tray notification on startup.
 
 The app still uses the same production pipeline underneath: Windows input capture
 feeds `AppState`, the engine tick produces predictions, `ContextTracker` gates

@@ -22,3 +22,9 @@ TEST_CASE("build_hyperfocus_notification embeds the minute count") {
     CHECK(n.title == "Time for a break");
     CHECK(n.body.find("90 minutes") != std::string::npos);
 }
+
+TEST_CASE("native notification delivery requires title and body") {
+    CHECK(notification_payload_is_valid(build_distraction_notification("Cursor")));
+    CHECK_FALSE(notification_payload_is_valid(NotificationPayload{"", "body"}));
+    CHECK_FALSE(notification_payload_is_valid(NotificationPayload{"title", ""}));
+}

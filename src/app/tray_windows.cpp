@@ -3,6 +3,7 @@
 // (same UI thread), so no separate message loop is needed.
 #include "app/tray.hpp"
 
+#include <string>
 #include <utility>
 
 #ifndef NOMINMAX
@@ -22,6 +23,25 @@ namespace {
 
 constexpr UINT kTrayCallbackMsg = WM_APP + 1;
 constexpr wchar_t kTrayWndClass[] = L"SnapbackTrayWindow";
+
+std::wstring utf8_to_wide(std::string_view text) {
+    if (text.empty()) return {};
+    const int input_length = static_cast<int>(text.size());
+    const int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
+                                           input_length, nullptr, 0);
+    if (length <= 0) return {};
+
+    std::wstring result(static_cast<std::size_t>(length), L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), input_length, result.data(),
+                        length);
+    return result;
+}
+
+template <std::size_t N>
+void copy_notification_text(wchar_t (&destination)[N], std::string_view source) {
+    const auto wide = utf8_to_wide(source);
+    wcsncpy_s(destination, N, wide.c_str(), _TRUNCATE);
+}
 
 class WindowsTray final : public Tray {
 public:
@@ -57,6 +77,17 @@ public:
         nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
         wcscpy_s(nid_.szTip, L"Snapback");
         installed_ = Shell_NotifyIconW(NIM_ADD, &nid_) == TRUE;
+    }
+
+    bool show_notification(const NotificationPayload& payload) override {
+        if (!installed_ || !hwnd_ || !notification_payload_is_valid(payload)) return false;
+
+        NOTIFYICONDATAW notification = nid_;
+        notification.uFlags |= NIF_INFO;
+        copy_notification_text(notification.szInfoTitle, payload.title);
+        copy_notification_text(notification.szInfo, payload.body);
+        notification.dwInfoFlags = NIIF_INFO;
+        return Shell_NotifyIconW(NIM_MODIFY, &notification) == TRUE;
     }
 
 private:

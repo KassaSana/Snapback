@@ -17,6 +17,13 @@ struct NotificationPayload {
     std::string body;
 };
 
+// Native notification APIs treat an empty title or body as an invalid/poorly-formed
+// request. Keep that boundary explicit so OS adapters can reject bad payloads before
+// crossing their FFI/API boundary.
+inline bool notification_payload_is_valid(const NotificationPayload& payload) {
+    return !payload.title.empty() && !payload.body.empty();
+}
+
 // Fired when the user drifts off-task. Names the app so the nudge is specific, not naggy.
 inline NotificationPayload build_distraction_notification(std::string_view app_name) {
     NotificationPayload n;

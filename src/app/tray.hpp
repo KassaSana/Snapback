@@ -7,6 +7,8 @@
 
 #include <functional>
 
+#include "app/notification.hpp"
+
 namespace snapback {
 
 // What a clicked tray menu item means.
@@ -27,6 +29,11 @@ public:
 
     // on_show: bring the main window forward. on_quit: end the app's run loop.
     virtual void install(std::function<void()> on_show, std::function<void()> on_quit) = 0;
+
+    // Show a native notification using the icon registered by install(). The return value
+    // reports whether the OS accepted the request; callers can safely ignore it when a
+    // notification is only a best-effort nudge.
+    virtual bool show_notification(const NotificationPayload& payload) = 0;
 
     static Tray& instance();
 };

@@ -20,6 +20,7 @@
 #include "app/commands.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/ipc_shim.hpp"
+#include "app/notification.hpp"
 #include "app/state.hpp"
 #include "app/tray.hpp"
 #include "engine/onnx_model.hpp"
@@ -155,6 +156,15 @@ int main() {
             demo.file_hint = "overlay_windows.cpp";
             demo.distraction_duration_secs = 37;
             Overlay::instance().show(demo);
+        });
+    }
+
+    // Manual-QA hook: SNAPBACK_NOTIFICATION_TEST=1 sends a sample native balloon through
+    // the already-installed tray icon. This exercises the Win32 delivery path without
+    // fabricating a distraction in the capture stream.
+    if (env_var("SNAPBACK_NOTIFICATION_TEST")) {
+        w.dispatch([] {
+            Tray::instance().show_notification(build_distraction_notification("YouTube"));
         });
     }
 
