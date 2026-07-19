@@ -68,6 +68,39 @@ IdleTransition AppState::update_idle_for_test(std::int64_t now_ms, bool had_inpu
     return update_idle_unlocked(now_ms, had_input);
 }
 
+PomodoroStatus AppState::start_pomodoro_unlocked(std::int64_t now_ms) {
+    if (!active_session_) throw std::runtime_error("no active session");
+    pomodoro_.start(now_ms);
+    return pomodoro_.status(now_ms);
+}
+
+PomodoroStatus AppState::start_pomodoro() {
+    std::lock_guard lock(mutex_);
+    return start_pomodoro_unlocked(steady_now_ms());
+}
+
+PomodoroStatus AppState::start_pomodoro_for_test(std::int64_t now_ms) {
+    std::lock_guard lock(mutex_);
+    return start_pomodoro_unlocked(now_ms);
+}
+
+PomodoroStatus AppState::stop_pomodoro() {
+    std::lock_guard lock(mutex_);
+    pomodoro_.stop();
+    return pomodoro_.status(steady_now_ms());
+}
+
+PomodoroStatus AppState::pomodoro_status() const {
+    std::lock_guard lock(mutex_);
+    return pomodoro_.status(steady_now_ms());
+}
+
+std::optional<PomodoroStatus> AppState::update_pomodoro_for_test(std::int64_t now_ms) {
+    std::lock_guard lock(mutex_);
+    if (!pomodoro_.poll(now_ms)) return std::nullopt;
+    return pomodoro_.status(now_ms);
+}
+
 void AppState::start_engine() {
     bool expected = false;
     if (!engine_running_.compare_exchange_strong(expected, true)) return;
@@ -107,6 +140,7 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     focus_mode_ = mode;
     features_.reset_for_session(std::nullopt);
     context_tracker_.reset();
+    pomodoro_.reset();
     active_session_ = storage_.create_session(goal, mode);
     last_prediction_secs_ = -1.0;
     reload_app_rules_unlocked();  // pick up any rules edited while idle
@@ -119,6 +153,7 @@ void AppState::stop_session() {
     if (!active_session_) {
         active_session_ = storage_.active_session();
     }
+    pomodoro_.reset();
     if (active_session_) {
         storage_.end_session(active_session_->session_id);
         active_session_.reset();
@@ -137,6 +172,7 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         std::cerr << "failed to save automatic session label: " << err.what() << '\n';
     }
     if (active_session_ && active_session_->session_id == session_id) {
+        pomodoro_.reset();
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
@@ -340,6 +376,7 @@ void AppState::engine_tick() {
     EmitHook hook;
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
+    std::optional<PomodoroStatus> pomodoro_to_emit;
     std::vector<PersistJob> jobs;
     IdleTransition idle_edge = IdleTransition::None;
     {
@@ -351,7 +388,9 @@ void AppState::engine_tick() {
         }
         // Idle timing runs off the tick's monotonic clock, not event timestamps: true AFK
         // means no events arrive at all, so we must measure wall time, not the last event.
-        idle_edge = update_idle_unlocked(steady_now_ms(), had_input);
+        const auto now_ms = steady_now_ms();
+        idle_edge = update_idle_unlocked(now_ms, had_input);
+        if (pomodoro_.poll(now_ms)) pomodoro_to_emit = pomodoro_.status(now_ms);
         hook = emit_hook_;
         if (prediction_dirty_) {
             pred_to_emit = latest_prediction_;
@@ -375,6 +414,7 @@ void AppState::engine_tick() {
     if (idle_edge == IdleTransition::WokeUp) hook("idle", "{\"idle\":false}");
     if (pred_to_emit) hook("prediction", nlohmann::json(*pred_to_emit).dump());
     if (snap_to_emit) hook("snapback", nlohmann::json(*snap_to_emit).dump());
+    if (pomodoro_to_emit) hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump());
 }
 
 std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& event) {

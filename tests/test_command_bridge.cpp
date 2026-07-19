@@ -101,3 +101,21 @@ TEST_CASE("a start_session handler round-trips through the bridge with camelCase
     auto err = detail::run_json_command(start_session, R"([{"goal":"   "}])");
     CHECK(json::parse(err).at("__snapback_error") == "Session goal is required.");
 }
+
+TEST_CASE("Pomodoro handlers return the stable status envelope through the bridge") {
+    auto state = make_state();
+    state->start_session("Ship the timer", FocusMode::Normal);
+
+    detail::JsonHandler start = [&](const json&) { return json(state->start_pomodoro()); };
+    detail::JsonHandler stop = [&](const json&) { return json(state->stop_pomodoro()); };
+
+    const auto started = json::parse(detail::run_json_command(start, "[{}]"));
+    CHECK(started.at("running") == true);
+    CHECK(started.at("phase") == "work");
+    CHECK(started.at("completedWorkIntervals") == 0);
+    CHECK(started.at("remainingMs").get<std::int64_t>() > 0);
+
+    const auto stopped = json::parse(detail::run_json_command(stop, "[{}]"));
+    CHECK(stopped.at("running") == false);
+    CHECK(stopped.at("remainingMs") == 0);
+}

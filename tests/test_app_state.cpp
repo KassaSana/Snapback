@@ -75,6 +75,30 @@ TEST_CASE("AppState idle wiring goes AFK after the threshold and wakes on input"
     CHECK_FALSE(state->is_idle());
 }
 
+TEST_CASE("AppState binds Pomodoro to an active session and exposes transition edges") {
+    auto state = make_state();
+    CHECK_THROWS_WITH(state->start_pomodoro_for_test(0), "no active session");
+
+    const auto session = state->start_session("Finish Pomodoro wiring", FocusMode::Normal);
+    const auto started = state->start_pomodoro_for_test(100);
+    CHECK(started.running);
+    CHECK(started.phase == PomodoroPhase::Work);
+    CHECK(started.remaining_ms == 25 * 60 * 1000);
+
+    CHECK_FALSE(state->update_pomodoro_for_test(100 + 25 * 60 * 1000 - 1).has_value());
+    const auto transition = state->update_pomodoro_for_test(100 + 25 * 60 * 1000);
+    REQUIRE(transition.has_value());
+    CHECK(transition->phase == PomodoroPhase::ShortBreak);
+    CHECK(transition->completed_work_intervals == 1);
+    CHECK_FALSE(state->update_pomodoro_for_test(100 + 25 * 60 * 1000).has_value());
+
+    state->stop_session(session.session_id);
+    const auto stopped = state->pomodoro_status();
+    CHECK_FALSE(stopped.running);
+    CHECK(stopped.phase == PomodoroPhase::Work);
+    CHECK(stopped.completed_work_intervals == 0);
+}
+
 TEST_CASE("AppState focus_summary aggregates persisted predictions") {
     auto state = make_state();
     auto session = state->start_session("Write tests", FocusMode::Deep);

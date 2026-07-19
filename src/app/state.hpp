@@ -20,6 +20,7 @@
 #include "engine/features.hpp"
 #include "engine/focus_summary.hpp"
 #include "engine/idle_detector.hpp"
+#include "engine/pomodoro.hpp"
 #include "snapback/tracker.hpp"
 #include "app/settings.hpp"
 #include "storage/storage.hpp"
@@ -67,6 +68,12 @@ public:
     void set_focus_mode(FocusMode mode);
     AppSettings settings() const;
 
+    // Optional Pomodoro timer bound to the active focus session. Starting without an
+    // active session is rejected; ending the active session stops the timer.
+    PomodoroStatus start_pomodoro();
+    PomodoroStatus stop_pomodoro();
+    PomodoroStatus pomodoro_status() const;
+
     // App rules (allow/block overrides). The CRUD methods keep the cached rule set
     // (app_rules_) in sync so the live classifier sees changes immediately.
     std::vector<AppRuleRecord> app_rules();
@@ -96,6 +103,10 @@ public:
     // (had_input = an input event was seen since the last step) and return the edge.
     IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
 
+    // Deterministic seams for the same timer operations used by IPC/engine_tick.
+    PomodoroStatus start_pomodoro_for_test(std::int64_t now_ms);
+    std::optional<PomodoroStatus> update_pomodoro_for_test(std::int64_t now_ms);
+
 private:
     // A tick's writes, computed under mutex_ (no storage I/O) and flushed later under
     // storage_mutex_. Keeping persistence out of the state lock is what stops a disk
@@ -120,6 +131,7 @@ private:
     // Advance the idle state machine one step. Requires mutex_. Returns the transition
     // edge so the tick loop can emit it. Sets idle_ from the resulting state.
     IdleTransition update_idle_unlocked(std::int64_t now_ms, bool had_input);
+    PomodoroStatus start_pomodoro_unlocked(std::int64_t now_ms);
 
     // Lock order (deadlock-free): always acquire mutex_ BEFORE storage_mutex_, never the
     // reverse. mutex_ guards in-memory state; storage_mutex_ serializes all storage_ access
@@ -133,6 +145,7 @@ private:
     Classifier classifier_;
     ContextTracker context_tracker_;
     IdleDetector idle_detector_;
+    PomodoroTimer pomodoro_;
 
     std::optional<SessionRecord> active_session_;
     std::vector<AppRuleRecord> app_rules_;  // cached; passed to the live classifier

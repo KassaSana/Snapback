@@ -66,6 +66,7 @@ add_library(snapback_core STATIC
   src/engine/feature_parity.cpp
   src/engine/features.cpp
   src/engine/onnx_model.cpp
+  src/engine/pomodoro.cpp
   src/storage/storage.cpp
   src/snapback/tracker.cpp
   src/snapback/title_parser.cpp

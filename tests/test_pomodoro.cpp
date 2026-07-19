@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <nlohmann/json.hpp>
+
 #include "engine/pomodoro.hpp"
 
 using namespace snapback;
@@ -65,4 +67,25 @@ TEST_CASE("PomodoroTimer stopped timer does nothing") {
     PomodoroTimer t;
     CHECK_FALSE(t.poll(kWork * 10));
     CHECK(t.remaining_ms(0) == 0);
+}
+
+TEST_CASE("PomodoroTimer reset clears progress for a new focus session") {
+    PomodoroTimer t;
+    t.start(0);
+    t.poll(kWork);
+    REQUIRE(t.completed_work_intervals() == 1);
+    t.reset();
+    CHECK_FALSE(t.running());
+    CHECK(t.phase() == PomodoroPhase::Work);
+    CHECK(t.completed_work_intervals() == 0);
+    CHECK(t.remaining_ms(kWork) == 0);
+}
+
+TEST_CASE("PomodoroStatus serializes the stable camelCase IPC contract") {
+    const PomodoroStatus status{true, PomodoroPhase::LongBreak, 4, 1234};
+    const nlohmann::json json = status;
+    CHECK(json.at("running") == true);
+    CHECK(json.at("phase") == "longBreak");
+    CHECK(json.at("completedWorkIntervals") == 4);
+    CHECK(json.at("remainingMs") == 1234);
 }

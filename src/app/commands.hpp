@@ -77,6 +77,14 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(state.session_history(detail::clamp_limit(a, 20)));
     });
 
+    // --- Optional Pomodoro timer ---
+    bind_cmd(w, "get_pomodoro_status",
+             [&state](const json&) { return json(state.pomodoro_status()); });
+    bind_cmd(w, "start_pomodoro",
+             [&state](const json&) { return json(state.start_pomodoro()); });
+    bind_cmd(w, "stop_pomodoro",
+             [&state](const json&) { return json(state.stop_pomodoro()); });
+
     // --- Feedback + config ---
     bind_cmd(w, "submit_label", [&state](const json& a) {
         auto req = a.at("request").get<LabelRequest>();

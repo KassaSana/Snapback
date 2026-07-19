@@ -8,9 +8,20 @@
 
 #include <cstdint>
 
+#include <nlohmann/json_fwd.hpp>
+
 namespace snapback {
 
 enum class PomodoroPhase { Work, ShortBreak, LongBreak };
+
+inline const char* pomodoro_phase_as_str(PomodoroPhase phase) noexcept {
+    switch (phase) {
+        case PomodoroPhase::Work: return "work";
+        case PomodoroPhase::ShortBreak: return "shortBreak";
+        case PomodoroPhase::LongBreak: return "longBreak";
+    }
+    return "work";
+}
 
 struct PomodoroConfig {
     std::int64_t work_ms = 25 * 60 * 1000;         // classic 25/5/15
@@ -18,6 +29,15 @@ struct PomodoroConfig {
     std::int64_t long_break_ms = 15 * 60 * 1000;
     int intervals_before_long_break = 4;           // long break after every 4th work block
 };
+
+struct PomodoroStatus {
+    bool running = false;
+    PomodoroPhase phase = PomodoroPhase::Work;
+    int completed_work_intervals = 0;
+    std::int64_t remaining_ms = 0;
+};
+
+void to_json(nlohmann::json& json, const PomodoroStatus& status);
 
 class PomodoroTimer {
 public:
@@ -33,6 +53,16 @@ public:
     }
 
     void stop() { running_ = false; }
+
+    // Clear all progress at a focus-session boundary. This is distinct from stop(),
+    // which intentionally leaves the current phase/count available for the UI.
+    void reset() {
+        running_ = false;
+        phase_ = PomodoroPhase::Work;
+        completed_work_intervals_ = 0;
+        phase_start_ms_ = 0;
+        phase_end_ms_ = 0;
+    }
 
     // Advance time. Returns true if at least one phase boundary was crossed (the caller
     // chimes / repaints on true). Loops so a large time jump can't skip phases.
@@ -57,6 +87,11 @@ public:
         if (!running_) return 0;
         const std::int64_t left = phase_end_ms_ - now_ms;
         return left > 0 ? left : 0;
+    }
+
+    [[nodiscard]] PomodoroStatus status(std::int64_t now_ms) const noexcept {
+        return PomodoroStatus{
+            running_, phase_, completed_work_intervals_, remaining_ms(now_ms)};
     }
 
 private:
