@@ -37,10 +37,18 @@ public:
     static std::optional<std::filesystem::path> resolve_model_path(
         const std::filesystem::path& app_data_dir);
 
-    // Runs the 31-feature vector through the graph -> scores. Returns default-constructed
-    // scores if no model is loaded (the classifier only calls this when loaded()).
+    // Runs the 31-feature vector through the graph. **nullopt means inference failed** —
+    // no model, a throwing Run(), or no usable 4-class tensor in the outputs — and the
+    // caller must fall back to the heuristic.
+    //
+    // This used to return a default-constructed PredictionScores on failure, which is
+    // indistinguishable from a real prediction and whose focus_state is the empty string.
+    // That empty string flowed all the way into the `focus_state TEXT NOT NULL` column
+    // (which accepts ""), and recap()'s `CASE WHEN focus_state = 'DEEP_FOCUS'` then
+    // silently skipped those rows. Making failure unrepresentable-as-success is the fix.
+    //
     // Non-const because Ort::Session::Run mutates session state.
-    PredictionScores run(const FeatureVector& features);
+    std::optional<PredictionScores> run(const FeatureVector& features);
 
     // Test seam (Rust: reset_model_for_tests) — the singleton persists across tests, so a
     // test that loads a model must reset afterward or it leaks the "onnx" backend.

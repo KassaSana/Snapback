@@ -88,8 +88,10 @@ PredictionScores Classifier::predict(const FeatureVector& features,
                                      const std::optional<std::string>& session_goal,
                                      const std::vector<AppRuleRecord>& rules) const {
 #if defined(SNAPBACK_ONNX)
-    if (OnnxModel::instance().loaded()) {
-        return apply_focus_guardrails(OnnxModel::instance().run(features), 0.0, 0.0, false, mode);
+    // A loaded model can still fail to infer. Fall through to the heuristic when it does,
+    // rather than persisting an empty focus_state.
+    if (auto scores = OnnxModel::instance().run(features)) {
+        return apply_focus_guardrails(*scores, 0.0, 0.0, false, mode);
     }
 #endif
     return predict_heuristic(features, mode, session_goal, rules, {});
@@ -101,8 +103,8 @@ PredictionScores Classifier::predict(const FeatureVector& features,
                                      const std::vector<AppRuleRecord>& rules,
                                      const std::vector<GoalCategory>& categories) const {
 #if defined(SNAPBACK_ONNX)
-    if (OnnxModel::instance().loaded()) {
-        return apply_focus_guardrails(OnnxModel::instance().run(features), 0.0, 0.0, false, mode);
+    if (auto scores = OnnxModel::instance().run(features)) {
+        return apply_focus_guardrails(*scores, 0.0, 0.0, false, mode);
     }
 #endif
     return predict_heuristic(features, mode, session_goal, rules, categories);

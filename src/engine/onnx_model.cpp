@@ -49,8 +49,8 @@ bool OnnxModel::init(const std::filesystem::path& model_path) {
     return loaded_;
 }
 
-PredictionScores OnnxModel::run(const FeatureVector& features) {
-    if (!loaded_ || !session_) return {};
+std::optional<PredictionScores> OnnxModel::run(const FeatureVector& features) {
+    if (!loaded_ || !session_) return std::nullopt;
     try {
         std::array<float, kFeatureCount> input{};
         for (std::size_t i = 0; i < kFeatureCount; ++i) {
@@ -82,9 +82,11 @@ PredictionScores OnnxModel::run(const FeatureVector& features) {
             return scores_from_probabilities(probas, 0.0, 0.0, 0.5);
         }
     } catch (const std::exception&) {
-        // Inference failure -> empty scores; the classifier treats this as no signal.
+        // Fall through to nullopt: the classifier retries on the heuristic path.
     }
-    return {};
+    // Also reached when no output was a 4-element float tensor — a model whose outputs we
+    // can't interpret is a failure, not a neutral prediction.
+    return std::nullopt;
 }
 
 void OnnxModel::reset_for_tests() {
@@ -103,7 +105,7 @@ bool OnnxModel::init(const std::filesystem::path&) {
     return false;
 }
 
-PredictionScores OnnxModel::run(const FeatureVector&) { return {}; }
+std::optional<PredictionScores> OnnxModel::run(const FeatureVector&) { return std::nullopt; }
 
 void OnnxModel::reset_for_tests() {
     loaded_ = false;

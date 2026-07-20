@@ -70,3 +70,46 @@ TEST_CASE("ONNX backend loads the fixture, runs it, and falls back to heuristic 
     CHECK(valid_state);
 }
 #endif
+
+TEST_CASE("OnnxModel::run reports failure as nullopt, not as neutral scores") {
+    // The distinction the type now carries: "inference failed" vs "inference said
+    // neutral". With no model loaded there is nothing to run, and the caller must be able
+    // to tell — previously this returned default-constructed scores whose focus_state was
+    // the empty string, which then reached the DB.
+    struct Guard {
+        ~Guard() { OnnxModel::instance().reset_for_tests(); }
+    } guard;
+    OnnxModel::instance().reset_for_tests();
+
+    FeatureVector features;
+    features.keystroke_count() = 5.0;
+    CHECK_FALSE(OnnxModel::instance().run(features).has_value());
+}
+
+TEST_CASE("classifier never yields an empty focus_state") {
+    // focus_state lands in a TEXT NOT NULL column that happily accepts "", and recap()'s
+    // `CASE WHEN focus_state = 'DEEP_FOCUS'` silently drops such rows, so an empty state is
+    // invisible corruption rather than a loud failure. Whatever the backend does, predict()
+    // must always name a state.
+    struct Guard {
+        ~Guard() { OnnxModel::instance().reset_for_tests(); }
+    } guard;
+    OnnxModel::instance().reset_for_tests();
+
+    Classifier clf;
+    auto valid = [](const std::string& s) {
+        return s == "DISTRACTED" || s == "PSEUDO_PRODUCTIVE" || s == "PRODUCTIVE" ||
+               s == "DEEP_FOCUS";
+    };
+
+    FeatureVector idle;  // all-zero features: the degenerate input
+    CHECK(valid(clf.predict(idle, FocusMode::Normal).focus_state));
+
+    FeatureVector busy;
+    busy.keystroke_count() = 120.0;
+    busy.keystroke_rate() = 4.0;
+    busy.is_ide() = 1.0;
+    for (const auto mode : {FocusMode::Deep, FocusMode::Normal, FocusMode::Recovery}) {
+        CHECK(valid(clf.predict(busy, mode).focus_state));
+    }
+}
