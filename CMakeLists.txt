@@ -169,6 +169,11 @@ if(SNAPBACK_BUILD_APP)
   )
   if(WIN32)
     target_sources(snapback PRIVATE src/snapback/overlay_windows.cpp src/app/tray_windows.cpp)
+  else()
+    # Overlay::instance()/Tray::instance() live ONLY in the *_windows.cpp files above, so
+    # without these no-op fallbacks the app fails to link off Windows (undefined symbols).
+    # Real implementations: ROADMAP 3.1 (macOS) / 3.2 (Linux).
+    target_sources(snapback PRIVATE src/snapback/overlay_stub.cpp src/app/tray_stub.cpp)
   endif()
   # snapback_app already PUBLIC-links snapback_core (which itself PUBLIC-links sqlite3)
   # and snapback_capture transitively.

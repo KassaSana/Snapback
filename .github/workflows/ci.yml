@@ -8,6 +8,7 @@ name: CI
 #   - frontend dependency vulnerability audit
 #   - the reused React frontend (typecheck + tests + build)
 #   - the Windows desktop app (no-launch integration smoke)
+#   - the desktop app link on macOS / Linux (build-only, never launched)
 #   - docs invariants
 #
 # Anti-hang guarantees: every job has `timeout-minutes`, the riskiest steps have their
@@ -331,6 +332,44 @@ jobs:
             .demo/*.log
             build-windows-demo/**/*.log
           if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Desktop app link on macOS + Linux. Build only — the GUI is never launched
+  # (that would hang), so this job exists purely to prove `snapback` still links.
+  #
+  # Why it exists: every other job configures with SNAPBACK_BUILD_APP=OFF, and the
+  # only job that built the real binary was Windows-only. That left main.cpp
+  # unlinked on two of three OSes indefinitely — which is how Overlay::instance()
+  # and Tray::instance() stayed undefined off Windows without anyone noticing.
+  # An opt-in build target is an opt-in guarantee; this is the guarantee.
+  # ---------------------------------------------------------------------------
+  desktop-app-build:
+    name: Desktop app build / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    needs: [cpp-headless]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # webview picks webkit2gtk-4.1 first and falls back to 4.0; 4.1 is what
+      # ubuntu-latest ships. macOS uses the system WebKit and needs nothing.
+      - name: Install Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Configure (app on)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=ON -DSNAPBACK_ONNX=OFF
+
+      - name: Build desktop app (link check, no launch)
+        timeout-minutes: 20
+        run: cmake --build build --target snapback --config Release
 
   # ---------------------------------------------------------------------------
   # Docs invariants.
