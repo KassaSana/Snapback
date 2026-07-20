@@ -86,7 +86,18 @@ input. (It was missed by earlier audits because it is the repo's only `.mm` file
 Correct 0.3's framing when folding this back: the work is **fix and test**, not **build**.
 That likely moves it from `L` to `M`.
 
-- **P1.1 — Re-arm the event tap after a timeout.** `S` — *highest severity in this file*
+**P1.1–P1.5 are all fixed (`cc8bf15`, `0bc8242`) — but nobody has watched this run.** The
+fixes compile and the headless suite is green under TSan, yet no test exercises a live
+`CGEventTap`, and reproducing the original failure needs a real desktop session with
+Accessibility granted. **Before marking ROADMAP 0.3 done, someone should run the app on
+macOS and confirm keystrokes reach the engine and keep reaching it under sustained mouse
+movement** — the old code died within seconds of the first mouse move. Until then this tier
+is "fixed in code, unverified in the world."
+
+- **P1.1 — Re-arm the event tap after a timeout.** `S` — ✅ **done** (`cc8bf15`)
+
+  The disable branch now calls `CGEventTapEnable(self->tap_, true)` for both
+  `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput`.
 
   `input_hook_macos.mm:92` recognizes `kCGEventTapDisabledByTimeout` and then just
   `return event;`. macOS **disables the tap** when it sends that message; the only way
@@ -94,7 +105,13 @@ That likely moves it from `L` to `M`.
   capture is dead for the remaining process lifetime, with no log line and no health-status
   change — `HealthStatus::capture_running` still reads `true` because the thread is alive.
 
-- **P1.2 — Get `query_active_window()` out of the hook callback.** `M`
+- **P1.2 — Get `query_active_window()` out of the hook callback.** `M` — ✅ **done** (`cc8bf15`)
+
+  The callback now reads a cached app/title. `run()` refreshes it every 500ms on the hook
+  thread, matching the polling fallback's cadence. No lock needed: the tap source is
+  attached to the hook thread's run loop, so the callback is delivered on that same thread.
+  **This does not remove the `osascript` fork — it caps it at ~2/sec instead of ~100/sec.**
+  P3.3 (native APIs) is the actual fix.
 
   `input_hook_macos.mm:101` calls `query_active_window()` **per event**. On macOS that is
   `active_window.cpp:74` — a `popen` that shells out to **`osascript`**. So every keystroke
@@ -108,7 +125,10 @@ That likely moves it from `L` to `M`.
   Fix: cache the foreground window, refresh it on a timer off the hot path, and have the
   callback read the cache.
 
-- **P1.3 — `stop()` stops the wrong run loop.** `S`
+- **P1.3 — `stop()` stops the wrong run loop.** `S` — ✅ **done** (`cc8bf15`)
+
+  `run()` publishes its own `CFRunLoopRef` (retained) into an atomic; `stop()` reads that
+  and stops it instead of `CFRunLoopGetCurrent()`.
 
   `input_hook_macos.mm:85` calls `CFRunLoopStop(CFRunLoopGetCurrent())`, but `stop()` runs
   on the **caller's** thread (`CaptureThread::stop()`), not the hook thread. Under the
@@ -117,14 +137,28 @@ That likely moves it from `L` to `M`.
   within 250ms regardless. Capture the hook thread's `CFRunLoopRef` in `run()` and stop
   that.
 
-- **P1.4 — First tests for the capture layer.** `M`
+- **P1.4 — First tests for the capture layer.** `M` — ✅ **done** (`0bc8242`)
+
+  `tests/test_capture_thread.cpp`: 5 tests over FIFO ordering, drop counting at the ring's
+  `kCapacity - 1` boundary, the double-start guard, stop-without-start, and restart. Needed
+  a seam — `CaptureThread::start()` now takes an optional `InputHook*` (defaults to the
+  platform singleton) so a `ScriptedHook` can drive the producer side headlessly. Verified
+  under TSan: 142/142 clean.
+
+  **Still uncovered:** the OS backends themselves (`input_hook_macos.mm`, `_linux`,
+  `_windows`) and `query_active_window`. P1.1–P1.3 are argued from CGEventTap semantics
+  and remain unverified against a live tap — see the caveat below.
 
   `grep -rln "InputHook\|CaptureThread\|query_active_window" tests/` returns **nothing**.
   The layer CLAUDE.md calls out as *"where bugs will hide"* has zero coverage — which is
   exactly how P1.1–P1.3 shipped. Start with what is testable headlessly: `CaptureThread`
   push/drain/drop-counting against a fake `InputHook`, and the tap's event-type mapping.
 
-- **P1.5 — Guard `CaptureThread::start()` against double-start.** `S`
+- **P1.5 — Guard `CaptureThread::start()` against double-start.** `S` — ✅ **done** (`0bc8242`)
+
+  `running_.exchange(true)` gates the thread assignment; `stop()` now stops the hook it
+  actually started (not the singleton), so an injected fake is told to return and the join
+  cannot hang.
 
   `capture_thread.cpp:5` assigns to `hook_thread_` with no check. A second `start()` without
   `stop()` assigns over a joinable `std::thread` → `std::terminate`. Currently unreachable
