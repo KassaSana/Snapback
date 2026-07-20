@@ -1,15 +1,23 @@
 import type {
   AppSettings,
+  AnalyticsSummary,
+  SummaryExportResult,
+  SummaryReport,
+  SummaryWindow,
+  GoalCategory,
+  AutostartStatus,
   AppRuleKind,
   AppRuleRecord,
   ClassifierStatus,
   ContextSnapshot,
+  DiagnosticsSnapshot,
   ExportTrainingResult,
   FocusSummary,
   HealthStatus,
   PermissionStatus,
   PomodoroPhase,
   PomodoroStatus,
+  PrivacySettings,
   PredictionRecord,
   SessionRecap,
   SessionRecord,
@@ -41,6 +49,84 @@ export function mapSettings(raw: Record<string, unknown>): AppSettings {
       raw.default_focus_mode ?? raw.defaultFocusMode,
     ),
   };
+}
+
+export function mapAutostartStatus(raw: Record<string, unknown>): AutostartStatus {
+  return {
+    enabled: Boolean(raw.enabled ?? false),
+    supported: Boolean(raw.supported ?? false),
+  };
+}
+
+export function mapPrivacySettings(raw: Record<string, unknown>): PrivacySettings {
+  const exclusions = raw.excluded_apps ?? raw.excludedApps;
+  return {
+    privateMode: Boolean(raw.private_mode ?? raw.privateMode ?? false),
+    excludedApps: Array.isArray(exclusions) ? exclusions.map((value) => String(value)) : [],
+    localOnly: Boolean(raw.local_only ?? raw.localOnly ?? true),
+  };
+}
+
+export function mapAnalyticsSummary(raw: Record<string, unknown>): AnalyticsSummary {
+  const hourlyRaw = Array.isArray(raw.hourly) ? raw.hourly : [];
+  const topAppsValue = raw.top_apps ?? raw.topApps;
+  const topAppsRaw = Array.isArray(topAppsValue) ? topAppsValue : [];
+  return {
+    sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
+    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
+    productiveSessionStreak: Number(
+      raw.productive_session_streak ?? raw.productiveSessionStreak ?? 0,
+    ),
+    hourly: hourlyRaw.map((value) => {
+      const row = (value ?? {}) as Record<string, unknown>;
+      return {
+        hour: Number(row.hour ?? 0),
+        sampleCount: Number(row.sample_count ?? row.sampleCount ?? 0),
+        avgFocusScore: Number(row.avg_focus_score ?? row.avgFocusScore ?? 0),
+        distractedFraction: Number(row.distracted_fraction ?? row.distractedFraction ?? 0),
+      };
+    }),
+    topApps: topAppsRaw.map((value) => {
+      const row = (value ?? {}) as Record<string, unknown>;
+      return {
+        appName: String(row.app_name ?? row.appName ?? ""),
+        windowCount: Number(row.window_count ?? row.windowCount ?? 0),
+      };
+    }),
+  };
+}
+
+export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
+  const window = String(raw.window ?? "day");
+  return {
+    window: (window === "week" ? "week" : "day") as SummaryWindow,
+    generatedAt: String(raw.generated_at ?? raw.generatedAt ?? ""),
+    sessionCount: Number(raw.session_count ?? raw.sessionCount ?? 0),
+    focusSeconds: Number(raw.focus_seconds ?? raw.focusSeconds ?? 0),
+    sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
+    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
+    distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
+    longestFocusStreak: Number(raw.longest_focus_streak ?? raw.longestFocusStreak ?? 0),
+    topContextApp: String(raw.top_context_app ?? raw.topContextApp ?? ""),
+  };
+}
+
+export function mapSummaryExportResult(raw: Record<string, unknown>): SummaryExportResult {
+  return {
+    window: String(raw.window ?? "day") === "week" ? "week" : "day",
+    outputPath: String(raw.output_path ?? raw.outputPath ?? ""),
+  };
+}
+
+export function mapGoalCategories(raw: Record<string, unknown>[]): GoalCategory[] {
+  return raw.map((value) => {
+    const row = value ?? {};
+    const keywords = row.keywords;
+    return {
+      name: String(row.name ?? ""),
+      keywords: Array.isArray(keywords) ? keywords.map((keyword) => String(keyword)) : [],
+    };
+  });
 }
 
 export function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapshot {
@@ -105,6 +191,14 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
     classifier: mapClassifierStatus(
       (raw.classifier as Record<string, unknown>) ?? {},
     ),
+  };
+}
+
+export function mapDiagnosticsSnapshot(raw: Record<string, unknown>): DiagnosticsSnapshot {
+  const logs = raw.recent_logs ?? raw.recentLogs;
+  return {
+    health: mapHealth((raw.health as Record<string, unknown>) ?? {}),
+    recentLogs: Array.isArray(logs) ? logs.map((line) => String(line)) : [],
   };
 }
 

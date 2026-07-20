@@ -104,8 +104,9 @@ roadmap wins.
 | Logger / notifications | **Done, adopted + wired** — leveled logger in storage/state, toast fires on real `snapback` events |
 | `dismiss_snapback` | **Done** — was silently unreachable everywhere, which stuck `ContextTracker` in `Recovering` after one snapback per session; now wired natively (Windows) and from the web UI |
 | Onboarding wizard (1.1) | **Done** — explains capture + local-only, requests permissions, and now picks a default focus mode |
+| Start-on-login (1.3) | **Done on Windows** — HKCU Run key, IPC, settings toggle, and tests; launchd/systemd remain follow-ups |
+| Privacy, analytics, summary reports, goal categories, diagnostics | **Done** — five-feature product pass, native + frontend tests green |
 | Perf / safety hardening | **Done** — WAL, stmt cache, two-lock split, interning, ASan/TSan, concurrent tests |
 
-**Do next (Roadmap Tier 0):** native macOS capture (0.3) is the only large item left in
-Tier 0. Tier 1 remaining: 1.3 (autostart), 1.6 (privacy controls) — 1.2 (sensitivity
-tuning) needs a product decision first, see ROADMAP.md. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Do next (Roadmap):** 1.2 sensitivity tuning needs a product decision, followed by native
+macOS capture (0.3) and model retraining (2.3). See [docs/ROADMAP.md](docs/ROADMAP.md).

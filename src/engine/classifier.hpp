@@ -27,6 +27,11 @@ public:
                              FocusMode mode,
                              const std::optional<std::string>& session_goal,
                              const std::vector<AppRuleRecord>& rules) const;
+    PredictionScores predict(const FeatureVector& features,
+                             FocusMode mode,
+                             const std::optional<std::string>& session_goal,
+                             const std::vector<AppRuleRecord>& rules,
+                             const std::vector<GoalCategory>& categories) const;
 
     std::string backend() const;
 
@@ -34,7 +39,8 @@ private:
     PredictionScores predict_heuristic(const FeatureVector& features,
                                        FocusMode mode,
                                        const std::optional<std::string>& session_goal,
-                                       const std::vector<AppRuleRecord>& rules) const;
+                                       const std::vector<AppRuleRecord>& rules,
+                                       const std::vector<GoalCategory>& categories) const;
 };
 
 PredictionScores apply_focus_guardrails(PredictionScores scores,

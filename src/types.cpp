@@ -322,10 +322,110 @@ void from_json(const json& j, ExportTrainingResult& v) {
 // ---- AppSettings -----------------------------------------------------------
 
 void to_json(json& j, const AppSettings& v) {
-    j = json{{"defaultFocusMode", v.default_focus_mode}};
+    j = json{{"defaultFocusMode", v.default_focus_mode},
+             {"privateMode", v.private_mode},
+             {"excludedApps", v.excluded_apps},
+             {"goalCategories", v.goal_categories}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
+    v.private_mode = get_or<bool>(j, "privateMode", false);
+    v.excluded_apps = get_or<std::vector<std::string>>(j, "excludedApps", {});
+    v.goal_categories = get_or<std::vector<GoalCategory>>(j, "goalCategories", {});
+}
+
+void to_json(json& j, const PrivacySettings& v) {
+    j = json{{"privateMode", v.private_mode},
+             {"excludedApps", v.excluded_apps},
+             {"localOnly", v.local_only}};
+}
+void from_json(const json& j, PrivacySettings& v) {
+    v.private_mode = get_or<bool>(j, "privateMode", false);
+    v.excluded_apps = get_or<std::vector<std::string>>(j, "excludedApps", {});
+    v.local_only = get_or<bool>(j, "localOnly", true);
+}
+
+void to_json(json& j, const AnalyticsHour& v) {
+    j = json{{"hour", v.hour},
+             {"sampleCount", v.sample_count},
+             {"avgFocusScore", v.avg_focus_score},
+             {"distractedFraction", v.distracted_fraction}};
+}
+void from_json(const json& j, AnalyticsHour& v) {
+    v.hour = get_or<int>(j, "hour", 0);
+    v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
+    v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
+    v.distracted_fraction = get_or<double>(j, "distractedFraction", 0.0);
+}
+
+void to_json(json& j, const AnalyticsApp& v) {
+    j = json{{"appName", v.app_name}, {"windowCount", v.window_count}};
+}
+void from_json(const json& j, AnalyticsApp& v) {
+    v.app_name = get_or<std::string>(j, "appName", "");
+    v.window_count = get_or<std::size_t>(j, "windowCount", 0);
+}
+
+void to_json(json& j, const AnalyticsSummary& v) {
+    j = json{{"sampleCount", v.sample_count},
+             {"avgFocusScore", v.avg_focus_score},
+             {"productiveSessionStreak", v.productive_session_streak},
+             {"hourly", v.hourly},
+             {"topApps", v.top_apps}};
+}
+void from_json(const json& j, AnalyticsSummary& v) {
+    v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
+    v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
+    v.productive_session_streak = get_or<std::size_t>(j, "productiveSessionStreak", 0);
+    v.hourly = get_or<std::vector<AnalyticsHour>>(j, "hourly", {});
+    v.top_apps = get_or<std::vector<AnalyticsApp>>(j, "topApps", {});
+}
+
+void to_json(json& j, const SummaryReport& v) {
+    j = json{{"window", v.window},
+             {"generatedAt", v.generated_at},
+             {"sessionCount", v.session_count},
+             {"focusSeconds", v.focus_seconds},
+             {"sampleCount", v.sample_count},
+             {"avgFocusScore", v.avg_focus_score},
+             {"distractedFraction", v.distracted_fraction},
+             {"longestFocusStreak", v.longest_focus_streak},
+             {"topContextApp", v.top_context_app}};
+}
+void from_json(const json& j, SummaryReport& v) {
+    v.window = get_or<std::string>(j, "window", "day");
+    v.generated_at = get_or<std::string>(j, "generatedAt", "");
+    v.session_count = get_or<std::size_t>(j, "sessionCount", 0);
+    v.focus_seconds = get_or<std::uint64_t>(j, "focusSeconds", 0);
+    v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
+    v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
+    v.distracted_fraction = get_or<double>(j, "distractedFraction", 0.0);
+    v.longest_focus_streak = get_or<std::size_t>(j, "longestFocusStreak", 0);
+    v.top_context_app = get_or<std::string>(j, "topContextApp", "");
+}
+
+void to_json(json& j, const SummaryExportResult& v) {
+    j = json{{"window", v.window}, {"outputPath", v.output_path}};
+}
+void from_json(const json& j, SummaryExportResult& v) {
+    v.window = get_or<std::string>(j, "window", "day");
+    v.output_path = get_or<std::string>(j, "outputPath", "");
+}
+
+void to_json(json& j, const DiagnosticsSnapshot& v) {
+    j = json{{"health", v.health}, {"recentLogs", v.recent_logs}};
+}
+void from_json(const json& j, DiagnosticsSnapshot& v) {
+    v.health = get_or<HealthStatus>(j, "health", {});
+    v.recent_logs = get_or<std::vector<std::string>>(j, "recentLogs", {});
+}
+
+void to_json(json& j, const GoalCategory& v) {
+    j = json{{"name", v.name}, {"keywords", v.keywords}};
+}
+void from_json(const json& j, GoalCategory& v) {
+    v.name = get_or<std::string>(j, "name", "");
+    v.keywords = get_or<std::vector<std::string>>(j, "keywords", {});
 }
 
 // ---- Failure payloads ------------------------------------------------------

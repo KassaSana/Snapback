@@ -54,6 +54,7 @@ public:
     SessionRecord stop_session(const std::string& session_id);
     std::optional<SessionRecord> get_session(const std::string& session_id);
     HealthStatus health() const;
+    DiagnosticsSnapshot diagnostics() const;
     std::optional<PredictionRecord> latest_prediction() const;
     std::optional<SessionRecord> active_session() const;
 
@@ -73,6 +74,15 @@ public:
         const std::optional<std::string>& session_id = std::nullopt);
     void set_focus_mode(FocusMode mode);
     AppSettings settings() const;
+    PrivacySettings privacy_settings() const;
+    void set_private_mode(bool enabled);
+    void set_privacy_exclusions(std::vector<std::string> exclusions);
+    AnalyticsSummary analytics() const;
+    SummaryReport summary_report(const std::string& window) const;
+    SummaryExportResult export_summary_report(const std::filesystem::path& out_dir,
+                                              const std::string& window) const;
+    std::vector<GoalCategory> goal_categories() const;
+    void set_goal_categories(std::vector<GoalCategory> categories);
 
     // Optional Pomodoro timer bound to the active focus session. Starting without an
     // active session is rejected; ending the active session stops the timer.
@@ -131,6 +141,9 @@ private:
     // Writes a job to storage. Requires storage_mutex_ (call inside a Transaction).
     void persist(const PersistJob& job);
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
+    static std::vector<std::string> normalize_privacy_exclusions(
+        std::vector<std::string> exclusions);
+    bool is_private_event_unlocked(const CaptureEvent& event) const;
     static std::string now_rfc3339();
     static std::int64_t steady_now_ms();  // monotonic clock for idle timing
     static bool is_input_event(EventType type);  // key/mouse = real user activity
@@ -140,6 +153,7 @@ private:
     PomodoroStatus start_pomodoro_unlocked(std::int64_t now_ms);
     // Injected logger if one was passed in, otherwise the stderr fallback below.
     Logger& log() { return logger_ ? *logger_ : local_logger_; }
+    const Logger& log() const { return logger_ ? *logger_ : local_logger_; }
 
     // Lock order (deadlock-free): always acquire mutex_ BEFORE storage_mutex_, never the
     // reverse. mutex_ guards in-memory state; storage_mutex_ serializes all storage_ access

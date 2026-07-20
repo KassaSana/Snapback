@@ -1,17 +1,61 @@
 #include "app/state.hpp"
 
 #include <chrono>
+#include <algorithm>
+#include <array>
+#include <cctype>
 #include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
 #include "capture/permissions.hpp"
+#include "engine/app_context.hpp"
 #include "engine/onnx_model.hpp"
 
 namespace snapback {
+namespace {
+
+std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+std::string trim_copy(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string cutoff_rfc3339(int days_ago) {
+    const auto now = std::chrono::system_clock::now() - std::chrono::hours(24 * days_ago);
+    const std::time_t time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &time);
+#else
+    gmtime_r(&time, &tm);
+#endif
+    std::ostringstream out;
+    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return out.str();
+}
+
+int timestamp_hour(const std::string& timestamp) {
+    if (timestamp.size() < 13 || timestamp[10] != 'T' ||
+        !std::isdigit(static_cast<unsigned char>(timestamp[11])) ||
+        !std::isdigit(static_cast<unsigned char>(timestamp[12]))) return -1;
+    return (timestamp[11] - '0') * 10 + (timestamp[12] - '0');
+}
+
+}  // namespace
 
 AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger)
     : storage_(std::move(storage)), app_data_dir_(std::move(app_data_dir)), logger_(logger) {
@@ -19,6 +63,7 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
         settings_ = load_app_settings(app_data_dir_);
     }
     focus_mode_ = settings_.default_focus_mode;
+    context_tracker_.set_goal_categories(settings_.goal_categories);
 }
 
 std::string AppState::now_rfc3339() {
@@ -139,6 +184,7 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     focus_mode_ = mode;
     features_.reset_for_session(std::nullopt);
     context_tracker_.reset();
+    context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
     active_session_ = storage_.create_session(goal, mode);
     last_prediction_secs_ = -1.0;
@@ -199,6 +245,10 @@ HealthStatus AppState::health() const {
     h.classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
     h.classifier.model_path = OnnxModel::instance().model_path();
     return h;
+}
+
+DiagnosticsSnapshot AppState::diagnostics() const {
+    return DiagnosticsSnapshot{health(), log().recent_lines()};
 }
 
 std::optional<PredictionRecord> AppState::latest_prediction() const {
@@ -285,6 +335,170 @@ AppSettings AppState::settings() const {
     return settings_;
 }
 
+PrivacySettings AppState::privacy_settings() const {
+    std::lock_guard lock(mutex_);
+    return PrivacySettings{settings_.private_mode, settings_.excluded_apps, true};
+}
+
+void AppState::set_private_mode(bool enabled) {
+    std::lock_guard lock(mutex_);
+    settings_.private_mode = enabled;
+    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
+}
+
+void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
+    std::lock_guard lock(mutex_);
+    settings_.excluded_apps = normalize_privacy_exclusions(std::move(exclusions));
+    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
+}
+
+AnalyticsSummary AppState::analytics() const {
+    std::lock_guard lock(storage_mutex_);
+    AnalyticsSummary summary;
+    struct Bucket {
+        std::size_t count{};
+        double focus_sum{};
+        std::size_t distracted{};
+    };
+    std::array<Bucket, 24> buckets{};
+    const auto predictions = const_cast<Storage&>(storage_).recent_predictions(10000);
+    for (const auto& prediction : predictions) {
+        ++summary.sample_count;
+        summary.avg_focus_score += prediction.focus_score;
+        const int hour = timestamp_hour(prediction.timestamp);
+        if (hour < 0 || hour >= 24) continue;
+        auto& bucket = buckets[static_cast<std::size_t>(hour)];
+        ++bucket.count;
+        bucket.focus_sum += prediction.focus_score;
+        if (prediction.focus_state == "DISTRACTED") ++bucket.distracted;
+    }
+    if (summary.sample_count > 0) {
+        summary.avg_focus_score /= static_cast<double>(summary.sample_count);
+    }
+    for (int hour = 0; hour < 24; ++hour) {
+        const auto& bucket = buckets[static_cast<std::size_t>(hour)];
+        if (bucket.count == 0) continue;
+        summary.hourly.push_back(AnalyticsHour{
+            hour, bucket.count, bucket.focus_sum / static_cast<double>(bucket.count),
+            static_cast<double>(bucket.distracted) / static_cast<double>(bucket.count)});
+    }
+
+    std::unordered_map<std::string, std::size_t> app_counts;
+    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(200)) {
+        for (const auto& snapshot : const_cast<Storage&>(storage_).list_context_snapshots(
+                 session.session_id, 200)) {
+            if (!snapshot.app_name.empty()) ++app_counts[snapshot.app_name];
+        }
+    }
+    std::vector<AnalyticsApp> apps;
+    apps.reserve(app_counts.size());
+    for (const auto& [app, count] : app_counts) apps.push_back(AnalyticsApp{app, count});
+    std::sort(apps.begin(), apps.end(), [](const auto& left, const auto& right) {
+        if (left.window_count != right.window_count) return left.window_count > right.window_count;
+        return left.app_name < right.app_name;
+    });
+    if (apps.size() > 5) apps.resize(5);
+    summary.top_apps = std::move(apps);
+
+    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(200)) {
+        if (session.status != "COMPLETED") continue;
+        if (const auto recap = const_cast<Storage&>(storage_).recap(session.session_id);
+            recap.avg_focus_score >= 70.0) {
+            ++summary.productive_session_streak;
+        } else {
+            break;
+        }
+    }
+    return summary;
+}
+
+SummaryReport AppState::summary_report(const std::string& window) const {
+    if (window != "day" && window != "week") {
+        throw std::runtime_error("summary window must be day or week");
+    }
+    std::lock_guard lock(storage_mutex_);
+    const auto cutoff = cutoff_rfc3339(window == "day" ? 1 : 7);
+    SummaryReport report;
+    report.window = window;
+    report.generated_at = now_rfc3339();
+
+    std::size_t distracted = 0;
+    std::size_t current_streak = 0;
+    std::unordered_map<std::string, std::size_t> context_counts;
+    for (const auto& prediction : const_cast<Storage&>(storage_).recent_predictions(10000)) {
+        if (prediction.timestamp < cutoff) continue;
+        ++report.sample_count;
+        report.avg_focus_score += prediction.focus_score;
+        if (prediction.focus_state == "DISTRACTED") {
+            ++distracted;
+            current_streak = 0;
+        } else {
+            ++current_streak;
+            report.longest_focus_streak =
+                std::max(report.longest_focus_streak, current_streak);
+        }
+    }
+    if (report.sample_count > 0) {
+        report.avg_focus_score /= static_cast<double>(report.sample_count);
+        report.distracted_fraction =
+            static_cast<double>(distracted) / static_cast<double>(report.sample_count);
+    }
+
+    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(500)) {
+        if (!session.started_at || *session.started_at < cutoff) continue;
+        ++report.session_count;
+        if (session.status == "COMPLETED") {
+            report.focus_seconds += const_cast<Storage&>(storage_).recap(session.session_id).duration_secs;
+        }
+        for (const auto& snapshot : const_cast<Storage&>(storage_).list_context_snapshots(
+                 session.session_id, 200)) {
+            if (!snapshot.app_name.empty()) ++context_counts[snapshot.app_name];
+        }
+    }
+    for (const auto& [app, count] : context_counts) {
+        if (report.top_context_app.empty() || count > context_counts[report.top_context_app] ||
+            (count == context_counts[report.top_context_app] && app < report.top_context_app)) {
+            report.top_context_app = app;
+        }
+    }
+    return report;
+}
+
+SummaryExportResult AppState::export_summary_report(const std::filesystem::path& out_dir,
+                                                    const std::string& window) const {
+    const auto report = summary_report(window);
+    std::filesystem::create_directories(out_dir);
+    const auto path = out_dir / ("summary_" + window + ".json");
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) throw std::runtime_error("failed to write summary report");
+    out << nlohmann::json(report).dump(2) << '\n';
+    return SummaryExportResult{window, path.string()};
+}
+
+std::vector<GoalCategory> AppState::goal_categories() const {
+    std::lock_guard lock(mutex_);
+    return settings_.goal_categories.empty() ? snapback::default_goal_categories()
+                                              : settings_.goal_categories;
+}
+
+void AppState::set_goal_categories(std::vector<GoalCategory> categories) {
+    std::vector<GoalCategory> normalized;
+    for (auto& category : categories) {
+        category.name = trim_copy(std::move(category.name));
+        if (category.name.empty()) continue;
+        std::vector<std::string> keywords;
+        for (auto& keyword : category.keywords) {
+            keyword = trim_copy(std::move(keyword));
+            if (!keyword.empty()) keywords.push_back(std::move(keyword));
+        }
+        if (!keywords.empty()) normalized.push_back(GoalCategory{std::move(category.name), std::move(keywords)});
+    }
+    std::lock_guard lock(mutex_);
+    settings_.goal_categories = std::move(normalized);
+    context_tracker_.set_goal_categories(settings_.goal_categories);
+    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
+}
+
 std::vector<AppRuleRecord> AppState::app_rules() {
     std::lock_guard lock(storage_mutex_);
     return storage_.list_app_rules();
@@ -337,6 +551,30 @@ PermissionStatus AppState::refresh_permissions() {
 
 void AppState::reload_app_rules_unlocked() {
     app_rules_ = storage_.list_app_rules();
+}
+
+std::vector<std::string> AppState::normalize_privacy_exclusions(
+    std::vector<std::string> exclusions) {
+    std::vector<std::string> out;
+    for (auto& exclusion : exclusions) {
+        exclusion = trim_copy(std::move(exclusion));
+        if (exclusion.empty()) continue;
+        const auto lowered = lower_copy(exclusion);
+        const bool duplicate = std::any_of(out.begin(), out.end(), [&](const auto& existing) {
+            return lower_copy(existing) == lowered;
+        });
+        if (!duplicate) out.push_back(std::move(exclusion));
+    }
+    return out;
+}
+
+bool AppState::is_private_event_unlocked(const CaptureEvent& event) const {
+    if (settings_.private_mode) return true;
+    const auto app = lower_copy(event.app_name);
+    return std::any_of(settings_.excluded_apps.begin(), settings_.excluded_apps.end(),
+                       [&](const auto& exclusion) {
+                           return app.find(lower_copy(exclusion)) != std::string::npos;
+                       });
 }
 
 void AppState::submit_label(FocusLabel label, const std::string& source,
@@ -422,6 +660,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     // Requires mutex_. Pure in-memory: advances features/classifier/tracker + latest_*,
     // and returns the rows to write (nullopt if this event produced nothing to persist).
     // No storage I/O — persistence happens later under storage_mutex_.
+    if (is_private_event_unlocked(event)) return std::nullopt;
     last_event_secs_ = event.timestamp_secs;
 
     PersistJob job;
@@ -472,7 +711,8 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     const auto features = features_.extract(now, app_rules_);
     const auto goal =
         have_session ? std::optional<std::string>(active_session_->goal) : std::nullopt;
-    const auto scores = classifier_.predict(features, focus_mode_, goal, app_rules_);
+    const auto scores = classifier_.predict(features, focus_mode_, goal, app_rules_,
+                                             settings_.goal_categories);
     features_.update_focus_score(scores.focus_score / 100.0, 0.2);
     context_tracker_.set_prediction_feedback(scores.focus_state, goal);
 

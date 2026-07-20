@@ -5,7 +5,9 @@ gaps, chores. If it's not in this file, it's not planned; if it's done, it moves
 [Done archive](#done-archive) at the bottom. `CLAUDE.md`'s status table is a summary
 that points here — when they disagree, this file wins.
 
-**Last synced against the code: 2026-07-19** (full-codebase health check, then closed out
+**Last synced against the code: 2026-07-20** (completed five product features in one pass:
+privacy controls, analytics, summary reports, editable goal categories, and diagnostics;
+then closed out
 Tier 0's four wiring gaps same day: logger adoption, native toast, focus-summary IPC+UI,
 Pomodoro UI — all with tests, C++ + frontend suites green).
 
@@ -59,39 +61,16 @@ First-run experience, control, and respecting the user.
   `risk_threshold`? A per-mode override stored in `AppSettings`? Something else? Don't
   build a UI for this until that's decided.
 
-- **1.3 — Start-on-login / autostart.** `S`
-  Register autostart via the Windows Run key (launchd/systemd variants later), toggleable
-  from settings.
-
-- **1.6 — Privacy controls.** `M`
-  A per-app exclusion list (never record titles from e.g. banking/password managers), a
-  global "private mode" pause, and a plain-language local-only data statement in-app.
-
 ---
 
 ## Tier 2 — Product & ML depth
 
 Make the insights worth coming back for, and close the training loop.
 
-- **2.1 — Analytics / trends dashboard.** `L`
-  Focus over time, a distraction-by-hour heatmap, top distracting apps, and session
-  streaks — storage aggregate queries feeding new frontend views. *Reach for the dataviz
-  design guidance before building charts.*
-
-- **2.2 — Daily / weekly summary report.** `M`
-  An in-app recap of the day/week (focus time, biggest distractions, best streak), with an
-  optional export. The `focus_summary` aggregation (0.8) is the first slice; this item is
-  the day/week windowing + export on top of it.
-
 - **2.3 — Model retraining loop.** `L`
   Wire the `ml/` trainer to consume the exported CSV + the user's own labels → produce a
   fresh `model.onnx`; add model versioning and a "model info" panel. Opens the door to
   on-device personalization. *Rust ref: `ml/`, `engine/onnx_model.rs`.*
-
-- **2.5 — Goal-alignment coverage.** `M`
-  Broaden the app-context keyword/category tables and let the user edit categories, so the
-  "is this on-goal?" signal generalizes past the seed keyword lists. *Rust ref:
-  `engine/app_context.rs`, `engine/goal_alignment.rs`.*
 
 ---
 
@@ -139,18 +118,13 @@ Pull any of these in anytime; they pay for themselves as the surface grows.
   An explicit `schema_version` table with ordered migrations, and optional SQLCipher
   encryption-at-rest for the local DB.
 
-- **4.10 — In-app diagnostics/health view.** `M`
-  The deferred half of old 4.1: once the logger is adopted (0.5), surface recent log lines
-  + health state in a diagnostics panel.
-
 ---
 
 ## Suggested near-term sequence
 
 Default order if you don't want to pick freely:
-**1.3 → 1.6 → 1.2** — 1.1 and Tier 4's chores are cleared (see Done archive). 1.2 is last
-in this tier because it needs a product decision first (see its entry above). Big rocks
-(0.3 macOS capture, 2.1 analytics, 2.3 retraining) come once the small stuff is flushed.
+**1.2 → 0.3 → 2.3** — product sensitivity tuning needs a decision first; native macOS capture
+and model retraining are the next larger workstreams.
 
 ---
 
@@ -203,3 +177,15 @@ history; details live in git log and [PORT_HISTORY.md](PORT_HISTORY.md).
   already explained what's captured (local-only) and requested permissions; added the
   missing third piece, a "Default focus mode" picker in the wizard itself, reusing
   `useSession`'s existing `focusMode`/`handleFocusModeChange` (no new backend needed).
+- **1.3 — Start-on-login / autostart** — Windows HKCU Run-key registration with a
+  cross-platform support status, IPC commands, settings toggle, and round-trip tests.
+- **1.6 — Privacy controls** — local-only statement, global private mode, per-app exclusions,
+  persistence, suppression tests, and frontend controls.
+- **2.1 — Analytics / trends dashboard** — hourly focus/distraction aggregates, top context
+  apps, productive-session streaks, analytics IPC, and frontend trend views.
+- **2.2 — Daily / weekly summary report** — windowed focus/session aggregates, distraction
+  and streak metrics, JSON export, IPC, and frontend report controls.
+- **2.5 — Goal-alignment coverage** — editable persisted goal categories and keywords wired
+  through classifier, tracker, IPC, and frontend settings.
+- **4.10 — In-app diagnostics/health view** — health snapshot plus bounded recent logger tail,
+  diagnostics IPC, mapper, refreshable panel, and tests.

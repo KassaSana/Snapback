@@ -239,6 +239,95 @@ TEST_CASE("AppState persists default focus mode settings") {
     CHECK(reloaded->settings().default_focus_mode == FocusMode::Deep);
 }
 
+TEST_CASE("AppState persists privacy settings and suppresses private events") {
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
+
+    state->set_private_mode(true);
+    state->set_privacy_exclusions({"  Banking  ", "BANKING", "1Password"});
+    CHECK(state->privacy_settings().private_mode);
+    CHECK(state->privacy_settings().excluded_apps == std::vector<std::string>{"Banking", "1Password"});
+
+    state->start_session("Ship privacy", FocusMode::Normal);
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
+    CHECK(state->prediction_history(10).empty());
+
+    auto storage2 = Storage::open_memory();
+    REQUIRE(storage2);
+    auto reloaded = std::make_unique<AppState>(std::move(*storage2), temp.path);
+    CHECK(reloaded->privacy_settings().private_mode);
+    CHECK(reloaded->privacy_settings().excluded_apps ==
+          std::vector<std::string>{"Banking", "1Password"});
+}
+
+TEST_CASE("AppState excludes matching apps without affecting other apps") {
+    auto state = make_state();
+    state->set_privacy_exclusions({"password"});
+    state->start_session("Test exclusion", FocusMode::Normal);
+
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "1Password"));
+    CHECK(state->prediction_history(10).empty());
+
+    state->process_event_for_test(ev(EventType::KeyPress, 2.0, "Cursor"));
+    CHECK(state->prediction_history(10).size() == 1);
+}
+
+TEST_CASE("AppState analytics aggregates predictions, hourly buckets, and app context") {
+    auto state = make_state();
+    state->start_session("Analyze focus", FocusMode::Normal);
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 1.0, "Cursor",
+                                     "state.cpp - Snapback"));
+    state->process_event_for_test(ev(EventType::KeyPress, 2.0, "Cursor",
+                                     "state.cpp - Snapback"));
+
+    const auto summary = state->analytics();
+    CHECK(summary.sample_count == 2);
+    CHECK(summary.avg_focus_score >= 0.0);
+    REQUIRE(summary.hourly.size() == 1);
+    CHECK(summary.hourly[0].sample_count == 2);
+    REQUIRE(summary.top_apps.size() == 1);
+    CHECK(summary.top_apps[0].app_name == "Cursor");
+    CHECK(summary.top_apps[0].window_count == 1);
+}
+
+TEST_CASE("AppState creates and exports day or week summary reports") {
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
+    state->start_session("Daily summary", FocusMode::Normal);
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
+
+    const auto report = state->summary_report("day");
+    CHECK(report.window == "day");
+    CHECK(report.session_count == 1);
+    CHECK(report.sample_count == 1);
+    CHECK_THROWS_AS(state->summary_report("month"), std::runtime_error);
+
+    const auto exported = state->export_summary_report(temp.path / "exports", "week");
+    CHECK(exported.window == "week");
+    CHECK(std::filesystem::exists(exported.output_path));
+    CHECK(read_file(exported.output_path).find("\"window\": \"week\"") != std::string::npos);
+}
+
+TEST_CASE("AppState persists editable goal categories") {
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
+    state->set_goal_categories({{"design", {"brand", "visual"}}});
+    REQUIRE(state->goal_categories().size() == 1);
+    CHECK(state->goal_categories()[0].name == "design");
+
+    auto storage2 = Storage::open_memory();
+    REQUIRE(storage2);
+    auto reloaded = std::make_unique<AppState>(std::move(*storage2), temp.path);
+    REQUIRE(reloaded->goal_categories().size() == 1);
+    CHECK(reloaded->goal_categories()[0].keywords[0] == "brand");
+}
+
 TEST_CASE("AppState fires a snapback payload on return from a long distraction") {
     auto state = make_state();
     state->start_session("implement the classifier", FocusMode::Normal);

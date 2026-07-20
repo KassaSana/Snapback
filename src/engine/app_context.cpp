@@ -42,49 +42,62 @@ bool matches_rule_pattern(const std::string& pattern,
            window_title.find(pattern) != std::string::npos;
 }
 
-double alignment_score(const std::string& goal, const AppContext& ctx, const std::string& title) {
-    const std::string g = lower(goal);
+double category_alignment(const std::string& category,
+                          const AppContext& ctx,
+                          const std::string& title) {
+    const std::string name = lower(category);
     const std::string t = lower(title);
-    if (g.empty()) return 0.5;
-
-    auto has = [&](std::initializer_list<const char*> words) {
-        return std::any_of(words.begin(), words.end(),
-                           [&](const char* word) { return g.find(word) != std::string::npos; });
-    };
-
-    double best = 0.5;
-    if (has({"code", "coding", "bug", "fix", "implement", "rust", "api", "refactor",
-             "test", "debug", "build", "feature", "compile", "merge", "pr",
-             "pull request"})) {
-        if (ctx.is_ide || ctx.is_terminal) best = std::max(best, 0.95);
-        else if (ctx.is_browser &&
-                 (t.find("github") != std::string::npos ||
-                  t.find("stackoverflow") != std::string::npos ||
-                  t.find("docs.rs") != std::string::npos ||
-                  t.find("documentation") != std::string::npos)) best = std::max(best, 0.8);
-        else if (ctx.is_communication) best = std::max(best, 0.35);
+    if (ctx.is_ide || ctx.is_terminal) return 0.95;
+    if (ctx.is_productivity) return 0.95;
+    if (ctx.is_browser && !ctx.title_is_distracting) {
+        return name.find("research") != std::string::npos || name.find("read") != std::string::npos
+                   ? 0.85
+                   : (t.find("github") != std::string::npos || t.find("docs") != std::string::npos
+                          ? 0.8
+                          : 0.55);
     }
-    if (has({"write", "writing", "report", "essay", "document", "blog", "draft",
-             "paper", "notes"})) {
-        if (ctx.is_productivity) best = std::max(best, 0.95);
-        else if (ctx.is_ide && (t.find(".md") != std::string::npos ||
-                                t.find("readme") != std::string::npos)) best = std::max(best, 0.85);
-        else if (ctx.is_browser && !ctx.title_is_distracting) best = std::max(best, 0.55);
+    if (ctx.is_communication) {
+        return name.find("commun") != std::string::npos || name.find("meeting") != std::string::npos
+                   ? 0.9
+                   : 0.35;
     }
-    if (has({"research", "read", "reading", "learn", "study", "article", "docs",
-             "documentation"})) {
-        if (ctx.is_browser && !ctx.title_is_distracting) best = std::max(best, 0.85);
-        else if (ctx.is_productivity || ctx.is_ide) best = std::max(best, 0.65);
-    }
-    if (has({"email", "meeting", "call", "slack", "message", "reply", "interview",
-             "present"})) {
-        if (ctx.is_communication) best = std::max(best, 0.9);
-        else if (ctx.is_browser && t.find("mail") != std::string::npos) best = std::max(best, 0.85);
-    }
-    return std::clamp(best, 0.0, 1.0);
+    return 0.5;
 }
 
 }  // namespace
+
+std::vector<GoalCategory> default_goal_categories() {
+    return {
+        {"coding", {"code", "coding", "bug", "fix", "implement", "rust", "api", "refactor",
+                     "test", "debug", "build", "feature", "compile", "merge", "pr", "pull request"}},
+        {"writing", {"write", "writing", "report", "essay", "document", "blog", "draft", "paper", "notes"}},
+        {"research", {"research", "read", "reading", "learn", "study", "article", "docs", "documentation"}},
+        {"communication", {"email", "meeting", "call", "slack", "message", "reply", "interview", "present"}},
+    };
+}
+
+double goal_alignment_score(const std::optional<std::string>& goal,
+                            const AppContext& ctx,
+                            const std::string& title,
+                            const std::vector<GoalCategory>& categories) {
+    const std::string g = lower(goal.value_or(""));
+    if (g.empty()) return 0.5;
+    const auto active = categories.empty() ? default_goal_categories() : categories;
+    double best = 0.5;
+    for (const auto& category : active) {
+        const auto category_name = lower(category.name);
+        const bool matches = std::any_of(category.keywords.begin(), category.keywords.end(),
+                                         [&](const auto& keyword) {
+                                             return !keyword.empty() && g.find(lower(keyword)) != std::string::npos;
+                                         });
+        if (!matches) continue;
+        double score = category_alignment(category_name, ctx, title);
+        if (category_name.find("communication") != std::string::npos && ctx.is_browser &&
+            lower(title).find("mail") != std::string::npos) score = 0.85;
+        best = std::max(best, score);
+    }
+    return std::clamp(best, 0.0, 1.0);
+}
 
 std::string AppContext::productivity_category() const {
     if (personal_block) return "Entertainment";
@@ -142,13 +155,14 @@ bool is_clearly_off_task(const AppContext& ctx) {
 bool snapback_on_task(const AppContext& ctx,
                       const std::string& window_title,
                       const std::optional<std::string>& focus_state,
-                      const std::optional<std::string>& session_goal) {
+                      const std::optional<std::string>& session_goal,
+                      const std::vector<GoalCategory>& categories) {
     if (is_clearly_off_task(ctx)) return false;
     if (focus_state == std::optional<std::string>("DISTRACTED")) return false;
     if (ctx.personal_allow) return true;
 
     if (session_goal && !session_goal->empty()) {
-        const double score = alignment_score(*session_goal, ctx, window_title);
+        const double score = goal_alignment_score(session_goal, ctx, window_title, categories);
         if (score >= 0.72) return true;
         if (score <= 0.35) return false;
     }

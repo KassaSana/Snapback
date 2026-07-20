@@ -1,13 +1,19 @@
 ﻿import { useAppEffects } from "./useAppEffects";
 
 import { ActivityCards } from "./ActivityCards";
+import { AnalyticsCard } from "./AnalyticsCard";
+import { DiagnosticsCard } from "./DiagnosticsCard";
+import { GoalCategoriesCard } from "./GoalCategoriesCard";
 import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
 import { FocusSummaryCard } from "./FocusSummaryCard";
 import { InsightsCard } from "./InsightsCard";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
+import { SettingsCard } from "./SettingsCard";
+import { SummaryCard } from "./SummaryCard";
 import { PermissionsCard } from "./PermissionsCard";
+import { PrivacyCard } from "./PrivacyCard";
 import { PermissionWizard } from "./PermissionWizard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
@@ -22,9 +28,15 @@ import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
 import { usePomodoro } from "./usePomodoro";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
+import { useAutostart } from "./useAutostart";
+import { useAnalytics } from "./useAnalytics";
+import { usePrivacy } from "./usePrivacy";
 
 export default function App() {
   const feedback = useFeedback();
+  const autostart = useAutostart();
+  const privacy = usePrivacy();
+  const { analytics, refreshAnalytics } = useAnalytics();
 
   const live = useLiveData();
 
@@ -143,6 +155,7 @@ export default function App() {
     captureRunning,
     refreshInsights,
     refreshFocusSummary,
+    refreshAnalytics,
     refreshPomodoroStatus,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
@@ -258,6 +271,14 @@ export default function App() {
 
         <InsightsCard sessionHistory={sessionHistory} />
 
+        <AnalyticsCard analytics={analytics} />
+
+        <SummaryCard />
+
+        <GoalCategoriesCard />
+
+        <DiagnosticsCard />
+
         <FocusSummaryCard focusSummary={focusSummary} />
 
         <ActivityCards
@@ -289,6 +310,24 @@ export default function App() {
           setRuleKind={setRuleKind}
           setRuleNote={setRuleNote}
           setRulePattern={setRulePattern}
+        />
+
+        <SettingsCard
+          busy={autostart.busy}
+          error={autostart.error}
+          onAutostartChange={autostart.setEnabled}
+          status={autostart.status}
+        />
+
+        <PrivacyCard
+          busy={privacy.busy}
+          error={privacy.error}
+          exclusionInput={privacy.exclusionInput}
+          onAddExclusion={privacy.addExclusion}
+          onPrivateModeChange={privacy.setPrivateMode}
+          onRemoveExclusion={privacy.removeExclusion}
+          setExclusionInput={privacy.setExclusionInput}
+          settings={privacy.settings}
         />
 
         <PermissionsCard

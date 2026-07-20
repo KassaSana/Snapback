@@ -44,6 +44,18 @@ TEST_CASE("Logger formats a line with timestamp, level, and message") {
     Logger log(out, LogLevel::Info, fixed_clock());
     log.info("engine started");
     CHECK(out.str() == "2026-07-18T00:00:00Z [INFO] engine started\n");
+    CHECK(log.recent_lines() == std::vector<std::string>{"2026-07-18T00:00:00Z [INFO] engine started"});
+}
+
+TEST_CASE("Logger keeps a bounded diagnostics tail") {
+    std::ostringstream out;
+    Logger log(out, LogLevel::Info, fixed_clock());
+    for (int i = 0; i < 205; ++i) log.info("line " + std::to_string(i));
+
+    const auto recent = log.recent_lines(3);
+    REQUIRE(recent.size() == 3);
+    CHECK(recent[0].find("line 202") != std::string::npos);
+    CHECK(recent[2].find("line 204") != std::string::npos);
 }
 
 TEST_CASE("Logger drops messages below the configured level") {

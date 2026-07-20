@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <fstream>
@@ -21,6 +22,8 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <mutex>
+#include <vector>
 #include <utility>
 
 namespace snapback {
@@ -264,7 +267,12 @@ public:
 
     void log(LogLevel level, std::string_view message) {
         if (!enabled(level)) return;
-        sink_ << clock_() << " [" << to_string(level) << "] " << message << '\n';
+        std::string line = clock_() + " [" + to_string(level) + "] " +
+                           std::string(message);
+        sink_ << line << '\n';
+        std::lock_guard lock(recent_mutex_);
+        recent_lines_.push_back(std::move(line));
+        while (recent_lines_.size() > kRecentLogLines) recent_lines_.pop_front();
     }
 
     void trace(std::string_view m) { log(LogLevel::Trace, m); }
@@ -275,11 +283,25 @@ public:
 
     void set_level(LogLevel level) { min_level_ = level; }
     [[nodiscard]] LogLevel level() const noexcept { return min_level_; }
+    [[nodiscard]] std::vector<std::string> recent_lines(std::size_t limit = kRecentLogLines) const {
+        std::lock_guard lock(recent_mutex_);
+        const auto count = std::min(limit, recent_lines_.size());
+        std::vector<std::string> result;
+        result.reserve(count);
+        const auto begin = recent_lines_.size() - count;
+        for (std::size_t index = begin; index < recent_lines_.size(); ++index) {
+            result.push_back(recent_lines_[index]);
+        }
+        return result;
+    }
 
 private:
+    static constexpr std::size_t kRecentLogLines = 200;
     std::ostream& sink_;
     LogLevel min_level_;
     Clock clock_;
+    mutable std::mutex recent_mutex_;
+    std::deque<std::string> recent_lines_;
 };
 
 }  // namespace snapback

@@ -28,10 +28,17 @@ AppContext classify_app_context(const std::string& app_name,
                                 const std::string& window_title,
                                 const std::vector<AppRuleRecord>& rules = {});
 
+std::vector<GoalCategory> default_goal_categories();
+double goal_alignment_score(const std::optional<std::string>& goal,
+                            const AppContext& ctx,
+                            const std::string& title,
+                            const std::vector<GoalCategory>& categories = {});
+
 bool is_clearly_off_task(const AppContext& ctx);
 bool snapback_on_task(const AppContext& ctx,
                       const std::string& window_title,
                       const std::optional<std::string>& focus_state = std::nullopt,
-                      const std::optional<std::string>& session_goal = std::nullopt);
+                      const std::optional<std::string>& session_goal = std::nullopt,
+                      const std::vector<GoalCategory>& categories = {});
 
 }  // namespace snapback

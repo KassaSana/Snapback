@@ -20,28 +20,6 @@ double clamp(double value, double lo, double hi) {
     return std::max(lo, std::min(hi, value));
 }
 
-double goal_alignment_score(const std::optional<std::string>& goal,
-                            const AppContext& ctx,
-                            const std::string& title) {
-    if (!goal || goal->empty()) return 0.5;
-    if ((ctx.is_ide || ctx.is_terminal) &&
-        (goal->find("code") != std::string::npos ||
-         goal->find("fix") != std::string::npos ||
-         goal->find("implement") != std::string::npos ||
-         goal->find("test") != std::string::npos ||
-         goal->find("debug") != std::string::npos)) {
-        return 0.95;
-    }
-    if (ctx.is_browser &&
-        (title.find("documentation") != std::string::npos ||
-         title.find("docs") != std::string::npos ||
-         title.find("github") != std::string::npos)) {
-        return 0.85;
-    }
-    if (ctx.is_communication) return 0.35;
-    return 0.5;
-}
-
 double thrash_score(const FeatureVector& f) {
     const double switches_30s = std::min(f.context_switches_30s() / 4.0, 1.0);
     const double switches_5min = std::min(f.context_switches_5min() / 10.0, 1.0);
@@ -114,7 +92,20 @@ PredictionScores Classifier::predict(const FeatureVector& features,
         return apply_focus_guardrails(OnnxModel::instance().run(features), 0.0, 0.0, false, mode);
     }
 #endif
-    return predict_heuristic(features, mode, session_goal, rules);
+    return predict_heuristic(features, mode, session_goal, rules, {});
+}
+
+PredictionScores Classifier::predict(const FeatureVector& features,
+                                     FocusMode mode,
+                                     const std::optional<std::string>& session_goal,
+                                     const std::vector<AppRuleRecord>& rules,
+                                     const std::vector<GoalCategory>& categories) const {
+#if defined(SNAPBACK_ONNX)
+    if (OnnxModel::instance().loaded()) {
+        return apply_focus_guardrails(OnnxModel::instance().run(features), 0.0, 0.0, false, mode);
+    }
+#endif
+    return predict_heuristic(features, mode, session_goal, rules, categories);
 }
 
 std::string Classifier::backend() const {
@@ -127,9 +118,10 @@ std::string Classifier::backend() const {
 PredictionScores Classifier::predict_heuristic(const FeatureVector& f,
                                                FocusMode mode,
                                                const std::optional<std::string>& session_goal,
-                                               const std::vector<AppRuleRecord>& rules) const {
+                                               const std::vector<AppRuleRecord>& rules,
+                                               const std::vector<GoalCategory>& categories) const {
     const auto ctx = classify_app_context(f.app_name, f.window_title, rules);
-    const double alignment = goal_alignment_score(session_goal, ctx, f.window_title);
+    const double alignment = snapback::goal_alignment_score(session_goal, ctx, f.window_title, categories);
     const double bias = alignment - 0.5;
 
     const double thrash = thrash_score(f);

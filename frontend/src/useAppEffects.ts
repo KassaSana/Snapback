@@ -17,6 +17,7 @@ type UseAppEffectsArgs = {
   captureRunning: boolean;
   refreshInsights: () => void | Promise<void>;
   refreshFocusSummary: () => void | Promise<void>;
+  refreshAnalytics: () => void | Promise<void>;
   refreshPomodoroStatus: () => void | Promise<void>;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
@@ -47,6 +48,7 @@ export const useAppEffects = ({
   captureRunning,
   refreshInsights,
   refreshFocusSummary,
+  refreshAnalytics,
   refreshPomodoroStatus,
   refreshLatest,
   refreshAppRules,
@@ -73,6 +75,7 @@ export const useAppEffects = ({
     void refreshDeployStatus();
     void refreshInsights();
     void refreshFocusSummary();
+    void refreshAnalytics();
     void hydrateActiveSession();
   }, [
     hydrateActiveSession,
@@ -82,6 +85,7 @@ export const useAppEffects = ({
     refreshDeployStatus,
     refreshInsights,
     refreshFocusSummary,
+    refreshAnalytics,
   ]);
 
   // A completed session adds a new row to history — refresh insights (and the
@@ -91,8 +95,9 @@ export const useAppEffects = ({
     if (sessionStatus === "COMPLETED") {
       void refreshInsights();
       void refreshFocusSummary();
+      void refreshAnalytics();
     }
-  }, [sessionStatus, refreshInsights, refreshFocusSummary]);
+  }, [sessionStatus, refreshInsights, refreshFocusSummary, refreshAnalytics]);
 
   // Starting or stopping a session resets the Pomodoro timer server-side
   // (AppState::start_session / stop_session both call pomodoro_.reset()), so

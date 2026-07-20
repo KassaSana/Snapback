@@ -3,13 +3,20 @@ import { listen } from "@tauri-apps/api/event";
 
 import {
   mapAppRule,
+  mapAnalyticsSummary,
+  mapAutostartStatus,
   mapClassifierStatus,
   mapContextSnapshot,
+  mapDiagnosticsSnapshot,
   mapExportTrainingResult,
   mapFocusSummary,
   mapHealth,
   mapPermissionStatus,
   mapPomodoroStatus,
+  mapPrivacySettings,
+  mapSummaryReport,
+  mapSummaryExportResult,
+  mapGoalCategories,
   mapPrediction,
   mapSettings,
   mapSession,
@@ -91,6 +98,11 @@ export type HealthStatus = {
   captureStalled: boolean;
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
+};
+
+export type DiagnosticsSnapshot = {
+  health: HealthStatus;
+  recentLogs: string[];
 };
 
 export type SessionRecap = {
@@ -190,6 +202,61 @@ export type AppSettings = {
   defaultFocusMode: string;
 };
 
+export type PrivacySettings = {
+  privateMode: boolean;
+  excludedApps: string[];
+  localOnly: boolean;
+};
+
+export type AnalyticsHour = {
+  hour: number;
+  sampleCount: number;
+  avgFocusScore: number;
+  distractedFraction: number;
+};
+
+export type AnalyticsApp = {
+  appName: string;
+  windowCount: number;
+};
+
+export type AnalyticsSummary = {
+  sampleCount: number;
+  avgFocusScore: number;
+  productiveSessionStreak: number;
+  hourly: AnalyticsHour[];
+  topApps: AnalyticsApp[];
+};
+
+export type SummaryWindow = "day" | "week";
+
+export type SummaryReport = {
+  window: SummaryWindow;
+  generatedAt: string;
+  sessionCount: number;
+  focusSeconds: number;
+  sampleCount: number;
+  avgFocusScore: number;
+  distractedFraction: number;
+  longestFocusStreak: number;
+  topContextApp: string;
+};
+
+export type SummaryExportResult = {
+  window: SummaryWindow;
+  outputPath: string;
+};
+
+export type GoalCategory = {
+  name: string;
+  keywords: string[];
+};
+
+export type AutostartStatus = {
+  enabled: boolean;
+  supported: boolean;
+};
+
 export type TrainFromExportResult = {
   success: boolean;
   trainingSucceeded: boolean;
@@ -204,6 +271,10 @@ export const api = {
   getHealth: async () => {
     const raw = await invoke<Record<string, unknown>>("get_health");
     return mapHealth(raw);
+  },
+  getDiagnostics: async () => {
+    const raw = await invoke<Record<string, unknown> | null>("get_diagnostics");
+    return mapDiagnosticsSnapshot(raw ?? {});
   },
   getLatestPrediction: async () => {
     const raw = await invoke<Record<string, unknown> | null>("get_latest_prediction");
@@ -263,6 +334,48 @@ export const api = {
   getSettings: async () => {
     const raw = await invoke<Record<string, unknown> | null>("get_settings");
     return mapSettings(raw ?? {});
+  },
+  getPrivacySettings: async () => {
+    const raw = await invoke<Record<string, unknown> | null>("get_privacy_settings");
+    return mapPrivacySettings(raw ?? {});
+  },
+  getAnalytics: async () => {
+    const raw = await invoke<Record<string, unknown> | null>("get_analytics");
+    return mapAnalyticsSummary(raw ?? {});
+  },
+  getSummaryReport: async (window: SummaryWindow = "day") => {
+    const raw = await invoke<Record<string, unknown> | null>("get_summary_report", { window });
+    return mapSummaryReport(raw ?? {});
+  },
+  exportSummaryReport: async (window: SummaryWindow) => {
+    const raw = await invoke<Record<string, unknown>>("export_summary_report", { window });
+    return mapSummaryExportResult(raw);
+  },
+  getGoalCategories: async () => {
+    const raw = await invoke<Record<string, unknown>[] | null>("get_goal_categories");
+    return mapGoalCategories(raw ?? []);
+  },
+  setGoalCategories: async (categories: GoalCategory[]) => {
+    const raw = await invoke<Record<string, unknown>[] | null>("set_goal_categories", { categories });
+    return mapGoalCategories(raw ?? []);
+  },
+  setPrivateMode: async (enabled: boolean) => {
+    const raw = await invoke<Record<string, unknown>>("set_private_mode", { enabled });
+    return mapPrivacySettings(raw);
+  },
+  setPrivacyExclusions: async (excludedApps: string[]) => {
+    const raw = await invoke<Record<string, unknown>>("set_privacy_exclusions", {
+      excludedApps,
+    });
+    return mapPrivacySettings(raw);
+  },
+  getAutostart: async () => {
+    const raw = await invoke<Record<string, unknown>>("get_autostart");
+    return mapAutostartStatus(raw);
+  },
+  setAutostart: async (enabled: boolean) => {
+    const raw = await invoke<Record<string, unknown>>("set_autostart", { enabled });
+    return mapAutostartStatus(raw);
   },
   setFocusMode: (mode: string) => invoke("set_focus_mode", { mode }),
   dismissSnapback: () => invoke("dismiss_snapback"),

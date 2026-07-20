@@ -16,6 +16,14 @@ const boundary = vi.hoisted(() => {
         return (state.health.permissions as Record<string, unknown>) ?? {};
       case "get_settings":
         return { default_focus_mode: "normal" };
+      case "get_privacy_settings":
+        return { private_mode: false, excluded_apps: [], local_only: true };
+      case "get_diagnostics":
+        return { health: state.health, recent_logs: ["ready"] };
+      case "get_goal_categories":
+        return [{ name: "coding", keywords: ["code", "test"] }];
+      case "get_summary_report":
+        return { window: "day" };
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -73,6 +81,8 @@ describe("App first-run permission wizard", () => {
     render(<App />);
     // Permissions card always renders regardless of health.
     expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("coding")).toBeInTheDocument();
   });
 
   it("shows the wizard on first run when capture isn't ready", async () => {

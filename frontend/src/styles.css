@@ -154,6 +154,53 @@ h1 {
   opacity: 0;
 }
 
+.diagnostics-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diagnostics-summary span:last-child {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.health-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.health-dot-online { background: #2d9d68; }
+.health-dot-degraded { background: #d58a24; }
+.health-dot-offline { background: #b54a3d; }
+
+.diagnostics-error {
+  margin: 0;
+  color: #8a2f1f;
+  font-size: 0.9rem;
+}
+
+.diagnostics-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  background: #15181d;
+  color: #e6edf3;
+  border-radius: 8px;
+}
+
+.diagnostics-log code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.72rem;
+}
+
 .card:nth-child(1) {
   animation-delay: 0.05s;
 }
@@ -581,6 +628,41 @@ h1 {
   font-size: 0.8rem;
   color: var(--muted);
   margin: 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(14, 17, 22, 0.1);
+  border-bottom: 1px solid rgba(14, 17, 22, 0.1);
+  cursor: pointer;
+}
+
+.toggle-row > span {
+  display: grid;
+  gap: 4px;
+}
+
+.toggle-row input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.toggle-row-disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.category-editor {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(14, 17, 22, 0.1);
 }
 
 .deploy-log {

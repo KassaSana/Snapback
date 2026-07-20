@@ -91,6 +91,15 @@ TEST_CASE("app context on-task parity matches personal rule semantics") {
     CHECK(snapback_on_task(new_tab, "New Tab", "PRODUCTIVE"));
 }
 
+TEST_CASE("goal alignment accepts user-defined categories") {
+    const auto ctx = classify_app_context("Cursor", "brand-guide.md");
+    const std::vector<GoalCategory> categories = {{"design", {"brand", "visual", "ui"}}};
+    CHECK(goal_alignment_score(std::optional<std::string>("Finish the brand guide"), ctx,
+                               "brand-guide.md", categories) == doctest::Approx(0.95));
+    CHECK(snapback_on_task(ctx, "brand-guide.md", std::nullopt,
+                           std::optional<std::string>("Finish the brand guide"), categories));
+}
+
 TEST_CASE("feature extractor computes rolling keyboard mouse and context features") {
     FeatureExtractor extractor;
     extractor.reset_for_session(100.0);

@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
 
 import {
+  mapAutostartStatus,
+  mapAnalyticsSummary,
   mapAppRule,
   mapClassifierStatus,
   mapContextSnapshot,
+  mapDiagnosticsSnapshot,
   mapExportTrainingResult,
   mapFocusSummary,
   mapHealth,
   mapPermissionStatus,
   mapPomodoroStatus,
+  mapPrivacySettings,
+  mapSummaryReport,
+  mapGoalCategories,
   mapPrediction,
   mapSettings,
   mapSession,
@@ -111,6 +117,47 @@ assert.equal(settingsCamel.defaultFocusMode, "recovery");
 
 const settingsUnknown = mapSettings({ defaultFocusMode: "bogus" });
 assert.equal(settingsUnknown.defaultFocusMode, "normal");
+
+const autostartSnake = mapAutostartStatus({ enabled: true, supported: true });
+assert.deepEqual(autostartSnake, { enabled: true, supported: true });
+
+const autostartMissing = mapAutostartStatus({});
+assert.deepEqual(autostartMissing, { enabled: false, supported: false });
+
+const privacy = mapPrivacySettings({ private_mode: true, excluded_apps: ["Banking"], local_only: true });
+assert.deepEqual(privacy, { privateMode: true, excludedApps: ["Banking"], localOnly: true });
+
+const analytics = mapAnalyticsSummary({
+  sample_count: 2,
+  avg_focus_score: 72,
+  productive_session_streak: 3,
+  hourly: [{ hour: 9, sample_count: 2, avg_focus_score: 72, distracted_fraction: 0.5 }],
+  top_apps: [{ app_name: "Cursor", window_count: 4 }],
+});
+assert.equal(analytics.hourly[0].avgFocusScore, 72);
+assert.equal(analytics.topApps[0].appName, "Cursor");
+
+const report = mapSummaryReport({
+  window: "week",
+  session_count: 4,
+  focus_seconds: 3600,
+  avg_focus_score: 81,
+  distracted_fraction: 0.2,
+  longest_focus_streak: 8,
+  top_context_app: "Cursor",
+});
+assert.equal(report.window, "week");
+assert.equal(report.focusSeconds, 3600);
+
+const categories = mapGoalCategories([{ name: "coding", keywords: ["code", "bug"] }]);
+assert.deepEqual(categories, [{ name: "coding", keywords: ["code", "bug"] }]);
+
+const diagnostics = mapDiagnosticsSnapshot({
+  health: { status: "online", capture_running: true, classifier: { backend: "heuristic" } },
+  recent_logs: ["2026-07-19T00:00:00Z [INFO] ready"],
+});
+assert.equal(diagnostics.health.status, "online");
+assert.equal(diagnostics.recentLogs[0].includes("ready"), true);
 
 const trainDeployed = mapTrainFromExportResult({
   success: true,

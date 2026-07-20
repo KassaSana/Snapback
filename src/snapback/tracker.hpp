@@ -29,6 +29,9 @@ public:
                                  std::optional<std::string> session_goal);
     void set_snapshot_interval_secs(double secs) { snapshot_interval_secs_ = secs; }
     void set_min_distraction_secs(double secs) { min_distraction_secs_ = secs; }
+    void set_goal_categories(std::vector<GoalCategory> categories) {
+        goal_categories_ = std::move(categories);
+    }
 
     std::optional<ContextSnapshotDto> observe_window_change(
         const std::string& app_name,
@@ -81,6 +84,7 @@ private:
     std::optional<SnapbackPayload> pending_snapback_;
     std::optional<std::string> latest_focus_state_;
     std::optional<std::string> latest_session_goal_;
+    std::vector<GoalCategory> goal_categories_;
 };
 
 }  // namespace snapback

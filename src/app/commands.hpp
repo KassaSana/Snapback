@@ -15,6 +15,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
 #include "app/state.hpp"
 #include "app/training_deploy.hpp"
@@ -43,6 +44,7 @@ inline void register_commands(webview::webview& w, AppState& state,
 
     // --- Health + predictions ---
     bind_cmd(w, "get_health", [&state](const json&) { return json(state.health()); });
+    bind_cmd(w, "get_diagnostics", [&state](const json&) { return json(state.diagnostics()); });
     bind_cmd(w, "get_latest_prediction", [&state](const json&) {
         auto p = state.latest_prediction();
         return p ? json(*p) : json(nullptr);
@@ -104,6 +106,57 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(nullptr);
     });
     bind_cmd(w, "get_settings", [&state](const json&) { return json(state.settings()); });
+    bind_cmd(w, "get_privacy_settings", [&state](const json&) {
+        return json(state.privacy_settings());
+    });
+    bind_cmd(w, "get_analytics", [&state](const json&) { return json(state.analytics()); });
+    bind_cmd(w, "get_summary_report", [&state](const json& a) {
+        return json(state.summary_report(a.value("window", std::string("day"))));
+    });
+    bind_cmd(w, "export_summary_report", [&state, data_dir](const json& a) {
+        return json(state.export_summary_report(data_dir / "exports" / "summaries",
+                                                 a.value("window", std::string("day"))));
+    });
+    bind_cmd(w, "set_private_mode", [&state](const json& a) {
+        state.set_private_mode(a.at("enabled").get<bool>());
+        return json(state.privacy_settings());
+    });
+    bind_cmd(w, "set_privacy_exclusions", [&state](const json& a) {
+        auto exclusions = a.at("excludedApps").get<std::vector<std::string>>();
+        if (exclusions.size() > 50) throw std::runtime_error("too many privacy exclusions");
+        for (const auto& exclusion : exclusions) {
+            if (exclusion.size() > 120) throw std::runtime_error("privacy exclusion is too long");
+        }
+        state.set_privacy_exclusions(std::move(exclusions));
+        return json(state.privacy_settings());
+    });
+    bind_cmd(w, "get_goal_categories", [&state](const json&) {
+        return json(state.goal_categories());
+    });
+    bind_cmd(w, "set_goal_categories", [&state](const json& a) {
+        auto categories = a.at("categories").get<std::vector<GoalCategory>>();
+        if (categories.size() > 20) throw std::runtime_error("too many goal categories");
+        for (const auto& category : categories) {
+            if (category.name.size() > 80 || category.keywords.size() > 50) {
+                throw std::runtime_error("goal category is too large");
+            }
+        }
+        state.set_goal_categories(std::move(categories));
+        return json(state.goal_categories());
+    });
+    bind_cmd(w, "get_autostart", [](const json&) {
+        return json{{"enabled", autostart_enabled()}, {"supported", autostart_supported()}};
+    });
+    bind_cmd(w, "set_autostart", [](const json& a) {
+        const bool enabled = a.at("enabled").get<bool>();
+        if (!autostart_supported()) {
+            throw std::runtime_error("autostart is not supported on this platform");
+        }
+        if (!set_autostart_enabled(enabled)) {
+            throw std::runtime_error("could not update autostart setting");
+        }
+        return json{{"enabled", autostart_enabled()}, {"supported", true}};
+    });
     bind_cmd(w, "dismiss_snapback", [&state](const json&) {
         state.dismiss_snapback();
         // Bind callbacks run on the UI thread, so hiding the native overlay is safe here.

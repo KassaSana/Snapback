@@ -9,6 +9,7 @@
 // FocusMode/AppRuleKind = lowercase.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -254,10 +255,66 @@ struct ExportTrainingResult {
     std::uint64_t label_count{};
 };
 
+struct GoalCategory {
+    std::string name;
+    std::vector<std::string> keywords;
+};
+
 // New C++ settings DTO. Persisted in app-data/settings.json and exposed to the
 // frontend with camelCase keys.
 struct AppSettings {
     FocusMode default_focus_mode{FocusMode::Normal};
+    bool private_mode{};
+    std::vector<std::string> excluded_apps;
+    std::vector<GoalCategory> goal_categories;
+};
+
+struct PrivacySettings {
+    bool private_mode{};
+    std::vector<std::string> excluded_apps;
+    bool local_only{true};
+};
+
+struct AnalyticsHour {
+    int hour{};
+    std::size_t sample_count{};
+    double avg_focus_score{};
+    double distracted_fraction{};
+};
+
+struct AnalyticsApp {
+    std::string app_name;
+    std::size_t window_count{};
+};
+
+struct AnalyticsSummary {
+    std::size_t sample_count{};
+    double avg_focus_score{};
+    std::size_t productive_session_streak{};
+    std::vector<AnalyticsHour> hourly;
+    std::vector<AnalyticsApp> top_apps;
+};
+
+struct SummaryReport {
+    std::string window;
+    std::string generated_at;
+    std::size_t session_count{};
+    std::uint64_t focus_seconds{};
+    std::size_t sample_count{};
+    double avg_focus_score{};
+    double distracted_fraction{};
+    std::size_t longest_focus_streak{};
+    std::string top_context_app;
+};
+
+struct SummaryExportResult {
+    std::string window;
+    std::string output_path;
+};
+
+struct DiagnosticsSnapshot {
+    HealthStatus health;
+    std::vector<std::string> recent_logs;
 };
 
 // Rust: CaptureFailurePayload / OverlayFailurePayload / PersistenceFailurePayload.
@@ -317,6 +374,22 @@ void to_json(json& j, const ExportTrainingResult& v);
 void from_json(const json& j, ExportTrainingResult& v);
 void to_json(json& j, const AppSettings& v);
 void from_json(const json& j, AppSettings& v);
+void to_json(json& j, const PrivacySettings& v);
+void from_json(const json& j, PrivacySettings& v);
+void to_json(json& j, const AnalyticsHour& v);
+void from_json(const json& j, AnalyticsHour& v);
+void to_json(json& j, const AnalyticsApp& v);
+void from_json(const json& j, AnalyticsApp& v);
+void to_json(json& j, const AnalyticsSummary& v);
+void from_json(const json& j, AnalyticsSummary& v);
+void to_json(json& j, const SummaryReport& v);
+void from_json(const json& j, SummaryReport& v);
+void to_json(json& j, const SummaryExportResult& v);
+void from_json(const json& j, SummaryExportResult& v);
+void to_json(json& j, const DiagnosticsSnapshot& v);
+void from_json(const json& j, DiagnosticsSnapshot& v);
+void to_json(json& j, const GoalCategory& v);
+void from_json(const json& j, GoalCategory& v);
 void to_json(json& j, const CaptureFailurePayload& v);
 void from_json(const json& j, CaptureFailurePayload& v);
 void to_json(json& j, const OverlayFailurePayload& v);

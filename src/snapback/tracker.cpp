@@ -123,7 +123,8 @@ bool ContextTracker::is_on_task(const std::string& app_name,
                                 const std::vector<AppRuleRecord>& app_rules) const {
     if (app_name.empty() && window_title.empty()) return false;
     const auto ctx = classify_app_context(app_name, window_title, app_rules);
-    return snapback_on_task(ctx, window_title, latest_focus_state_, latest_session_goal_);
+    return snapback_on_task(ctx, window_title, latest_focus_state_, latest_session_goal_,
+                            goal_categories_);
 }
 
 std::optional<SnapbackPayload> ContextTracker::build_snapback(double distraction_secs) const {

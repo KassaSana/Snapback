@@ -26,6 +26,13 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Next up (from ROADMAP suggested sequence)
 
+- [x] **1.3** Windows start-on-login / autostart — Run-key backend, IPC, settings toggle,
+  and tests.
+- [x] **1.6** Privacy controls — private mode, app exclusions, local-only statement, and tests.
+- [x] **2.1** Analytics / trends — hourly aggregates, top apps, streaks, and frontend views.
+- [x] **2.2** Daily / weekly summary — report windows, JSON export, and frontend controls.
+- [x] **2.5** Goal categories — persisted editable keywords wired into goal alignment.
+- [x] **4.10** Diagnostics — health state, recent logger tail, IPC, panel, and tests.
 - [x] **1.4b** Win32 toast delivery consuming `NotificationPayload` via the existing tray icon.
 - [x] **4.1b** Logger file sink + rotation (`RotatingFileStream`, bounded backups).
 - [x] **2.6b** Wire Pomodoro timer into AppState + IPC commands + transition events.
