@@ -118,6 +118,36 @@ TEST_CASE("RotatingFileStream rotates before a record exceeds the byte limit") {
     CHECK_FALSE(std::filesystem::exists(path.string() + ".2"));
 }
 
+TEST_CASE("pick_startup_log_sink prefers a healthy file over the fallback") {
+    TempDir temp;
+    RotatingFileStream file(temp.path / "snapback.log");
+    REQUIRE(file.healthy());
+    std::ostringstream fallback;
+
+    std::ostream& sink = pick_startup_log_sink(file, fallback);
+    Logger log(sink, LogLevel::Info, fixed_clock());
+    log.info("routed to file");
+    file.flush();
+
+    CHECK(read_file(temp.path / "snapback.log") == "2026-07-18T00:00:00Z [INFO] routed to file\n");
+    CHECK(fallback.str().empty());
+}
+
+TEST_CASE("pick_startup_log_sink falls back when the file can't be opened") {
+    // A directory can never be opened as a regular file, so RotatingFileStream fails and
+    // healthy() is false — this is the "bad log path" case the sink must degrade from.
+    TempDir temp;
+    RotatingFileStream file(temp.path);
+    REQUIRE_FALSE(file.healthy());
+    std::ostringstream fallback;
+
+    std::ostream& sink = pick_startup_log_sink(file, fallback);
+    Logger log(sink, LogLevel::Info, fixed_clock());
+    log.info("routed to fallback");
+
+    CHECK(fallback.str() == "2026-07-18T00:00:00Z [INFO] routed to fallback\n");
+}
+
 TEST_CASE("RotatingFileStream keeps only the configured number of backups") {
     TempDir temp;
     const auto path = temp.path / "snapback.log";

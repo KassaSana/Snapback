@@ -288,7 +288,8 @@ std::string double_cell(double value) {
 
 }  // namespace
 
-std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir) {
+std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
+                                     Logger* logger) {
     try {
         std::filesystem::create_directories(app_data_dir);
         sqlite3* db = nullptr;
@@ -298,6 +299,8 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir) 
             return std::nullopt;
         }
         Storage storage(db);
+        Logger local_logger(std::cerr);
+        Logger& log = logger ? *logger : local_logger;
         exec(storage.db_, "PRAGMA foreign_keys = ON;");
         // WAL + NORMAL: commits append to the write-ahead log and only fsync at
         // checkpoints, instead of an fsync per statement (synchronous=FULL default). This
@@ -317,21 +320,26 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir) 
             const auto cutoff = retention_cutoff_rfc3339(kDefaultRetentionDays);
             const PruneSummary summary = storage.prune_runtime_data(cutoff);
             if (summary.total() > 0) {
-                std::cerr << "storage: pruned " << summary.total() << " rows older than "
-                          << kDefaultRetentionDays
-                          << "d on open (predictions=" << summary.predictions_deleted
-                          << ", context_snapshots=" << summary.context_snapshots_deleted
-                          << ")\n";
+                std::ostringstream msg;
+                msg << "storage: pruned " << summary.total() << " rows older than "
+                    << kDefaultRetentionDays
+                    << "d on open (predictions=" << summary.predictions_deleted
+                    << ", context_snapshots=" << summary.context_snapshots_deleted << ")";
+                log.info(msg.str());
                 if (should_vacuum_after_prune(summary.total())) {
                     try {
                         storage.vacuum();
                     } catch (const std::exception& err) {
-                        std::cerr << "storage: VACUUM after prune failed: " << err.what() << '\n';
+                        std::ostringstream vacuum_msg;
+                        vacuum_msg << "storage: VACUUM after prune failed: " << err.what();
+                        log.warn(vacuum_msg.str());
                     }
                 }
             }
         } catch (const std::exception& err) {
-            std::cerr << "storage: startup retention prune failed: " << err.what() << '\n';
+            std::ostringstream msg;
+            msg << "storage: startup retention prune failed: " << err.what();
+            log.warn(msg.str());
         }
         return storage;
     } catch (...) {

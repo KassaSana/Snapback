@@ -7,6 +7,7 @@
 #include <string>
 
 #include "storage/storage.hpp"
+#include "util/logger.hpp"
 
 using namespace snapback;
 
@@ -293,4 +294,27 @@ TEST_CASE("should_vacuum_after_prune matches Rust threshold") {
     CHECK_FALSE(should_vacuum_after_prune(0));
     CHECK_FALSE(should_vacuum_after_prune(kVacuumMinDeletedRows - 1));
     CHECK(should_vacuum_after_prune(kVacuumMinDeletedRows));
+}
+
+TEST_CASE("Storage::open routes the startup prune message through an injected logger") {
+    TempDir temp;
+    {
+        // Seed one prediction old enough for the on-open prune (kDefaultRetentionDays)
+        // to catch, then let this Storage go out of scope so the reopen below is a real
+        // cold start against the file on disk.
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        const auto session = storage->create_session("Retention", FocusMode::Normal);
+        PredictionRecord old_pred = prediction(session.session_id, 50.0, 0.2, "PRODUCTIVE");
+        old_pred.timestamp = "2000-01-01T00:00:00Z";
+        storage->insert_prediction(old_pred);
+    }
+
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info, [] { return std::string("2026-07-19T00:00:00Z"); });
+    auto reopened = Storage::open(temp.path, &logger);
+    REQUIRE(reopened.has_value());
+
+    CHECK(log_out.str().find("[INFO]") != std::string::npos);
+    CHECK(log_out.str().find("pruned 1 rows") != std::string::npos);
 }

@@ -26,6 +26,7 @@
 #include "engine/onnx_model.hpp"
 #include "snapback/overlay.hpp"
 #include "storage/storage.hpp"
+#include "util/logger.hpp"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -86,22 +87,31 @@ int main() {
     const auto data_dir = app_data_dir();
     std::filesystem::create_directories(data_dir);
 
+    // Roadmap 0.5: one leveled logger for the process, writing to a rotating file next to
+    // the DB instead of the console (nothing owns a terminal once this ships as a GUI
+    // app). Falls back to stderr if the file can't be opened, so a bad log path degrades
+    // instead of going silent. Level is overridable via SNAPBACK_LOG (e.g. "debug"),
+    // mirroring the Rust side's RUST_LOG convention.
+    RotatingFileStream log_file(data_dir / "snapback.log");
+    Logger logger(pick_startup_log_sink(log_file, std::cerr),
+                  level_from_string(env_var("SNAPBACK_LOG").value_or("")));
+
 #if defined(SNAPBACK_ONNX)
     if (auto model = OnnxModel::resolve_model_path(data_dir)) {
         OnnxModel::instance().init(*model);
     }
 #endif
 
-    auto storage = Storage::open(data_dir);
+    auto storage = Storage::open(data_dir, &logger);
     if (!storage) {
-        // Rust logs + exit(1) here so a headless failure isn't silent on Windows.
+        logger.error("failed to open storage at startup");
         return 1;
     }
 
     // Heap-allocate AppState: it embeds the 64K-slot capture ring buffer inline (~5 MB),
     // which blows the default 1 MB stack if placed as a local. The tests do the same via
     // make_unique. A unique_ptr keeps ownership + lifetime clear.
-    auto state = std::make_unique<AppState>(std::move(*storage), data_dir);
+    auto state = std::make_unique<AppState>(std::move(*storage), data_dir, &logger);
     state->start_engine();
 
     webview::webview w(/*debug=*/true, nullptr);

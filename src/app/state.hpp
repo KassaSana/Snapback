@@ -8,6 +8,7 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -25,12 +26,17 @@
 #include "app/settings.hpp"
 #include "storage/storage.hpp"
 #include "types.hpp"
+#include "util/logger.hpp"
 
 namespace snapback {
 
 class AppState {
 public:
-    explicit AppState(Storage storage, std::filesystem::path app_data_dir = {});
+    // `logger` is optional (defaults to null) so existing call sites keep compiling
+    // unchanged; pass one to route non-fatal warnings (e.g. a failed auto-label save)
+    // somewhere other than stderr.
+    explicit AppState(Storage storage, std::filesystem::path app_data_dir = {},
+                      Logger* logger = nullptr);
 
     // Rust: AppState::start_engine — spawn capture + the engine tick thread.
     void start_engine();
@@ -132,6 +138,8 @@ private:
     // edge so the tick loop can emit it. Sets idle_ from the resulting state.
     IdleTransition update_idle_unlocked(std::int64_t now_ms, bool had_input);
     PomodoroStatus start_pomodoro_unlocked(std::int64_t now_ms);
+    // Injected logger if one was passed in, otherwise the stderr fallback below.
+    Logger& log() { return logger_ ? *logger_ : local_logger_; }
 
     // Lock order (deadlock-free): always acquire mutex_ BEFORE storage_mutex_, never the
     // reverse. mutex_ guards in-memory state; storage_mutex_ serializes all storage_ access
@@ -140,6 +148,8 @@ private:
     mutable std::mutex storage_mutex_;
     Storage storage_;
     std::filesystem::path app_data_dir_;
+    Logger* logger_ = nullptr;
+    Logger local_logger_{std::cerr};
     CaptureThread capture_;
     FeatureExtractor features_;
     Classifier classifier_;

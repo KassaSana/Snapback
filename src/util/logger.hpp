@@ -242,6 +242,14 @@ private:
     RotatingFileBuffer buffer_;
 };
 
+// Picks the sink for process-wide startup/shutdown logging: the caller's rotating file
+// if it opened successfully, otherwise std::cerr so a bad log path never silences the app.
+// A free function, not a class, because there's exactly one decision to make here and no
+// state to own — the returned reference always outlives the RotatingFileStream passed in.
+inline std::ostream& pick_startup_log_sink(RotatingFileStream& file, std::ostream& fallback) {
+    return file.healthy() ? static_cast<std::ostream&>(file) : fallback;
+}
+
 class Logger {
 public:
     using Clock = std::function<std::string()>;

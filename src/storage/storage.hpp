@@ -13,6 +13,7 @@
 
 #include "engine/features.hpp"
 #include "types.hpp"
+#include "util/logger.hpp"
 
 struct sqlite3;       // forward decl; real sqlite3.h included in the .cpp
 struct sqlite3_stmt;  // forward decl; cached prepared statements are held as pointers
@@ -37,7 +38,11 @@ inline bool should_vacuum_after_prune(std::size_t rows_deleted) {
 class Storage {
 public:
     // Rust: Storage::open(app_data_dir). Opens focoflow.db and runs migrations.
-    static std::optional<Storage> open(const std::filesystem::path& app_data_dir);
+    // `logger` is optional (defaults to null) so every existing call site keeps compiling
+    // unchanged; pass one to route the startup prune/vacuum messages somewhere other than
+    // stderr (main.cpp passes its rotating-file logger).
+    static std::optional<Storage> open(const std::filesystem::path& app_data_dir,
+                                       Logger* logger = nullptr);
     static std::optional<Storage> open_memory();
     ~Storage();
     Storage(Storage&&) noexcept;

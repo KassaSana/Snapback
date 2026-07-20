@@ -12,6 +12,7 @@
 
 #include "app/settings.hpp"
 #include "app/state.hpp"
+#include "util/logger.hpp"
 
 using namespace snapback;
 
@@ -146,6 +147,23 @@ TEST_CASE("AppState starts and stops sessions through storage") {
     const auto labels = read_file(temp.path / "labels.csv");
     CHECK(labels.find(",auto,") != std::string::npos);
     CHECK(labels.find("inferred from session recap") != std::string::npos);
+}
+
+TEST_CASE("AppState accepts an injected logger and stays silent on the happy path") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    auto state = std::make_unique<AppState>(std::move(*storage), std::filesystem::path{}, &logger);
+
+    auto session = state->start_session("Ship phase five", FocusMode::Deep);
+    state->stop_session(session.session_id);
+
+    CHECK(state->active_session() == std::nullopt);
+    // Normal stop/save-label path never warns; the injected logger only speaks up on the
+    // failure branch this same constructor param is wired to (storage.cpp's prune path
+    // is the one exercised directly in test_storage.cpp).
+    CHECK(log_out.str().empty());
 }
 
 TEST_CASE("AppState processes synthetic events into predictions and persisted rows") {

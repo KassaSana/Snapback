@@ -3,7 +3,6 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
-#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -14,8 +13,8 @@
 
 namespace snapback {
 
-AppState::AppState(Storage storage, std::filesystem::path app_data_dir)
-    : storage_(std::move(storage)), app_data_dir_(std::move(app_data_dir)) {
+AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger)
+    : storage_(std::move(storage)), app_data_dir_(std::move(app_data_dir)), logger_(logger) {
     if (!app_data_dir_.empty()) {
         settings_ = load_app_settings(app_data_dir_);
     }
@@ -169,7 +168,9 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
     try {
         storage_.save_auto_session_label(session_id);
     } catch (const std::exception& err) {
-        std::cerr << "failed to save automatic session label: " << err.what() << '\n';
+        std::ostringstream msg;
+        msg << "failed to save automatic session label: " << err.what();
+        log().warn(msg.str());
     }
     if (active_session_ && active_session_->session_id == session_id) {
         pomodoro_.reset();
