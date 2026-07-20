@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -347,4 +348,47 @@ TEST_CASE("Storage::open routes the startup prune message through an injected lo
 
     CHECK(log_out.str().find("[INFO]") != std::string::npos);
     CHECK(log_out.str().find("pruned 1 rows") != std::string::npos);
+}
+
+TEST_CASE("storage schema indexes the hot read paths") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto names = storage->index_names();
+    auto has = [&](const std::string& name) {
+        return std::find(names.begin(), names.end(), name) != names.end();
+    };
+    CHECK(has("idx_predictions_session_ts"));
+    CHECK(has("idx_predictions_ts"));
+    CHECK(has("idx_feature_snapshots_session_ts"));
+    CHECK(has("idx_sessions_status_started"));
+    CHECK(has("idx_context_snapshots_session_ts"));
+}
+
+TEST_CASE("storage hot queries use an index instead of scanning") {
+    // Presence isn't enough — a composite index whose leading column the query doesn't
+    // filter on is unusable, which is exactly why latest_prediction() scanned despite
+    // idx_predictions_session_ts existing. Assert the planner actually picks one, and
+    // that no query needs a temp B-tree to satisfy its ORDER BY.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    auto uses_index = [&](const std::string& sql) {
+        bool indexed = false;
+        for (const auto& step : storage->query_plan(sql)) {
+            if (step.find("USING INDEX") != std::string::npos ||
+                step.find("USING COVERING INDEX") != std::string::npos) {
+                indexed = true;
+            }
+            // A temp B-tree means the index didn't supply the ordering.
+            CHECK(step.find("TEMP B-TREE") == std::string::npos);
+        }
+        return indexed;
+    };
+
+    CHECK(uses_index("SELECT session_id FROM predictions ORDER BY timestamp DESC LIMIT 1"));
+    CHECK(uses_index(
+        "SELECT session_id FROM sessions WHERE status = 'ACTIVE' ORDER BY started_at DESC LIMIT 1"));
+    CHECK(uses_index(
+        "SELECT app_name FROM context_snapshots WHERE session_id = 'x' ORDER BY timestamp ASC"));
 }

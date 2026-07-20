@@ -118,6 +118,15 @@ public:
     PruneSummary prune_runtime_data(const std::string& cutoff_rfc3339, double cutoff_unix_secs);
     void vacuum();
 
+    // Test seam: index names in the current schema, sorted. A dropped index is a silent
+    // perf regression — the query still returns correct rows, just via a full scan — so
+    // it needs an explicit assertion to be catchable.
+    std::vector<std::string> index_names();
+
+    // Test seam: the SQLite query plan for `sql`, one line per step. Lets a test assert an
+    // index is actually *used*, not merely present.
+    std::vector<std::string> query_plan(const std::string& sql);
+
 private:
     explicit Storage(sqlite3* db) : db_(db) {}
     void migrate();

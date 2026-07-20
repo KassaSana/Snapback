@@ -421,6 +421,13 @@ void Storage::migrate() {
             CREATE INDEX IF NOT EXISTS idx_predictions_session_ts
                 ON predictions(session_id, timestamp DESC);
 
+            -- latest_prediction()/recent_predictions() order by timestamp with no
+            -- session filter. The composite index above can't serve them: SQLite can't
+            -- skip a leading column, so both fell back to a full SCAN plus a temp B-tree
+            -- sort over the largest table, on the UI's hot read path.
+            CREATE INDEX IF NOT EXISTS idx_predictions_ts
+                ON predictions(timestamp DESC);
+
             CREATE TABLE IF NOT EXISTS labels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -500,6 +507,16 @@ void Storage::migrate() {
 
             CREATE INDEX IF NOT EXISTS idx_feature_snapshots_session_ts
                 ON feature_snapshots(session_id, timestamp DESC);
+
+            -- active_session() runs on every health check and stop_session; without this
+            -- it scanned sessions and sorted. Ordered by started_at to match the query.
+            CREATE INDEX IF NOT EXISTS idx_sessions_status_started
+                ON sessions(status, started_at DESC);
+
+            -- list_context_snapshots() filters by session and orders ascending; ASC here
+            -- (not DESC) so the index supplies the ordering directly.
+            CREATE INDEX IF NOT EXISTS idx_context_snapshots_session_ts
+                ON context_snapshots(session_id, timestamp);
          )sql");
 }
 
@@ -1036,6 +1053,23 @@ PruneSummary Storage::prune_runtime_data(const std::string& cutoff_rfc3339,
 
 void Storage::vacuum() {
     exec(db_, "VACUUM");
+}
+
+std::vector<std::string> Storage::index_names() {
+    std::vector<std::string> names;
+    Stmt stmt(db_,
+              "SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE "
+              "'sqlite_autoindex%' ORDER BY name");
+    while (stmt.step_row()) names.push_back(column_text(stmt.get(), 0));
+    return names;
+}
+
+std::vector<std::string> Storage::query_plan(const std::string& sql) {
+    std::vector<std::string> steps;
+    Stmt stmt(db_, ("EXPLAIN QUERY PLAN " + sql).c_str());
+    // Column 3 is the human-readable "detail" text ("SEARCH x USING INDEX y", "SCAN x").
+    while (stmt.step_row()) steps.push_back(column_text(stmt.get(), 3));
+    return steps;
 }
 
 }  // namespace snapback
