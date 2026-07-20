@@ -93,5 +93,49 @@ TEST_CASE("training_deploy builds platform command with output dir") {
     const auto command = training_deploy::build_pipeline_command("C:/app data/exports/training");
     CHECK(command.find("-m ml.pipeline_cli") != std::string::npos);
     CHECK(command.find("--skip-export") != std::string::npos);
+    // Quoting is platform-specific: this string is meant to be pasted into the user's own
+    // shell, and POSIX shells need single quotes for the path to stay literal.
+#if defined(_WIN32)
     CHECK(command.find("\"C:/app data/exports/training\"") != std::string::npos);
+#else
+    CHECK(command.find("'C:/app data/exports/training'") != std::string::npos);
+#endif
+}
+
+TEST_CASE("shell_quote neutralizes command substitution in repo paths") {
+    // The repo path comes from SNAPBACK_REPO or training_repo.txt — both writable by any
+    // local process running as the user — and ends up inside a std::system() command.
+    // A directory literally named "$(...)" passes is_training_repo()'s existence check,
+    // because std::filesystem treats the name as literal while the shell does not.
+    const auto quoted = training_deploy::detail::shell_quote("/tmp/$(touch /tmp/pwned)");
+
+#if defined(_WIN32)
+    CHECK(quoted == "\"/tmp/$(touch /tmp/pwned)\"");
+#else
+    // Single-quoted: the shell performs no substitution whatsoever inside these.
+    CHECK(quoted == "'/tmp/$(touch /tmp/pwned)'");
+    CHECK(quoted.front() == '\'');
+    CHECK(quoted.back() == '\'');
+#endif
+}
+
+TEST_CASE("shell_quote survives quotes in the path itself") {
+    // The escape must not let the argument terminate early — that's what would reopen the
+    // injection it exists to close.
+#if defined(_WIN32)
+    CHECK(training_deploy::detail::shell_quote("a\"b") == "\"a\"\"b\"");
+#else
+    CHECK(training_deploy::detail::shell_quote("a'b") == "'a'\\''b'");
+    // Backticks are the other POSIX substitution syntax; single quotes cover them too.
+    CHECK(training_deploy::detail::shell_quote("`id`") == "'`id`'");
+#endif
+}
+
+TEST_CASE("shell_quote leaves ordinary paths usable") {
+    const auto quoted = training_deploy::detail::shell_quote("/home/kassa/Snapback");
+#if defined(_WIN32)
+    CHECK(quoted == "\"/home/kassa/Snapback\"");
+#else
+    CHECK(quoted == "'/home/kassa/Snapback'");
+#endif
 }

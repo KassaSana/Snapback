@@ -12,28 +12,47 @@
 #include <vector>
 
 namespace snapback::training_deploy {
-namespace {
 
-std::string quote(const std::filesystem::path& path) {
-    std::string s = path.string();
-    std::string out = "\"";
-    for (char c : s) {
-        if (c == '"') out += "\\\"";
-        else out += c;
-    }
-    out += "\"";
-    return out;
-}
+namespace detail {
 
-std::string quote_arg(const std::string& value) {
+std::string shell_quote(const std::string& value) {
+#if defined(_WIN32)
+    // cmd.exe has no command substitution, so double quotes are enough to keep spaces and
+    // operators (&, |, >) literal. Embedded quotes are doubled, which is how cmd escapes
+    // them inside a quoted string.
     std::string out = "\"";
     for (char c : value) {
-        if (c == '"') out += "\\\"";
+        if (c == '"') out += "\"\"";
         else out += c;
     }
     out += "\"";
     return out;
+#else
+    // Single quotes are the only POSIX construct that suppresses *everything* — no
+    // parameter expansion, no command substitution, no backslash escapes. The previous
+    // version used double quotes and escaped only `"`, which left $(...) and `...` live:
+    // a repo directory literally named `$(cmd)` passed the is_training_repo() existence
+    // check and then executed when the path was pasted into the shell command.
+    //
+    // A single quote can't be escaped inside single quotes, so close, emit an escaped
+    // quote, and reopen: foo'bar -> 'foo'\''bar'
+    std::string out = "'";
+    for (char c : value) {
+        if (c == '\'') out += "'\\''";
+        else out += c;
+    }
+    out += "'";
+    return out;
+#endif
 }
+
+}  // namespace detail
+
+namespace {
+
+std::string quote(const std::filesystem::path& path) { return detail::shell_quote(path.string()); }
+
+std::string quote_arg(const std::string& value) { return detail::shell_quote(value); }
 
 std::uint64_t count_csv_rows(const std::filesystem::path& path) {
     std::ifstream in(path);
