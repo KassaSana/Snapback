@@ -182,7 +182,7 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
     focus_mode_ = mode;
-    features_.reset_for_session(std::nullopt);
+    features_.begin_session();
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();

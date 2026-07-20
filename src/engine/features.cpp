@@ -70,6 +70,13 @@ void FeatureExtractor::ingest(const CaptureEvent& ev) {
     // need a prediction occasionally (the engine throttles to ~1/sec) ingest every event
     // but extract on demand, so the O(window) scan runs ~1/sec instead of per event.
     const double now = ev.timestamp_secs;
+    // Seed the session origin from the first event of the session (see begin_session).
+    // The first event is the earliest moment the event clock and the session agree on.
+    if (awaiting_session_start_) {
+        session_start_secs_ = now;
+        last_break_secs_ = now;  // Rust does the same: last_break_ts starts at session start
+        awaiting_session_start_ = false;
+    }
     if (!current_app_start_secs_ && !ev.app_name.empty()) {
         current_app_name_ = ev.app_name;
         current_window_title_ = ev.window_title;
@@ -106,8 +113,15 @@ void FeatureExtractor::update_focus_score(double score, double alpha) {
     focus_momentum_ = alpha * score + (1.0 - alpha) * focus_momentum_;
 }
 
+void FeatureExtractor::begin_session() {
+    reset_for_session(std::nullopt);
+    awaiting_session_start_ = true;
+}
+
 void FeatureExtractor::reset_for_session(std::optional<double> session_start_secs) {
     session_start_secs_ = session_start_secs;
+    // An explicit origin (or an explicit "no session") overrides any pending lazy seed.
+    awaiting_session_start_ = false;
     events_30s_.clear();
     events_5min_.clear();
     app_ids_.clear();

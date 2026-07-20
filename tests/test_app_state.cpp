@@ -1,14 +1,18 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include "app/settings.hpp"
 #include "app/state.hpp"
@@ -53,6 +57,35 @@ std::string read_file(const std::filesystem::path& path) {
     std::ostringstream out;
     out << in.rdbuf();
     return out.str();
+}
+
+std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> cells;
+    std::istringstream in(line);
+    std::string cell;
+    while (std::getline(in, cell, ',')) cells.push_back(cell);
+    return cells;
+}
+
+// Value of `column` in the final data row of a CSV. Used instead of substring-matching a
+// row, which silently matches whichever column happens to share the value.
+double last_csv_column(const std::string& csv, const std::string& column) {
+    std::istringstream in(csv);
+    std::string header_line;
+    if (!std::getline(in, header_line)) return std::numeric_limits<double>::quiet_NaN();
+    const auto header = split_csv_line(header_line);
+    const auto it = std::find(header.begin(), header.end(), column);
+    if (it == header.end()) return std::numeric_limits<double>::quiet_NaN();
+    const auto index = static_cast<std::size_t>(std::distance(header.begin(), it));
+
+    std::string line;
+    std::string last;
+    while (std::getline(in, line)) {
+        if (!line.empty()) last = line;
+    }
+    const auto cells = split_csv_line(last);
+    if (index >= cells.size()) return std::numeric_limits<double>::quiet_NaN();
+    return std::stod(cells[index]);
 }
 
 }  // namespace
@@ -147,6 +180,32 @@ TEST_CASE("AppState starts and stops sessions through storage") {
     const auto labels = read_file(temp.path / "labels.csv");
     CHECK(labels.find(",auto,") != std::string::npos);
     CHECK(labels.find("inferred from session recap") != std::string::npos);
+}
+
+TEST_CASE("AppState writes a real elapsed time into exported features") {
+    // Regression guard for the bug the unit tests missed: every FeatureExtractor test used
+    // reset_for_session(explicit), while start_session passed nullopt — so feature[0] was
+    // 0.0 in every row ever persisted and every training CSV, and nothing noticed. This
+    // asserts the production path end to end, through export, where the model reads it.
+    auto state = make_state();
+    auto session = state->start_session("Ship the extractor fix", FocusMode::Normal);
+
+    // Events are spaced far enough apart to clear the ~1/sec prediction throttle, so each
+    // one produces a persisted feature row.
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 1000.0, "Cursor"));
+    state->process_event_for_test(ev(EventType::KeyPress, 1002.0, "Cursor"));
+    state->process_event_for_test(ev(EventType::KeyPress, 1045.0, "Cursor"));
+    state->stop_session(session.session_id);
+
+    TempDir temp;
+    const auto exported = state->export_training_data(temp.path, session.session_id);
+    REQUIRE(exported.feature_count > 0);
+
+    const auto features = read_file(temp.path / "features.csv");
+    // Read the named column explicitly rather than substring-matching the row: a plain
+    // find(",45,") also matches time_in_current_app, which is 45 here too, so it passed
+    // even with the bug present. Verified by reintroducing the bug and watching this fail.
+    CHECK(last_csv_column(features, "seconds_since_session_start") == doctest::Approx(45.0));
 }
 
 TEST_CASE("AppState accepts an injected logger and stays silent on the happy path") {

@@ -105,7 +105,17 @@ public:
     FeatureVector extract(double now_secs);
 
     void update_focus_score(double score, double alpha);
+    // Explicit origin. Used by tests and the parity harness, which know the timestamp the
+    // scenario starts at. Pass nullopt to mean "no active session" (feature stays 0).
     void reset_for_session(std::optional<double> session_start_secs);
+
+    // Start a session whose origin is not yet known, seeding it from the first event.
+    //
+    // AppState can't call reset_for_session with a real value: `started_at` is wall-clock
+    // while event timestamps come from a monotonic clock started at process launch, and
+    // there is no conversion between the two. Passing nullopt (which is what it used to do)
+    // silently pinned seconds_since_session_start to 0.0 for every row ever written.
+    void begin_session();
     FeatureVector update(const CaptureEvent& ev, const std::vector<AppRuleRecord>& rules = {});
     FeatureVector extract(double now_secs, const std::vector<AppRuleRecord>& rules) const;
 
@@ -122,6 +132,7 @@ private:
     std::deque<WindowedEvent> events_30s_;
     std::deque<WindowedEvent> events_5min_;
     std::optional<double> session_start_secs_;
+    bool awaiting_session_start_ = false;  // seed session_start_secs_ from the next event
     std::optional<double> last_break_secs_;
     std::string current_app_name_;
     std::string current_window_title_;

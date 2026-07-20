@@ -122,6 +122,30 @@ TEST_CASE("feature extractor computes rolling keyboard mouse and context feature
     CHECK(features.is_ide() == doctest::Approx(1.0));
 }
 
+TEST_CASE("begin_session seeds the session origin from the first event") {
+    // The production path: AppState can't supply a start timestamp (wall-clock vs the
+    // monotonic event clock), so the origin comes from the first event instead. Before
+    // this existed, start_session passed nullopt and feature[0] was pinned to 0.0 forever.
+    FeatureExtractor extractor;
+    extractor.begin_session();
+
+    extractor.update(event(EventType::WindowFocusChange, 500.0, "Cursor", "main.cpp"));
+    auto features = extractor.update(event(EventType::KeyPress, 512.0, "Cursor", "main.cpp"));
+
+    CHECK(features.seconds_since_session_start() == doctest::Approx(12.0));
+}
+
+TEST_CASE("no active session leaves the session-start feature at zero") {
+    // reset_for_session(nullopt) is the stop path and must NOT lazily seed — with no
+    // session there is nothing to measure elapsed time against.
+    FeatureExtractor extractor;
+    extractor.reset_for_session(std::nullopt);
+
+    auto features = extractor.update(event(EventType::KeyPress, 900.0, "Cursor", "main.cpp"));
+
+    CHECK(features.seconds_since_session_start() == doctest::Approx(0.0));
+}
+
 TEST_CASE("feature extractor interning preserves unique_apps_5min count") {
     FeatureExtractor extractor;
     extractor.update(event(EventType::WindowFocusChange, 0.0, "Cursor", "a.cpp"));
