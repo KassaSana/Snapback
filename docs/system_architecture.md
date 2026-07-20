@@ -3,7 +3,7 @@
 **Status:** Living document · **Audience:** Engineering leadership, senior ICs, reviewers
 **Scope:** The single-binary C++/webview rewrite of Snapback (v0.2 parity target)
 **Author role:** Principal Systems Architect
-**Source of truth:** the Rust/Tauri original at `../Snapback/src-tauri/`; this document
+**Source of truth:** the Rust/Tauri original at `../FocoFlow-1/src-tauri/`; this document
 describes the C++ port's realized design, not a greenfield proposal.
 
 ---
@@ -94,7 +94,7 @@ thread, fronted by a UI-thread event loop:
 | **IPC layer** | `kIpcShim` + emit | A hand-written JS shim that satisfies `@tauri-apps/api` v2 (`window.__TAURI_INTERNALS__`) atop webview's binding protocol; a host→frontend event bus | `src/app/ipc_shim.hpp` |
 
 **Topological invariant — the three-way name contract:** every command name must match
-across (a) the frontend's `invoke(...)` calls (`../Snapback/frontend/src/api.ts`), (b)
+across (a) the frontend's `invoke(...)` calls (`../FocoFlow-1/frontend/src/api.ts`), (b)
 `register_commands`, and (c) the Rust `generate_handler![...]` list. A mismatch fails
 silently at runtime (the UI call rejects), so this contract is treated as sacred and is
 the first thing a reviewer checks.

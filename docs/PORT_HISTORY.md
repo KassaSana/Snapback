@@ -6,7 +6,7 @@
 > `Learn:` / C++-vs-Rust notes are the reason the project exists. For what's left to build,
 > see [ROADMAP.md](ROADMAP.md); this file is history, not a live TODO.
 
-The Rust source at `../Snapback/src-tauri/src/` was the spec. For every phase, the
+The Rust source at `../FocoFlow-1/src-tauri/src/` was the spec. For every phase, the
 "Rust reference" line names the file that was read and ported.
 
 > **The work loop each phase followed:** write the code → write/adjust the doctest →
@@ -125,7 +125,7 @@ prediction, read it back; assert `recap()` math matches a known fixture.
    (the scaffold has placeholder numbers — replace them).
 4. `goal_alignment` + `focus_modes` helpers: port verbatim.
 
-**Tests:** this is the highest-value test surface. Port `../Snapback`'s
+**Tests:** this is the highest-value test surface. Port `../FocoFlow-1`'s
 feature-parity fixtures (`fixtures/feature_parity/scenarios.json`): feed the same
 event sequences, assert the C++ feature vector matches Rust within a tolerance.
 That parity check is your proof the port is faithful.
@@ -218,7 +218,7 @@ list + setup closure).
    the Rust handler list exactly.
 4. `events::emit_or_log` → the `emit()` helper: on each tick, push the new
    `PredictionRecord` (and snapback payloads) to the frontend.
-5. Dev workflow: run `../Snapback/frontend`'s Vite server, then launch the C++ app.
+5. Dev workflow: run `../FocoFlow-1/frontend`'s Vite server, then launch the C++ app.
 
 **Tests:** command handlers are thin — unit-test the `AppState` methods they call
 (done in Phase 5). Verify the wired UI by **running it** and watching the dashboard
@@ -249,7 +249,7 @@ falling back to the heuristic when absent — exactly the Rust policy.
    fallback.
 
 **Tests:** run a tiny known model on a fixed feature vector, assert the output
-matches the Rust ONNX path (port a fixture from `../Snapback`).
+matches the Rust ONNX path (port a fixture from `../FocoFlow-1`).
 
 **Done when:** with a model present, `get_health` reports `backend: "onnx"` and
 predictions come from the model; without one, it says `heuristic`.
@@ -283,7 +283,7 @@ card; the tray menu works; macOS permission flow matches the Rust README steps.
 
 ## Phase 9 — Packaging, CI, parity sign-off
 
-**Rust reference:** `../Snapback/.github/workflows/`, `docs/DEPLOYMENT.md`.
+**Rust reference:** `../FocoFlow-1/.github/workflows/`, `docs/DEPLOYMENT.md`.
 
 **Goal:** a shippable binary + a CI that guards the port.
 
@@ -315,6 +315,6 @@ is green including parity.
 
 ## Definition of "done" for the whole rewrite
 
-The C++ app reaches feature parity with `../Snapback` v0.2: live focus states, the
+The C++ app reaches feature parity with `../FocoFlow-1` v0.2: live focus states, the
 snapback overlay, focus modes, one-tap labels, session recap, SQLite persistence,
 optional ONNX — and the **feature-parity fixtures pass against both codebases**.

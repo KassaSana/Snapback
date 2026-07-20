@@ -38,7 +38,7 @@ py .\scripts\run_feature_parity_dual.py
 ```
 
 This script builds the small `snapback_feature_parity_export` tool, runs the
-original Rust/Python parity CLI from `../Snapback`, exports Rust and C++ feature
+original Rust/Python parity CLI from `../FocoFlow-1`, exports Rust and C++ feature
 vectors for the same `fixtures/feature_parity/scenarios.json`, and compares every
 training column within `1e-6`. On CI/macOS/Linux, use `python` instead of the
 Windows `py` launcher. CI checks out the Rust source-of-truth layout from the

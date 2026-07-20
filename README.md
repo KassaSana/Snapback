@@ -12,7 +12,7 @@ The pipeline runs end-to-end today: global input capture → feature extraction 
 classifier (heuristic or ONNX) → SQLite → a system-webview UI, with a native overlay
 and tray. The React frontend from the original is reused **unchanged**.
 
-The original lives at [`../Snapback`](../Snapback) (Rust + Tauri + React) and is the
+The original lives at [`../FocoFlow-1`](../FocoFlow-1) (Rust + Tauri + React) and is the
 source of truth for behavior, thresholds, and the IPC contract.
 
 > Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first. It maps every Rust module to

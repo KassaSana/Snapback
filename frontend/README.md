@@ -1,4 +1,4 @@
-# Frontend: reuse ../Snapback/frontend unchanged
+# Frontend: reuse ../FocoFlow-1/frontend unchanged
 
 The React dashboard does **not** get rewritten. It's plain web code (Vite +
 TypeScript + React) and knows nothing about Rust vs C++ — it only speaks the IPC
@@ -22,7 +22,7 @@ Two compatibility rules keep it working against the C++ core:
 
 ## During the port
 
-- **Dev:** run the existing Vite dev server (`cd ../Snapback/frontend && npm run dev`)
+- **Dev:** run the existing Vite dev server (`cd ../FocoFlow-1/frontend && npm run dev`)
   and point `main.cpp`'s `w.navigate(...)` at `http://localhost:5173`.
 - **Prod:** `npm run build` there, then embed `dist/` in the C++ binary and load it
   via a custom scheme or data URLs (CSP-safe, offline).

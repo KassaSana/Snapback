@@ -1,8 +1,13 @@
 # Snapback C++ — architecture sketch
 
 This mirrors **today's** Snapback (v0.2: one Tauri binary), not the retired 4-layer
-C++→ZeroMQ→Python→Spring design in `../Snapback/docs/ARCHITECTURE.md`. That older
+C++→ZeroMQ→Python→Spring design in `../FocoFlow-1/docs/ARCHITECTURE.md`. That older
 design is the thing the project already migrated *away from* — don't rebuild it.
+
+> Paths corrected 2026-07-20: every `../Snapback/...` reference in this file pointed at
+> **this repo itself** — self-referential, so anyone following one landed back where they
+> started and concluded the Rust spec was gone. The same bug was fixed in `CLAUDE.md`
+> earlier the same day but survived in five other docs. The Rust original is `../FocoFlow-1`.
 
 ## The shape (unchanged from Rust)
 
@@ -24,10 +29,27 @@ design is the thing the project already migrated *away from* — don't rebuild i
                        ▼
               System WebView (WebView2 / WKWebView / WebKitGTK)
                        │
-              React dashboard  (reused from ../Snapback/frontend, unchanged)
+              React dashboard  (reused from ../FocoFlow-1/frontend, unchanged)
 ```
 
 ## Module map: Rust → C++
+
+> ⚠️ **This table is the pre-port *plan*, not the shipped shape.** Verified 2026-07-20 —
+> five of the C++ paths below do not exist, and two library choices were never taken.
+> Reconciling it is Roadmap **12.1**; until then, trust the code over this table.
+>
+> | This table says | Reality |
+> |---|---|
+> | `app/events.hpp` | Never created — `emit()` lives in `app/commands.hpp:222` |
+> | `engine/goal_alignment.hpp/.cpp` | Folded into `engine/app_context.{hpp,cpp}` |
+> | `capture/active_window_*.cpp` | One file, `capture/active_window.cpp`, `#if`-branched |
+> | `capture/permissions_*.cpp` | One file, `capture/permissions.cpp`, `#if`-branched |
+> | `snapback/overlay.hpp/.cpp` | Split as `overlay_common` / `overlay_windows` / `overlay_stub` |
+> | Logging via `spdlog` | Hand-written `util/logger.hpp` — spdlog is not a dependency |
+> | UUID via `stduuid` | Not a dependency |
+>
+> The rest of the table matches. This is a *sketch that predates the build*, kept because
+> the Rust→C++ reasoning is the teaching value; the file list is just stale.
 
 | Rust (`src-tauri/src/`)        | C++ (`src/`)                     | Library / mechanism |
 |--------------------------------|----------------------------------|---------------------|
