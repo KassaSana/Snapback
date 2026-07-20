@@ -10,6 +10,8 @@
 #include <string>
 #include <string_view>
 
+#include "types.hpp"
+
 namespace snapback {
 
 struct NotificationPayload {
@@ -41,6 +43,20 @@ inline NotificationPayload build_hyperfocus_notification(std::uint64_t continuou
     n.title = "Time for a break";
     n.body = "You've been locked in for " + std::to_string(continuous_minutes) +
              " minutes straight. Stand up and stretch.";
+    return n;
+}
+
+// Fired on the return-from-distraction edge (ContextTracker::build_snapback). This is a
+// "welcome back" card, not a drifting-off nudge: by the time SnapbackPayload exists the
+// user has already returned to the on-task app, so the copy reuses payload.summary (e.g.
+// "Return to auth.ts") — the same line the native overlay already shows — so the toast
+// and overlay never disagree.
+inline NotificationPayload build_snapback_notification(const SnapbackPayload& payload) {
+    NotificationPayload n;
+    n.title = "Welcome back";
+    n.body = payload.summary.empty()
+                 ? "You're back on task. Pick up where you left off."
+                 : payload.summary;
     return n;
 }
 

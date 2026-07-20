@@ -145,10 +145,14 @@ int main() {
         std::string ev = event;
         w.dispatch([&w, ev, payload] {
             emit(w, ev.c_str(), payload);
-            // On the return-from-distraction edge, also pop the native overlay card.
+            // On the return-from-distraction edge, also pop the native overlay card and a
+            // toast (Roadmap 0.6) — the toast is the one that reaches the user when the
+            // app window isn't focused, which is exactly when the overlay alone can't.
             if (ev == "snapback") {
                 try {
-                    Overlay::instance().show(nlohmann::json::parse(payload).get<SnapbackPayload>());
+                    const auto snap = nlohmann::json::parse(payload).get<SnapbackPayload>();
+                    Overlay::instance().show(snap);
+                    Tray::instance().show_notification(build_snapback_notification(snap));
                 } catch (...) {
                     // A malformed payload must never take down the UI thread.
                 }

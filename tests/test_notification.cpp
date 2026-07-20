@@ -28,3 +28,22 @@ TEST_CASE("native notification delivery requires title and body") {
     CHECK_FALSE(notification_payload_is_valid(NotificationPayload{"", "body"}));
     CHECK_FALSE(notification_payload_is_valid(NotificationPayload{"title", ""}));
 }
+
+TEST_CASE("build_snapback_notification mirrors the overlay's summary line") {
+    SnapbackPayload payload;
+    payload.summary = "Return to auth.ts";
+    payload.app_name = "Cursor";
+    payload.distraction_duration_secs = 90;
+
+    const auto n = build_snapback_notification(payload);
+    CHECK(n.title == "Welcome back");
+    CHECK(n.body == "Return to auth.ts");
+    CHECK(notification_payload_is_valid(n));
+}
+
+TEST_CASE("build_snapback_notification falls back gracefully with no summary") {
+    SnapbackPayload payload;  // summary left empty
+    const auto n = build_snapback_notification(payload);
+    CHECK_FALSE(n.body.empty());
+    CHECK(notification_payload_is_valid(n));
+}
