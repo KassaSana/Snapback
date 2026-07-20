@@ -136,14 +136,15 @@ Fixed so far: 5.2, 5.7, 5.8, plus (in the Done archive) the feature-vector sessi
 command injection, feature-snapshot retention, and hot-path indexes. Each entry below cites
 the code it came from so nothing has to be re-derived.
 
-- **5.1 — ONNX inference discards user rules, thrash, and drift.** `M`
-  `classifier.cpp:90-108` calls `apply_focus_guardrails(..., 0.0, 0.0, false, mode)` when a
-  model is loaded — `thrash`, `drift`, and `personal_block` are hardcoded, and
-  `session_goal` / `rules` / `categories` are dropped entirely. So **deploying a trained
-  model silently disables the user's Block app rules** (`personal_block` is the strongest
-  guardrail signal) and pins `goal_alignment` to 0.5. `tests/test_onnx.cpp` only covers
-  load/run/fallback, so CI can't see it. Blocks 2.3 — retraining is not safe to ship until
-  a deployed model respects user configuration.
+- **5.1 — ~~ONNX inference discards user rules, thrash, and drift~~.** ✅ **done** (`912b01c`)
+  Fixed by moving the layering boundary: `OnnxModel::infer_probabilities` now returns raw
+  class probabilities, and the classifier combines them with `compute_context_signals`
+  (thrash, drift, goal alignment, `personal_block`) via `blend_model_output`. Both are free
+  functions **specifically so the logic is testable without `SNAPBACK_ONNX` compiled** —
+  the bug was invisible because it lived inside the ONNX-only branch. The new test feeds a
+  confident DEEP_FOCUS probability vector through both an unblocked and a blocked context
+  and asserts the Block rule wins. The two `predict` overloads now delegate rather than
+  duplicate, which is how they drifted apart originally. **Unblocks 2.3.**
 
 - **5.2 — ~~ONNX failure writes an empty `focus_state`~~.** ✅ **done** (`7d4e6f3`)
   `OnnxModel::run` now returns `std::optional<PredictionScores>`; both `Classifier::predict`
@@ -218,9 +219,9 @@ the code it came from so nothing has to be re-derived.
   (and maps signals to `128 + signo`). Confirmed against a real child: `sh -c 'exit 2'`
   returns 512. `train_from_export` itself still has no test — it shells out to Python.
 
-- **5.9 — CSV export never checks for write failure.** `S`
-  `storage.cpp:915`/`:957` check the stream only at open. On a full disk the export returns
-  a success result whose `feature_count` disagrees with the truncated file.
+- **5.9 — ~~CSV export never checks for write failure~~.** ✅ **done** (`73370b8`)
+  Both blocks now `flush()` and re-check the stream before returning, throwing rather than
+  reporting a `feature_count` for rows that never reached disk.
 
 ---
 
@@ -263,12 +264,16 @@ Pull any of these in anytime; they pay for themselves as the surface grows.
 
 ## Suggested near-term sequence
 
-The no-decision-needed Tier 5 fixes (5.2, 5.7, 5.8) are done. What's left splits cleanly:
+**Every Tier 5 item that didn't need a decision is done** (5.1, 5.2, 5.7, 5.8, 5.9). What's
+left splits cleanly:
 
-- **Needs a decision from Kassa first:** 5.3 (wire confidence gating or delete the claim),
-  5.4 (what `thrash_spikes` measures), 4.11 (diverge from Rust on title parsing?), 1.2.
-- **Ready to build:** **5.1** (ONNX drops user rules — blocks 2.3), **5.9**, then
-  **0.3 verification on a Mac**, then Tier 3 platform work (3.0 autostart, 3.1/3.2 tray).
+- **Needs a decision from Kassa first:** 5.3 (wire confidence gating or delete the Done
+  claim on 2.4), 5.4 (what `thrash_spikes` measures), 4.11 (diverge from Rust on title
+  parsing?), 5.6 (needs both extractors changed together), 1.2.
+- **Ready to build:** **0.3 verification on a real Mac** (nothing else can confirm it),
+  then Tier 3 platform work — 3.0 autostart via launchd/systemd, 3.1/3.2 real tray +
+  overlay replacing the no-op stubs. **2.3 (model retraining) is unblocked now that 5.1 is
+  fixed**, and is the biggest product win left.
 
 ### Original sequence (superseded, kept for context)
 
