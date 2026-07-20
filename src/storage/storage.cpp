@@ -295,17 +295,24 @@ std::string double_cell(double value) {
 
 std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
                                      Logger* logger) {
+    // Declared outside the try so the catch blocks below can actually report the cause.
+    Logger local_logger(std::cerr);
+    Logger& log = logger ? *logger : local_logger;
+    const auto db_path = (app_data_dir / "focoflow.db").string();
     try {
         std::filesystem::create_directories(app_data_dir);
         sqlite3* db = nullptr;
-        const auto db_path = (app_data_dir / "focoflow.db").string();
         if (sqlite3_open(db_path.c_str(), &db) != SQLITE_OK) {
-            if (db) sqlite3_close(db);
+            std::ostringstream msg;
+            msg << "storage: could not open " << db_path;
+            if (db) {
+                msg << ": " << sqlite3_errmsg(db);
+                sqlite3_close(db);
+            }
+            log.error(msg.str());
             return std::nullopt;
         }
         Storage storage(db);
-        Logger local_logger(std::cerr);
-        Logger& log = logger ? *logger : local_logger;
         exec(storage.db_, "PRAGMA foreign_keys = ON;");
         // WAL + NORMAL: commits append to the write-ahead log and only fsync at
         // checkpoints, instead of an fsync per statement (synchronous=FULL default). This
@@ -349,7 +356,19 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
             log.warn(msg.str());
         }
         return storage;
+    } catch (const std::exception& err) {
+        // Previously a bare `catch (...)` returning nullopt, which made a corrupt DB, a
+        // permissions error, a failed migration, and a full disk indistinguishable to the
+        // caller — and to the user, who just saw the app decline to start. The inner
+        // prune/vacuum handlers already logged; only this outer one was blind.
+        std::ostringstream msg;
+        msg << "storage: failed to open " << db_path << ": " << err.what();
+        log.error(msg.str());
+        return std::nullopt;
     } catch (...) {
+        std::ostringstream msg;
+        msg << "storage: failed to open " << db_path << " (unknown error)";
+        log.error(msg.str());
         return std::nullopt;
     }
 }

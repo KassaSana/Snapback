@@ -392,3 +392,21 @@ TEST_CASE("storage hot queries use an index instead of scanning") {
     CHECK(uses_index(
         "SELECT app_name FROM context_snapshots WHERE session_id = 'x' ORDER BY timestamp ASC"));
 }
+
+TEST_CASE("Storage::open explains why it failed instead of returning a bare nullopt") {
+    // The old outer `catch (...)` returned nullopt with no diagnostic, so a corrupt DB, a
+    // permissions problem, and a full disk all looked identical — the user just saw the app
+    // decline to start. Force a real failure by putting a directory where the DB file goes:
+    // sqlite can't open it, and the reason must reach the injected logger.
+    TempDir temp;
+    std::filesystem::create_directories(temp.path / "focoflow.db");
+
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    auto storage = Storage::open(temp.path, &logger);
+
+    CHECK_FALSE(storage.has_value());
+    const auto logged = log_out.str();
+    CHECK(logged.find("ERROR") != std::string::npos);
+    CHECK(logged.find("focoflow.db") != std::string::npos);
+}
