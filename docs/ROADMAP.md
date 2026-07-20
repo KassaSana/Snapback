@@ -140,16 +140,6 @@ Pull any of these in anytime; they pay for themselves as the surface grows.
   An explicit `schema_version` table with ordered migrations, and optional SQLCipher
   encryption-at-rest for the local DB.
 
-- **4.8 — Decide the fate of `dismiss_snapback`.** `S`
-  The IPC command is registered in `commands.hpp` but nothing calls it — the native
-  overlay self-dismisses (timeout/click) and the frontend never invokes it. Either wire a
-  frontend dismiss affordance to it or delete it; an unused command on the sacred IPC
-  contract is a trap for future readers.
-
-- **4.9 — Fix duplicate-library link warning.** `S`
-  `ld: warning: ignoring duplicate libraries: 'libsnapback_capture.a', 'libsnapback_core.a'`
-  on the test binary — dedupe the CMake `target_link_libraries` lines.
-
 - **4.10 — In-app diagnostics/health view.** `M`
   The deferred half of old 4.1: once the logger is adopted (0.5), surface recent log lines
   + health state in a diagnostics panel.
@@ -159,9 +149,9 @@ Pull any of these in anytime; they pay for themselves as the surface grows.
 ## Suggested near-term sequence
 
 Default order if you don't want to pick freely:
-**4.8 → 4.9 → 1.2 → 1.1** — sweep the two small chores, then turn to the v1 experience.
-Big rocks (0.3 macOS capture, 2.1 analytics, 2.3 retraining) come once the small stuff is
-flushed.
+**1.2 → 1.1** — Tier 4's cheap chores are cleared (see Done archive); next up is the v1
+experience. Big rocks (0.3 macOS capture, 2.1 analytics, 2.3 retraining) come once the
+small stuff is flushed.
 
 ---
 
@@ -194,3 +184,19 @@ history; details live in git log and [PORT_HISTORY.md](PORT_HISTORY.md).
 - **0.8 (ex-Tier-0) — `focus_summary` over IPC + UI** — `get_focus_summary` command,
   frontend mapper/hook, and a `FocusSummaryCard` tile row on the dashboard. First slice of
   2.2 (daily/weekly report) is now unblocked.
+- **4.8 — Wired `dismiss_snapback`, and fixed a real bug it exposed** — the audit found
+  this wasn't just an unused command: `ContextTracker::dismiss_recovery()` is the *only*
+  exit from its `Recovering` state, and nothing called it from any UI — so on every
+  platform, the tracker got stuck after the first snapback of a session and silently
+  never fired a second one. Fixed by routing both native dismiss triggers (Windows
+  overlay auto-timeout + click, `overlay_windows.cpp`) through `Overlay::dismiss()` with a
+  registered callback into `AppState::dismiss_snapback()` (mirrors `Tray::install`'s
+  callback pattern), plus a frontend "Dismiss" button on the snapback note calling the
+  same IPC command. Added the first-ever test for this path
+  (`test_app_state.cpp`), which proves a second snapback now fires after dismiss.
+  **Caveat:** the Windows-side native wiring (`overlay_windows.cpp`) could not be
+  compiled or tested on this (macOS) machine — CI or a Windows run should confirm it.
+- **4.9 — Fixed the duplicate-library link warning** — `snapback_tests`, `snapback`, and
+  the benchmark targets were re-listing `snapback_core`/`snapback_capture`/`sqlite3`,
+  which `snapback_app` already re-exports `PUBLIC`ly; dropped the redundant entries in
+  `CMakeLists.txt`.
