@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIRST_RUN_ACK_KEY } from "../src/permissionWizardState";
@@ -84,6 +84,22 @@ describe("App first-run permission wizard", () => {
     // Platform setup steps from the health probe are surfaced inside the wizard.
     expect(wizard.getByText("Enable Snapback")).toBeInTheDocument();
     expect(wizard.getByRole("button", { name: /Check again/i })).toBeInTheDocument();
+  });
+
+  it("lets the user pick a default focus mode from the wizard", async () => {
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog");
+    const wizard = within(dialog);
+    const select = wizard.getByLabelText("Default focus mode") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("normal"));
+
+    fireEvent.change(select, { target: { value: "deep" } });
+
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("set_focus_mode", { mode: "deep" }),
+    );
+    expect(select.value).toBe("deep");
   });
 
   it("hides the wizard once capture is confirmed running", async () => {

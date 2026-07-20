@@ -6,6 +6,7 @@ import {
   shouldShowPermissionWizard,
   writeFirstRunAck,
 } from "./permissionWizardState";
+import { FOCUS_MODES, type FocusMode } from "./useSession";
 
 type PermissionWizardProps = {
   healthChecked: boolean;
@@ -14,6 +15,8 @@ type PermissionWizardProps = {
   permissionMessage: string | null;
   permissionSteps: string[];
   onRefreshPermissions: () => void;
+  focusMode: FocusMode;
+  onFocusModeChange: (mode: FocusMode) => void;
 };
 
 export function PermissionWizard({
@@ -23,6 +26,8 @@ export function PermissionWizard({
   permissionMessage,
   permissionSteps,
   onRefreshPermissions,
+  focusMode,
+  onFocusModeChange,
 }: PermissionWizardProps) {
   const [acknowledged, setAcknowledged] = useState(() => readFirstRunAck());
   const ready = captureIsReady(captureRunning, captureProbeConfirmed);
@@ -68,6 +73,19 @@ export function PermissionWizard({
             ))}
           </ol>
         ) : null}
+        <label className="field">
+          <span>Default focus mode</span>
+          <select
+            value={focusMode}
+            onChange={(event) => onFocusModeChange(event.target.value as FocusMode)}
+          >
+            {FOCUS_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="wizard-actions">
           <button className="primary-button" onClick={() => void onRefreshPermissions()}>
             Check again

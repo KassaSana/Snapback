@@ -172,6 +172,8 @@ export default function App() {
         permissionMessage={permissionMessage}
         permissionSteps={permissionSteps}
         onRefreshPermissions={handleRefreshPermissions}
+        focusMode={focusMode}
+        onFocusModeChange={handleFocusModeChange}
       />
 
       <AppHeader
