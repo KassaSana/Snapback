@@ -63,11 +63,11 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         case WM_TIMER:
             if (wparam == kDismissTimerId) {
                 KillTimer(hwnd, kDismissTimerId);
-                ShowWindow(hwnd, SW_HIDE);
+                Overlay::instance().dismiss();
             }
             return 0;
         case WM_LBUTTONUP:  // click to dismiss
-            ShowWindow(hwnd, SW_HIDE);
+            Overlay::instance().dismiss();
             return 0;
         case WM_DESTROY: {
             delete reinterpret_cast<std::wstring*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -111,6 +111,11 @@ public:
 
     void dismiss() override {
         if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
+        if (on_dismiss_) on_dismiss_();
+    }
+
+    void set_dismiss_callback(std::function<void()> on_dismiss) override {
+        on_dismiss_ = std::move(on_dismiss);
     }
 
 private:
@@ -132,6 +137,7 @@ private:
     }
 
     HWND hwnd_ = nullptr;
+    std::function<void()> on_dismiss_;
 };
 
 }  // namespace

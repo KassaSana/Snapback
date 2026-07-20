@@ -8,6 +8,7 @@ import {
 
 type LiveStatusCardsProps = {
   hyperfocusNote: string | null;
+  onDismissSnapback: () => void;
   prediction: PredictionRecord | null;
   riskBadgeLabel: string;
   riskClass: string;
@@ -17,6 +18,7 @@ type LiveStatusCardsProps = {
 
 export function LiveStatusCards({
   hyperfocusNote,
+  onDismissSnapback,
   prediction,
   riskBadgeLabel,
   riskClass,
@@ -69,7 +71,14 @@ export function LiveStatusCards({
           ))}
         </ul>
         {hyperfocusNote ? <p className="helper-text alert">{hyperfocusNote}</p> : null}
-        {snapbackNote ? <p className="helper-text snapback">{snapbackNote}</p> : null}
+        {snapbackNote ? (
+          <p className="helper-text snapback">
+            {snapbackNote}{" "}
+            <button className="link-button" onClick={onDismissSnapback}>
+              Dismiss
+            </button>
+          </p>
+        ) : null}
       </section>
     </>
   );

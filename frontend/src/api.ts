@@ -265,6 +265,7 @@ export const api = {
     return mapSettings(raw ?? {});
   },
   setFocusMode: (mode: string) => invoke("set_focus_mode", { mode }),
+  dismissSnapback: () => invoke("dismiss_snapback"),
   reloadClassifierModel: async () => {
     const raw = await invoke<Record<string, unknown>>("reload_classifier_model");
     return mapClassifierStatus(raw);

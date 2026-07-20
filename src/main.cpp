@@ -114,6 +114,14 @@ int main() {
     auto state = std::make_unique<AppState>(std::move(*storage), data_dir, &logger);
     state->start_engine();
 
+    // The overlay's own dismiss triggers (auto-timeout, click) have no other route back
+    // into app state — ContextTracker::dismiss_recovery() is the only exit from
+    // Recovering, so without this the tracker gets stuck after the first snapback of a
+    // session and never fires another one. Registering here covers every dismiss path,
+    // not just the IPC `dismiss_snapback` command.
+    Overlay::instance().set_dismiss_callback(
+        [state = state.get()] { state->dismiss_snapback(); });
+
     webview::webview w(/*debug=*/true, nullptr);
     w.set_title("Snapback");
     w.set_size(1100, 760, WEBVIEW_HINT_NONE);

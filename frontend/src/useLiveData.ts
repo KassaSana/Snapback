@@ -98,6 +98,18 @@ export const useLiveData = () => {
     setSnapbackNote(`Snapback: ${payload.summary}`);
   }, []);
 
+  const handleDismissSnapback = useCallback(async () => {
+    // Clearing the note is what the user asked for regardless of the backend call's
+    // outcome; the command's real job is unsticking ContextTracker's Recovering state
+    // (its only exit), not the note itself, so a failure here shouldn't trap the UI.
+    setSnapbackNote(null);
+    try {
+      await api.dismissSnapback();
+    } catch {
+      // Best-effort; nothing actionable to show the user for this.
+    }
+  }, []);
+
   const handleHyperfocus = useCallback((payload: { message: string }) => {
     setHyperfocusNote(payload.message);
   }, []);
@@ -109,6 +121,7 @@ export const useLiveData = () => {
 
   return {
     contextTimeline,
+    handleDismissSnapback,
     handleHyperfocus,
     handlePrediction,
     handleSnapback,

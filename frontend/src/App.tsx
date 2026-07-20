@@ -201,6 +201,7 @@ export default function App() {
       <main className="grid">
         <LiveStatusCards
           hyperfocusNote={live.hyperfocusNote}
+          onDismissSnapback={live.handleDismissSnapback}
           prediction={live.prediction}
           riskBadgeLabel={live.riskBadgeLabel}
           riskClass={live.riskClass}

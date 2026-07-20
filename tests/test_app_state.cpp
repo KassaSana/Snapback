@@ -268,6 +268,38 @@ TEST_CASE("AppState fires a snapback payload on return from a long distraction")
     CHECK(state->take_snapback() == std::nullopt);
 }
 
+TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker for a "
+          "second snapback") {
+    auto state = make_state();
+    state->start_session("implement the classifier", FocusMode::Normal);
+
+    // First distraction/return cycle: establish context, drift, come back -> Recovering.
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 100.0, "Cursor",
+                                     "classifier.cpp - Snapback"));
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 101.0, "Google Chrome",
+                                     "YouTube - Recommended"));
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 140.0, "Cursor",
+                                     "classifier.cpp - Snapback"));
+    REQUIRE(state->latest_snapback().has_value());
+
+    // Without dismiss_snapback(), ContextTracker has no other way out of Recovering —
+    // dismiss_recovery() is its only caller — so a second distraction/return cycle would
+    // silently produce no payload at all. Calling it here is what proves the fix, not
+    // just that the pending payload got cleared.
+    state->dismiss_snapback();
+    CHECK(state->latest_snapback() == std::nullopt);
+
+    // Second distraction/return cycle, well past the first: should fire again.
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 200.0, "Google Chrome",
+                                     "YouTube - Recommended"));
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 240.0, "Cursor",
+                                     "classifier.cpp - Snapback"));
+
+    auto second = state->take_snapback();
+    REQUIRE(second.has_value());
+    CHECK(second->app_name == "Cursor");
+}
+
 TEST_CASE("AppState app-rule CRUD upserts, updates in place, and deletes") {
     auto state = make_state();
 

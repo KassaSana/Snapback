@@ -7,6 +7,7 @@
 // unit-tested without a real window (as overlay.rs did for positioning).
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "types.hpp"
@@ -41,6 +42,12 @@ public:
     // Show the "here's where you left off" card, then auto-dismiss.
     virtual void show(const SnapbackPayload& payload) = 0;
     virtual void dismiss() = 0;
+
+    // Fired whenever the card is dismissed — by the auto-dismiss timer, a click, or an
+    // explicit dismiss() call — so a caller can clear app state (ContextTracker's
+    // Recovering state has no other exit) even when the user dismisses natively instead
+    // of through the IPC `dismiss_snapback` command. main.cpp wires this once at startup.
+    virtual void set_dismiss_callback(std::function<void()> on_dismiss) = 0;
 
     static Overlay& instance();
 };
