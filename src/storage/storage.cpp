@@ -710,6 +710,15 @@ SessionRecap Storage::recap(const std::string& session_id) {
     }
 
     {
+        // The 0.7 is deliberate and matches the Rust original (storage/mod.rs:633): it's an
+        // *absolute* "this was a strong distraction" bar, not the mode's alerting threshold
+        // (risk_threshold() = 0.55/0.70/0.85). Keeping it absolute stops Deep mode's higher
+        // sensitivity from inflating session-quality metrics that feed auto-labels.
+        //
+        // It is not free of mode effects — focus_state itself is mode-derived, so Recovery
+        // rows between 0.7 and 0.85 are never DISTRACTED and never counted. Whether that
+        // matters is a product question; see ROADMAP 5.4. Don't "fix" this to
+        // risk_threshold(mode) without deciding what thrash_spikes is supposed to measure.
         Stmt stmt(db_,
                   "SELECT COUNT(*) FROM predictions WHERE session_id = ?1 "
                   "AND distraction_risk >= 0.7 AND focus_state = 'DISTRACTED'");

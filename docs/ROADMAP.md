@@ -154,13 +154,27 @@ it came from so nothing has to be re-derived.
   on a `[0,1]` scale, or delete it and drop the 2.4 "confidence gating" claim** — which is
   currently in the Done archive on the strength of code that never runs.
 
-- **5.4 — `recap()` hardcodes 0.7 while `risk_threshold(mode)` varies.** `S`
-  `storage.cpp:691` counts thrash spikes at `distraction_risk >= 0.7`, but the threshold
-  that produced the `DISTRACTED` rows is 0.55 / 0.70 / 0.85 by focus mode
-  (`types.hpp:86-92`). A Deep-mode session marks rows distracted at 0.55, so everything
-  between 0.55 and 0.7 is excluded from the count. `infer_session_label` branches on
-  `thrash_spikes >= 3`, so **identical behavior gets different auto-labels depending on
-  focus mode — and those labels are written into the training set.** Join `sessions.focus_mode`.
+- **5.4 — What should `thrash_spikes` measure?** `S` — **needs a product decision, not a fix**
+
+  `recap()` counts `distraction_risk >= 0.7 AND focus_state = 'DISTRACTED'`. The audit
+  called the constant a bug (the mode's threshold is 0.55/0.70/0.85); **it isn't, or at
+  least not obviously.** Two things checked on 2026-07-20 before attempting a change:
+
+  1. The Rust original hardcodes the identical 0.7 (`storage/mod.rs:633`), so this is a
+     faithful port, not drift.
+  2. There's a coherent reading where 0.7 is an *absolute* "strong distraction" bar,
+     deliberately mode-independent so Deep mode's higher sensitivity doesn't inflate
+     session-quality metrics — which is arguably what you want for comparable auto-labels.
+
+  Switching to `risk_threshold(mode)` was tried and reverted: it breaks the existing recap
+  test, and it *increases* mode-dependence for Deep rather than removing it.
+
+  The real residual oddity is different: `apply_focus_guardrails` (`classifier.cpp:167`)
+  also marks rows `DISTRACTED` via `thrash >= 0.75` or a `personal_block` app rule, with no
+  risk floor. So a blocked-app row at risk 0.3 is `DISTRACTED` but never a "spike", while
+  Recovery rows between 0.7 and 0.85 are never `DISTRACTED` and so never counted either.
+  **Decide what the metric means** — absolute intensity, mode-relative alerting, or simply
+  `COUNT(*) WHERE focus_state = 'DISTRACTED'` — then make the query say it.
 
 - **5.5 — Retention silently no-ops on unparseable timestamps.** `S`
   `storage.cpp:1004`/`:1011` use `datetime(timestamp) < datetime(?1)`. If `datetime()` can't
