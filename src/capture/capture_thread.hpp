@@ -21,7 +21,14 @@ public:
     // 65,536 events ≈ 1.3s at 50k/s, matching the Rust ring buffer sizing note.
     static constexpr std::size_t kCapacity = 1u << 16;
 
-    void start();
+    // `hook` defaults to the platform singleton (InputHook::instance()). Tests inject a
+    // fake to drive the producer side deterministically without installing real OS hooks —
+    // this layer had no coverage at all before that seam existed.
+    //
+    // Calling start() twice without stop() is a no-op, not a crash: assigning over a
+    // joinable std::thread calls std::terminate. That invariant used to live in the caller
+    // (AppState::start_engine's CAS); it belongs here.
+    void start(InputHook* hook = nullptr);
     void stop();
 
     // Engine side: drain one event, or nullopt if the buffer is empty.
@@ -32,6 +39,7 @@ public:
 
 private:
     RingBuffer<CaptureEvent, kCapacity> buffer_;
+    InputHook* hook_ = nullptr;  // borrowed; owned by the singleton or the test
     std::thread hook_thread_;
     std::atomic<std::uint64_t> dropped_{0};
     std::atomic<bool> running_{false};
