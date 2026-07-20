@@ -48,17 +48,16 @@ Everything that was in "close the wiring gaps" (0.5–0.8) shipped on 2026-07-19
 
 First-run experience, control, and respecting the user.
 
-- **1.1 — First-run onboarding / permissions wizard.** `M`
-  A short first-launch flow: explain exactly what's captured (and that it's local-only),
-  request permissions, and pick a default focus mode. (A `PermissionWizard` component
-  exists in the frontend — audit what it covers and extend, don't rebuild.)
-
-- **1.2 — Settings UI.** `M`
-  The backend half is **done**: `src/app/settings.{hpp,cpp}` persists `settings.json` in
-  the app-data dir, and default focus mode already round-trips. Remaining: a settings
-  screen surfacing app-rule management UX, distraction sensitivity/threshold tuning, and
-  the default focus mode. *C++/Rust delta: Tauri had a config/plugin-store convention;
-  here it's our own JSON-on-disk with explicit load/save.*
+- **1.2 — Settings UI: distraction sensitivity tuning.** `M` (needs a product decision
+  first — see below)
+  App-rule management (`RulesCard`) and default focus mode (session control + onboarding
+  wizard) are **done** — see Done archive. What's left is a real gap, not a wiring one:
+  there is no user-facing "sensitivity" concept in the backend at all today.
+  `risk_threshold(mode)` in `classifier.cpp` is a hardcoded function of `FocusMode`
+  (deep/normal/recovery already *are* the sensitivity levers). Exposing a further
+  per-user tunable requires deciding what it means first — a scalar multiplier on
+  `risk_threshold`? A per-mode override stored in `AppSettings`? Something else? Don't
+  build a UI for this until that's decided.
 
 - **1.3 — Start-on-login / autostart.** `S`
   Register autostart via the Windows Run key (launchd/systemd variants later), toggleable
@@ -149,9 +148,9 @@ Pull any of these in anytime; they pay for themselves as the surface grows.
 ## Suggested near-term sequence
 
 Default order if you don't want to pick freely:
-**1.2 → 1.1** — Tier 4's cheap chores are cleared (see Done archive); next up is the v1
-experience. Big rocks (0.3 macOS capture, 2.1 analytics, 2.3 retraining) come once the
-small stuff is flushed.
+**1.3 → 1.6 → 1.2** — 1.1 and Tier 4's chores are cleared (see Done archive). 1.2 is last
+in this tier because it needs a product decision first (see its entry above). Big rocks
+(0.3 macOS capture, 2.1 analytics, 2.3 retraining) come once the small stuff is flushed.
 
 ---
 
@@ -200,3 +199,7 @@ history; details live in git log and [PORT_HISTORY.md](PORT_HISTORY.md).
   the benchmark targets were re-listing `snapback_core`/`snapback_capture`/`sqlite3`,
   which `snapback_app` already re-exports `PUBLIC`ly; dropped the redundant entries in
   `CMakeLists.txt`.
+- **1.1 — First-run onboarding / permissions wizard** — the existing `PermissionWizard`
+  already explained what's captured (local-only) and requested permissions; added the
+  missing third piece, a "Default focus mode" picker in the wizard itself, reusing
+  `useSession`'s existing `focusMode`/`handleFocusModeChange` (no new backend needed).

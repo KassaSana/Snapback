@@ -102,7 +102,10 @@ roadmap wins.
 | Packaging / CI | **Partial** — CI + parity job + tag release + signing wired; cert itself is Roadmap 0.4b |
 | Idle/AFK, pomodoro, confidence gating, retention prune, focus summary | **Done, backend + UI** |
 | Logger / notifications | **Done, adopted + wired** — leveled logger in storage/state, toast fires on real `snapback` events |
+| `dismiss_snapback` | **Done** — was silently unreachable everywhere, which stuck `ContextTracker` in `Recovering` after one snapback per session; now wired natively (Windows) and from the web UI |
+| Onboarding wizard (1.1) | **Done** — explains capture + local-only, requests permissions, and now picks a default focus mode |
 | Perf / safety hardening | **Done** — WAL, stmt cache, two-lock split, interning, ASan/TSan, concurrent tests |
 
 **Do next (Roadmap Tier 0):** native macOS capture (0.3) is the only large item left in
-Tier 0; the four wiring-gap items closed 2026-07-19. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Tier 0. Tier 1 remaining: 1.3 (autostart), 1.6 (privacy controls) — 1.2 (sensitivity
+tuning) needs a product decision first, see ROADMAP.md. See [docs/ROADMAP.md](docs/ROADMAP.md).
