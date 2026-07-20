@@ -62,4 +62,27 @@ PermissionStatus check_capture_permissions(bool capture_running) {
     return status;
 }
 
+bool request_capture_permissions() {
+#if defined(_WIN32)
+    // Nothing to request: the low-level hooks need no elevation or user consent.
+    return true;
+#elif defined(__APPLE__)
+    // Passing the prompt option is what makes this differ from the nullptr call in
+    // check_capture_permissions above — nullptr checks silently, this one shows the
+    // Accessibility dialog when we aren't yet trusted.
+    const void* keys[] = {kAXTrustedCheckOptionPrompt};
+    const void* values[] = {kCFBooleanTrue};
+    CFDictionaryRef options =
+        CFDictionaryCreate(kCFAllocatorDefault, keys, values, 1,
+                           &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    const bool trusted = AXIsProcessTrustedWithOptions(options);
+    if (options) CFRelease(options);
+    return trusted;
+#else
+    // Linux capture needs a desktop session and xdotool, not a permission grant — there is
+    // no dialog to raise, so report the current state instead of pretending we asked.
+    return check_capture_permissions(false).capture_available;
+#endif
+}
+
 }  // namespace snapback

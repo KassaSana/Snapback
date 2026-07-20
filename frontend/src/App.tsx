@@ -66,6 +66,7 @@ export default function App() {
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
     handleRefreshPermissions,
+    handleRequestPermissions,
     healthStatus,
     overlayFailureReason,
     persistenceFailureReason,
@@ -185,6 +186,7 @@ export default function App() {
         permissionMessage={permissionMessage}
         permissionSteps={permissionSteps}
         onRefreshPermissions={handleRefreshPermissions}
+        onRequestPermissions={handleRequestPermissions}
         focusMode={focusMode}
         onFocusModeChange={handleFocusModeChange}
       />
@@ -338,6 +340,7 @@ export default function App() {
           captureRunning={captureRunning}
           captureStalled={captureStalled}
           onRefreshPermissions={handleRefreshPermissions}
+          onRequestPermissions={handleRequestPermissions}
           permissionMessage={permissionMessage}
           permissionSteps={permissionSteps}
         />

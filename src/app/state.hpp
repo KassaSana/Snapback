@@ -103,6 +103,9 @@ public:
 
     ClassifierStatus classifier_status() const;
     PermissionStatus refresh_permissions();
+    // Prompt for capture permission (macOS Accessibility dialog), then report the result.
+    // User-initiated only — refresh_permissions() is the pollable, dialog-free version.
+    PermissionStatus request_permissions();
     void submit_label(FocusLabel label, const std::string& source,
                       std::optional<std::string> notes = std::nullopt);
     void submit_label(const std::string& session_id, FocusLabel label, const std::string& source,

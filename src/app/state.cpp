@@ -549,6 +549,16 @@ PermissionStatus AppState::refresh_permissions() {
     return check_capture_permissions(capture_.running());
 }
 
+PermissionStatus AppState::request_permissions() {
+    std::lock_guard lock(mutex_);
+    // Prompt first, then re-probe so the returned status reflects the user's answer in the
+    // same round trip (the macOS dialog is modal, so by the time this returns they've
+    // decided). Re-probing rather than trusting the prompt's return value keeps one code
+    // path — check_capture_permissions — as the single source of truth for the status DTO.
+    request_capture_permissions();
+    return check_capture_permissions(capture_.running());
+}
+
 void AppState::reload_app_rules_unlocked() {
     app_rules_ = storage_.list_app_rules();
 }

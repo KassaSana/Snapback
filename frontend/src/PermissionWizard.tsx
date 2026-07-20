@@ -15,6 +15,7 @@ type PermissionWizardProps = {
   permissionMessage: string | null;
   permissionSteps: string[];
   onRefreshPermissions: () => void;
+  onRequestPermissions: () => void;
   focusMode: FocusMode;
   onFocusModeChange: (mode: FocusMode) => void;
 };
@@ -26,6 +27,7 @@ export function PermissionWizard({
   permissionMessage,
   permissionSteps,
   onRefreshPermissions,
+  onRequestPermissions,
   focusMode,
   onFocusModeChange,
 }: PermissionWizardProps) {
@@ -87,7 +89,15 @@ export function PermissionWizard({
           </select>
         </label>
         <div className="wizard-actions">
-          <button className="primary-button" onClick={() => void onRefreshPermissions()}>
+          {/* The whole point of onboarding: actually raise the OS dialog rather than
+              telling the user to go find it in System Settings. Only shown while access
+              is still missing — once granted there is nothing left to ask for. */}
+          {permissionSteps.length > 0 ? (
+            <button className="primary-button" onClick={() => void onRequestPermissions()}>
+              Grant access
+            </button>
+          ) : null}
+          <button className="secondary-button" onClick={() => void onRefreshPermissions()}>
             Check again
           </button>
           <button className="secondary-button" onClick={dismiss}>

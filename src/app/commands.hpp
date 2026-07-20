@@ -190,6 +190,10 @@ inline void register_commands(webview::webview& w, AppState& state,
              [&state](const json&) { return json(state.classifier_status()); });
     bind_cmd(w, "refresh_permissions",
              [&state](const json&) { return json(state.refresh_permissions()); });
+    // User-initiated only (wizard "Grant access" button) — this one can raise an OS dialog,
+    // so it must never be called from a poll the way refresh_permissions is.
+    bind_cmd(w, "request_permissions",
+             [&state](const json&) { return json(state.request_permissions()); });
 
     // --- Training data export ---
     bind_cmd(w, "export_training_data", [&state, data_dir](const json& a) {

@@ -85,19 +85,37 @@ export const useHealth = () => {
     }
   }, [applyHealth]);
 
-  const handleRefreshPermissions = useCallback(async () => {
-    try {
-      const status = await api.refreshPermissions();
+  const applyPermissionStatus = useCallback(
+    (status: Awaited<ReturnType<typeof api.refreshPermissions>>) => {
       setPermissionCaptureAvailable(status.captureAvailable);
       setCaptureProbeConfirmed(status.captureProbeConfirmed);
       setActiveWindowAvailable(status.activeWindowAvailable);
       setPermissionMessage(status.message);
       setPermissionSteps(status.setupSteps);
+    },
+    [],
+  );
+
+  const handleRefreshPermissions = useCallback(async () => {
+    try {
+      applyPermissionStatus(await api.refreshPermissions());
       await refreshHealth();
     } catch {
       setPermissionMessage("Could not refresh permissions.");
     }
-  }, [refreshHealth]);
+  }, [applyPermissionStatus, refreshHealth]);
+
+  // Triggers the OS permission dialog, then reflects whatever the user chose. Separate
+  // from refresh because refresh is also called on a timer — prompting from there would
+  // pop a dialog repeatedly.
+  const handleRequestPermissions = useCallback(async () => {
+    try {
+      applyPermissionStatus(await api.requestPermissions());
+      await refreshHealth();
+    } catch {
+      setPermissionMessage("Could not request permissions.");
+    }
+  }, [applyPermissionStatus, refreshHealth]);
 
   return {
     activeWindowAvailable,
@@ -115,6 +133,7 @@ export const useHealth = () => {
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
     handleRefreshPermissions,
+    handleRequestPermissions,
     healthStatus,
     overlayFailureReason,
     persistenceFailureReason,

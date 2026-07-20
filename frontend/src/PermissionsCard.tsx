@@ -6,6 +6,7 @@ type PermissionsCardProps = {
   captureRunning: boolean;
   captureStalled: boolean;
   onRefreshPermissions: () => void;
+  onRequestPermissions: () => void;
   permissionMessage: string | null;
   permissionSteps: string[];
 };
@@ -18,6 +19,7 @@ export function PermissionsCard({
   captureRunning,
   captureStalled,
   onRefreshPermissions,
+  onRequestPermissions,
   permissionMessage,
   permissionSteps,
 }: PermissionsCardProps) {
@@ -64,9 +66,19 @@ export function PermissionsCard({
           ))}
         </ol>
       ) : null}
-      <button className="secondary-button" onClick={() => void onRefreshPermissions()}>
-        Refresh permissions
-      </button>
+      <div className="button-row">
+        {/* Setup steps are only populated when the OS hasn't granted access, so this is
+            exactly when there is something to prompt for. Once granted, the button would
+            be a no-op that re-opens nothing — macOS only shows its dialog once. */}
+        {permissionSteps.length > 0 ? (
+          <button className="primary-button" onClick={() => void onRequestPermissions()}>
+            Grant access
+          </button>
+        ) : null}
+        <button className="secondary-button" onClick={() => void onRefreshPermissions()}>
+          Refresh permissions
+        </button>
+      </div>
     </section>
   );
 }

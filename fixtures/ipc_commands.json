@@ -33,6 +33,7 @@
   "get_context_timeline",
   "reload_classifier_model",
   "refresh_permissions",
+  "request_permissions",
   "export_training_data",
   "get_training_deploy_status",
   "set_training_repo_path",

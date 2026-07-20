@@ -387,6 +387,12 @@ export const api = {
     const raw = await invoke<Record<string, unknown>>("refresh_permissions");
     return mapPermissionStatus(raw);
   },
+  // Can raise an OS dialog (macOS Accessibility), so only call this from an explicit
+  // user action — never from a poll. refreshPermissions is the dialog-free probe.
+  requestPermissions: async () => {
+    const raw = await invoke<Record<string, unknown>>("request_permissions");
+    return mapPermissionStatus(raw);
+  },
   getAppRules: async () => {
     const rows = await invoke<Record<string, unknown>[]>("get_app_rules");
     return rows.map(mapAppRule);
