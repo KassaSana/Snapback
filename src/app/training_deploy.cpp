@@ -11,9 +11,29 @@
 #include <string>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <sys/wait.h>  // WIFEXITED / WEXITSTATUS — std::system returns a wait status here
+#endif
+
 namespace snapback::training_deploy {
 
 namespace detail {
+
+int normalized_exit_code(int system_result) {
+    if (system_result == -1) return -1;  // couldn't even start a shell
+#if defined(_WIN32)
+    // cmd.exe returns the child's exit code directly.
+    return system_result;
+#else
+    // POSIX std::system returns a *wait status*, not an exit code: a child exiting 2 comes
+    // back as 512 (2 << 8). The pipeline's `exit_code == 2` check for the
+    // majority-classifier stub therefore never fired, and users lost the "capture more
+    // labeled sessions" guidance. (`== 0` worked only because status 0 <=> exit 0.)
+    if (WIFEXITED(system_result)) return WEXITSTATUS(system_result);
+    if (WIFSIGNALED(system_result)) return 128 + WTERMSIG(system_result);  // shell convention
+    return -1;
+#endif
+}
 
 std::string shell_quote(const std::string& value) {
 #if defined(_WIN32)
@@ -322,7 +342,7 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
     cmd << " -m ml.pipeline_cli --output-dir " << quote(out_dir)
         << " --skip-export > " << quote(log_path) << " 2>&1";
 
-    const int exit_code = std::system(cmd.str().c_str());
+    const int exit_code = detail::normalized_exit_code(std::system(cmd.str().c_str()));
     const std::string log_tail = read_file_tail(log_path, 12);
     const bool onnx_exported = std::filesystem::is_regular_file(out_dir / "model.onnx");
     const auto metrics = parse_metrics_json(out_dir / "metrics.json");

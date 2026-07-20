@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
@@ -138,4 +139,28 @@ TEST_CASE("shell_quote leaves ordinary paths usable") {
 #else
     CHECK(quoted == "'/home/kassa/Snapback'");
 #endif
+}
+
+TEST_CASE("normalized_exit_code unwraps the POSIX wait status") {
+    using training_deploy::detail::normalized_exit_code;
+
+    // The bug: std::system returns a wait status on POSIX, so a child exiting 2 arrives as
+    // 512 and the `exit_code == 2` branch that surfaces the majority-classifier-stub
+    // guidance never fired. Verified against a real `sh -c 'exit 2'`, which returns 512.
+    CHECK(normalized_exit_code(0) == 0);
+#if defined(_WIN32)
+    CHECK(normalized_exit_code(2) == 2);
+#else
+    CHECK(normalized_exit_code(512) == 2);   // 2 << 8
+    CHECK(normalized_exit_code(256) == 1);
+    CHECK(normalized_exit_code(9) == 128 + 9);  // killed by SIGKILL, shell convention
+#endif
+    CHECK(normalized_exit_code(-1) == -1);  // shell never started
+}
+
+TEST_CASE("normalized_exit_code agrees with a real child process") {
+    // Ties the unit test to reality rather than to my reading of the man page.
+    using training_deploy::detail::normalized_exit_code;
+    CHECK(normalized_exit_code(std::system("exit 2")) == 2);
+    CHECK(normalized_exit_code(std::system("exit 0")) == 0);
 }

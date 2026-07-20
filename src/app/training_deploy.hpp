@@ -25,6 +25,10 @@ namespace detail {
 // user-writable env var / file, so this is the boundary that has to hold.
 std::string shell_quote(const std::string& value);
 
+// Turn the return of std::system into an actual exit code. On POSIX that return is a wait
+// status, so a child exiting 2 arrives as 512 — see the implementation. Exposed for testing.
+int normalized_exit_code(int system_result);
+
 }  // namespace detail
 
 }  // namespace snapback::training_deploy
