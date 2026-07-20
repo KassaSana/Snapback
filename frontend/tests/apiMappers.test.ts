@@ -5,6 +5,7 @@ import {
   mapClassifierStatus,
   mapContextSnapshot,
   mapExportTrainingResult,
+  mapFocusSummary,
   mapHealth,
   mapPermissionStatus,
   mapPrediction,
@@ -346,5 +347,35 @@ const exportCamel = mapExportTrainingResult({
   labelCount: 60,
 });
 assert.equal(exportCamel.labelCount, 60);
+
+// --- mapFocusSummary ---
+
+const focusSummaryEmpty = mapFocusSummary({});
+assert.equal(focusSummaryEmpty.sampleCount, 0);
+assert.equal(focusSummaryEmpty.avgFocusScore, 0);
+
+const focusSummarySnake = mapFocusSummary({
+  sample_count: 120,
+  avg_focus_score: 68.4,
+  peak_focus_score: 97.0,
+  distracted_samples: 18,
+  distracted_fraction: 0.15,
+  longest_focus_streak: 42,
+});
+assert.equal(focusSummarySnake.sampleCount, 120);
+assert.equal(focusSummarySnake.peakFocusScore, 97.0);
+assert.equal(focusSummarySnake.distractedFraction, 0.15);
+assert.equal(focusSummarySnake.longestFocusStreak, 42);
+
+const focusSummaryCamel = mapFocusSummary({
+  sampleCount: 80,
+  avgFocusScore: 55.0,
+  peakFocusScore: 90.0,
+  distractedSamples: 30,
+  distractedFraction: 0.375,
+  longestFocusStreak: 10,
+});
+assert.equal(focusSummaryCamel.sampleCount, 80);
+assert.equal(focusSummaryCamel.distractedSamples, 30);
 
 console.log("apiMappers.test.ts passed");

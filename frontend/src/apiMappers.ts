@@ -5,6 +5,7 @@ import type {
   ClassifierStatus,
   ContextSnapshot,
   ExportTrainingResult,
+  FocusSummary,
   HealthStatus,
   PermissionStatus,
   PredictionRecord,
@@ -141,6 +142,17 @@ export function mapSessionRecap(raw: Record<string, unknown>): SessionRecap {
     snapbackCount: Number(raw.snapback_count ?? raw.snapbackCount ?? 0),
     thrashSpikes: Number(raw.thrash_spikes ?? raw.thrashSpikes ?? 0),
     deepFocusPct: Number(raw.deep_focus_pct ?? raw.deepFocusPct ?? 0),
+  };
+}
+
+export function mapFocusSummary(raw: Record<string, unknown>): FocusSummary {
+  return {
+    sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
+    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
+    peakFocusScore: Number(raw.peak_focus_score ?? raw.peakFocusScore ?? 0),
+    distractedSamples: Number(raw.distracted_samples ?? raw.distractedSamples ?? 0),
+    distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
+    longestFocusStreak: Number(raw.longest_focus_streak ?? raw.longestFocusStreak ?? 0),
   };
 }
 

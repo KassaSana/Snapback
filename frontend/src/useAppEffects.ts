@@ -15,6 +15,7 @@ type UseAppEffectsArgs = {
   refreshHealth: () => void | Promise<void>;
   captureRunning: boolean;
   refreshInsights: () => void | Promise<void>;
+  refreshFocusSummary: () => void | Promise<void>;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
   refreshDeployStatus: () => void | Promise<void>;
@@ -42,6 +43,7 @@ export const useAppEffects = ({
   refreshHealth,
   captureRunning,
   refreshInsights,
+  refreshFocusSummary,
   refreshLatest,
   refreshAppRules,
   refreshDeployStatus,
@@ -65,6 +67,7 @@ export const useAppEffects = ({
     void refreshAppRules();
     void refreshDeployStatus();
     void refreshInsights();
+    void refreshFocusSummary();
     void hydrateActiveSession();
   }, [
     hydrateActiveSession,
@@ -73,15 +76,18 @@ export const useAppEffects = ({
     refreshAppRules,
     refreshDeployStatus,
     refreshInsights,
+    refreshFocusSummary,
   ]);
 
-  // A completed session adds a new row to history — refresh insights so the
-  // chart and tiles pick it up without a manual reload.
+  // A completed session adds a new row to history — refresh insights (and the
+  // rolling focus summary, which draws from the same predictions) so the chart
+  // and tiles pick it up without a manual reload.
   useEffect(() => {
     if (sessionStatus === "COMPLETED") {
       void refreshInsights();
+      void refreshFocusSummary();
     }
-  }, [sessionStatus, refreshInsights]);
+  }, [sessionStatus, refreshInsights, refreshFocusSummary]);
 
   useEffect(() => {
     if (!sessionId || sessionStatus !== "ACTIVE") {

@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "types.hpp"
 
 namespace snapback {
@@ -46,6 +48,17 @@ inline FocusSummary summarize_predictions(const std::vector<PredictionRecord>& p
     s.distracted_fraction =
         static_cast<double>(s.distracted_samples) / static_cast<double>(preds.size());
     return s;
+}
+
+// Header-only like the rest of this file (matches summarize_predictions above); camelCase
+// keys match the frontend's existing JSON convention (see PomodoroStatus::to_json).
+inline void to_json(nlohmann::json& json, const FocusSummary& s) {
+    json = nlohmann::json{{"sampleCount", s.sample_count},
+                          {"avgFocusScore", s.avg_focus_score},
+                          {"peakFocusScore", s.peak_focus_score},
+                          {"distractedSamples", s.distracted_samples},
+                          {"distractedFraction", s.distracted_fraction},
+                          {"longestFocusStreak", s.longest_focus_streak}};
 }
 
 }  // namespace snapback

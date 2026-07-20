@@ -3,6 +3,7 @@
 import { ActivityCards } from "./ActivityCards";
 import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
+import { FocusSummaryCard } from "./FocusSummaryCard";
 import { InsightsCard } from "./InsightsCard";
 import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
@@ -13,6 +14,7 @@ import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
+import { useFocusSummary } from "./useFocusSummary";
 import { useHealth } from "./useHealth";
 import { useInsights } from "./useInsights";
 import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
@@ -25,6 +27,7 @@ export default function App() {
   const live = useLiveData();
 
   const { sessionHistory, refreshInsights } = useInsights();
+  const { focusSummary, refreshFocusSummary } = useFocusSummary();
 
   const {
     activeWindowAvailable,
@@ -130,6 +133,7 @@ export default function App() {
     refreshHealth,
     captureRunning,
     refreshInsights,
+    refreshFocusSummary,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
     refreshDeployStatus,
@@ -232,6 +236,8 @@ export default function App() {
         />
 
         <InsightsCard sessionHistory={sessionHistory} />
+
+        <FocusSummaryCard focusSummary={focusSummary} />
 
         <ActivityCards
           contextTimeline={live.contextTimeline}

@@ -2,9 +2,14 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => {
-  const state: { health: Record<string, unknown>; history: Record<string, unknown>[] } = {
+  const state: {
+    health: Record<string, unknown>;
+    history: Record<string, unknown>[];
+    focusSummary: Record<string, unknown>;
+  } = {
     health: {},
     history: [],
+    focusSummary: {},
   };
 
   const invoke = vi.fn(async (cmd: string): Promise<unknown> => {
@@ -13,6 +18,8 @@ const boundary = vi.hoisted(() => {
         return state.health;
       case "get_session_history":
         return state.history;
+      case "get_focus_summary":
+        return state.focusSummary;
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -72,11 +79,15 @@ const rawSummary = (id: string, focus: number, deep: number, snap: number) => ({
 const insightsCard = () =>
   screen.getByRole("heading", { name: "Insights" }).closest("section") as HTMLElement;
 
+const focusSummaryCard = () =>
+  screen.getByRole("heading", { name: "Recent Focus" }).closest("section") as HTMLElement;
+
 beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
   boundary.state.history = [];
+  boundary.state.focusSummary = {};
 });
 
 afterEach(() => {
@@ -108,5 +119,41 @@ describe("Insights card", () => {
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }));
     expect(within(card).getByText(/No completed sessions yet/i)).toBeInTheDocument();
     expect(card.querySelectorAll("rect.chart-bar")).toHaveLength(0);
+  });
+});
+
+describe("Focus summary card", () => {
+  it("renders the recent-focus tiles from get_focus_summary", async () => {
+    boundary.state.focusSummary = {
+      sample_count: 40,
+      avg_focus_score: 72.4,
+      peak_focus_score: 95,
+      distracted_samples: 6,
+      distracted_fraction: 0.15,
+      longest_focus_streak: 18,
+    };
+    render(<App />);
+
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { limit: 200 }),
+    );
+
+    const card = focusSummaryCard();
+    const tiles = within(card);
+    expect(tiles.getByText("72")).toBeInTheDocument();
+    expect(tiles.getByText("95")).toBeInTheDocument();
+    expect(tiles.getByText("15%")).toBeInTheDocument();
+    expect(tiles.getByText("18")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when there are no predictions yet", async () => {
+    boundary.state.focusSummary = { sample_count: 0 };
+    render(<App />);
+
+    const card = focusSummaryCard();
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { limit: 200 }),
+    );
+    expect(within(card).getByText(/No predictions recorded yet/i)).toBeInTheDocument();
   });
 });

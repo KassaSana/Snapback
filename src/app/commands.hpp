@@ -50,6 +50,9 @@ inline void register_commands(webview::webview& w, AppState& state,
     bind_cmd(w, "get_prediction_history", [&state](const json& a) {
         return json(state.prediction_history(detail::clamp_limit(a, 8)));
     });
+    bind_cmd(w, "get_focus_summary", [&state](const json& a) {
+        return json(state.focus_summary(detail::clamp_limit(a, 200)));
+    });
 
     // --- Session lifecycle ---
     bind_cmd(w, "start_session", [&state](const json& a) {

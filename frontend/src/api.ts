@@ -6,6 +6,7 @@ import {
   mapClassifierStatus,
   mapContextSnapshot,
   mapExportTrainingResult,
+  mapFocusSummary,
   mapHealth,
   mapPermissionStatus,
   mapPrediction,
@@ -107,6 +108,15 @@ export type SessionSummary = {
   recap: SessionRecap;
 };
 
+export type FocusSummary = {
+  sampleCount: number;
+  avgFocusScore: number;
+  peakFocusScore: number;
+  distractedSamples: number;
+  distractedFraction: number;
+  longestFocusStreak: number;
+};
+
 export type FocusLabel =
   | "DISTRACTED"
   | "PSEUDO_PRODUCTIVE"
@@ -192,6 +202,10 @@ export const api = {
   getPredictionHistory: async (limit = 8) => {
     const rows = await invoke<Record<string, unknown>[]>("get_prediction_history", { limit });
     return rows.map(mapPrediction);
+  },
+  getFocusSummary: async (limit = 200) => {
+    const raw = await invoke<Record<string, unknown>>("get_focus_summary", { limit });
+    return mapFocusSummary(raw);
   },
   startSession: async (goal: string, focusMode = "normal") => {
     const raw = await invoke<Record<string, unknown>>("start_session", { goal, focusMode });

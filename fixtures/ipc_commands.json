@@ -2,6 +2,7 @@
   "get_health",
   "get_latest_prediction",
   "get_prediction_history",
+  "get_focus_summary",
   "start_session",
   "stop_session",
   "get_session",

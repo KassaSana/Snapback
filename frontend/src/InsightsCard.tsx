@@ -14,7 +14,7 @@ type InsightsCardProps = {
 // SVG coordinate space; the element scales to its container via CSS width.
 const CHART = { w: 320, h: 120, padX: 4, padTop: 8, padBottom: 6, gap: 3, maxBarW: 40 };
 
-function Tile({ value, label }: { value: string; label: string }) {
+export function Tile({ value, label }: { value: string; label: string }) {
   return (
     <div className="insight-tile">
       <p className="insight-tile-value">{value}</p>
