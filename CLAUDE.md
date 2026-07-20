@@ -81,8 +81,8 @@ from. We're porting **today's** single-binary v0.2 app.
 
 The Rust→C++ port is **complete** — the phase playbook that got us here is archived in
 [docs/PORT_HISTORY.md](docs/PORT_HISTORY.md) as a teaching record. New work comes from
-[docs/ROADMAP.md](docs/ROADMAP.md); start at **Tier 0** (the last parity/CI gaps) before
-reaching for shipping or platform polish.
+[docs/ROADMAP.md](docs/ROADMAP.md); start at **Tier 0** (native macOS capture is what's
+left there) before reaching for shipping or platform polish.
 
 ## Status (2026-07-19)
 
@@ -100,10 +100,9 @@ roadmap wins.
 | Linux capture (evdev) | **Done** — real evdev with polling fallback |
 | macOS capture / overlay / tray | **Polling only** — native `CGEventTap` + tray are Roadmap Tier 0.3 / Tier 3.1 |
 | Packaging / CI | **Partial** — CI + parity job + tag release + signing wired; cert itself is Roadmap 0.4b |
-| Idle/AFK, pomodoro, confidence gating, retention prune | **Done (backend)** — pomodoro/focus-summary UI are Roadmap 0.7 / 0.8 |
-| Logger / notifications | **Built, not wired** — adoption + real-event trigger are Roadmap 0.5 / 0.6 |
+| Idle/AFK, pomodoro, confidence gating, retention prune, focus summary | **Done, backend + UI** |
+| Logger / notifications | **Done, adopted + wired** — leveled logger in storage/state, toast fires on real `snapback` events |
 | Perf / safety hardening | **Done** — WAL, stmt cache, two-lock split, interning, ASan/TSan, concurrent tests |
 
-**Do next (Roadmap Tier 0):** close the wiring gaps — adopt the logger (0.5), fire the
-toast on real distractions (0.6), pomodoro UI (0.7), expose focus summary (0.8) — then
-native macOS capture (0.3). See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Do next (Roadmap Tier 0):** native macOS capture (0.3) is the only large item left in
+Tier 0; the four wiring-gap items closed 2026-07-19. See [docs/ROADMAP.md](docs/ROADMAP.md).

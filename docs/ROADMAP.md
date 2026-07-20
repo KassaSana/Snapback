@@ -5,8 +5,9 @@ gaps, chores. If it's not in this file, it's not planned; if it's done, it moves
 [Done archive](#done-archive) at the bottom. `CLAUDE.md`'s status table is a summary
 that points here — when they disagree, this file wins.
 
-**Last synced against the code: 2026-07-19** (full-codebase health check: clean macOS
-build, all tests green, IPC contract verified frontend↔backend, no stray TODOs).
+**Last synced against the code: 2026-07-19** (full-codebase health check, then closed out
+Tier 0's four wiring gaps same day: logger adoption, native toast, focus-summary IPC+UI,
+Pomodoro UI — all with tests, C++ + frontend suites green).
 
 The Rust→C++ port itself is done; the phase-by-phase playbook is archived in
 [PORT_HISTORY.md](PORT_HISTORY.md).
@@ -24,35 +25,10 @@ Work each item on the standard loop: code → test → senior-to-junior explanat
 
 ---
 
-## Tier 0 — Close the wiring gaps (highest priority)
+## Tier 0 — Finish the port's last gaps
 
-The 2026-07 health check found a recurring pattern: subsystems landed backend-first with
-tests, but the final "connect a consumer" commit never happened. These are all small and
-they make already-written code actually do something. **A module isn't done until
-something calls it.**
-
-- **0.5 — Adopt the logger everywhere.** `S`
-  `src/util/logger.hpp` (leveled + rotating file sink) is built and tested, but nothing
-  uses it: `std::cerr` writes remain in `src/app/state.cpp` and `src/storage/storage.cpp`.
-  Replace them with logger calls and pick sensible levels. Closes the loose end of 4.1.
-
-- **0.6 — Fire the native toast on a real distraction.** `S`
-  Win32 toast delivery + payload builders exist, but the only caller is the
-  `SNAPBACK_NOTIFICATION_TEST` env hook in `main.cpp`. Wire
-  `Tray::show_notification(build_distraction_notification(...))` into the real event path
-  (the emit hook in `main.cpp` that already pops the overlay on `snapback`), ideally only
-  when the app window isn't focused. Closes the loose end of 1.4.
-
-- **0.7 — Pomodoro UI.** `S`/`M`
-  Backend is fully wired: the engine tick polls the timer and emits `pomodoro` events, and
-  `start_pomodoro` / `stop_pomodoro` / `get_pomodoro_status` are registered IPC commands —
-  but the frontend never calls them and shows no timer. Add a small timer card:
-  subscribe to the `pomodoro` event, call the three commands.
-
-- **0.8 — Expose `focus_summary` over IPC + show it.** `S`
-  `AppState::focus_summary()` (aggregation over recent predictions) exists with tests but
-  has no IPC command and no UI. Add a `get_focus_summary` command + a frontend surface
-  (e.g. extend InsightsCard). This is the first slice of 2.2 (daily/weekly report).
+Everything that was in "close the wiring gaps" (0.5–0.8) shipped on 2026-07-19 — see the
+[Done archive](#done-archive). What's left in this tier:
 
 - **0.3 — Native macOS capture.** `L`
   Replace the polling fallback (`input_hook_posix.cpp`) with a real `CGEventTap` +
@@ -183,10 +159,9 @@ Pull any of these in anytime; they pay for themselves as the surface grows.
 ## Suggested near-term sequence
 
 Default order if you don't want to pick freely:
-**0.5 → 0.6 → 0.8 → 0.7 → 4.8 → 4.9 → 1.2 → 1.1** — clear every wiring gap first (each
-is a sitting and makes existing tested code visible to the user), sweep the two chores,
-then turn to the v1 experience. Big rocks (0.3 macOS capture, 2.1 analytics, 2.3
-retraining) come once the small stuff is flushed.
+**4.8 → 4.9 → 1.2 → 1.1** — sweep the two small chores, then turn to the v1 experience.
+Big rocks (0.3 macOS capture, 2.1 analytics, 2.3 retraining) come once the small stuff is
+flushed.
 
 ---
 
@@ -202,15 +177,20 @@ history; details live in git log and [PORT_HISTORY.md](PORT_HISTORY.md).
   `context_snapshots` with conditional VACUUM (`storage.cpp`).
 - **0.4 — Signed Windows installer (CI wiring)** — signing path wired in `release.yml`;
   only the cert itself remains (see 0.4b).
-- **1.4 — Native notifications (delivery path)** — Win32 toast + payload builders +
-  tests; real-event trigger remains (see 0.6).
+- **1.4 — Native notifications** — Win32 toast + payload builders, wired into the real
+  `snapback` recovery event via `build_snapback_notification()` (`main.cpp`), tested.
 - **1.5 — Idle / AFK detection** — detector state machine wired into the engine tick;
   predictions freeze while AFK.
 - **2.4 — Confidence calibration (gating)** — low-confidence distraction calls are gated
   (`test_confidence.cpp`).
-- **2.6 — Pomodoro (backend)** — timer state machine wired into AppState + engine tick,
-  emits `pomodoro` events, IPC commands registered; UI remains (see 0.7).
-- **4.1 — Structured logging (module)** — leveled logger + rotating file sink + tests;
-  adoption remains (see 0.5), diagnostics view split out (see 4.10).
+- **2.6 — Pomodoro** — timer state machine wired into AppState + engine tick, emits
+  `pomodoro` events, IPC commands registered, and a frontend `PomodoroCard` + `usePomodoro`
+  hook drive start/stop and live countdown. Fully done, backend and UI.
+- **4.1 — Structured logging** — leveled logger + rotating file sink, adopted in
+  `storage.cpp` and `state.cpp` (main.cpp wires a real file sink with stderr fallback),
+  tested. In-app diagnostics view split out separately (see 4.10).
 - **4.6 — Dependabot** — `.github/dependabot.yml` for Actions + npm.
 - **4.7 — Security-audit CI job** — frontend `npm audit` gate in CI.
+- **0.8 (ex-Tier-0) — `focus_summary` over IPC + UI** — `get_focus_summary` command,
+  frontend mapper/hook, and a `FocusSummaryCard` tile row on the dashboard. First slice of
+  2.2 (daily/weekly report) is now unblocked.
