@@ -49,7 +49,7 @@ bool OnnxModel::init(const std::filesystem::path& model_path) {
     return loaded_;
 }
 
-std::optional<PredictionScores> OnnxModel::run(const FeatureVector& features) {
+std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const FeatureVector& features) {
     if (!loaded_ || !session_) return std::nullopt;
     try {
         std::array<float, kFeatureCount> input{};
@@ -77,9 +77,9 @@ std::optional<PredictionScores> OnnxModel::run(const FeatureVector& features) {
             if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) continue;
             if (info.GetElementCount() != 4) continue;
             const float* data = out.GetTensorData<float>();
-            std::array<double, 4> probas{data[0], data[1], data[2], data[3]};
-            // Neutral thrash/drift/goal: the classifier applies its guardrails afterward.
-            return scores_from_probabilities(probas, 0.0, 0.0, 0.5);
+            // Raw probabilities only. The classifier combines them with the user's context
+            // signals; doing it here is what dropped Block rules and goal alignment.
+            return std::array<double, 4>{data[0], data[1], data[2], data[3]};
         }
     } catch (const std::exception&) {
         // Fall through to nullopt: the classifier retries on the heuristic path.
@@ -105,7 +105,9 @@ bool OnnxModel::init(const std::filesystem::path&) {
     return false;
 }
 
-std::optional<PredictionScores> OnnxModel::run(const FeatureVector&) { return std::nullopt; }
+std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const FeatureVector&) {
+    return std::nullopt;
+}
 
 void OnnxModel::reset_for_tests() {
     loaded_ = false;

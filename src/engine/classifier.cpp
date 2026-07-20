@@ -87,14 +87,9 @@ PredictionScores Classifier::predict(const FeatureVector& features,
                                      FocusMode mode,
                                      const std::optional<std::string>& session_goal,
                                      const std::vector<AppRuleRecord>& rules) const {
-#if defined(SNAPBACK_ONNX)
-    // A loaded model can still fail to infer. Fall through to the heuristic when it does,
-    // rather than persisting an empty focus_state.
-    if (auto scores = OnnxModel::instance().run(features)) {
-        return apply_focus_guardrails(*scores, 0.0, 0.0, false, mode);
-    }
-#endif
-    return predict_heuristic(features, mode, session_goal, rules, {});
+    // Delegate rather than duplicate the backend selection — keeping two copies is how the
+    // ONNX branch drifted out of sync with the heuristic one in the first place.
+    return predict(features, mode, session_goal, rules, {});
 }
 
 PredictionScores Classifier::predict(const FeatureVector& features,
@@ -103,8 +98,12 @@ PredictionScores Classifier::predict(const FeatureVector& features,
                                      const std::vector<AppRuleRecord>& rules,
                                      const std::vector<GoalCategory>& categories) const {
 #if defined(SNAPBACK_ONNX)
-    if (auto scores = OnnxModel::instance().run(features)) {
-        return apply_focus_guardrails(*scores, 0.0, 0.0, false, mode);
+    // The model supplies class probabilities; the user's Block/Allow rules, goal alignment,
+    // and thrash/drift come from here and apply to both backends. Previously this branch
+    // passed zeros and `false`, so a deployed model silently ignored user configuration.
+    if (auto probas = OnnxModel::instance().infer_probabilities(features)) {
+        return blend_model_output(
+            *probas, compute_context_signals(features, session_goal, rules, categories), mode);
     }
 #endif
     return predict_heuristic(features, mode, session_goal, rules, categories);
@@ -115,6 +114,31 @@ std::string Classifier::backend() const {
     if (OnnxModel::instance().loaded()) return "onnx";
 #endif
     return "heuristic";
+}
+
+ContextSignals compute_context_signals(const FeatureVector& f,
+                                       const std::optional<std::string>& session_goal,
+                                       const std::vector<AppRuleRecord>& rules,
+                                       const std::vector<GoalCategory>& categories) {
+    const auto ctx = classify_app_context(f.app_name, f.window_title, rules);
+    const double alignment =
+        snapback::goal_alignment_score(session_goal, ctx, f.window_title, categories);
+    const double bias = alignment - 0.5;
+    ContextSignals out;
+    out.thrash = thrash_score(f);
+    out.drift = clamp(drift_score(f) - bias * 0.25, 0.0, 1.0);
+    out.goal_alignment = alignment;
+    out.personal_block = ctx.personal_block;
+    return out;
+}
+
+PredictionScores blend_model_output(const std::array<double, 4>& probas,
+                                    const ContextSignals& signals,
+                                    FocusMode mode) {
+    auto scores = scores_from_probabilities(probas, signals.thrash, signals.drift,
+                                            signals.goal_alignment);
+    return apply_focus_guardrails(scores, signals.thrash, signals.drift, signals.personal_block,
+                                  mode);
 }
 
 PredictionScores Classifier::predict_heuristic(const FeatureVector& f,

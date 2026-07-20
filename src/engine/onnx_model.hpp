@@ -7,6 +7,7 @@
 // back to the heuristic.
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -37,18 +38,21 @@ public:
     static std::optional<std::filesystem::path> resolve_model_path(
         const std::filesystem::path& app_data_dir);
 
-    // Runs the 31-feature vector through the graph. **nullopt means inference failed** —
-    // no model, a throwing Run(), or no usable 4-class tensor in the outputs — and the
-    // caller must fall back to the heuristic.
+    // Runs the 31-feature vector through the graph and returns the raw class probabilities
+    // [DISTRACTED, PSEUDO_PRODUCTIVE, PRODUCTIVE, DEEP_FOCUS].
     //
-    // This used to return a default-constructed PredictionScores on failure, which is
-    // indistinguishable from a real prediction and whose focus_state is the empty string.
-    // That empty string flowed all the way into the `focus_state TEXT NOT NULL` column
-    // (which accepts ""), and recap()'s `CASE WHEN focus_state = 'DEEP_FOCUS'` then
-    // silently skipped those rows. Making failure unrepresentable-as-success is the fix.
+    // **nullopt means inference failed** — no model, a throwing Run(), or no usable 4-class
+    // tensor in the outputs — and the caller must fall back to the heuristic. It used to
+    // return default-constructed scores on failure, indistinguishable from a real
+    // prediction and carrying an empty focus_state straight into the database.
+    //
+    // Returns probabilities rather than PredictionScores on purpose: turning them into
+    // scores requires the user's context (Block rules, goal alignment, thrash/drift), which
+    // this layer has no business knowing. That layering mistake is what let the ONNX path
+    // quietly ignore user configuration — see Classifier::predict.
     //
     // Non-const because Ort::Session::Run mutates session state.
-    std::optional<PredictionScores> run(const FeatureVector& features);
+    std::optional<std::array<double, 4>> infer_probabilities(const FeatureVector& features);
 
     // Test seam (Rust: reset_model_for_tests) — the singleton persists across tests, so a
     // test that loads a model must reset afterward or it leaks the "onnx" backend.

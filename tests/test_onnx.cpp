@@ -83,7 +83,63 @@ TEST_CASE("OnnxModel::run reports failure as nullopt, not as neutral scores") {
 
     FeatureVector features;
     features.keystroke_count() = 5.0;
-    CHECK_FALSE(OnnxModel::instance().run(features).has_value());
+    CHECK_FALSE(OnnxModel::instance().infer_probabilities(features).has_value());
+}
+
+TEST_CASE("model output respects a user Block rule") {
+    // The bug this closes lived inside `#if defined(SNAPBACK_ONNX)`, so it was invisible to
+    // every default build: the ONNX branch called the guardrails with thrash=0, drift=0,
+    // personal_block=false and dropped the goal and rules entirely. Deploying a trained
+    // model therefore silently switched OFF the user's Block app rules.
+    //
+    // blend_model_output is a free function precisely so this is testable with no model
+    // loaded and no ONNX compiled in.
+    FeatureVector features;
+    features.app_name = "YouTube";
+    features.window_title = "some video";
+    features.keystroke_count() = 5.0;
+
+    // A confident DEEP_FOCUS prediction from the model.
+    const std::array<double, 4> confident_deep{0.02, 0.03, 0.05, 0.90};
+
+    const std::vector<AppRuleRecord> none;
+    const auto unblocked = compute_context_signals(features, std::nullopt, none, {});
+    CHECK_FALSE(unblocked.personal_block);
+    CHECK(blend_model_output(confident_deep, unblocked, FocusMode::Normal).focus_state ==
+          "DEEP_FOCUS");
+
+    AppRuleRecord block;
+    block.id = 1;
+    block.pattern = "youtube";
+    block.rule_type = AppRuleKind::Block;
+    const std::vector<AppRuleRecord> rules{block};
+
+    const auto blocked = compute_context_signals(features, std::nullopt, rules, {});
+    CHECK(blocked.personal_block);
+    // Same model output, but the user said "this app is a distraction" — and that wins.
+    CHECK(blend_model_output(confident_deep, blocked, FocusMode::Normal).focus_state ==
+          "DISTRACTED");
+}
+
+TEST_CASE("model output carries real goal alignment, not a pinned 0.5") {
+    // goal_alignment used to be hardcoded to 0.5 on the ONNX path, so the UI showed a
+    // constant neutral alignment no matter what the user was doing.
+    FeatureVector on_goal;
+    on_goal.app_name = "Cursor";
+    on_goal.window_title = "classifier.cpp — snapback";
+
+    // "implement" is a keyword of the built-in "coding" category, and Cursor classifies as
+    // an IDE — so this pair must score above neutral.
+    const auto signals = compute_context_signals(
+        on_goal, std::optional<std::string>("implement the classifier"), {}, {});
+    const auto scores =
+        blend_model_output({0.1, 0.1, 0.4, 0.4}, signals, FocusMode::Normal);
+
+    CHECK(scores.goal_alignment == doctest::Approx(signals.goal_alignment));
+    CHECK(scores.goal_alignment != doctest::Approx(0.5));
+    // thrash/drift must survive onto the record too — they're persisted per prediction.
+    CHECK(scores.thrash_score == doctest::Approx(signals.thrash));
+    CHECK(scores.drift_score == doctest::Approx(signals.drift));
 }
 
 TEST_CASE("classifier never yields an empty focus_state") {
