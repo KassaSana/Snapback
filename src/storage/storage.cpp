@@ -1002,6 +1002,12 @@ ExportTrainingResult Storage::export_training_csv(
                 write_csv_row(out, row);
             }
         }
+        // Checking only at open() catches a bad path but not a full disk: the writes above
+        // fail silently and the stream just sets badbit. Without this, export returns a
+        // success result whose feature_count doesn't match the truncated file on disk, and
+        // the training pipeline then trains on whatever survived.
+        out.flush();
+        if (!out) throw std::runtime_error("failed to write features.csv (disk full?)");
     }
 
     {
@@ -1038,6 +1044,8 @@ ExportTrainingResult Storage::export_training_csv(
                                column_text(stmt.get(), 4)});
             }
         }
+        out.flush();
+        if (!out) throw std::runtime_error("failed to write labels.csv (disk full?)");
     }
 
     ExportTrainingResult result;

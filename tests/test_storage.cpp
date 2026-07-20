@@ -410,3 +410,39 @@ TEST_CASE("Storage::open explains why it failed instead of returning a bare null
     CHECK(logged.find("ERROR") != std::string::npos);
     CHECK(logged.find("focoflow.db") != std::string::npos);
 }
+
+TEST_CASE("export reports a write failure instead of a bogus success") {
+    // Only the open() was checked before, so a mid-write failure (classically a full disk)
+    // left a truncated file behind while export still returned a success result whose
+    // feature_count described rows that never made it to disk.
+    //
+    // Simulate an unwritable destination by making labels.csv a directory: the open
+    // succeeds or fails depending on platform, but either way export must not claim success.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("Export failure", FocusMode::Normal);
+    FeatureVector f;
+    f.seconds_since_session_start() = 5.0;
+    storage->insert_feature_snapshot(session.session_id, f);
+
+    TempDir temp;
+    std::filesystem::create_directories(temp.path / "labels.csv");
+    CHECK_THROWS_AS(storage->export_training_csv(temp.path, session.session_id),
+                    std::runtime_error);
+}
+
+TEST_CASE("export still succeeds on a writable destination") {
+    // Guards the check above from being over-eager: a normal export must stay clean.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("Export ok", FocusMode::Normal);
+    FeatureVector f;
+    f.seconds_since_session_start() = 5.0;
+    storage->insert_feature_snapshot(session.session_id, f);
+
+    TempDir temp;
+    const auto exported = storage->export_training_csv(temp.path, session.session_id);
+    CHECK(exported.feature_count == 1);
+    CHECK(std::filesystem::is_regular_file(temp.path / "features.csv"));
+    CHECK(std::filesystem::is_regular_file(temp.path / "labels.csv"));
+}
