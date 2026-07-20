@@ -131,7 +131,10 @@ target_link_libraries(snapback_app PUBLIC snapback_core snapback_capture)
 enable_testing()
 file(GLOB SNAPBACK_TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
 add_executable(snapback_tests ${SNAPBACK_TEST_SOURCES})
-target_link_libraries(snapback_tests PRIVATE snapback_core snapback_capture snapback_app doctest::doctest)
+# snapback_app already PUBLIC-links snapback_core + snapback_capture (see above), so they
+# propagate transitively — listing them again here just made the linker warn about
+# duplicate static libraries.
+target_link_libraries(snapback_tests PRIVATE snapback_app doctest::doctest)
 # The fixture test loads fixtures/model.onnx; hand the path to the test via a define.
 target_compile_definitions(snapback_tests PRIVATE
   SNAPBACK_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/fixtures"
@@ -145,12 +148,13 @@ target_link_libraries(snapback_feature_parity_export PRIVATE snapback_core)
 if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_benchmarks benchmarks/bench_snapback.cpp)
   target_include_directories(snapback_benchmarks PRIVATE benchmarks)
-  target_link_libraries(snapback_benchmarks PRIVATE snapback_core snapback_capture snapback_app)
+  # snapback_app already PUBLIC-links snapback_core + snapback_capture transitively.
+  target_link_libraries(snapback_benchmarks PRIVATE snapback_app)
 
   # Targeted hot-path micro-benchmarks (producer/consumer/lock/SQLite).
   add_executable(snapback_hotpath_benchmarks benchmarks/bench_hotpaths.cpp)
   target_include_directories(snapback_hotpath_benchmarks PRIVATE benchmarks)
-  target_link_libraries(snapback_hotpath_benchmarks PRIVATE snapback_core snapback_capture snapback_app)
+  target_link_libraries(snapback_hotpath_benchmarks PRIVATE snapback_app)
 endif()
 
 # --- the desktop app (later phases) ---
@@ -166,7 +170,9 @@ if(SNAPBACK_BUILD_APP)
   if(WIN32)
     target_sources(snapback PRIVATE src/snapback/overlay_windows.cpp src/app/tray_windows.cpp)
   endif()
-  target_link_libraries(snapback PRIVATE snapback_core snapback_capture snapback_app sqlite3 webview::core)
+  # snapback_app already PUBLIC-links snapback_core (which itself PUBLIC-links sqlite3)
+  # and snapback_capture transitively.
+  target_link_libraries(snapback PRIVATE snapback_app webview::core)
   if(WIN32)
     target_link_libraries(snapback PRIVATE user32 gdi32 shell32)
   endif()
