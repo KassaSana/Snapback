@@ -21,7 +21,18 @@ tests green, clean build.
 This tier is first because it invalidates a status claim in `CLAUDE.md`, and because P0.2
 is the reason every other item here went unnoticed.
 
-- **P0.1 — Provide no-op `Overlay` / `Tray` fallbacks.** `S`
+- **P0.1 — Provide no-op `Overlay` / `Tray` fallbacks.** `S` — ✅ **done** (`c0cfc3f`)
+
+  Added `src/snapback/overlay_stub.cpp` + `src/app/tray_stub.cpp` behind
+  `#if !defined(_WIN32)`, wired into the app target's `else()` branch. Verified: both
+  compile clean and `nm` now reports `T snapback::Overlay::instance()` /
+  `T snapback::Tray::instance()`.
+
+  **Not yet verified: a full `snapback` link on macOS.** The build gets past the stubs and
+  fails later in `state.cpp` on the concurrent goal-alignment work
+  (`default_goal_categories` undeclared). Re-run the app build once that lands to confirm
+  end-to-end, and note the two `.o` files above only prove the symbols exist, not that
+  nothing else is missing.
 
   `Overlay::instance()` and `Tray::instance()` are defined in exactly two translation
   units — `src/snapback/overlay_windows.cpp:145` and `src/app/tray_windows.cpp:139` — and
@@ -41,7 +52,13 @@ is the reason every other item here went unnoticed.
   Add the documented no-op implementations behind `#if !defined(_WIN32)` so the app links
   everywhere, then real implementations land as P2.2 / P2.3.
 
-- **P0.2 — Build the app target in CI.** `S` — *do this with P0.1, it is the root cause*
+- **P0.2 — Build the app target in CI.** `S` — ✅ **done** (`c0cfc3f`)
+
+  Added the `desktop-app-build` job: macOS + Linux matrix, `SNAPBACK_BUILD_APP=ON`,
+  builds the `snapback` target and never launches it. Linux installs
+  `libgtk-3-dev` + `libwebkit2gtk-4.1-dev` (webview prefers `webkit2gtk-4.1`, falls back
+  to `4.0`). **Unverified until the first CI run** — the Linux webview/webkit pairing could
+  not be exercised locally on macOS.
 
   `grep -rn SNAPBACK_BUILD_APP .github/` returns **nothing**. The option defaults to `OFF`
   (`CMakeLists.txt:39`), so the three-OS CI matrix builds only the static libs and the
@@ -144,10 +161,13 @@ That likely moves it from `L` to `M`.
   Article."** A YouTube video reads as a file you were editing, in the product's namesake
   feature. No test catches it because the parser trivially "succeeds."
 
-  Needs a real extension check plus per-app title conventions. **Note:** the Rust source of
-  truth is gone — `../Snapback/src-tauri/src/` does not exist on this machine, so
-  `title_parser.rs` cannot be consulted. Behavior has to be re-specified from scratch or
-  the Rust repo restored first. *Worth confirming with Kassa which.*
+  Needs a real extension check plus per-app title conventions.
+
+  **On the Rust source of truth:** it is missing *locally* — `../Snapback/src-tauri/` does
+  not exist on this machine, which CLAUDE.md assumes it does. But it is not lost: the
+  `feature-parity` CI job checks out `KassaSana/Snapback` at ref **`main-fresh`**, which
+  still carries the Rust/Tauri layout (`.github/workflows/ci.yml:162-169`). Clone that ref
+  before doing P3.1 so `title_parser.rs` can be ported faithfully rather than guessed at.
 
 - **P3.2 — Fuzz `title_parser`.** `M` — *same as ROADMAP 4.2*
 
