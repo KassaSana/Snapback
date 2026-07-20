@@ -8,6 +8,7 @@ import {
   mapFocusSummary,
   mapHealth,
   mapPermissionStatus,
+  mapPomodoroStatus,
   mapPrediction,
   mapSettings,
   mapSession,
@@ -377,5 +378,35 @@ const focusSummaryCamel = mapFocusSummary({
 });
 assert.equal(focusSummaryCamel.sampleCount, 80);
 assert.equal(focusSummaryCamel.distractedSamples, 30);
+
+// --- mapPomodoroStatus ---
+
+const pomodoroEmpty = mapPomodoroStatus({});
+assert.equal(pomodoroEmpty.running, false);
+assert.equal(pomodoroEmpty.phase, "work");
+assert.equal(pomodoroEmpty.remainingMs, 0);
+
+const pomodoroSnake = mapPomodoroStatus({
+  running: true,
+  phase: "shortBreak",
+  completed_work_intervals: 3,
+  remaining_ms: 45_000,
+});
+assert.equal(pomodoroSnake.running, true);
+assert.equal(pomodoroSnake.phase, "shortBreak");
+assert.equal(pomodoroSnake.completedWorkIntervals, 3);
+assert.equal(pomodoroSnake.remainingMs, 45_000);
+
+const pomodoroCamel = mapPomodoroStatus({
+  running: false,
+  phase: "longBreak",
+  completedWorkIntervals: 4,
+  remainingMs: 0,
+});
+assert.equal(pomodoroCamel.phase, "longBreak");
+assert.equal(pomodoroCamel.completedWorkIntervals, 4);
+
+const pomodoroUnknownPhase = mapPomodoroStatus({ running: false, phase: "bogus" });
+assert.equal(pomodoroUnknownPhase.phase, "work"); // falls back safely
 
 console.log("apiMappers.test.ts passed");

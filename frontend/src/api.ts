@@ -9,6 +9,7 @@ import {
   mapFocusSummary,
   mapHealth,
   mapPermissionStatus,
+  mapPomodoroStatus,
   mapPrediction,
   mapSettings,
   mapSession,
@@ -117,6 +118,15 @@ export type FocusSummary = {
   longestFocusStreak: number;
 };
 
+export type PomodoroPhase = "work" | "shortBreak" | "longBreak";
+
+export type PomodoroStatus = {
+  running: boolean;
+  phase: PomodoroPhase;
+  completedWorkIntervals: number;
+  remainingMs: number;
+};
+
 export type FocusLabel =
   | "DISTRACTED"
   | "PSEUDO_PRODUCTIVE"
@@ -206,6 +216,18 @@ export const api = {
   getFocusSummary: async (limit = 200) => {
     const raw = await invoke<Record<string, unknown>>("get_focus_summary", { limit });
     return mapFocusSummary(raw);
+  },
+  getPomodoroStatus: async () => {
+    const raw = await invoke<Record<string, unknown>>("get_pomodoro_status");
+    return mapPomodoroStatus(raw);
+  },
+  startPomodoro: async () => {
+    const raw = await invoke<Record<string, unknown>>("start_pomodoro");
+    return mapPomodoroStatus(raw);
+  },
+  stopPomodoro: async () => {
+    const raw = await invoke<Record<string, unknown>>("stop_pomodoro");
+    return mapPomodoroStatus(raw);
   },
   startSession: async (goal: string, focusMode = "normal") => {
     const raw = await invoke<Record<string, unknown>>("start_session", { goal, focusMode });
@@ -318,6 +340,10 @@ export const api = {
     listen<Record<string, unknown>>("snapback", (event) => {
       handler(mapSnapbackPayload(event.payload));
     }),
+  onPomodoro: (handler: (status: PomodoroStatus) => void) =>
+    listen<Record<string, unknown>>("pomodoro", (event) => {
+      handler(mapPomodoroStatus(event.payload));
+    }),
   onHyperfocus: (handler: (payload: { message: string }) => void) =>
     listen<{ message: string }>("hyperfocus", (event) => handler(event.payload)),
   onLabelHotkey: (handler: (payload: LabelHotkeyPayload) => void) =>
@@ -337,6 +363,7 @@ export {
   clamp,
   focusStateLabel,
   formatPercent,
+  formatPomodoroRemaining,
   formatScore,
   formatTime,
   nextBackoffDelay,

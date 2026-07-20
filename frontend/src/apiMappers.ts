@@ -8,6 +8,8 @@ import type {
   FocusSummary,
   HealthStatus,
   PermissionStatus,
+  PomodoroPhase,
+  PomodoroStatus,
   PredictionRecord,
   SessionRecap,
   SessionRecord,
@@ -22,6 +24,15 @@ const FOCUS_MODE_VALUES = new Set(["deep", "normal", "recovery"]);
 function normalizeFocusMode(value: unknown): string {
   const mode = String(value ?? "normal").toLowerCase();
   return FOCUS_MODE_VALUES.has(mode) ? mode : "normal";
+}
+
+const POMODORO_PHASE_VALUES: PomodoroPhase[] = ["work", "shortBreak", "longBreak"];
+
+function normalizePomodoroPhase(value: unknown): PomodoroPhase {
+  const phase = String(value ?? "work");
+  return (POMODORO_PHASE_VALUES as string[]).includes(phase)
+    ? (phase as PomodoroPhase)
+    : "work";
 }
 
 export function mapSettings(raw: Record<string, unknown>): AppSettings {
@@ -153,6 +164,17 @@ export function mapFocusSummary(raw: Record<string, unknown>): FocusSummary {
     distractedSamples: Number(raw.distracted_samples ?? raw.distractedSamples ?? 0),
     distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
     longestFocusStreak: Number(raw.longest_focus_streak ?? raw.longestFocusStreak ?? 0),
+  };
+}
+
+export function mapPomodoroStatus(raw: Record<string, unknown>): PomodoroStatus {
+  return {
+    running: Boolean(raw.running ?? false),
+    phase: normalizePomodoroPhase(raw.phase),
+    completedWorkIntervals: Number(
+      raw.completed_work_intervals ?? raw.completedWorkIntervals ?? 0,
+    ),
+    remainingMs: Number(raw.remaining_ms ?? raw.remainingMs ?? 0),
   };
 }
 

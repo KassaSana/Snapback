@@ -5,6 +5,7 @@ import {
   clamp,
   focusStateLabel,
   formatPercent,
+  formatPomodoroRemaining,
   formatScore,
   formatTime,
   nextBackoffDelay,
@@ -93,5 +94,11 @@ assert.ok(d.some((s) => s.includes("Deep work")));
 const low = { ...base, distractionRisk: 0.1 };
 const l = buildSignals(low as any);
 assert.ok(l.some((s) => s.includes("Keep momentum")));
+
+assert.equal(formatPomodoroRemaining(0), "0:00");
+assert.equal(formatPomodoroRemaining(59_000), "0:59");
+assert.equal(formatPomodoroRemaining(60_000), "1:00");
+assert.equal(formatPomodoroRemaining(90_500), "1:31"); // rounds to the nearest second
+assert.equal(formatPomodoroRemaining(-500), "0:00"); // clamps negative drift to zero
 
 console.log("utils.test.ts passed");

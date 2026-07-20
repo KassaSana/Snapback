@@ -9,6 +9,7 @@ import { LiveStatusCards } from "./LiveStatusCards";
 import { RulesCard } from "./RulesCard";
 import { PermissionsCard } from "./PermissionsCard";
 import { PermissionWizard } from "./PermissionWizard";
+import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
@@ -18,6 +19,7 @@ import { useFocusSummary } from "./useFocusSummary";
 import { useHealth } from "./useHealth";
 import { useInsights } from "./useInsights";
 import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
+import { usePomodoro } from "./usePomodoro";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
 
@@ -28,6 +30,13 @@ export default function App() {
 
   const { sessionHistory, refreshInsights } = useInsights();
   const { focusSummary, refreshFocusSummary } = useFocusSummary();
+  const {
+    pomodoroStatus,
+    refreshPomodoroStatus,
+    handlePomodoroEvent,
+    handleStartPomodoro,
+    handleStopPomodoro,
+  } = usePomodoro({ setActionError: feedback.setActionError });
 
   const {
     activeWindowAvailable,
@@ -134,6 +143,7 @@ export default function App() {
     captureRunning,
     refreshInsights,
     refreshFocusSummary,
+    refreshPomodoroStatus,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
     refreshDeployStatus,
@@ -147,6 +157,7 @@ export default function App() {
     handlePrediction: live.handlePrediction,
     handleSnapback: live.handleSnapback,
     handleHyperfocus: live.handleHyperfocus,
+    handlePomodoroEvent,
     refreshTimelineFromEvent: live.refreshTimelineFromEvent,
     setLabelStatus: feedback.setLabelStatus,
     setLabelStatusWarning: feedback.setLabelStatusWarning,
@@ -207,6 +218,13 @@ export default function App() {
           sessionRecord={sessionRecord}
           sessionStatusLabel={sessionStatusLabel}
           setSessionGoal={setSessionGoal}
+        />
+
+        <PomodoroCard
+          pomodoroStatus={pomodoroStatus}
+          sessionActive={sessionRecord?.status === "ACTIVE"}
+          onStart={handleStartPomodoro}
+          onStop={handleStopPomodoro}
         />
 
         <TrainingDeployCard

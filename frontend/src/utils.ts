@@ -58,6 +58,13 @@ export const focusStateLabel = (state: string | null | undefined) => {
   }
 };
 
+export const formatPomodoroRemaining = (remainingMs: number) => {
+  const totalSeconds = Math.max(0, Math.round(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+};
+
 export const nextBackoffDelay = (attempt: number) => {
   const safeAttempt = Math.max(0, attempt);
   const baseMs = 500;

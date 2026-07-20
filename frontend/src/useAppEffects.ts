@@ -5,6 +5,7 @@ import {
   type CaptureFailurePayload,
   type LabelHotkeyPayload,
   type OverlayFailurePayload,
+  type PomodoroStatus,
   type PredictionRecord,
   type SnapbackPayload,
 } from "./api";
@@ -16,6 +17,7 @@ type UseAppEffectsArgs = {
   captureRunning: boolean;
   refreshInsights: () => void | Promise<void>;
   refreshFocusSummary: () => void | Promise<void>;
+  refreshPomodoroStatus: () => void | Promise<void>;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
   refreshDeployStatus: () => void | Promise<void>;
@@ -33,6 +35,7 @@ type UseAppEffectsArgs = {
   handlePrediction: (record: PredictionRecord | null) => void;
   handleSnapback: (payload: SnapbackPayload) => void;
   handleHyperfocus: (payload: { message: string }) => void;
+  handlePomodoroEvent: (status: PomodoroStatus) => void;
   refreshTimelineFromEvent: (sid?: string | null) => void;
 
   setLabelStatus: (value: string | null) => void;
@@ -44,6 +47,7 @@ export const useAppEffects = ({
   captureRunning,
   refreshInsights,
   refreshFocusSummary,
+  refreshPomodoroStatus,
   refreshLatest,
   refreshAppRules,
   refreshDeployStatus,
@@ -57,6 +61,7 @@ export const useAppEffects = ({
   handlePrediction,
   handleSnapback,
   handleHyperfocus,
+  handlePomodoroEvent,
   refreshTimelineFromEvent,
   setLabelStatus,
   setLabelStatusWarning,
@@ -88,6 +93,13 @@ export const useAppEffects = ({
       void refreshFocusSummary();
     }
   }, [sessionStatus, refreshInsights, refreshFocusSummary]);
+
+  // Starting or stopping a session resets the Pomodoro timer server-side
+  // (AppState::start_session / stop_session both call pomodoro_.reset()), so
+  // refetch whenever the session identity changes to pick up the cleared state.
+  useEffect(() => {
+    void refreshPomodoroStatus();
+  }, [sessionId, refreshPomodoroStatus]);
 
   useEffect(() => {
     if (!sessionId || sessionStatus !== "ACTIVE") {
@@ -167,6 +179,11 @@ export const useAppEffects = ({
       }),
     );
     unsubs.push(
+      api.onPomodoro((status) => {
+        handlePomodoroEvent(status);
+      }),
+    );
+    unsubs.push(
       api.onLabelHotkey((payload) => {
         setLabelStatus(payload.message);
         setLabelStatusWarning(!payload.ok);
@@ -181,6 +198,7 @@ export const useAppEffects = ({
     applyOverlayFailure,
     applyPersistenceFailure,
     handleHyperfocus,
+    handlePomodoroEvent,
     handlePrediction,
     handleSnapback,
     refreshTimelineFromEvent,
