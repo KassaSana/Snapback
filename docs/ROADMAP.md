@@ -124,10 +124,17 @@ Everything Windows has, on the other two OSes — plus real installers.
 
 ## Tier 5 — Open findings from the 2026-07-20 engine/storage audit
 
-A full audit of the engine, storage, and ONNX paths on 2026-07-20 found ten issues. Four
-are fixed (see the Done archive: feature-vector session time, command injection,
-feature-snapshot retention, hot-path indexes). These are the ones left. Each cites the code
-it came from so nothing has to be re-derived.
+A full audit of the engine, storage, and ONNX paths on 2026-07-20 found ten issues.
+
+**Verifying each against the Rust reference before fixing changed the answer twice.** 5.4
+and 5.6 turned out to be faithful ports of deliberate reference behavior, not port bugs —
+and 5.6 would have failed the `feature-parity` CI job had it been "fixed" unilaterally. Both
+are now decision items, not tasks. An audit finding is a hypothesis; check it against
+`../FocoFlow-1/src-tauri/src/` before writing code.
+
+Fixed so far: 5.2, 5.7, 5.8, plus (in the Done archive) the feature-vector session time,
+command injection, feature-snapshot retention, and hot-path indexes. Each entry below cites
+the code it came from so nothing has to be re-derived.
 
 - **5.1 — ONNX inference discards user rules, thrash, and drift.** `M`
   `classifier.cpp:90-108` calls `apply_focus_guardrails(..., 0.0, 0.0, false, mode)` when a
@@ -138,13 +145,12 @@ it came from so nothing has to be re-derived.
   load/run/fallback, so CI can't see it. Blocks 2.3 — retraining is not safe to ship until
   a deployed model respects user configuration.
 
-- **5.2 — ONNX failure writes an empty `focus_state`.** `S`
-  `onnx_model.cpp:53` and `:87` `return {}` on failure, and a default `PredictionScores`
-  has `focus_state == ""` (`classifier.hpp:20`). That empty string reaches the
-  `focus_state TEXT NOT NULL` column, which happily accepts it; `recap()`'s
-  `CASE WHEN focus_state = 'DEEP_FOCUS'` then silently excludes those rows. `predict` can't
-  currently tell failure from a real prediction — `run()` should return
-  `std::optional<PredictionScores>` so the caller can fall back to `predict_heuristic`.
+- **5.2 — ~~ONNX failure writes an empty `focus_state`~~.** ✅ **done** (`7d4e6f3`)
+  `OnnxModel::run` now returns `std::optional<PredictionScores>`; both `Classifier::predict`
+  overloads fall back to `predict_heuristic` on `nullopt`. Note the fix lives inside
+  `#if defined(SNAPBACK_ONNX)`, which **is not compiled in the default build** — only CI's
+  `onnx-windows` job exercises it. The invariant test (predict never yields an empty state)
+  runs everywhere.
 
 - **5.3 — `confidence.hpp` is dead code with inverted units.** `S`
   Nothing outside its own test calls `should_nag` or `distraction_confidence`. Worse, the
@@ -183,21 +189,34 @@ it came from so nothing has to be re-derived.
   also defeats the new `idx_predictions_ts`, forcing a scan on every startup prune. Store
   and compare a canonical format instead.
 
-- **5.6 — `longest_active_stretch_5min` reports a full 300s for brand-new sessions.** `S`
-  `features.cpp:190` defaults to the whole window when no idle events are present, so ten
-  seconds in, the extractor claims a five-minute unbroken active stretch — inflating the
-  deep-focus signal exactly when there's least evidence. Bound it by elapsed session time.
+- **5.6 — `longest_active_stretch_5min` reports 300s for brand-new sessions.** `M`
+  — **do not "just fix" this; it will fail CI**
 
-- **5.7 — `Storage::open` swallows every failure into `nullopt`.** `S`
-  `storage.cpp:345`'s bare `catch (...)` makes a corrupt DB, a permissions error, and a
-  full disk indistinguishable. The function already takes a `Logger*`; log `err.what()`.
-  The inner prune/vacuum handlers already do this correctly — only the outer one is blind.
+  `features.cpp:190` defaults to the whole 5-minute window when the window holds no idle
+  events, so ten seconds into a session the extractor claims a five-minute unbroken active
+  stretch. Two things checked on 2026-07-20:
 
-- **5.8 — `std::system` exit-code check is dead on POSIX.** `S`
-  `training_deploy.cpp:306` treats the return of `std::system` as an exit code, but POSIX
-  returns a wait status — exit 2 arrives as 512, so the `exit_code == 2` branch
-  (`:174`) never fires and the "capture more labeled sessions" guidance is lost. Needs
-  `WEXITSTATUS`. (`== 0` is coincidentally correct.) `train_from_export` has no test.
+  1. The Rust original does exactly the same (`features.rs:315`:
+     `if idle_timestamps.is_empty() { self.long_window_seconds }`).
+  2. **The `feature-parity` CI job diffs every key of the C++ feature vector against the
+     Rust extractor** (`scripts/run_feature_parity_dual.py` compares
+     `sorted(set(rust) | set(cpp))`). Changing this value in C++ alone fails that job.
+
+  Defensible as-is, too: the feature is defined over a fixed window, not the session, so
+  "no idle events in the last 5 minutes" genuinely means the window was fully active.
+  The real question is whether a feature that is constant-300 for most users carries any
+  signal for the model. **Doing this means changing both extractors together**, plus
+  retraining — bundle it with 2.3 rather than as a standalone fix.
+
+- **5.7 — ~~`Storage::open` swallows every failure into `nullopt`~~.** ✅ **done** (`2bd03c7`)
+  The outer handler now logs at Error with the DB path and `what()`, and the
+  `sqlite3_open` branch reports `sqlite3_errmsg`. Guarded by a test that forces a real
+  failure (a directory where the DB file belongs) and asserts the reason reaches the logger.
+
+- **5.8 — ~~`std::system` exit-code check is dead on POSIX~~.** ✅ **done** (`8745ba1`)
+  Added `detail::normalized_exit_code`, which unwraps the wait status via `WEXITSTATUS`
+  (and maps signals to `128 + signo`). Confirmed against a real child: `sh -c 'exit 2'`
+  returns 512. `train_from_export` itself still has no test — it shells out to Python.
 
 - **5.9 — CSV export never checks for write failure.** `S`
   `storage.cpp:915`/`:957` check the stream only at open. On a full disk the export returns
@@ -244,10 +263,12 @@ Pull any of these in anytime; they pay for themselves as the surface grows.
 
 ## Suggested near-term sequence
 
-Highest value first, given what the audit turned up:
-**5.2 → 5.4 → 5.3 → 0.3 (verify on a Mac) → 5.1**. The Tier 5 items are mostly `S` and
-several corrupt data that feeds model training, so they pay off before new features. 5.1
-blocks 2.3. 4.11 and 5.3 both need a product decision before code.
+The no-decision-needed Tier 5 fixes (5.2, 5.7, 5.8) are done. What's left splits cleanly:
+
+- **Needs a decision from Kassa first:** 5.3 (wire confidence gating or delete the claim),
+  5.4 (what `thrash_spikes` measures), 4.11 (diverge from Rust on title parsing?), 1.2.
+- **Ready to build:** **5.1** (ONNX drops user rules — blocks 2.3), **5.9**, then
+  **0.3 verification on a Mac**, then Tier 3 platform work (3.0 autostart, 3.1/3.2 tray).
 
 ### Original sequence (superseded, kept for context)
 
