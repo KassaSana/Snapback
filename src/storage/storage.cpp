@@ -241,6 +241,11 @@ std::string make_uuid_v4() {
     return out.str();
 }
 
+// Same instant as retention_cutoff_rfc3339, expressed the way feature_snapshots stores it.
+double retention_cutoff_unix_secs(int retention_days) {
+    return unix_now_secs() - 60.0 * 60.0 * 24.0 * static_cast<double>(retention_days);
+}
+
 std::string retention_cutoff_rfc3339(int retention_days) {
     using namespace std::chrono;
     const auto now = system_clock::now();
@@ -318,13 +323,15 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         storage.migrate();
         try {
             const auto cutoff = retention_cutoff_rfc3339(kDefaultRetentionDays);
-            const PruneSummary summary = storage.prune_runtime_data(cutoff);
+            const PruneSummary summary = storage.prune_runtime_data(
+                cutoff, retention_cutoff_unix_secs(kDefaultRetentionDays));
             if (summary.total() > 0) {
                 std::ostringstream msg;
                 msg << "storage: pruned " << summary.total() << " rows older than "
                     << kDefaultRetentionDays
                     << "d on open (predictions=" << summary.predictions_deleted
-                    << ", context_snapshots=" << summary.context_snapshots_deleted << ")";
+                    << ", context_snapshots=" << summary.context_snapshots_deleted
+                    << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
                 log.info(msg.str());
                 if (should_vacuum_after_prune(summary.total())) {
                     try {
@@ -997,7 +1004,8 @@ ExportTrainingResult Storage::export_training_csv(
     return result;
 }
 
-PruneSummary Storage::prune_runtime_data(const std::string& cutoff_rfc3339) {
+PruneSummary Storage::prune_runtime_data(const std::string& cutoff_rfc3339,
+                                         double cutoff_unix_secs) {
     PruneSummary summary;
     {
         Stmt stmt(db_,
@@ -1012,6 +1020,16 @@ PruneSummary Storage::prune_runtime_data(const std::string& cutoff_rfc3339) {
         stmt.bind(1, cutoff_rfc3339);
         stmt.step_done();
         summary.context_snapshots_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
+    }
+    {
+        // feature_snapshots is the highest-volume table in the schema — one row per
+        // prediction tick (~1/sec while active) with 31 REAL columns — and until now it
+        // was never pruned at all, so it grew without bound while the other two stayed
+        // flat. Numeric comparison, not datetime(): this column is REAL epoch seconds.
+        Stmt stmt(db_, "DELETE FROM feature_snapshots WHERE timestamp < ?1");
+        stmt.bind(1, cutoff_unix_secs);
+        stmt.step_done();
+        summary.feature_snapshots_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
     }
     return summary;
 }

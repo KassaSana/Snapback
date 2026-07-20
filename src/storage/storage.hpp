@@ -26,8 +26,9 @@ inline constexpr std::size_t kVacuumMinDeletedRows = 500;
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
     std::size_t context_snapshots_deleted = 0;
+    std::size_t feature_snapshots_deleted = 0;
     [[nodiscard]] std::size_t total() const {
-        return predictions_deleted + context_snapshots_deleted;
+        return predictions_deleted + context_snapshots_deleted + feature_snapshots_deleted;
     }
 };
 
@@ -108,8 +109,13 @@ public:
         const std::filesystem::path& out_dir,
         const std::optional<std::string>& session_id = std::nullopt);
 
-    // Rust: prune_runtime_data — deletes old predictions + context_snapshots on open.
-    PruneSummary prune_runtime_data(const std::string& cutoff_rfc3339);
+    // Rust: prune_runtime_data — deletes old runtime rows on open.
+    //
+    // Takes the cutoff twice because the tables don't agree on a time format:
+    // predictions/context_snapshots store RFC3339 TEXT, while feature_snapshots.timestamp
+    // is REAL Unix epoch seconds (see insert_feature_snapshot). Passing one and deriving
+    // the other would mean parsing RFC3339 by hand; the caller already has both.
+    PruneSummary prune_runtime_data(const std::string& cutoff_rfc3339, double cutoff_unix_secs);
     void vacuum();
 
 private:

@@ -257,7 +257,7 @@ TEST_CASE("storage export_training_csv filters by session id") {
     CHECK(features_all.find("Session B") != std::string::npos);
 }
 
-TEST_CASE("storage prune_runtime_data removes old predictions and context snapshots only") {
+TEST_CASE("storage prune_runtime_data removes old rows from all three runtime tables") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
 
@@ -274,20 +274,50 @@ TEST_CASE("storage prune_runtime_data removes old predictions and context snapsh
     old_ctx.timestamp = "2020-01-01T00:00:00Z";
     storage->save_context_snapshot(session.session_id, old_ctx);
 
+    // insert_feature_snapshot stamps rows with unix_now_secs(), so this row is "now" and
+    // must survive a cutoff in the past.
     FeatureVector f;
     f.seconds_since_session_start() = 10.0;
     storage->insert_feature_snapshot(session.session_id, f);
 
+    // 2024-01-01 as RFC3339 and as Unix epoch seconds — the same instant in the two
+    // formats the tables use.
+    constexpr double kCutoffUnix = 1704067200.0;
     const PruneSummary summary =
-        storage->prune_runtime_data("2024-01-01T00:00:00Z");
+        storage->prune_runtime_data("2024-01-01T00:00:00Z", kCutoffUnix);
     CHECK(summary.predictions_deleted == 1);
     CHECK(summary.context_snapshots_deleted == 1);
+    CHECK(summary.feature_snapshots_deleted == 0);  // stamped now, newer than the cutoff
     CHECK(should_vacuum_after_prune(summary.total()) == false);
 
     TempDir temp;
     const auto exported =
         storage->export_training_csv(temp.path, session.session_id);
     CHECK(exported.feature_count == 1);
+}
+
+TEST_CASE("storage prune_runtime_data deletes feature snapshots past the cutoff") {
+    // The regression this closes: feature_snapshots is the highest-volume table (one row
+    // per prediction tick) and was excluded from the prune entirely, so it grew forever
+    // while predictions/context_snapshots stayed flat at the retention window.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto session = storage->create_session("Retention", FocusMode::Normal);
+    FeatureVector f;
+    f.seconds_since_session_start() = 10.0;
+    storage->insert_feature_snapshot(session.session_id, f);
+
+    // A cutoff far in the future makes the just-written row "old".
+    constexpr double kFarFuture = 4102444800.0;  // 2100-01-01
+    const PruneSummary summary =
+        storage->prune_runtime_data("2100-01-01T00:00:00Z", kFarFuture);
+    CHECK(summary.feature_snapshots_deleted == 1);
+
+    TempDir temp;
+    const auto exported =
+        storage->export_training_csv(temp.path, session.session_id);
+    CHECK(exported.feature_count == 0);
 }
 
 TEST_CASE("should_vacuum_after_prune matches Rust threshold") {
