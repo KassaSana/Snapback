@@ -22,6 +22,7 @@ const granted = {
 const boundary = vi.hoisted(() => {
   const state = {
     permissions: null as Record<string, unknown> | null,
+    grantedValue: null as Record<string, unknown> | null,
     grantOnRequest: true,
   };
 
@@ -62,7 +63,7 @@ const boundary = vi.hoisted(() => {
     }
   });
   const listen = vi.fn(async () => () => {});
-  return { invoke, listen, state: state as typeof state & { grantedValue: unknown } };
+  return { invoke, listen, state };
 });
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
