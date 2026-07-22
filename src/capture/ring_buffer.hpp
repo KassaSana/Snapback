@@ -7,9 +7,9 @@
 // kind of code Rust made safe for free and C++ makes your responsibility.
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -53,7 +53,11 @@ public:
 
 private:
     static constexpr std::size_t kMask = Capacity - 1;
-    std::array<T, Capacity> slots_{};
+    // Heap, not std::array: 65,536 CaptureEvents is ~6 MB, which silently lived in
+    // whatever storage the *owner* chose. A stack-allocated CaptureThread (or AppState,
+    // which holds one by value) blew Windows' 1 MB default thread stack — see Roadmap 6.1.
+    // Allocated once here, never resized; the hot-path push/pop never touch the pointer.
+    std::unique_ptr<T[]> slots_ = std::make_unique<T[]>(Capacity);
     // alignas(64): keep head_ (producer-written) and tail_ (consumer-written) on separate
     // cache lines. Adjacent atomics would share a line and ping-pong it between the two
     // threads on every push/pop (false sharing); 64 bytes is the common x86/ARM line size.

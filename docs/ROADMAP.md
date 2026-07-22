@@ -81,6 +81,15 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
 
 - **6.1 — Windows CTest dies with a stack overflow.** `S` ⛔ **blocks everything**
 
+  > **Fixed in code 2026-07-21, awaiting Windows CI confirmation.** `RingBuffer` now owns
+  > its storage on the heap (`unique_ptr<T[]>`), fixing the test, `AppState`, and every
+  > future caller at once. Reproduced first on macOS with `ulimit -s 1024` (SIGSEGV, same as
+  > Windows CI), then verified: 161 test cases / 672 assertions green under the same 1 MB
+  > stack. A `static_assert(sizeof(CaptureThread) < 4096)` in `test_capture_thread.cpp` now
+  > fails the *compile* if the array ever moves back inline — verified by reintroducing the
+  > bug and watching it fire. **Do not move this to Done until Windows CI is green** —
+  > consequence 1 below still stands: 138 skipped cases may reveal the next failure.
+
   Two jobs fail — **C++ headless tests / windows-latest** and **ONNX backend / windows** —
   and they are the *same* failure, because both run the same CTest binary. macOS and Ubuntu
   pass.

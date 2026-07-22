@@ -68,6 +68,14 @@ std::size_t drain(CaptureThread& capture) {
 
 }  // namespace
 
+// Regression guard for Roadmap 6.1: RingBuffer used to hold its 65,536-slot array inline,
+// making sizeof(CaptureThread) ~6 MB — every stack-allocated instance (this file's tests,
+// any future AppState local) overflowed Windows' 1 MB default thread stack. The storage now
+// lives on the heap; if someone inlines it again, this fails at compile time instead of
+// SIGSEGV-ing only on Windows CI.
+static_assert(sizeof(CaptureThread) < 4096,
+              "CaptureThread must stay stack-friendly; ring storage belongs on the heap");
+
 TEST_CASE("CaptureThread drains hook events in FIFO order") {
     ScriptedHook hook(10);
     CaptureThread capture;
