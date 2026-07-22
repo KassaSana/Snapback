@@ -8,7 +8,7 @@
 // — that three-way match is the contract (see frontend/README.md).
 #pragma once
 
-#include <webview/webview.h>  // from FetchContent
+#include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
 
 #include <filesystem>
 #include <string>

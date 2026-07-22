@@ -6,7 +6,7 @@
 //   3. open SQLite storage             (Rust: Storage::open)
 //   4. build AppState + start engine   (Rust: AppState::new + start_engine)
 //   5. create the webview, bind IPC, load the React build, run the loop
-#include <webview/webview.h>
+#include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
 
 #include <cstdlib>
 #include <filesystem>
