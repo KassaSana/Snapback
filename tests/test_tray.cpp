@@ -1,6 +1,6 @@
 // Tests the tray's pure menu-command -> action mapping. The Shell_NotifyIcon plumbing is
 // OS glue verified by running the app.
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include "app/tray.hpp"
 

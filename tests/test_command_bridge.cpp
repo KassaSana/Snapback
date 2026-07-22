@@ -1,7 +1,7 @@
 // Tests the pure IPC-bridge contract (command_dispatch.hpp): argument unwrapping,
 // result serialization, the {__snapback_error} envelope, and the ported validation
 // helpers. These are the seams the frontend depends on, minus the webview transport.
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include <memory>
 #include <stdexcept>

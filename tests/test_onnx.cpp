@@ -1,6 +1,6 @@
 // Tests the ONNX backend. resolve_model_path is exercised in every build; the actual
 // load+run + heuristic-fallback path only when SNAPBACK_ONNX is on (fixtures/model.onnx).
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include <chrono>
 #include <filesystem>

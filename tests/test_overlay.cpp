@@ -1,7 +1,7 @@
 // Tests the overlay's pure helpers: top-right placement math (ported from overlay.rs's
 // #[cfg(test)] cases) and the card text formatting. The Win32 window itself is verified
 // by running the app.
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include "snapback/overlay.hpp"
 

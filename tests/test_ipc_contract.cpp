@@ -1,4 +1,4 @@
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include <filesystem>
 #include <fstream>

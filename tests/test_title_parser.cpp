@@ -1,7 +1,7 @@
 // Mirrors the spirit of Rust's #[cfg(test)] mod tests in snapback/title_parser.rs.
 // Replaces `cargo test` with doctest. One real, runnable test to anchor the harness.
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include "snapback/title_parser.hpp"
 

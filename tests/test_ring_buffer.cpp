@@ -2,7 +2,7 @@
 // single-threaded ordering/full-state case lives in test_engine.cpp; this one runs a real
 // producer thread against a real consumer thread to exercise the acquire/release memory
 // ordering (the part CLAUDE.md calls the riskiest — Rust's Send/Sync gave it to us free).
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include <atomic>
 #include <cstdint>

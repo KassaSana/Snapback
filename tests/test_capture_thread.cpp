@@ -7,7 +7,7 @@
 // CaptureThread's producer/consumer seam over the SPSC ring. A ScriptedHook stands in for
 // the platform backend so the producer side is deterministic. (test_ring_buffer.cpp covers
 // the ring's memory ordering directly; this covers the class that drives it.)
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include <atomic>
 #include <chrono>

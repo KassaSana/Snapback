@@ -1,6 +1,6 @@
 // Ports the #[cfg(test)] cases from ../Snapback/src-tauri/src/types.rs, plus the
 // wire-format assertions the port plan requires (camelCase keys, nested objects).
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include "types.hpp"
 

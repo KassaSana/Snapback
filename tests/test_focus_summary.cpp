@@ -1,4 +1,4 @@
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include "engine/focus_summary.hpp"
 

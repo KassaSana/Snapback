@@ -1,4 +1,4 @@
-#include <doctest/doctest.h>
+#include "doctest_wrapper.hpp"
 
 #include "capture/ring_buffer.hpp"
 #include "engine/app_context.hpp"
