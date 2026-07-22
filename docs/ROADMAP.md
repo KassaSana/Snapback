@@ -14,7 +14,9 @@ entries duplicated the [Done archive](#done-archive) below. Don't reopen a paral
 features (privacy, analytics, summary reports, goal categories, diagnostics); Tier 0's four
 wiring gaps; an engine/storage audit that opened **Tier 5**; and a staff review of CI,
 security, and the app/storage/capture paths that opened **Tiers 6, 7, and 8**. 152 C++ tests
-and 38 frontend tests green *on macOS and Linux* — **Windows CI is currently red, see 6.1.**
+and 38 frontend tests green *on macOS and Linux*. **Windows CI went green again 2026-07-22**
+(6.1 fixed, 161 C++ test cases on all three OSes); the first real run of the Linux desktop
+guard then failed on X11 macro pollution — fixed, see 6.3's note.
 
 **A note on trusting this file.** Past audits found items here that were simply wrong: 0.3
 described work that was already written (and broken), 2.4 sits in the Done archive on the
@@ -50,9 +52,9 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 
 | # | Item | Why now |
 |---|------|---------|
-| 1 | **6.1** Windows stack overflow | Nothing else is verifiable while CI is red, and it's the smallest fix on the list |
-| 2 | **6.4** `actions/checkout` bump | A deadline, not a preference — Node 20 removal breaks *every* job |
-| 3 | **6.2 / 6.3** red-master rule + guard decoupling | Cheap, and the reason they matter is fresh right now |
+| 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
+| 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
+| 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
 | 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
 | 5 | **12.3** create `docs/adr/` | **Blocks the decision sessions** — eleven items produce decisions with nowhere to land |
 | 6 | **8.1** engine-thread exception boundary | A crash in normal use, not just under attack |
@@ -79,61 +81,10 @@ shippable product** — if the goal is "someone else uses this," 9.1 should argu
 
 Opened by the 2026-07-20 staff review against run `29728565319`.
 
-- **6.1 — Windows CTest dies with a stack overflow.** `S` ⛔ **blocks everything**
-
-  > **Fixed in code 2026-07-21, awaiting Windows CI confirmation.** `RingBuffer` now owns
-  > its storage on the heap (`unique_ptr<T[]>`), fixing the test, `AppState`, and every
-  > future caller at once. Reproduced first on macOS with `ulimit -s 1024` (SIGSEGV, same as
-  > Windows CI), then verified: 161 test cases / 672 assertions green under the same 1 MB
-  > stack. A `static_assert(sizeof(CaptureThread) < 4096)` in `test_capture_thread.cpp` now
-  > fails the *compile* if the array ever moves back inline — verified by reintroducing the
-  > bug and watching it fire. **Do not move this to Done until Windows CI is green** —
-  > consequence 1 below still stands: 138 skipped cases may reveal the next failure.
-
-  Two jobs fail — **C++ headless tests / windows-latest** and **ONNX backend / windows** —
-  and they are the *same* failure, because both run the same CTest binary. macOS and Ubuntu
-  pass.
-
-  ```
-  tests/test_capture_thread.cpp(71): CaptureThread drains hook events in FIFO order
-  FATAL ERROR: test case CRASHED: SIGSEGV - Stack overflow
-  [doctest] test cases: 25 | 24 passed | 1 failed | 138 skipped
-  ```
-
-  **Root cause is arithmetic, not a race.** The test declares `CaptureThread capture;` as a
-  local (`test_capture_thread.cpp:72`). `CaptureThread` holds its ring buffer **by value**
-  (`capture_thread.hpp:41`), and `RingBuffer` holds `std::array<T, Capacity> slots_{}` by
-  value. `CaptureEvent` (`types.hpp:124`) is **96 bytes** on MSVC — 8 (enum + padding) + 8
-  (double) + 32 + 32 (two `std::string`) + 16 (four ints).
-
-  **96 × 65,536 = 6,291,456 bytes ≈ 6 MB on the stack.** Windows default thread stack is
-  **1 MB** → overflow, every time. Linux and macOS get 8 MB → they fit. That is the entire
-  platform split; it is deterministic, not flaky.
-
-  Three consequences beyond the red X:
-
-  1. **138 test cases were skipped, not passed** — the crash aborted the run. Do not assume
-     this fix turns CI green; assume it reveals the next problem.
-  2. `AppState` holds `CaptureThread` by value (`state.hpp:170`), so **`sizeof(AppState)` is
-     also >6 MB**. Production survives *only* because `main.cpp:114` happens to use
-     `std::make_unique`. Any future stack-allocated `AppState` crashes the same way. This is
-     a landmine, not just a test bug.
-  3. Constructing a `CaptureThread` value-initializes 65,536 `CaptureEvent`s — **131,072
-     `std::string` constructions** — every time.
-
-  **Fix direction:** heap-allocating in the test is the one-line unblock but leaves the
-  landmine. Better is making `RingBuffer` own its storage on the heap (`unique_ptr` to the
-  array, or a `vector` sized at construction), which fixes the test, `AppState`, and every
-  future caller at once. The buffer is allocated once at startup and never resized, so the
-  indirection costs nothing on the hot path — the push/pop atomics and cache-line padding
-  that justify this class are untouched.
-
-  **Reproduce before fixing:** this cannot be reproduced on macOS or Linux at default stack
-  size. Build on Windows, or constrain the stack locally (`ulimit -s 1024`) and watch it
-  fail first.
-
-  *C++/Rust delta: Rust's `Box`/`Vec` would have put this on the heap by default; a
-  fixed-size `std::array` member is C++ silently choosing automatic storage for 6 MB.*
+- **6.1 — DONE, CI-confirmed 2026-07-22.** Moved to the [Done archive](#done-archive).
+  Both Windows jobs are green as of run `29890010902`; the 138 previously-skipped test
+  cases ran and passed. The predicted "next problem" did surface — the first-ever real run
+  of `desktop-app-build / ubuntu-latest` failed on X11 macro pollution (see 6.3's note).
 
 - **6.2 — Master has been red all day and commits kept landing.** `S` `process`
 
@@ -159,23 +110,24 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
   The desktop build doesn't depend on the headless suite passing — it depends on the code
   compiling. Decouple the `needs:` graph.
 
-- **6.4 — Dependency updates are blocked behind 6.1, and there's a deadline.** `S`
+  > **Decoupled 2026-07-22, awaiting CI confirmation.** Both `windows-desktop-integration`
+  > and `desktop-app-build` lost their `needs:` — they now run unconditionally, with a
+  > comment in `ci.yml` explaining why they must never regain one. Cost: they burn runner
+  > minutes even when the core is broken; that is the point — broken core is exactly when
+  > the desktop guard's answer matters.
+  >
+  > **And the guard's first real run immediately earned its keep:** once 6.1 unblocked it,
+  > `desktop-app-build / ubuntu-latest` failed for the first time ever — X11 headers
+  > (pulled in via webview → GTK → GDK) `#define KeyPress`, `KeyRelease`, `None`, `Status`
+  > as bare macros, clobbering `EventType::KeyPress`, `snapback::Status`, and every
+  > `::None` enumerator at parse time. Fixed the same day: `src/app/webview_compat.hpp` is
+  > now the only legal include site for `webview.h` and scrubs the macro pollution right
+  > after the include (same pattern as `tests/doctest_wrapper.hpp`). Verified to link on
+  > macOS; Ubuntu is CI-verified only, so the next master run is the proof.
 
-  The Dependabot PR bumping `actions/checkout` 4→7 is failing CI for the 6.1 reason. Every
-  job currently annotates:
-
-  > Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced
-  > to run on Node.js 24: `actions/checkout@v4`
-
-  We are already on the forced fallback. When GitHub removes it, **every job fails at
-  checkout** — the whole CI system, not one job. The fix is the PR that 6.1 is blocking.
-
-  > **Bumped in-repo 2026-07-22, awaiting CI confirmation.** All four Node-20 actions moved
-  > to the majors Dependabot proposed: `checkout` 4→7, `setup-node` 4→7, `upload-artifact`
-  > 4→7, `download-artifact` 4→8, across all four workflow files. The corresponding
-  > Dependabot PRs (#20–#23) should auto-close on push. `softprops/action-gh-release` 2→3
-  > (PR #19) was left alone — third-party, release-path, deserves its own look. Workflows
-  > can't be validated locally; the next master run is the test.
+- **6.4 — DONE, CI-confirmed 2026-07-22.** Moved to the [Done archive](#done-archive).
+  Remaining loose ends: `action-gh-release` 2→3 (PR #19) still open by choice, and the
+  Dependabot PRs #20–#23 should auto-close now that the versions match.
 
 - **6.5 — MSVC warning noise obscures real diagnostics.** `S`
 
@@ -183,6 +135,11 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
   `doctest.h`, once per translation unit. Third-party, not ours — but it buries our own
   warnings, which is part of why 6.1 took a crash to surface rather than inspection.
   Suppress at the include site.
+
+  > **Done in code 2026-07-22, awaiting a Windows CI log to confirm the spam is gone.**
+  > All 24 test TUs now include `tests/doctest_wrapper.hpp`, which wraps
+  > `<doctest/doctest.h>` in a `#pragma warning(disable : 5285)` push/pop under `_MSC_VER`.
+  > One include site, third-party noise only — our own C5285s would still fire.
 
 ---
 
@@ -1137,6 +1094,25 @@ itself a backlog item below.
 
 Completed work. Kept for history; details live in git log and
 [PORT_HISTORY.md](PORT_HISTORY.md).
+
+### Tier 6 CI fixes (2026-07-22)
+
+- **6.1 — Windows CTest stack overflow** (`a240e11`, CI-confirmed run `29890010902`) —
+  `RingBuffer` held `std::array<T, 65536>` inline; at 96 bytes per `CaptureEvent` that made
+  every `CaptureThread` (and `AppState`, which holds one by value) a ~6 MB object. Windows'
+  1 MB default thread stack overflowed deterministically; Linux/macOS survived on 8 MB.
+  Fixed by moving storage to `std::unique_ptr<T[]>` — one allocation at construction, hot
+  path untouched. Reproduced first via `ulimit -s 1024` on macOS; guarded by a
+  `static_assert(sizeof(CaptureThread) < 4096)` verified to fire when the bug is
+  reintroduced. The fix un-skipped 138 test cases, which then exposed the X11 macro
+  collision in the desktop build (see 6.3). *C++/Rust delta: Rust's `Box`/`Vec` heap by
+  default; a `std::array` member is C++ silently choosing automatic storage for 6 MB.*
+
+- **6.4 — GitHub Actions off Node 20** (`07e898c`, CI-confirmed run `29890010902`) —
+  `checkout` 4→7, `setup-node` 4→7, `upload-artifact` 4→7, `download-artifact` 4→8 across
+  all four workflows, matching the blocked Dependabot PRs. `setup-python` 5→6 followed in
+  the 6.3 commit after the run's annotations flagged it too (Dependabot never PR'd it).
+  `action-gh-release` 2→3 (PR #19) deliberately deferred — third-party, release-path.
 
 ### Tier 5 audit fixes (2026-07-20)
 

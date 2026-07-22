@@ -109,7 +109,8 @@ The Rust→C++ port is **complete** — the phase playbook that got us here is a
 [docs/PORT_HISTORY.md](docs/PORT_HISTORY.md) as a teaching record. All new work comes from
 [docs/ROADMAP.md](docs/ROADMAP.md), which opens with an ordered **"Start here"** table.
 Follow that table; don't pick by tier number, since the tiers are numbered by when they were
-opened, not by priority. **Tier 6 (CI is red) blocks everything else.**
+opened, not by priority. (Tier 6's "CI is red" blocker cleared 2026-07-22 — 6.1 and 6.4 are
+done and CI-confirmed; 6.2 remains as a process decision.)
 
 ### Verifying a claim before you act on it
 
@@ -126,7 +127,7 @@ described as missing that already existed, and work marked done whose code never
   was 0.0 in every row ever written because every test passed an explicit origin while
   production passed `nullopt`. Roadmap 7.1 is the same shape, still open.
 
-## Status (2026-07-20)
+## Status (2026-07-20, CI rows amended 2026-07-22)
 
 The port runs end-to-end on Windows: capture → engine → SQLite → webview IPC → reused React
 UI. CI covers three OSes with ASan/UBSan/TSan plus a dual-language Rust/C++ feature-parity
@@ -134,27 +135,28 @@ job; a tag-driven release workflow packages Windows builds with optional Authent
 signing. This table is a summary — **the single source of truth for open work is
 [docs/ROADMAP.md](docs/ROADMAP.md)**; when they disagree, the roadmap wins.
 
-**⛔ Windows CI is red, so several rows below are unverified rather than green** (Roadmap
-6.1). A 6 MB stack-allocated ring buffer overflows Windows' 1 MB default stack in
-`test_capture_thread.cpp`. The crash aborts the run, so **138 test cases are *skipped, not
-passed***. Everything Windows-only is untested right now — and per the toolchain section,
-Windows-only code can't be built on this macOS machine either, so CI was its only coverage.
+**Windows CI went green again 2026-07-22** — the 6.1 stack overflow (6 MB ring buffer held
+inline by value, overflowing Windows' 1 MB thread stack) is fixed: storage moved to the heap,
+guarded by a `static_assert` on `sizeof(CaptureThread)`. All 161 test cases now run on all
+three OSes. Un-skipping the desktop guard immediately surfaced the next bug — X11 macro
+pollution (`#define KeyPress`/`None`/`Status`) breaking the Linux desktop build — fixed via
+`src/app/webview_compat.hpp`, the now-only legal include site for `webview.h`.
 
 | Area | Status |
 |------|--------|
-| Core pipeline (types → storage → engine → app → IPC → ONNX) | **Done** — 24 test files green on macOS/Linux; Windows blocked by 6.1 |
-| Windows capture / overlay / tray | **Written, currently unverified** — `overlay_windows.cpp` was never compiled locally (macOS host) and Windows CI is red; the `windows-desktop-integration` job `needs: [cpp-headless, …]` so it's skipped, not run |
+| Core pipeline (types → storage → engine → app → IPC → ONNX) | **Done** — 161 test cases green on all three OSes as of 2026-07-22 |
+| Windows capture / overlay / tray | **Compiled + smoke-tested in CI as of 2026-07-22** — the `windows-desktop-integration` job ran for real (green) once 6.1 unblocked it; still never exercised interactively |
 | Linux capture (evdev) | **Done** — real evdev with polling fallback |
 | macOS capture | **Native `CGEventTap`, fixed but unverified on real hardware** — the tap existed all along in `input_hook_macos.mm` (the repo's only `.mm` file, which is why audits missed it) and was silently dying under load; fixed 2026-07-20. Needs a live Mac run — Roadmap 0.3 |
 | macOS / Linux overlay + tray | **No-op stubs** — `overlay_stub.cpp` / `tray_stub.cpp` exist so the app links; real ones are Roadmap 3.1 / 3.2 |
-| Desktop app off Windows | **Links as of 2026-07-20** — it never had, and no CI job built it; the `desktop-app-build` job now guards it, but ⚠️ it's *skipped* whenever CI is red — Roadmap 6.3 |
-| Packaging / CI | **⛔ Red** — Windows headless + ONNX jobs fail (6.1); `actions/checkout` is on GitHub's forced Node-20 fallback and the bump PR is blocked behind the same bug (6.4). Parity job, tag release, and signing are wired; cert is 0.4b |
+| Desktop app off Windows | **macOS links (local + CI); Linux fixed 2026-07-22, awaiting CI** — the guard's first real run caught X11 macros breaking the build; `webview_compat.hpp` scrubs them. The job no longer has a `needs:`, so it runs even when CI is red (6.3) |
+| Packaging / CI | **Green as of 2026-07-22** (except the Linux desktop link, fix pending push) — 6.1 fixed, all actions off Node 20 (6.4). Parity job, tag release, and signing are wired; cert is 0.4b |
 | Engine thread resilience | **⚠️ No exception boundary** — any throw from `engine_tick()` terminates the process, and `json::dump()` throws on invalid UTF-8 from OS-supplied window titles. Roadmap 8.1 |
 | Analytics / summary windows | **⚠️ Silently capped** — both read `recent_predictions(10000)` ≈ 2h46m of use, so the "weekly" report covers this afternoon; hourly buckets are UTC presented as local. Roadmap 7.1 / 7.2 |
 | DB schema migrations | **⚠️ None** — all `CREATE TABLE IF NOT EXISTS`, no `user_version`, no `ALTER TABLE`, while we promise `focoflow.db` compatibility with the Rust build. Roadmap 7.3 |
 | Idle/AFK, pomodoro, retention prune, focus summary | **Done, backend + UI** |
 | Confidence gating | **⚠️ Claimed done, actually dead code** — `confidence.hpp` has no callers and its `[0,100]` threshold can't fire against the classifier's `[0,1]` output. Roadmap 5.3 |
-| ONNX inference path | **Fixed but unverified** — 5.1 moved the layering boundary so the model returns raw probabilities and the classifier still applies Block rules, thrash, drift, and goal alignment. **Unblocks 2.3.** The ONNX code is behind `SNAPBACK_ONNX`, **not compiled in the default build**, and its only CI job is currently failing (6.1) |
+| ONNX inference path | **CI-verified as of 2026-07-22** — 5.1 moved the layering boundary so the model returns raw probabilities and the classifier still applies Block rules, thrash, drift, and goal alignment. **Unblocks 2.3.** The ONNX code is behind `SNAPBACK_ONNX`, **not compiled in the default build**; its `onnx-windows` CI job is green again |
 | Logger / notifications | **Done, adopted + wired** — leveled logger in storage/state, toast fires on real `snapback` events |
 | `dismiss_snapback` | **Done** — was silently unreachable everywhere, which stuck `ContextTracker` in `Recovering` after one snapback per session; now wired natively (Windows) and from the web UI |
 | Onboarding wizard (1.1) | **Done** — explains capture + local-only, requests permissions, and now picks a default focus mode |
@@ -164,9 +166,10 @@ Windows-only code can't be built on this macOS machine either, so CI was its onl
 
 **Do next (Roadmap):** the ordered sequence lives at the top of
 [docs/ROADMAP.md](docs/ROADMAP.md) under **"Start here"** — follow it there rather than
-duplicating it here. In short: **6.1** (unbreak Windows CI) → **6.4** (the Node-20 deadline)
-→ **8.1** (engine exception boundary) → **7.4 + 7.10** (capture/prediction health, which are
-the instruments 0.3 needs) → **0.3**.
+duplicating it here. In short (6.1 and 6.4 done 2026-07-22): **6.2** (red-master rule,
+a decision) → **9.1** (define v1) → **12.3** (`docs/adr/`) → **8.1** (engine exception
+boundary) → **7.4 + 7.10** (capture/prediction health, which are the instruments 0.3
+needs) → **0.3**.
 
 Then one decision session settles **5.3, 5.4, 1.2, and 7.7** together — they are all the same
 question: *what do our scores mean, and on what scale?* Nothing gets coded in that session.
