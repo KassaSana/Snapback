@@ -47,10 +47,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -74,7 +74,7 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure core
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
@@ -103,7 +103,7 @@ jobs:
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure (sanitized)
         run: >
@@ -134,7 +134,7 @@ jobs:
       TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure (tsan)
         run: >
@@ -158,10 +158,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout C++ port
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout Rust source of truth
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: KassaSana/Snapback
           # master now carries the C++ port. main-fresh preserves the Rust/Tauri
@@ -217,7 +217,7 @@ jobs:
       ORT_VERSION: "1.20.1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Vendor ONNX Runtime
         shell: pwsh
@@ -249,7 +249,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure (benchmarks on)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_BENCHMARKS=ON
@@ -272,10 +272,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -309,10 +309,10 @@ jobs:
     needs: [cpp-headless, frontend-mock]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -325,7 +325,7 @@ jobs:
 
       - name: Upload demo logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-demo-logs
           path: |
@@ -354,7 +354,7 @@ jobs:
         os: [macos-latest, ubuntu-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # webview picks webkit2gtk-4.1 first and falls back to 4.0; 4.1 is what
       # ubuntu-latest ships. macOS uses the system WebKit and needs nothing.
@@ -380,7 +380,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Ensure Windows demo runbook is linked
         run: |

@@ -170,6 +170,13 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
   We are already on the forced fallback. When GitHub removes it, **every job fails at
   checkout** — the whole CI system, not one job. The fix is the PR that 6.1 is blocking.
 
+  > **Bumped in-repo 2026-07-22, awaiting CI confirmation.** All four Node-20 actions moved
+  > to the majors Dependabot proposed: `checkout` 4→7, `setup-node` 4→7, `upload-artifact`
+  > 4→7, `download-artifact` 4→8, across all four workflow files. The corresponding
+  > Dependabot PRs (#20–#23) should auto-close on push. `softprops/action-gh-release` 2→3
+  > (PR #19) was left alone — third-party, release-path, deserves its own look. Workflows
+  > can't be validated locally; the next master run is the test.
+
 - **6.5 — MSVC warning noise obscures real diagnostics.** `S`
 
   Every Windows build emits C5285 (`cannot declare a specialization for 'std::tuple'`) from
