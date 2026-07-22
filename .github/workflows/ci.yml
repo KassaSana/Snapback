@@ -176,7 +176,7 @@ jobs:
           test -f rust-source/fixtures/feature_parity/scenarios.json
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -300,13 +300,18 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Windows desktop app: build + no-launch integration smoke (never starts the
-  # GUI, which would hang). Depends on the core + frontend passing first.
+  # GUI, which would hang).
+  #
+  # Deliberately has NO `needs:` (Roadmap 6.3): with `needs: [cpp-headless,
+  # frontend-mock]` this job was *skipped* whenever those failed — so the one
+  # guard over Windows-only desktop code stopped running exactly when CI was
+  # red, which is when it matters most. A guard that only executes when
+  # everything else is green does not guard the case it exists for.
   # ---------------------------------------------------------------------------
   windows-desktop-integration:
     name: Windows desktop integration smoke
     runs-on: windows-latest
     timeout-minutes: 40
-    needs: [cpp-headless, frontend-mock]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -343,11 +348,13 @@ jobs:
   # and Tray::instance() stayed undefined off Windows without anyone noticing.
   # An opt-in build target is an opt-in guarantee; this is the guarantee.
   # ---------------------------------------------------------------------------
+  # Deliberately no `needs:` — same Roadmap 6.3 reasoning as the Windows job
+  # above: this link check depends on the code compiling, not on the headless
+  # suite passing, and gating it on test jobs made it skip while CI was red.
   desktop-app-build:
     name: Desktop app build / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    needs: [cpp-headless]
     strategy:
       fail-fast: false
       matrix:
