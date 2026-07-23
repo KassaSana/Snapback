@@ -324,6 +324,7 @@ export default function App() {
         <PrivacyCard
           busy={privacy.busy}
           error={privacy.error}
+          exclusionWarning={privacy.exclusionWarning}
           exclusionInput={privacy.exclusionInput}
           onAddExclusion={privacy.addExclusion}
           onPrivateModeChange={privacy.setPrivateMode}

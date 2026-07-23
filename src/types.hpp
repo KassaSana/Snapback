@@ -315,6 +315,7 @@ struct SummaryExportResult {
 };
 
 struct DiagnosticsSnapshot {
+    std::string version;
     HealthStatus health;
     std::vector<std::string> recent_logs;
 };

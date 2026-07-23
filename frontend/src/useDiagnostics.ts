@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type DiagnosticsSnapshot } from "./api";
 
 const emptyDiagnostics: DiagnosticsSnapshot = {
+  version: "0.0.0-dev",
   health: {
     status: "offline",
     captureRunning: false,

@@ -3,6 +3,7 @@ import type { PrivacySettings } from "./api";
 type PrivacyCardProps = {
   busy: boolean;
   error: string | null;
+  exclusionWarning: string | null;
   exclusionInput: string;
   onAddExclusion: () => void | Promise<void>;
   onPrivateModeChange: (enabled: boolean) => void | Promise<void>;
@@ -14,6 +15,7 @@ type PrivacyCardProps = {
 export function PrivacyCard({
   busy,
   error,
+  exclusionWarning,
   exclusionInput,
   onAddExclusion,
   onPrivateModeChange,
@@ -29,7 +31,8 @@ export function PrivacyCard({
       </div>
       <p className="helper-text">
         Snapback stores activity on this device. Private mode pauses capture processing, and
-        excluded apps never write titles or predictions.
+        excluded app names never write titles or predictions. Exclusions match whole words,
+        case-insensitively.
       </p>
       <label className="toggle-row">
         <span>
@@ -45,7 +48,7 @@ export function PrivacyCard({
         />
       </label>
       <label className="field">
-        <span>Excluded app or pattern</span>
+        <span>Excluded app name or word</span>
         <input
           type="text"
           placeholder="Banking, 1Password"
@@ -60,6 +63,7 @@ export function PrivacyCard({
       <button className="secondary-button" disabled={busy || !exclusionInput.trim()} onClick={() => void onAddExclusion()}>
         Add exclusion
       </button>
+      {exclusionWarning ? <p className="helper-text alert">{exclusionWarning}</p> : null}
       <ul className="rules-list">
         {(settings?.excludedApps ?? []).length === 0 ? (
           <li className="rules-empty">No excluded apps.</li>

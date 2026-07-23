@@ -67,4 +67,11 @@ describe("privacy controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("set_privacy_exclusions", { excludedApps: [] }));
   });
+
+  it("warns before saving a broad one-character exclusion", async () => {
+    render(<App />);
+    const input = await screen.findByPlaceholderText("Banking, 1Password");
+    fireEvent.change(input, { target: { value: "a" } });
+    expect(screen.getByText("A one-character exclusion can hide many unrelated apps.")).toBeInTheDocument();
+  });
 });

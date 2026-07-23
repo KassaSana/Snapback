@@ -62,12 +62,12 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 8 | **0.3** live-Mac verification | Now actually measurable |
 | 9 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
 | 10 | **Decision session B**: 4.11 (incl. the no-separator case) | The diverge-from-Rust call |
-| 11 | **7.16** timestamp representation, then 7.1, 7.2 | **7.1 is the highest user-visible impact in this file** |
+| 11 | **7.16** timestamp representation, then 7.3, 7.11 | Analytics windows and local-hour buckets are done; the timestamp decision now scopes migrations and fixtures |
 | 12 | **7.3 + 7.11** migrations + DB fixtures | Unblocks the schema-drift CI job and 9.4's upgrade path |
-| 13 | **8.4** frontend-URL gate (**8.3 CSP done**) | Small, pure defense in depth |
+| 13 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
 | 14 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
-| 15 | **9.2, 9.7, 9.8** version, empty states, single-instance | Small, and each is visible to the first stranger who runs this |
-| 16 | **7.5, 7.6, 7.8, 7.9** | Independent, pick up any time |
+| 15 | ~~**9.2** version~~, **9.7, 9.8** empty states, single-instance | **9.2 done 2026-07-22**; the remaining two are visible to the first stranger who runs this |
+| 16 | **7.5, 7.6, 7.8** | Independent, pick up any time |
 | 17 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
 | 18 | **7.12 + 7.13** perf | After 4.4 benchmarking, so the fix is measured not guessed |
 | 19 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
@@ -181,7 +181,13 @@ internals, and the benchmark harness.
 
 ### Correctness
 
-- **7.1 — Analytics and summary reports silently cover only the last ~3 hours.** `S`
+- **7.1 + 7.2 — DONE 2026-07-22.** Analytics reports now query the requested timestamp
+  window in SQLite without the 10,000-row cap, and hourly buckets convert UTC timestamps
+  to local time.
+
+  The original findings were:
+
+  **7.1 — Analytics and summary reports silently cover only the last ~3 hours.** `S`
   **Highest user-visible impact in this file.**
 
   `AppState::analytics()` (`state.cpp:364`) and `summary_report()` (`state.cpp:428`) both
@@ -291,7 +297,13 @@ internals, and the benchmark harness.
   Also, the two overloads call *different* storage methods (`end_session` vs `stop_session`).
   Check whether that divergence is intentional before unifying.
 
-- **7.9 — Privacy exclusions match by unanchored substring.** `S`
+- **7.9 — DONE 2026-07-22.** Privacy exclusions now match whole app-name words
+  case-insensitively, so `Chrome` does not match `chromedriver`; the UI warns before saving
+  one- and two-character exclusions that are likely to hide unrelated apps.
+
+  The original finding was:
+
+  **Privacy exclusions match by unanchored substring.** `S`
 
   `is_private_event_unlocked()` (`state.cpp:581`) tests
   `app.find(lower_copy(exclusion)) != npos`. Excluding `Chrome` also excludes
@@ -585,7 +597,12 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   is injected via `webview.init`, not fetched), and converts "one React bug from RCE" into
   "two independent failures from RCE."
 
-- **8.4 — `SNAPBACK_FRONTEND_URL` lets any local process redirect the webview.** `S`
+- **8.4 — DONE 2026-07-22.** `SNAPBACK_FRONTEND_URL` is now debug-only; release builds load
+  the bundled frontend and fail closed to `about:blank` when the bundle is absent.
+
+  The original finding was:
+
+  **`SNAPBACK_FRONTEND_URL` lets any local process redirect the webview.** `S`
 
   ```cpp
   w.navigate(resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL")));
@@ -814,7 +831,13 @@ small; the tier is large because nobody has walked that path yet.
   blockers vs. fast-follows? What is explicitly *not* in v1? Output is a short checklist that
   the rest of this file gets measured against.
 
-- **9.2 — One version number, surfaced everywhere.** `S`
+- **9.2 — DONE 2026-07-22.** CMake owns the project version, which is compiled into the
+  backend and surfaced through the diagnostics payload and card. Runtime diagnostics now
+  identify the exact build without adding a second IPC command outside the Rust contract.
+
+  The original finding was:
+
+  **One version number, surfaced everywhere.** `S`
   The version `0.2.0` is written in **two independent places** — `CMakeLists.txt:200`
   (`CPACK_PACKAGE_VERSION`) and `frontend/package.json:4` — with nothing keeping them in
   sync. There is **no `get_version` IPC command**, so the UI cannot display a version and
@@ -1180,6 +1203,18 @@ Completed work. Kept for history; details live in git log and
 
 - **8.3 — Frontend Content Security Policy** — the bundled dashboard restricts fetched scripts
   to same-origin content while explicitly allowing its existing fonts, styles, and data images.
+
+### Tier 7 correctness and release-readiness fixes (2026-07-22)
+
+- **7.1 + 7.2 — Analytics windows and local-hour buckets** — removed the prediction row cap
+  from reports, moved timestamp filtering into SQLite, and converted UTC timestamps to the
+  machine's local hour before building chart buckets.
+- **7.9 — Privacy exclusion boundaries** — exclusions match whole app-name words and warn on
+  unusually broad one- and two-character entries.
+- **8.4 — Release frontend URL gate** — debug overrides remain available, while release builds
+  cannot be redirected by the launch environment and fail closed if the bundled UI is missing.
+- **9.2 — Runtime version identity** — the CMake project version is compiled into diagnostics
+  and displayed in the frontend.
 
 ### Tier 5 audit fixes (2026-07-20)
 

@@ -103,9 +103,11 @@ export type HealthStatus = {
 };
 
 export type DiagnosticsSnapshot = {
+  version: string;
   health: HealthStatus;
   recentLogs: string[];
 };
+
 
 export type SessionRecap = {
   sessionId: string;

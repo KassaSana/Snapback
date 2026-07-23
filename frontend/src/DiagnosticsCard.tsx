@@ -15,6 +15,7 @@ export function DiagnosticsCard() {
       <div className="diagnostics-summary">
         <span className={`health-dot health-dot-${health.status}`} aria-hidden="true" />
         <strong>{health.status}</strong>
+        <span>Version {diagnostics.version}</span>
         <span>{health.captureEventsDropped} dropped capture events</span>
         <span>
           Prediction: {health.lastPredictionAgeSecs == null

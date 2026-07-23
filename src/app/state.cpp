@@ -14,8 +14,10 @@
 #include <nlohmann/json.hpp>
 
 #include "capture/permissions.hpp"
+#include "app/version.hpp"
 #include "engine/app_context.hpp"
 #include "engine/onnx_model.hpp"
+#include "util/time.hpp"
 
 namespace snapback {
 namespace {
@@ -34,6 +36,24 @@ std::string trim_copy(std::string value) {
     return value.substr(first, last - first + 1);
 }
 
+bool is_app_name_word_char(unsigned char c) {
+    return std::isalnum(c) || c == '_';
+}
+
+bool contains_whole_app_name_phrase(const std::string& app, const std::string& phrase) {
+    if (phrase.empty()) return false;
+    for (std::size_t offset = app.find(phrase); offset != std::string::npos;
+         offset = app.find(phrase, offset + 1)) {
+        const bool starts_word = offset == 0 ||
+                                 !is_app_name_word_char(static_cast<unsigned char>(app[offset - 1]));
+        const auto end = offset + phrase.size();
+        const bool ends_word = end == app.size() ||
+                               !is_app_name_word_char(static_cast<unsigned char>(app[end]));
+        if (starts_word && ends_word) return true;
+    }
+    return false;
+}
+
 std::string cutoff_rfc3339(int days_ago) {
     const auto now = std::chrono::system_clock::now() - std::chrono::hours(24 * days_ago);
     const std::time_t time = std::chrono::system_clock::to_time_t(now);
@@ -46,13 +66,6 @@ std::string cutoff_rfc3339(int days_ago) {
     std::ostringstream out;
     out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     return out.str();
-}
-
-int timestamp_hour(const std::string& timestamp) {
-    if (timestamp.size() < 13 || timestamp[10] != 'T' ||
-        !std::isdigit(static_cast<unsigned char>(timestamp[11])) ||
-        !std::isdigit(static_cast<unsigned char>(timestamp[12]))) return -1;
-    return (timestamp[11] - '0') * 10 + (timestamp[12] - '0');
 }
 
 }  // namespace
@@ -284,7 +297,7 @@ HealthStatus AppState::health() const {
 }
 
 DiagnosticsSnapshot AppState::diagnostics() const {
-    return DiagnosticsSnapshot{health(), log().recent_lines()};
+    return DiagnosticsSnapshot{kSnapbackVersion, health(), log().recent_lines()};
 }
 
 std::optional<PredictionRecord> AppState::latest_prediction() const {
@@ -397,11 +410,11 @@ AnalyticsSummary AppState::analytics() const {
         std::size_t distracted{};
     };
     std::array<Bucket, 24> buckets{};
-    const auto predictions = const_cast<Storage&>(storage_).recent_predictions(10000);
+    const auto predictions = const_cast<Storage&>(storage_).predictions_since();
     for (const auto& prediction : predictions) {
         ++summary.sample_count;
         summary.avg_focus_score += prediction.focus_score;
-        const int hour = timestamp_hour(prediction.timestamp);
+        const int hour = local_hour_from_rfc3339(prediction.timestamp);
         if (hour < 0 || hour >= 24) continue;
         auto& bucket = buckets[static_cast<std::size_t>(hour)];
         ++bucket.count;
@@ -461,8 +474,7 @@ SummaryReport AppState::summary_report(const std::string& window) const {
     std::size_t distracted = 0;
     std::size_t current_streak = 0;
     std::unordered_map<std::string, std::size_t> context_counts;
-    for (const auto& prediction : const_cast<Storage&>(storage_).recent_predictions(10000)) {
-        if (prediction.timestamp < cutoff) continue;
+    for (const auto& prediction : const_cast<Storage&>(storage_).predictions_since(cutoff)) {
         ++report.sample_count;
         report.avg_focus_score += prediction.focus_score;
         if (prediction.focus_state == "DISTRACTED") {
@@ -619,7 +631,7 @@ bool AppState::is_private_event_unlocked(const CaptureEvent& event) const {
     const auto app = lower_copy(event.app_name);
     return std::any_of(settings_.excluded_apps.begin(), settings_.excluded_apps.end(),
                        [&](const auto& exclusion) {
-                           return app.find(lower_copy(exclusion)) != std::string::npos;
+                           return contains_whole_app_name_phrase(app, lower_copy(exclusion));
                        });
 }
 

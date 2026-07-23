@@ -204,6 +204,7 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
 export function mapDiagnosticsSnapshot(raw: Record<string, unknown>): DiagnosticsSnapshot {
   const logs = raw.recent_logs ?? raw.recentLogs;
   return {
+    version: String(raw.version ?? "0.0.0-dev"),
     health: mapHealth((raw.health as Record<string, unknown>) ?? {}),
     recentLogs: Array.isArray(logs) ? logs.map((line) => String(line)) : [],
   };

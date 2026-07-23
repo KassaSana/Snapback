@@ -2,6 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, type PrivacySettings } from "./api";
 
+export const privacyExclusionWarning = (value: string): string | null => {
+  const length = value.trim().length;
+  if (length === 1) return "A one-character exclusion can hide many unrelated apps.";
+  if (length === 2) return "Short exclusions can hide many unrelated apps; use a distinctive app name.";
+  return null;
+};
+
 export const usePrivacy = () => {
   const [settings, setSettings] = useState<PrivacySettings | null>(null);
   const [exclusionInput, setExclusionInput] = useState("");
@@ -65,6 +72,7 @@ export const usePrivacy = () => {
     addExclusion,
     busy,
     error,
+    exclusionWarning: privacyExclusionWarning(exclusionInput),
     exclusionInput,
     removeExclusion,
     setExclusionInput,

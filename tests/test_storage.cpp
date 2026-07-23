@@ -390,12 +390,32 @@ TEST_CASE("storage hot queries use an index instead of scanning") {
 
     CHECK(uses_index("SELECT session_id FROM predictions ORDER BY timestamp DESC LIMIT 1"));
     CHECK(uses_index(
+        "SELECT session_id FROM predictions WHERE timestamp >= '2026-07-10T00:00:00Z' "
+        "ORDER BY timestamp DESC"));
+    CHECK(uses_index(
         "SELECT session_id FROM sessions WHERE status = 'ACTIVE' ORDER BY started_at DESC LIMIT 1"));
     CHECK(uses_index(
         "SELECT app_name FROM context_snapshots WHERE session_id = 'x' ORDER BY timestamp ASC"));
     CHECK(uses_index(
         "SELECT COUNT(*) FROM snapback_events WHERE session_id = 'x'"));
     CHECK(uses_index("SELECT id FROM labels WHERE session_id = 'x'"));
+}
+
+TEST_CASE("storage prediction windows stay in SQL and preserve the cutoff") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto session = storage->create_session("Prediction window", FocusMode::Normal);
+    auto before = prediction(session.session_id, 40.0, 0.8, "DISTRACTED");
+    before.timestamp = "2026-07-09T00:00:00Z";
+    auto after = prediction(session.session_id, 80.0, 0.2, "PRODUCTIVE");
+    after.timestamp = "2026-07-11T00:00:00Z";
+    storage->insert_prediction(before);
+    storage->insert_prediction(after);
+
+    const auto rows = storage->predictions_since("2026-07-10T00:00:00Z");
+    REQUIRE(rows.size() == 1);
+    CHECK(rows.front().focus_score == 80.0);
 }
 
 TEST_CASE("Storage::open explains why it failed instead of returning a bare nullopt") {

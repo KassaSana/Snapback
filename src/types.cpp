@@ -425,9 +425,10 @@ void from_json(const json& j, SummaryExportResult& v) {
 }
 
 void to_json(json& j, const DiagnosticsSnapshot& v) {
-    j = json{{"health", v.health}, {"recentLogs", v.recent_logs}};
+    j = json{{"version", v.version}, {"health", v.health}, {"recentLogs", v.recent_logs}};
 }
 void from_json(const json& j, DiagnosticsSnapshot& v) {
+    v.version = get_or<std::string>(j, "version", "0.0.0-dev");
     v.health = get_or<HealthStatus>(j, "health", {});
     v.recent_logs = get_or<std::vector<std::string>>(j, "recentLogs", {});
 }

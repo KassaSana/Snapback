@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -72,6 +74,19 @@ std::unique_ptr<AppState> make_state() {
     auto storage = Storage::open_memory();
     if (!storage) throw std::runtime_error("failed to open in-memory storage");
     return std::make_unique<AppState>(std::move(*storage));
+}
+
+std::string utc_days_ago(int days) {
+    const auto now = std::time(nullptr) - static_cast<std::time_t>(days * 24 * 60 * 60);
+    std::tm tm{};
+#if defined(_WIN32)
+    gmtime_s(&tm, &now);
+#else
+    gmtime_r(&now, &tm);
+#endif
+    std::ostringstream out;
+    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+    return out.str();
 }
 
 struct TempDir {
@@ -378,7 +393,7 @@ TEST_CASE("AppState persists privacy settings and suppresses private events") {
 
 TEST_CASE("AppState excludes matching apps without affecting other apps") {
     auto state = make_state();
-    state->set_privacy_exclusions({"password"});
+    state->set_privacy_exclusions({"1Password"});
     state->start_session("Test exclusion", FocusMode::Normal);
 
     state->process_event_for_test(ev(EventType::KeyPress, 1.0, "1Password"));
@@ -386,6 +401,42 @@ TEST_CASE("AppState excludes matching apps without affecting other apps") {
 
     state->process_event_for_test(ev(EventType::KeyPress, 2.0, "Cursor"));
     CHECK(state->prediction_history(10).size() == 1);
+}
+
+TEST_CASE("AppState privacy exclusions do not overmatch inside app names") {
+    auto state = make_state();
+    state->set_privacy_exclusions({"Chrome"});
+    state->start_session("Bounded exclusion", FocusMode::Normal);
+
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Google Chrome"));
+    CHECK(state->prediction_history(10).empty());
+
+    state->process_event_for_test(ev(EventType::KeyPress, 2.0, "chromedriver"));
+    CHECK(state->prediction_history(10).size() == 1);
+}
+
+TEST_CASE("AppState analytics includes predictions older than the former row cap") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("Scale analytics", FocusMode::Normal);
+
+    const auto timestamp = utc_days_ago(2);
+    Storage::Transaction transaction(*storage);
+    for (int i = 0; i < 10001; ++i) {
+        PredictionRecord prediction;
+        prediction.session_id = session.session_id;
+        prediction.focus_score = 80.0;
+        prediction.distraction_risk = 0.2;
+        prediction.focus_state = "PRODUCTIVE";
+        prediction.timestamp = timestamp;
+        storage->insert_prediction(prediction);
+    }
+    transaction.commit();
+    storage->end_session(session.session_id);
+
+    AppState state(std::move(*storage));
+    const auto report = state.summary_report("week");
+    CHECK(report.sample_count == 10001);
 }
 
 TEST_CASE("AppState analytics aggregates predictions, hourly buckets, and app context") {

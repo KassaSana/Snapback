@@ -153,9 +153,11 @@ const categories = mapGoalCategories([{ name: "coding", keywords: ["code", "bug"
 assert.deepEqual(categories, [{ name: "coding", keywords: ["code", "bug"] }]);
 
 const diagnostics = mapDiagnosticsSnapshot({
+  version: "0.2.0",
   health: { status: "online", capture_running: true, classifier: { backend: "heuristic" } },
   recent_logs: ["2026-07-19T00:00:00Z [INFO] ready"],
 });
+assert.equal(diagnostics.version, "0.2.0");
 assert.equal(diagnostics.health.status, "online");
 assert.equal(diagnostics.recentLogs[0].includes("ready"), true);
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(snapback_cpp LANGUAGES C CXX)
+project(snapback_cpp VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -127,6 +127,7 @@ add_library(snapback_app STATIC
 )
 target_include_directories(snapback_app PUBLIC src)
 target_link_libraries(snapback_app PUBLIC snapback_core snapback_capture)
+target_compile_definitions(snapback_app PUBLIC SNAPBACK_VERSION=\"${PROJECT_VERSION}\")
 
 # --- tests (doctest replaces `cargo test`) ---
 enable_testing()
@@ -197,7 +198,7 @@ if(SNAPBACK_BUILD_APP)
 
   set(CPACK_PACKAGE_NAME "Snapback")
   set(CPACK_PACKAGE_VENDOR "Snapback")
-  set(CPACK_PACKAGE_VERSION "0.2.0")
+  set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Snapback local-first focus telemetry demo")
   set(CPACK_PACKAGE_INSTALL_DIRECTORY "Snapback")
   set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/README.md")

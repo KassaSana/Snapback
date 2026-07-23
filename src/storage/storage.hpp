@@ -86,6 +86,11 @@ public:
     void insert_prediction(const PredictionRecord& p);
     std::optional<PredictionRecord> latest_prediction();
     std::vector<PredictionRecord> recent_predictions(std::size_t limit);
+    // Returns every prediction at or after `cutoff`, or all predictions when the cutoff is
+    // absent. The timestamp range stays in SQL so idx_predictions_ts can serve analytics
+    // windows without silently dropping older rows.
+    std::vector<PredictionRecord> predictions_since(
+        const std::optional<std::string>& cutoff = std::nullopt);
     void insert_feature_snapshot(const std::string& session_id, const FeatureVector& f);
 
     // Labels (one-tap feedback)

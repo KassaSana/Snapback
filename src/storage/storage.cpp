@@ -815,6 +815,23 @@ std::vector<PredictionRecord> Storage::recent_predictions(std::size_t limit) {
     return rows;
 }
 
+std::vector<PredictionRecord> Storage::predictions_since(
+    const std::optional<std::string>& cutoff) {
+    const char* sql = cutoff
+                          ? "SELECT session_id, focus_score, distraction_risk, focus_state, "
+                            "thrash_score, drift_score, goal_alignment, timestamp "
+                            "FROM predictions WHERE timestamp >= ?1 "
+                            "ORDER BY timestamp DESC"
+                          : "SELECT session_id, focus_score, distraction_risk, focus_state, "
+                            "thrash_score, drift_score, goal_alignment, timestamp "
+                            "FROM predictions ORDER BY timestamp DESC";
+    Stmt stmt(db_, sql);
+    if (cutoff) stmt.bind(1, *cutoff);
+    std::vector<PredictionRecord> rows;
+    while (stmt.step_row()) rows.push_back(read_prediction(stmt.get()));
+    return rows;
+}
+
 void Storage::insert_feature_snapshot(const std::string& session_id, const FeatureVector& f) {
     ensure_active_session(session_id);
     Stmt stmt(db_, cached_stmt(
