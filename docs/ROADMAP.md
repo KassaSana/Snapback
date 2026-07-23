@@ -64,7 +64,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 10 | **Decision session B**: 4.11 (incl. the no-separator case) | The diverge-from-Rust call |
 | 11 | **7.16** timestamp representation, then 7.1, 7.2 | **7.1 is the highest user-visible impact in this file** |
 | 12 | **7.3 + 7.11** migrations + DB fixtures | Unblocks the schema-drift CI job and 9.4's upgrade path |
-| 13 | **8.3 + 8.4** CSP + frontend-URL gate | Small, pure defense in depth |
+| 13 | **8.4** frontend-URL gate (**8.3 CSP done**) | Small, pure defense in depth |
 | 14 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
 | 15 | **9.2, 9.7, 9.8** version, empty states, single-instance | Small, and each is visible to the first stranger who runs this |
 | 16 | **7.5, 7.6, 7.8, 7.9** | Independent, pick up any time |
@@ -556,7 +556,13 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   properly-escaped JS string literal and `JSON.parse` it, or set it on a global and call a
   zero-argument function.
 
-- **8.3 — No CSP, and the IPC shim exposes every command to any script in the page.** `M`
+- **8.3 — DONE 2026-07-22.** Bundled `frontend/index.html` now declares a Content Security
+  Policy with same-origin scripts, explicit font/style origins, and no arbitrary script sources.
+  A frontend-assets regression test guards the policy's presence.
+
+  The original finding was:
+
+  **No CSP, and the IPC shim exposes every command to any script in the page.** `M`
 
   There is **no Content-Security-Policy** anywhere — not in `frontend/index.html`, not set by
   the host. The shim resolves commands by global lookup (`ipc_shim.hpp:70`):
@@ -1169,6 +1175,11 @@ Completed work. Kept for history; details live in git log and
   the same recap-derived training label as the explicit session-id path.
 - **7.13 — Session foreign-key indexes** — recap and label queries now have indexes on
   `snapback_events(session_id)` and `labels(session_id)`.
+
+### Tier 8 security fixes (2026-07-22)
+
+- **8.3 — Frontend Content Security Policy** — the bundled dashboard restricts fetched scripts
+  to same-origin content while explicitly allowing its existing fonts, styles, and data images.
 
 ### Tier 5 audit fixes (2026-07-20)
 

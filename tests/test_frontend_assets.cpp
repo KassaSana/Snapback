@@ -30,6 +30,11 @@ void write_file(const std::filesystem::path& path) {
     out << "<!doctype html>";
 }
 
+std::string read_file(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
 }  // namespace
 
 TEST_CASE("resolve_frontend_url uses explicit dev override first") {
@@ -63,4 +68,14 @@ TEST_CASE("file_url_from_path escapes spaces") {
     write_file(path);
 
     CHECK(file_url_from_path(path).find("with%20space") != std::string::npos);
+}
+
+TEST_CASE("bundled frontend declares a restrictive content security policy") {
+#ifndef SNAPBACK_SOURCE_DIR
+#define SNAPBACK_SOURCE_DIR "."
+#endif
+    const auto html = read_file(std::filesystem::path(SNAPBACK_SOURCE_DIR) / "frontend" /
+                                "index.html");
+    CHECK(html.find("http-equiv=\"Content-Security-Policy\"") != std::string::npos);
+    CHECK(html.find("default-src 'self'; script-src 'self'") != std::string::npos);
 }
