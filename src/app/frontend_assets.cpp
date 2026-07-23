@@ -42,15 +42,19 @@ std::string file_url_from_path(const std::filesystem::path& path) {
 }
 
 std::string resolve_frontend_url(const std::filesystem::path& exe_dir,
-                                 const std::optional<std::string>& frontend_url_override) {
-    if (frontend_url_override && !frontend_url_override->empty()) return *frontend_url_override;
+                                 const std::optional<std::string>& frontend_url_override,
+                                 bool allow_override,
+                                 bool allow_localhost_fallback) {
+    if (allow_override && frontend_url_override && !frontend_url_override->empty()) {
+        return *frontend_url_override;
+    }
 
     const auto bundled_index = exe_dir / "frontend" / "index.html";
     if (std::filesystem::is_regular_file(bundled_index)) {
         return file_url_from_path(bundled_index);
     }
 
-    return "http://localhost:5173";
+    return allow_localhost_fallback ? "http://localhost:5173" : "about:blank";
 }
 
 }  // namespace snapback

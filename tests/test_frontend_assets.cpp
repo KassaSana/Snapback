@@ -45,6 +45,16 @@ TEST_CASE("resolve_frontend_url uses explicit dev override first") {
           "http://127.0.0.1:5173");
 }
 
+TEST_CASE("resolve_frontend_url can reject overrides for release builds") {
+    TempDir temp;
+    write_file(temp.path / "frontend" / "index.html");
+
+    const auto resolved =
+        resolve_frontend_url(temp.path, "https://untrusted.example", false);
+    CHECK(resolved.rfind("file://", 0) == 0);
+    CHECK(resolved.find("frontend/index.html") != std::string::npos);
+}
+
 TEST_CASE("resolve_frontend_url loads bundled frontend when present") {
     TempDir temp;
     const auto index = temp.path / "frontend" / "index.html";
@@ -60,6 +70,12 @@ TEST_CASE("resolve_frontend_url falls back to Vite when bundle is absent") {
     TempDir temp;
 
     CHECK(resolve_frontend_url(temp.path, std::nullopt) == "http://localhost:5173");
+}
+
+TEST_CASE("resolve_frontend_url fails closed when a release bundle is absent") {
+    TempDir temp;
+
+    CHECK(resolve_frontend_url(temp.path, std::nullopt, false, false) == "about:blank");
 }
 
 TEST_CASE("file_url_from_path escapes spaces") {

@@ -190,9 +190,14 @@ int main() {
         });
     }
 
-    // Dev override: SNAPBACK_FRONTEND_URL=http://127.0.0.1:5173. Demo/release path:
-    // load the bundled frontend/index.html copied next to snapback.exe.
-    w.navigate(resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL")));
+    // Dev-only override: a release process must never let its launch environment redirect
+    // the webview to arbitrary remote content, because that page receives the full IPC shim.
+    // Demo/release path loads the bundled frontend copied next to snapback.exe.
+#if defined(NDEBUG)
+    w.navigate(resolve_frontend_url(executable_dir(), std::nullopt, false, false));
+#else
+    w.navigate(resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL"), true));
+#endif
 
     if (env_var("SNAPBACK_GUI_SESSION_SMOKE")) {
         w.dispatch([state = state.get(), data_dir, &w]() {
