@@ -151,7 +151,7 @@ pollution (`#define KeyPress`/`None`/`Status`) breaking the Linux desktop build 
 | macOS / Linux overlay + tray | **No-op stubs** — `overlay_stub.cpp` / `tray_stub.cpp` exist so the app links; real ones are Roadmap 3.1 / 3.2 |
 | Desktop app off Windows | **macOS links (local + CI); Linux fixed 2026-07-22, awaiting CI** — the guard's first real run caught X11 macros breaking the build; `webview_compat.hpp` scrubs them. The job no longer has a `needs:`, so it runs even when CI is red (6.3) |
 | Packaging / CI | **Green as of 2026-07-22** (except the Linux desktop link, fix pending push) — 6.1 fixed, all actions off Node 20 (6.4). Parity job, tag release, and signing are wired; cert is 0.4b |
-| Engine thread resilience | **⚠️ No exception boundary** — any throw from `engine_tick()` terminates the process, and `json::dump()` throws on invalid UTF-8 from OS-supplied window titles. Roadmap 8.1 |
+| Engine thread resilience | **Done** — the engine loop catches and logs standard/unknown tick exceptions; invalid UTF-8 is contained by the boundary rather than terminating the process |
 | Analytics / summary windows | **⚠️ Silently capped** — both read `recent_predictions(10000)` ≈ 2h46m of use, so the "weekly" report covers this afternoon; hourly buckets are UTC presented as local. Roadmap 7.1 / 7.2 |
 | DB schema migrations | **⚠️ None** — all `CREATE TABLE IF NOT EXISTS`, no `user_version`, no `ALTER TABLE`, while we promise `focoflow.db` compatibility with the Rust build. Roadmap 7.3 |
 | Idle/AFK, pomodoro, retention prune, focus summary | **Done, backend + UI** |
@@ -166,10 +166,9 @@ pollution (`#define KeyPress`/`None`/`Status`) breaking the Linux desktop build 
 
 **Do next (Roadmap):** the ordered sequence lives at the top of
 [docs/ROADMAP.md](docs/ROADMAP.md) under **"Start here"** — follow it there rather than
-duplicating it here. In short (6.1 and 6.4 done 2026-07-22): **6.2** (red-master rule,
-a decision) → **9.1** (define v1) → **12.3** (`docs/adr/`) → **8.1** (engine exception
-boundary) → **7.4 + 7.10** (capture/prediction health, which are the instruments 0.3
-needs) → **0.3**.
+duplicating it here. In short (6.1, 6.4, and 8.1 done 2026-07-22): **6.2** (red-master
+rule, a decision) → **9.1** (define v1) → **12.3** (`docs/adr/`) → **7.4 + 7.10**
+(capture/prediction health, which are the instruments 0.3 needs) → **0.3**.
 
 Then one decision session settles **5.3, 5.4, 1.2, and 7.7** together — they are all the same
 question: *what do our scores mean, and on what scale?* Nothing gets coded in that session.

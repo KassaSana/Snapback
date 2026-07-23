@@ -57,7 +57,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
 | 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
 | 5 | **12.3** create `docs/adr/` | **Blocks the decision sessions** — eleven items produce decisions with nowhere to land |
-| 6 | **8.1** engine-thread exception boundary | A crash in normal use, not just under attack |
+| 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | **7.4 + 7.10** capture + prediction health | These are the instruments 0.3 needs to mean anything |
 | 8 | **0.3** live-Mac verification | Now actually measurable |
 | 9 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
@@ -459,7 +459,15 @@ in `active_window.cpp:32` and `permissions.cpp:18` take compile-time literals;
 vulnerabilities and the `security-audit` job is green; and the hook callback correctly
 swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS callback is UB.
 
-- **8.1 — The engine thread has no exception boundary; any throw kills the app.** `S`
+- **8.1 — DONE 2026-07-22.** The engine loop now catches standard and unknown exceptions
+  around each tick, logs the failure at Error level, and keeps the engine alive. The
+  injected-hook regression test exercises the real background thread and verifies it stays
+  online after an emit failure. The logger itself is guarded so a logging failure cannot
+  escape the thread boundary.
+
+  The original finding was:
+
+  **The engine thread has no exception boundary; any throw kills the app.** `S`
   **Highest-value reliability item in this tier.**
 
   ```cpp
@@ -1113,6 +1121,13 @@ Completed work. Kept for history; details live in git log and
   all four workflows, matching the blocked Dependabot PRs. `setup-python` 5→6 followed in
   the 6.3 commit after the run's annotations flagged it too (Dependabot never PR'd it).
   `action-gh-release` 2→3 (PR #19) deliberately deferred — third-party, release-path.
+
+### Tier 8 reliability fixes (2026-07-22)
+
+- **8.1 — Engine-thread exception boundary** — the background tick loop catches and logs
+  standard and unknown exceptions instead of allowing `std::terminate` to take down the
+  process. A headless injected-hook test verifies the thread remains online after a thrown
+  emit callback.
 
 ### Tier 5 audit fixes (2026-07-20)
 

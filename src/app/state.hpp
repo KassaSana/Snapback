@@ -40,6 +40,9 @@ public:
 
     // Rust: AppState::start_engine — spawn capture + the engine tick thread.
     void start_engine();
+    // Test seam: run the same engine loop with an injected hook instead of installing
+    // the platform-wide input hook.
+    void start_engine_for_test(InputHook* hook);
     void stop_engine();
 
     // Host->frontend event sink, set by main.cpp once the webview exists. Called with
@@ -127,6 +130,7 @@ public:
     std::optional<PomodoroStatus> update_pomodoro_for_test(std::int64_t now_ms);
 
 private:
+    void start_engine_impl(InputHook* hook);
     // A tick's writes, computed under mutex_ (no storage I/O) and flushed later under
     // storage_mutex_. Keeping persistence out of the state lock is what stops a disk
     // write from blocking a UI read.

@@ -146,6 +146,14 @@ std::optional<PomodoroStatus> AppState::update_pomodoro_for_test(std::int64_t no
 }
 
 void AppState::start_engine() {
+    start_engine_impl(nullptr);
+}
+
+void AppState::start_engine_for_test(InputHook* hook) {
+    start_engine_impl(hook);
+}
+
+void AppState::start_engine_impl(InputHook* hook) {
     bool expected = false;
     if (!engine_running_.compare_exchange_strong(expected, true)) return;
 
@@ -157,10 +165,27 @@ void AppState::start_engine() {
         // needs to touch storage_ to discover it (keeps the hot path storage-free).
         if (!active_session_) active_session_ = storage_.active_session();
     }
-    capture_.start();
+    capture_.start(hook);
     engine_thread_ = std::thread([this] {
         while (engine_running_.load(std::memory_order_relaxed)) {
-            engine_tick();
+            try {
+                engine_tick();
+            } catch (const std::exception& error) {
+                try {
+                    std::ostringstream message;
+                    message << "engine tick failed: " << error.what();
+                    log().error(message.str());
+                } catch (...) {
+                    // Logging must not turn a contained engine failure into an
+                    // unhandled exception on this thread.
+                }
+            } catch (...) {
+                try {
+                    log().error("engine tick failed: unknown exception");
+                } catch (...) {
+                    // Keep the thread boundary intact even if the logger fails.
+                }
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     });

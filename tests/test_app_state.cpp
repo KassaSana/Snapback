@@ -22,6 +22,31 @@ using namespace snapback;
 
 namespace {
 
+class OneShotHook final : public InputHook {
+public:
+    void run(InputCallback on_event) override {
+        CaptureEvent event;
+        event.event_type = EventType::KeyPress;
+        event.timestamp_secs = 1.0;
+        event.app_name = "Cursor";
+        event.window_title = "state.cpp - Snapback";
+        on_event(event);
+        emitted_.store(true, std::memory_order_release);
+
+        while (running_.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void stop() override { running_.store(false, std::memory_order_relaxed); }
+
+    bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+
+private:
+    std::atomic<bool> running_{true};
+    std::atomic<bool> emitted_{false};
+};
+
 CaptureEvent ev(EventType type, double ts, const char* app = "Cursor",
                 const char* title = "state.cpp - Snapback") {
     CaptureEvent e;
@@ -65,6 +90,11 @@ std::vector<std::string> split_csv_line(const std::string& line) {
     std::string cell;
     while (std::getline(in, cell, ',')) cells.push_back(cell);
     return cells;
+}
+
+bool contains_log(const DiagnosticsSnapshot& diagnostics, const std::string& text) {
+    return std::any_of(diagnostics.recent_logs.begin(), diagnostics.recent_logs.end(),
+                       [&](const std::string& line) { return line.find(text) != std::string::npos; });
 }
 
 // Value of `column` in the final data row of a CSV. Used instead of substring-matching a
@@ -537,4 +567,39 @@ TEST_CASE("AppState health reflects offline engine before capture starts") {
     CHECK(health.status == "offline");
     CHECK_FALSE(health.capture_running);
     CHECK(health.classifier.backend == "heuristic");
+}
+
+TEST_CASE("AppState contains engine tick exceptions and keeps the engine online") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    auto state = std::make_unique<AppState>(std::move(*storage), std::filesystem::path{}, &logger);
+    OneShotHook hook;
+
+    state->set_emit_hook([](const char*, const std::string&) {
+        throw std::runtime_error("intentional emit failure");
+    });
+    state->start_engine_for_test(&hook);
+
+    bool emitted = false;
+    for (int attempt = 0; attempt < 5000 && !emitted; ++attempt) {
+        emitted = hook.emitted();
+        if (!emitted) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(emitted);
+    if (!emitted) {
+        state->stop_engine();
+        return;
+    }
+
+    bool logged = false;
+    for (int attempt = 0; attempt < 5000 && !logged; ++attempt) {
+        logged = contains_log(state->diagnostics(), "engine tick failed: intentional emit failure");
+        if (!logged) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    CHECK(logged);
+    CHECK(state->health().status == "online");
+    state->stop_engine();
 }
