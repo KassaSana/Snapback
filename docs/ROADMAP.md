@@ -423,7 +423,13 @@ internals, and the benchmark harness.
   hit it first. Aggregate in SQL; add the indexes in 7.13. **Measure before rewriting** —
   4.4 wants a perf gate anyway and this is its natural first benchmark.
 
-- **7.13 — Missing indexes on two hot foreign keys.** `S`
+- **7.13 — DONE 2026-07-22.** Added `idx_snapback_events_session` and `idx_labels_session`,
+  with schema and `EXPLAIN QUERY PLAN` regression tests proving the session-filtered queries
+  use them.
+
+  The original finding was:
+
+  **Missing indexes on two hot foreign keys.** `S`
 
   Indexes exist for `predictions(session_id, timestamp)`, `predictions(timestamp)`,
   `feature_snapshots(session_id, timestamp)`, `sessions(status, started_at)`, and
@@ -1161,6 +1167,8 @@ Completed work. Kept for history; details live in git log and
 
 - **7.5 — Automatic labels on shutdown** — the no-argument active-session stop path now saves
   the same recap-derived training label as the explicit session-id path.
+- **7.13 — Session foreign-key indexes** — recap and label queries now have indexes on
+  `snapback_events(session_id)` and `labels(session_id)`.
 
 ### Tier 5 audit fixes (2026-07-20)
 

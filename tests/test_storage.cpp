@@ -363,6 +363,8 @@ TEST_CASE("storage schema indexes the hot read paths") {
     CHECK(has("idx_feature_snapshots_session_ts"));
     CHECK(has("idx_sessions_status_started"));
     CHECK(has("idx_context_snapshots_session_ts"));
+    CHECK(has("idx_snapback_events_session"));
+    CHECK(has("idx_labels_session"));
 }
 
 TEST_CASE("storage hot queries use an index instead of scanning") {
@@ -391,6 +393,9 @@ TEST_CASE("storage hot queries use an index instead of scanning") {
         "SELECT session_id FROM sessions WHERE status = 'ACTIVE' ORDER BY started_at DESC LIMIT 1"));
     CHECK(uses_index(
         "SELECT app_name FROM context_snapshots WHERE session_id = 'x' ORDER BY timestamp ASC"));
+    CHECK(uses_index(
+        "SELECT COUNT(*) FROM snapback_events WHERE session_id = 'x'"));
+    CHECK(uses_index("SELECT id FROM labels WHERE session_id = 'x'"));
 }
 
 TEST_CASE("Storage::open explains why it failed instead of returning a bare nullopt") {

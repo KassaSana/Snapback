@@ -457,6 +457,11 @@ void Storage::migrate() {
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
 
+            -- Session recap/export queries filter both tables by session_id. Without these
+            -- indexes, every completed session adds another full-table scan.
+            CREATE INDEX IF NOT EXISTS idx_labels_session
+                ON labels(session_id);
+
             CREATE TABLE IF NOT EXISTS snapback_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL,
@@ -464,6 +469,9 @@ void Storage::migrate() {
                 timestamp TEXT NOT NULL,
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
+
+            CREATE INDEX IF NOT EXISTS idx_snapback_events_session
+                ON snapback_events(session_id);
 
             CREATE TABLE IF NOT EXISTS context_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
