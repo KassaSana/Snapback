@@ -79,6 +79,14 @@ bool wait_for_return(const ReturningHook& hook) {
     return false;
 }
 
+bool wait_for_capture_stop(const CaptureThread& capture) {
+    for (int i = 0; i < 5000; ++i) {
+        if (!capture.running()) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return false;
+}
+
 std::size_t drain(CaptureThread& capture) {
     std::size_t count = 0;
     while (capture.next_event()) ++count;
@@ -119,6 +127,10 @@ TEST_CASE("CaptureThread reports a hook that returns as failed") {
     CaptureThread capture;
     capture.start(&hook);
     REQUIRE(wait_for_return(hook));
+    // The hook's return flag is set before CaptureThread records the failure and publishes
+    // its stopped state. Wait for the class's public completion state, not the fake's
+    // internal implementation detail, before asserting the health contract.
+    REQUIRE(wait_for_capture_stop(capture));
 
     CHECK_FALSE(capture.running());
     CHECK(capture.failed());
