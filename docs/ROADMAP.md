@@ -240,7 +240,14 @@ internals, and the benchmark harness.
   opens a fixture DB built from the *Rust* schema and asserts every current query still runs.
   That fixture is the artifact actually missing — see 7.11.
 
-- **7.4 — A dead capture hook is indistinguishable from a healthy one.** `S`
+- **7.4 — DONE 2026-07-22.** `CaptureThread` now marks a returned hook as stopped and failed,
+  records a diagnostic reason, tracks monotonic event arrival age, and safely joins a finished
+  hook before restart. `AppState::health()` exposes `capture_failed`, `captureFailureReason`,
+  `captureRunning`, and active-session staleness through the existing diagnostics contract.
+
+  The original finding was:
+
+  **A dead capture hook is indistinguishable from a healthy one.** `S`
   **Do before 0.3.**
 
   Structural version of the macOS bug in 0.3 — and **not macOS-specific.**
@@ -1128,6 +1135,12 @@ Completed work. Kept for history; details live in git log and
   standard and unknown exceptions instead of allowing `std::terminate` to take down the
   process. A headless injected-hook test verifies the thread remains online after a thrown
   emit callback.
+
+### Tier 7 observability fixes (2026-07-22)
+
+- **7.4 — Capture health** — returned hooks are reported as failed, event arrival age is
+  tracked with a monotonic clock, and finished hook threads can be restarted safely. The
+  existing diagnostics UI now receives truthful capture status and failure reasons.
 
 ### Tier 5 audit fixes (2026-07-20)
 

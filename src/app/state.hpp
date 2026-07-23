@@ -30,6 +30,8 @@
 
 namespace snapback {
 
+inline constexpr std::int64_t kCaptureStallThresholdMs = 30'000;
+
 class AppState {
 public:
     // `logger` is optional (defaults to null) so existing call sites keep compiling

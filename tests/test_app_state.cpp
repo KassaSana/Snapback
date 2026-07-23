@@ -47,6 +47,17 @@ private:
     std::atomic<bool> emitted_{false};
 };
 
+class ReturningHook final : public InputHook {
+public:
+    void run(InputCallback) override { returned_.store(true, std::memory_order_release); }
+    void stop() override {}
+
+    bool returned() const { return returned_.load(std::memory_order_acquire); }
+
+private:
+    std::atomic<bool> returned_{false};
+};
+
 CaptureEvent ev(EventType type, double ts, const char* app = "Cursor",
                 const char* title = "state.cpp - Snapback") {
     CaptureEvent e;
@@ -567,6 +578,38 @@ TEST_CASE("AppState health reflects offline engine before capture starts") {
     CHECK(health.status == "offline");
     CHECK_FALSE(health.capture_running);
     CHECK(health.classifier.backend == "heuristic");
+}
+
+TEST_CASE("AppState health reports a capture hook that stopped unexpectedly") {
+    auto state = make_state();
+    ReturningHook hook;
+    state->start_engine_for_test(&hook);
+
+    bool returned = false;
+    for (int attempt = 0; attempt < 5000 && !returned; ++attempt) {
+        returned = hook.returned();
+        if (!returned) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(returned);
+    if (!returned) {
+        state->stop_engine();
+        return;
+    }
+
+    HealthStatus health;
+    bool failed = false;
+    for (int attempt = 0; attempt < 5000 && !failed; ++attempt) {
+        health = state->health();
+        failed = health.capture_failed;
+        if (!failed) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    CHECK(failed);
+    CHECK(health.status == "capture_failed");
+    CHECK_FALSE(health.capture_running);
+    REQUIRE(health.capture_failure_reason.has_value());
+    CHECK(*health.capture_failure_reason == "input hook stopped unexpectedly");
+    state->stop_engine();
 }
 
 TEST_CASE("AppState contains engine tick exceptions and keeps the engine online") {

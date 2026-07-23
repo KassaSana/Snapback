@@ -6,8 +6,11 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <optional>
+#include <string>
 #include <thread>
 
 #include "capture/input_hook.hpp"
@@ -36,13 +39,25 @@ public:
 
     std::uint64_t events_dropped() const { return dropped_.load(std::memory_order_relaxed); }
     bool running() const { return running_.load(std::memory_order_relaxed); }
+    bool failed() const { return failed_.load(std::memory_order_acquire); }
+    std::optional<std::string> failure_reason() const;
+    std::optional<std::int64_t> last_event_age_ms() const;
 
 private:
+    static std::int64_t steady_now_ms();
+    void record_failure(const char* reason) noexcept;
+
     RingBuffer<CaptureEvent, kCapacity> buffer_;
     InputHook* hook_ = nullptr;  // borrowed; owned by the singleton or the test
     std::thread hook_thread_;
     std::atomic<std::uint64_t> dropped_{0};
     std::atomic<bool> running_{false};
+    std::atomic<bool> stop_requested_{false};
+    std::atomic<bool> failed_{false};
+    std::atomic<bool> has_event_{false};
+    std::atomic<std::int64_t> last_event_ms_{0};
+    mutable std::mutex failure_mutex_;
+    std::string failure_reason_;
 };
 
 }  // namespace snapback

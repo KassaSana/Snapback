@@ -51,10 +51,29 @@ private:
     std::atomic<bool> emitted_{false};
 };
 
+class ReturningHook final : public InputHook {
+public:
+    void run(InputCallback) override { returned_.store(true, std::memory_order_release); }
+    void stop() override {}
+
+    bool returned() const { return returned_.load(std::memory_order_acquire); }
+
+private:
+    std::atomic<bool> returned_{false};
+};
+
 // Bounded wait: a bug fails the test instead of hanging CI.
 bool wait_for_emit(const ScriptedHook& hook) {
     for (int i = 0; i < 5000; ++i) {
         if (hook.emitted()) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return false;
+}
+
+bool wait_for_return(const ReturningHook& hook) {
+    for (int i = 0; i < 5000; ++i) {
+        if (hook.returned()) return true;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     return false;
@@ -90,7 +109,26 @@ TEST_CASE("CaptureThread drains hook events in FIFO order") {
         ++drained;
     }
     CHECK(drained == 10);
+    CHECK(capture.last_event_age_ms().has_value());
     CHECK(capture.events_dropped() == 0);
+    capture.stop();
+}
+
+TEST_CASE("CaptureThread reports a hook that returns as failed") {
+    ReturningHook hook;
+    CaptureThread capture;
+    capture.start(&hook);
+    REQUIRE(wait_for_return(hook));
+
+    CHECK_FALSE(capture.running());
+    CHECK(capture.failed());
+    REQUIRE(capture.failure_reason().has_value());
+    CHECK(*capture.failure_reason() == "input hook stopped unexpectedly");
+
+    ScriptedHook replacement(1);
+    capture.start(&replacement);
+    REQUIRE(wait_for_emit(replacement));
+    CHECK(capture.running());
     capture.stop();
 }
 

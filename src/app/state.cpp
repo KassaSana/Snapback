@@ -260,11 +260,18 @@ std::optional<SessionRecord> AppState::get_session(const std::string& session_id
 HealthStatus AppState::health() const {
     std::lock_guard lock(mutex_);
     HealthStatus h;
-    h.status = engine_running_.load(std::memory_order_relaxed) ? "online" : "offline";
+    const bool capture_failed = capture_.failed();
+    h.status = capture_failed
+                   ? "capture_failed"
+                   : engine_running_.load(std::memory_order_relaxed) ? "online" : "offline";
     h.capture_running = capture_.running();
-    h.capture_failed = false;
+    h.capture_failed = capture_failed;
+    h.capture_failure_reason = capture_.failure_reason();
     h.capture_events_dropped = capture_.events_dropped();
-    h.capture_stalled = false;
+    const auto event_age_ms = capture_.last_event_age_ms();
+    h.capture_stalled = h.capture_running && active_session_.has_value() && !idle_ &&
+                        event_age_ms.has_value() &&
+                        *event_age_ms >= kCaptureStallThresholdMs;
     h.permissions = check_capture_permissions(capture_.running());
     h.classifier.backend = classifier_.backend();
     h.classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
