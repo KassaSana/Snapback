@@ -223,6 +223,20 @@ TEST_CASE("AppState starts and stops sessions through storage") {
     CHECK(labels.find("inferred from session recap") != std::string::npos);
 }
 
+TEST_CASE("AppState saves an automatic label when stopping the active session") {
+    auto state = make_state();
+    const auto session = state->start_session("Label shutdown session", FocusMode::Normal);
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0));
+    state->process_event_for_test(ev(EventType::KeyPress, 3.0));
+
+    state->stop_session();
+
+    TempDir temp;
+    const auto exported = state->export_training_data(temp.path, session.session_id);
+    CHECK(exported.label_count == 1);
+    CHECK(read_file(temp.path / "labels.csv").find(",auto,") != std::string::npos);
+}
+
 TEST_CASE("AppState writes a real elapsed time into exported features") {
     // Regression guard for the bug the unit tests missed: every FeatureExtractor test used
     // reset_for_session(explicit), while start_session passed nullopt — so feature[0] was

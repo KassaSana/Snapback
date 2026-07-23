@@ -149,6 +149,7 @@ private:
     std::optional<PersistJob> compute_event(const CaptureEvent& event);
     // Writes a job to storage. Requires storage_mutex_ (call inside a Transaction).
     void persist(const PersistJob& job);
+    void save_auto_session_label_unlocked(const std::string& session_id);
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
     static std::vector<std::string> normalize_privacy_exclusions(
         std::vector<std::string> exclusions);

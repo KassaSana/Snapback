@@ -273,7 +273,13 @@ internals, and the benchmark harness.
   as `capture_failed`; (2) track the last-pushed event timestamp and derive `capture_stalled`
   from staleness while a session is active, gated on `IdleDetector` so AFK doesn't trip it.
 
-- **7.5 — Sessions stopped via the no-argument path never get an auto-label.** `S`
+- **7.5 — DONE 2026-07-22.** Both session-stop paths now use the same warning-safe helper to
+  save an automatic recap label, and a regression test verifies the no-argument shutdown path
+  includes that label in exported training data.
+
+  The original finding was:
+
+  **Sessions stopped via the no-argument path never get an auto-label.** `S`
 
   `stop_session(const std::string&)` (`state.cpp:210`) calls `save_auto_session_label()`.
   `stop_session()` (`state.cpp:195`), used on shutdown and internal teardown, **does not.**
@@ -1150,6 +1156,11 @@ Completed work. Kept for history; details live in git log and
   existing diagnostics UI now receives truthful capture status and failure reasons.
 - **7.10 — Prediction health** — diagnostics expose last-prediction age and distinguish idle,
   no-session, private-mode, and unsuppressed states.
+
+### Tier 7 correctness fixes (2026-07-22)
+
+- **7.5 — Automatic labels on shutdown** — the no-argument active-session stop path now saves
+  the same recap-derived training label as the explicit session-id path.
 
 ### Tier 5 audit fixes (2026-07-20)
 

@@ -226,6 +226,7 @@ void AppState::stop_session() {
     pomodoro_.reset();
     if (active_session_) {
         storage_.end_session(active_session_->session_id);
+        save_auto_session_label_unlocked(active_session_->session_id);
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
@@ -236,13 +237,7 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
     SessionRecord record = storage_.stop_session(session_id);
-    try {
-        storage_.save_auto_session_label(session_id);
-    } catch (const std::exception& err) {
-        std::ostringstream msg;
-        msg << "failed to save automatic session label: " << err.what();
-        log().warn(msg.str());
-    }
+    save_auto_session_label_unlocked(session_id);
     if (active_session_ && active_session_->session_id == session_id) {
         pomodoro_.reset();
         active_session_.reset();
@@ -796,6 +791,16 @@ void AppState::persist(const PersistJob& job) {
     if (job.prediction) {
         storage_.insert_prediction(*job.prediction);
         if (job.features) storage_.insert_feature_snapshot(job.session_id, *job.features);
+    }
+}
+
+void AppState::save_auto_session_label_unlocked(const std::string& session_id) {
+    try {
+        storage_.save_auto_session_label(session_id);
+    } catch (const std::exception& err) {
+        std::ostringstream msg;
+        msg << "failed to save automatic session label: " << err.what();
+        log().warn(msg.str());
     }
 }
 
