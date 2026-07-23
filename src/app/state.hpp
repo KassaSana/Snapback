@@ -184,6 +184,7 @@ private:
     std::vector<AppRuleRecord> app_rules_;  // cached; passed to the live classifier
     std::optional<PredictionRecord> latest_prediction_;
     std::optional<SnapbackPayload> latest_snapback_;
+    std::optional<std::int64_t> last_prediction_at_ms_;
     AppSettings settings_;
     FocusMode focus_mode_ = FocusMode::Normal;
     double last_prediction_secs_ = -1.0;

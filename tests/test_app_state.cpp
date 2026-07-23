@@ -612,6 +612,37 @@ TEST_CASE("AppState health reports a capture hook that stopped unexpectedly") {
     state->stop_engine();
 }
 
+TEST_CASE("AppState health explains prediction freshness and suppression") {
+    auto state = make_state();
+
+    auto health = state->health();
+    CHECK_FALSE(health.last_prediction_age_secs.has_value());
+    CHECK(health.prediction_suppression_reason == "no_session");
+
+    const auto session = state->start_session("Explain prediction health", FocusMode::Normal);
+    health = state->health();
+    CHECK_FALSE(health.last_prediction_age_secs.has_value());
+    CHECK(health.prediction_suppression_reason == "none");
+
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0));
+    health = state->health();
+    REQUIRE(health.last_prediction_age_secs.has_value());
+    CHECK(*health.last_prediction_age_secs >= 0.0);
+    CHECK(health.prediction_suppression_reason == "none");
+
+    state->update_idle_for_test(0, true);
+    state->update_idle_for_test(kDefaultIdleThresholdMs, false);
+    CHECK(state->health().prediction_suppression_reason == "idle");
+
+    state->set_private_mode(true);
+    CHECK(state->health().prediction_suppression_reason == "private_mode");
+    state->set_private_mode(false);
+
+    state->update_idle_for_test(kDefaultIdleThresholdMs + 1, true);
+    state->stop_session(session.session_id);
+    CHECK(state->health().prediction_suppression_reason == "no_session");
+}
+
 TEST_CASE("AppState contains engine tick exceptions and keeps the engine online") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());

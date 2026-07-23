@@ -198,6 +198,8 @@ struct HealthStatus {
     std::optional<std::string> persistence_failure_reason;
     std::uint64_t capture_events_dropped{};
     bool capture_stalled{};
+    std::optional<double> last_prediction_age_secs;
+    std::string prediction_suppression_reason{"none"};
     PermissionStatus permissions;
     ClassifierStatus classifier;
 };

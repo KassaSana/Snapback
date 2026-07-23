@@ -202,8 +202,14 @@ void to_json(json& j, const HealthStatus& v) {
              {"captureFailed", v.capture_failed},
              {"captureEventsDropped", v.capture_events_dropped},
              {"captureStalled", v.capture_stalled},
+             {"predictionSuppressionReason", v.prediction_suppression_reason},
              {"permissions", v.permissions},
              {"classifier", v.classifier}};
+    if (v.last_prediction_age_secs) {
+        j["lastPredictionAgeSecs"] = *v.last_prediction_age_secs;
+    } else {
+        j["lastPredictionAgeSecs"] = nullptr;
+    }
     put_opt(j, "captureFailureReason", v.capture_failure_reason);
     put_opt(j, "overlayFailureReason", v.overlay_failure_reason);
     put_opt(j, "persistenceFailureReason", v.persistence_failure_reason);
@@ -217,6 +223,12 @@ void from_json(const json& j, HealthStatus& v) {
     v.persistence_failure_reason = opt_str(j, "persistenceFailureReason");
     v.capture_events_dropped = get_or<std::uint64_t>(j, "captureEventsDropped", 0);
     v.capture_stalled = get_or<bool>(j, "captureStalled", false);
+    const auto age = j.find("lastPredictionAgeSecs");
+    v.last_prediction_age_secs = age == j.end() || age->is_null()
+                                     ? std::nullopt
+                                     : std::optional<double>(age->get<double>());
+    v.prediction_suppression_reason =
+        get_or<std::string>(j, "predictionSuppressionReason", "none");
     v.permissions = get_or<PermissionStatus>(j, "permissions", {});
     v.classifier = get_or<ClassifierStatus>(j, "classifier", {});
 }

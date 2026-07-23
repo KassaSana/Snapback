@@ -272,6 +272,15 @@ HealthStatus AppState::health() const {
     h.capture_stalled = h.capture_running && active_session_.has_value() && !idle_ &&
                         event_age_ms.has_value() &&
                         *event_age_ms >= kCaptureStallThresholdMs;
+    if (last_prediction_at_ms_) {
+        h.last_prediction_age_secs = static_cast<double>(std::max<std::int64_t>(
+            0, steady_now_ms() - *last_prediction_at_ms_)) / 1000.0;
+    }
+    h.prediction_suppression_reason = settings_.private_mode
+                                          ? "private_mode"
+                                          : idle_          ? "idle"
+                                          : !active_session_ ? "no_session"
+                                                             : "none";
     h.permissions = check_capture_permissions(capture_.running());
     h.classifier.backend = classifier_.backend();
     h.classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
@@ -768,6 +777,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     record.goal_alignment = scores.goal_alignment;
     record.timestamp = now_rfc3339();
     latest_prediction_ = record;
+    last_prediction_at_ms_ = steady_now_ms();
     prediction_dirty_ = true;  // engine_tick emits this after unlocking
 
     if (have_session) {

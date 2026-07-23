@@ -16,6 +16,11 @@ export function DiagnosticsCard() {
         <span className={`health-dot health-dot-${health.status}`} aria-hidden="true" />
         <strong>{health.status}</strong>
         <span>{health.captureEventsDropped} dropped capture events</span>
+        <span>
+          Prediction: {health.lastPredictionAgeSecs == null
+            ? `none (${health.predictionSuppressionReason})`
+            : `${health.lastPredictionAgeSecs.toFixed(1)}s old`}
+        </span>
       </div>
       <p className="helper-text">
         Capture: {health.captureRunning ? "running" : "stopped"}. Classifier: {health.classifier.backend}.

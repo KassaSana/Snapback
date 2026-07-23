@@ -96,6 +96,8 @@ export type HealthStatus = {
   persistenceFailureReason: string | null;
   captureEventsDropped: number;
   captureStalled: boolean;
+  lastPredictionAgeSecs: number | null;
+  predictionSuppressionReason: string;
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
 };

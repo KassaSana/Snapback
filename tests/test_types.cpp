@@ -131,6 +131,8 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     h.status = "ok";
     h.capture_running = true;
     h.capture_events_dropped = 5;
+    h.last_prediction_age_secs = 1.5;
+    h.prediction_suppression_reason = "none";
     h.permissions.capture_available = true;
     h.permissions.setup_steps = {"grant access"};
     h.classifier.backend = "heuristic";
@@ -139,6 +141,8 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     json j = h;
     CHECK(j.contains("captureRunning"));
     CHECK(j.contains("captureEventsDropped"));
+    CHECK(j["lastPredictionAgeSecs"] == doctest::Approx(1.5));
+    CHECK(j["predictionSuppressionReason"] == "none");
     CHECK(j["permissions"].contains("captureAvailable"));
     CHECK(j["permissions"].contains("setupSteps"));
     CHECK(j["classifier"].contains("onnxRuntimeEnabled"));
@@ -148,6 +152,9 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     auto back = j.get<HealthStatus>();
     CHECK(back.capture_running);
     CHECK(back.capture_events_dropped == 5);
+    REQUIRE(back.last_prediction_age_secs.has_value());
+    CHECK(*back.last_prediction_age_secs == doctest::Approx(1.5));
+    CHECK(back.prediction_suppression_reason == "none");
     CHECK(back.permissions.capture_available);
     CHECK(back.permissions.setup_steps.size() == 1);
     CHECK(back.classifier.backend == "heuristic");

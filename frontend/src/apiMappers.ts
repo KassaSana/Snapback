@@ -185,6 +185,13 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
       raw.capture_events_dropped ?? raw.captureEventsDropped ?? 0,
     ),
     captureStalled: Boolean(raw.capture_stalled ?? raw.captureStalled ?? false),
+    lastPredictionAgeSecs:
+      raw.last_prediction_age_secs == null && raw.lastPredictionAgeSecs == null
+        ? null
+        : Number(raw.last_prediction_age_secs ?? raw.lastPredictionAgeSecs),
+    predictionSuppressionReason: String(
+      raw.prediction_suppression_reason ?? raw.predictionSuppressionReason ?? "none",
+    ),
     permissions: mapPermissionStatus(
       (raw.permissions as Record<string, unknown>) ?? {},
     ),

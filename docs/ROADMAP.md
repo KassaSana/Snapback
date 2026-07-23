@@ -58,7 +58,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
 | 5 | **12.3** create `docs/adr/` | **Blocks the decision sessions** — eleven items produce decisions with nowhere to land |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
-| 7 | **7.4 + 7.10** capture + prediction health | These are the instruments 0.3 needs to mean anything |
+| 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
 | 8 | **0.3** live-Mac verification | Now actually measurable |
 | 9 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
 | 10 | **Decision session B**: 4.11 (incl. the no-separator case) | The diverge-from-Rust call |
@@ -364,7 +364,14 @@ internals, and the benchmark harness.
 
 ### Observability & test coverage
 
-- **7.10 — Nothing measures whether predictions are still being produced.** `S`
+- **7.10 — DONE 2026-07-22.** `HealthStatus` now reports nullable monotonic age for the last
+  prediction and a suppression reason: `idle`, `no_session`, `private_mode`, or `none`.
+  The existing Diagnostics card displays both fields, making a stale prediction distinguishable
+  from a legitimate suppression.
+
+  The original finding was:
+
+  **Nothing measures whether predictions are still being produced.** `S`
   **Cheapest high-value item in this file.**
 
   `HealthStatus` reports `capture_running`, `capture_events_dropped`, and the classifier
@@ -1141,6 +1148,8 @@ Completed work. Kept for history; details live in git log and
 - **7.4 — Capture health** — returned hooks are reported as failed, event arrival age is
   tracked with a monotonic clock, and finished hook threads can be restarted safely. The
   existing diagnostics UI now receives truthful capture status and failure reasons.
+- **7.10 — Prediction health** — diagnostics expose last-prediction age and distinguish idle,
+  no-session, private-mode, and unsuppressed states.
 
 ### Tier 5 audit fixes (2026-07-20)
 
