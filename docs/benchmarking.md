@@ -8,7 +8,13 @@ compare.
 ## Run
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File .\scripts\run_benchmarks.ps1
+```
+
+```sh
+# macOS / Linux (Roadmap 12.5)
+./scripts/run_benchmarks.sh
 ```
 
 By default the benchmark replays a three-hour simulated work session. To change
@@ -16,6 +22,11 @@ the trace length:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run_benchmarks.ps1 -Minutes 480
+```
+
+```sh
+./scripts/run_benchmarks.sh --minutes 480
+./scripts/run_benchmarks.sh --hotpaths     # the micro-benchmarks below instead
 ```
 
 The script configures CMake with `SNAPBACK_BUILD_BENCHMARKS=ON`, builds

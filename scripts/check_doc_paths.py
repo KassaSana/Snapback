@@ -118,7 +118,7 @@ def main() -> int:
     docs += [os.path.join("docs", "adr", f)
              for f in sorted(os.listdir(os.path.join(REPO, "docs", "adr")))
              if f.endswith(".md")]
-    docs += ["CLAUDE.md", "README.md"]
+    docs += ["CLAUDE.md", "README.md", os.path.join("scripts", "README.md")]
 
     failures: list[tuple[str, str]] = []
     checked = 0

@@ -80,12 +80,16 @@ ctest --test-dir build -C Debug --output-on-failure
 Or run the full headless + frontend suite in one shot:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\test_local.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\test_local.ps1   # Windows
+```
+
+```sh
+./scripts/test_local.sh                                            # macOS / Linux
 ```
 
 See [docs/testing_strategy.md](docs/testing_strategy.md) for the complete plan and
 [docs/benchmarking.md](docs/benchmarking.md) for the core-loop benchmark harness
-(`scripts\run_benchmarks.ps1`).
+(`scripts/run_benchmarks.ps1` / `scripts/run_benchmarks.sh`).
 
 ## Build the desktop app
 

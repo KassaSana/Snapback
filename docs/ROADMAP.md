@@ -1095,14 +1095,9 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
   converts a comment into a guarantee. *C++/Rust delta: Rust wouldn't have prevented this
   either — but it's exactly the class of invariant worth making mechanical.*
 
-- **12.5 — The operational scripts are unrunnable on the dev machine.** `S`
-  Seven of eight files in `scripts/` are PowerShell (`test_local.ps1`, `run_benchmarks.ps1`,
-  `package_windows.ps1`, …); the only portable one is `run_feature_parity_dual.py`. The
-  development host is macOS. So the documented way to run the local test suite doesn't run
-  here, which is a standing tax on every session and a likely reason CI is where problems get
-  discovered. Either port the non-Windows-specific ones to `sh`/Python, or document the
-  direct `cmake`/`ctest` invocations as the primary path and mark the `.ps1` files as
-  Windows packaging helpers. Folds naturally into **12.4**.
+- **12.5 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). `test_local.sh`
+  and `run_benchmarks.sh` are real ports (verified by running them on this Mac), and
+  `scripts/README.md` says which of the eleven scripts run where.
 
 ---
 
@@ -1178,6 +1173,20 @@ Completed work. Kept for history; details live in git log and
   exist; verified by injecting a false path and watching it fail. That guard immediately
   found a real defect in `PORT_HISTORY.md:286` (a Rust-repo path written as if it were
   ours). Surfaced **12.6**.
+
+- **12.5 — The operational scripts were unrunnable on the dev machine** — the two scripts
+  that were never Windows-specific are now ported: `test_local.sh` and `run_benchmarks.sh`.
+  **Both were verified by running them on the macOS host**, not just written: the headless
+  suite configures, builds, and passes CTest, and the benchmark replay produces numbers.
+  `scripts/README.md` is new and states which of the eleven scripts run where, so the next
+  session does not rediscover that five of them are MSVC/`signtool`/IExpress-bound and
+  portable only in CI.
+
+  The substantive difference, and why these are ports rather than translations: **MSVC is a
+  multi-config generator and Make/Ninja are not.** The `.ps1` scripts pick the build type at
+  `--build` time and look in `build/Release/`; the `.sh` scripts must pass
+  `-DCMAKE_BUILD_TYPE` at *configure* time and find binaries directly in `build/`. Both
+  output layouts are probed so the scripts work under either generator.
 
 - **12.2 — Audit the remaining docs against the code** — ten false claims corrected, all
   stale in the same direction: they described the design *before* the 2026-07-22 passes.

@@ -20,7 +20,13 @@ desktop session.
 Run:
 
 ```powershell
+# Windows
 powershell -ExecutionPolicy Bypass -File .\scripts\test_local.ps1
+```
+
+```sh
+# macOS / Linux -- same pipeline (Roadmap 12.5)
+./scripts/test_local.sh
 ```
 
 This runs:
@@ -30,11 +36,18 @@ This runs:
 - frontend unit/component tests
 - frontend production build
 
-Fast variant:
+Fast variant (C++ only):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\test_local.ps1 -SkipFrontend
 ```
+
+```sh
+./scripts/test_local.sh --skip-frontend
+```
+
+The two are equivalent except that the shell version has no `-IncludeWindowsDemo`:
+`windows_demo.ps1` needs MSVC and produces `snapback.exe`, so it cannot run off Windows.
 
 The C++ suite is mostly mock/headless by design: synthetic capture events drive
 storage, classifier, tracker, app-state, command dispatch, training status, tray,
