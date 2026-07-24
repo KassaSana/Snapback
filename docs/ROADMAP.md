@@ -1016,19 +1016,6 @@ later moved.
 `model.onnx`" is the easy half; everything about *operating* a model the user can't inspect
 is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
 
-- **13.1 — ONNX cannot compile off Windows at all.** `M`
-  `onnx_model.cpp:31` calls `model_path.wstring().c_str()`, with a comment claiming it's
-  "the portable way to pass a path on Windows." It's inside `#if defined(SNAPBACK_ONNX)` but
-  has **no Windows guard** — and on POSIX `Ort::Session` takes `const char*`, so this is a
-  compile error, not a runtime one. The only ONNX CI job is `onnx-windows`, so nothing would
-  ever surface it.
-
-  **This is the same blind spot as the `SNAPBACK_BUILD_APP` one** (Done archive, `c0cfc3f`):
-  an opt-in flag that no job turns on for a given OS is an opt-in guarantee. So "ONNX is
-  optional and cross-platform" is false in a way no test can currently catch. Decide whether
-  ONNX is Windows-only by design (then say so, and 3.3/3.4 ship heuristic-only), or fix the
-  overload and add a POSIX ONNX job.
-
 - **13.2 — A deployed model has no identity.** `S`
   `OnnxModel` tracks only `model_path_`. There is no version, no training-run id, no input
   hash, no record of which feature-vector layout it expects. So: you cannot tell which model
@@ -1164,6 +1151,14 @@ Completed work. Kept for history; details live in git log and
   addition rather than a silent edit. That is the failure this fixes: 5.4 and 5.6 were both
   implemented and reverted because the rationale lived only in a chat log. Unblocks 9.1 and
   decision sessions A and B.
+
+### Tier 13 model lifecycle (2026-07-23)
+
+- **13.1 — Cross-platform ONNX Runtime build** — `OnnxModel` now selects the native path
+  overload required by Windows or POSIX, CMake links and stages the matching `.lib`/`.dll`,
+  `.dylib`, or `.so`, and a Linux ONNX CI job runs the fixture-backed inference tests. The
+  optional ONNX build is now exercised on both Windows and POSIX rather than making an
+  untested cross-platform claim.
 
 ### Tier 6 CI fixes (2026-07-22)
 

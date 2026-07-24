@@ -27,8 +27,15 @@ bool OnnxModel::init(const std::filesystem::path& model_path) {
         env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "snapback");
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1);
-        // The wide-string overload is the portable way to pass a path on Windows.
-        session_ = std::make_unique<Ort::Session>(*env_, model_path.wstring().c_str(), options);
+#if defined(_WIN32)
+        // ONNX Runtime exposes the wide-string path overload on Windows.
+        const auto native_model_path = model_path.wstring();
+#else
+        // POSIX builds expose the UTF-8 path overload instead; wstring() does not compile
+        // against Ort::Session there.
+        const auto native_model_path = model_path.string();
+#endif
+        session_ = std::make_unique<Ort::Session>(*env_, native_model_path.c_str(), options);
 
         Ort::AllocatorWithDefaultOptions allocator;
         input_name_ = session_->GetInputNameAllocated(0, allocator).get();
