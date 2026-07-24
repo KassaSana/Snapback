@@ -52,6 +52,7 @@ RUST_REF = "../FocoFlow-1"
 EXPECTED_ABSENT = {
     "third_party/onnxruntime": "optional vendored ONNX Runtime; CI vendors it, absent locally",
     "third_party/onnxruntime/": "same",
+    "third_party/onnxruntime/lib": "same -- the lib subdir docs tell you to populate",
     "third_party/sqlite/": "optional vendored SQLite override; docs say it is not checked in",
     "docs/TODO.md": "deleted 2026-07-20; ROADMAP.md names it to say so",
     "docs/DECISIONS.md": "a rejected option in ADR-0001, never created",

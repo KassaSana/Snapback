@@ -29,7 +29,7 @@ not a broken tree.**
 | `snapback_tests` (headless core) | ✅ | ✅ | ✅ |
 | `snapback` (desktop app, `SNAPBACK_BUILD_APP=ON`) | ✅ | ✅ links, tray/overlay are no-ops | ✅ links, tray/overlay are no-ops |
 | Benchmarks (`SNAPBACK_BUILD_BENCHMARKS=ON`) | ✅ | ✅ | ✅ |
-| ONNX backend (`SNAPBACK_ONNX=ON`) | CI only | ❌ | CI only |
+| ONNX backend (`SNAPBACK_ONNX=ON`) | CI only | buildable, but no runtime vendored and no CI job | CI only |
 | Real input capture | ✅ | ✅ needs Accessibility permission | ✅ needs `/dev/input` access |
 | Tray + overlay | ✅ | ❌ stub | ❌ stub |
 | Packaging / signing | ✅ | ❌ | ❌ |
@@ -38,8 +38,13 @@ Why the ❌s, concretely:
 
 - **ONNX** expects a vendored runtime at `third_party/onnxruntime` (`CMakeLists.txt:84`).
   **That directory is not in this repo** — CI's `onnx-windows` / `onnx-linux` jobs vendor
-  it as a build step. Turning `SNAPBACK_ONNX=ON` locally is a `FATAL_ERROR`, not a
-  slow build. It is **off by default**, so the normal build never touches it.
+  it as a build step. Turning `SNAPBACK_ONNX=ON` without it is a `FATAL_ERROR` at configure
+  time, not a slow build. It is **off by default**, so the normal build never touches it.
+
+  CMake does know how to link it on all three platforms (`.lib`/`.dll`, `.dylib`, `.so`),
+  so a macOS build works if you drop a matching `libonnxruntime.dylib` under
+  `third_party/onnxruntime/lib`. But **no CI job builds ONNX on macOS**, so that path is
+  unproven — treat a local success as your own result, not a guarantee.
 - **Tray and overlay** off Windows are deliberate no-op stubs (`tray_stub.cpp`,
   `overlay_stub.cpp`) that exist so the app *links*. Real ones are Roadmap 3.1 / 3.2. The
   app runs; those two surfaces just do nothing.
