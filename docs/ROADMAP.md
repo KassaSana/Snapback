@@ -983,12 +983,10 @@ happened often enough to be a category, not an accident. Two root causes recur: 
 *before* the code (plans that were never reconciled), and docs written *about* code that
 later moved.
 
-- **12.1 — `ARCHITECTURE.md`'s module map is the pre-port plan, not the built shape.** `S`
-  Verified 2026-07-20: five claimed C++ paths don't exist (`app/events.hpp`,
-  `engine/goal_alignment.*`, `capture/active_window_*.cpp`, `capture/permissions_*.cpp`,
-  `snapback/overlay.cpp`), and two library choices were never taken (`spdlog`, `stduuid`).
-  A warning table has been added inline as a stopgap; the map itself still needs
-  reconciling. *Keep the Rust→C++ reasoning — that's the teaching value. Fix the file list.*
+- **12.1 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). The map now
+  matches the tree, and `scripts/check_doc_paths.py` runs in CI so it cannot drift again.
+  The audit found one thing nobody was looking for: **`label_shortcuts.rs` was never
+  ported** — see the new item **12.6**.
 
 - **12.2 — Audit the remaining docs against the code.** `M`
   `system_architecture.md`, `testing_strategy.md`, `benchmarking.md`, `windows_demo.md`, and
@@ -1007,6 +1005,19 @@ later moved.
   simply cannot be built on which host, and why (`SNAPBACK_BUILD_APP` defaults OFF, ONNX
   needs a vendored runtime, Windows-only files can't compile on macOS). Would have saved
   several sessions' worth of rediscovery.
+
+- **12.6 — `label_shortcuts.rs` was never ported, and nothing recorded that.** `M`
+  Found 2026-07-23 while reconciling 12.1. The Rust build has
+  `../FocoFlow-1/src-tauri/src/label_shortcuts.rs` (143 lines, wired at `lib.rs:73`)
+  registering global hotkeys to label the current window focused/distracted. **Nothing in
+  `src/`, `tests/`, or `frontend/src` mentions it.** It stayed invisible because
+  `ARCHITECTURE.md`'s module map never listed the file — the map only covered what someone
+  intended to port, so a skipped module left no trace anywhere.
+
+  Belongs conceptually with **Tier 0** (finish the port's last gaps); filed here because
+  the doc audit is what surfaced it. In Rust this was a Tauri global-shortcut plugin call;
+  in C++ it is hand-written per-OS hotkey registration, which is presumably why it was
+  skipped. *Decide whether v1 needs it (**9.1**) before building it.*
 
 ---
 
@@ -1141,6 +1152,19 @@ Completed work. Kept for history; details live in git log and
 [PORT_HISTORY.md](PORT_HISTORY.md).
 
 ### Tier 12 docs (2026-07-23)
+
+- **12.1 — `ARCHITECTURE.md`'s module map was the pre-port plan** — the map now matches the
+  tree: every C++ path in it was confirmed to exist, every Rust file appears exactly once,
+  and divergences (per-OS file splits, `goal_alignment` folded into `app_context`,
+  `parity.rs` → `feature_parity`) are called out in their own column rather than silently
+  wrong. Two new tables: C++ modules with no Rust counterpart (why each exists), and Rust
+  modules not ported. The Libraries table now lists what we *actually* depend on — four
+  third-party libs — after confirming `spdlog` and `stduuid` were never taken and that
+  UUID, logging, and time are hand-written. **Guarded by `scripts/check_doc_paths.py`,
+  wired into the `docs-smoke` CI job**, which fails if any doc names a file that does not
+  exist; verified by injecting a false path and watching it fail. That guard immediately
+  found a real defect in `PORT_HISTORY.md:286` (a Rust-repo path written as if it were
+  ours). Surfaced **12.6**.
 
 - **12.3 — Nowhere to record a decision** — created [`docs/adr/`](adr/README.md) with a
   one-page template, an index, and a table of the fourteen `decision`-tagged items still
