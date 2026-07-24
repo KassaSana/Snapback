@@ -56,7 +56,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
 | 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
-| 5 | **12.3** create `docs/adr/` | **Blocks the decision sessions** — eleven items produce decisions with nowhere to land |
+| 5 | ~~**12.3** create `docs/adr/`~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) exists; decision sessions have a home |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
 | 8 | **0.3** live-Mac verification | Now actually measurable |
@@ -996,14 +996,9 @@ later moved.
   `CLAUDE.md` (six false claims), `ARCHITECTURE.md` (seven), and this file (three), assume
   they contain errors until checked. `docs-smoke` in CI only checks that docs exist.
 
-- **12.3 — There is nowhere to record a decision.** `S` — **blocks the decision sessions.**
-  No `docs/adr/`, no decision log, nothing. Meanwhile this file carries **fourteen
-  `decision`-tagged items** (1.2, 4.11, 5.3, 5.4, 5.6, 7.7, 7.8, 7.16, 8.5, 9.1, 9.10, 10.2,
-  13.5, 13.6) whose
-  entire output is *a decision and its reasoning*. Without a home, those answers land in a
-  chat log and evaporate — and the next audit re-derives the same question, which is exactly
-  how 5.4 and 5.6 got "fixed" and reverted. Create `docs/adr/` with a one-page template
-  before the first decision session, not after.
+- **12.3 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive).
+  [`docs/adr/`](adr/README.md) now holds the template, the index, and the list of the
+  fourteen `decision`-tagged items still awaiting one.
 
 - **12.4 — A "how do I actually run this" doc, per OS.** `S`
   `testing_strategy.md` documents PowerShell scripts; this development machine is macOS
@@ -1157,6 +1152,18 @@ itself a backlog item below.
 
 Completed work. Kept for history; details live in git log and
 [PORT_HISTORY.md](PORT_HISTORY.md).
+
+### Tier 12 docs (2026-07-23)
+
+- **12.3 — Nowhere to record a decision** — created [`docs/adr/`](adr/README.md) with a
+  one-page template, an index, and a table of the fourteen `decision`-tagged items still
+  awaiting an ADR. [ADR-0001](adr/0001-record-architecture-decisions.md) records the
+  practice itself and the rule that follows from it: **`decision` items are not
+  implementable until their ADR is `Accepted`.** Files are append-only — a changed mind
+  writes a new ADR and marks the old one `Superseded`, so a reversal is visible as an
+  addition rather than a silent edit. That is the failure this fixes: 5.4 and 5.6 were both
+  implemented and reverted because the rationale lived only in a chat log. Unblocks 9.1 and
+  decision sessions A and B.
 
 ### Tier 6 CI fixes (2026-07-22)
 
