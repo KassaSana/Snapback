@@ -14,6 +14,21 @@ std::optional<std::filesystem::path> read_training_repo_path(
     const std::filesystem::path& app_data_dir);
 void write_training_repo_path(const std::filesystem::path& app_data_dir,
                               const std::filesystem::path& repo_path);
+
+struct ModelQualityDecision {
+    bool accepted{};
+    std::string metric;
+    double candidate_score{};
+    double threshold{};
+    std::string reason;
+};
+
+// Gate a candidate model before it can replace the deployed model. The candidate metrics must
+// contain a held-out/validation/CV accuracy; in-sample-only metrics are deliberately rejected.
+ModelQualityDecision evaluate_model_quality(
+    const nlohmann::json& candidate_metrics,
+    const std::optional<nlohmann::json>& deployed_quality = std::nullopt);
+
 nlohmann::json training_deploy_status(const std::filesystem::path& app_data_dir);
 nlohmann::json train_from_export(const std::filesystem::path& app_data_dir);
 std::string build_pipeline_command(const std::filesystem::path& output_dir);

@@ -104,6 +104,11 @@ export function TrainingDeployCard({
             Label balance: {formatLabelBreakdown(deployStatus.labelBreakdown)}
           </p>
           {metricsSummary ? <p className="helper-text">Latest quality: {metricsSummary}</p> : null}
+          {deployStatus.qualityGate?.reason ? (
+            <p className={`helper-text${deployStatus.qualityGate.passed ? "" : " alert"}`}>
+              {deployStatus.qualityGate.reason}
+            </p>
+          ) : null}
           {readinessBlockers.length > 0 ? (
             <ul className="permission-steps">
               {readinessBlockers.map((blocker) => (

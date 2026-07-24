@@ -82,6 +82,35 @@ TEST_CASE("training_deploy status counts export rows labels metrics and model") 
     CHECK(status.at("metrics").contains("ignored") == false);
 }
 
+TEST_CASE("model quality gate requires held-out quality and protects the deployed baseline") {
+    const auto accepted = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.72}}, std::nullopt);
+    CHECK(accepted.accepted);
+    CHECK(accepted.metric == "held_out_accuracy");
+    CHECK(accepted.threshold == doctest::Approx(0.60));
+
+    const auto too_low = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.59}}, std::nullopt);
+    CHECK_FALSE(too_low.accepted);
+    CHECK(too_low.reason.find("rejected") != std::string::npos);
+
+    const auto regressed = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.79}},
+        nlohmann::json{{"metric", "held_out_accuracy"}, {"score", 0.80}});
+    CHECK_FALSE(regressed.accepted);
+    CHECK(regressed.threshold == doctest::Approx(0.80));
+
+    const auto unchanged = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.80}},
+        nlohmann::json{{"metric", "held_out_accuracy"}, {"score", 0.80}});
+    CHECK(unchanged.accepted);
+
+    const auto in_sample_only = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"in_sample_accuracy", 0.99}}, std::nullopt);
+    CHECK_FALSE(in_sample_only.accepted);
+    CHECK(in_sample_only.reason.find("held-out") != std::string::npos);
+}
+
 TEST_CASE("training_deploy rejects invalid configured repo") {
     TempDir app_data;
     TempDir not_repo;

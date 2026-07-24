@@ -198,6 +198,13 @@ export type TrainingDeployStatus = {
   modelOnnxExists: boolean;
   metricsExists: boolean;
   metrics: Record<string, number> | null;
+  qualityGate?: {
+    passed: boolean;
+    metric: string;
+    candidateScore: number;
+    threshold: number;
+    reason: string;
+  };
   pythonAvailable: boolean;
   repoPath: string | null;
   repoConfigured: boolean;
@@ -270,6 +277,8 @@ export type TrainFromExportResult = {
   message: string;
   onnxExported: boolean;
   metrics: Record<string, number> | null;
+  qualityGatePassed?: boolean;
+  qualityGateReason?: string;
   logTail: string;
 };
 

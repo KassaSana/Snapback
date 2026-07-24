@@ -314,6 +314,7 @@ export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingD
       metrics[key] = Number(value);
     }
   }
+  const qualityGateRaw = (raw.quality_gate ?? raw.qualityGate ?? {}) as Record<string, unknown>;
   return {
     exportDir: String(raw.export_dir ?? raw.exportDir ?? ""),
     featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
@@ -323,6 +324,13 @@ export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingD
     modelOnnxExists: Boolean(raw.model_onnx_exists ?? raw.modelOnnxExists ?? false),
     metricsExists: Boolean(raw.metrics_exists ?? raw.metricsExists ?? false),
     metrics,
+    qualityGate: {
+      passed: Boolean(qualityGateRaw.passed ?? false),
+      metric: String(qualityGateRaw.metric ?? ""),
+      candidateScore: Number(qualityGateRaw.candidate_score ?? qualityGateRaw.candidateScore ?? 0),
+      threshold: Number(qualityGateRaw.threshold ?? 0),
+      reason: String(qualityGateRaw.reason ?? ""),
+    },
     pythonAvailable: Boolean(raw.python_available ?? raw.pythonAvailable ?? false),
     repoPath: (raw.repo_path ?? raw.repoPath ?? null) as string | null,
     repoConfigured: Boolean(raw.repo_configured ?? raw.repoConfigured ?? false),
@@ -349,6 +357,8 @@ export function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFro
     message: String(raw.message ?? ""),
     onnxExported: Boolean(raw.onnx_exported ?? raw.onnxExported ?? false),
     metrics,
+    qualityGatePassed: Boolean(raw.quality_gate_passed ?? raw.qualityGatePassed ?? false),
+    qualityGateReason: String(raw.quality_gate_reason ?? raw.qualityGateReason ?? ""),
     logTail: String(raw.log_tail ?? raw.logTail ?? ""),
   };
 }
