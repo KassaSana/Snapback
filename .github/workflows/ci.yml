@@ -423,3 +423,10 @@ jobs:
         run: |
           grep -q "docs/windows_demo.md" README.md
           test -f docs/windows_demo.md
+
+      # Roadmap Tier 12 exists because docs repeatedly named files that were never
+      # created or had moved, and nothing caught it. This makes that mechanical.
+      # The Rust reference (../FocoFlow-1) is not checked out here; the script skips
+      # those paths rather than failing on them.
+      - name: Every path a doc names must exist
+        run: python3 scripts/check_doc_paths.py
