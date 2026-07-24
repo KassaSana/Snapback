@@ -9,6 +9,10 @@
 namespace snapback::training_deploy {
 
 std::filesystem::path export_dir(const std::filesystem::path& app_data_dir);
+bool rollback_available(const std::filesystem::path& app_data_dir);
+// Restore the previous deployed model and its quality metadata. The swap keeps the current
+// model as the next rollback target, so a user can undo an undo.
+nlohmann::json rollback_model(const std::filesystem::path& app_data_dir);
 bool is_training_repo(const std::filesystem::path& path);
 std::optional<std::filesystem::path> read_training_repo_path(
     const std::filesystem::path& app_data_dir);

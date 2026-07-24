@@ -26,6 +26,7 @@ import {
   mapSnapbackPayload,
   mapTrainFromExportResult,
   mapTrainingDeployStatus,
+  mapRollbackClassifierModelResult,
 } from "./apiMappers";
 
 export type RiskLevel = "high" | "medium" | "low" | "unknown";
@@ -205,6 +206,7 @@ export type TrainingDeployStatus = {
     threshold: number;
     reason: string;
   };
+  rollbackAvailable?: boolean;
   pythonAvailable: boolean;
   repoPath: string | null;
   repoConfigured: boolean;
@@ -280,6 +282,13 @@ export type TrainFromExportResult = {
   qualityGatePassed?: boolean;
   qualityGateReason?: string;
   logTail: string;
+};
+
+export type RollbackClassifierModelResult = {
+  success: boolean;
+  message: string;
+  modelId: string | null;
+  classifier: ClassifierStatus;
 };
 
 export const api = {
@@ -397,6 +406,10 @@ export const api = {
   reloadClassifierModel: async () => {
     const raw = await invoke<Record<string, unknown>>("reload_classifier_model");
     return mapClassifierStatus(raw);
+  },
+  rollbackClassifierModel: async () => {
+    const raw = await invoke<Record<string, unknown>>("rollback_classifier_model");
+    return mapRollbackClassifierModelResult(raw);
   },
   refreshPermissions: async () => {
     const raw = await invoke<Record<string, unknown>>("refresh_permissions");

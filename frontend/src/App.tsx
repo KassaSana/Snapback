@@ -117,6 +117,7 @@ export default function App() {
     handleCopyTrainingCommand,
     handleExportTrainingData,
     handleReloadClassifierModel,
+    handleRollbackClassifierModel,
     handleSaveRepoPath,
     handleTrainFromExport,
     modelReloadStatus,
@@ -259,6 +260,7 @@ export default function App() {
           handleExportTrainingData={handleExportTrainingData}
           handleLabel={handleLabel}
           handleReloadClassifierModel={handleReloadClassifierModel}
+          handleRollbackClassifierModel={handleRollbackClassifierModel}
           handleSaveRepoPath={handleSaveRepoPath}
           handleTrainFromExport={handleTrainFromExport}
           labelStatus={feedback.labelStatus}

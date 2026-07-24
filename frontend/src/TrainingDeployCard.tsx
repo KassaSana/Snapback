@@ -18,6 +18,7 @@ type TrainingDeployCardProps = {
   handleExportTrainingData: () => void | Promise<void>;
   handleLabel: (label: FocusLabel) => void | Promise<void>;
   handleReloadClassifierModel: () => void | Promise<void>;
+  handleRollbackClassifierModel: () => void | Promise<void>;
   handleSaveRepoPath: () => void | Promise<void>;
   handleTrainFromExport: () => void | Promise<void>;
   labelStatus: string | null;
@@ -45,6 +46,7 @@ export function TrainingDeployCard({
   handleExportTrainingData,
   handleLabel,
   handleReloadClassifierModel,
+  handleRollbackClassifierModel,
   handleSaveRepoPath,
   handleTrainFromExport,
   labelStatus,
@@ -184,6 +186,13 @@ export function TrainingDeployCard({
           </button>
           <button className="secondary-button" onClick={() => void handleReloadClassifierModel()}>
             Reload model
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!deployStatus?.rollbackAvailable}
+            onClick={() => void handleRollbackClassifierModel()}
+          >
+            Roll back model
           </button>
         </div>
         {trainFromExportHint ? <p className="helper-text alert">{trainFromExportHint}</p> : null}

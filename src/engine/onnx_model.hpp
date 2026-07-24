@@ -30,6 +30,7 @@ public:
 
     // Rust: onnx_model::init(model_path). Loads once at startup if the file exists.
     bool init(const std::filesystem::path& model_path);
+    void unload();
     bool loaded() const { return loaded_; }
     // Path of the loaded model (for HealthStatus), or nullopt when none is loaded.
     const std::optional<std::string>& model_path() const { return model_path_; }

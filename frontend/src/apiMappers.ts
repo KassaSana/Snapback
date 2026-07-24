@@ -25,6 +25,7 @@ import type {
   SnapbackPayload,
   TrainFromExportResult,
   TrainingDeployStatus,
+  RollbackClassifierModelResult,
 } from "./api";
 
 const FOCUS_MODE_VALUES = new Set(["deep", "normal", "recovery"]);
@@ -331,6 +332,7 @@ export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingD
       threshold: Number(qualityGateRaw.threshold ?? 0),
       reason: String(qualityGateRaw.reason ?? ""),
     },
+    rollbackAvailable: Boolean(raw.rollback_available ?? raw.rollbackAvailable ?? false),
     pythonAvailable: Boolean(raw.python_available ?? raw.pythonAvailable ?? false),
     repoPath: (raw.repo_path ?? raw.repoPath ?? null) as string | null,
     repoConfigured: Boolean(raw.repo_configured ?? raw.repoConfigured ?? false),
@@ -360,6 +362,17 @@ export function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFro
     qualityGatePassed: Boolean(raw.quality_gate_passed ?? raw.qualityGatePassed ?? false),
     qualityGateReason: String(raw.quality_gate_reason ?? raw.qualityGateReason ?? ""),
     logTail: String(raw.log_tail ?? raw.logTail ?? ""),
+  };
+}
+
+export function mapRollbackClassifierModelResult(
+  raw: Record<string, unknown>,
+): RollbackClassifierModelResult {
+  return {
+    success: Boolean(raw.success ?? false),
+    message: String(raw.message ?? ""),
+    modelId: (raw.model_id ?? raw.modelId ?? null) as string | null,
+    classifier: mapClassifierStatus((raw.classifier as Record<string, unknown>) ?? {}),
   };
 }
 

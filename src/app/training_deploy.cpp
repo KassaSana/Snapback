@@ -239,9 +239,52 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
     const auto export_model = export_path / "model.onnx";
     if (!std::filesystem::is_regular_file(export_model)) return false;
     std::filesystem::create_directories(app_data_dir);
+
+    const auto deployed_model = app_data_dir / "model.onnx";
+    const auto previous_model = app_data_dir / "model.onnx.previous";
+    if (std::filesystem::is_regular_file(deployed_model)) {
+        std::filesystem::copy_file(deployed_model, previous_model,
+                                   std::filesystem::copy_options::overwrite_existing);
+        const auto deployed_quality = app_data_dir / "model_quality.json";
+        const auto previous_quality = app_data_dir / "model_quality.json.previous";
+        if (std::filesystem::is_regular_file(deployed_quality)) {
+            std::filesystem::copy_file(deployed_quality, previous_quality,
+                                       std::filesystem::copy_options::overwrite_existing);
+        } else {
+            std::error_code ignored;
+            std::filesystem::remove(previous_quality, ignored);
+        }
+    }
     std::filesystem::copy_file(export_model, app_data_dir / "model.onnx",
                                std::filesystem::copy_options::overwrite_existing);
     return true;
+}
+
+void swap_file(const std::filesystem::path& first, const std::filesystem::path& second) {
+    const auto temporary = first.string() + ".rollback-temp";
+    const std::filesystem::path temp_path(temporary);
+    std::filesystem::copy_file(first, temp_path,
+                               std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(second, first,
+                               std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(temp_path, second,
+                               std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::remove(temp_path);
+}
+
+void swap_optional_file(const std::filesystem::path& first,
+                        const std::filesystem::path& second) {
+    const bool first_exists = std::filesystem::is_regular_file(first);
+    const bool second_exists = std::filesystem::is_regular_file(second);
+    if (first_exists && second_exists) {
+        swap_file(first, second);
+    } else if (second_exists) {
+        std::filesystem::copy_file(second, first,
+                                   std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::remove(second);
+    } else if (first_exists) {
+        std::filesystem::remove(first);
+    }
 }
 
 }  // namespace
@@ -300,6 +343,27 @@ ModelQualityDecision evaluate_model_quality(
 
 std::filesystem::path export_dir(const std::filesystem::path& app_data_dir) {
     return app_data_dir / "exports" / "training";
+}
+
+bool rollback_available(const std::filesystem::path& app_data_dir) {
+    return std::filesystem::is_regular_file(app_data_dir / "model.onnx.previous");
+}
+
+nlohmann::json rollback_model(const std::filesystem::path& app_data_dir) {
+    const auto current = app_data_dir / "model.onnx";
+    const auto previous = app_data_dir / "model.onnx.previous";
+    if (!rollback_available(app_data_dir)) {
+        throw std::runtime_error("No previous model is available to restore.");
+    }
+
+    swap_optional_file(current, previous);
+    swap_optional_file(app_data_dir / "model_quality.json",
+                       app_data_dir / "model_quality.json.previous");
+    const auto identity = OnnxModel::model_id_for_path(current);
+    return nlohmann::json{{"success", true},
+                          {"message", "Previous model restored. Reloading classifier."},
+                          {"modelId", identity ? nlohmann::json(*identity)
+                                                 : nlohmann::json(nullptr)}};
 }
 
 bool is_training_repo(const std::filesystem::path& path) {
@@ -377,6 +441,7 @@ nlohmann::json training_deploy_status(const std::filesystem::path& app_data_dir)
         {"metricsExists", std::filesystem::is_regular_file(metrics_path)},
         {"metrics", metrics.value_or(nlohmann::json(nullptr))},
         {"qualityGate", quality_gate},
+        {"rollbackAvailable", rollback_available(app_data_dir)},
         {"pythonAvailable", find_python().has_value()},
         {"repoPath", repo_path ? nlohmann::json(repo_path->string()) : nlohmann::json(nullptr)},
         {"repoConfigured", repo_path.has_value()},

@@ -107,6 +107,7 @@ public:
                                                      std::size_t limit);
 
     ClassifierStatus classifier_status() const;
+    ClassifierStatus reload_classifier_model();
     PermissionStatus refresh_permissions();
     // Prompt for capture permission (macOS Accessibility dialog), then report the result.
     // User-initiated only — refresh_permissions() is the pollable, dialog-free version.

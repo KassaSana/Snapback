@@ -593,6 +593,22 @@ ClassifierStatus AppState::classifier_status() const {
     return status;
 }
 
+ClassifierStatus AppState::reload_classifier_model() {
+    std::lock_guard lock(mutex_);
+    if (const auto model = OnnxModel::resolve_model_path(app_data_dir_)) {
+        OnnxModel::instance().init(*model);
+    } else {
+        OnnxModel::instance().unload();
+    }
+
+    ClassifierStatus status;
+    status.backend = classifier_.backend();
+    status.onnx_runtime_enabled = classifier_.backend() == "onnx";
+    status.model_path = OnnxModel::instance().model_path();
+    status.model_id = OnnxModel::instance().model_id();
+    return status;
+}
+
 PermissionStatus AppState::refresh_permissions() {
     std::lock_guard lock(mutex_);
     return check_capture_permissions(capture_.running());

@@ -47,6 +47,18 @@ std::optional<std::string> OnnxModel::model_id_for_path(
     return id.str();
 }
 
+void OnnxModel::unload() {
+    loaded_ = false;
+    model_path_.reset();
+    model_id_.reset();
+#if defined(SNAPBACK_ONNX)
+    session_.reset();
+    env_.reset();
+    input_name_.clear();
+    output_names_.clear();
+#endif
+}
+
 #if defined(SNAPBACK_ONNX)
 
 bool OnnxModel::init(const std::filesystem::path& model_path) {
@@ -129,13 +141,7 @@ std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const Featur
 }
 
 void OnnxModel::reset_for_tests() {
-    loaded_ = false;
-    model_path_.reset();
-    model_id_.reset();
-    session_.reset();
-    env_.reset();
-    input_name_.clear();
-    output_names_.clear();
+    unload();
 }
 
 #else  // stub build (SNAPBACK_ONNX off)
@@ -150,9 +156,7 @@ std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const Featur
 }
 
 void OnnxModel::reset_for_tests() {
-    loaded_ = false;
-    model_path_.reset();
-    model_id_.reset();
+    unload();
 }
 
 #endif

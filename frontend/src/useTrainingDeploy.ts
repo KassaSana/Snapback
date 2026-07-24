@@ -159,6 +159,19 @@ export const useTrainingDeploy = ({
     }
   }, [onClassifierStatusChange]);
 
+  const handleRollbackClassifierModel = useCallback(async () => {
+    try {
+      const result = await api.rollbackClassifierModel();
+      onClassifierStatusChange(result.classifier);
+      setModelReloadStatus(
+        `${result.message} ${buildModelReloadStatus(result.classifier)}`,
+      );
+      await refreshDeployStatus();
+    } catch (err) {
+      setModelReloadStatus(err instanceof Error ? err.message : "Rollback failed.");
+    }
+  }, [onClassifierStatusChange, refreshDeployStatus]);
+
   const trainFromExportHint = useMemo(
     () => buildTrainFromExportHint(deployStatus),
     [deployStatus],
@@ -188,6 +201,7 @@ export const useTrainingDeploy = ({
     handleCopyTrainingCommand,
     handleExportTrainingData,
     handleReloadClassifierModel,
+    handleRollbackClassifierModel,
     handleSaveRepoPath,
     handleTrainFromExport,
     modelReloadStatus,
