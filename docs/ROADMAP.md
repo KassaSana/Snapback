@@ -1019,13 +1019,9 @@ later moved.
   [`docs/adr/`](adr/README.md) now holds the template, the index, and the list of the
   fourteen `decision`-tagged items still awaiting one.
 
-- **12.4 — A "how do I actually run this" doc, per OS.** `S`
-  `testing_strategy.md` documents PowerShell scripts; this development machine is macOS
-  (see CLAUDE.md). There is no single page saying: here's how you build, here's how you run
-  the tests, here's how you launch the real app, on *your* OS — including which targets
-  simply cannot be built on which host, and why (`SNAPBACK_BUILD_APP` defaults OFF, ONNX
-  needs a vendored runtime, Windows-only files can't compile on macOS). Would have saved
-  several sessions' worth of rediscovery.
+- **12.4 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive).
+  [`docs/running.md`](running.md) is the per-OS page, and every macOS claim in it was run
+  before being written.
 
 - **12.6 — `label_shortcuts.rs` was never ported, and nothing recorded that.** `M`
   Found 2026-07-23 while reconciling 12.1. The Rust build has
@@ -1173,6 +1169,18 @@ Completed work. Kept for history; details live in git log and
   exist; verified by injecting a false path and watching it fail. That guard immediately
   found a real defect in `PORT_HISTORY.md:286` (a Rust-repo path written as if it were
   ours). Surfaced **12.6**.
+
+- **12.4 — A "how do I actually run this" doc, per OS** — [`docs/running.md`](running.md):
+  a what-builds-where matrix, prerequisites, the headless build, the desktop app, the
+  permissions real capture needs on each OS, the environment variables, and a
+  symptom→cause table. **The macOS claims were verified by running them**, including a
+  `SNAPBACK_BUILD_APP=ON` build that produced a linked arm64 binary — so the page reports
+  what happened rather than what should happen.
+
+  The section that will earn its keep is *what cannot be built where*: ONNX needs a vendored
+  runtime that is not in this repo, tray and overlay are deliberate no-op stubs off Windows,
+  and four Windows-only sources cannot compile on this host at all — which is why **red
+  Windows CI means those four are covered nowhere**, not merely less well.
 
 - **12.5 — The operational scripts were unrunnable on the dev machine** — the two scripts
   that were never Windows-specific are now ported: `test_local.sh` and `run_benchmarks.sh`.

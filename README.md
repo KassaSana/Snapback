@@ -63,18 +63,28 @@ snapbackCplusplus/
 │   ├── storage/           # SQLite persistence (Rust: storage/)
 │   └── snapback/          # context recovery: tracker, title parser, overlay (Rust: snapback/)
 ├── tests/                 # doctest-based unit + parity tests
-├── scripts/               # Windows demo / packaging / benchmark helpers
+├── scripts/               # test / benchmark / Windows packaging helpers (see scripts/README.md)
 └── frontend/              # reused React build output (see frontend/README.md)
 ```
 
 ## Build & test the core
 
 Requires C++20, CMake ≥ 3.20, and (on Windows) MSVC.
+**[docs/running.md](docs/running.md) is the full per-OS guide** — what builds where, the
+permissions real capture needs, and what to do when something fails.
 
 ```powershell
+# Windows (MSVC is multi-config: pick the config at build time)
 cmake -S . -B build
 cmake --build build --target snapback_tests --config Debug
 ctest --test-dir build -C Debug --output-on-failure
+```
+
+```sh
+# macOS / Linux (single-config: pick the build type at configure time)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target snapback_tests --parallel
+ctest --test-dir build --output-on-failure
 ```
 
 Or run the full headless + frontend suite in one shot:

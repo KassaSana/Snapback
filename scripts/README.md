@@ -30,5 +30,5 @@ must be set at *configure* time with `-DCMAKE_BUILD_TYPE=`, and binaries land di
 `build/`. The shell scripts pass both and probe both output layouts, which is why they are
 ports rather than translations.
 
-If you skip the scripts entirely, the raw `cmake`/`ctest` invocations are in
-[README.md](../README.md) and [docs/testing_strategy.md](../docs/testing_strategy.md).
+If you skip the scripts entirely, [docs/running.md](../docs/running.md) has the raw
+`cmake`/`ctest` invocations per OS, plus what can and cannot be built on each host.

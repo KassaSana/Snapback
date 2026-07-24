@@ -9,8 +9,10 @@ two. Corrections are inline.
 Snapback has three useful test tiers right now. They answer different questions,
 so they should stay separate.
 
-> **On a non-Windows host**, most commands below do not run — they are PowerShell, and the
-> development machine is macOS. Per-OS equivalents are Roadmap 12.4/12.5.
+> **On a non-Windows host**, several commands below do not run — they are PowerShell, and
+> the development machine is macOS. See [running.md](running.md) for the per-OS build, test,
+> and launch instructions, and [../scripts/README.md](../scripts/README.md) for which
+> scripts run where.
 
 ## 1. Local Mock / Headless Tests
 
