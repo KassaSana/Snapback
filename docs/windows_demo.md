@@ -2,8 +2,16 @@
 
 This is the local Windows demo path for the C++ port. It builds the reused React
 frontend into `frontend/dist`, copies those assets next to `snapback.exe`, and
-launches the native C++ webview shell against the bundled files. Vite is optional
-for development.
+launches the native C++ webview shell against the bundled files.
+
+> ⚠️ **`-UseVite` currently does nothing.** Audited 2026-07-23 (Roadmap 12.2). The script
+> builds `--config Release` (`windows_demo.ps1:128-130`), which defines `NDEBUG`, and the
+> 8.4 security fix made `main.cpp:196` ignore `SNAPBACK_FRONTEND_URL` in exactly that case
+> — release builds always load the bundled frontend. So the switch sets an environment
+> variable the app deliberately does not read. Worse, the documented
+> `-UseVite -SkipFrontend` combination skips building the bundle *and* cannot reach Vite,
+> leaving nothing to load. Tracked as Roadmap **8.7**; until it is resolved, treat the
+> bundled-frontend path as the only working demo flow.
 
 ## One-Command Demo
 

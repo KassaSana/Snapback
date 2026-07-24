@@ -615,6 +615,21 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   sibling QA hooks (`SNAPBACK_OVERLAY_TEST`, `SNAPBACK_NOTIFICATION_TEST`,
   `SNAPBACK_GUI_SESSION_SMOKE`) are benign — keep them.
 
+- **8.7 — The 8.4 gate silently killed the demo's `-UseVite` flow.** `S`
+  Found 2026-07-23 by the 12.2 doc audit. `scripts/windows_demo.ps1` builds
+  `--config Release` (lines 128-130), so `NDEBUG` is defined, so `main.cpp:196` ignores
+  `SNAPBACK_FRONTEND_URL`. `-UseVite` therefore sets an environment variable the app
+  deliberately does not read — it fails **silently**, loading the bundled frontend instead.
+  The documented `-UseVite -SkipFrontend` combination is worse: it skips building the
+  bundle too, so there is nothing to load.
+
+  This is not an argument to weaken 8.4 — the gate is correct. It is that the fix landed
+  without checking who called the thing it disabled. Options: allowlist
+  `http://127.0.0.1:*` / `http://localhost:*` (offered in 8.4's own text, and gated by
+  **8.5**'s threat model), have the demo script build `RelWithDebInfo`/`Debug` when
+  `-UseVite` is passed, or drop `-UseVite` and document the bundled path as the only one.
+  **Whichever is chosen, the script should fail loudly rather than ignore the switch.**
+
 - **8.5 — Write a threat model.** `M` `decision`
 
   `focoflow.db` is an unencrypted SQLite file holding a complete history of window titles,
@@ -988,7 +1003,13 @@ later moved.
   The audit found one thing nobody was looking for: **`label_shortcuts.rs` was never
   ported** — see the new item **12.6**.
 
-- **12.2 — Audit the remaining docs against the code.** `M`
+- **12.2 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). Ten false claims
+  corrected across four files; `PACKAGING.md` was the only one that survived clean. The
+  audit surfaced **8.7** (a live bug) and confirmed the value of `check_doc_paths.py` from
+  12.1.
+
+  The original finding was:
+
   `system_architecture.md`, `testing_strategy.md`, `benchmarking.md`, `windows_demo.md`, and
   `PACKAGING.md` have not been verified since they were written. Given the hit rate on
   `CLAUDE.md` (six false claims), `ARCHITECTURE.md` (seven), and this file (three), assume
@@ -1165,6 +1186,22 @@ Completed work. Kept for history; details live in git log and
   exist; verified by injecting a false path and watching it fail. That guard immediately
   found a real defect in `PORT_HISTORY.md:286` (a Rust-repo path written as if it were
   ours). Surfaced **12.6**.
+
+- **12.2 — Audit the remaining docs against the code** — ten false claims corrected, all
+  stale in the same direction: they described the design *before* the 2026-07-22 passes.
+  `system_architecture.md` (five: the single-mutex design in §5.2/§5.5/§6/§7.1, the inline
+  `std::array` ring, the ~5 MB `AppState` whose fix had already shipped, and the Rust
+  dual-check parity job listed as future work when it runs on every push);
+  `testing_strategy.md` (four: six CI jobs listed of twelve, macOS/Linux capture called
+  "stubs" when both backends are real, NSIS listed as future work when `CMakeLists.txt:226`
+  configures it, signing listed as future work when only the certificate is missing);
+  `benchmarking.md` (one: perf deltas cross-referenced to a section that never held them —
+  plus the CI benchmark jobs and the Windows-vs-macOS baseline caveat, neither documented).
+  `PACKAGING.md` was accurate.
+
+  **The audit found a live bug, which was the point:** `-UseVite` in the Windows demo has
+  been silently dead since 8.4 landed — filed as **8.7**. A doc audit is a cheap way to
+  find code defects, because a doc says what the code was *supposed* to do.
 
 - **12.3 — Nowhere to record a decision** — created [`docs/adr/`](adr/README.md) with a
   one-page template, an index, and a table of the fourteen `decision`-tagged items still

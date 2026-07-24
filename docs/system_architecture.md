@@ -6,6 +6,13 @@
 **Source of truth:** the Rust/Tauri original at `../FocoFlow-1/src-tauri/`; this document
 describes the C++ port's realized design, not a greenfield proposal.
 
+> **Audited against the code 2026-07-23 (Roadmap 12.2).** Five claims were stale, all in
+> the same direction — they described the design *before* the 2026-07-22 performance and
+> stability passes. Corrected in §5.2, §5.5, §6, §7.1, and §7.2, each marked inline. The
+> pattern is worth naming: **a "living document" that is never re-read becomes a snapshot
+> of the day it was written**, and its confident tone makes the staleness harder to spot
+> than an obviously incomplete file would be.
+
 ---
 
 ## 1. Executive Summary & System Boundaries
@@ -228,8 +235,14 @@ Three threads of interest:
 - **Capture handoff:** lock-free SPSC. Correctness rests entirely on the two atomics and
   acquire/release ordering. Rust's `Send`/`Sync` + borrow checker made this safe by
   construction; here it is upheld manually and is the code to be most paranoid about.
-- **Shared app state:** a single `std::mutex mutex_` guards all of `AppState`'s mutable
-  members. Every public method locks; the tick locks once per wake.
+- **Shared app state: two locks, not one.** `mutex_` guards in-memory state;
+  `storage_mutex_` serializes all `storage_` access (`state.hpp:171-172`). **Lock order is
+  an invariant: always `mutex_` before `storage_mutex_`, never the reverse**
+  (`state.hpp:168`). Keeping persistence off the state lock is what stops a disk write from
+  stalling a UI read — worth ~415× on the worst-case read (see
+  [benchmarking.md](benchmarking.md)). Nothing mechanically enforces the ordering yet;
+  that is Roadmap 11.6. *Corrected 2026-07-23 — this section described the pre-split
+  single-mutex design.*
 - **Lock discipline (critical):** `engine_tick` performs *all* shared-state work under the
   lock, then **snapshots what to emit and releases the lock before invoking the emit
   hook.** The hook is never called while holding `mutex_` (CLAUDE.md rule: never hold the
@@ -262,7 +275,10 @@ and modeling `listen`/`emit` on top.
 ### 5.5 Failure modes considered
 - **Ring overflow:** bounded, counted, surfaced in `HealthStatus`.
 - **Torn-down webview during shutdown:** hook cleared before join.
-- **Lock contention:** single mutex is a known serialization point (see §7).
+- **Lock contention:** `mutex_` still serializes in-memory state access. The split moved
+  disk I/O out from under it; some read paths (`analytics()`, `summary_report()`,
+  `session_history()`) still issue N+1 queries while holding `storage_mutex_`, which the
+  engine tick also takes — Roadmap 7.12. See §7.
 - **Bad frontend input:** validated at the bridge (length caps, required fields) exactly
   as `commands.rs` did.
 
@@ -274,8 +290,8 @@ and modeling `listen`/`emit` on top.
 |---|---|---|---|---|
 | **Single-binary C++ + `webview/webview`** | Keep Tauri/Rust; or Electron | Full control; SQLite/ONNX are first-class C/C++; small footprint | Reassemble window/IPC/tray by hand | Project mandate: own and defend every line; backends are *easier* in C++ |
 | **Lock-free SPSC ring buffer** | Mutex-guarded queue; channel lib | Wait-free producer; no alloc in hook; cache-friendly | Manual memory-ordering correctness; fixed capacity | The producer runs in the OS input queue — blocking/allocating there is unacceptable |
-| **Fixed 65,536-slot inline array** | Dynamic/growable buffer | O(1), bounded memory, no reallocation jitter | ~5 MB always resident; forces heap `AppState` | Predictable latency > peak memory economy for a background agent |
-| **Single `std::mutex` over `AppState`** | Fine-grained locks; lock-free state | Simple, obviously correct, easy to review | One serialization point | State mutation is infrequent (≤10 Hz); correctness and clarity outrank throughput here |
+| **Fixed 65,536-slot ring, heap-allocated** | Dynamic/growable buffer; inline `std::array` | O(1), bounded memory, no reallocation jitter; one allocation at construction | ~6 MB always resident | Predictable latency > peak memory economy. **It was an inline `std::array` until 2026-07-22**, which made `CaptureThread` a ~6 MB object and blew Windows' 1 MB thread stack (Roadmap 6.1) |
+| **Two locks: `mutex_` + `storage_mutex_`** | One coarse lock; fine-grained/lock-free state | Disk writes never stall in-memory reads (~415× worst-case read win) | An ordering invariant a human must uphold | State mutation is infrequent (≤10 Hz), but a *write* is disk-bound and a UI read must not wait on it. Enforcing the order mechanically is Roadmap 11.6 |
 | **Emit after unlocking (snapshot pattern)** | Emit inside the lock | No lock coupled to webview; no re-entrancy | Slightly more tick code | Prevents deadlocks and unbounded lock-hold; matches the "never lock across callbacks" rule |
 | **JSON-string IPC via shim** | Custom binary IPC; native bindings gen | Reuses the React app *unchanged*; tiny shim | Encode/parse overhead; stringly-typed | Command volume is low; reuse of the frontend is a hard requirement |
 | **Heuristic default, ONNX optional (Strategy)** | ONNX-only; heuristic-only | Always-correct fallback; ships without a model | Two code paths to keep in parity | Mirrors Rust policy; the app must work with zero model artifacts |
@@ -289,26 +305,36 @@ and modeling `listen`/`emit` on top.
 
 We are shipping deliberate trade-offs. Naming them is the point.
 
+> **Re-audited 2026-07-23 (Roadmap 12.2).** Two of the four limits below had already been
+> fixed and were still listed as open; a third had its real shape wrong.
+
 ### 7.1 Known scaling limits
-- **Single-mutex contention.** All `AppState` access serializes on one lock. At the
-  current ≤10 Hz tick and human-paced commands this is invisible; under a hypothetical
-  high-frequency command load or a much faster tick it becomes the bottleneck. *Mitigation
-  path:* split read-mostly state (latest prediction) behind an atomic/seqlock, or shard
-  the lock.
+- **Lock contention (reduced, not gone).** The single lock was **split** into `mutex_`
+  (in-memory state) and `storage_mutex_` (all storage access), which took the worst-case
+  contended UI read from ~90 ms to ~0.2 ms. What remains: `analytics()`,
+  `summary_report()`, and `session_history()` issue N+1 queries while holding
+  `storage_mutex_`, and the engine tick takes the same lock — so a big UI read can still
+  stall capture writes. *Mitigation path:* single-query aggregates — Roadmap 7.12. The
+  ordering invariant is also unenforced — Roadmap 11.6.
 - **Fixed ring-buffer capacity.** ~1.3 s of burst tolerance. Sustained input above the
   drain rate drops events (counted, not silent). *Mitigation path:* adaptive drain
   batching or a second consumer — but SPSC simplicity is worth keeping until proven
   insufficient.
-- **~5 MB resident `AppState`.** Forces heap allocation and is wasteful if capture is
-  disabled. *Mitigation path:* make the ring buffer a `unique_ptr`-owned heap block, or
-  size it per-config.
+- **~6 MB resident ring buffer.** ~~Forces heap allocation~~ — **fixed 2026-07-22**
+  (Roadmap 6.1): the ring now owns a `std::unique_ptr<T[]>` block instead of an inline
+  `std::array`, so `CaptureThread` is small again and a `static_assert` keeps it that way.
+  The memory is still resident and still wasteful if capture is disabled; sizing it
+  per-config remains open.
 - **String-JSON IPC.** Fine for control-plane traffic; it would not carry a high-rate data
   stream. If live charts ever need sub-second, high-volume series, introduce a batched or
   binary channel rather than per-sample `emit`.
 
 ### 7.2 Parity debt (intentional, tracked)
-- **Cross-language fixture CI.** C++ replays `fixtures/feature_parity/scenarios.json` and
-  `classifier_scenarios.json`; optional Rust dual-check remains a future CI checkout step.
+- **Cross-language fixture CI.** ~~Optional Rust dual-check remains a future CI checkout
+  step.~~ **It ships.** The `feature-parity` job checks out the Rust source of truth
+  (`KassaSana/Snapback` ref `main-fresh`) into `rust-source`, runs both languages over
+  `fixtures/feature_parity/scenarios.json`, and diffs every training column within `1e-6`.
+  *Corrected 2026-07-23.*
 - **Unicode validation.** Command length limits now count UTF-8 scalars (Rust `.chars()` parity).
 - **Signing / installer parity.** Unsigned ZIP + IExpress + `-SignCertificate` hook documented in
   [`docs/PACKAGING.md`](PACKAGING.md). Auto-update deferred for v1.

@@ -19,7 +19,26 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_benchmarks.ps1 -Minutes 4
 ```
 
 The script configures CMake with `SNAPBACK_BUILD_BENCHMARKS=ON`, builds
-`snapback_benchmarks`, and runs it.
+`snapback_benchmarks`, and runs it. It passes the trace length through the
+`SNAPBACK_BENCH_MINUTES` environment variable (`scripts/run_benchmarks.ps1:38`), so on a
+non-Windows host you can skip the script entirely:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_BENCHMARKS=ON
+cmake --build build --target snapback_benchmarks --parallel
+SNAPBACK_BENCH_MINUTES=180 ./build/snapback_benchmarks
+```
+
+### In CI
+
+Two places, doing different jobs — noted here 2026-07-23 because this file described
+neither:
+
+- **`benchmarks.yml`** — *manual only* (`workflow_dispatch`), takes a `minutes` input,
+  uploads a `benchmark-results` artifact. This is the one that produces numbers.
+- **`benchmark-smoke`** in `ci.yml` — runs on every push, and only proves the benchmark
+  targets still build and run. **It is not a performance regression gate**; nothing
+  compares its output to the baseline below.
 
 ## What It Measures
 
@@ -96,8 +115,14 @@ reads must stay responsive under the *worst* case, not just on average.
 
 ## Measured results (12th Gen Intel i5-12500H, Release/MSVC)
 
-These are the deltas from the performance pass (see `docs/system_architecture.md` §7). They
-are the reference baseline; re-run and compare after changes to the files listed above.
+These are the deltas from the performance pass. **This file is where they live** — an
+earlier version pointed at `docs/system_architecture.md` §7 for them, but §7 is
+"Critique & Architectural Debt" and carries the *limits*, not the measurements. They are
+the reference baseline; re-run and compare after changes to the files listed above.
+
+⚠️ **These numbers are from a Windows machine (i5-12500H, Release/MSVC).** The development
+host is macOS, so a local run is not comparable to this table — compare like-for-like or
+you will read a platform difference as a regression.
 
 **Per-tick SQLite write** (prediction + feature snapshot) — the engine's write path:
 
