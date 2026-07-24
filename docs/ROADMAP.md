@@ -56,7 +56,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
 | 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
-| 5 | ~~**12.3** create `docs/adr/`~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) exists; decision sessions have a home |
+| 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
 | 8 | **0.3** live-Mac verification | Now actually measurable |
@@ -74,6 +74,11 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," 9.1 should arguably be #1.
+
+**Next up is #3 and #4 — both are `decision`s that need Kassa, not code.** With Tier 12
+cleared there is now a place to put the answers ([`docs/adr/`](adr/README.md)) and a
+correct picture of the system to reason about, which is the order those were meant to
+happen in.
 
 ---
 
@@ -998,6 +1003,21 @@ happened often enough to be a category, not an accident. Two root causes recur: 
 *before* the code (plans that were never reconciled), and docs written *about* code that
 later moved.
 
+> **Cleared 2026-07-23.** 12.1–12.5 are all done; only **12.6** remains, and it is a port
+> gap the audit *found*, not a doc defect. Three things are worth carrying forward:
+>
+> 1. **The tier is now partly self-enforcing.** `scripts/check_doc_paths.py` runs in
+>    `docs-smoke` and fails the build if any doc names a file that does not exist. That
+>    closes the most common failure mode mechanically. It cannot check *claims* — only
+>    paths — so the audit habit still matters.
+> 2. **Doc audits find code bugs.** 12.2 turned up **8.7**, a silently dead `-UseVite`
+>    flow, and 12.1 turned up **12.6**, an entire unported Rust module. A doc records what
+>    the code was *supposed* to do; diffing that against what it does is cheap and finds
+>    things tests do not.
+> 3. **Every stale claim pointed the same way** — describing the system before a fix
+>    landed, never after. Docs rot toward *pessimism* here, which is the dangerous
+>    direction: it makes finished work look open and invites rebuilding it.
+
 - **12.1 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). The map now
   matches the tree, and `scripts/check_doc_paths.py` runs in CI so it cannot drift again.
   The audit found one thing nobody was looking for: **`label_shortcuts.rs` was never
@@ -1050,10 +1070,6 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
   silently degrades with no signal. Needs a held-out evaluation and a threshold: refuse to
   deploy below baseline, and say why. **This is the item that makes on-device personalization
   safe rather than a coin flip.**
-
-- **13.4 — No rollback.** `S`
-  Once `model.onnx` is replaced there is no previous version to return to. Keep the prior
-  model and expose a revert. Cheap once 13.2 exists; near-impossible without it.
 
 - **13.5 — Is there enough labelled data to train on at all?** `S` `decision`
   Unexamined. Labels come from explicit user submissions plus auto-labels at session end —
@@ -1234,6 +1250,14 @@ Completed work. Kept for history; details live in git log and
   distinguishes heuristic output from ONNX output, includes the 31-feature contract version,
   and hashes the model contents. The identity is exposed in classifier diagnostics and the
   training panel; legacy databases receive the new column with a heuristic default on open.
+
+- **13.3 — Model quality gate** — training now refuses to deploy without a held-out/validation/
+  cross-validation accuracy, enforces a minimum 0.60 score, and rejects candidates below the
+  accepted model's recorded baseline. The decision and reason are returned to the training UI.
+
+- **13.4 — Model rollback** — accepted deployments preserve the previous ONNX model and its
+  quality metadata; the training panel exposes a reversible rollback command that reloads the
+  restored model immediately.
 
 ### Tier 6 CI fixes (2026-07-22)
 
