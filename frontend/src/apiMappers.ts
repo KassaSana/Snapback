@@ -164,6 +164,7 @@ export function mapClassifierStatus(raw: Record<string, unknown>): ClassifierSta
     backend: String(raw.backend ?? "heuristic"),
     onnxRuntimeEnabled: Boolean(raw.onnx_runtime_enabled ?? raw.onnxRuntimeEnabled ?? false),
     modelPath: (raw.model_path ?? raw.modelPath ?? null) as string | null,
+    modelId: (raw.model_id ?? raw.modelId ?? null) as string | null,
   };
 }
 
@@ -231,6 +232,7 @@ export function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
     driftScore: Number(raw.drift_score ?? raw.driftScore ?? 0),
     goalAlignment: Number(raw.goal_alignment ?? raw.goalAlignment ?? 0.5),
     timestamp: String(raw.timestamp ?? ""),
+    modelId: String(raw.model_id ?? raw.modelId ?? "heuristic:snapback-features-v1-31"),
   };
 }
 

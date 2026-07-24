@@ -8,6 +8,7 @@ import {
 type TrainingDeployCardProps = {
   canTrainFromExport: boolean;
   classifierBackend: string;
+  classifierModelId: string | null;
   classifierModelPath: string | null;
   copyStatus: string | null;
   deployMessage: string | null;
@@ -34,6 +35,7 @@ type TrainingDeployCardProps = {
 export function TrainingDeployCard({
   canTrainFromExport,
   classifierBackend,
+  classifierModelId,
   classifierModelPath,
   copyStatus,
   deployMessage,
@@ -188,6 +190,9 @@ export function TrainingDeployCard({
         {modelReloadStatus ? <p className="helper-text">{modelReloadStatus}</p> : null}
         {classifierModelPath ? (
           <p className="helper-text">Model path: {classifierModelPath}</p>
+        ) : null}
+        {classifierModelId ? (
+          <p className="helper-text">Model identity: {classifierModelId}</p>
         ) : null}
         <button
           type="button"

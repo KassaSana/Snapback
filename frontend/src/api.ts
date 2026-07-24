@@ -39,6 +39,7 @@ export type PredictionRecord = {
   driftScore: number;
   goalAlignment: number;
   timestamp: string;
+  modelId: string;
 };
 
 export type SessionRecord = {
@@ -85,6 +86,7 @@ export type ClassifierStatus = {
   backend: string;
   onnxRuntimeEnabled: boolean;
   modelPath: string | null;
+  modelId: string | null;
 };
 
 export type HealthStatus = {

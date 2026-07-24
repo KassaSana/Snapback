@@ -7,6 +7,8 @@
 #include <sstream>
 #include <string>
 
+#include <sqlite3.h>
+
 #include "storage/storage.hpp"
 #include "util/logger.hpp"
 
@@ -48,6 +50,7 @@ PredictionRecord prediction(const std::string& session_id, double focus, double 
     p.drift_score = 0.1;
     p.goal_alignment = 0.6;
     p.timestamp = "2026-07-11T19:00:00Z";
+    p.model_id = "test:model-v1";
     return p;
 }
 
@@ -120,6 +123,47 @@ TEST_CASE("storage gates prediction and feature writes to active sessions") {
                     std::runtime_error);
     CHECK_THROWS_AS(storage->insert_feature_snapshot(session.session_id, f),
                     std::runtime_error);
+}
+
+TEST_CASE("storage persists prediction model identity") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("Model identity", FocusMode::Normal);
+
+    auto original = prediction(session.session_id, 75.0, 0.2, "PRODUCTIVE");
+    original.model_id = "onnx:snapback-features-v1-31:abc123";
+    storage->insert_prediction(original);
+
+    const auto latest = storage->latest_prediction();
+    REQUIRE(latest.has_value());
+    CHECK(latest->model_id == original.model_id);
+}
+
+TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
+    TempDir temp;
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const char* legacy_schema =
+        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, goal TEXT NOT NULL, "
+        "status TEXT NOT NULL, focus_mode TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT);"
+        "CREATE TABLE predictions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, "
+        "focus_score REAL NOT NULL, distraction_risk REAL NOT NULL, focus_state TEXT NOT NULL, "
+        "thrash_score REAL NOT NULL DEFAULT 0.0, drift_score REAL NOT NULL DEFAULT 0.0, "
+        "goal_alignment REAL NOT NULL DEFAULT 0.5, timestamp TEXT NOT NULL);"
+        "INSERT INTO sessions VALUES ('legacy', 'legacy', 'ACTIVE', 'normal', "
+        "'2026-07-11T19:00:00Z', NULL);"
+        "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, "
+        "timestamp) VALUES ('legacy', 50.0, 0.5, 'PRODUCTIVE', '2026-07-11T19:00:00Z');";
+    char* error = nullptr;
+    REQUIRE(sqlite3_exec(db, legacy_schema, nullptr, nullptr, &error) == SQLITE_OK);
+    if (error) sqlite3_free(error);
+    sqlite3_close(db);
+
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    const auto latest = storage->latest_prediction();
+    REQUIRE(latest.has_value());
+    CHECK(latest->model_id == "heuristic:snapback-features-v1-31");
 }
 
 TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash spikes") {

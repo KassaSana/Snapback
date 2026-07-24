@@ -203,7 +203,17 @@ PredictionRecord read_prediction(sqlite3_stmt* stmt) {
     p.drift_score = sqlite3_column_double(stmt, 5);
     p.goal_alignment = sqlite3_column_double(stmt, 6);
     p.timestamp = column_text(stmt, 7);
+    p.model_id = column_text(stmt, 8);
     return p;
+}
+
+void ensure_prediction_model_id_column(sqlite3* db) {
+    Stmt columns(db, "PRAGMA table_info(predictions)");
+    while (columns.step_row()) {
+        if (column_text(columns.get(), 1) == "model_id") return;
+    }
+    exec(db, "ALTER TABLE predictions ADD COLUMN model_id TEXT NOT NULL "
+             "DEFAULT 'heuristic:snapback-features-v1-31'");
 }
 
 std::string utc_now_rfc3339() {
@@ -434,6 +444,7 @@ void Storage::migrate() {
                 drift_score REAL NOT NULL DEFAULT 0.0,
                 goal_alignment REAL NOT NULL DEFAULT 0.5,
                 timestamp TEXT NOT NULL,
+                model_id TEXT NOT NULL DEFAULT 'heuristic:snapback-features-v1-31',
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
 
@@ -545,6 +556,9 @@ void Storage::migrate() {
             CREATE INDEX IF NOT EXISTS idx_context_snapshots_session_ts
                 ON context_snapshots(session_id, timestamp);
          )sql");
+    // Rust-authored databases predate model provenance. Upgrade this one column in place;
+    // the broader ordered migration system remains Roadmap 7.3.
+    ensure_prediction_model_id_column(db_);
 }
 
 void Storage::finalize_cache() {
@@ -782,8 +796,8 @@ void Storage::insert_prediction(const PredictionRecord& p) {
     Stmt stmt(db_, cached_stmt(
                        "INSERT INTO predictions "
                        "(session_id, focus_score, distraction_risk, focus_state, thrash_score, "
-                       "drift_score, goal_alignment, timestamp) "
-                       "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"));
+                       "drift_score, goal_alignment, timestamp, model_id) "
+                       "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"));
     stmt.bind(1, p.session_id);
     stmt.bind(2, p.focus_score);
     stmt.bind(3, p.distraction_risk);
@@ -792,13 +806,14 @@ void Storage::insert_prediction(const PredictionRecord& p) {
     stmt.bind(6, p.drift_score);
     stmt.bind(7, p.goal_alignment);
     stmt.bind(8, p.timestamp);
+    stmt.bind(9, p.model_id);
     stmt.step_done();
 }
 
 std::optional<PredictionRecord> Storage::latest_prediction() {
     Stmt stmt(db_,
               "SELECT session_id, focus_score, distraction_risk, focus_state, thrash_score, "
-              "drift_score, goal_alignment, timestamp "
+              "drift_score, goal_alignment, timestamp, model_id "
               "FROM predictions ORDER BY timestamp DESC LIMIT 1");
     if (!stmt.step_row()) return std::nullopt;
     return read_prediction(stmt.get());
@@ -807,7 +822,7 @@ std::optional<PredictionRecord> Storage::latest_prediction() {
 std::vector<PredictionRecord> Storage::recent_predictions(std::size_t limit) {
     Stmt stmt(db_,
               "SELECT session_id, focus_score, distraction_risk, focus_state, thrash_score, "
-              "drift_score, goal_alignment, timestamp "
+              "drift_score, goal_alignment, timestamp, model_id "
               "FROM predictions ORDER BY timestamp DESC LIMIT ?1");
     stmt.bind(1, static_cast<std::int64_t>(limit));
     std::vector<PredictionRecord> rows;
@@ -819,11 +834,11 @@ std::vector<PredictionRecord> Storage::predictions_since(
     const std::optional<std::string>& cutoff) {
     const char* sql = cutoff
                           ? "SELECT session_id, focus_score, distraction_risk, focus_state, "
-                            "thrash_score, drift_score, goal_alignment, timestamp "
+                            "thrash_score, drift_score, goal_alignment, timestamp, model_id "
                             "FROM predictions WHERE timestamp >= ?1 "
                             "ORDER BY timestamp DESC"
                           : "SELECT session_id, focus_score, distraction_risk, focus_state, "
-                            "thrash_score, drift_score, goal_alignment, timestamp "
+                            "thrash_score, drift_score, goal_alignment, timestamp, model_id "
                             "FROM predictions ORDER BY timestamp DESC";
     Stmt stmt(db_, sql);
     if (cutoff) stmt.bind(1, *cutoff);

@@ -33,6 +33,13 @@ public:
     bool loaded() const { return loaded_; }
     // Path of the loaded model (for HealthStatus), or nullopt when none is loaded.
     const std::optional<std::string>& model_path() const { return model_path_; }
+    // Stable identity for the loaded model: feature contract plus a content hash.
+    const std::optional<std::string>& model_id() const { return model_id_; }
+
+    // Computes the identity without loading ONNX Runtime. Used by deployment/storage tests
+    // and by init() after the runtime has accepted the model.
+    static std::optional<std::string> model_id_for_path(
+        const std::filesystem::path& model_path);
 
     // Rust: onnx_model::resolve_model_path(app_data_dir).
     static std::optional<std::filesystem::path> resolve_model_path(
@@ -61,6 +68,7 @@ public:
 private:
     bool loaded_ = false;
     std::optional<std::string> model_path_;  // set on successful load
+    std::optional<std::string> model_id_;    // set on successful load
 #if defined(SNAPBACK_ONNX)
     std::unique_ptr<Ort::Env> env_;
     std::unique_ptr<Ort::Session> session_;

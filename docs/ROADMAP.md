@@ -1048,14 +1048,6 @@ later moved.
 `model.onnx`" is the easy half; everything about *operating* a model the user can't inspect
 is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
 
-- **13.2 — A deployed model has no identity.** `S`
-  `OnnxModel` tracks only `model_path_`. There is no version, no training-run id, no input
-  hash, no record of which feature-vector layout it expects. So: you cannot tell which model
-  produced a given prediction row; you cannot detect that a model was trained against an
-  older feature order (which CLAUDE.md calls a contract); and "model info panel" in 2.3 has
-  nothing to display. Stamp predictions with a model id. Prerequisite for everything else in
-  this tier.
-
 - **13.3 — Nothing stops a worse model from being deployed.** `M`
   `train_from_export` parses `metrics.json` but no gate consumes it. A retraining run that
   produces a *less* accurate model deploys exactly like a good one, and the user's experience
@@ -1220,6 +1212,11 @@ Completed work. Kept for history; details live in git log and
   `.dylib`, or `.so`, and a Linux ONNX CI job runs the fixture-backed inference tests. The
   optional ONNX build is now exercised on both Windows and POSIX rather than making an
   untested cross-platform claim.
+
+- **13.2 — Deployed model identity** — prediction rows now carry a stable identity that
+  distinguishes heuristic output from ONNX output, includes the 31-feature contract version,
+  and hashes the model contents. The identity is exposed in classifier diagnostics and the
+  training panel; legacy databases receive the new column with a heuristic default on open.
 
 ### Tier 6 CI fixes (2026-07-22)
 

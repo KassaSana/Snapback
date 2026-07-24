@@ -63,6 +63,7 @@ export default function App() {
     captureRunning,
     captureStalled,
     classifierBackend,
+    classifierModelId,
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
     handleRefreshPermissions,
@@ -248,6 +249,7 @@ export default function App() {
         <TrainingDeployCard
           canTrainFromExport={canTrainFromExport}
           classifierBackend={classifierBackend}
+          classifierModelId={classifierModelId}
           classifierModelPath={classifierModelPath}
           copyStatus={copyStatus}
           deployMessage={deployMessage}
