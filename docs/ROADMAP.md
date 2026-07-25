@@ -936,7 +936,17 @@ structure alone — a real review would likely find more.
   failure CLAUDE.md calls "silently breaks the UI." The `windows-desktop-integration` job is
   the closest thing and it's currently skipped (6.3).
 
-- **10.2 — The dashboard is ~20 cards on one page.** `M` `decision`
+- **10.2 — The dashboard is ~20 cards on one page.** `M` — **decided 2026-07-25, see
+  [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`).** Three surfaces — **Now**
+  (session control, live state, pomodoro), **Review** (insights, analytics, summary, focus
+  summary, session recap, activity), **Settings** (rules, settings, privacy, permissions, goal
+  categories, training, diagnostics). Now leads with the focus *state*, not the score, which
+  keeps this work independent of Decision session A. Palette stays; hierarchy, spacing, and
+  density change. Implementation is a surface-at-a-time composition change, not a rewrite —
+  no longer a `decision`.
+
+  The original finding was:
+
   `App.tsx` renders 34 card/wizard references. Every feature shipped as "another card,"
   which was right while porting and is now an information-architecture problem: no
   navigation, no hierarchy, no progressive disclosure. A new user's first screen shows
