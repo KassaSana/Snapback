@@ -1,7 +1,7 @@
 # ADR-0002 — v1 supports Windows and macOS
 
-- **Status:** Proposed
-- **Date:** 2026-07-24
+- **Status:** Accepted
+- **Date:** 2026-07-24 (sub-decision resolved and accepted 2026-07-25)
 - **Roadmap item:** 9.1
 - **Decided by:** Kassa
 
@@ -55,7 +55,7 @@ not a supported desktop target in v1.
 
 1. **0.3** — verify `CGEventTap` on real Mac hardware with Accessibility granted. First,
    because everything else on macOS is decoration if capture does not record.
-2. **3.1** — macOS tray.
+2. **3.1** — macOS tray **and native `NSPanel` overlay** (per the resolved sub-decision).
 3. **3.3** — macOS `.app`/DMG packaging **and notarization**. Longest lead time (Apple
    Developer account, certificates); start early even though it lands late.
 4. **macOS launch smoke in CI** — extend beyond the existing build-only job.
@@ -67,12 +67,65 @@ not a supported desktop target in v1.
 **Fast-follow (not blocking)**
 
 - macOS autostart via launchd.
+- macOS toast delivery via `UNUserNotificationCenter`, once 3.3 provides a bundle ID.
 - Linux desktop overlay/tray (3.2).
 - 2.3 / Tier 13 remainder — on-device retraining.
 
 **Open sub-decision:** does macOS v1 need a *native overlay*, or is a notification enough?
-Toasts already work. The overlay is the largest single item in the blocker list, so this
-question is worth settling before 3.1 starts. Recorded here rather than assumed.
+The overlay is the largest single item in the blocker list, so this question is worth
+settling before 3.1 starts. Recorded here rather than assumed.
+
+> **Correction, 2026-07-25 — this sub-decision was stated on a false premise.** The
+> sentence "Toasts already work" was written into a macOS-scoped paragraph and is **not
+> true on macOS.** All three notification call sites (`src/main.cpp:213`, `:224`, `:249`)
+> go through `Tray::instance().show_notification()`, and on macOS that resolves to
+> `NoopTray::show_notification()`, which **returns `false` without ever calling the OS**
+> (`src/app/tray_stub.cpp`). Toasts work on Windows only. What exists cross-platform is the
+> *payload builders* in `src/app/notification.hpp` — the copy, not the delivery.
+>
+> Two consequences for the choice:
+>
+> 1. **Neither option is free.** "Notification is enough" was the cheap branch because it
+>    was believed to be already built; it is not. Both branches require new native macOS
+>    code, so the question is how much, not whether.
+> 2. **The cheap branch has a dependency the expensive one does not.**
+>    `UNUserNotificationCenter` requires a valid bundle identifier and refuses to post from
+>    an unbundled binary — so notification delivery on macOS is **gated on 3.3** (`.app`
+>    bundle, and in practice the Apple Developer account behind it), the longest-lead-time
+>    blocker on this list. A native `NSPanel` overlay has no such gate and can be built and
+>    run today.
+>
+> Also worth weighing: macOS is not silent today. `AppState` emits the `snapback` event and
+> the React UI renders it with a working Dismiss (`src/snapback/overlay_stub.cpp` explains
+> why that path must stay reachable). But that only reaches a user who is *looking at
+> Snapback* — and the entire premise of a snapback is reaching someone who is looking at
+> something else. So macOS v1 does need some out-of-app delivery; this sub-decision picks
+> which.
+
+**Sub-decision resolved 2026-07-25: macOS v1 ships a native `NSPanel` overlay.** 3.1 is
+therefore tray *and* overlay, mirroring `src/snapback/overlay_windows.cpp`.
+
+The correction above is what settled it. Before it, this looked like "expensive parity vs.
+cheap toast" and cheap was winning. Once toasts turned out to be unbuilt on macOS *and*
+gated on a bundle identifier, the comparison inverted: the notification branch is smaller
+code that **cannot ship until 3.3 and an Apple Developer account land**, while the overlay
+branch is larger code with **no external dependency at all** — buildable and runnable on the
+author's own machine today. Choosing the overlay takes v1's critical path off Apple's
+paperwork, which is the single least controllable item on the blocker list.
+
+Secondary reasons, in order of weight: Windows and macOS then behave identically, so there
+is one mental model of what a snapback *is* rather than two; the overlay is the product's
+namesake feature and demoting it to a toast on the author's daily-driver platform is exactly
+the kind of quiet scope loss this ADR exists to prevent; and `overlay_stub.cpp`'s note about
+`ContextTracker::Recovering` having exactly one exit means a real overlay restores the
+dismiss path natively instead of depending on the web UI being visible.
+
+Toast delivery on macOS becomes **fast-follow**, not dropped — once 3.3 bundles the app, the
+payload builders in `src/app/notification.hpp` are already written and cross-platform, so
+delivery is the only missing piece.
+
+**Accepting this closes 9.1.** Every blocker below is now a scoped piece of work rather than
+an open question.
 
 ## Why
 
