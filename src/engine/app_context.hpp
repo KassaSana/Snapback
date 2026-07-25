@@ -1,5 +1,5 @@
 // Classify the foreground app into focus-relevant categories.
-// Rust: engine/app_context.rs. Plain string matching + user AppRules override.
+// Plain string matching + user AppRules override.
 #pragma once
 
 #include <optional>

@@ -1,7 +1,6 @@
 // Windows overlay: a borderless, always-on-top, non-activating card in the top-right.
-// Rust used a second Tauri webview window; here it's a native Win32 window so we don't
-// need a second WebView2 message loop. Pumped by main.cpp's webview run loop (same UI
-// thread), so no separate loop is required.
+// The overlay is a native Win32 window, pumped by main.cpp's webview run loop on the
+// same UI thread, so no separate loop is required.
 #include "snapback/overlay.hpp"
 
 #include <string>

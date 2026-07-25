@@ -1,8 +1,8 @@
-// ONNX Runtime inference. Rust: engine/onnx_model.rs (behind `--features onnx`).
+// ONNX Runtime inference, enabled with the SNAPBACK_ONNX build option.
 //
-// This is a case where C++ is *easier* than Rust: ONNX Runtime ships a first-class C++
+// ONNX Runtime ships a first-class C++
 // API, so there's no `ort` wrapper crate to fight. Gated by the SNAPBACK_ONNX CMake
-// option (a PUBLIC define on snapback_core), mirroring the Rust cargo feature. When the
+// option (a PUBLIC define on snapback_core). When the
 // option is off, this is a stub whose loaded() is always false and the classifier falls
 // back to the heuristic.
 #pragma once
@@ -28,7 +28,7 @@ class OnnxModel {
 public:
     static OnnxModel& instance();
 
-    // Rust: onnx_model::init(model_path). Loads once at startup if the file exists.
+    // Loads once at startup if the file exists.
     bool init(const std::filesystem::path& model_path);
     void unload();
     bool loaded() const { return loaded_; }
@@ -42,7 +42,7 @@ public:
     static std::optional<std::string> model_id_for_path(
         const std::filesystem::path& model_path);
 
-    // Rust: onnx_model::resolve_model_path(app_data_dir).
+    // Resolves the model path from the app data directory.
     static std::optional<std::filesystem::path> resolve_model_path(
         const std::filesystem::path& app_data_dir);
 
@@ -62,7 +62,7 @@ public:
     // Non-const because Ort::Session::Run mutates session state.
     std::optional<std::array<double, 4>> infer_probabilities(const FeatureVector& features);
 
-    // Test seam (Rust: reset_model_for_tests) — the singleton persists across tests, so a
+    // Test seam — the singleton persists across tests, so a
     // test that loads a model must reset afterward or it leaks the "onnx" backend.
     void reset_for_tests();
 

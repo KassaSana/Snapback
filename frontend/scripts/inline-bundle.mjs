@@ -9,8 +9,8 @@
 // resource error. Verified on 2026-07-25 with a probe page.
 //
 // A self-contained page sidesteps the whole class of problem and behaves identically on
-// WebView2 and WebKitGTK. The long-term alternative is a custom URL scheme handler (what
-// Tauri does), which would give the page a real origin; see the roadmap.
+// WebView2 and WebKitGTK. A future custom URL scheme handler could give the page a real
+// origin; see the roadmap.
 //
 // CSP: inlining would be blocked by `script-src 'self'`, so we compute the script's
 // sha256 and add it to the policy. Hashes authorize one exact script and nothing else, so

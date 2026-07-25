@@ -46,7 +46,7 @@ AppRuleRecord rule(const char* pattern, AppRuleKind kind) {
 }  // namespace
 
 TEST_CASE("app context detects defaults and lets block rules win") {
-    auto browser = classify_app_context("Google Chrome", "Rust documentation");
+    auto browser = classify_app_context("Google Chrome", "C++ documentation");
     CHECK(browser.is_browser);
     CHECK_FALSE(browser.title_is_distracting);
 

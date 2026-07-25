@@ -1,4 +1,4 @@
-// Focus-state classifier. Rust: engine/classifier.rs.
+// Focus-state classifier.
 #pragma once
 
 #include <array>
@@ -51,7 +51,7 @@ PredictionScores apply_focus_guardrails(PredictionScores scores,
                                         FocusMode mode);
 
 // Builds PredictionScores from a model's 4 class probabilities
-// [DISTRACTED, PSEUDO_PRODUCTIVE, PRODUCTIVE, DEEP_FOCUS]. Rust: build_prediction_scores.
+// [DISTRACTED, PSEUDO_PRODUCTIVE, PRODUCTIVE, DEEP_FOCUS].
 // Used by the ONNX backend; the heuristic backend has its own internal builder.
 PredictionScores scores_from_probabilities(const std::array<double, 4>& probas, double thrash,
                                            double drift, double goal_alignment);

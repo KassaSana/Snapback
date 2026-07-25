@@ -5,7 +5,7 @@
 // crossed from Active -> Idle or woke back up. The engine owns the wiring; this class
 // just owns the "have we heard input lately?" decision so it's trivially testable.
 //
-// C++/Rust delta: nothing exotic here, but note there's no clock hidden inside — `now`
+// There is no clock hidden inside this detector — `now`
 // is always passed in, exactly like storage's retention window. That keeps the state
 // machine deterministic in tests instead of racing a real wall clock.
 #pragma once

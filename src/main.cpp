@@ -1,10 +1,10 @@
-// Entry point. Rust: main.rs (calls run_from_cli) + lib.rs::run().
+// Entry point for the native application.
 //
-// Boot order mirrors the Rust setup() closure:
-//   1. resolve app data dir            (Tauri: app.path().app_data_dir())
-//   2. optionally load the ONNX model  (Rust: onnx_model::init behind a feature)
-//   3. open SQLite storage             (Rust: Storage::open)
-//   4. build AppState + start engine   (Rust: AppState::new + start_engine)
+// Boot order:
+//   1. resolve the app data directory
+//   2. optionally load the ONNX model
+//   3. open SQLite storage
+//   4. build AppState and start the engine
 //   5. create the webview, bind IPC, load the React build, run the loop
 #include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
 
@@ -117,11 +117,11 @@ int main() {
     const auto data_dir = app_data_dir();
     std::filesystem::create_directories(data_dir);
 
-    // Roadmap 0.5: one leveled logger for the process, writing to a rotating file next to
+    // One leveled logger for the process, writing to a rotating file next to
     // the DB instead of the console (nothing owns a terminal once this ships as a GUI
     // app). Falls back to stderr if the file can't be opened, so a bad log path degrades
     // instead of going silent. Level is overridable via SNAPBACK_LOG (e.g. "debug"),
-    // mirroring the Rust side's RUST_LOG convention.
+    // Keep startup logging configurable without coupling it to the UI.
     RotatingFileStream log_file(data_dir / "snapback.log");
     Logger logger(pick_startup_log_sink(log_file, std::cerr),
                   level_from_string(env_var("SNAPBACK_LOG").value_or("")));
@@ -177,14 +177,13 @@ int main() {
     w.set_title("Snapback");
     w.set_size(1100, 760, WEBVIEW_HINT_NONE);
 
-    // Inject the Tauri-v2 IPC shim BEFORE any page script runs (init scripts run on
+    // Inject the IPC shim BEFORE any page script runs (init scripts run on
     // every navigation, ahead of the bundle), then register the command binds it calls.
     w.init(kIpcShim);
     register_commands(w, *state, data_dir);
 
     // System tray (Phase 8): left-click/double-click or the "Show" menu item brings the
-    // window forward; "Quit" ends the run loop. Tauri gave us this for free; here it's
-    // Shell_NotifyIcon behind the Tray interface.
+    // window forward; "Quit" ends the run loop.
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
@@ -205,7 +204,7 @@ int main() {
         w.dispatch([&w, ev, payload] {
             emit(w, ev.c_str(), payload);
             // On the return-from-distraction edge, also pop the native overlay card and a
-            // toast (Roadmap 0.6) — the toast is the one that reaches the user when the
+            // toast — the toast is the one that reaches the user when the
             // app window isn't focused, which is exactly when the overlay alone can't.
             if (ev == "snapback") {
                 try {
@@ -214,6 +213,16 @@ int main() {
                     Tray::instance().show_notification(build_snapback_notification(snap));
                 } catch (...) {
                     // A malformed payload must never take down the UI thread.
+                }
+            }
+            // The hyperfocus nudge is a toast only — no overlay. An overlay here would
+            // interrupt exactly the deep work the guardrail is trying to protect.
+            if (ev == "hyperfocus") {
+                try {
+                    const auto minutes =
+                        nlohmann::json::parse(payload).at("minutes").get<std::uint64_t>();
+                    Tray::instance().show_notification(build_hyperfocus_notification(minutes));
+                } catch (...) {
                 }
             }
         });

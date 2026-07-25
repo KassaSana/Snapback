@@ -74,7 +74,7 @@ void FeatureExtractor::ingest(const CaptureEvent& ev) {
     // The first event is the earliest moment the event clock and the session agree on.
     if (awaiting_session_start_) {
         session_start_secs_ = now;
-        last_break_secs_ = now;  // Rust does the same: last_break_ts starts at session start
+        last_break_secs_ = now;  // The break clock starts at session start.
         awaiting_session_start_ = false;
     }
     if (!current_app_start_secs_ && !ev.app_name.empty()) {

@@ -184,7 +184,7 @@ TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash sp
     CHECK(recap.thrash_spikes == 1);
 }
 
-TEST_CASE("Storage::infer_session_label maps recap thresholds like Rust") {
+TEST_CASE("Storage::infer_session_label maps recap thresholds") {
     SessionRecap deep;
     deep.session_id = "s";
     deep.goal = "focus";
@@ -365,7 +365,7 @@ TEST_CASE("storage prune_runtime_data deletes feature snapshots past the cutoff"
     CHECK(exported.feature_count == 0);
 }
 
-TEST_CASE("should_vacuum_after_prune matches Rust threshold") {
+TEST_CASE("should_vacuum_after_prune uses the configured threshold") {
     CHECK_FALSE(should_vacuum_after_prune(0));
     CHECK_FALSE(should_vacuum_after_prune(kVacuumMinDeletedRows - 1));
     CHECK(should_vacuum_after_prune(kVacuumMinDeletedRows));

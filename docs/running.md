@@ -148,7 +148,7 @@ All optional. Read in `main.cpp`.
 
 Default data directory: `%APPDATA%\snapback` on Windows, `~/.snapback` elsewhere
 (`main.cpp:51-61`). **The database file is named `focoflow.db`** and that is deliberate —
-install compatibility with the Rust build.
+install compatibility across releases.
 
 ## 7. Benchmarks
 

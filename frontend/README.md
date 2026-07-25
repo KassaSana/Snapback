@@ -1,28 +1,13 @@
-# Frontend: reuse ../FocoFlow-1/frontend unchanged
+# Snapback frontend
 
-The React dashboard does **not** get rewritten. It's plain web code (Vite +
-TypeScript + React) and knows nothing about Rust vs C++ — it only speaks the IPC
-protocol: `invoke("command_name", args)` and event listeners.
+The React dashboard is plain web code (Vite + TypeScript + React). It speaks to
+the native application through `src/bridge.ts`, which exposes `invoke(command,
+args)` and event listeners over the injected `window.__snapback` bridge.
 
-Two compatibility rules keep it working against the C++ core:
+The command names in `src/app/commands.hpp` are the IPC contract. The bridge
+maps each call to a `webview.bind()` command and delivers native events to the
+registered listeners.
 
-1. **Command names match.** Every name in `src/app/commands.hpp` `register_commands`
-   must equal a name the frontend calls via `invoke(...)`, which equals a name in the
-   Rust `tauri::generate_handler![...]` list. That three-way match is the contract.
-
-2. **The `invoke` shim + event bus.** Tauri injects `window.__TAURI__` and the
-   `@tauri-apps/api` `invoke`/`listen` helpers. `webview/webview` does not. So the
-   C++ host injects a tiny shim (via `webview.init(...)`) that:
-   - maps `invoke(name, args)` onto the bound C++ functions, and
-   - exposes `window.__snapback.emit(event, payload)` for the host to push events
-     (the `emit()` helper in `commands.hpp` calls it).
-
-   If the frontend imports `@tauri-apps/api` directly, add a thin adapter module so
-   those imports resolve to the shim instead.
-
-## During the port
-
-- **Dev:** run the existing Vite dev server (`cd ../FocoFlow-1/frontend && npm run dev`)
-  and point `main.cpp`'s `w.navigate(...)` at `http://localhost:5173`.
-- **Prod:** `npm run build` there, then embed `dist/` in the C++ binary and load it
-  via a custom scheme or data URLs (CSP-safe, offline).
+For development, run `npm run dev` and set `SNAPBACK_FRONTEND_URL` to the local
+Vite URL. Production builds are inlined into the native app's self-contained
+HTML bundle.

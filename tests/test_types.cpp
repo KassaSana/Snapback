@@ -1,12 +1,11 @@
-// Ports the #[cfg(test)] cases from ../Snapback/src-tauri/src/types.rs, plus the
-// wire-format assertions the port plan requires (camelCase keys, nested objects).
+// Wire-format assertions for the data model and the React boundary.
 #include "doctest_wrapper.hpp"
 
 #include "types.hpp"
 
 using namespace snapback;
 
-// --- LabelSource parse/as_str (types.rs) ------------------------------------
+// --- LabelSource parse/as_str -----------------------------------------------
 
 TEST_CASE("label_source_parse recognizes known values case-insensitively") {
     CHECK(label_source_parse("hotkey") == LabelSource::Hotkey);
@@ -29,7 +28,7 @@ TEST_CASE("label_source as_str round-trips through parse") {
     }
 }
 
-// --- FocusMode (types.rs) ---------------------------------------------------
+// --- FocusMode --------------------------------------------------------------
 
 TEST_CASE("focus_mode_from_string recognizes known values case-insensitively") {
     CHECK(focus_mode_from_string("deep") == FocusMode::Deep);
@@ -59,7 +58,7 @@ TEST_CASE("focus_mode thresholds and hyperfocus minutes are stable per variant")
     CHECK(hyperfocus_minutes(FocusMode::Recovery) == 45);
 }
 
-// --- AppRuleKind (types.rs) -------------------------------------------------
+// --- AppRuleKind ------------------------------------------------------------
 
 TEST_CASE("app_rule_kind_from_string recognizes known values case-insensitively") {
     CHECK(app_rule_kind_from_string("allow") == AppRuleKind::Allow);
@@ -79,15 +78,15 @@ TEST_CASE("app_rule_kind string form matches JSON serialization") {
     }
 }
 
-// --- Enum wire strings match Rust serde exactly -----------------------------
+// --- Enum wire strings -------------------------------------------------------
 
-TEST_CASE("EventType and FocusLabel serialize to the exact Rust strings") {
+TEST_CASE("EventType and FocusLabel serialize to the exact wire strings") {
     CHECK(json(EventType::KeyPress).get<std::string>() == "KEY_PRESS");
     CHECK(json(EventType::WindowFocusChange).get<std::string>() == "WINDOW_FOCUS_CHANGE");
     CHECK(json(EventType::IdleEnd).get<std::string>() == "IDLE_END");
     CHECK(json(FocusLabel::Distracted).get<std::string>() == "DISTRACTED");
     CHECK(json(FocusLabel::DeepFocus).get<std::string>() == "DEEP_FOCUS");
-    // Distracted is -1 in Rust; the numeric value backs the enum, string backs JSON.
+    // Distracted is -1; the numeric value backs the enum, string backs JSON.
     CHECK(static_cast<int>(FocusLabel::Distracted) == -1);
 }
 
@@ -146,7 +145,7 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     CHECK(j["permissions"].contains("captureAvailable"));
     CHECK(j["permissions"].contains("setupSteps"));
     CHECK(j["classifier"].contains("onnxRuntimeEnabled"));
-    // Optional-null fields present as JSON null (matches serde Option<String>).
+    // An empty std::optional serialises as JSON null, not as a missing key.
     CHECK(j["captureFailureReason"].is_null());
 
     auto back = j.get<HealthStatus>();

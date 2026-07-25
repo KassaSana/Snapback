@@ -6,7 +6,7 @@ namespace snapback {
 
 // Editors separate segments with " — " (em dash, VS Code) or " - " (hyphen).
 // Split on whichever appears and treat the first segment as the file, the second
-// as the project. This is a faithful port sketch; extend to match title_parser.rs.
+// as the project. Keep the parser conservative so titles remain useful recovery hints.
 TitleHints parse_title(const std::string& window_title) {
     TitleHints hints;
     static const std::array<std::string, 2> seps = {" \xE2\x80\x94 ", " - "};  // " — ", " - "

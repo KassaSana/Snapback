@@ -556,7 +556,7 @@ void Storage::migrate() {
             CREATE INDEX IF NOT EXISTS idx_context_snapshots_session_ts
                 ON context_snapshots(session_id, timestamp);
          )sql");
-    // Rust-authored databases predate model provenance. Upgrade this one column in place;
+    // Older databases predate model provenance. Upgrade this one column in place;
     // the broader ordered migration system remains Roadmap 7.3.
     ensure_prediction_model_id_column(db_);
 }
@@ -668,8 +668,8 @@ void Storage::end_session(const std::string& session_id) {
 }
 
 SessionRecord Storage::stop_session(const std::string& session_id) {
-    // Idempotent: stopping an already-completed session just returns it (mirrors Rust,
-    // so a double-click on "stop" in the UI doesn't error).
+    // Idempotent: stopping an already-completed session just returns it, so a double-click
+    // on "stop" in the UI doesn't error.
     if (auto existing = get_session(session_id); existing && existing->status == "COMPLETED") {
         return *existing;
     }
@@ -751,8 +751,8 @@ SessionRecap Storage::recap(const std::string& session_id) {
     }
 
     {
-        // The 0.7 is deliberate and matches the Rust original (storage/mod.rs:633): it's an
-        // *absolute* "this was a strong distraction" bar, not the mode's alerting threshold
+        // The 0.7 is deliberate: it's an *absolute* "this was a strong distraction" bar,
+        // not the mode's alerting threshold
         // (risk_threshold() = 0.55/0.70/0.85). Keeping it absolute stops Deep mode's higher
         // sensitivity from inflating session-quality metrics that feed auto-labels.
         //

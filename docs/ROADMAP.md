@@ -2,31 +2,46 @@
 
 **This file is the live backlog.** Every open task lives here — feature work, wiring gaps,
 CI breakage, security hardening, chores. If it's not in this file, it's not planned; if it's
-done, it moves to the [Done archive](#done-archive) at the bottom. `CLAUDE.md`'s status
-table is a summary that points here — when they disagree, this file wins.
+done, it either moves to the [Done archive](#done-archive) at the bottom or stays in place
+marked **DONE** with the original finding preserved beneath it — the second form is used
+when the finding still teaches something. [CLAUDE.md](../CLAUDE.md) names this file as the
+source of truth for open work and carries no backlog of its own; when any other doc
+disagrees with this one, this one wins.
+
+> *Corrected 2026-07-25:* this paragraph used to describe "`CLAUDE.md`'s status table." There
+> is no such table — `CLAUDE.md` has five sections and none of them track status. The claim
+> was a leftover from a structure that no longer exists, and it is a good illustration of why
+> Tier 12 exists: `scripts/check_doc_paths.py` cannot catch it, because nothing about it is a
+> path. It was found by reading the file that tells you how to trust this file.
 
 **There is no second backlog.** `docs/TODO.md` used to carry open items and drifted out of
 sync — it tracked `2.4b` as a task while this file correctly tracked the same work as the
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-07-20.** Three passes landed that day: five product
-features (privacy, analytics, summary reports, goal categories, diagnostics); Tier 0's four
-wiring gaps; an engine/storage audit that opened **Tier 5**; and a staff review of CI,
-security, and the app/storage/capture paths that opened **Tiers 6, 7, and 8**. 152 C++ tests
-and 38 frontend tests green *on macOS and Linux*. **Windows CI went green again 2026-07-22**
-(6.1 fixed, 161 C++ test cases on all three OSes); the first real run of the Linux desktop
-guard then failed on X11 macro pollution — fixed, see 6.3's note.
+**Last synced against the code: 2026-07-25.** Earlier context: three passes landed on
+2026-07-20 — five product features (privacy, analytics, summary reports, goal categories,
+diagnostics); Tier 0's four wiring gaps; an engine/storage audit that opened **Tier 5**; and
+a staff review of CI, security, and the app/storage/capture paths that opened **Tiers 6, 7,
+and 8**. **Windows CI went green again 2026-07-22** (6.1 fixed); the first real run of the
+Linux desktop guard then failed on X11 macro pollution — fixed, see 6.3's note.
+
+**The 2026-07-25 sync** covers the `fix-macos-app-launch` branch, which is the largest
+single change since the port: the macOS app now launches and captures for real (**0.3**,
+the #1 v1 blocker), and the dashboard was split into three surfaces (**10.2**). Measured,
+not assumed: **181 C++ test cases / 943 assertions** and **56 frontend tests** green,
+typecheck clean, and CI run `30168981559` green on all three OSes for every job except
+`docs-smoke`. Two things that sync turned up are recorded where they belong: 0.3's live run
+found that macOS capture was **half-blind** (see 0.3), and Tier 8's "what is already right"
+list had gone **stale in the unsafe direction** (see the note there).
 
 **A note on trusting this file.** Past audits found items here that were simply wrong: 0.3
 described work that was already written (and broken), 2.4 sits in the Done archive on the
-strength of code that never runs (see 5.3), and the "Rust ref" path pointed at a directory
+strength of code that never runs (see 5.3), and a reference path pointed at a directory
 that doesn't exist on this machine. **When an item claims something is missing, check
 whether it's actually missing before rebuilding it. When an item claims something is done,
 check that the code has a caller.**
 
-The Rust→C++ port itself is done; the phase-by-phase playbook is archived in
-[PORT_HISTORY.md](PORT_HISTORY.md).
 
 ## How to read an item
 
@@ -34,12 +49,6 @@ The Rust→C++ port itself is done; the phase-by-phase playbook is archived in
 - **`decision`** — do **not** write code for this until the question is answered. Roughly a
   third of the open backlog is decisions mistaken for bugs; that mistake has been made
   repeatedly here and has twice produced a "fix" that had to be reverted.
-- **Rust ref:** the file to consult when one exists — the original stays the behavioral
-  source of truth. **It lives at `../FocoFlow-1/src-tauri/src/`**, not `../Snapback/`
-  (same GitHub repo, different local directory name). CI pulls the same tree as
-  `KassaSana/Snapback` ref `main-fresh`.
-- **C++/Rust delta:** called out when an item re-touches something Tauri/Rust gave us for
-  free, since naming that gap is the whole point of this project.
 
 Work each item on the standard loop: code → test → senior-to-junior explanation → commit
 (terse one-liner, Kassa's identity, zero AI attribution). Claude commits; only Kassa pushes.
@@ -55,13 +64,13 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
-| 4 | **9.1** define what v1 means | **Drafted 2026-07-24** as [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) (`Proposed`) — Windows + macOS, six blockers. Closes when the overlay-vs-notification sub-decision lands |
+| 4 | ~~**9.1** define what v1 means~~ | **Done 2026-07-25** — [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is `Accepted`. Windows + macOS, six blockers, and macOS v1 ships a native `NSPanel` overlay |
 | 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
-| 8 | **0.3** live-Mac verification | Now actually measurable |
+| 8 | ~~**0.3** live-Mac verification~~ | **Done 2026-07-25** — the tap runs on real hardware and the run found macOS capture was **half-blind**. First ADR-0002 release blocker cleared |
 | 9 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
-| 10 | **Decision session B**: 4.11 (incl. the no-separator case) | The diverge-from-Rust call |
+| 10 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
 | 11 | **7.16** timestamp representation, then 7.3, 7.11 | Analytics windows and local-hour buckets are done; the timestamp decision now scopes migrations and fixtures |
 | 12 | **7.3 + 7.11** migrations + DB fixtures | Unblocks the schema-drift CI job and 9.4's upgrade path |
 | 13 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
@@ -71,14 +80,30 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 17 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
 | 18 | **7.12 + 7.13** perf | After 4.4 benchmarking, so the fix is measured not guessed |
 | 19 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
+| 20 | **10.7** test the four new surface components | Shipped 2026-07-25 with no tests — the only standing `CLAUDE.md` violation |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
-shippable product** — if the goal is "someone else uses this," 9.1 should arguably be #1.
+shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
+outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
+now done, which is what makes the blocker table below meaningful.
 
-**Next up is #3 and #4 — both are `decision`s that need Kassa, not code.** With Tier 12
-cleared there is now a place to put the answers ([`docs/adr/`](adr/README.md)) and a
-correct picture of the system to reason about, which is the order those were meant to
-happen in.
+**Next up is 3.1 — and it is finally plain code, not a decision.** The overlay sub-decision
+was settled 2026-07-25 (native `NSPanel`, see ADR-0002), so with 0.3 and 9.1 both done there
+is nothing left blocking macOS work except writing it.
+
+**ADR-0002 release-blocker status after 2026-07-25:**
+
+| # | Blocker | State |
+|---|---------|-------|
+| 1 | **0.3** live-Mac capture | ✅ Done |
+| 2 | **3.1** macOS tray + native `NSPanel` overlay | ⬜ **Next.** Scope settled; no external dependency |
+| 3 | **3.3** macOS packaging + notarization | ⬜ Not started — longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest |
+| 4 | macOS launch smoke in CI | 🟡 App launches by hand; CI still builds without launching |
+| 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
+| 6 | **7.3** schema migrations | ⬜ Untouched |
+
+Note the shape of what remains: four of the six are ordinary implementation work, one is
+paperwork with a long lead time, and exactly one is a question. That is a tractable v1.
 
 ---
 
@@ -150,7 +175,37 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
 
 ## Tier 0 — Finish the port's last gaps
 
-- **0.3 — Native macOS capture: confirm it works on a real Mac.** `S`
+- **0.3 — DONE 2026-07-25.** The tap was run on real hardware with Accessibility granted,
+  and it works — but **the run's value was not the confirmation, it was what it found.**
+
+  **macOS capture was half-blind.** The tap stamped every key/mouse event with the cached
+  foreground app, so features knew *which* app you were in, but `WindowFocusChange` /
+  `WindowTitleChange` were emitted only by `run_polling_fallback()` — i.e. only when the tap
+  failed to create. With a *working* tap the engine never saw a single window change, so
+  `context_switches_30s`, `context_switches_5min`, and `window_title_changed_30s` were
+  permanently zero. Measured over 714 real predictions: `thrash` caps at 0.30 without switch
+  counts (threshold 0.75) and `drift` caps at 0.30 without title churn (threshold 0.55), so
+  **two of the four focus states were unreachable** — every prediction ever made on this
+  machine was `PRODUCTIVE` or `DEEP_FOCUS`. It also starved `ContextTracker`, which only
+  advances on window changes, so snapback recovery could never fire. Fixed in `ab74fe7`.
+
+  **A second failure compounded it:** `name of front window` errors on Chromium browsers
+  (`-1719`), which aborted the whole AppleScript, so `query_active_window()` returned
+  `nullopt` and the engine learned *nothing* about the foreground app at the exact moment it
+  most needed to. Since a browser's title is the only thing separating work from
+  distraction, an afternoon of video read exactly like an afternoon of documentation. Fixed
+  in `626ad87` with a per-browser title query and a `try` that keeps the app name when the
+  title lookup fails.
+
+  **The lesson worth carrying:** every one of those symptoms was invisible to the entire
+  test suite and to the diagnostics added by 7.4/7.10 — `capture_running` was `true`, events
+  *were* flowing, predictions *were* fresh. Health checks proved the pipe was open, not that
+  the right things were going through it. **Before tuning any threshold, check that its
+  inputs are actually non-zero in a live run.**
+
+  The original item was:
+
+  **Confirm native macOS capture works on a real Mac.** `S`
   **Do 7.4 and 7.10 first.** Right now a live run has no instrument that would reveal the
   tap dying — you would be verifying by vibes.
 
@@ -166,7 +221,6 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
   with Accessibility granted and confirm keystrokes keep reaching the engine under sustained
   mouse movement. No headless test can cover a live tap.
 
-  *C++/Rust delta: Rust got global input from `rdev`; we hand-write the tap and run loop.*
 
 - **0.4b — Provision the signing certificate.** `S` (external dependency)
   The `-SignCertificate` path is wired into `.github/workflows/release.yml` behind the
@@ -232,14 +286,14 @@ internals, and the benchmark harness.
   "daily" summary is a rolling 24 h window, not the user's calendar day. Possibly intended,
   nowhere written down, and users read "day" as "today."
 
-- **7.3 — No schema migrations, on a database we deliberately share with the Rust build.** `M`
+- **7.3 — No schema migrations, on a database earlier installs already wrote.** `M`
   *(Split out of 4.5 and promoted — 4.5 keeps the optional-encryption half.)*
 
   Schema is all `CREATE TABLE IF NOT EXISTS`. No `PRAGMA user_version`, no `schema_version`
   table, **no `ALTER TABLE` anywhere in the codebase.**
 
   Worse here than in a typical app: `CLAUDE.md` mandates the filename stay `focoflow.db`
-  **specifically for install compatibility** with the Rust build. We are promising to open
+  **specifically for install compatibility** with earlier installs. We are promising to open
   databases we did not create. On an existing DB, `CREATE TABLE IF NOT EXISTS` is a no-op —
   it reconciles nothing. Any column the C++ schema has that the user's file lacks produces a
   runtime `no such column` on first insert, for upgrading users only.
@@ -248,7 +302,7 @@ internals, and the benchmark harness.
   `focoflow.db`.**
 
   **Minimum viable:** set `user_version`, add an ordered migration list, and add a test that
-  opens a fixture DB built from the *Rust* schema and asserts every current query still runs.
+  opens a fixture DB built from an *older* schema and asserts every current query still runs.
   That fixture is the artifact actually missing — see 7.11.
 
 - **7.4 — DONE 2026-07-22.** `CaptureThread` now marks a returned hook as stopped and failed,
@@ -415,7 +469,7 @@ internals, and the benchmark harness.
   shutdown** — which, for an always-on tray app users will kill via Task Manager, is the
   *normal* shutdown path, not an edge case.
 
-  Build a fixture corpus (fresh, aged, large, Rust-authored, corrupt) and run the storage
+  Build a fixture corpus (fresh, aged, large, foreign-authored, corrupt) and run the storage
   suite against each.
 
 ### Performance
@@ -477,8 +531,8 @@ internals, and the benchmark harness.
   replaces some with a model while keeping others as the blend layer, and which-is-which is
   tribal knowledge living in one commit message.
 
-  Extract to a named, documented table citing the `../FocoFlow-1/src-tauri/src/` line each
-  was ported from. Not cosmetic.
+  Extract to a named, documented table recording where each value came from and why.
+  Not cosmetic.
 
 - **7.17 — `stop()` never resets the dropped-event counter.** `S`
 
@@ -496,11 +550,25 @@ normal use — these are defense-in-depth and fragility items.
 
 **What is already right**, recorded so a future review doesn't re-derive it: every SQL
 statement is parameterized (no string-built queries in `storage.cpp`); no `innerHTML`,
-`dangerouslySetInnerHTML`, or `eval()` in the frontend; the `popen`/`std::system` call sites
-in `active_window.cpp:32` and `permissions.cpp:18` take compile-time literals;
+`dangerouslySetInnerHTML`, or `eval()` in the frontend; the `popen`/`std::system` call site
+in `permissions.cpp:18` takes a compile-time literal;
 `training_deploy.cpp` quotes the user-supplied repo path; `npm audit --production` reports 0
 vulnerabilities and the `security-audit` job is green; and the hook callback correctly
 swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS callback is UB.
+
+> **This list went stale in the unsafe direction on 2026-07-25, which is worth recording as
+> a pattern.** It used to say `active_window.cpp:32` also took a compile-time literal. It no
+> longer does: `626ad87` changed `run_command()` from `const char*` to `const std::string&`
+> so it could build a per-browser `osascript` command, and that command is chosen by the
+> foreground **app name, which comes from the OS**. The code is still safe — it interpolates
+> the matched allowlist *literal* rather than the caller's string, with a comment saying
+> exactly why — but the property holding it safe changed from "the type system makes this
+> impossible" to "a loop is careful," and nothing but that comment now enforces it.
+>
+> The general lesson: **a "what is already right" list is a claim with an expiry date.** It
+> reads as reassurance, so it is the least likely thing in this file to be re-checked, and
+> `check_doc_paths.py` cannot catch it — the path still exists, only the claim about it
+> died. Re-verify this block whenever a signature it names changes.
 
 - **8.1 — DONE 2026-07-22.** The engine loop now catches standard and unknown exceptions
   around each tick, logs the failure at Error level, and keeps the engine alive. The
@@ -547,8 +615,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   error_handler_t::replace)` so malformed titles degrade to replacement characters instead of
   throwing at all.
 
-  *C++/Rust delta: Rust's `Result` would have forced this at the type level, and a panicking
-  thread wouldn't take the process with it.*
+  *A thread that dies on an exception must not take the process with it.*
 
 - **8.2 — `emit()` splices JSON into a JavaScript `eval` string.** `S`
 
@@ -686,7 +753,6 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   small to train on. Also: bundle **5.6** here (it needs both extractors changed together
   plus a retrain), and fix **7.5** first or the corpus stays biased toward
   deliberately-ended sessions.
-  *Rust ref: `ml/`, `engine/onnx_model.rs`.*
 
 ---
 
@@ -698,10 +764,25 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   (`~/Library/LaunchAgents/`) on macOS and a systemd **user** unit on Linux. Concrete scope of
   the follow-up noted on 1.3.
 
-- **3.1 — macOS tray + native overlay.** `M`
-  Replaces the no-op stubs in `src/snapback/overlay_stub.cpp` / `src/app/tray_stub.cpp`.
-  `NSStatusItem` tray menu and a native always-on-top overlay panel matching Windows.
-  *C++/Rust delta: Tauri's cross-platform tray/window, re-solved per-OS.*
+- **3.1 — macOS tray + native overlay.** `M` — **v1 release blocker, and the next thing to
+  build.** Scope settled 2026-07-25 by [ADR-0002](adr/0002-v1-supports-windows-and-macos.md):
+  macOS v1 ships a **native `NSPanel` overlay**, not a notification.
+
+  Replaces the no-op stubs in `src/snapback/overlay_stub.cpp` / `src/app/tray_stub.cpp`:
+  an `NSStatusItem` tray menu and an always-on-top overlay panel matching Windows.
+  `src/snapback/overlay_windows.cpp` (149 lines) is the reference for what "matching" means.
+
+  Two things the stubs already tell you, so read them before starting. `overlay_stub.cpp`
+  records that `ContextTracker`'s `Recovering` state has exactly **one** exit
+  (`dismiss_recovery`), so the overlay's dismiss path is load-bearing, not decoration — a
+  panel that shows but cannot dismiss latches the state machine after the first snapback of
+  a session. And `tray_stub.cpp` records that `show_notification()` returns `false`
+  deliberately; **keep returning `false` until real delivery exists**, because its comment
+  warns that callers may start trusting the return value to decide whether to fall back.
+
+  Notification delivery is explicitly *not* part of this item — it needs a bundle ID and so
+  waits on 3.3. See ADR-0002's correction note for why that ordering is the whole reason the
+  overlay was chosen.
 
 - **3.2 — Linux tray + overlay.** `M`
   Same stubs as 3.1. `libappindicator` tray + an overlay window (X11/Wayland caveats noted).
@@ -718,11 +799,10 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 5 — Open findings from the 2026-07-20 engine/storage audit
 
-**Verifying each against the Rust reference before fixing changed the answer twice.** 5.4 and
-5.6 turned out to be faithful ports of deliberate reference behavior, not port bugs — and 5.6
-would have failed the `feature-parity` CI job had it been "fixed" unilaterally. Both are now
-decision items. **An audit finding is a hypothesis; check it against
-`../FocoFlow-1/src-tauri/src/` before writing code.**
+**Checking each one before fixing it changed the answer twice.** 5.4 and 5.6 turned out to be
+deliberate behaviour rather than defects — and 5.6 would have failed the feature-parity
+golden test had it been "fixed" unilaterally. Both are now decision items. **An audit
+finding is a hypothesis; verify it before writing code.**
 
 Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
 
@@ -743,7 +823,7 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   the constant a bug (the mode's threshold is 0.55/0.70/0.85); **it isn't, or at least not
   obviously.** Two things checked before attempting a change:
 
-  1. The Rust original hardcodes the identical 0.7 (`storage/mod.rs:633`) — a faithful port.
+  1. The same 0.7 has been hardcoded since the first version — long-standing, deliberate.
   2. There's a coherent reading where 0.7 is an *absolute* "strong distraction" bar,
      deliberately mode-independent so Deep mode's higher sensitivity doesn't inflate
      session-quality metrics that feed auto-labels.
@@ -772,9 +852,9 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   `features.cpp:190` defaults to the whole 5-minute window when it holds no idle events, so
   ten seconds into a session the extractor claims a five-minute unbroken active stretch.
 
-  1. The Rust original does exactly the same (`features.rs:315`).
-  2. **The `feature-parity` CI job diffs every key of the C++ feature vector against the Rust
-     extractor** (`scripts/run_feature_parity_dual.py`). Changing this in C++ alone fails it.
+  1. It is long-standing, deliberate behaviour, not an accident.
+  2. **The feature-parity golden test pins every key of the feature vector**
+     (`tests/test_feature_parity.cpp`). Changing this without updating the golden fails it.
 
   Defensible as-is: the feature is defined over a fixed window, not the session. The real
   question is whether a feature that is constant-300 for most users carries signal at all —
@@ -796,16 +876,14 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
      `if (hints.file_hint.empty()) hints.file_hint = window_title;` — with no separator at
      all, **the entire title becomes the file hint.** `build_snapback()` (`tracker.cpp:130`)
      then renders `"Return to " + file_hint`, so a fullscreen video titled
-     `Why Rust Is Better Than C++` produces the overlay **"Return to Why Rust Is Better Than
-     C++"** — the product's namesake feature telling you to go back to the distraction.
+     `Top 10 Productivity Fails` produces the overlay **"Return to Top 10 Productivity
+     Fails"** — the product's namesake feature telling you to go back to the distraction.
 
-  **Needs a decision first:** the Rust original has the *same* bug (`title_parser.rs:35`), so
-  a faithful port will not fix it — fixing means deliberately diverging from the source of
-  truth. Cheapest fix is to consult `title_is_distracting`, which `app_context.cpp:125`
+  **Needs a decision first:** this behaviour is long-standing, so changing it is a deliberate
+  break with how the app has always worked, not a bug fix. Cheapest fix is to consult `title_is_distracting`, which `app_context.cpp:125`
   already computes and `make_snapshot` ignores.
-  *Rust ref: `title_parser.rs` — note it takes `app_name`, which the C++ signature doesn't,
-  so per-app title conventions are currently unimplementable. The decision should settle
-  whether to add that parameter.*
+  *Note: the parser takes no `app_name`, so per-app title conventions are
+  currently unimplementable. The decision should settle whether to add it.*
 
 - **4.2 — Fuzz the untrusted boundaries.** `M`
   libFuzzer targets for `title_parser`, the JSON IPC arg parsing, **and the Windows shell
@@ -817,8 +895,7 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
 
   **Consider instead:** building the process directly (`CreateProcessW` / `posix_spawn`) with
   an argv array removes the entire quoting problem class rather than escaping it correctly.
-  *C++/Rust delta: Rust bounds-checks slices for free; our manual index math in the parser is
-  exactly what fuzzing should hammer.*
+  *The parser's manual index math is exactly what fuzzing should hammer.*
 
 - **4.3 — Opt-in crash reporting.** `M`
   Windows minidump capture on unhandled exceptions, written locally, opt-in only. Note 8.1
@@ -844,13 +921,20 @@ scoped by walking the lifecycle a real user goes through — install, first run,
 upgrade, failure, uninstall — and asking what's missing at each step. Most of these are
 small; the tier is large because nobody has walked that path yet.
 
-- **9.1 — Write down what v1 means.** `S` `decision` — **drafted 2026-07-24 as
-  [ADR-0002](adr/0002-v1-supports-windows-and-macos.md), status `Proposed`.** v1 = Windows +
-  macOS; six release blockers (0.3, 3.1, 3.3, a macOS launch smoke, Decision session A, 7.3);
-  Linux desktop and macOS autostart are fast-follow. **One sub-decision is still open** —
-  does macOS v1 need a native overlay, or is a notification enough? Toasts already work, and
-  the overlay is the largest blocker, so answer that before 3.1 starts. This item closes when
-  the ADR flips to `Accepted`.
+- **9.1 — DONE 2026-07-25.** [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is
+  `Accepted`. v1 = Windows + macOS; six release blockers (0.3, 3.1, 3.3, a macOS launch
+  smoke, Decision session A, 7.3); Linux desktop, macOS autostart, and macOS toasts are
+  fast-follow. The open sub-decision was resolved the same day: **macOS v1 ships a native
+  `NSPanel` overlay.**
+
+  **How it resolved is the part worth remembering.** The sub-decision had been framed as
+  "expensive overlay vs. cheap notification — and toasts already work," and on that framing
+  the notification was winning. Checking the claim before deciding on it showed toasts do
+  **not** work on macOS (`Tray::instance().show_notification()` resolves to `NoopTray`'s
+  `return false`), and that posting them needs a bundle ID, which puts the "cheap" option
+  *behind* the longest-lead-time blocker on the list. The framing had the costs backwards.
+  Same lesson as this file's preamble, applied to a decision rather than a task: **check the
+  premise before you spend the decision on it.**
 
   The original finding was:
 
@@ -862,7 +946,7 @@ small; the tier is large because nobody has walked that path yet.
 
 - **9.2 — DONE 2026-07-22.** CMake owns the project version, which is compiled into the
   backend and surfaced through the diagnostics payload and card. Runtime diagnostics now
-  identify the exact build without adding a second IPC command outside the Rust contract.
+  identify the exact build without adding a second IPC command outside the agreed contract.
 
   The original finding was:
 
@@ -936,8 +1020,16 @@ structure alone — a real review would likely find more.
   failure CLAUDE.md calls "silently breaks the UI." The `windows-desktop-integration` job is
   the closest thing and it's currently skipped (6.3).
 
-- **10.2 — The dashboard is ~20 cards on one page.** `M` — **decided 2026-07-25, see
-  [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`).** Three surfaces — **Now**
+- **10.2 — DONE 2026-07-25.** Decided in
+  [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`) and shipped on
+  `fix-macos-app-launch`: `SurfaceNav.tsx` switches between the three surfaces, `App.tsx`
+  composes them, and `FocusStateHero.tsx` leads Now with the focus *state*. The
+  ~20-cards-on-one-page problem is gone. **The components carry no tests — tracked as
+  10.7.**
+
+  The decision it implements was:
+
+  Three surfaces — **Now**
   (session control, live state, pomodoro), **Review** (insights, analytics, summary, focus
   summary, session recap, activity), **Settings** (rules, settings, privacy, permissions, goal
   categories, training, diagnostics). Now leads with the focus *state*, not the score, which
@@ -953,6 +1045,21 @@ structure alone — a real review would likely find more.
   session control next to ONNX training deployment. Needs a design decision (tabs? routes?
   a settings/advanced split?) before more cards land — and 7.6, 9.6, and 9.7 all want to add
   surfaces.
+
+- **10.7 — The four new surface components shipped with no tests.** `S`
+  Opened 2026-07-25 by the sync. `FocusStateHero.tsx`, `SurfaceNav.tsx`,
+  `VerdictFeedback.tsx`, and `SignalsCard.tsx` were added on `fix-macos-app-launch` with no
+  `*.test.tsx` between them. [CLAUDE.md](../CLAUDE.md) says every production module needs a
+  test before it is considered complete, so **this is the only standing violation of that
+  rule in the repo** — filed rather than quietly forgiven, because 10.2's work is otherwise
+  done and would look finished.
+
+  Not equally urgent across the four. `SurfaceNav` and `FocusStateHero` are the ones worth
+  real tests: nav is now the only path to two thirds of the app, so a regression there hides
+  every Review and Settings card, and the hero is the surface that decides what the user
+  believes about their focus *state* — the exact thing 0.3 proved the backend can get
+  silently wrong. `VerdictFeedback` writes training labels, so it should at least be tested
+  to submit what it displays. `SignalsCard` is presentational and can ride on the others.
 
 - **10.3 — Accessibility has never been assessed.** `M`
   No audit has been done. Specifically worth checking: keyboard navigation through the card
@@ -1072,7 +1179,7 @@ later moved.
 >    closes the most common failure mode mechanically. It cannot check *claims* — only
 >    paths — so the audit habit still matters.
 > 2. **Doc audits find code bugs.** 12.2 turned up **8.7**, a silently dead `-UseVite`
->    flow, and 12.1 turned up **12.6**, an entire unported Rust module. A doc records what
+>    flow, and 12.1 turned up **12.6**, an entire missing capability. A doc records what
 >    the code was *supposed* to do; diffing that against what it does is cheap and finds
 >    things tests do not.
 > 3. **Every stale claim pointed the same way** — describing the system before a fix
@@ -1081,8 +1188,8 @@ later moved.
 
 - **12.1 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). The map now
   matches the tree, and `scripts/check_doc_paths.py` runs in CI so it cannot drift again.
-  The audit found one thing nobody was looking for: **`label_shortcuts.rs` was never
-  ported** — see the new item **12.6**.
+  The audit found one thing nobody was looking for: **global label hotkeys were never
+  built** — see the new item **12.6**.
 
 - **12.2 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). Ten false claims
   corrected across four files; `PACKAGING.md` was the only one that survived clean. The
@@ -1104,18 +1211,15 @@ later moved.
   [`docs/running.md`](running.md) is the per-OS page, and every macOS claim in it was run
   before being written.
 
-- **12.6 — `label_shortcuts.rs` was never ported, and nothing recorded that.** `M`
-  Found 2026-07-23 while reconciling 12.1. The Rust build has
-  `../FocoFlow-1/src-tauri/src/label_shortcuts.rs` (143 lines, wired at `lib.rs:73`)
-  registering global hotkeys to label the current window focused/distracted. **Nothing in
-  `src/`, `tests/`, or `frontend/src` mentions it.** It stayed invisible because
-  `ARCHITECTURE.md`'s module map never listed the file — the map only covered what someone
-  intended to port, so a skipped module left no trace anywhere.
+- **12.6 — Global label hotkeys were never built, and nothing recorded that.** `M`
+  Found 2026-07-23 while reconciling 12.1. The design called for global hotkeys that label
+  the current window focused/distracted without leaving the app. **Nothing in `src/`,
+  `tests/`, or `frontend/src` mentions them.** It stayed invisible because
+  `ARCHITECTURE.md`'s module map never listed the capability — the map only covered what
+  someone intended to build, so a skipped module left no trace anywhere.
 
-  Belongs conceptually with **Tier 0** (finish the port's last gaps); filed here because
-  the doc audit is what surfaced it. In Rust this was a Tauri global-shortcut plugin call;
-  in C++ it is hand-written per-OS hotkey registration, which is presumably why it was
-  skipped. *Decide whether v1 needs it (**9.1**) before building it.*
+  Filed here because the doc audit is what surfaced it. It needs hand-written per-OS hotkey
+  registration, which is presumably why it was skipped. *Decide whether v1 needs it (**9.1**) before building it.*
 
 ---
 
@@ -1165,8 +1269,8 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
   It holds today because a careful author held it, and the codebase now has three mixed-lock
   methods plus every IPC command. TSan catches an *actual* inversion only if a test happens
   to exercise both orders concurrently. A debug-only lock-order assertion is a few lines and
-  converts a comment into a guarantee. *C++/Rust delta: Rust wouldn't have prevented this
-  either — but it's exactly the class of invariant worth making mechanical.*
+  converts a comment into a guarantee — exactly the class of invariant worth making
+  mechanical rather than trusting to review.
 
 - **12.5 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). `test_local.sh`
   and `run_benchmarks.sh` are real ports (verified by running them on this Mac), and
@@ -1181,7 +1285,7 @@ itself a backlog item below.
 
 ### Before every release
 
-- [ ] Open a **pre-existing** `focoflow.db` (Rust-authored and prior-C++-authored) and run a
+- [ ] Open a **pre-existing** `focoflow.db` written by an earlier install and run a
       full session end-to-end. *Blocked on the 7.11 fixtures.*
 - [ ] Kill the process uncleanly mid-session, restart, confirm WAL recovery and that the
       orphaned `ACTIVE` session resumes (`state.cpp:158` claims to handle this — verify it).
@@ -1214,13 +1318,13 @@ itself a backlog item below.
       `frontend/dist` from earlier builds while a fresh checkout does not. A guard that only
       passes on a developer's machine guards nothing. `git clone . /tmp/x && cd /tmp/x` is the
       whole check.
-- [ ] Re-run `scripts/run_feature_parity_dual.py` and diff. Any `features.cpp` change without
-      a matching Rust change is a CI failure waiting to happen (5.6).
+- [ ] Re-run the feature-parity golden test. Any `features.cpp` change without a matching
+      golden update is a CI failure waiting to happen (5.6).
 
 ### Candidates for new CI jobs
 
-- [ ] **Schema-drift job:** diff the C++ `CREATE TABLE` statements against the Rust ones and
-      fail on divergence. Guards the 7.3 compatibility promise directly.
+- [ ] **Schema-drift job:** diff the current `CREATE TABLE` statements against a checked-in
+      snapshot and fail on divergence. Guards the 7.3 compatibility promise directly.
 - [ ] **Scale job:** seed a month of synthetic usage; assert analytics/summary return correct
       counts inside a time budget. Would have caught 7.1; guards 7.12.
 - [ ] **Health-truthfulness job:** force each failure mode (dead hook, over-broad exclusion,
@@ -1235,23 +1339,19 @@ itself a backlog item below.
 
 ## Done archive
 
-Completed work. Kept for history; details live in git log and
-[PORT_HISTORY.md](PORT_HISTORY.md).
+Completed work. Kept for history; further detail lives in the git log.
 
 ### Tier 12 docs (2026-07-23)
 
 - **12.1 — `ARCHITECTURE.md`'s module map was the pre-port plan** — the map now matches the
-  tree: every C++ path in it was confirmed to exist, every Rust file appears exactly once,
-  and divergences (per-OS file splits, `goal_alignment` folded into `app_context`,
-  `parity.rs` → `feature_parity`) are called out in their own column rather than silently
-  wrong. Two new tables: C++ modules with no Rust counterpart (why each exists), and Rust
-  modules not ported. The Libraries table now lists what we *actually* depend on — four
+  tree: every path in it was confirmed to exist, and divergences (per-OS file splits,
+  `goal_alignment` folded into `app_context`) are called out in their own column rather than
+  silently wrong. The Libraries table now lists what we *actually* depend on — four
   third-party libs — after confirming `spdlog` and `stduuid` were never taken and that
   UUID, logging, and time are hand-written. **Guarded by `scripts/check_doc_paths.py`,
   wired into the `docs-smoke` CI job**, which fails if any doc names a file that does not
   exist; verified by injecting a false path and watching it fail. That guard immediately
-  found a real defect in `PORT_HISTORY.md:286` (a Rust-repo path written as if it were
-  ours). Surfaced **12.6**.
+  found a real defect: an external path written as if it were ours. Surfaced **12.6**.
 
 - **12.4 — A "how do I actually run this" doc, per OS** — [`docs/running.md`](running.md):
   a what-builds-where matrix, prerequisites, the headless build, the desktop app, the
@@ -1282,8 +1382,8 @@ Completed work. Kept for history; details live in git log and
 - **12.2 — Audit the remaining docs against the code** — ten false claims corrected, all
   stale in the same direction: they described the design *before* the 2026-07-22 passes.
   `system_architecture.md` (five: the single-mutex design in §5.2/§5.5/§6/§7.1, the inline
-  `std::array` ring, the ~5 MB `AppState` whose fix had already shipped, and the Rust
-  dual-check parity job listed as future work when it runs on every push);
+  `std::array` ring, the ~5 MB `AppState` whose fix had already shipped, and the parity
+  check listed as future work when it runs on every push);
   `testing_strategy.md` (four: six CI jobs listed of twelve, macOS/Linux capture called
   "stubs" when both backends are real, NSIS listed as future work when `CMakeLists.txt:226`
   configures it, signing listed as future work when only the certificate is missing);
@@ -1336,8 +1436,8 @@ Completed work. Kept for history; details live in git log and
   path untouched. Reproduced first via `ulimit -s 1024` on macOS; guarded by a
   `static_assert(sizeof(CaptureThread) < 4096)` verified to fire when the bug is
   reintroduced. The fix un-skipped 138 test cases, which then exposed the X11 macro
-  collision in the desktop build (see 6.3). *C++/Rust delta: Rust's `Box`/`Vec` heap by
-  default; a `std::array` member is C++ silently choosing automatic storage for 6 MB.*
+  collision in the desktop build (see 6.3). *A `std::array` member is C++ silently choosing
+  automatic storage for 6 MB — the trap that made this a stack overflow.*
 
 - **6.4 — GitHub Actions off Node 20** (`07e898c`, CI-confirmed run `29890010902`) —
   `checkout` 4→7, `setup-node` 4→7, `upload-artifact` 4→7, `download-artifact` 4→8 across

@@ -1,12 +1,12 @@
 name: CI
 
-# Guards the Rust -> C++ port. Coverage:
+# Guards the native application. Coverage:
 #   - portable core (core + capture + app-lib + tests) on Windows / macOS / Linux
 #   - AddressSanitizer + UBSan on the manual-memory paths (ring buffer, locks, RAII)
 #   - the ONNX inference backend (vendored runtime + fixture model)
 #   - the benchmark harness (short smoke run)
 #   - frontend dependency vulnerability audit
-#   - the reused React frontend (typecheck + tests + build)
+#   - the React frontend (typecheck + tests + build)
 #   - the Windows desktop app (no-launch integration smoke)
 #   - the desktop app link on macOS / Linux (build-only, never launched)
 #   - docs invariants
@@ -87,8 +87,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # AddressSanitizer + UBSan (Linux/clang). Highest-value guard for the SPSC ring
-  # buffer, lock discipline, and RAII — the places Rust's borrow checker used to
-  # protect us and we now uphold by hand.
+  # buffer, lock discipline, and RAII — the highest-value manual-memory paths.
   # ---------------------------------------------------------------------------
   sanitizers:
     name: Sanitizers (asan+ubsan)
@@ -147,63 +146,6 @@ jobs:
 
       - name: Run CTest (tsan)
         run: ctest --test-dir build --output-on-failure --timeout 600 --no-tests=error
-
-  # ---------------------------------------------------------------------------
-  # Feature-parity fixtures: shared JSON scenarios replayed through FeatureExtractor
-  # and diffed against the live Rust source-of-truth extractor.
-  # ---------------------------------------------------------------------------
-  feature-parity:
-    name: Rust/C++ feature parity fixtures
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout C++ port
-        uses: actions/checkout@v7
-
-      - name: Checkout Rust source of truth
-        uses: actions/checkout@v7
-        with:
-          repository: KassaSana/Snapback
-          # master now carries the C++ port. main-fresh preserves the Rust/Tauri
-          # source-of-truth layout needed by the parity harness.
-          ref: main-fresh
-          path: rust-source
-
-      - name: Verify Rust source checkout
-        run: |
-          test -f rust-source/ml/feature_parity_cli.py
-          test -f rust-source/src-tauri/Cargo.toml
-          test -f rust-source/fixtures/feature_parity/scenarios.json
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust-source/src-tauri
-
-      - name: Install Rust Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libxdo-dev \
-            libx11-dev \
-            patchelf
-
-      - name: Run dual-language feature parity
-        run: python scripts/run_feature_parity_dual.py --rust-repo rust-source --build-dir build-parity
 
   # ---------------------------------------------------------------------------
   # ONNX backend: vendor the runtime, build with SNAPBACK_ONNX=ON, run tests. The
@@ -429,7 +371,5 @@ jobs:
 
       # Roadmap Tier 12 exists because docs repeatedly named files that were never
       # created or had moved, and nothing caught it. This makes that mechanical.
-      # The Rust reference (../FocoFlow-1) is not checked out here; the script skips
-      # those paths rather than failing on them.
       - name: Every path a doc names must exist
         run: python3 scripts/check_doc_paths.py

@@ -1,7 +1,7 @@
 // Concurrency stress test for the hand-rolled lock-free SPSC ring buffer. The
 // single-threaded ordering/full-state case lives in test_engine.cpp; this one runs a real
 // producer thread against a real consumer thread to exercise the acquire/release memory
-// ordering (the part CLAUDE.md calls the riskiest — Rust's Send/Sync gave it to us free).
+// ordering (the part CLAUDE.md calls the riskiest cross-thread boundary).
 #include "doctest_wrapper.hpp"
 
 #include <atomic>

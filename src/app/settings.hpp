@@ -1,7 +1,6 @@
 // Small JSON-backed app settings store.
 //
-// Rust/Tauri would usually lean on a plugin/store convention here. In the C++ port we
-// keep the contract explicit: one settings.json file in the app-data directory, loaded
+// Keep the contract explicit: one settings.json file in the app-data directory, loaded
 // at startup and rewritten when the user changes settings.
 #pragma once
 

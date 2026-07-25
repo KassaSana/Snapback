@@ -34,19 +34,17 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | ADR | Title | Status | Roadmap |
 |-----|-------|--------|---------|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted | 12.3 |
-| [0002](0002-v1-supports-windows-and-macos.md) | v1 supports Windows and macOS | Proposed | 9.1 |
+| [0002](0002-v1-supports-windows-and-macos.md) | v1 supports Windows and macOS | Accepted | 9.1 |
 | [0003](0003-three-surface-dashboard.md) | Split the dashboard into Now, Review, and Settings | Accepted | 10.2 |
 
 ## Awaiting an ADR
 
-The open `decision` items in `ROADMAP.md`, as of 2026-07-23. Grouped by the session that
+The open `decision` items in `ROADMAP.md`, as of 2026-07-25. Grouped by the session that
 should settle them — the roadmap's "Start here" table sets the order.
 
 | Session | Roadmap items | The question |
 |---------|---------------|--------------|
-| — | 9.1 | **Drafted as [ADR-0002](0002-v1-supports-windows-and-macos.md), still `Proposed`** — one sub-decision open: does macOS v1 need a native overlay, or is a notification enough? |
-| A | 5.3, 5.4, 1.2, 7.7 | What do our scores mean, and on what scale? |
-| B | 4.11 | Do we port the `title_parser` bug faithfully, or diverge from Rust? |
+| A | 5.3, 5.4, 1.2, 7.7 | What do our scores mean, and on what scale? **Now the only decision left on the v1 blocker list** |
 | — | 7.16 | How does this app represent time? Scopes 7.3 and 7.11 |
 | — | 8.5 | Threat model — gates whether 4.5 encryption is required |
 | — | 5.6 | What should `longest_active_stretch_5min` report for a new session? |

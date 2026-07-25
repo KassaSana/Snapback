@@ -138,4 +138,4 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate_windows_package.ps1
 The app still uses the same production pipeline underneath: Windows input capture
 feeds `AppState`, the engine tick produces predictions, `ContextTracker` gates
 timeline snapshots, storage writes SQLite rows, and the webview IPC shim exposes
-the Rust/Tauri-compatible command names to the React frontend.
+the native command names to the React frontend.

@@ -1,8 +1,8 @@
-// Central app state. Rust: state.rs (AppState) + the engine tick loop.
+// Central application state and the engine tick loop.
 //
 // Owns storage, the capture thread, the classifier, and the snapback tracker, and
-// runs the engine loop that ties them together. Tauri's `.manage(state)` +
-// interior-mutability (Mutex) becomes a plain shared object guarded by std::mutex.
+// runs the engine loop that ties them together. The shared object is guarded by
+// std::mutex where mutation crosses threads.
 #pragma once
 
 #include <atomic>
@@ -40,7 +40,7 @@ public:
     explicit AppState(Storage storage, std::filesystem::path app_data_dir = {},
                       Logger* logger = nullptr);
 
-    // Rust: AppState::start_engine — spawn capture + the engine tick thread.
+    // Spawn capture and the engine tick thread.
     void start_engine();
     // Test seam: run the same engine loop with an injected hook instead of installing
     // the platform-wide input hook.
@@ -148,6 +148,11 @@ private:
     // Runs the event through features/classifier/tracker and updates in-memory state.
     // Requires mutex_. Does NO storage I/O — returns what to persist (nullopt if nothing).
     std::optional<PersistJob> compute_event(const CaptureEvent& event);
+
+    // Hyperfocus guardrail state. `hyperfocus_latched_` prevents a second nudge inside the
+    // same unbroken stretch; `hyperfocus_minutes_` is the pending emit drained by the tick.
+    bool hyperfocus_latched_ = false;
+    std::optional<std::uint64_t> hyperfocus_minutes_;
     // Writes a job to storage. Requires storage_mutex_ (call inside a Transaction).
     void persist(const PersistJob& job);
     void save_auto_session_label_unlocked(const std::string& session_id);

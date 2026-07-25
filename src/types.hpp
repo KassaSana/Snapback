@@ -1,9 +1,7 @@
-// Shared data model. Mirrors ../Snapback/src-tauri/src/types.rs.
+// Shared data model and JSON wire format used by the native app and frontend.
 //
-// WIRE FORMAT: in Rust every DTO below carries #[serde(rename_all = "camelCase")],
-// so the JSON the frontend sees is camelCase (e.g. focusScore, sessionId). We match
-// that byte-for-byte here. The one internal exception is CaptureEvent, which has no
-// serde rename in Rust and stays snake_case (it never crosses to the frontend).
+// Frontend-facing DTOs use camelCase (e.g. focusScore, sessionId). Internal-only
+// CaptureEvent values stay snake_case and never cross to the frontend.
 //
 // Enums serialize to fixed strings: EventType/FocusLabel = SCREAMING_SNAKE_CASE,
 // FocusMode/AppRuleKind = lowercase.
@@ -25,8 +23,8 @@ using json = nlohmann::json;
 // Enums (+ string conversions used by command handling and tests)
 // ---------------------------------------------------------------------------
 
-// Rust: EventType. On-wire strings are SCREAMING_SNAKE_CASE; numeric values match
-// the Rust discriminants (used as the SQLite event code).
+// EventType. On-wire strings are SCREAMING_SNAKE_CASE; numeric values are used as
+// the SQLite event code.
 enum class EventType : int {
     KeyPress = 1,
     KeyRelease = 2,
@@ -48,7 +46,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(EventType, {
     {EventType::IdleEnd, "IDLE_END"},
 })
 
-// Rust: FocusLabel. Note Distracted = -1 (the label stored in SQLite).
+// FocusLabel. Note Distracted = -1 (the label stored in SQLite).
 enum class FocusLabel : int {
     Distracted = -1,
     PseudoProductive = 0,
@@ -62,10 +60,10 @@ NLOHMANN_JSON_SERIALIZE_ENUM(FocusLabel, {
     {FocusLabel::DeepFocus, "DEEP_FOCUS"},
 })
 
-// Rust: FocusMode (lowercase on the wire). Thresholds ported verbatim from types.rs.
+// FocusMode (lowercase on the wire).
 enum class FocusMode { Deep, Normal, Recovery };
 // Normal is listed first so nlohmann's enum from_json falls back to it on an
-// unknown string — matching Rust FocusMode::from_str (unknown -> Normal).
+// unknown string maps to Normal.
 NLOHMANN_JSON_SERIALIZE_ENUM(FocusMode, {
     {FocusMode::Normal, "normal"},
     {FocusMode::Deep, "deep"},
@@ -80,7 +78,7 @@ inline const char* focus_mode_to_string(FocusMode m) {
     }
 }
 
-// Rust: FocusMode::from_str — case-insensitive, unknown -> Normal.
+// Case-insensitive parser; unknown values map to Normal.
 FocusMode focus_mode_from_string(const std::string& s);
 
 inline double risk_threshold(FocusMode m) {
@@ -99,7 +97,7 @@ inline std::uint32_t hyperfocus_minutes(FocusMode m) {
     }
 }
 
-// Rust: AppRuleKind (lowercase). from_str returns None on unknown (NOT a default) —
+// AppRuleKind (lowercase). Unknown values are rejected rather than defaulted —
 // so we expose an optional parse rather than a lossy fallback.
 enum class AppRuleKind { Allow, Block };
 NLOHMANN_JSON_SERIALIZE_ENUM(AppRuleKind, {
@@ -111,7 +109,7 @@ inline const char* app_rule_kind_to_string(AppRuleKind k) {
 }
 std::optional<AppRuleKind> app_rule_kind_from_string(const std::string& s);
 
-// Rust: LabelSource. No serde derive there; it round-trips through as_str/parse.
+// LabelSource. It round-trips through as_str/parse.
 enum class LabelSource { Manual, Hotkey, Survey, Auto };
 const char* label_source_as_str(LabelSource s);
 LabelSource label_source_parse(const std::optional<std::string>& value);
@@ -120,7 +118,7 @@ LabelSource label_source_parse(const std::optional<std::string>& value);
 // Structs
 // ---------------------------------------------------------------------------
 
-// Rust: CaptureEvent — internal capture->engine record. snake_case wire (no rename).
+// CaptureEvent — internal capture-to-engine record. snake_case wire.
 struct CaptureEvent {
     EventType event_type{EventType::KeyPress};
     double timestamp_secs{};
@@ -132,7 +130,7 @@ struct CaptureEvent {
     std::uint32_t idle_duration_ms{};
 };
 
-// Rust: PredictionRecord (camelCase).
+// PredictionRecord (camelCase).
 struct PredictionRecord {
     std::string session_id;
     double focus_score{};
@@ -145,7 +143,7 @@ struct PredictionRecord {
     std::string model_id{"heuristic:snapback-features-v1-31"};
 };
 
-// Rust: SessionRecord. Note focus_mode is a plain string here (not the enum).
+// SessionRecord. Note focus_mode is a plain string here (not the enum).
 struct SessionRecord {
     std::string session_id;
     std::string goal;
@@ -155,7 +153,7 @@ struct SessionRecord {
     std::optional<std::string> ended_at;
 };
 
-// Rust: SessionRecap.
+// SessionRecap.
 struct SessionRecap {
     std::string session_id;
     std::string goal;
@@ -167,13 +165,13 @@ struct SessionRecap {
     double deep_focus_pct{};
 };
 
-// Rust: SessionSummary — a past session plus its computed recap.
+// SessionSummary — a past session plus its computed recap.
 struct SessionSummary {
     SessionRecord record;
     SessionRecap recap;
 };
 
-// Rust: PermissionStatus.
+// PermissionStatus.
 struct PermissionStatus {
     bool capture_available{};
     bool capture_probe_confirmed{};
@@ -182,7 +180,7 @@ struct PermissionStatus {
     std::vector<std::string> setup_steps;
 };
 
-// Rust: ClassifierStatus.
+// ClassifierStatus.
 struct ClassifierStatus {
     std::string backend{"heuristic"};
     bool onnx_runtime_enabled{};
@@ -190,7 +188,7 @@ struct ClassifierStatus {
     std::optional<std::string> model_id;
 };
 
-// Rust: HealthStatus — nests PermissionStatus + ClassifierStatus as objects.
+// HealthStatus — nests PermissionStatus + ClassifierStatus as objects.
 struct HealthStatus {
     std::string status;
     bool capture_running{};
@@ -206,7 +204,7 @@ struct HealthStatus {
     ClassifierStatus classifier;
 };
 
-// Rust: SnapbackPayload — what the overlay/dashboard show on return-from-distraction.
+// SnapbackPayload — what the overlay/dashboard show on return-from-distraction.
 struct SnapbackPayload {
     std::string summary;
     std::string app_name;
@@ -215,7 +213,7 @@ struct SnapbackPayload {
     std::uint32_t distraction_duration_secs{};
 };
 
-// Rust: ContextSnapshotDto.
+// ContextSnapshotDto.
 struct ContextSnapshotDto {
     std::string app_name;
     std::string window_title;
@@ -225,7 +223,7 @@ struct ContextSnapshotDto {
     std::string timestamp;
 };
 
-// Rust: AppRuleRecord.
+// AppRuleRecord.
 struct AppRuleRecord {
     std::int64_t id{};
     std::string pattern;
@@ -235,14 +233,14 @@ struct AppRuleRecord {
     std::string updated_at;
 };
 
-// Rust: UpsertAppRuleRequest.
+// UpsertAppRuleRequest.
 struct UpsertAppRuleRequest {
     std::string pattern;
     AppRuleKind rule_type{AppRuleKind::Allow};
     std::optional<std::string> note;
 };
 
-// Rust: LabelRequest (the nested `request` arg of submit_label).
+// LabelRequest (the nested `request` arg of submit_label).
 struct LabelRequest {
     std::string session_id;
     FocusLabel label{FocusLabel::Productive};
@@ -250,7 +248,7 @@ struct LabelRequest {
     std::optional<std::string> source;
 };
 
-// Rust: ExportTrainingResult.
+// ExportTrainingResult.
 struct ExportTrainingResult {
     std::string output_dir;
     std::string features_path;
@@ -322,7 +320,7 @@ struct DiagnosticsSnapshot {
     std::vector<std::string> recent_logs;
 };
 
-// Rust: CaptureFailurePayload / OverlayFailurePayload / PersistenceFailurePayload.
+// CaptureFailurePayload / OverlayFailurePayload / PersistenceFailurePayload.
 struct CaptureFailurePayload {
     std::string reason;
     std::string message;

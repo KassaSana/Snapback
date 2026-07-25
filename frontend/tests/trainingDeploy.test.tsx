@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock the Tauri boundary so the real api.ts + useTrainingDeploy run end to end.
+// Mock the native boundary so the real api.ts + useTrainingDeploy run end to end.
 const boundary = vi.hoisted(() => {
   const state: {
     health: Record<string, unknown>;
@@ -32,8 +32,7 @@ const boundary = vi.hoisted(() => {
   return { state, invoke, listen };
 });
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
+vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 import { renderApp } from "./renderApp";
 

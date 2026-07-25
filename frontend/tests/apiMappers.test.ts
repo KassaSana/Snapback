@@ -249,7 +249,7 @@ assert.equal(deployCamel.repoPath, null);
 
 // The guard this mapper exists to enforce: `metrics` must be a plain object,
 // not an array or a primitive, or it silently coerces into garbage
-// (e.g. Object.entries on an array yields numeric-string keys). Rust never
+// (e.g. Object.entries on an array yields numeric-string keys). The native layer never
 // sends this shape today, but nothing in TypeScript's type system stops a
 // malformed IPC payload from doing so at runtime — this is the one branch
 // where "what TypeScript expects" and "what actually arrived" can diverge.

@@ -1,4 +1,4 @@
-// Extract file/project hints from a window title. Rust: snapback/title_parser.rs.
+// Extract file/project hints from a window title.
 // Pure string parsing, so it ports 1:1 — and it's the one piece with real logic in
 // this sketch, to show the porting style.
 #pragma once
@@ -12,7 +12,7 @@ struct TitleHints {
     std::string project_hint;  // e.g. "Snapback"
 };
 
-// Examples the Rust parser handles:
+// Examples:
 //   "auth.ts — Snapback — Visual Studio Code"  -> {auth.ts, Snapback}
 //   "index.html - Chromium"                    -> {index.html, ""}
 TitleHints parse_title(const std::string& window_title);

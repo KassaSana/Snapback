@@ -1,5 +1,5 @@
 // Windows global input capture via low-level hooks.
-// Rust equivalent: rdev's Windows backend, used from capture/mod.rs.
+// Windows low-level hook backend.
 #if defined(_WIN32)
 
 #include "capture/input_hook.hpp"

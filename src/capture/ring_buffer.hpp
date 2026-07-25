@@ -1,10 +1,7 @@
 // Lock-free single-producer / single-consumer ring buffer.
 //
-// In Rust, rdev hands events to a bounded channel and the borrow checker + the
-// channel type guarantee no data race. Here we hand-roll it: the OS hook thread
-// is the sole producer, the engine thread is the sole consumer. Correctness rests
-// on the two atomics below and the acquire/release ordering — this is exactly the
-// kind of code Rust made safe for free and C++ makes your responsibility.
+// The OS hook thread is the sole producer, the engine thread is the sole consumer.
+// Correctness rests on the two atomics below and their acquire/release ordering.
 #pragma once
 
 #include <atomic>
@@ -28,7 +25,7 @@ class RingBuffer {
 
 public:
     // Producer side (OS hook thread). Returns false if full -> caller counts a
-    // drop, mirroring HealthStatus::capture_events_dropped in the Rust engine.
+    // drop, exposed through HealthStatus::capture_events_dropped.
     bool push(T value) {
         const std::size_t head = head_.load(std::memory_order_relaxed);
         const std::size_t next = (head + 1) & kMask;

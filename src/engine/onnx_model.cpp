@@ -14,7 +14,7 @@ OnnxModel& OnnxModel::instance() {
 
 std::optional<std::filesystem::path> OnnxModel::resolve_model_path(
     const std::filesystem::path& app_data_dir) {
-    // Rust checks the app data dir, then the training-export dir. Match both, in order.
+    // Check the app data dir, then the training-export dir, in that order.
     for (const std::filesystem::path candidate :
          {app_data_dir / "model.onnx",
           app_data_dir / "exports" / "training" / "model.onnx"}) {
@@ -120,8 +120,8 @@ std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const Featur
         auto outputs = session_->Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1,
                                      output_names.data(), output_names.size());
 
-        // Find the 4-class probability tensor among the outputs (mirrors Rust's
-        // extract_probas: some exporters also emit a label tensor we skip).
+        // Find the 4-class probability tensor among the outputs. Some exporters also
+        // emit a label tensor we skip.
         for (auto& out : outputs) {
             if (!out.IsTensor()) continue;
             const auto info = out.GetTensorTypeAndShapeInfo();

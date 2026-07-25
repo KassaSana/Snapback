@@ -16,20 +16,20 @@ TEST_CASE("ContextTracker snapshots meaningful on-task window changes") {
     ContextTracker tracker;
     tracker.set_prediction_feedback("PRODUCTIVE", std::nullopt);
 
-    auto snapshot = tracker.observe_window_change("Cursor", "main.rs - Snapback",
+    auto snapshot = tracker.observe_window_change("Cursor", "main.cpp - Snapback",
                                                   no_rules(), 10.0, "2026-07-12T10:00:00Z");
 
     REQUIRE(snapshot.has_value());
     CHECK(snapshot->app_name == "Cursor");
-    CHECK(snapshot->file_hint == "main.rs");
-    CHECK(snapshot->summary == "Editing main.rs");
+    CHECK(snapshot->file_hint == "main.cpp");
+    CHECK(snapshot->summary == "Editing main.cpp");
 }
 
 TEST_CASE("ContextTracker does not persist off-task window changes") {
     ContextTracker tracker;
     tracker.set_prediction_feedback("PRODUCTIVE", std::nullopt);
 
-    REQUIRE(tracker.observe_window_change("Cursor", "main.rs", no_rules(), 10.0,
+    REQUIRE(tracker.observe_window_change("Cursor", "main.cpp", no_rules(), 10.0,
                                           "2026-07-12T10:00:00Z")
                 .has_value());
 

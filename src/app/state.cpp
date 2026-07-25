@@ -15,7 +15,9 @@
 
 #include "capture/permissions.hpp"
 #include "app/version.hpp"
+#include "app/notification.hpp"
 #include "engine/app_context.hpp"
+#include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
 #include "util/time.hpp"
 
@@ -335,7 +337,7 @@ std::optional<SnapbackPayload> AppState::take_snapback() {
 void AppState::dismiss_snapback() {
     std::lock_guard lock(mutex_);
     // Clear the pending payload and return the tracker from Recovering to Focused so it
-    // doesn't keep the recovery state latched (Rust: tracker.dismiss_recovery()).
+    // doesn't keep the recovery state latched.
     latest_snapback_.reset();
     context_tracker_.dismiss_recovery(last_event_secs_);
 }
@@ -691,6 +693,7 @@ void AppState::engine_tick() {
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
     std::optional<PomodoroStatus> pomodoro_to_emit;
+    std::optional<std::uint64_t> hyper_to_emit;
     std::vector<PersistJob> jobs;
     IdleTransition idle_edge = IdleTransition::None;
     {
@@ -714,6 +717,10 @@ void AppState::engine_tick() {
             snap_to_emit = std::move(latest_snapback_);
             latest_snapback_.reset();
         }
+        if (hyperfocus_minutes_) {
+            hyper_to_emit = hyperfocus_minutes_;
+            hyperfocus_minutes_.reset();
+        }
     }
 
     if (!jobs.empty()) {
@@ -729,6 +736,12 @@ void AppState::engine_tick() {
     if (pred_to_emit) hook("prediction", nlohmann::json(*pred_to_emit).dump());
     if (snap_to_emit) hook("snapback", nlohmann::json(*snap_to_emit).dump());
     if (pomodoro_to_emit) hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump());
+    if (hyper_to_emit) {
+        const auto note = build_hyperfocus_notification(*hyper_to_emit);
+        hook("hyperfocus", nlohmann::json{{"message", note.body},
+                                          {"minutes", *hyper_to_emit}}
+                               .dump());
+    }
 }
 
 std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& event) {
@@ -784,6 +797,22 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     last_prediction_secs_ = now;
 
     const auto features = features_.extract(now, app_rules_);
+
+    // Hyperfocus guardrail: nudge the user to break after the mode's continuous-work
+    // window. Latched, so one stretch produces one nudge rather than one per tick; the
+    // latch clears when a break resets minutes_since_last_break below the threshold.
+    if (have_session) {
+        const auto minutes = static_cast<std::uint64_t>(features.minutes_since_last_break());
+        if (evaluate_hyperfocus(focus_mode_, minutes)) {
+            if (!hyperfocus_latched_) {
+                hyperfocus_latched_ = true;
+                hyperfocus_minutes_ = minutes;
+            }
+        } else {
+            hyperfocus_latched_ = false;
+        }
+    }
+
     const auto goal =
         have_session ? std::optional<std::string>(active_session_->goal) : std::nullopt;
     const auto scores = classifier_.predict(features, focus_mode_, goal, app_rules_,

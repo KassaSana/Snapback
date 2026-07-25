@@ -1,10 +1,13 @@
 #include "doctest_wrapper.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include <nlohmann/json.hpp>
@@ -22,6 +25,16 @@ using namespace snapback;
 namespace {
 
 constexpr double kEpsilon = 1e-6;
+
+constexpr std::array<std::string_view, kFeatureCount> kGoldenFeatureOrder = {
+    "seconds_since_session_start", "hour_of_day", "day_of_week", "minutes_since_last_break",
+    "keystroke_count", "keystroke_rate", "keystroke_interval_mean", "keystroke_interval_std",
+    "keystroke_interval_trend", "mouse_move_count", "mouse_distance_pixels", "mouse_speed_mean",
+    "mouse_speed_std", "mouse_acceleration_mean", "mouse_click_count", "context_switches_30s",
+    "context_switches_5min", "time_in_current_app", "unique_apps_5min", "idle_time_30s",
+    "idle_event_count_5min", "longest_active_stretch_5min", "window_title_length",
+    "window_title_changed_30s", "is_browser", "is_ide", "is_communication", "is_entertainment",
+    "is_productivity", "focus_momentum", "is_pseudo_productive"};
 
 std::string read_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
@@ -86,6 +99,37 @@ void run_feature_file(const std::filesystem::path& path) {
     }
 }
 
+void run_feature_golden_file(const std::filesystem::path& scenarios_path,
+                             const std::filesystem::path& golden_path) {
+    const auto scenarios = nlohmann::json::parse(read_file(scenarios_path));
+    const auto golden = nlohmann::json::parse(read_file(golden_path));
+    REQUIRE(golden.is_array());
+    REQUIRE(golden.size() == scenarios.at("scenarios").size());
+
+    for (const auto& expected : golden) {
+        const std::string name = expected.at("name").get<std::string>();
+        const auto scenario_it = std::find_if(
+            scenarios.at("scenarios").begin(), scenarios.at("scenarios").end(),
+            [&name](const nlohmann::json& scenario) {
+                return scenario.at("name").get<std::string>() == name;
+            });
+        REQUIRE(scenario_it != scenarios.at("scenarios").end());
+
+        const auto actual = replay_feature_parity_scenario(*scenario_it, {});
+        const auto& expected_features = expected.at("features");
+        REQUIRE(expected_features.size() == kFeatureCount + 1);
+        CHECK_MESSAGE(std::abs(actual.timestamp - expected_features.at("timestamp").get<double>()) <=
+                          kEpsilon,
+                      name << ".timestamp");
+        for (std::size_t i = 0; i < kGoldenFeatureOrder.size(); ++i) {
+            const auto key = kGoldenFeatureOrder[i];
+            CHECK_MESSAGE(std::abs(actual.values[i] - expected_features.at(key).get<double>()) <=
+                              kEpsilon,
+                          name << "." << key << " [feature index " << i << "]");
+        }
+    }
+}
+
 void run_classifier_file(const std::filesystem::path& path) {
     Classifier classifier;
     const auto file = nlohmann::json::parse(read_file(path));
@@ -113,9 +157,14 @@ void run_classifier_file(const std::filesystem::path& path) {
 
 }  // namespace
 
-TEST_CASE("feature parity scenarios.json matches Rust fixtures") {
+TEST_CASE("feature parity scenarios satisfy their behavioral expectations") {
     run_feature_file(std::filesystem::path(SNAPBACK_FIXTURES_DIR) / "feature_parity" /
                      "scenarios.json");
+}
+
+TEST_CASE("feature vectors match the checked-in golden fixture") {
+    const auto dir = std::filesystem::path(SNAPBACK_FIXTURES_DIR) / "feature_parity";
+    run_feature_golden_file(dir / "scenarios.json", dir / "golden.json");
 }
 
 TEST_CASE("classifier parity scenarios match heuristic guardrails") {

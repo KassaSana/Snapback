@@ -1,8 +1,8 @@
 name: Release
 
 # The CD half of the pipeline. CI (ci.yml) proves every push is green; this builds
-# the shippable artifact and cuts a GitHub Release. Mirrors the Rust repo's
-# release.yml: tag-triggered, builds the installer, uploads it, publishes the release.
+# the shippable artifact and cuts a GitHub Release. It is tag-triggered, builds the
+# installer, uploads it, and publishes the release.
 #
 # Trigger it by pushing a version tag:
 #   git tag v0.2.0 && git push origin v0.2.0

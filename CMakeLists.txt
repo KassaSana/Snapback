@@ -40,7 +40,7 @@ option(SNAPBACK_BUILD_APP "Build the desktop app target (webview + sqlite)" OFF)
 option(SNAPBACK_ONNX      "Build with ONNX Runtime inference" OFF)
 option(SNAPBACK_BUILD_BENCHMARKS "Build standalone performance benchmarks" OFF)
 
-# SQLite amalgamation (replaces rusqlite). Prefer a local vendored copy when present
+# SQLite amalgamation. Prefer a local vendored copy when present
 # so offline development works; otherwise fetch a pinned upstream amalgamation for CI.
 set(SNAPBACK_SQLITE_LOCAL_DIR "${CMAKE_SOURCE_DIR}/third_party/sqlite")
 if(EXISTS "${SNAPBACK_SQLITE_LOCAL_DIR}/sqlite3.c" AND
@@ -149,7 +149,7 @@ target_include_directories(snapback_app PUBLIC src)
 target_link_libraries(snapback_app PUBLIC snapback_core snapback_capture)
 target_compile_definitions(snapback_app PUBLIC SNAPBACK_VERSION=\"${PROJECT_VERSION}\")
 
-# --- tests (doctest replaces `cargo test`) ---
+# --- tests (doctest) ---
 enable_testing()
 file(GLOB SNAPBACK_TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
 add_executable(snapback_tests ${SNAPBACK_TEST_SOURCES})

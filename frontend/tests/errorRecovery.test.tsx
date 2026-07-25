@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIRST_RUN_ACK_KEY } from "../src/permissionWizardState";
 
-// Mock the Tauri boundary; `startShouldFail` flips start_session into a reject.
+// Mock the native boundary; `startShouldFail` flips start_session into a reject.
 const boundary = vi.hoisted(() => {
   const state: { health: Record<string, unknown>; startShouldFail: boolean } = {
     health: {},
@@ -44,8 +44,7 @@ const boundary = vi.hoisted(() => {
   return { state, invoke, listen };
 });
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
+vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 import App from "../src/App";
 

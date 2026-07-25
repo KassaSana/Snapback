@@ -10,8 +10,7 @@ documented way to run the test suite did not run on the machine it was documente
 | `test_local.ps1` | Windows | Same, plus optional `-IncludeWindowsDemo` |
 | `run_benchmarks.sh` | macOS, Linux | Benchmark replay; `--hotpaths` for the micro-benchmarks |
 | `run_benchmarks.ps1` | Windows | Same, replay only |
-| `check_doc_paths.py` | anywhere | Fails if a doc names a file that does not exist (runs in CI) |
-| `run_feature_parity_dual.py` | anywhere | Rust-vs-C++ feature vector diff; needs the Rust tree |
+| `check_doc_paths.py` | any OS | verifies that documented repository paths exist |
 | `windows_demo.ps1` | **Windows only** | MSVC build + CTest + launches `snapback.exe` |
 | `gui_smoke_windows.ps1` | **Windows only** | Verifies a real Snapback window appears |
 | `package_windows.ps1` | **Windows only** | CPack ZIP, IExpress installer, Authenticode signing |
