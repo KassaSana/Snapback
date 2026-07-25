@@ -18,6 +18,8 @@ Deliberately NOT checked:
   * `../FocoFlow-1/...` (the Rust reference) unless that tree is present, since it is a
     sibling checkout that CI clones separately and contributors may not have
   * URLs, and bare words that merely look path-ish (no slash, or no known extension)
+  * build outputs listed in GENERATED -- a doc naming `frontend/dist` is describing what a
+    build produces, which is a correct claim even though a fresh checkout lacks it
 
 Usage:  python3 scripts/check_doc_paths.py [--verbose]
 Exit 0 = every referenced path resolves.
@@ -49,6 +51,11 @@ RUST_REF = "../FocoFlow-1"
 
 # Paths a doc names on purpose while saying they are absent. Each needs a reason, so an
 # entry can be re-checked rather than becoming a permanent excuse.
+GENERATED = {
+    "frontend/dist": "vite build output, .gitignore:10 -- docs name it as a build product",
+    "frontend/dist/index.html": "same; running.md tells you to build it before the app",
+}
+
 EXPECTED_ABSENT = {
     "third_party/onnxruntime": "optional vendored ONNX Runtime; CI vendors it, absent locally",
     "third_party/onnxruntime/": "same",
@@ -98,6 +105,8 @@ def resolve(path: str) -> tuple[bool, str]:
     cleaned = LINE_SUFFIX.sub("", path).rstrip(".,;)")
     if PLACEHOLDER.search(cleaned):
         return True, "placeholder"
+    if cleaned in GENERATED:
+        return True, f"generated ({GENERATED[cleaned]})"
     if cleaned in EXPECTED_ABSENT:
         return True, f"expected absent ({EXPECTED_ABSENT[cleaned]})"
     if cleaned.startswith(RUST_REF):
