@@ -156,9 +156,41 @@ private:
         const double now = now_secs();
         if (!force && now - last_window_refresh_secs_ < kWindowRefreshSecs) return;
         last_window_refresh_secs_ = now;
-        if (auto active = query_active_window()) {
-            cached_app_ = active->app_name;
-            cached_title_ = active->window_title;
+        auto active = query_active_window();
+        if (!active) return;
+
+        const bool app_changed = !force && active->app_name != cached_app_;
+        const bool title_changed = !force && active->window_title != cached_title_;
+        cached_app_ = active->app_name;
+        cached_title_ = active->window_title;
+
+        // Emit the change as an event, not just into the cache.
+        //
+        // This was the whole reason macOS could not tell focus from distraction. The tap
+        // path stamped every key/mouse event with the cached app, so features knew *which*
+        // app you were in — but `WindowFocusChange`/`WindowTitleChange` were emitted only
+        // by run_polling_fallback(), i.e. only when the tap failed to create. With a
+        // working tap, the engine never saw a single window change, so
+        // `context_switches_30s`, `context_switches_5min`, and `window_title_changed_30s`
+        // were **permanently zero**.
+        //
+        // The consequences, measured over 714 real predictions on 2026-07-25: `thrash`
+        // caps at 0.30 without switch counts and so can never reach the 0.75 DISTRACTED
+        // threshold; `drift` caps at 0.30 without title churn and so can never reach the
+        // 0.55 PSEUDO_PRODUCTIVE threshold. Two of the four focus states were unreachable
+        // — every prediction ever made on this machine was PRODUCTIVE or DEEP_FOCUS. It
+        // also starved ContextTracker, which only advances on window changes, so snapback
+        // recovery could never fire either.
+        //
+        // `force` is the startup seed: the first observation is not a change.
+        if ((app_changed || title_changed) && callback_) {
+            CaptureEvent ev;
+            ev.event_type =
+                app_changed ? EventType::WindowFocusChange : EventType::WindowTitleChange;
+            ev.timestamp_secs = now;
+            ev.app_name = cached_app_;
+            ev.window_title = cached_title_;
+            callback_(ev);
         }
     }
 
