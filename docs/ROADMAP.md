@@ -2,21 +2,38 @@
 
 **This file is the live backlog.** Every open task lives here — feature work, wiring gaps,
 CI breakage, security hardening, chores. If it's not in this file, it's not planned; if it's
-done, it moves to the [Done archive](#done-archive) at the bottom. `CLAUDE.md`'s status
-table is a summary that points here — when they disagree, this file wins.
+done, it either moves to the [Done archive](#done-archive) at the bottom or stays in place
+marked **DONE** with the original finding preserved beneath it — the second form is used
+when the finding still teaches something. [CLAUDE.md](../CLAUDE.md) names this file as the
+source of truth for open work and carries no backlog of its own; when any other doc
+disagrees with this one, this one wins.
+
+> *Corrected 2026-07-25:* this paragraph used to describe "`CLAUDE.md`'s status table." There
+> is no such table — `CLAUDE.md` has five sections and none of them track status. The claim
+> was a leftover from a structure that no longer exists, and it is a good illustration of why
+> Tier 12 exists: `scripts/check_doc_paths.py` cannot catch it, because nothing about it is a
+> path. It was found by reading the file that tells you how to trust this file.
 
 **There is no second backlog.** `docs/TODO.md` used to carry open items and drifted out of
 sync — it tracked `2.4b` as a task while this file correctly tracked the same work as the
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-07-20.** Three passes landed that day: five product
-features (privacy, analytics, summary reports, goal categories, diagnostics); Tier 0's four
-wiring gaps; an engine/storage audit that opened **Tier 5**; and a staff review of CI,
-security, and the app/storage/capture paths that opened **Tiers 6, 7, and 8**. 152 C++ tests
-and 38 frontend tests green *on macOS and Linux*. **Windows CI went green again 2026-07-22**
-(6.1 fixed, 161 C++ test cases on all three OSes); the first real run of the Linux desktop
-guard then failed on X11 macro pollution — fixed, see 6.3's note.
+**Last synced against the code: 2026-07-25.** Earlier context: three passes landed on
+2026-07-20 — five product features (privacy, analytics, summary reports, goal categories,
+diagnostics); Tier 0's four wiring gaps; an engine/storage audit that opened **Tier 5**; and
+a staff review of CI, security, and the app/storage/capture paths that opened **Tiers 6, 7,
+and 8**. **Windows CI went green again 2026-07-22** (6.1 fixed); the first real run of the
+Linux desktop guard then failed on X11 macro pollution — fixed, see 6.3's note.
+
+**The 2026-07-25 sync** covers the `fix-macos-app-launch` branch, which is the largest
+single change since the port: the macOS app now launches and captures for real (**0.3**,
+the #1 v1 blocker), and the dashboard was split into three surfaces (**10.2**). Measured,
+not assumed: **181 C++ test cases / 943 assertions** and **56 frontend tests** green,
+typecheck clean, and CI run `30168981559` green on all three OSes for every job except
+`docs-smoke`. Two things that sync turned up are recorded where they belong: 0.3's live run
+found that macOS capture was **half-blind** (see 0.3), and Tier 8's "what is already right"
+list had gone **stale in the unsafe direction** (see the note there).
 
 **A note on trusting this file.** Past audits found items here that were simply wrong: 0.3
 described work that was already written (and broken), 2.4 sits in the Done archive on the
@@ -47,11 +64,11 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
-| 4 | **9.1** define what v1 means | **Drafted 2026-07-24** as [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) (`Proposed`) — Windows + macOS, six blockers. Closes when the overlay-vs-notification sub-decision lands |
+| 4 | ~~**9.1** define what v1 means~~ | **Done 2026-07-25** — [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is `Accepted`. Windows + macOS, six blockers, and macOS v1 ships a native `NSPanel` overlay |
 | 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
-| 8 | **0.3** live-Mac verification | Now actually measurable |
+| 8 | ~~**0.3** live-Mac verification~~ | **Done 2026-07-25** — the tap runs on real hardware and the run found macOS capture was **half-blind**. First ADR-0002 release blocker cleared |
 | 9 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
 | 10 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
 | 11 | **7.16** timestamp representation, then 7.3, 7.11 | Analytics windows and local-hour buckets are done; the timestamp decision now scopes migrations and fixtures |
@@ -63,14 +80,30 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 17 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
 | 18 | **7.12 + 7.13** perf | After 4.4 benchmarking, so the fix is measured not guessed |
 | 19 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
+| 20 | **10.7** test the four new surface components | Shipped 2026-07-25 with no tests — the only standing `CLAUDE.md` violation |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
-shippable product** — if the goal is "someone else uses this," 9.1 should arguably be #1.
+shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
+outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
+now done, which is what makes the blocker table below meaningful.
 
-**Next up is #3 and #4 — both are `decision`s that need Kassa, not code.** With Tier 12
-cleared there is now a place to put the answers ([`docs/adr/`](adr/README.md)) and a
-correct picture of the system to reason about, which is the order those were meant to
-happen in.
+**Next up is 3.1 — and it is finally plain code, not a decision.** The overlay sub-decision
+was settled 2026-07-25 (native `NSPanel`, see ADR-0002), so with 0.3 and 9.1 both done there
+is nothing left blocking macOS work except writing it.
+
+**ADR-0002 release-blocker status after 2026-07-25:**
+
+| # | Blocker | State |
+|---|---------|-------|
+| 1 | **0.3** live-Mac capture | ✅ Done |
+| 2 | **3.1** macOS tray + native `NSPanel` overlay | ⬜ **Next.** Scope settled; no external dependency |
+| 3 | **3.3** macOS packaging + notarization | ⬜ Not started — longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest |
+| 4 | macOS launch smoke in CI | 🟡 App launches by hand; CI still builds without launching |
+| 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
+| 6 | **7.3** schema migrations | ⬜ Untouched |
+
+Note the shape of what remains: four of the six are ordinary implementation work, one is
+paperwork with a long lead time, and exactly one is a question. That is a tractable v1.
 
 ---
 
@@ -142,7 +175,37 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
 
 ## Tier 0 — Finish the port's last gaps
 
-- **0.3 — Native macOS capture: confirm it works on a real Mac.** `S`
+- **0.3 — DONE 2026-07-25.** The tap was run on real hardware with Accessibility granted,
+  and it works — but **the run's value was not the confirmation, it was what it found.**
+
+  **macOS capture was half-blind.** The tap stamped every key/mouse event with the cached
+  foreground app, so features knew *which* app you were in, but `WindowFocusChange` /
+  `WindowTitleChange` were emitted only by `run_polling_fallback()` — i.e. only when the tap
+  failed to create. With a *working* tap the engine never saw a single window change, so
+  `context_switches_30s`, `context_switches_5min`, and `window_title_changed_30s` were
+  permanently zero. Measured over 714 real predictions: `thrash` caps at 0.30 without switch
+  counts (threshold 0.75) and `drift` caps at 0.30 without title churn (threshold 0.55), so
+  **two of the four focus states were unreachable** — every prediction ever made on this
+  machine was `PRODUCTIVE` or `DEEP_FOCUS`. It also starved `ContextTracker`, which only
+  advances on window changes, so snapback recovery could never fire. Fixed in `ab74fe7`.
+
+  **A second failure compounded it:** `name of front window` errors on Chromium browsers
+  (`-1719`), which aborted the whole AppleScript, so `query_active_window()` returned
+  `nullopt` and the engine learned *nothing* about the foreground app at the exact moment it
+  most needed to. Since a browser's title is the only thing separating work from
+  distraction, an afternoon of video read exactly like an afternoon of documentation. Fixed
+  in `626ad87` with a per-browser title query and a `try` that keeps the app name when the
+  title lookup fails.
+
+  **The lesson worth carrying:** every one of those symptoms was invisible to the entire
+  test suite and to the diagnostics added by 7.4/7.10 — `capture_running` was `true`, events
+  *were* flowing, predictions *were* fresh. Health checks proved the pipe was open, not that
+  the right things were going through it. **Before tuning any threshold, check that its
+  inputs are actually non-zero in a live run.**
+
+  The original item was:
+
+  **Confirm native macOS capture works on a real Mac.** `S`
   **Do 7.4 and 7.10 first.** Right now a live run has no instrument that would reveal the
   tap dying — you would be verifying by vibes.
 
@@ -487,11 +550,25 @@ normal use — these are defense-in-depth and fragility items.
 
 **What is already right**, recorded so a future review doesn't re-derive it: every SQL
 statement is parameterized (no string-built queries in `storage.cpp`); no `innerHTML`,
-`dangerouslySetInnerHTML`, or `eval()` in the frontend; the `popen`/`std::system` call sites
-in `active_window.cpp:32` and `permissions.cpp:18` take compile-time literals;
+`dangerouslySetInnerHTML`, or `eval()` in the frontend; the `popen`/`std::system` call site
+in `permissions.cpp:18` takes a compile-time literal;
 `training_deploy.cpp` quotes the user-supplied repo path; `npm audit --production` reports 0
 vulnerabilities and the `security-audit` job is green; and the hook callback correctly
 swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS callback is UB.
+
+> **This list went stale in the unsafe direction on 2026-07-25, which is worth recording as
+> a pattern.** It used to say `active_window.cpp:32` also took a compile-time literal. It no
+> longer does: `626ad87` changed `run_command()` from `const char*` to `const std::string&`
+> so it could build a per-browser `osascript` command, and that command is chosen by the
+> foreground **app name, which comes from the OS**. The code is still safe — it interpolates
+> the matched allowlist *literal* rather than the caller's string, with a comment saying
+> exactly why — but the property holding it safe changed from "the type system makes this
+> impossible" to "a loop is careful," and nothing but that comment now enforces it.
+>
+> The general lesson: **a "what is already right" list is a claim with an expiry date.** It
+> reads as reassurance, so it is the least likely thing in this file to be re-checked, and
+> `check_doc_paths.py` cannot catch it — the path still exists, only the claim about it
+> died. Re-verify this block whenever a signature it names changes.
 
 - **8.1 — DONE 2026-07-22.** The engine loop now catches standard and unknown exceptions
   around each tick, logs the failure at Error level, and keeps the engine alive. The
@@ -687,9 +764,25 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   (`~/Library/LaunchAgents/`) on macOS and a systemd **user** unit on Linux. Concrete scope of
   the follow-up noted on 1.3.
 
-- **3.1 — macOS tray + native overlay.** `M`
-  Replaces the no-op stubs in `src/snapback/overlay_stub.cpp` / `src/app/tray_stub.cpp`.
-  `NSStatusItem` tray menu and a native always-on-top overlay panel matching Windows.
+- **3.1 — macOS tray + native overlay.** `M` — **v1 release blocker, and the next thing to
+  build.** Scope settled 2026-07-25 by [ADR-0002](adr/0002-v1-supports-windows-and-macos.md):
+  macOS v1 ships a **native `NSPanel` overlay**, not a notification.
+
+  Replaces the no-op stubs in `src/snapback/overlay_stub.cpp` / `src/app/tray_stub.cpp`:
+  an `NSStatusItem` tray menu and an always-on-top overlay panel matching Windows.
+  `src/snapback/overlay_windows.cpp` (149 lines) is the reference for what "matching" means.
+
+  Two things the stubs already tell you, so read them before starting. `overlay_stub.cpp`
+  records that `ContextTracker`'s `Recovering` state has exactly **one** exit
+  (`dismiss_recovery`), so the overlay's dismiss path is load-bearing, not decoration — a
+  panel that shows but cannot dismiss latches the state machine after the first snapback of
+  a session. And `tray_stub.cpp` records that `show_notification()` returns `false`
+  deliberately; **keep returning `false` until real delivery exists**, because its comment
+  warns that callers may start trusting the return value to decide whether to fall back.
+
+  Notification delivery is explicitly *not* part of this item — it needs a bundle ID and so
+  waits on 3.3. See ADR-0002's correction note for why that ordering is the whole reason the
+  overlay was chosen.
 
 - **3.2 — Linux tray + overlay.** `M`
   Same stubs as 3.1. `libappindicator` tray + an overlay window (X11/Wayland caveats noted).
@@ -828,13 +921,20 @@ scoped by walking the lifecycle a real user goes through — install, first run,
 upgrade, failure, uninstall — and asking what's missing at each step. Most of these are
 small; the tier is large because nobody has walked that path yet.
 
-- **9.1 — Write down what v1 means.** `S` `decision` — **drafted 2026-07-24 as
-  [ADR-0002](adr/0002-v1-supports-windows-and-macos.md), status `Proposed`.** v1 = Windows +
-  macOS; six release blockers (0.3, 3.1, 3.3, a macOS launch smoke, Decision session A, 7.3);
-  Linux desktop and macOS autostart are fast-follow. **One sub-decision is still open** —
-  does macOS v1 need a native overlay, or is a notification enough? Toasts already work, and
-  the overlay is the largest blocker, so answer that before 3.1 starts. This item closes when
-  the ADR flips to `Accepted`.
+- **9.1 — DONE 2026-07-25.** [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is
+  `Accepted`. v1 = Windows + macOS; six release blockers (0.3, 3.1, 3.3, a macOS launch
+  smoke, Decision session A, 7.3); Linux desktop, macOS autostart, and macOS toasts are
+  fast-follow. The open sub-decision was resolved the same day: **macOS v1 ships a native
+  `NSPanel` overlay.**
+
+  **How it resolved is the part worth remembering.** The sub-decision had been framed as
+  "expensive overlay vs. cheap notification — and toasts already work," and on that framing
+  the notification was winning. Checking the claim before deciding on it showed toasts do
+  **not** work on macOS (`Tray::instance().show_notification()` resolves to `NoopTray`'s
+  `return false`), and that posting them needs a bundle ID, which puts the "cheap" option
+  *behind* the longest-lead-time blocker on the list. The framing had the costs backwards.
+  Same lesson as this file's preamble, applied to a decision rather than a task: **check the
+  premise before you spend the decision on it.**
 
   The original finding was:
 
@@ -920,8 +1020,16 @@ structure alone — a real review would likely find more.
   failure CLAUDE.md calls "silently breaks the UI." The `windows-desktop-integration` job is
   the closest thing and it's currently skipped (6.3).
 
-- **10.2 — The dashboard is ~20 cards on one page.** `M` — **decided 2026-07-25, see
-  [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`).** Three surfaces — **Now**
+- **10.2 — DONE 2026-07-25.** Decided in
+  [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`) and shipped on
+  `fix-macos-app-launch`: `SurfaceNav.tsx` switches between the three surfaces, `App.tsx`
+  composes them, and `FocusStateHero.tsx` leads Now with the focus *state*. The
+  ~20-cards-on-one-page problem is gone. **The components carry no tests — tracked as
+  10.7.**
+
+  The decision it implements was:
+
+  Three surfaces — **Now**
   (session control, live state, pomodoro), **Review** (insights, analytics, summary, focus
   summary, session recap, activity), **Settings** (rules, settings, privacy, permissions, goal
   categories, training, diagnostics). Now leads with the focus *state*, not the score, which
@@ -937,6 +1045,21 @@ structure alone — a real review would likely find more.
   session control next to ONNX training deployment. Needs a design decision (tabs? routes?
   a settings/advanced split?) before more cards land — and 7.6, 9.6, and 9.7 all want to add
   surfaces.
+
+- **10.7 — The four new surface components shipped with no tests.** `S`
+  Opened 2026-07-25 by the sync. `FocusStateHero.tsx`, `SurfaceNav.tsx`,
+  `VerdictFeedback.tsx`, and `SignalsCard.tsx` were added on `fix-macos-app-launch` with no
+  `*.test.tsx` between them. [CLAUDE.md](../CLAUDE.md) says every production module needs a
+  test before it is considered complete, so **this is the only standing violation of that
+  rule in the repo** — filed rather than quietly forgiven, because 10.2's work is otherwise
+  done and would look finished.
+
+  Not equally urgent across the four. `SurfaceNav` and `FocusStateHero` are the ones worth
+  real tests: nav is now the only path to two thirds of the app, so a regression there hides
+  every Review and Settings card, and the hero is the surface that decides what the user
+  believes about their focus *state* — the exact thing 0.3 proved the backend can get
+  silently wrong. `VerdictFeedback` writes training labels, so it should at least be tested
+  to submit what it displays. `SignalsCard` is presentational and can ride on the others.
 
 - **10.3 — Accessibility has never been assessed.** `M`
   No audit has been done. Specifically worth checking: keyboard navigation through the card

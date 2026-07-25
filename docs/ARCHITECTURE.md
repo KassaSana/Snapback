@@ -60,7 +60,15 @@ has 31 named values and a fixed training-column order. The scenarios in
 Platform-specific code is isolated behind small interfaces:
 
 - Windows low-level hooks, active-window lookup, overlay, tray, and autostart.
-- macOS event tap, accessibility permissions, and active-window lookup.
+- macOS `CGEventTap`, accessibility permissions, and active-window lookup including browser
+  tab titles. **Overlay and tray are no-op stubs**, so nothing reaches the user outside the
+  app window: `Tray::show_notification()` returns `false` without calling the OS, and the
+  snapback renders only in the web UI. Closing that is Roadmap 3.1, a v1 release blocker
+  under [ADR-0002](adr/0002-v1-supports-windows-and-macos.md).
 - Linux input capture and desktop stubs where native UI support is pending.
+
+The stubs live in `src/snapback/overlay_stub.cpp` and `src/app/tray_stub.cpp` and exist so
+the desktop app links off Windows at all. Read their header comments before replacing them —
+they record which behavior is load-bearing and which is merely absent.
 
 The headless core remains buildable without the webview or ONNX runtime.
