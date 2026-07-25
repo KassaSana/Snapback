@@ -55,7 +55,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
-| 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
+| 4 | **9.1** define what v1 means | **Drafted 2026-07-24** as [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) (`Proposed`) — Windows + macOS, six blockers. Closes when the overlay-vs-notification sub-decision lands |
 | 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
@@ -844,7 +844,16 @@ scoped by walking the lifecycle a real user goes through — install, first run,
 upgrade, failure, uninstall — and asking what's missing at each step. Most of these are
 small; the tier is large because nobody has walked that path yet.
 
-- **9.1 — Write down what v1 means.** `S` `decision` — **do this first; it scopes the rest.**
+- **9.1 — Write down what v1 means.** `S` `decision` — **drafted 2026-07-24 as
+  [ADR-0002](adr/0002-v1-supports-windows-and-macos.md), status `Proposed`.** v1 = Windows +
+  macOS; six release blockers (0.3, 3.1, 3.3, a macOS launch smoke, Decision session A, 7.3);
+  Linux desktop and macOS autostart are fast-follow. **One sub-decision is still open** —
+  does macOS v1 need a native overlay, or is a notification enough? Toasts already work, and
+  the overlay is the largest blocker, so answer that before 3.1 starts. This item closes when
+  the ADR flips to `Accepted`.
+
+  The original finding was:
+
   There is no release checklist, no scope freeze, no "we ship when X." Without it, every item
   in this file looks equally required and the project never converges. Decide: which OSes at
   v1 (Windows-only is a legitimate answer and makes Tier 3 post-v1)? Which of Tiers 7/8 are
