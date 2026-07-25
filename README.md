@@ -20,6 +20,8 @@ The React frontend is plain TypeScript and React. It uses the project-owned
 | SQLite storage, sessions, predictions, recaps, and CSV export | ✅ |
 | Heuristic classifier and optional ONNX Runtime backend | ✅ |
 | Windows input hooks, active-window enrichment, overlay, and tray | ✅ |
+| macOS capture: `CGEventTap`, active-window and browser-tab enrichment | ✅ Needs Accessibility permission |
+| macOS tray and overlay | ❌ Stubbed — [Roadmap 3.1](docs/ROADMAP.md) |
 | Linux capture with polling fallback | ✅ |
 | C++ feature-vector golden fixtures and IPC contract tests | ✅ |
 | CI on Windows, macOS, and Linux plus sanitizer jobs | ✅ |
@@ -63,3 +65,6 @@ npm run typecheck
 
 See [docs/running.md](docs/running.md), [docs/testing_strategy.md](docs/testing_strategy.md),
 and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for platform and design details.
+
+For the full end-to-end Windows walkthrough, see
+[docs/windows_demo.md](docs/windows_demo.md).
