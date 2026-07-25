@@ -5,8 +5,10 @@ import {
   clamp,
   focusStateLabel,
   formatPercent,
+  formatPercentCoarse,
   formatPomodoroRemaining,
   formatScore,
+  formatScoreCoarse,
   formatTime,
   nextBackoffDelay,
   riskLabel,
@@ -18,6 +20,16 @@ assert.equal(clamp(-1, 0, 1), 0);
 
 assert.equal(formatPercent(0.5), "50.0%");
 assert.equal(formatScore(105), "100.0");
+
+// Coarse variants back the Now surface (ADR-0003): whole numbers only, because a decimal
+// place claims precision the score's undecided scale does not have.
+assert.equal(formatScoreCoarse(71.2), "71");
+assert.equal(formatScoreCoarse(71.6), "72");
+assert.equal(formatScoreCoarse(105), "100");
+assert.equal(formatScoreCoarse(null), "--");
+assert.equal(formatPercentCoarse(0.214), "21%");
+assert.equal(formatPercentCoarse(1.4), "100%");
+assert.equal(formatPercentCoarse(undefined), "--");
 
 // Defensive branches: malformed backend values must degrade to "--"
 // rather than rendering "NaN%" or "Invalid Date" in the UI.

@@ -17,6 +17,20 @@ export const formatScore = (value: number | null | undefined) => {
   return score.toFixed(1);
 };
 
+// Whole-number variants for the Now surface (ADR-0003). A decimal place claims precision
+// the score does not have: what `focus_score` even means is still an open decision
+// (Roadmap 5.3, 5.4, 1.2, 7.7). `formatScore`/`formatPercent` keep their decimals for the
+// Review surface, where comparing two sessions makes the extra digit meaningful.
+export const formatScoreCoarse = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  return String(Math.round(clamp(value, 0, 100)));
+};
+
+export const formatPercentCoarse = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "--";
+  return `${Math.round(clamp(value, 0, 1) * 100)}%`;
+};
+
 export const formatTime = (isoString: string | null | undefined) => {
   if (!isoString) return "--";
   const date = new Date(isoString);
