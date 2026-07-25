@@ -38,7 +38,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
-import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 beforeEach(() => {
   boundary.invoke.mockClear();
@@ -49,7 +49,7 @@ afterEach(() => cleanup());
 
 describe("privacy controls", () => {
   it("toggles private mode through the backend", async () => {
-    render(<App />);
+    renderApp("settings");
     const toggle = await screen.findByRole("checkbox", { name: "Private mode" });
     await waitFor(() => expect(toggle).not.toBeDisabled());
     fireEvent.click(toggle);
@@ -58,7 +58,7 @@ describe("privacy controls", () => {
   });
 
   it("adds and removes an excluded app", async () => {
-    render(<App />);
+    renderApp("settings");
     const input = await screen.findByPlaceholderText("Banking, 1Password");
     fireEvent.change(input, { target: { value: "Banking" } });
     fireEvent.click(screen.getByRole("button", { name: "Add exclusion" }));
@@ -69,7 +69,7 @@ describe("privacy controls", () => {
   });
 
   it("warns before saving a broad one-character exclusion", async () => {
-    render(<App />);
+    renderApp("settings");
     const input = await screen.findByPlaceholderText("Banking, 1Password");
     fireEvent.change(input, { target: { value: "a" } });
     expect(screen.getByText("A one-character exclusion can hide many unrelated apps.")).toBeInTheDocument();

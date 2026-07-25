@@ -38,7 +38,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
-import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
@@ -97,7 +97,7 @@ afterEach(() => {
 describe("Insights card", () => {
   it("renders tiles and one bar per session from history", async () => {
     boundary.state.history = [rawSummary("a", 60, 40, 2), rawSummary("b", 80, 20, 3)];
-    render(<App />);
+    renderApp("review");
 
     await screen.findByRole("heading", { name: "Insights" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }));
@@ -113,7 +113,7 @@ describe("Insights card", () => {
 
   it("shows an empty state when there are no sessions", async () => {
     boundary.state.history = [];
-    render(<App />);
+    renderApp("review");
 
     const card = insightsCard();
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }));
@@ -132,7 +132,7 @@ describe("Focus summary card", () => {
       distracted_fraction: 0.15,
       longest_focus_streak: 18,
     };
-    render(<App />);
+    renderApp("review");
 
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { limit: 200 }),
@@ -148,7 +148,7 @@ describe("Focus summary card", () => {
 
   it("shows an empty state when there are no predictions yet", async () => {
     boundary.state.focusSummary = { sample_count: 0 };
-    render(<App />);
+    renderApp("review");
 
     const card = focusSummaryCard();
     await waitFor(() =>

@@ -133,6 +133,58 @@ h1 {
   font-size: 0.78rem;
 }
 
+/* Surface navigation (ADR-0003). Sits between the header and the panel, using the same
+   pill vocabulary as .status-pill so it reads as part of the existing design rather than
+   a bolted-on tab bar. */
+.surface-nav {
+  margin-top: 32px;
+  position: relative;
+  z-index: 1;
+}
+
+.surface-nav > div[role="tablist"] {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+
+.surface-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 9px 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.surface-tab:hover {
+  color: var(--ink);
+}
+
+.surface-tab-active {
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Keyboard focus must stay visible — the active tab has no other affordance. */
+.surface-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.grid:focus {
+  outline: none;
+}
+
 .grid {
   margin-top: 40px;
   display: grid;

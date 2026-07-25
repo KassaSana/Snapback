@@ -69,7 +69,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
-import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 beforeEach(() => {
   boundary.invoke.mockClear();
@@ -84,7 +84,7 @@ afterEach(() => {
 
 describe("permission request flow", () => {
   it("asks the OS for permission when Grant access is clicked", async () => {
-    render(<App />);
+    renderApp("settings");
 
     // Two render while ungranted — the onboarding wizard (modal, on top) and the
     // Permissions card behind it. Either should reach the same IPC command.
@@ -96,7 +96,7 @@ describe("permission request flow", () => {
 
   it("hides Grant access once permission is already held", async () => {
     boundary.state.permissions = granted;
-    render(<App />);
+    renderApp("settings");
 
     // Wait for the first health poll to settle before asserting an absence.
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
@@ -106,7 +106,7 @@ describe("permission request flow", () => {
   it("never prompts from the pollable refresh path", async () => {
     // The dialog-free probe must stay dialog-free: refreshing should never call
     // request_permissions, or a timer-driven refresh would spam the user with dialogs.
-    render(<App />);
+    renderApp("settings");
 
     const refresh = await screen.findAllByRole("button", { name: /Check again|Refresh permissions/ });
     fireEvent.click(refresh[0]);
