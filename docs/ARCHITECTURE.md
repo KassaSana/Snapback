@@ -1,7 +1,6 @@
 # Snapback architecture
 
-This document describes the current native application. Historical migration
-notes live in [PORT_HISTORY.md](PORT_HISTORY.md).
+This document describes the current native application.
 
 ## Runtime shape
 

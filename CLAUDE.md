@@ -58,4 +58,3 @@ The repository docs are the source of truth for current work:
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — current module boundaries.
 - [docs/ROADMAP.md](docs/ROADMAP.md) — ordered open work.
-- [docs/PORT_HISTORY.md](docs/PORT_HISTORY.md) — archived teaching history.

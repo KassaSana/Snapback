@@ -1,7 +1,6 @@
 # Roadmap
 
-This is the live backlog. Completed migration history is in
-[PORT_HISTORY.md](PORT_HISTORY.md).
+This is the live backlog.
 
 ## Start here
 
