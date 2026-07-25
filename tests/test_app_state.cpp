@@ -49,6 +49,34 @@ private:
     std::atomic<bool> emitted_{false};
 };
 
+// Feeds two events: one to start the break clock, one far enough later that the mode's
+// hyperfocus window has elapsed. Drives the real engine thread, because the bug this test
+// guards was a feature that had correct logic, a passing unit test, and no caller.
+class HyperfocusHook final : public InputHook {
+public:
+    void run(InputCallback on_event) override {
+        CaptureEvent first;
+        first.event_type = EventType::KeyPress;
+        first.timestamp_secs = 1.0;
+        first.app_name = "Cursor";
+        first.window_title = "state.cpp - Snapback";
+        on_event(first);
+
+        CaptureEvent later = first;
+        later.timestamp_secs = 8100.0;  // 134 minutes on, past Normal's 120-minute window
+        on_event(later);
+
+        while (running_.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void stop() override { running_.store(false, std::memory_order_relaxed); }
+
+private:
+    std::atomic<bool> running_{true};
+};
+
 class ReturningHook final : public InputHook {
 public:
     void run(InputCallback) override { returned_.store(true, std::memory_order_release); }
@@ -741,4 +769,46 @@ TEST_CASE("AppState contains engine tick exceptions and keeps the engine online"
     CHECK(logged);
     CHECK(state->health().status == "online");
     state->stop_engine();
+}
+
+
+TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    auto state = std::make_unique<AppState>(std::move(*storage), std::filesystem::path{});
+    HyperfocusHook hook;
+
+    std::mutex seen_mutex;
+    std::vector<std::string> events;
+    std::string payload;
+    state->set_emit_hook([&](const char* name, const std::string& body) {
+        std::lock_guard lock(seen_mutex);
+        events.emplace_back(name);
+        if (std::string(name) == "hyperfocus") payload = body;
+    });
+
+    state->start_session("ship the overlay", FocusMode::Normal);
+    state->start_engine_for_test(&hook);
+
+    bool fired = false;
+    for (int attempt = 0; attempt < 5000 && !fired; ++attempt) {
+        {
+            std::lock_guard lock(seen_mutex);
+            fired = std::count(events.begin(), events.end(), "hyperfocus") > 0;
+        }
+        if (!fired) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    state->stop_engine();
+
+    CHECK(fired);
+    if (!fired) return;
+
+    // The frontend reads `message`; main.cpp rebuilds the toast from `minutes`.
+    const auto parsed = nlohmann::json::parse(payload);
+    CHECK(parsed.contains("message"));
+    CHECK(parsed.at("minutes").get<std::uint64_t>() >= 120);
+
+    // Latched: one unbroken stretch produces exactly one nudge, not one per tick.
+    std::lock_guard lock(seen_mutex);
+    CHECK(std::count(events.begin(), events.end(), "hyperfocus") == 1);
 }

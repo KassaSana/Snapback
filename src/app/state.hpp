@@ -148,6 +148,11 @@ private:
     // Runs the event through features/classifier/tracker and updates in-memory state.
     // Requires mutex_. Does NO storage I/O — returns what to persist (nullopt if nothing).
     std::optional<PersistJob> compute_event(const CaptureEvent& event);
+
+    // Hyperfocus guardrail state. `hyperfocus_latched_` prevents a second nudge inside the
+    // same unbroken stretch; `hyperfocus_minutes_` is the pending emit drained by the tick.
+    bool hyperfocus_latched_ = false;
+    std::optional<std::uint64_t> hyperfocus_minutes_;
     // Writes a job to storage. Requires storage_mutex_ (call inside a Transaction).
     void persist(const PersistJob& job);
     void save_auto_session_label_unlocked(const std::string& session_id);

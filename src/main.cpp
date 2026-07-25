@@ -215,6 +215,16 @@ int main() {
                     // A malformed payload must never take down the UI thread.
                 }
             }
+            // The hyperfocus nudge is a toast only — no overlay. An overlay here would
+            // interrupt exactly the deep work the guardrail is trying to protect.
+            if (ev == "hyperfocus") {
+                try {
+                    const auto minutes =
+                        nlohmann::json::parse(payload).at("minutes").get<std::uint64_t>();
+                    Tray::instance().show_notification(build_hyperfocus_notification(minutes));
+                } catch (...) {
+                }
+            }
         });
     });
 
