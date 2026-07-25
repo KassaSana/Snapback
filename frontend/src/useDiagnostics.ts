@@ -22,7 +22,12 @@ const emptyDiagnostics: DiagnosticsSnapshot = {
       message: "",
       setupSteps: [],
     },
-    classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
+    classifier: {
+      backend: "heuristic",
+      onnxRuntimeEnabled: false,
+      modelPath: null,
+      modelId: null,
+    },
   },
   recentLogs: [],
 };

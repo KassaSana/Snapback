@@ -6,6 +6,7 @@
 #include <deque>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -15,6 +16,9 @@ namespace snapback {
 
 // 31 numeric model features (matches Rust FeatureVector::training_input()).
 inline constexpr std::size_t kFeatureCount = 31;
+// Model identity includes this contract so a prediction can be traced back to the feature
+// order the deployed model was trained against.
+inline constexpr std::string_view kFeatureContractId = "snapback-features-v1-31";
 
 struct FeatureVector {
     std::array<double, kFeatureCount> values{};

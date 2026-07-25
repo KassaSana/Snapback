@@ -34,6 +34,7 @@ public:
                              const std::vector<GoalCategory>& categories) const;
 
     std::string backend() const;
+    std::string model_id() const;
 
 private:
     PredictionScores predict_heuristic(const FeatureVector& features,

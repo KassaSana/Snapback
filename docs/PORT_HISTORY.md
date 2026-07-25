@@ -283,7 +283,7 @@ card; the tray menu works; macOS permission flow matches the Rust README steps.
 
 ## Phase 9 — Packaging, CI, parity sign-off
 
-**Rust reference:** `../FocoFlow-1/.github/workflows/`, `docs/DEPLOYMENT.md`.
+**Rust reference:** `../FocoFlow-1/.github/workflows/`, `../FocoFlow-1/docs/DEPLOYMENT.md`.
 
 **Goal:** a shippable binary + a CI that guards the port.
 

@@ -100,7 +100,8 @@ void to_json(json& j, const PredictionRecord& v) {
              {"thrashScore", v.thrash_score},
              {"driftScore", v.drift_score},
              {"goalAlignment", v.goal_alignment},
-             {"timestamp", v.timestamp}};
+             {"timestamp", v.timestamp},
+             {"modelId", v.model_id}};
 }
 void from_json(const json& j, PredictionRecord& v) {
     v.session_id = get_or<std::string>(j, "sessionId", "");
@@ -111,6 +112,7 @@ void from_json(const json& j, PredictionRecord& v) {
     v.drift_score = get_or<double>(j, "driftScore", 0.0);
     v.goal_alignment = get_or<double>(j, "goalAlignment", 0.5);
     v.timestamp = get_or<std::string>(j, "timestamp", "");
+    v.model_id = get_or<std::string>(j, "modelId", "heuristic:snapback-features-v1-31");
 }
 
 // ---- SessionRecord ---------------------------------------------------------
@@ -187,11 +189,13 @@ void from_json(const json& j, PermissionStatus& v) {
 void to_json(json& j, const ClassifierStatus& v) {
     j = json{{"backend", v.backend}, {"onnxRuntimeEnabled", v.onnx_runtime_enabled}};
     put_opt(j, "modelPath", v.model_path);
+    put_opt(j, "modelId", v.model_id);
 }
 void from_json(const json& j, ClassifierStatus& v) {
     v.backend = get_or<std::string>(j, "backend", "heuristic");
     v.onnx_runtime_enabled = get_or<bool>(j, "onnxRuntimeEnabled", false);
     v.model_path = opt_str(j, "modelPath");
+    v.model_id = opt_str(j, "modelId");
 }
 
 // ---- HealthStatus ----------------------------------------------------------

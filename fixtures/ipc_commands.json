@@ -37,5 +37,6 @@
   "export_training_data",
   "get_training_deploy_status",
   "set_training_repo_path",
-  "train_from_export"
+  "train_from_export",
+  "rollback_classifier_model"
 ]

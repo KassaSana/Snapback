@@ -166,9 +166,9 @@ pollution (`#define KeyPress`/`None`/`Status`) breaking the Linux desktop build 
 
 **Do next (Roadmap):** the ordered sequence lives at the top of
 [docs/ROADMAP.md](docs/ROADMAP.md) under **"Start here"** — follow it there rather than
-duplicating it here. In short (6.1, 6.4, and 8.1 done 2026-07-22): **6.2** (red-master
-rule, a decision) → **9.1** (define v1) → **12.3** (`docs/adr/`) → **7.4 + 7.10**
-(capture/prediction health, which are the instruments 0.3 needs) → **0.3**.
+duplicating it here. In short (6.1, 6.4, 8.1, 7.4 + 7.10 done 2026-07-22; **12.3 done
+2026-07-23** — [`docs/adr/`](docs/adr/README.md) is the home for decisions now): **6.2**
+(red-master rule, a decision) → **9.1** (define v1) → **0.3** (live-Mac verification).
 
 Then one decision session settles **5.3, 5.4, 1.2, and 7.7** together — they are all the same
 question: *what do our scores mean, and on what scale?* Nothing gets coded in that session.

@@ -142,6 +142,7 @@ struct PredictionRecord {
     double drift_score{};
     double goal_alignment{0.5};
     std::string timestamp;
+    std::string model_id{"heuristic:snapback-features-v1-31"};
 };
 
 // Rust: SessionRecord. Note focus_mode is a plain string here (not the enum).
@@ -186,6 +187,7 @@ struct ClassifierStatus {
     std::string backend{"heuristic"};
     bool onnx_runtime_enabled{};
     std::optional<std::string> model_path;
+    std::optional<std::string> model_id;
 };
 
 // Rust: HealthStatus — nests PermissionStatus + ClassifierStatus as objects.

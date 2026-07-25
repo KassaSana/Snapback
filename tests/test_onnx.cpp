@@ -41,6 +41,26 @@ TEST_CASE("resolve_model_path prefers the app dir, then the training-export dir"
     std::filesystem::remove_all(dir, ec);
 }
 
+TEST_CASE("model identity is stable for content and includes the feature contract") {
+    auto dir = make_temp_dir();
+    const auto path = dir / "model.onnx";
+    touch(path);
+
+    const auto first = OnnxModel::model_id_for_path(path);
+    REQUIRE(first.has_value());
+    CHECK(first->find("onnx:snapback-features-v1-31:") == 0);
+    CHECK(first == OnnxModel::model_id_for_path(path));
+
+    touch(dir / "other.onnx");
+    CHECK(first == OnnxModel::model_id_for_path(dir / "other.onnx"));
+    std::ofstream(path, std::ios::binary | std::ios::trunc) << "different";
+    CHECK(first != OnnxModel::model_id_for_path(path));
+    CHECK_FALSE(OnnxModel::model_id_for_path(dir / "missing.onnx").has_value());
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
 #if defined(SNAPBACK_ONNX)
 TEST_CASE("ONNX backend loads the fixture, runs it, and falls back to heuristic when reset") {
     // The singleton persists across tests, so always reset on the way out.

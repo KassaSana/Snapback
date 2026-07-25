@@ -56,7 +56,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
 | 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
-| 5 | **12.3** create `docs/adr/` | **Blocks the decision sessions** — eleven items produce decisions with nowhere to land |
+| 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
 | 8 | **0.3** live-Mac verification | Now actually measurable |
@@ -74,6 +74,11 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," 9.1 should arguably be #1.
+
+**Next up is #3 and #4 — both are `decision`s that need Kassa, not code.** With Tier 12
+cleared there is now a place to put the answers ([`docs/adr/`](adr/README.md)) and a
+correct picture of the system to reason about, which is the order those were meant to
+happen in.
 
 ---
 
@@ -615,6 +620,21 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   sibling QA hooks (`SNAPBACK_OVERLAY_TEST`, `SNAPBACK_NOTIFICATION_TEST`,
   `SNAPBACK_GUI_SESSION_SMOKE`) are benign — keep them.
 
+- **8.7 — The 8.4 gate silently killed the demo's `-UseVite` flow.** `S`
+  Found 2026-07-23 by the 12.2 doc audit. `scripts/windows_demo.ps1` builds
+  `--config Release` (lines 128-130), so `NDEBUG` is defined, so `main.cpp:196` ignores
+  `SNAPBACK_FRONTEND_URL`. `-UseVite` therefore sets an environment variable the app
+  deliberately does not read — it fails **silently**, loading the bundled frontend instead.
+  The documented `-UseVite -SkipFrontend` combination is worse: it skips building the
+  bundle too, so there is nothing to load.
+
+  This is not an argument to weaken 8.4 — the gate is correct. It is that the fix landed
+  without checking who called the thing it disabled. Options: allowlist
+  `http://127.0.0.1:*` / `http://localhost:*` (offered in 8.4's own text, and gated by
+  **8.5**'s threat model), have the demo script build `RelWithDebInfo`/`Debug` when
+  `-UseVite` is passed, or drop `-UseVite` and document the bundled path as the only one.
+  **Whichever is chosen, the script should fail loudly rather than ignore the switch.**
+
 - **8.5 — Write a threat model.** `M` `decision`
 
   `focoflow.db` is an unencrypted SQLite file holding a complete history of window titles,
@@ -983,35 +1003,58 @@ happened often enough to be a category, not an accident. Two root causes recur: 
 *before* the code (plans that were never reconciled), and docs written *about* code that
 later moved.
 
-- **12.1 — `ARCHITECTURE.md`'s module map is the pre-port plan, not the built shape.** `S`
-  Verified 2026-07-20: five claimed C++ paths don't exist (`app/events.hpp`,
-  `engine/goal_alignment.*`, `capture/active_window_*.cpp`, `capture/permissions_*.cpp`,
-  `snapback/overlay.cpp`), and two library choices were never taken (`spdlog`, `stduuid`).
-  A warning table has been added inline as a stopgap; the map itself still needs
-  reconciling. *Keep the Rust→C++ reasoning — that's the teaching value. Fix the file list.*
+> **Cleared 2026-07-23.** 12.1–12.5 are all done; only **12.6** remains, and it is a port
+> gap the audit *found*, not a doc defect. Three things are worth carrying forward:
+>
+> 1. **The tier is now partly self-enforcing.** `scripts/check_doc_paths.py` runs in
+>    `docs-smoke` and fails the build if any doc names a file that does not exist. That
+>    closes the most common failure mode mechanically. It cannot check *claims* — only
+>    paths — so the audit habit still matters.
+> 2. **Doc audits find code bugs.** 12.2 turned up **8.7**, a silently dead `-UseVite`
+>    flow, and 12.1 turned up **12.6**, an entire unported Rust module. A doc records what
+>    the code was *supposed* to do; diffing that against what it does is cheap and finds
+>    things tests do not.
+> 3. **Every stale claim pointed the same way** — describing the system before a fix
+>    landed, never after. Docs rot toward *pessimism* here, which is the dangerous
+>    direction: it makes finished work look open and invites rebuilding it.
 
-- **12.2 — Audit the remaining docs against the code.** `M`
+- **12.1 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). The map now
+  matches the tree, and `scripts/check_doc_paths.py` runs in CI so it cannot drift again.
+  The audit found one thing nobody was looking for: **`label_shortcuts.rs` was never
+  ported** — see the new item **12.6**.
+
+- **12.2 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). Ten false claims
+  corrected across four files; `PACKAGING.md` was the only one that survived clean. The
+  audit surfaced **8.7** (a live bug) and confirmed the value of `check_doc_paths.py` from
+  12.1.
+
+  The original finding was:
+
   `system_architecture.md`, `testing_strategy.md`, `benchmarking.md`, `windows_demo.md`, and
   `PACKAGING.md` have not been verified since they were written. Given the hit rate on
   `CLAUDE.md` (six false claims), `ARCHITECTURE.md` (seven), and this file (three), assume
   they contain errors until checked. `docs-smoke` in CI only checks that docs exist.
 
-- **12.3 — There is nowhere to record a decision.** `S` — **blocks the decision sessions.**
-  No `docs/adr/`, no decision log, nothing. Meanwhile this file carries **fourteen
-  `decision`-tagged items** (1.2, 4.11, 5.3, 5.4, 5.6, 7.7, 7.8, 7.16, 8.5, 9.1, 9.10, 10.2,
-  13.5, 13.6) whose
-  entire output is *a decision and its reasoning*. Without a home, those answers land in a
-  chat log and evaporate — and the next audit re-derives the same question, which is exactly
-  how 5.4 and 5.6 got "fixed" and reverted. Create `docs/adr/` with a one-page template
-  before the first decision session, not after.
+- **12.3 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive).
+  [`docs/adr/`](adr/README.md) now holds the template, the index, and the list of the
+  fourteen `decision`-tagged items still awaiting one.
 
-- **12.4 — A "how do I actually run this" doc, per OS.** `S`
-  `testing_strategy.md` documents PowerShell scripts; this development machine is macOS
-  (see CLAUDE.md). There is no single page saying: here's how you build, here's how you run
-  the tests, here's how you launch the real app, on *your* OS — including which targets
-  simply cannot be built on which host, and why (`SNAPBACK_BUILD_APP` defaults OFF, ONNX
-  needs a vendored runtime, Windows-only files can't compile on macOS). Would have saved
-  several sessions' worth of rediscovery.
+- **12.4 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive).
+  [`docs/running.md`](running.md) is the per-OS page, and every macOS claim in it was run
+  before being written.
+
+- **12.6 — `label_shortcuts.rs` was never ported, and nothing recorded that.** `M`
+  Found 2026-07-23 while reconciling 12.1. The Rust build has
+  `../FocoFlow-1/src-tauri/src/label_shortcuts.rs` (143 lines, wired at `lib.rs:73`)
+  registering global hotkeys to label the current window focused/distracted. **Nothing in
+  `src/`, `tests/`, or `frontend/src` mentions it.** It stayed invisible because
+  `ARCHITECTURE.md`'s module map never listed the file — the map only covered what someone
+  intended to port, so a skipped module left no trace anywhere.
+
+  Belongs conceptually with **Tier 0** (finish the port's last gaps); filed here because
+  the doc audit is what surfaced it. In Rust this was a Tauri global-shortcut plugin call;
+  in C++ it is hand-written per-OS hotkey registration, which is presumably why it was
+  skipped. *Decide whether v1 needs it (**9.1**) before building it.*
 
 ---
 
@@ -1021,37 +1064,12 @@ later moved.
 `model.onnx`" is the easy half; everything about *operating* a model the user can't inspect
 is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
 
-- **13.1 — ONNX cannot compile off Windows at all.** `M`
-  `onnx_model.cpp:31` calls `model_path.wstring().c_str()`, with a comment claiming it's
-  "the portable way to pass a path on Windows." It's inside `#if defined(SNAPBACK_ONNX)` but
-  has **no Windows guard** — and on POSIX `Ort::Session` takes `const char*`, so this is a
-  compile error, not a runtime one. The only ONNX CI job is `onnx-windows`, so nothing would
-  ever surface it.
-
-  **This is the same blind spot as the `SNAPBACK_BUILD_APP` one** (Done archive, `c0cfc3f`):
-  an opt-in flag that no job turns on for a given OS is an opt-in guarantee. So "ONNX is
-  optional and cross-platform" is false in a way no test can currently catch. Decide whether
-  ONNX is Windows-only by design (then say so, and 3.3/3.4 ship heuristic-only), or fix the
-  overload and add a POSIX ONNX job.
-
-- **13.2 — A deployed model has no identity.** `S`
-  `OnnxModel` tracks only `model_path_`. There is no version, no training-run id, no input
-  hash, no record of which feature-vector layout it expects. So: you cannot tell which model
-  produced a given prediction row; you cannot detect that a model was trained against an
-  older feature order (which CLAUDE.md calls a contract); and "model info panel" in 2.3 has
-  nothing to display. Stamp predictions with a model id. Prerequisite for everything else in
-  this tier.
-
 - **13.3 — Nothing stops a worse model from being deployed.** `M`
   `train_from_export` parses `metrics.json` but no gate consumes it. A retraining run that
   produces a *less* accurate model deploys exactly like a good one, and the user's experience
   silently degrades with no signal. Needs a held-out evaluation and a threshold: refuse to
   deploy below baseline, and say why. **This is the item that makes on-device personalization
   safe rather than a coin flip.**
-
-- **13.4 — No rollback.** `S`
-  Once `model.onnx` is replaced there is no previous version to return to. Keep the prior
-  model and expose a revert. Cheap once 13.2 exists; near-impossible without it.
 
 - **13.5 — Is there enough labelled data to train on at all?** `S` `decision`
   Unexamined. Labels come from explicit user submissions plus auto-labels at session end —
@@ -1089,14 +1107,9 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
   converts a comment into a guarantee. *C++/Rust delta: Rust wouldn't have prevented this
   either — but it's exactly the class of invariant worth making mechanical.*
 
-- **12.5 — The operational scripts are unrunnable on the dev machine.** `S`
-  Seven of eight files in `scripts/` are PowerShell (`test_local.ps1`, `run_benchmarks.ps1`,
-  `package_windows.ps1`, …); the only portable one is `run_feature_parity_dual.py`. The
-  development host is macOS. So the documented way to run the local test suite doesn't run
-  here, which is a standing tax on every session and a likely reason CI is where problems get
-  discovered. Either port the non-Windows-specific ones to `sh`/Python, or document the
-  direct `cmake`/`ctest` invocations as the primary path and mark the `.ps1` files as
-  Windows packaging helpers. Folds naturally into **12.4**.
+- **12.5 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). `test_local.sh`
+  and `run_benchmarks.sh` are real ports (verified by running them on this Mac), and
+  `scripts/README.md` says which of the eleven scripts run where.
 
 ---
 
@@ -1157,6 +1170,94 @@ itself a backlog item below.
 
 Completed work. Kept for history; details live in git log and
 [PORT_HISTORY.md](PORT_HISTORY.md).
+
+### Tier 12 docs (2026-07-23)
+
+- **12.1 — `ARCHITECTURE.md`'s module map was the pre-port plan** — the map now matches the
+  tree: every C++ path in it was confirmed to exist, every Rust file appears exactly once,
+  and divergences (per-OS file splits, `goal_alignment` folded into `app_context`,
+  `parity.rs` → `feature_parity`) are called out in their own column rather than silently
+  wrong. Two new tables: C++ modules with no Rust counterpart (why each exists), and Rust
+  modules not ported. The Libraries table now lists what we *actually* depend on — four
+  third-party libs — after confirming `spdlog` and `stduuid` were never taken and that
+  UUID, logging, and time are hand-written. **Guarded by `scripts/check_doc_paths.py`,
+  wired into the `docs-smoke` CI job**, which fails if any doc names a file that does not
+  exist; verified by injecting a false path and watching it fail. That guard immediately
+  found a real defect in `PORT_HISTORY.md:286` (a Rust-repo path written as if it were
+  ours). Surfaced **12.6**.
+
+- **12.4 — A "how do I actually run this" doc, per OS** — [`docs/running.md`](running.md):
+  a what-builds-where matrix, prerequisites, the headless build, the desktop app, the
+  permissions real capture needs on each OS, the environment variables, and a
+  symptom→cause table. **The macOS claims were verified by running them**, including a
+  `SNAPBACK_BUILD_APP=ON` build that produced a linked arm64 binary — so the page reports
+  what happened rather than what should happen.
+
+  The section that will earn its keep is *what cannot be built where*: ONNX needs a vendored
+  runtime that is not in this repo, tray and overlay are deliberate no-op stubs off Windows,
+  and four Windows-only sources cannot compile on this host at all — which is why **red
+  Windows CI means those four are covered nowhere**, not merely less well.
+
+- **12.5 — The operational scripts were unrunnable on the dev machine** — the two scripts
+  that were never Windows-specific are now ported: `test_local.sh` and `run_benchmarks.sh`.
+  **Both were verified by running them on the macOS host**, not just written: the headless
+  suite configures, builds, and passes CTest, and the benchmark replay produces numbers.
+  `scripts/README.md` is new and states which of the eleven scripts run where, so the next
+  session does not rediscover that five of them are MSVC/`signtool`/IExpress-bound and
+  portable only in CI.
+
+  The substantive difference, and why these are ports rather than translations: **MSVC is a
+  multi-config generator and Make/Ninja are not.** The `.ps1` scripts pick the build type at
+  `--build` time and look in `build/Release/`; the `.sh` scripts must pass
+  `-DCMAKE_BUILD_TYPE` at *configure* time and find binaries directly in `build/`. Both
+  output layouts are probed so the scripts work under either generator.
+
+- **12.2 — Audit the remaining docs against the code** — ten false claims corrected, all
+  stale in the same direction: they described the design *before* the 2026-07-22 passes.
+  `system_architecture.md` (five: the single-mutex design in §5.2/§5.5/§6/§7.1, the inline
+  `std::array` ring, the ~5 MB `AppState` whose fix had already shipped, and the Rust
+  dual-check parity job listed as future work when it runs on every push);
+  `testing_strategy.md` (four: six CI jobs listed of twelve, macOS/Linux capture called
+  "stubs" when both backends are real, NSIS listed as future work when `CMakeLists.txt:226`
+  configures it, signing listed as future work when only the certificate is missing);
+  `benchmarking.md` (one: perf deltas cross-referenced to a section that never held them —
+  plus the CI benchmark jobs and the Windows-vs-macOS baseline caveat, neither documented).
+  `PACKAGING.md` was accurate.
+
+  **The audit found a live bug, which was the point:** `-UseVite` in the Windows demo has
+  been silently dead since 8.4 landed — filed as **8.7**. A doc audit is a cheap way to
+  find code defects, because a doc says what the code was *supposed* to do.
+
+- **12.3 — Nowhere to record a decision** — created [`docs/adr/`](adr/README.md) with a
+  one-page template, an index, and a table of the fourteen `decision`-tagged items still
+  awaiting an ADR. [ADR-0001](adr/0001-record-architecture-decisions.md) records the
+  practice itself and the rule that follows from it: **`decision` items are not
+  implementable until their ADR is `Accepted`.** Files are append-only — a changed mind
+  writes a new ADR and marks the old one `Superseded`, so a reversal is visible as an
+  addition rather than a silent edit. That is the failure this fixes: 5.4 and 5.6 were both
+  implemented and reverted because the rationale lived only in a chat log. Unblocks 9.1 and
+  decision sessions A and B.
+
+### Tier 13 model lifecycle (2026-07-23)
+
+- **13.1 — Cross-platform ONNX Runtime build** — `OnnxModel` now selects the native path
+  overload required by Windows or POSIX, CMake links and stages the matching `.lib`/`.dll`,
+  `.dylib`, or `.so`, and a Linux ONNX CI job runs the fixture-backed inference tests. The
+  optional ONNX build is now exercised on both Windows and POSIX rather than making an
+  untested cross-platform claim.
+
+- **13.2 — Deployed model identity** — prediction rows now carry a stable identity that
+  distinguishes heuristic output from ONNX output, includes the 31-feature contract version,
+  and hashes the model contents. The identity is exposed in classifier diagnostics and the
+  training panel; legacy databases receive the new column with a heuristic default on open.
+
+- **13.3 — Model quality gate** — training now refuses to deploy without a held-out/validation/
+  cross-validation accuracy, enforces a minimum 0.60 score, and rejects candidates below the
+  accepted model's recorded baseline. The decision and reason are returned to the training UI.
+
+- **13.4 — Model rollback** — accepted deployments preserve the previous ONNX model and its
+  quality metadata; the training panel exposes a reversible rollback command that reloads the
+  restored model immediately.
 
 ### Tier 6 CI fixes (2026-07-22)
 

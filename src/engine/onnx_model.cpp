@@ -1,6 +1,9 @@
 #include "engine/onnx_model.hpp"
 
 #include <array>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 namespace snapback {
 
@@ -20,6 +23,42 @@ std::optional<std::filesystem::path> OnnxModel::resolve_model_path(
     return std::nullopt;
 }
 
+std::optional<std::string> OnnxModel::model_id_for_path(
+    const std::filesystem::path& model_path) {
+    if (!std::filesystem::is_regular_file(model_path)) return std::nullopt;
+
+    std::ifstream input(model_path, std::ios::binary);
+    if (!input) return std::nullopt;
+
+    // FNV-1a is deliberately implemented here instead of adding a crypto dependency for a
+    // local provenance identifier. The feature-contract prefix makes the identity useful even
+    // when a future model happens to share the same file hash.
+    std::uint64_t hash = 14695981039346656037ull;
+    char byte = 0;
+    while (input.get(byte)) {
+        hash ^= static_cast<unsigned char>(byte);
+        hash *= 1099511628211ull;
+    }
+    if (!input.eof()) return std::nullopt;
+
+    std::ostringstream id;
+    id << "onnx:" << kFeatureContractId << ":" << std::hex << std::setfill('0')
+       << std::setw(16) << hash;
+    return id.str();
+}
+
+void OnnxModel::unload() {
+    loaded_ = false;
+    model_path_.reset();
+    model_id_.reset();
+#if defined(SNAPBACK_ONNX)
+    session_.reset();
+    env_.reset();
+    input_name_.clear();
+    output_names_.clear();
+#endif
+}
+
 #if defined(SNAPBACK_ONNX)
 
 bool OnnxModel::init(const std::filesystem::path& model_path) {
@@ -27,8 +66,18 @@ bool OnnxModel::init(const std::filesystem::path& model_path) {
         env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "snapback");
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1);
-        // The wide-string overload is the portable way to pass a path on Windows.
-        session_ = std::make_unique<Ort::Session>(*env_, model_path.wstring().c_str(), options);
+#if defined(_WIN32)
+        // ONNX Runtime exposes the wide-string path overload on Windows.
+        const auto native_model_path = model_path.wstring();
+#else
+        // POSIX builds expose the UTF-8 path overload instead; wstring() does not compile
+        // against Ort::Session there.
+        const auto native_model_path = model_path.string();
+#endif
+        session_ = std::make_unique<Ort::Session>(*env_, native_model_path.c_str(), options);
+
+        const auto identity = model_id_for_path(model_path);
+        if (!identity) throw std::runtime_error("could not read model identity");
 
         Ort::AllocatorWithDefaultOptions allocator;
         input_name_ = session_->GetInputNameAllocated(0, allocator).get();
@@ -38,12 +87,14 @@ bool OnnxModel::init(const std::filesystem::path& model_path) {
             output_names_.push_back(session_->GetOutputNameAllocated(i, allocator).get());
         }
         model_path_ = model_path.string();
+        model_id_ = identity;
         loaded_ = true;
     } catch (const std::exception&) {
         // A bad/missing/incompatible model must not crash startup; fall back to heuristic.
         session_.reset();
         env_.reset();
         model_path_.reset();
+        model_id_.reset();
         loaded_ = false;
     }
     return loaded_;
@@ -90,12 +141,7 @@ std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const Featur
 }
 
 void OnnxModel::reset_for_tests() {
-    loaded_ = false;
-    model_path_.reset();
-    session_.reset();
-    env_.reset();
-    input_name_.clear();
-    output_names_.clear();
+    unload();
 }
 
 #else  // stub build (SNAPBACK_ONNX off)
@@ -110,8 +156,7 @@ std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const Featur
 }
 
 void OnnxModel::reset_for_tests() {
-    loaded_ = false;
-    model_path_.reset();
+    unload();
 }
 
 #endif

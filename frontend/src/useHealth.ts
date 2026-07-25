@@ -28,11 +28,13 @@ export const useHealth = () => {
   const [classifierBackend, setClassifierBackend] = useState("heuristic");
   const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
+  const [classifierModelId, setClassifierModelId] = useState<string | null>(null);
 
   const applyClassifierStatus = useCallback((status: ClassifierStatus) => {
     setClassifierBackend(status.backend);
     setClassifierOnnxRuntimeEnabled(status.onnxRuntimeEnabled);
     setClassifierModelPath(status.modelPath);
+    setClassifierModelId(status.modelId);
   }, []);
 
   const applyHealth = useCallback((health: Awaited<ReturnType<typeof api.getHealth>>) => {
@@ -130,6 +132,7 @@ export const useHealth = () => {
     captureRunning,
     captureStalled,
     classifierBackend,
+    classifierModelId,
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
     handleRefreshPermissions,

@@ -25,6 +25,7 @@ import type {
   SnapbackPayload,
   TrainFromExportResult,
   TrainingDeployStatus,
+  RollbackClassifierModelResult,
 } from "./api";
 
 const FOCUS_MODE_VALUES = new Set(["deep", "normal", "recovery"]);
@@ -164,6 +165,7 @@ export function mapClassifierStatus(raw: Record<string, unknown>): ClassifierSta
     backend: String(raw.backend ?? "heuristic"),
     onnxRuntimeEnabled: Boolean(raw.onnx_runtime_enabled ?? raw.onnxRuntimeEnabled ?? false),
     modelPath: (raw.model_path ?? raw.modelPath ?? null) as string | null,
+    modelId: (raw.model_id ?? raw.modelId ?? null) as string | null,
   };
 }
 
@@ -231,6 +233,7 @@ export function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
     driftScore: Number(raw.drift_score ?? raw.driftScore ?? 0),
     goalAlignment: Number(raw.goal_alignment ?? raw.goalAlignment ?? 0.5),
     timestamp: String(raw.timestamp ?? ""),
+    modelId: String(raw.model_id ?? raw.modelId ?? "heuristic:snapback-features-v1-31"),
   };
 }
 
@@ -312,6 +315,7 @@ export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingD
       metrics[key] = Number(value);
     }
   }
+  const qualityGateRaw = (raw.quality_gate ?? raw.qualityGate ?? {}) as Record<string, unknown>;
   return {
     exportDir: String(raw.export_dir ?? raw.exportDir ?? ""),
     featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
@@ -321,6 +325,14 @@ export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingD
     modelOnnxExists: Boolean(raw.model_onnx_exists ?? raw.modelOnnxExists ?? false),
     metricsExists: Boolean(raw.metrics_exists ?? raw.metricsExists ?? false),
     metrics,
+    qualityGate: {
+      passed: Boolean(qualityGateRaw.passed ?? false),
+      metric: String(qualityGateRaw.metric ?? ""),
+      candidateScore: Number(qualityGateRaw.candidate_score ?? qualityGateRaw.candidateScore ?? 0),
+      threshold: Number(qualityGateRaw.threshold ?? 0),
+      reason: String(qualityGateRaw.reason ?? ""),
+    },
+    rollbackAvailable: Boolean(raw.rollback_available ?? raw.rollbackAvailable ?? false),
     pythonAvailable: Boolean(raw.python_available ?? raw.pythonAvailable ?? false),
     repoPath: (raw.repo_path ?? raw.repoPath ?? null) as string | null,
     repoConfigured: Boolean(raw.repo_configured ?? raw.repoConfigured ?? false),
@@ -347,7 +359,20 @@ export function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFro
     message: String(raw.message ?? ""),
     onnxExported: Boolean(raw.onnx_exported ?? raw.onnxExported ?? false),
     metrics,
+    qualityGatePassed: Boolean(raw.quality_gate_passed ?? raw.qualityGatePassed ?? false),
+    qualityGateReason: String(raw.quality_gate_reason ?? raw.qualityGateReason ?? ""),
     logTail: String(raw.log_tail ?? raw.logTail ?? ""),
+  };
+}
+
+export function mapRollbackClassifierModelResult(
+  raw: Record<string, unknown>,
+): RollbackClassifierModelResult {
+  return {
+    success: Boolean(raw.success ?? false),
+    message: String(raw.message ?? ""),
+    modelId: (raw.model_id ?? raw.modelId ?? null) as string | null,
+    classifier: mapClassifierStatus((raw.classifier as Record<string, unknown>) ?? {}),
   };
 }
 

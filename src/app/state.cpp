@@ -589,6 +589,23 @@ ClassifierStatus AppState::classifier_status() const {
     status.backend = classifier_.backend();
     status.onnx_runtime_enabled = classifier_.backend() == "onnx";
     status.model_path = OnnxModel::instance().model_path();
+    status.model_id = OnnxModel::instance().model_id();
+    return status;
+}
+
+ClassifierStatus AppState::reload_classifier_model() {
+    std::lock_guard lock(mutex_);
+    if (const auto model = OnnxModel::resolve_model_path(app_data_dir_)) {
+        OnnxModel::instance().init(*model);
+    } else {
+        OnnxModel::instance().unload();
+    }
+
+    ClassifierStatus status;
+    status.backend = classifier_.backend();
+    status.onnx_runtime_enabled = classifier_.backend() == "onnx";
+    status.model_path = OnnxModel::instance().model_path();
+    status.model_id = OnnxModel::instance().model_id();
     return status;
 }
 
@@ -783,6 +800,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     record.drift_score = scores.drift_score;
     record.goal_alignment = scores.goal_alignment;
     record.timestamp = now_rfc3339();
+    record.model_id = classifier_.model_id();
     latest_prediction_ = record;
     last_prediction_at_ms_ = steady_now_ms();
     prediction_dirty_ = true;  // engine_tick emits this after unlocking

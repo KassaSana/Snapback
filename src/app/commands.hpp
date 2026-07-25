@@ -187,7 +187,7 @@ inline void register_commands(webview::webview& w, AppState& state,
 
     // --- ONNX + permissions ---
     bind_cmd(w, "reload_classifier_model",
-             [&state](const json&) { return json(state.classifier_status()); });
+             [&state](const json&) { return json(state.reload_classifier_model()); });
     bind_cmd(w, "refresh_permissions",
              [&state](const json&) { return json(state.refresh_permissions()); });
     // User-initiated only (wizard "Grant access" button) — this one can raise an OS dialog,
@@ -213,6 +213,11 @@ inline void register_commands(webview::webview& w, AppState& state,
     });
     bind_cmd(w, "train_from_export", [data_dir](const json&) {
         return training_deploy::train_from_export(data_dir);
+    });
+    bind_cmd(w, "rollback_classifier_model", [&state, data_dir](const json&) {
+        auto result = training_deploy::rollback_model(data_dir);
+        result["classifier"] = state.reload_classifier_model();
+        return result;
     });
 }
 

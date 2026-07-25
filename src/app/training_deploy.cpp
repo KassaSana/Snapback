@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <memory>
@@ -14,6 +15,8 @@
 #if !defined(_WIN32)
 #include <sys/wait.h>  // WIFEXITED / WEXITSTATUS — std::system returns a wait status here
 #endif
+
+#include "engine/onnx_model.hpp"
 
 namespace snapback::training_deploy {
 
@@ -153,6 +156,14 @@ std::optional<nlohmann::json> parse_metrics_json(const std::filesystem::path& pa
     return metrics;
 }
 
+std::optional<nlohmann::json> parse_json_object(const std::filesystem::path& path) {
+    std::ifstream in(path);
+    if (!in) return std::nullopt;
+    nlohmann::json parsed = nlohmann::json::parse(in, nullptr, false);
+    if (!parsed.is_object()) return std::nullopt;
+    return parsed;
+}
+
 bool command_succeeds(const std::string& command) {
     return std::system(command.c_str()) == 0;
 }
@@ -228,15 +239,131 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
     const auto export_model = export_path / "model.onnx";
     if (!std::filesystem::is_regular_file(export_model)) return false;
     std::filesystem::create_directories(app_data_dir);
+
+    const auto deployed_model = app_data_dir / "model.onnx";
+    const auto previous_model = app_data_dir / "model.onnx.previous";
+    if (std::filesystem::is_regular_file(deployed_model)) {
+        std::filesystem::copy_file(deployed_model, previous_model,
+                                   std::filesystem::copy_options::overwrite_existing);
+        const auto deployed_quality = app_data_dir / "model_quality.json";
+        const auto previous_quality = app_data_dir / "model_quality.json.previous";
+        if (std::filesystem::is_regular_file(deployed_quality)) {
+            std::filesystem::copy_file(deployed_quality, previous_quality,
+                                       std::filesystem::copy_options::overwrite_existing);
+        } else {
+            std::error_code ignored;
+            std::filesystem::remove(previous_quality, ignored);
+        }
+    }
     std::filesystem::copy_file(export_model, app_data_dir / "model.onnx",
                                std::filesystem::copy_options::overwrite_existing);
     return true;
 }
 
+void swap_file(const std::filesystem::path& first, const std::filesystem::path& second) {
+    const auto temporary = first.string() + ".rollback-temp";
+    const std::filesystem::path temp_path(temporary);
+    std::filesystem::copy_file(first, temp_path,
+                               std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(second, first,
+                               std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(temp_path, second,
+                               std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::remove(temp_path);
+}
+
+void swap_optional_file(const std::filesystem::path& first,
+                        const std::filesystem::path& second) {
+    const bool first_exists = std::filesystem::is_regular_file(first);
+    const bool second_exists = std::filesystem::is_regular_file(second);
+    if (first_exists && second_exists) {
+        swap_file(first, second);
+    } else if (second_exists) {
+        std::filesystem::copy_file(second, first,
+                                   std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::remove(second);
+    } else if (first_exists) {
+        std::filesystem::remove(first);
+    }
+}
+
 }  // namespace
+
+ModelQualityDecision evaluate_model_quality(
+    const nlohmann::json& candidate_metrics,
+    const std::optional<nlohmann::json>& deployed_quality) {
+    constexpr double kMinimumAccuracy = 0.60;
+    constexpr const char* kMetricNames[] = {
+        "held_out_accuracy", "validation_accuracy", "cv_accuracy"};
+
+    ModelQualityDecision decision;
+    for (const char* name : kMetricNames) {
+        if (candidate_metrics.contains(name) && candidate_metrics.at(name).is_number()) {
+            decision.metric = name;
+            decision.candidate_score = candidate_metrics.at(name).get<double>();
+            break;
+        }
+    }
+
+    if (decision.metric.empty() || !std::isfinite(decision.candidate_score) ||
+        decision.candidate_score < 0.0 || decision.candidate_score > 1.0) {
+        decision.reason =
+            "Model rejected: metrics.json must contain a held-out accuracy between 0 and 1.";
+        return decision;
+    }
+
+    decision.threshold = kMinimumAccuracy;
+    if (deployed_quality) {
+        const auto& baseline = *deployed_quality;
+        if (!baseline.contains("metric") || !baseline.at("metric").is_string() ||
+            baseline.at("metric").get<std::string>() != decision.metric ||
+            !baseline.contains("score") || !baseline.at("score").is_number()) {
+            decision.reason = "Model rejected: deployed model quality baseline is invalid.";
+            return decision;
+        }
+        const double baseline_score = baseline.at("score").get<double>();
+        if (!std::isfinite(baseline_score) || baseline_score < 0.0 || baseline_score > 1.0) {
+            decision.reason = "Model rejected: deployed model quality baseline is invalid.";
+            return decision;
+        }
+        decision.threshold = std::max(kMinimumAccuracy, baseline_score);
+    }
+
+    decision.accepted = decision.candidate_score >= decision.threshold;
+    if (decision.accepted) {
+        decision.reason = "Model quality gate passed (" + decision.metric + "=" +
+                          std::to_string(decision.candidate_score) + ").";
+    } else {
+        decision.reason = "Model rejected: " + decision.metric + "=" +
+                          std::to_string(decision.candidate_score) + " is below the " +
+                          std::to_string(decision.threshold) + " deployment threshold.";
+    }
+    return decision;
+}
 
 std::filesystem::path export_dir(const std::filesystem::path& app_data_dir) {
     return app_data_dir / "exports" / "training";
+}
+
+bool rollback_available(const std::filesystem::path& app_data_dir) {
+    return std::filesystem::is_regular_file(app_data_dir / "model.onnx.previous");
+}
+
+nlohmann::json rollback_model(const std::filesystem::path& app_data_dir) {
+    const auto current = app_data_dir / "model.onnx";
+    const auto previous = app_data_dir / "model.onnx.previous";
+    if (!rollback_available(app_data_dir)) {
+        throw std::runtime_error("No previous model is available to restore.");
+    }
+
+    swap_optional_file(current, previous);
+    swap_optional_file(app_data_dir / "model_quality.json",
+                       app_data_dir / "model_quality.json.previous");
+    const auto identity = OnnxModel::model_id_for_path(current);
+    return nlohmann::json{{"success", true},
+                          {"message", "Previous model restored. Reloading classifier."},
+                          {"modelId", identity ? nlohmann::json(*identity)
+                                                 : nlohmann::json(nullptr)}};
 }
 
 bool is_training_repo(const std::filesystem::path& path) {
@@ -289,9 +416,20 @@ nlohmann::json training_deploy_status(const std::filesystem::path& app_data_dir)
     const auto labels_path = out_dir / "labels.csv";
     const auto metrics_path = out_dir / "metrics.json";
     const auto metrics = parse_metrics_json(metrics_path);
+    const auto deployed_quality = parse_json_object(app_data_dir / "model_quality.json");
     const auto repo_path = read_training_repo_path(app_data_dir);
     const std::uint64_t feature_count = count_csv_rows(features_path);
     const std::uint64_t label_count = count_csv_rows(labels_path);
+
+    nlohmann::json quality_gate = nlohmann::json{{"passed", false}};
+    if (metrics) {
+        const auto decision = evaluate_model_quality(*metrics, deployed_quality);
+        quality_gate = nlohmann::json{{"passed", decision.accepted},
+                                      {"metric", decision.metric},
+                                      {"candidateScore", decision.candidate_score},
+                                      {"threshold", decision.threshold},
+                                      {"reason", decision.reason}};
+    }
 
     return nlohmann::json{
         {"exportDir", out_dir.string()},
@@ -302,6 +440,8 @@ nlohmann::json training_deploy_status(const std::filesystem::path& app_data_dir)
         {"modelOnnxExists", std::filesystem::is_regular_file(out_dir / "model.onnx")},
         {"metricsExists", std::filesystem::is_regular_file(metrics_path)},
         {"metrics", metrics.value_or(nlohmann::json(nullptr))},
+        {"qualityGate", quality_gate},
+        {"rollbackAvailable", rollback_available(app_data_dir)},
         {"pythonAvailable", find_python().has_value()},
         {"repoPath", repo_path ? nlohmann::json(repo_path->string()) : nlohmann::json(nullptr)},
         {"repoConfigured", repo_path.has_value()},
@@ -347,12 +487,39 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
     const bool onnx_exported = std::filesystem::is_regular_file(out_dir / "model.onnx");
     const auto metrics = parse_metrics_json(out_dir / "metrics.json");
     const bool training_succeeded = exit_code == 0;
+    const auto deployed_quality = parse_json_object(app_data_dir / "model_quality.json");
+    ModelQualityDecision quality;
+    bool quality_checked = false;
     std::optional<std::string> sync_warning;
     if (training_succeeded && onnx_exported) {
-        try {
-            sync_trained_model_to_app_dir(app_data_dir, out_dir);
-        } catch (const std::exception& err) {
-            sync_warning = err.what();
+        if (metrics) {
+            quality = evaluate_model_quality(*metrics, deployed_quality);
+            quality_checked = true;
+        } else {
+            quality.reason =
+                "Model rejected: metrics.json is missing a held-out accuracy metric.";
+            quality_checked = true;
+        }
+        if (quality.accepted) {
+            try {
+                if (!sync_trained_model_to_app_dir(app_data_dir, out_dir)) {
+                    sync_warning = "model.onnx was not found after training";
+                } else {
+                    const auto identity = OnnxModel::model_id_for_path(app_data_dir / "model.onnx");
+                    std::ofstream quality_file(app_data_dir / "model_quality.json",
+                                               std::ios::trunc);
+                    if (!quality_file || !identity) {
+                        sync_warning = "could not persist model quality metadata";
+                    } else {
+                        quality_file << nlohmann::json{{"metric", quality.metric},
+                                                       {"score", quality.candidate_score},
+                                                       {"modelId", *identity}}
+                                          .dump(2);
+                    }
+                }
+            } catch (const std::exception& err) {
+                sync_warning = err.what();
+            }
         }
     }
 
@@ -360,7 +527,10 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
     if (!training_succeeded) {
         message = build_failure_message(exit_code, log_tail);
     } else if (onnx_exported) {
-        message = "Training complete - model.onnx is ready. Reload model to activate.";
+        message = quality.reason;
+        if (quality.accepted && !sync_warning) {
+            message += " Training complete - model.onnx is ready. Reload model to activate.";
+        }
     } else {
         message = "Training finished but ONNX export was skipped (majority stub or missing export "
                   "deps).";
@@ -368,12 +538,14 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
     if (sync_warning) message += " Warning: " + *sync_warning;
 
     return nlohmann::json{
-        {"success", training_succeeded && onnx_exported},
+        {"success", training_succeeded && onnx_exported && quality.accepted && !sync_warning},
         {"trainingSucceeded", training_succeeded},
-        {"deployReady", training_succeeded && onnx_exported},
+        {"deployReady", training_succeeded && onnx_exported && quality.accepted && !sync_warning},
         {"message", message},
         {"onnxExported", onnx_exported},
         {"metrics", metrics.value_or(nlohmann::json(nullptr))},
+        {"qualityGatePassed", quality_checked && quality.accepted},
+        {"qualityGateReason", quality.reason},
         {"logTail", log_tail},
     };
 }

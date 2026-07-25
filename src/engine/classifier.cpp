@@ -116,6 +116,13 @@ std::string Classifier::backend() const {
     return "heuristic";
 }
 
+std::string Classifier::model_id() const {
+#if defined(SNAPBACK_ONNX)
+    if (const auto& identity = OnnxModel::instance().model_id()) return *identity;
+#endif
+    return "heuristic:" + std::string(kFeatureContractId);
+}
+
 ContextSignals compute_context_signals(const FeatureVector& f,
                                        const std::optional<std::string>& session_goal,
                                        const std::vector<AppRuleRecord>& rules,

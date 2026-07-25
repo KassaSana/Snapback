@@ -239,6 +239,36 @@ jobs:
       - name: Run CTest (incl. ONNX fixture)
         run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
 
+  onnx-linux:
+    name: ONNX backend / linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ORT_VERSION: "1.20.1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Vendor ONNX Runtime
+        timeout-minutes: 5
+        run: |
+          archive="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          curl --fail --location --retry 3 \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${archive}" \
+            --output "${archive}"
+          tar -xzf "${archive}" --directory third_party
+          mv "third_party/onnxruntime-linux-x64-${ORT_VERSION}" third_party/onnxruntime
+          test -f third_party/onnxruntime/lib/libonnxruntime.so
+
+      - name: Configure (ONNX on)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_ONNX=ON
+
+      - name: Build tests
+        run: cmake --build build --config Release --target snapback_tests
+
+      - name: Run CTest (incl. ONNX fixture)
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
+
   # ---------------------------------------------------------------------------
   # Benchmark smoke: the harness still builds and completes on a short trace.
   # Bounded by SNAPBACK_BENCH_MINUTES and a step timeout so it can't run away.
@@ -393,3 +423,10 @@ jobs:
         run: |
           grep -q "docs/windows_demo.md" README.md
           test -f docs/windows_demo.md
+
+      # Roadmap Tier 12 exists because docs repeatedly named files that were never
+      # created or had moved, and nothing caught it. This makes that mechanical.
+      # The Rust reference (../FocoFlow-1) is not checked out here; the script skips
+      # those paths rather than failing on them.
+      - name: Every path a doc names must exist
+        run: python3 scripts/check_doc_paths.py

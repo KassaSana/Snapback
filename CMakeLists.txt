@@ -78,22 +78,42 @@ target_link_libraries(snapback_core PUBLIC nlohmann_json::nlohmann_json sqlite3)
 
 # --- ONNX Runtime (optional backend) ---
 # The define is PUBLIC on the core so classifier.cpp AND every consumer (tests + app) see
-# the same OnnxModel layout. onnxruntime.lib is an import lib; the matching DLL is copied
-# next to each exe by copy_onnxruntime_dll() below.
+# the same OnnxModel layout. The platform runtime is staged next to each executable by
+# stage_onnxruntime() below so the ONNX tests exercise loading as well as compilation.
 if(SNAPBACK_ONNX)
   set(ONNXRUNTIME_ROOT "${CMAKE_SOURCE_DIR}/third_party/onnxruntime" CACHE PATH "ONNX Runtime root")
   target_compile_definitions(snapback_core PUBLIC SNAPBACK_ONNX=1)
   target_include_directories(snapback_core PUBLIC ${ONNXRUNTIME_ROOT}/include)
-  target_link_libraries(snapback_core PUBLIC ${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib)
 
-  # Stage onnxruntime.dll next to a target's exe so it's found at runtime.
-  function(copy_onnxruntime_dll target)
+  if(WIN32)
+    set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib")
+    set(ONNXRUNTIME_RUNTIME "${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll")
+  elseif(APPLE)
+    set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.dylib")
+    set(ONNXRUNTIME_RUNTIME "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.dylib")
+  else()
+    set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so")
+    set(ONNXRUNTIME_RUNTIME "${ONNXRUNTIME_ROOT}/lib/libonnxruntime.so")
+  endif()
+  if(NOT EXISTS "${ONNXRUNTIME_LIBRARY}" OR NOT EXISTS "${ONNXRUNTIME_RUNTIME}")
+    message(FATAL_ERROR
+      "SNAPBACK_ONNX requires the platform ONNX Runtime files under ${ONNXRUNTIME_ROOT}/lib")
+  endif()
+  target_link_libraries(snapback_core PUBLIC "${ONNXRUNTIME_LIBRARY}")
+
+  # Stage the shared runtime next to a target so it is found when tests or the app run.
+  function(stage_onnxruntime target)
     add_custom_command(TARGET ${target} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll" "$<TARGET_FILE_DIR:${target}>")
+        "${ONNXRUNTIME_RUNTIME}" "$<TARGET_FILE_DIR:${target}>")
+    if(APPLE)
+      set_property(TARGET ${target} APPEND PROPERTY BUILD_RPATH "@loader_path")
+    elseif(UNIX)
+      set_property(TARGET ${target} APPEND PROPERTY BUILD_RPATH "$ORIGIN")
+    endif()
   endfunction()
 else()
-  function(copy_onnxruntime_dll target)
+  function(stage_onnxruntime target)
   endfunction()
 endif()
 
@@ -141,7 +161,7 @@ target_link_libraries(snapback_tests PRIVATE snapback_app doctest::doctest)
 target_compile_definitions(snapback_tests PRIVATE
   SNAPBACK_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/fixtures"
   SNAPBACK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-copy_onnxruntime_dll(snapback_tests)
+stage_onnxruntime(snapback_tests)
 add_test(NAME snapback_tests COMMAND snapback_tests)
 
 add_executable(snapback_feature_parity_export tools/feature_parity_export.cpp)
@@ -183,8 +203,8 @@ if(SNAPBACK_BUILD_APP)
   if(WIN32)
     target_link_libraries(snapback PRIVATE user32 gdi32 shell32)
   endif()
-  # SNAPBACK_ONNX define/include/lib propagate from snapback_core (PUBLIC); just stage the DLL.
-  copy_onnxruntime_dll(snapback)
+  # SNAPBACK_ONNX define/include/lib propagate from snapback_core (PUBLIC); just stage the runtime.
+  stage_onnxruntime(snapback)
   set(SNAPBACK_FRONTEND_DIST "${CMAKE_SOURCE_DIR}/frontend/dist" CACHE PATH "Built frontend dist directory")
   if(EXISTS "${SNAPBACK_FRONTEND_DIST}/index.html")
     add_custom_command(TARGET snapback POST_BUILD

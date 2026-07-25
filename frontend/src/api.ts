@@ -26,6 +26,7 @@ import {
   mapSnapbackPayload,
   mapTrainFromExportResult,
   mapTrainingDeployStatus,
+  mapRollbackClassifierModelResult,
 } from "./apiMappers";
 
 export type RiskLevel = "high" | "medium" | "low" | "unknown";
@@ -39,6 +40,7 @@ export type PredictionRecord = {
   driftScore: number;
   goalAlignment: number;
   timestamp: string;
+  modelId: string;
 };
 
 export type SessionRecord = {
@@ -85,6 +87,7 @@ export type ClassifierStatus = {
   backend: string;
   onnxRuntimeEnabled: boolean;
   modelPath: string | null;
+  modelId: string | null;
 };
 
 export type HealthStatus = {
@@ -196,6 +199,14 @@ export type TrainingDeployStatus = {
   modelOnnxExists: boolean;
   metricsExists: boolean;
   metrics: Record<string, number> | null;
+  qualityGate?: {
+    passed: boolean;
+    metric: string;
+    candidateScore: number;
+    threshold: number;
+    reason: string;
+  };
+  rollbackAvailable?: boolean;
   pythonAvailable: boolean;
   repoPath: string | null;
   repoConfigured: boolean;
@@ -268,7 +279,16 @@ export type TrainFromExportResult = {
   message: string;
   onnxExported: boolean;
   metrics: Record<string, number> | null;
+  qualityGatePassed?: boolean;
+  qualityGateReason?: string;
   logTail: string;
+};
+
+export type RollbackClassifierModelResult = {
+  success: boolean;
+  message: string;
+  modelId: string | null;
+  classifier: ClassifierStatus;
 };
 
 export const api = {
@@ -386,6 +406,10 @@ export const api = {
   reloadClassifierModel: async () => {
     const raw = await invoke<Record<string, unknown>>("reload_classifier_model");
     return mapClassifierStatus(raw);
+  },
+  rollbackClassifierModel: async () => {
+    const raw = await invoke<Record<string, unknown>>("rollback_classifier_model");
+    return mapRollbackClassifierModelResult(raw);
   },
   refreshPermissions: async () => {
     const raw = await invoke<Record<string, unknown>>("refresh_permissions");

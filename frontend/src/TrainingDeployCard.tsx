@@ -8,6 +8,7 @@ import {
 type TrainingDeployCardProps = {
   canTrainFromExport: boolean;
   classifierBackend: string;
+  classifierModelId: string | null;
   classifierModelPath: string | null;
   copyStatus: string | null;
   deployMessage: string | null;
@@ -17,6 +18,7 @@ type TrainingDeployCardProps = {
   handleExportTrainingData: () => void | Promise<void>;
   handleLabel: (label: FocusLabel) => void | Promise<void>;
   handleReloadClassifierModel: () => void | Promise<void>;
+  handleRollbackClassifierModel: () => void | Promise<void>;
   handleSaveRepoPath: () => void | Promise<void>;
   handleTrainFromExport: () => void | Promise<void>;
   labelStatus: string | null;
@@ -34,6 +36,7 @@ type TrainingDeployCardProps = {
 export function TrainingDeployCard({
   canTrainFromExport,
   classifierBackend,
+  classifierModelId,
   classifierModelPath,
   copyStatus,
   deployMessage,
@@ -43,6 +46,7 @@ export function TrainingDeployCard({
   handleExportTrainingData,
   handleLabel,
   handleReloadClassifierModel,
+  handleRollbackClassifierModel,
   handleSaveRepoPath,
   handleTrainFromExport,
   labelStatus,
@@ -102,6 +106,11 @@ export function TrainingDeployCard({
             Label balance: {formatLabelBreakdown(deployStatus.labelBreakdown)}
           </p>
           {metricsSummary ? <p className="helper-text">Latest quality: {metricsSummary}</p> : null}
+          {deployStatus.qualityGate?.reason ? (
+            <p className={`helper-text${deployStatus.qualityGate.passed ? "" : " alert"}`}>
+              {deployStatus.qualityGate.reason}
+            </p>
+          ) : null}
           {readinessBlockers.length > 0 ? (
             <ul className="permission-steps">
               {readinessBlockers.map((blocker) => (
@@ -178,6 +187,13 @@ export function TrainingDeployCard({
           <button className="secondary-button" onClick={() => void handleReloadClassifierModel()}>
             Reload model
           </button>
+          <button
+            className="secondary-button"
+            disabled={!deployStatus?.rollbackAvailable}
+            onClick={() => void handleRollbackClassifierModel()}
+          >
+            Roll back model
+          </button>
         </div>
         {trainFromExportHint ? <p className="helper-text alert">{trainFromExportHint}</p> : null}
         {deployMessage ? (
@@ -188,6 +204,9 @@ export function TrainingDeployCard({
         {modelReloadStatus ? <p className="helper-text">{modelReloadStatus}</p> : null}
         {classifierModelPath ? (
           <p className="helper-text">Model path: {classifierModelPath}</p>
+        ) : null}
+        {classifierModelId ? (
+          <p className="helper-text">Model identity: {classifierModelId}</p>
         ) : null}
         <button
           type="button"

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 
 #include "app/training_deploy.hpp"
 
@@ -29,6 +30,11 @@ void write_text(const std::filesystem::path& path, const std::string& text) {
     std::filesystem::create_directories(path.parent_path());
     std::ofstream out(path, std::ios::binary);
     out << text;
+}
+
+std::string read_text(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
 }  // namespace
@@ -80,6 +86,60 @@ TEST_CASE("training_deploy status counts export rows labels metrics and model") 
     CHECK(status.at("labelBreakdown").at("DEEP_FOCUS").get<int>() == 1);
     CHECK(status.at("metrics").at("cv_accuracy").get<double>() == doctest::Approx(0.75));
     CHECK(status.at("metrics").contains("ignored") == false);
+    CHECK(status.at("qualityGate").at("passed").get<bool>());
+    CHECK_FALSE(status.at("rollbackAvailable").get<bool>());
+}
+
+TEST_CASE("model quality gate requires held-out quality and protects the deployed baseline") {
+    const auto accepted = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.72}}, std::nullopt);
+    CHECK(accepted.accepted);
+    CHECK(accepted.metric == "held_out_accuracy");
+    CHECK(accepted.threshold == doctest::Approx(0.60));
+
+    const auto too_low = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.59}}, std::nullopt);
+    CHECK_FALSE(too_low.accepted);
+    CHECK(too_low.reason.find("rejected") != std::string::npos);
+
+    const auto regressed = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.79}},
+        nlohmann::json{{"metric", "held_out_accuracy"}, {"score", 0.80}});
+    CHECK_FALSE(regressed.accepted);
+    CHECK(regressed.threshold == doctest::Approx(0.80));
+
+    const auto unchanged = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"held_out_accuracy", 0.80}},
+        nlohmann::json{{"metric", "held_out_accuracy"}, {"score", 0.80}});
+    CHECK(unchanged.accepted);
+
+    const auto in_sample_only = training_deploy::evaluate_model_quality(
+        nlohmann::json{{"in_sample_accuracy", 0.99}}, std::nullopt);
+    CHECK_FALSE(in_sample_only.accepted);
+    CHECK(in_sample_only.reason.find("held-out") != std::string::npos);
+}
+
+TEST_CASE("rollback_model swaps the deployed model and quality metadata") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model.onnx.previous", "old-model");
+    write_text(app_data.path / "model_quality.json", "{\"metric\":\"cv_accuracy\",\"score\":0.9}");
+    write_text(app_data.path / "model_quality.json.previous",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+
+    CHECK(training_deploy::rollback_available(app_data.path));
+    const auto result = training_deploy::rollback_model(app_data.path);
+    CHECK(result.at("success").get<bool>());
+    CHECK(read_text(app_data.path / "model.onnx") == "old-model");
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "new-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.8") != std::string::npos);
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.9") !=
+          std::string::npos);
+
+    // The swap is reversible, so a mistaken rollback can itself be undone.
+    training_deploy::rollback_model(app_data.path);
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "old-model");
 }
 
 TEST_CASE("training_deploy rejects invalid configured repo") {

@@ -63,6 +63,7 @@ export default function App() {
     captureRunning,
     captureStalled,
     classifierBackend,
+    classifierModelId,
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
     handleRefreshPermissions,
@@ -116,6 +117,7 @@ export default function App() {
     handleCopyTrainingCommand,
     handleExportTrainingData,
     handleReloadClassifierModel,
+    handleRollbackClassifierModel,
     handleSaveRepoPath,
     handleTrainFromExport,
     modelReloadStatus,
@@ -248,6 +250,7 @@ export default function App() {
         <TrainingDeployCard
           canTrainFromExport={canTrainFromExport}
           classifierBackend={classifierBackend}
+          classifierModelId={classifierModelId}
           classifierModelPath={classifierModelPath}
           copyStatus={copyStatus}
           deployMessage={deployMessage}
@@ -257,6 +260,7 @@ export default function App() {
           handleExportTrainingData={handleExportTrainingData}
           handleLabel={handleLabel}
           handleReloadClassifierModel={handleReloadClassifierModel}
+          handleRollbackClassifierModel={handleRollbackClassifierModel}
           handleSaveRepoPath={handleSaveRepoPath}
           handleTrainFromExport={handleTrainFromExport}
           labelStatus={feedback.labelStatus}
