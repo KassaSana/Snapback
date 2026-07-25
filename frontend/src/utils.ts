@@ -87,6 +87,55 @@ export const nextBackoffDelay = (attempt: number) => {
   return Math.min(delay, maxMs);
 };
 
+export type VerdictExplanation = {
+  reasons: string[];
+  caveat: string | null;
+};
+
+// Turn a verdict into the evidence behind it, so the user can see *why* and catch it
+// being wrong. Every phrase below names what the classifier actually measured — not what
+// we wish it measured. `thrash` is app switching. `drift` is title churn plus erratic
+// keystroke intervals. Neither can see what is on the screen.
+//
+// Hence the caveat: `deep_work_score` (classifier.cpp:44) is built from time-in-app,
+// low switching, and stability — all measures of *absence*. A quiet screen scores the
+// same whether you are reading a spec or watching a film. Saying so is more useful than
+// a confident label, and it is the honest reading of what this model can know.
+export const explainPrediction = (
+  record: PredictionRecord | null,
+  goal?: string | null,
+): VerdictExplanation => {
+  if (!record) return { reasons: [], caveat: null };
+
+  const reasons: string[] = [];
+
+  if (record.thrashScore >= 0.6) reasons.push("switching apps often");
+  else if (record.thrashScore <= 0.2) reasons.push("no app switching");
+
+  if (record.driftScore >= 0.55) reasons.push("tab and title churn");
+  else if (record.driftScore <= 0.2) reasons.push("settled in one window");
+
+  // 0.5 is the "no goal set / nothing matched" default, so only speak when it moved.
+  const goalKnown = Math.abs(record.goalAlignment - 0.5) > 0.08;
+  const trimmedGoal = goal?.trim();
+  if (goalKnown && trimmedGoal) {
+    reasons.push(
+      record.goalAlignment >= 0.5
+        ? `window matches “${trimmedGoal}”`
+        : `window is off “${trimmedGoal}”`,
+    );
+  }
+
+  const quiet = record.thrashScore <= 0.2 && record.driftScore <= 0.2;
+  const claimsFocus = record.focusState === "PRODUCTIVE" || record.focusState === "DEEP_FOCUS";
+  const caveat =
+    quiet && claimsFocus && !(goalKnown && trimmedGoal)
+      ? "A quiet screen looks the same whether you're working or watching. Tell Snapback if this is wrong."
+      : null;
+
+  return { reasons, caveat };
+};
+
 export const buildSignals = (record: PredictionRecord | null) => {
   if (!record) {
     return ["Waiting for live capture."];

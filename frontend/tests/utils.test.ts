@@ -3,6 +3,7 @@
 import {
   buildSignals,
   clamp,
+  explainPrediction,
   focusStateLabel,
   formatPercent,
   formatPercentCoarse,
@@ -114,3 +115,33 @@ assert.equal(formatPomodoroRemaining(90_500), "1:31"); // rounds to the nearest 
 assert.equal(formatPomodoroRemaining(-500), "0:00"); // clamps negative drift to zero
 
 console.log("utils.test.ts passed");
+
+// explainPrediction names what the classifier measured, and admits what it cannot see.
+const quietProductive = {
+  focusState: "PRODUCTIVE",
+  thrashScore: 0.05,
+  driftScore: 0.02,
+  goalAlignment: 0.5,
+} as any;
+const quiet = explainPrediction(quietProductive);
+assert.deepEqual(quiet.reasons, ["no app switching", "settled in one window"]);
+assert.ok(quiet.caveat, "a quiet screen with no goal signal must carry the caveat");
+
+// A corroborating goal removes the caveat: the verdict no longer rests on absence alone.
+const withGoal = explainPrediction({ ...quietProductive, goalAlignment: 0.9 }, "ship the overlay");
+assert.equal(withGoal.caveat, null);
+assert.ok(withGoal.reasons.some((r) => r.includes("matches")));
+
+// A neutral goalAlignment (0.5 = nothing matched) must not be reported as a match.
+assert.ok(!explainPrediction(quietProductive, "ship the overlay").reasons.some((r) => r.includes("matches")));
+
+// Negative verdicts get no caveat — the caveat is about unearned confidence, not noise.
+assert.equal(
+  explainPrediction({ ...quietProductive, focusState: "DISTRACTED" } as any).caveat,
+  null,
+);
+
+const busy = explainPrediction({ ...quietProductive, thrashScore: 0.8, driftScore: 0.7 } as any);
+assert.deepEqual(busy.reasons, ["switching apps often", "tab and title churn"]);
+
+assert.deepEqual(explainPrediction(null), { reasons: [], caveat: null });

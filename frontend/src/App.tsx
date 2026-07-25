@@ -35,6 +35,7 @@ import { useAutostart } from "./useAutostart";
 import { useAnalytics } from "./useAnalytics";
 import { usePrivacy } from "./usePrivacy";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
+import type { FocusLabel } from "./api";
 
 export default function App() {
   // Which surface is showing (ADR-0003). Defaults to Now: it is the 95% case, and the
@@ -238,10 +239,25 @@ export default function App() {
         {surface === "now" && (
           <>
         <FocusStateHero
+          goal={sessionRecord?.goal ?? null}
           hyperfocusNote={live.hyperfocusNote}
+          labelStatus={feedback.labelStatus}
+          onConfirmVerdict={() => {
+            const state = live.prediction?.focusState as FocusLabel | undefined;
+            if (state) void handleLabel(state, "manual", `agreed:${state}`);
+          }}
+          onCorrectVerdict={(label) => {
+            // Record what the classifier said alongside the correction: agreement rate is
+            // only computable if we know what was being corrected. `notes` is free text
+            // and already exists, so this needs no schema change — a dedicated
+            // `predicted_state` column is the proper fix once 7.3 lands migrations.
+            const predicted = live.prediction?.focusState ?? "unknown";
+            void handleLabel(label, "manual", `corrected:${predicted}`);
+          }}
           onDismissSnapback={live.handleDismissSnapback}
           prediction={live.prediction}
           riskClass={live.riskClass}
+          sessionActive={sessionRecord?.status === "ACTIVE"}
           snapbackNote={live.snapbackNote}
         />
 
