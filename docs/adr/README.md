@@ -35,6 +35,7 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 |-----|-------|--------|---------|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted | 12.3 |
 | [0002](0002-v1-supports-windows-and-macos.md) | v1 supports Windows and macOS | Proposed | 9.1 |
+| [0003](0003-three-surface-dashboard.md) | Split the dashboard into Now, Review, and Settings | Accepted | 10.2 |
 
 ## Awaiting an ADR
 
@@ -51,7 +52,6 @@ should settle them — the roadmap's "Start here" table sets the order.
 | — | 5.6 | What should `longest_active_stretch_5min` report for a new session? |
 | — | 7.8 | Should `set_focus_mode` rewrite the user's default? |
 | — | 9.10 | Retention window: user setting, and what default? |
-| — | 10.2 | Dashboard information architecture |
 | — | 13.5, 13.6 | Is there labelled data to train on, and who wins when model and heuristic disagree? |
 
 Keep this table in sync when an item graduates: delete the row, add an Index row.
