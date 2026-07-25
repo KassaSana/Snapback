@@ -963,6 +963,12 @@ structure alone — a real review would likely find more.
   CI job runs it and no threshold is enforced. Either wire it up with a floor or drop the
   dependency — right now it's a capability nobody uses.
 
+  *Amended 2026-07-24:* the generated report was **checked into git** — 38 files under
+  `frontend/coverage/`, so every local `npm run test:coverage` produced a 30-file diff, and
+  the committed copy had gone stale (missing the 17 components added since it was generated).
+  Now untracked and gitignored. Current measured baseline, if a floor gets set: 75% statements
+  / 66% branches / 73% functions.
+
 - **10.6 — No C++ coverage measurement at all.** `M`
   The frontend can measure coverage; the C++ side cannot. Given how many bugs in Tiers 5/7
   were "the tests never exercised the production branch" (`seconds_since_session_start`, 7.1,
@@ -1002,6 +1008,26 @@ structure alone — a real review would likely find more.
 
 - **11.5 — Fixture corpus for storage.** `M`
   Tracked as 7.11; listed here so the testing story is complete in one place.
+
+- **11.7 — The autostart test asserts against the real machine's registry.** `S`
+  `tests/test_autostart.cpp:26` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
+  that the write succeeds, so a passing suite depends on ambient machine state rather than on
+  our code. **Observed 2026-07-24:** in CI run `30141403795` this test *failed* in the
+  `ONNX backend / windows` job and *passed* in `C++ headless tests / windows-latest` — same
+  commit, same OS image, same test. Neither `src/app/autostart.cpp` nor the test had changed
+  on that branch, so it is environment coupling, not a regression.
+
+  Two shapes for the fix:
+
+  | Option | Change | Cost |
+  |--------|--------|------|
+  | Tolerate | Treat "cannot open the Run key for write" as *environment cannot test this* and skip; keep asserting the round-trip when it can open | ~5 lines, keeps the real-registry coverage where it works |
+  | Inject | Parameterize the key path so the test uses a throwaway key and never touches the real `Run` value | Makes autostart testable by seam instead of side effect; slightly wider change |
+
+  **Inject is the better shape** — it removes the shared mutable resource instead of
+  tolerating it. *Note: this is Windows-only code, so either fix is CI-verified only from a
+  macOS host (see [CLAUDE.md](../CLAUDE.md)) — write it carefully, because the feedback loop
+  is a full CI run.*
 
 ---
 
@@ -1156,6 +1182,12 @@ itself a backlog item below.
       lives inside an `#if` only one CI job compiles — a standing risk, not a one-time note.
 - [ ] **Stack-size sweep.** Grep for large by-value members (6.1). Anything over ~64 KB per
       object is a Windows landmine.
+- [ ] **Fresh-clone sweep.** Run the doc-path guard and the frontend build from a *clean*
+      clone, not the working tree. **2026-07-24:** `scripts/check_doc_paths.py` was green
+      locally and red in CI on its first run, because this working tree still has
+      `frontend/dist` from earlier builds while a fresh checkout does not. A guard that only
+      passes on a developer's machine guards nothing. `git clone . /tmp/x && cd /tmp/x` is the
+      whole check.
 - [ ] Re-run `scripts/run_feature_parity_dual.py` and diff. Any `features.cpp` change without
       a matching Rust change is a CI failure waiting to happen (5.6).
 
