@@ -508,6 +508,7 @@ export const api = {
 
 export {
   buildSignals,
+  explainPrediction,
   clamp,
   focusStateLabel,
   formatPercent,
@@ -520,3 +521,5 @@ export {
   riskLabel,
   riskLevel,
 } from "./utils";
+
+export type { VerdictExplanation } from "./utils";

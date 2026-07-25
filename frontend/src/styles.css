@@ -185,6 +185,100 @@ h1 {
   padding: 0 8px;
 }
 
+/* The evidence line. Set in the sans at body size so it reads as reasoning rather than
+   another metric — the verdict above is the claim, this is the argument for it. */
+.hero-because {
+  font-size: 1.05rem;
+  color: var(--ink);
+  margin: 2px 0 0;
+  line-height: 1.5;
+}
+
+.hero-because-label {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--muted);
+  margin-right: 10px;
+}
+
+/* Where the design takes its one deliberate risk: the app says out loud what it cannot
+   see. Bordered rather than tinted, so it reads as a margin note in the product's own
+   voice instead of a warning banner. */
+.hero-caveat {
+  margin: 6px 0 0;
+  padding-left: 14px;
+  border-left: 2px solid var(--accent-soft);
+  font-family: var(--font-serif);
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.verdict-feedback {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(14, 17, 22, 0.08);
+}
+
+.verdict-feedback-prompt {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.verdict-feedback-hint,
+.verdict-feedback-status {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 18px 0 0;
+}
+
+.verdict-vote,
+.verdict-option {
+  appearance: none;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(14, 17, 22, 0.14);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.verdict-vote:hover,
+.verdict-option:hover {
+  background: var(--surface);
+  border-color: rgba(14, 17, 22, 0.3);
+}
+
+.verdict-vote:focus-visible,
+.verdict-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.verdict-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verdict-vote,
+  .verdict-option,
+  .surface-tab {
+    transition: none;
+  }
+}
+
 /* Surface navigation (ADR-0003). Sits between the header and the panel, using the same
    pill vocabulary as .status-pill so it reads as part of the existing design rather than
    a bolted-on tab bar. */

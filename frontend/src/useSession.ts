@@ -66,14 +66,14 @@ export const useSession = ({
   }, [refreshContextTimeline]);
 
   const handleLabel = useCallback(
-    async (label: FocusLabel, source: LabelSource = "manual") => {
+    async (label: FocusLabel, source: LabelSource = "manual", notes?: string) => {
       if (!sessionId) {
         setLabelStatus("Start a session to save feedback.");
         return;
       }
 
       try {
-        await api.submitLabel(sessionId, label, undefined, source);
+        await api.submitLabel(sessionId, label, notes, source);
         const prefix =
           source === "hotkey"
             ? "Hotkey saved"
