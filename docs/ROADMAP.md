@@ -1012,10 +1012,26 @@ structure alone — a real review would likely find more.
 - **11.7 — The autostart test asserts against the real machine's registry.** `S`
   `tests/test_autostart.cpp:26` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
   that the write succeeds, so a passing suite depends on ambient machine state rather than on
-  our code. **Observed 2026-07-24:** in CI run `30141403795` this test *failed* in the
-  `ONNX backend / windows` job and *passed* in `C++ headless tests / windows-latest` — same
-  commit, same OS image, same test. Neither `src/app/autostart.cpp` nor the test had changed
-  on that branch, so it is environment coupling, not a regression.
+  our code.
+
+  **Measured flake rate: 2 of the first 6 observed Windows job runs (~33%), alternating
+  between the two jobs on identical code.**
+
+  | Run | `ONNX backend / windows` | `C++ headless tests / windows-latest` |
+  |-----|--------------------------|----------------------------------------|
+  | `30141403795` (PR #27) | ❌ `test_autostart.cpp:26` | ✅ |
+  | `30141852252` (master `18dcba0`) | ✅ | ✅ |
+  | `30143262631` (PR #28) | ✅ | ❌ `test_autostart.cpp:26` |
+
+  Neither `src/app/autostart.cpp` nor the test changed across those runs, and the failure
+  moves between jobs — so it is environment coupling, not a regression. Most likely cause:
+  writing `HKCU\...\Run` is a textbook persistence technique, so a hardened runner can refuse
+  it.
+
+  **Stopgap applied 2026-07-25:** the write is no longer asserted — if the environment
+  refuses it, the test emits a `MESSAGE` and returns. Everything after the write is still
+  asserted, so a real round-trip regression still fails wherever the write is permitted. This
+  keeps master green; it does **not** close this item.
 
   Two shapes for the fix:
 
