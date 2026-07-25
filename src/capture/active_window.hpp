@@ -1,5 +1,4 @@
-// Foreground app + window title. Rust uses the `active-win-pos-rs` crate;
-// here it's another hand-written per-OS backend (see active_window_*.cpp).
+// Foreground app + window title, implemented by per-OS backends.
 #pragma once
 
 #include <optional>

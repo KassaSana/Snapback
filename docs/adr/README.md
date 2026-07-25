@@ -46,7 +46,6 @@ should settle them — the roadmap's "Start here" table sets the order.
 |---------|---------------|--------------|
 | — | 9.1 | **Drafted as [ADR-0002](0002-v1-supports-windows-and-macos.md), still `Proposed`** — one sub-decision open: does macOS v1 need a native overlay, or is a notification enough? |
 | A | 5.3, 5.4, 1.2, 7.7 | What do our scores mean, and on what scale? |
-| B | 4.11 | Do we port the `title_parser` bug faithfully, or diverge from Rust? |
 | — | 7.16 | How does this app represent time? Scopes 7.3 and 7.11 |
 | — | 8.5 | Threat model — gates whether 4.5 encryption is required |
 | — | 5.6 | What should `longest_active_stretch_5min` report for a new session? |

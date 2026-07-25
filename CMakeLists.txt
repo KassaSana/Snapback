@@ -149,7 +149,7 @@ target_include_directories(snapback_app PUBLIC src)
 target_link_libraries(snapback_app PUBLIC snapback_core snapback_capture)
 target_compile_definitions(snapback_app PUBLIC SNAPBACK_VERSION=\"${PROJECT_VERSION}\")
 
-# --- tests (doctest replaces `cargo test`) ---
+# --- tests (doctest) ---
 enable_testing()
 file(GLOB SNAPBACK_TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
 add_executable(snapback_tests ${SNAPBACK_TEST_SOURCES})

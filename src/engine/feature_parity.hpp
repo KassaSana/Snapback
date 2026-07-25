@@ -1,8 +1,7 @@
 // Shared feature-parity replay helpers.
 //
-// These power the C++ side of the Rust-vs-C++ parity harness. They intentionally
-// mirror the Rust `engine/parity.rs` helper: load scenario JSON, replay synthetic
-// capture events through FeatureExtractor, and expose the model-training columns.
+// These power the checked-in feature-vector fixtures: load scenario JSON, replay
+// synthetic capture events through FeatureExtractor, and expose model columns.
 #pragma once
 
 #include <filesystem>

@@ -35,7 +35,7 @@ The port itself is finished and the pipeline runs end to end, so what remains is
 - **Not all v1 risk is platform-shaped.** Two open questions bind regardless of OS: what
   the scores mean (Roadmap 5.3, 5.4, 1.2, 7.7 — `src/engine/confidence.hpp` is currently
   dead code whose `[0,100]` threshold cannot fire against a `[0,1]` classifier output),
-  and whether `focoflow.db` stays compatible with Rust-authored databases when there are
+  and whether `focoflow.db` stays compatible with databases created by earlier releases when there are
   no migrations at all (Roadmap 7.3).
 
 ## Options considered

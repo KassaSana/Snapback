@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIRST_RUN_ACK_KEY } from "../src/permissionWizardState";
 
-// Mock the Tauri boundary so the real api.ts + useLiveData run end to end. Unlike the
+// Mock the native boundary so the real api.ts + useLiveData run end to end. Unlike the
 // other flow tests, this one needs to actually fire a subscribed event handler (the
 // "snapback" listener), so the listen mock records handlers instead of being a no-op.
 const boundary = vi.hoisted(() => {
@@ -44,8 +44,7 @@ const boundary = vi.hoisted(() => {
   return { state, invoke, listen, emit };
 });
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
+vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 import App from "../src/App";
 

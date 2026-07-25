@@ -335,7 +335,7 @@ std::optional<SnapbackPayload> AppState::take_snapback() {
 void AppState::dismiss_snapback() {
     std::lock_guard lock(mutex_);
     // Clear the pending payload and return the tracker from Recovering to Focused so it
-    // doesn't keep the recovery state latched (Rust: tracker.dismiss_recovery()).
+    // doesn't keep the recovery state latched.
     latest_snapback_.reset();
     context_tracker_.dismiss_recovery(last_event_secs_);
 }

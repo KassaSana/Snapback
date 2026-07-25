@@ -68,7 +68,7 @@ double category_alignment(const std::string& category,
 
 std::vector<GoalCategory> default_goal_categories() {
     return {
-        {"coding", {"code", "coding", "bug", "fix", "implement", "rust", "api", "refactor",
+        {"coding", {"code", "coding", "bug", "fix", "implement", "api", "refactor",
                      "test", "debug", "build", "feature", "compile", "merge", "pr", "pull request"}},
         {"writing", {"write", "writing", "report", "essay", "document", "blog", "draft", "paper", "notes"}},
         {"research", {"research", "read", "reading", "learn", "study", "article", "docs", "documentation"}},

@@ -93,8 +93,9 @@
       </div>
     </div>
     <script type="module">
-      import { listen } from "@tauri-apps/api/event";
-      import { invoke } from "@tauri-apps/api/core";
+      const bridge = window.__snapback;
+      if (!bridge) throw new Error("Snapback bridge is unavailable");
+      const { listen, invoke } = bridge;
 
       const AUTO_DISMISS_SECS = 8;
       const summaryEl = document.getElementById("summary");

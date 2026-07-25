@@ -1,10 +1,10 @@
-// The snapback overlay window. Rust: snapback/overlay.rs (a second Tauri window).
+// The snapback overlay window.
 //
-// In Tauri this is another WebviewWindow loading snapback.html. webview/webview can't
-// easily run a second WebView2 loop on the same thread, so the C++ port uses a native,
+// The C++ app uses a native, borderless, always-on-top Win32 window because webview
+// can't easily run a second WebView2 loop on the same thread, so it uses a native,
 // borderless, always-on-top Win32 window. Kept as an interface so the platform choice is
-// swappable; the placement math + text formatting are pure free functions so they can be
-// unit-tested without a real window (as overlay.rs did for positioning).
+// swappable; the placement math + text formatting are pure free functions and can be
+// unit-tested without a real window.
 #pragma once
 
 #include <functional>
@@ -14,7 +14,7 @@
 
 namespace snapback {
 
-// Overlay geometry, ported from overlay.rs constants.
+// Overlay geometry constants.
 constexpr int kOverlayWidth = 420;
 constexpr int kOverlayHeight = 250;
 constexpr int kScreenMargin = 20;
@@ -24,8 +24,7 @@ struct ScreenPoint {
     int y{};
 };
 
-// Top-right placement within a monitor's work area, with a margin. Ported 1:1 from
-// overlay.rs::top_right_position — this is what hugs the corner instead of centering.
+// Top-right placement within a monitor's work area, with a margin.
 ScreenPoint top_right_position(ScreenPoint monitor_pos, ScreenPoint monitor_size,
                                int window_width, int margin);
 

@@ -27,8 +27,7 @@ const boundary = vi.hoisted(() => {
   return { state, invoke, listen };
 });
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
+vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 import { renderApp } from "./renderApp";
 

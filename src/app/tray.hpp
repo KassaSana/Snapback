@@ -1,5 +1,5 @@
-// System tray icon. Rust: tray.rs (Tauri's tray API). Tauri gave us the tray for free;
-// on Windows we build it from Shell_NotifyIcon + a hidden message window + a popup menu.
+// System tray icon. On Windows we build it from Shell_NotifyIcon + a hidden message
+// window + a popup menu.
 //
 // The menu-command -> action mapping is a pure free function so it can be unit-tested;
 // the icon/window/menu plumbing is OS glue verified by running the app.

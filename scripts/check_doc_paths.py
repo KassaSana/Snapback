@@ -15,8 +15,6 @@ Deliberately NOT checked:
 
   * anything containing a glob (`input_hook_*.cpp`) -- these are shorthand for a real
     set, so we glob them and require at least one match instead
-  * `../FocoFlow-1/...` (the Rust reference) unless that tree is present, since it is a
-    sibling checkout that CI clones separately and contributors may not have
   * URLs, and bare words that merely look path-ish (no slash, or no known extension)
   * build outputs listed in GENERATED -- a doc naming `frontend/dist` is describing what a
     build produces, which is a correct claim even though a fresh checkout lacks it
@@ -46,8 +44,6 @@ FENCED_BLOCK = re.compile(r"```.*?```", re.S)
 LINE_SUFFIX = re.compile(r":\d+(-\d+)?$")
 # ADR filenames are written as a naming convention, not a claim that a file exists.
 PLACEHOLDER = re.compile(r"NNNN")
-
-RUST_REF = "../FocoFlow-1"
 
 # Paths a doc names on purpose while saying they are absent. Each needs a reason, so an
 # entry can be re-checked rather than becoming a permanent excuse.
@@ -83,7 +79,7 @@ def candidate_paths(text: str) -> set[str]:
             continue
         for part in token.split():
             part = part.strip(",;")
-            if part.startswith(ROOTS) or part.startswith(RUST_REF):
+            if part.startswith(ROOTS):
                 found.add(part)
     return found
 
@@ -111,12 +107,7 @@ def resolve(path: str) -> tuple[bool, str]:
         return True, f"generated ({GENERATED[cleaned]})"
     if cleaned in EXPECTED_ABSENT:
         return True, f"expected absent ({EXPECTED_ABSENT[cleaned]})"
-    if cleaned.startswith(RUST_REF):
-        if not os.path.isdir(os.path.join(REPO, RUST_REF)):
-            return True, "skipped (Rust reference not checked out)"
-        full = os.path.join(REPO, cleaned)
-    else:
-        full = os.path.join(REPO, cleaned)
+    full = os.path.join(REPO, cleaned)
 
     if "*" in cleaned:
         return bool(glob.glob(full)), "glob"

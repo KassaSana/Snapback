@@ -1,4 +1,4 @@
-// Feature extraction. Rust: engine/features.rs.
+// Feature extraction.
 #pragma once
 
 #include <array>
@@ -14,7 +14,7 @@
 
 namespace snapback {
 
-// 31 numeric model features (matches Rust FeatureVector::training_input()).
+// 31 numeric model features in the fixed model-input order.
 inline constexpr std::size_t kFeatureCount = 31;
 // Model identity includes this contract so a prediction can be traced back to the feature
 // order the deployed model was trained against.

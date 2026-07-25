@@ -40,14 +40,14 @@ FocusMode focus_mode_from_string(const std::string& s) {
     const std::string l = to_lower(s);
     if (l == "deep") return FocusMode::Deep;
     if (l == "recovery") return FocusMode::Recovery;
-    return FocusMode::Normal;  // unknown -> Normal, per Rust from_str
+    return FocusMode::Normal;  // unknown -> Normal
 }
 
 std::optional<AppRuleKind> app_rule_kind_from_string(const std::string& s) {
     const std::string l = to_lower(s);
     if (l == "allow") return AppRuleKind::Allow;
     if (l == "block") return AppRuleKind::Block;
-    return std::nullopt;  // unknown -> None (not a default), per Rust from_str
+    return std::nullopt;  // unknown -> None (not a default)
 }
 
 const char* label_source_as_str(LabelSource s) {

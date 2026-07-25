@@ -13,9 +13,7 @@
     "test:coverage": "vitest run --coverage",
     "test": "npm run test:unit && npm run test:components"
   },
-  "dependencies": {
-    "@tauri-apps/api": "^2"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",

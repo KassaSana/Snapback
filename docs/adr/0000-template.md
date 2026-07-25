@@ -13,8 +13,7 @@ If you cannot phrase it as a question, this is not a decision — it is a task.
 ## Context
 
 What forces made this a real choice? Include the ones that pull in opposite
-directions. Cite code with `path:line` and the Rust reference
-(`../FocoFlow-1/src-tauri/src/...`) where one exists.
+directions. Cite code with `path:line` where useful.
 
 ## Options considered
 

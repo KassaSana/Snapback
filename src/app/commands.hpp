@@ -1,11 +1,9 @@
-// The webview IPC bridge. Rust: commands.rs (#[tauri::command] fns) + events.rs.
+// The webview IPC bridge and native command registry.
 //
-// Tauri auto-generates the JS invoke() glue from #[tauri::command]. webview/webview has
-// no codegen, so we register each command by hand with webview.bind(name, handler): the
+// We register each command by hand with webview.bind(name, handler): the
 // handler receives the call arguments as a JSON *array* string, we take element [0] (the
 // args object the shim forwarded), call AppState, and return JSON. The command names
-// here must match the frontend's invoke() calls AND the Rust generate_handler![...] list
-// — that three-way match is the contract (see frontend/README.md).
+// here must match the frontend's invoke() calls — that match is the IPC contract.
 #pragma once
 
 #include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
@@ -35,8 +33,8 @@ inline void bind_cmd(webview::webview& w, const std::string& name, JsonHandler h
 
 }  // namespace detail
 
-// Registers every command the frontend calls. One bind() per Rust #[tauri::command].
-// `data_dir` is where training exports are written (Rust derives it from app_data_dir).
+// Registers every command the frontend calls. `data_dir` is where training exports
+// are written.
 inline void register_commands(webview::webview& w, AppState& state,
                               const std::filesystem::path& data_dir) {
     using detail::bind_cmd;
@@ -221,8 +219,8 @@ inline void register_commands(webview::webview& w, AppState& state,
     });
 }
 
-// Rust: events::emit_or_log — push an event to the frontend. Tauri has app.emit(); here
-// we eval() a JS call the shim listens on (window.__snapback.emit). MUST run on the UI
+// Push an event to the frontend. The shim listens on window.__snapback.emit. MUST run
+// on the UI
 // thread (see AppState's emit hook, which marshals via webview.dispatch).
 inline void emit(webview::webview& w, const char* event, const std::string& json_payload) {
     w.eval("window.__snapback && window.__snapback.emit(\"" + std::string(event) +

@@ -20,12 +20,12 @@
       "base_time": 1700002000.0,
       "focus_mode": "normal",
       "events": [
-        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" },
+        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Cursor", "title": "main.cpp" },
         { "offset_secs": 0.5, "type": "window_focus_change", "app": "Discord", "title": "chat" },
         { "offset_secs": 1.0, "type": "window_focus_change", "app": "Google Chrome", "title": "YouTube" },
         { "offset_secs": 1.5, "type": "window_focus_change", "app": "Slack", "title": "general" },
         { "offset_secs": 2.0, "type": "window_focus_change", "app": "Notion", "title": "notes" },
-        { "offset_secs": 2.5, "type": "window_focus_change", "app": "Cursor", "title": "main.rs" }
+        { "offset_secs": 2.5, "type": "window_focus_change", "app": "Cursor", "title": "main.cpp" }
       ],
       "expect": {
         "focus_state": "DISTRACTED",

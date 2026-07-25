@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIRST_RUN_ACK_KEY } from "../src/permissionWizardState";
 
-// Mock the Tauri boundary (invoke/listen) so the real api.ts + hooks run end to
+// Mock the native boundary (invoke/listen) so the real api.ts + hooks run end to
 // end without a backend. Command responses are mutable per test.
 const boundary = vi.hoisted(() => {
   const state: { health: Record<string, unknown> } = { health: {} };
@@ -44,8 +44,7 @@ const boundary = vi.hoisted(() => {
   return { state, invoke, listen };
 });
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
+vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 // Imported after the mocks are registered.
 import App from "../src/App";

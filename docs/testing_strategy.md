@@ -55,19 +55,16 @@ The C++ suite is mostly mock/headless by design: synthetic capture events drive
 storage, classifier, tracker, app-state, command dispatch, training status, tray,
 and overlay formatting. This is where most regressions should be caught.
 
-Feature parity against the Rust source of truth:
+Feature-vector contract testing:
 
 ```powershell
-py .\scripts\run_feature_parity_dual.py
+cmake --build build --target snapback_tests --config Release
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-This script builds the small `snapback_feature_parity_export` tool, runs the
-original Rust/Python parity CLI from `../FocoFlow-1`, exports Rust and C++ feature
-vectors for the same `fixtures/feature_parity/scenarios.json`, and compares every
-training column within `1e-6`. On CI/macOS/Linux, use `python` instead of the
-Windows `py` launcher. CI checks out the Rust source-of-truth layout from the
-`main-fresh` branch into `rust-source`; the current `master` branch contains the
-C++ port, so it cannot be used as the Rust parity input.
+The C++ suite replays `fixtures/feature_parity/scenarios.json` and compares every
+feature value with `fixtures/feature_parity/golden.json` within `1e-6`. The golden
+fixture is checked in so a feature-order change fails locally and in CI.
 
 ## 2. Integrated Cross-System Tests
 
@@ -76,7 +73,7 @@ and prove the Windows desktop shell can be built against WebView2.
 
 GitHub Actions workflow: `.github/workflows/ci.yml`
 
-Jobs — **all twelve** (this list previously named six):
+The current jobs are:
 
 | Job | What it proves |
 |-----|----------------|
@@ -84,7 +81,7 @@ Jobs — **all twelve** (this list previously named six):
 | `sanitizers` | ASan + UBSan over the suite |
 | `thread-sanitizer` | TSan — the capture/engine thread seam |
 | `security-audit` | frontend `npm audit` against the committed lockfile |
-| `feature-parity` | Rust/Python parity plus Rust-vs-C++ vector diff |
+| `cpp-headless` | C++ replay plus exact feature-vector comparison via the golden test |
 | `onnx-windows` | the `SNAPBACK_ONNX` path builds and runs (not in the default build) |
 | `onnx-linux` | same, on Linux |
 | `benchmark-smoke` | the benchmark targets still build and run |

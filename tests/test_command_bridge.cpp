@@ -62,7 +62,7 @@ TEST_CASE("validation helpers trim, reject blanks, and cap length") {
           std::optional<std::string>("hi"));
 }
 
-TEST_CASE("validation helpers count Unicode scalars like Rust chars()") {
+TEST_CASE("validation helpers count Unicode scalars") {
     CHECK(detail::utf8_scalar_count("hello") == 5);
     CHECK(detail::utf8_scalar_count("éé") == 2);
     const std::string two_scalars = "éé";

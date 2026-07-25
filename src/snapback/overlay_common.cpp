@@ -6,7 +6,7 @@ namespace snapback {
 
 ScreenPoint top_right_position(ScreenPoint monitor_pos, ScreenPoint monitor_size,
                                int window_width, int margin) {
-    // Mirror overlay.rs: x hugs the right edge (minus width + margin), y sits margin
+    // x hugs the right edge (minus width + margin), y sits at the margin
     // below the top. Written against monitor origin so multi-monitor layouts land right.
     return ScreenPoint{monitor_pos.x + monitor_size.x - window_width - margin,
                        monitor_pos.y + margin};

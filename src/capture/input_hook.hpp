@@ -1,5 +1,5 @@
-// Global input capture. Rust gets this from the `rdev` crate; here you hand-write
-// one backend per OS. This is the single biggest chunk of work in the port and the
+// Global input capture behind one backend per OS. This is the single biggest chunk
+// of platform-specific work and the
 // most footgun-prone (a global hook callback runs on an OS-owned thread).
 //
 // See input_hook_windows.cpp / input_hook_macos.cpp / input_hook_x11.cpp.
@@ -26,7 +26,7 @@ public:
     virtual void run(InputCallback on_event) = 0;
     virtual void stop() = 0;
 
-    // Rust: capture/mod.rs::create() picks the platform backend.
+    // The implementation selects the platform backend.
     static InputHook& instance();
 };
 

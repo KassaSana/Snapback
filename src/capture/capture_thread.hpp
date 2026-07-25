@@ -1,4 +1,4 @@
-// Owns the capture thread + the event ring buffer. Rust: capture/thread.rs.
+// Owns the capture thread and the event ring buffer.
 //
 // Producer: the InputHook callback (OS thread) pushes into the ring buffer.
 // Consumer: the engine drains it on its own tick. This class is the seam between
@@ -21,7 +21,7 @@ namespace snapback {
 
 class CaptureThread {
 public:
-    // 65,536 events ≈ 1.3s at 50k/s, matching the Rust ring buffer sizing note.
+    // 65,536 events ≈ 1.3s at 50k/s.
     static constexpr std::size_t kCapacity = 1u << 16;
 
     // `hook` defaults to the platform singleton (InputHook::instance()). Tests inject a

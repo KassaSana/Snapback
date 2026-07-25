@@ -5,8 +5,7 @@
 // RotatingFileStream adds a bounded on-disk sink; an in-app diagnostics view remains a
 // follow-up.
 //
-// C++/Rust delta: Rust's `log` crate hides the sink and clock behind macros. Here we make
-// both explicit and injectable — the sink is any std::ostream, the clock is a std::function
+// The sink and clock are explicit and injectable — the sink is any std::ostream, the clock is a std::function
 // — which is what lets tests assert exact output against a frozen timestamp.
 #pragma once
 

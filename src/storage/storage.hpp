@@ -1,8 +1,7 @@
-// SQLite persistence. Rust: storage/mod.rs (rusqlite).
+// SQLite persistence.
 //
 // Another "easier in C++" case: SQLite is a C library, so you call sqlite3_* directly
-// instead of going through rusqlite. The DB filename stays focoflow.db for install
-// compatibility, exactly as the Rust README calls out.
+// through the SQLite C API. The DB filename stays focoflow.db for install compatibility.
 #pragma once
 
 #include <filesystem>
@@ -38,7 +37,7 @@ inline bool should_vacuum_after_prune(std::size_t rows_deleted) {
 
 class Storage {
 public:
-    // Rust: Storage::open(app_data_dir). Opens focoflow.db and runs migrations.
+    // Opens focoflow.db and initializes the schema.
     // `logger` is optional (defaults to null) so every existing call site keeps compiling
     // unchanged; pass one to route the startup prune/vacuum messages somewhere other than
     // stderr (main.cpp passes its rotating-file logger).
@@ -71,14 +70,13 @@ public:
     std::optional<SessionRecord> get_session(const std::string& session_id);
     SessionRecord create_session(const std::string& goal, FocusMode mode);
     void end_session(const std::string& session_id);
-    // Rust: Storage::stop_session — completes the session and returns the row (the
-    // frontend maps the returned record). Idempotent if already COMPLETED.
+    // Completes the session and returns the row. Idempotent if already COMPLETED.
     SessionRecord stop_session(const std::string& session_id);
     std::optional<SessionRecord> active_session();
     std::vector<SessionRecord> recent_sessions(std::size_t limit);
     SessionRecap recap(const std::string& session_id);
 
-    // Rust: Storage::infer_session_label + save_auto_session_label — written on stop.
+    // Infers and saves an automatic session label on stop.
     static FocusLabel infer_session_label(const SessionRecap& recap);
     FocusLabel save_auto_session_label(const std::string& session_id);
 
@@ -98,7 +96,7 @@ public:
                       const std::string& source,
                       std::optional<std::string> notes = std::nullopt);
 
-    // App rules (allow/block overrides). Rust: storage/mod.rs app-rule CRUD.
+    // App rules (allow/block overrides).
     std::vector<AppRuleRecord> list_app_rules();
     AppRuleRecord upsert_app_rule(const std::string& pattern, AppRuleKind rule_type,
                                   std::optional<std::string> note);
@@ -109,12 +107,12 @@ public:
     std::vector<ContextSnapshotDto> list_context_snapshots(const std::string& session_id,
                                                            std::size_t limit);
 
-    // Rust: export_training_data -> features.csv + labels.csv for the ml/ trainer.
+    // Export features.csv + labels.csv for the training pipeline.
     ExportTrainingResult export_training_csv(
         const std::filesystem::path& out_dir,
         const std::optional<std::string>& session_id = std::nullopt);
 
-    // Rust: prune_runtime_data — deletes old runtime rows on open.
+    // Deletes old runtime rows on open.
     //
     // Takes the cutoff twice because the tables don't agree on a time format:
     // predictions/context_snapshots store RFC3339 TEXT, while feature_snapshots.timestamp

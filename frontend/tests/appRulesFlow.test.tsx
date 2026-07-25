@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock the Tauri boundary with a stateful rules store so the list round-trips
+// Mock the native boundary with a stateful rules store so the list round-trips
 // through the real api.ts + useAppRules (add pushes, delete removes, get reads).
 const boundary = vi.hoisted(() => {
   const state: { health: Record<string, unknown>; rules: Record<string, unknown>[] } = {
@@ -47,8 +47,7 @@ const boundary = vi.hoisted(() => {
   return { state, invoke, listen };
 });
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
+vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 import { renderApp } from "./renderApp";
 

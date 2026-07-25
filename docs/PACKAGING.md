@@ -60,11 +60,11 @@ still builds and uploads unsigned artifacts.
 
 ## Auto-update (v1 decision)
 
-**Decision: defer Tauri-style auto-update for v1.**
+**Decision: defer auto-update for v1.**
 
 Rationale:
 
-- The Rust app used Tauri's updater; replicating secure delta updates in C++ is a full subsystem (signing, channels, rollback).
+- Replicating secure delta updates is a full subsystem (signing, channels, rollback).
 - v1 ships as a signed installer + manual upgrade path.
 - Revisit when installer signing and CI release artifacts are stable.
 
@@ -72,7 +72,7 @@ Alternatives if needed later:
 
 1. **Manual download** — link from README / GitHub Releases (simplest)
 2. **In-app "check for updates"** — HTTP fetch of a version manifest + download link (no silent install)
-3. **Full updater** — port Tauri policy with signed manifests (high effort)
+3. **Full updater** — add signed manifests, channels, and rollback (high effort)
 
 ## macOS / Linux packaging
 

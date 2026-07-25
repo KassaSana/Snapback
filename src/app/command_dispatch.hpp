@@ -1,7 +1,7 @@
 // Pure, webview-free core of the IPC command bridge. Split out from commands.hpp so it
 // can be unit-tested without pulling in <webview/webview.h> (and thus WebView2 / Win32).
 //
-// This holds: input validation ported from Rust commands.rs, limit clamping, and the
+// This holds input validation, limit clamping, and the
 // arg-unwrap + serialize + error-envelope wrapper that every bound command runs through.
 #pragma once
 
@@ -17,8 +17,8 @@
 
 namespace snapback::detail {
 
-// Limits + validation ported from commands.rs (blank goal rejected, history capped, etc.).
-// Length uses Unicode scalar count like Rust's `.chars().count()`, not byte length.
+// Limits and validation for command input (blank goals rejected, history capped, etc.).
+// Length uses Unicode scalar count, not byte length.
 constexpr std::size_t kMaxHistoryLimit = 500;
 constexpr std::size_t kMaxSessionGoalLen = 280;
 constexpr std::size_t kMaxLabelNotesLen = 2000;
@@ -100,7 +100,7 @@ using JsonHandler = std::function<nlohmann::json(const nlohmann::json&)>;
 // The contract every command runs through: `req` is the JSON *array* string webview.bind
 // delivers; we take element [0] (the args object the shim forwarded), run the handler,
 // and dump the result. Any thrown exception becomes the {__snapback_error} envelope the
-// JS shim turns into a rejected Promise — reproducing Rust's Result::Err.
+// JS shim turns into a rejected Promise.
 inline std::string run_json_command(const JsonHandler& handler, const std::string& req) {
     try {
         auto arr = nlohmann::json::parse(req);

@@ -1,4 +1,4 @@
-// Snapback context-recovery state machine. Rust: snapback/tracker.rs.
+// Snapback context-recovery state machine.
 //
 // Watches the focus stream: when the user drifts to a distracting app and then
 // returns, it fires a SnapbackPayload describing where they left off ("You were
@@ -17,7 +17,7 @@ namespace snapback {
 
 enum class DistractionState { Focused, Distracted, Recovering };
 
-// The single context-recovery tracker (Rust: ContextTracker). It owns both the context
+// The single context-recovery tracker owns both the context
 // timeline snapshots AND the return-from-distraction snapback, driven by window changes +
 // on-task gating + a minimum-distraction threshold. (An earlier, simpler SnapbackTracker
 // that keyed off the classifier's focus_state was retired in favor of this faithful port.)

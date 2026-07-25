@@ -98,7 +98,7 @@ like the new colors?", and only one of those questions is answerable by a test.
   keyboard support, assessed once for the shell instead of per card.
 - Does **not** unblock or pre-empt 5.3 / 5.4 / 1.2 / 7.7. The score keeps its current
   rendering, only demoted.
-- The frontend is the one part of this project not ported from Rust, so there is no reference
+- The frontend is a plain React surface with no native implementation dependency, so there is no reference
   implementation to check against — this ADR is the specification.
 
 ## Revisit if
