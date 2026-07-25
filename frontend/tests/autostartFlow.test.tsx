@@ -53,7 +53,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
-import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 beforeEach(() => {
   boundary.invoke.mockClear();
@@ -66,7 +66,7 @@ afterEach(() => {
 
 describe("autostart settings", () => {
   it("loads and toggles the Windows start-on-login setting", async () => {
-    render(<App />);
+    renderApp("settings");
 
     const toggle = await screen.findByRole("checkbox", { name: /Start on login/ });
     await waitFor(() => expect(toggle).not.toBeDisabled());
@@ -81,7 +81,7 @@ describe("autostart settings", () => {
 
   it("disables the toggle when the platform has no backend", async () => {
     boundary.state.autostart = { enabled: false, supported: false };
-    render(<App />);
+    renderApp("settings");
 
     const toggle = await screen.findByRole("checkbox", { name: /Start on login/ });
     await waitFor(() => expect(toggle).toBeDisabled());

@@ -30,7 +30,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
-import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 const health = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   status: "online",
@@ -65,7 +65,7 @@ afterEach(() => {
 describe("Health degradation visibility", () => {
   it("warns when capture events are being dropped", async () => {
     boundary.state.health = health({ capture_events_dropped: 5 });
-    render(<App />);
+    renderApp("settings");
 
     const card = within(permissionsCard());
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
@@ -81,7 +81,7 @@ describe("Health degradation visibility", () => {
       capture_failed: true,
       capture_failure_reason: "listener died",
     });
-    render(<App />);
+    renderApp("settings");
 
     const card = within(permissionsCard());
     expect(await card.findByText("capture failed")).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe("Health degradation visibility", () => {
 
   it("warns when capture is running but receiving no events (stalled)", async () => {
     boundary.state.health = health({ capture_stalled: true });
-    render(<App />);
+    renderApp("settings");
 
     const card = within(permissionsCard());
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
@@ -112,7 +112,7 @@ describe("Health degradation visibility", () => {
           setup_steps: [],
         },
       });
-      render(<App />);
+      renderApp("settings");
       // Flush the mount health load (state updates must run inside act).
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
@@ -139,7 +139,7 @@ describe("Health degradation visibility", () => {
       window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
       // Capture is up and looks fine at launch (grace not elapsed yet).
       boundary.state.health = health({ capture_running: true, capture_stalled: false });
-      render(<App />);
+      renderApp("settings");
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });

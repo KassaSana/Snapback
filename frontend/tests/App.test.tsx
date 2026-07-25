@@ -49,6 +49,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
 // Imported after the mocks are registered.
 import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 const health = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   status: "online",
@@ -77,12 +78,39 @@ afterEach(() => {
 });
 
 describe("App first-run permission wizard", () => {
-  it("renders the app shell", async () => {
+  it("renders the app shell on the Now surface by default", async () => {
     render(<App />);
-    // Permissions card always renders regardless of health.
+
+    // ADR-0003: Now is the default surface, and it holds the session, not the config.
+    expect(await screen.findByRole("heading", { name: "Session Control" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Now" })).toHaveAttribute("aria-selected", "true");
+
+    // Settings-surface cards must NOT be mounted — that separation is the whole point.
+    expect(screen.queryByRole("heading", { name: "Permissions" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Diagnostics" })).not.toBeInTheDocument();
+  });
+
+  it("renders the configuration cards on the Settings surface", async () => {
+    renderApp("settings");
+
     expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
     expect(await screen.findByDisplayValue("coding")).toBeInTheDocument();
+  });
+
+  it("moves between surfaces with the arrow keys", async () => {
+    render(<App />);
+
+    const nowTab = await screen.findByRole("tab", { name: "Now" });
+    nowTab.focus();
+    fireEvent.keyDown(nowTab, { key: "ArrowRight" });
+
+    expect(screen.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true");
+    // The panel is labelled by the selected tab, so screen readers announce the change.
+    expect(screen.getByRole("tabpanel")).toHaveAttribute(
+      "aria-labelledby",
+      "surface-tab-review",
+    );
   });
 
   it("shows the wizard on first run when capture isn't ready", async () => {
@@ -116,8 +144,10 @@ describe("App first-run permission wizard", () => {
     boundary.state.health = health({ capture_running: true });
     render(<App />);
 
-    // Wait for health to load, then assert the wizard never appears.
-    await screen.findByRole("heading", { name: "Permissions" });
+    // Wait for the Now surface to settle, then assert the wizard never appears. (Was
+    // waiting on the Permissions heading, which ADR-0003 moved to the Settings surface —
+    // the wait was incidental to this test, not the thing under assertion.)
+    await screen.findByRole("heading", { name: "Session Control" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -126,7 +156,7 @@ describe("App first-run permission wizard", () => {
     window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Permissions" });
+    await screen.findByRole("heading", { name: "Session Control" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

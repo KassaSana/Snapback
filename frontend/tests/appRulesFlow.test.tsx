@@ -50,7 +50,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
-import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
@@ -80,7 +80,7 @@ afterEach(() => {
 
 describe("App rules add/delete flow", () => {
   it("adds a rule and shows it in the list", async () => {
-    render(<App />);
+    renderApp("settings");
     await screen.findByRole("heading", { name: "Personal App Rules" });
 
     fireEvent.change(screen.getByPlaceholderText("discord, notion, youtube"), {
@@ -98,7 +98,7 @@ describe("App rules add/delete flow", () => {
   });
 
   it("does not save when the pattern is empty", async () => {
-    render(<App />);
+    renderApp("settings");
     await screen.findByRole("heading", { name: "Personal App Rules" });
 
     fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
@@ -118,7 +118,7 @@ describe("App rules add/delete flow", () => {
         updated_at: "2026-07-11T00:00:00Z",
       },
     ];
-    render(<App />);
+    renderApp("settings");
     expect(await screen.findByText("notion")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));

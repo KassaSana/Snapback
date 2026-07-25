@@ -35,7 +35,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: boundary.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: boundary.listen }));
 
-import App from "../src/App";
+import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
@@ -78,7 +78,7 @@ afterEach(() => {
 describe("Training / deploy card", () => {
   it("disables 'Train from export' until export + repo + python are ready", async () => {
     boundary.state.deployStatus = { ...readyToTrain(), has_export: false };
-    render(<App />);
+    renderApp("settings");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_training_deploy_status"));
@@ -95,7 +95,7 @@ describe("Training / deploy card", () => {
       metrics: null,
       log_tail: "",
     };
-    render(<App />);
+    renderApp("settings");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(trainButton).not.toBeDisabled());
@@ -116,7 +116,7 @@ describe("Training / deploy card", () => {
       metrics: null,
       log_tail: "",
     };
-    render(<App />);
+    renderApp("settings");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(trainButton).not.toBeDisabled());
@@ -136,7 +136,7 @@ describe("Training / deploy card", () => {
       metrics: { cv_accuracy: 0.7 },
       log_tail: "",
     };
-    render(<App />);
+    renderApp("settings");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(trainButton).not.toBeDisabled());

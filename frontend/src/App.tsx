@@ -1,4 +1,6 @@
-﻿import { useAppEffects } from "./useAppEffects";
+﻿import { useState } from "react";
+
+import { useAppEffects } from "./useAppEffects";
 
 import { ActivityCards } from "./ActivityCards";
 import { AnalyticsCard } from "./AnalyticsCard";
@@ -31,8 +33,12 @@ import { useSession } from "./useSession";
 import { useAutostart } from "./useAutostart";
 import { useAnalytics } from "./useAnalytics";
 import { usePrivacy } from "./usePrivacy";
+import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
 
 export default function App() {
+  // Which surface is showing (ADR-0003). Defaults to Now: it is the 95% case, and the
+  // only one that matters while a session is running.
+  const [surface, setSurface] = useState<Surface>("now");
   const feedback = useFeedback();
   const autostart = useAutostart();
   const privacy = usePrivacy();
@@ -217,7 +223,19 @@ export default function App() {
         }}
       />
 
-      <main className="grid">
+      <SurfaceNav active={surface} onChange={setSurface} />
+
+      {/* One panel element, swapped content — ADR-0003. Cards move between surfaces by
+          composition; none of them were rewritten to get here. */}
+      <main
+        className="grid"
+        role="tabpanel"
+        id={surfacePanelId(surface)}
+        aria-labelledby={surfaceTabId(surface)}
+        tabIndex={-1}
+      >
+        {surface === "now" && (
+          <>
         <LiveStatusCards
           hyperfocusNote={live.hyperfocusNote}
           onDismissSnapback={live.handleDismissSnapback}
@@ -246,7 +264,38 @@ export default function App() {
           onStart={handleStartPomodoro}
           onStop={handleStopPomodoro}
         />
+          </>
+        )}
 
+        {surface === "review" && (
+          <>
+        <InsightsCard sessionHistory={sessionHistory} />
+
+        <AnalyticsCard analytics={analytics} />
+
+        <SummaryCard />
+
+        <FocusSummaryCard focusSummary={focusSummary} />
+
+        <SessionReviewCards
+          handleLabel={handleLabel}
+          handleSkipSurvey={handleSkipSurvey}
+          recap={recap}
+          surveyPending={surveyPending}
+        />
+
+        <ActivityCards
+          contextTimeline={live.contextTimeline}
+          historyLimit={HISTORY_LIMIT}
+          predictionHistory={live.predictionHistory}
+          refreshContextTimeline={live.refreshContextTimeline}
+          sessionId={sessionId}
+        />
+          </>
+        )}
+
+        {surface === "settings" && (
+          <>
         <TrainingDeployCard
           canTrainFromExport={canTrainFromExport}
           classifierBackend={classifierBackend}
@@ -275,32 +324,9 @@ export default function App() {
           trainingInProgress={trainingInProgress}
         />
 
-        <InsightsCard sessionHistory={sessionHistory} />
-
-        <AnalyticsCard analytics={analytics} />
-
-        <SummaryCard />
-
         <GoalCategoriesCard />
 
         <DiagnosticsCard />
-
-        <FocusSummaryCard focusSummary={focusSummary} />
-
-        <ActivityCards
-          contextTimeline={live.contextTimeline}
-          historyLimit={HISTORY_LIMIT}
-          predictionHistory={live.predictionHistory}
-          refreshContextTimeline={live.refreshContextTimeline}
-          sessionId={sessionId}
-        />
-
-        <SessionReviewCards
-          handleLabel={handleLabel}
-          handleSkipSurvey={handleSkipSurvey}
-          recap={recap}
-          surveyPending={surveyPending}
-        />
 
         <RulesCard
           appRules={appRules}
@@ -349,6 +375,8 @@ export default function App() {
           permissionMessage={permissionMessage}
           permissionSteps={permissionSteps}
         />
+          </>
+        )}
       </main>
     </div>
   );
