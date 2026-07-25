@@ -117,7 +117,7 @@ int main() {
     const auto data_dir = app_data_dir();
     std::filesystem::create_directories(data_dir);
 
-    // Roadmap 0.5: one leveled logger for the process, writing to a rotating file next to
+    // One leveled logger for the process, writing to a rotating file next to
     // the DB instead of the console (nothing owns a terminal once this ships as a GUI
     // app). Falls back to stderr if the file can't be opened, so a bad log path degrades
     // instead of going silent. Level is overridable via SNAPBACK_LOG (e.g. "debug"),
@@ -204,7 +204,7 @@ int main() {
         w.dispatch([&w, ev, payload] {
             emit(w, ev.c_str(), payload);
             // On the return-from-distraction edge, also pop the native overlay card and a
-            // toast (Roadmap 0.6) — the toast is the one that reaches the user when the
+            // toast — the toast is the one that reaches the user when the
             // app window isn't focused, which is exactly when the overlay alone can't.
             if (ev == "snapback") {
                 try {
