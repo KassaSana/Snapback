@@ -12,7 +12,8 @@ std::string to_lower(std::string s) {
     return s;
 }
 
-// null when absent, so Option<String> round-trips as JSON null (matches serde).
+// An empty optional is written as JSON null rather than omitted, so the field is
+// always present on the wire and the frontend can read it without a guard.
 void put_opt(json& j, const char* key, const std::optional<std::string>& v) {
     if (v) j[key] = *v;
     else j[key] = nullptr;

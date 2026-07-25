@@ -145,7 +145,7 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     CHECK(j["permissions"].contains("captureAvailable"));
     CHECK(j["permissions"].contains("setupSteps"));
     CHECK(j["classifier"].contains("onnxRuntimeEnabled"));
-    // Optional-null fields present as JSON null (matches serde Option<String>).
+    // An empty std::optional serialises as JSON null, not as a missing key.
     CHECK(j["captureFailureReason"].is_null());
 
     auto back = j.get<HealthStatus>();
