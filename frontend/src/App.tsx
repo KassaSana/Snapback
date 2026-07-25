@@ -10,7 +10,8 @@ import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
 import { FocusSummaryCard } from "./FocusSummaryCard";
 import { InsightsCard } from "./InsightsCard";
-import { LiveStatusCards } from "./LiveStatusCards";
+import { FocusStateHero } from "./FocusStateHero";
+import { SignalsCard } from "./SignalsCard";
 import { RulesCard } from "./RulesCard";
 import { SettingsCard } from "./SettingsCard";
 import { SummaryCard } from "./SummaryCard";
@@ -236,13 +237,11 @@ export default function App() {
       >
         {surface === "now" && (
           <>
-        <LiveStatusCards
+        <FocusStateHero
           hyperfocusNote={live.hyperfocusNote}
           onDismissSnapback={live.handleDismissSnapback}
           prediction={live.prediction}
-          riskBadgeLabel={live.riskBadgeLabel}
           riskClass={live.riskClass}
-          signals={live.signals}
           snapbackNote={live.snapbackNote}
         />
 
@@ -327,6 +326,8 @@ export default function App() {
         <GoalCategoriesCard />
 
         <DiagnosticsCard />
+
+        <SignalsCard signals={live.signals} />
 
         <RulesCard
           appRules={appRules}

@@ -78,7 +78,8 @@ afterEach(() => {
 describe("Snapback note dismiss", () => {
   it("shows the note on a snapback event and clears it via dismiss_snapback", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Live Prediction" });
+    // ADR-0003 replaced the "Live Prediction" card with the state-first hero on Now.
+    await screen.findByRole("heading", { name: "Focus state" });
 
     act(() => {
       boundary.emit("snapback", { summary: "Return to auth.ts" });
