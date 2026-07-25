@@ -54,7 +54,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 |---|------|---------|
 | 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
-| 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
+| 3 | ~~**6.2** red-master rule~~ (**6.3** decoupling done, awaiting CI) | **Done 2026-07-24** — [ADR-0002](adr/0002-protect-master-from-red-ci.md) establishes protected `master` with required CI checks |
 | 4 | **9.1** define what v1 means | **Scopes everything below it.** Without it, all 80 open items look equally required |
 | 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
@@ -75,10 +75,9 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," 9.1 should arguably be #1.
 
-**Next up is #3 and #4 — both are `decision`s that need Kassa, not code.** With Tier 12
-cleared there is now a place to put the answers ([`docs/adr/`](adr/README.md)) and a
-correct picture of the system to reason about, which is the order those were meant to
-happen in.
+**Next up is #4 — 9.1 is a `decision` that needs Kassa, not code.** With 6.2 now recorded in
+[ADR-0002](adr/0002-protect-master-from-red-ci.md), the next question is what "v1" means so
+the remaining backlog can be scoped against a real product boundary.
 
 ---
 
@@ -91,16 +90,9 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
   cases ran and passed. The predicted "next problem" did surface — the first-ever real run
   of `desktop-app-build / ubuntu-latest` failed on X11 macro pollution (see 6.3's note).
 
-- **6.2 — Master has been red all day and commits kept landing.** `S` `process`
-
-  Last five `master` runs: failure, failure, failure, success (Dependabot only), failure.
-  Five commits landed anyway, including `fix: type the permission test mock state so
-  typecheck passes` — a CI fix that did not fix CI and was not followed up.
-
-  The proximate cause is 6.1. The real finding is that **a red master stopped being a
-  signal.** Several items in this file describe CI as a guard; those claims are currently
-  false. Fix 6.1, then decide the rule — branch protection, or a stated "red master blocks
-  merges" convention.
+- **6.2 — DONE 2026-07-24.** [ADR-0002](adr/0002-protect-master-from-red-ci.md) makes
+  `master` a protected integration branch: required CI checks must pass before a merge, and
+  normal direct pushes are disabled. The hosting settings still need to be configured.
 
 - **6.3 — The `desktop-app-build` guard silently stops running when CI is red.** `S`
 
@@ -1260,6 +1252,10 @@ Completed work. Kept for history; details live in git log and
   restored model immediately.
 
 ### Tier 6 CI fixes (2026-07-22)
+
+- **6.2 — Red-master rule (2026-07-24)** — [ADR-0002](adr/0002-protect-master-from-red-ci.md)
+  records protected `master` with required CI checks and an explicit administrator-only
+  emergency bypass.
 
 - **6.1 — Windows CTest stack overflow** (`a240e11`, CI-confirmed run `29890010902`) —
   `RingBuffer` held `std::array<T, 65536>` inline; at 96 bytes per `CaptureEvent` that made

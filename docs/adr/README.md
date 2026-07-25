@@ -34,6 +34,7 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | ADR | Title | Status | Roadmap |
 |-----|-------|--------|---------|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted | 12.3 |
+| [0002](0002-protect-master-from-red-ci.md) | Protect `master` from red CI | Accepted | 6.2 |
 
 ## Awaiting an ADR
 
