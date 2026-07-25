@@ -38,7 +38,16 @@ std::string percent_encode_path(std::string value) {
 
 std::string file_url_from_path(const std::filesystem::path& path) {
     const auto absolute = std::filesystem::absolute(path).lexically_normal();
-    return "file:///" + percent_encode_path(absolute.string());
+    auto encoded = percent_encode_path(absolute.string());
+
+    // A file URL is `file://` + authority + absolute path, and our authority is empty — so
+    // the path's own leading slash is the third character, not a fourth one we add. On POSIX
+    // `absolute` already starts with `/`; prepending "file:///" produced `file:////Users/...`,
+    // which parses as an empty authority plus a `//Users/...` path and is refused by both
+    // WKWebView and WebKitGTK — a blank window with no error. On Windows the path starts
+    // with a drive letter (`C:/...`), so there the separator must still be supplied.
+    if (!encoded.empty() && encoded.front() == '/') return "file://" + encoded;
+    return "file:///" + encoded;
 }
 
 std::string resolve_frontend_url(const std::filesystem::path& exe_dir,

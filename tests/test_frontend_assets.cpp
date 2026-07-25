@@ -78,6 +78,26 @@ TEST_CASE("resolve_frontend_url fails closed when a release bundle is absent") {
     CHECK(resolve_frontend_url(temp.path, std::nullopt, false, false) == "about:blank");
 }
 
+// A `file://` URL has exactly three slashes before the path: two for the empty authority
+// and one starting an absolute path. On POSIX the path already begins with `/`, so naive
+// concatenation onto "file:///" yields FOUR — an empty authority followed by a `//Users/...`
+// path, which WKWebView and WebKitGTK both refuse to load. That shipped: the macOS app
+// opened a blank window while every test passed, because the tests only asserted the
+// "file:///" prefix (which a four-slash URL also satisfies) and never the whole URL.
+TEST_CASE("file_url_from_path emits exactly three slashes for an absolute path") {
+    const auto url = file_url_from_path(std::filesystem::path("/tmp/sb/frontend/index.html"));
+
+#if defined(_WIN32)
+    // Windows absolute paths start with a drive letter, so the third slash is the separator.
+    CHECK(url.rfind("file:///", 0) == 0);
+    CHECK(url.rfind("file:////", 0) != 0);
+#else
+    CHECK(url == "file:///tmp/sb/frontend/index.html");
+#endif
+    // Stated independently of the platform: never four.
+    CHECK(url.rfind("file:////", 0) != 0);
+}
+
 TEST_CASE("file_url_from_path escapes spaces") {
     TempDir temp;
     const auto path = temp.path / "with space" / "index.html";
