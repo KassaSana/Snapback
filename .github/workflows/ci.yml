@@ -256,6 +256,9 @@ jobs:
           curl --fail --location --retry 3 \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${archive}" \
             --output "${archive}"
+          # third_party/ is not checked in; tar needs it to exist, unlike the Windows
+          # job's Expand-Archive, which creates its destination.
+          mkdir -p third_party
           tar -xzf "${archive}" --directory third_party
           mv "third_party/onnxruntime-linux-x64-${ORT_VERSION}" third_party/onnxruntime
           test -f third_party/onnxruntime/lib/libonnxruntime.so
