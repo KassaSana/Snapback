@@ -54,6 +54,8 @@ RUST_REF = "../FocoFlow-1"
 GENERATED = {
     "frontend/dist": "vite build output, .gitignore:10 -- docs name it as a build product",
     "frontend/dist/index.html": "same; running.md tells you to build it before the app",
+    "frontend/coverage": "istanbul report from `npm run test:coverage`; untracked 2026-07-24",
+    "frontend/coverage/": "same",
 }
 
 EXPECTED_ABSENT = {
