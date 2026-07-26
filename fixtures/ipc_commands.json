@@ -1,5 +1,6 @@
 [
   "get_diagnostics",
+  "export_support_bundle",
   "get_health",
   "get_latest_prediction",
   "get_prediction_history",

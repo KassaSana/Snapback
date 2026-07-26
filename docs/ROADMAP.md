@@ -995,11 +995,10 @@ small; the tier is large because nobody has walked that path yet.
   overlapping sessions. WAL makes this survivable rather than corrupting, but the data is
   garbage and the CPU cost doubles. Autostart plus a manual launch is the obvious way in.
 
-- **9.9 — Support bundle export.** `S`
-  4.10 added an in-app diagnostics panel; the natural completion is a one-click "export
-  diagnostics" that writes health status, recent log tail, version (9.2), and OS/build info
-  to a file the user can attach to a bug report — with an explicit note about what it does
-  and does not contain. Pairs with 7.6's data-export work; same plumbing.
+- **9.9 — DONE 2026-07-26.** The diagnostics card now exports a one-click JSON support
+  bundle containing health, recent logs, version, and OS/build identity. Both the UI and
+  file state exactly what is included, what is excluded, and that logs may expose local
+  paths or error details; native and UI regressions pin the privacy boundary.
 
 ---
 

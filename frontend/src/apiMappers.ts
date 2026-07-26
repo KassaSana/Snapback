@@ -209,6 +209,7 @@ export function mapDiagnosticsSnapshot(raw: Record<string, unknown>): Diagnostic
     version: String(raw.version ?? "0.0.0-dev"),
     health: mapHealth((raw.health as Record<string, unknown>) ?? {}),
     recentLogs: Array.isArray(logs) ? logs.map((line) => String(line)) : [],
+    supportBundlePrivacyNotice: String(raw.supportBundlePrivacyNotice ?? ""),
   };
 }
 

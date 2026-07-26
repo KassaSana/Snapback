@@ -143,6 +143,7 @@ add_library(snapback_app STATIC
   src/app/frontend_assets.cpp
   src/app/settings.cpp
   src/app/state.cpp
+  src/app/support_bundle.cpp
   src/app/training_deploy.cpp
 )
 target_include_directories(snapback_app PUBLIC src)

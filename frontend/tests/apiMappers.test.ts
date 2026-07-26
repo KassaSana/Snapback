@@ -156,10 +156,12 @@ const diagnostics = mapDiagnosticsSnapshot({
   version: "0.2.0",
   health: { status: "online", capture_running: true, classifier: { backend: "heuristic" } },
   recent_logs: ["2026-07-19T00:00:00Z [INFO] ready"],
+  supportBundlePrivacyNotice: "Review before sharing.",
 });
 assert.equal(diagnostics.version, "0.2.0");
 assert.equal(diagnostics.health.status, "online");
 assert.equal(diagnostics.recentLogs[0].includes("ready"), true);
+assert.equal(diagnostics.supportBundlePrivacyNotice, "Review before sharing.");
 
 const trainDeployed = mapTrainFromExportResult({
   success: true,

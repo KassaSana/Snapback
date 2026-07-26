@@ -108,6 +108,12 @@ export type DiagnosticsSnapshot = {
   version: string;
   health: HealthStatus;
   recentLogs: string[];
+  supportBundlePrivacyNotice: string;
+};
+
+export type SupportBundleExportResult = {
+  outputPath: string;
+  privacyNotice: string;
 };
 
 
@@ -299,6 +305,8 @@ export const api = {
     const raw = await invoke<Record<string, unknown> | null>("get_diagnostics");
     return mapDiagnosticsSnapshot(raw ?? {});
   },
+  exportSupportBundle: () =>
+    invoke<SupportBundleExportResult>("export_support_bundle"),
   getLatestPrediction: async () => {
     const raw = await invoke<Record<string, unknown> | null>("get_latest_prediction");
     return raw ? mapPrediction(raw) : null;

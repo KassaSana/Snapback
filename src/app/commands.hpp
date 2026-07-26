@@ -16,6 +16,7 @@
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
 #include "app/state.hpp"
+#include "app/support_bundle.hpp"
 #include "app/training_deploy.hpp"
 #include "snapback/overlay.hpp"
 
@@ -42,7 +43,17 @@ inline void register_commands(webview::webview& w, AppState& state,
 
     // --- Health + predictions ---
     bind_cmd(w, "get_health", [&state](const json&) { return json(state.health()); });
-    bind_cmd(w, "get_diagnostics", [&state](const json&) { return json(state.diagnostics()); });
+    bind_cmd(w, "get_diagnostics", [&state](const json&) {
+        auto result = json(state.diagnostics());
+        result["supportBundlePrivacyNotice"] = kSupportBundlePrivacyNotice;
+        return result;
+    });
+    bind_cmd(w, "export_support_bundle", [&state, data_dir](const json&) {
+        const auto exported =
+            export_support_bundle(data_dir / "exports" / "support", state.diagnostics());
+        return json{{"outputPath", exported.output_path},
+                    {"privacyNotice", exported.privacy_notice}};
+    });
     bind_cmd(w, "get_latest_prediction", [&state](const json&) {
         auto p = state.latest_prediction();
         return p ? json(*p) : json(nullptr);
