@@ -1017,20 +1017,10 @@ structure alone — a real review would likely find more.
   a settings/advanced split?) before more cards land — and 7.6, 9.6, and 9.7 all want to add
   surfaces.
 
-- **10.7 — The four new surface components shipped with no tests.** `S`
-  Opened 2026-07-25 by the sync. `FocusStateHero.tsx`, `SurfaceNav.tsx`,
-  `VerdictFeedback.tsx`, and `SignalsCard.tsx` were added on `fix-macos-app-launch` with no
-  `*.test.tsx` between them. [CLAUDE.md](../CLAUDE.md) says every production module needs a
-  test before it is considered complete, so **this is the only standing violation of that
-  rule in the repo** — filed rather than quietly forgiven, because 10.2's work is otherwise
-  done and would look finished.
-
-  Not equally urgent across the four. `SurfaceNav` and `FocusStateHero` are the ones worth
-  real tests: nav is now the only path to two thirds of the app, so a regression there hides
-  every Review and Settings card, and the hero is the surface that decides what the user
-  believes about their focus *state* — the exact thing 0.3 proved the backend can get
-  silently wrong. `VerdictFeedback` writes training labels, so it should at least be tested
-  to submit what it displays. `SignalsCard` is presentational and can ride on the others.
+- **10.7 — DONE 2026-07-26.** `FocusStateHero`, `SurfaceNav`, `VerdictFeedback`, and
+  `SignalsCard` now have direct component tests. The suite covers verdict evidence and
+  feedback, tab selection/ARIA wiring/keyboard focus, concrete correction labels, and signal
+  list rendering including the empty state.
 
 - **10.3 — Accessibility has never been assessed.** `M`
   No audit has been done. Specifically worth checking: keyboard navigation through the card
