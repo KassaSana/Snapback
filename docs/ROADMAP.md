@@ -965,11 +965,10 @@ small; the tier is large because nobody has walked that path yet.
   most of these render as a dashboard that simply stops updating, which is
   indistinguishable from "you're doing great."
 
-- **9.7 — Empty states.** `S`
-  Every analytics surface is built for a user with history. A brand-new user's first run
-  shows analytics, summary reports, insights, and focus summary — all computed over zero
-  rows. Verify what each renders (0? NaN? a blank chart?) and design the first-run state.
-  Cheap, and it's literally the first thing every new user sees.
+- **9.7 — DONE 2026-07-26.** Insights, trends, summary reports, and recent focus now all
+  render explicit first-run guidance instead of zero-valued metrics or blank charts. Summary
+  export stays disabled until a completed session or prediction exists, and Review-surface
+  regression verifies all four empty states together.
 
 - **9.8 — Single-instance guard.** `S`
   Nothing prevents two Snapback processes running at once. Both would install OS-wide input

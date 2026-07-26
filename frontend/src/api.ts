@@ -254,6 +254,7 @@ export type SummaryReport = {
   window: SummaryWindow;
   generatedAt: string;
   sessionCount: number;
+  completedSessionCount: number;
   focusSeconds: number;
   sampleCount: number;
   avgFocusScore: number;

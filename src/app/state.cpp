@@ -498,6 +498,7 @@ SummaryReport AppState::summary_report(const std::string& window) const {
         if (!session.started_at || *session.started_at < cutoff) continue;
         ++report.session_count;
         if (session.status == "COMPLETED") {
+            ++report.completed_session_count;
             report.focus_seconds += const_cast<Storage&>(storage_).recap(session.session_id).duration_secs;
         }
         for (const auto& snapshot : const_cast<Storage&>(storage_).list_context_snapshots(

@@ -301,6 +301,7 @@ struct SummaryReport {
     std::string window;
     std::string generated_at;
     std::size_t session_count{};
+    std::size_t completed_session_count{};
     std::uint64_t focus_seconds{};
     std::size_t sample_count{};
     double avg_focus_score{};

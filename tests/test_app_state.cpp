@@ -505,6 +505,24 @@ TEST_CASE("AppState creates and exports day or week summary reports") {
     CHECK(read_file(exported.output_path).find("\"window\": \"week\"") != std::string::npos);
 }
 
+TEST_CASE("AppState summary distinguishes active from completed sessions without predictions") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage));
+    const auto session = state->start_session("Permission recovery", FocusMode::Normal);
+
+    auto active_report = state->summary_report("day");
+    CHECK(active_report.session_count == 1);
+    CHECK(active_report.completed_session_count == 0);
+    CHECK(active_report.sample_count == 0);
+
+    state->stop_session(session.session_id);
+    auto completed_report = state->summary_report("day");
+    CHECK(completed_report.session_count == 1);
+    CHECK(completed_report.completed_session_count == 1);
+    CHECK(completed_report.sample_count == 0);
+}
+
 TEST_CASE("AppState persists editable goal categories") {
     TempDir temp;
     auto storage = Storage::open_memory();

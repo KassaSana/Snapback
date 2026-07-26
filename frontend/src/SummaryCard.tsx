@@ -8,6 +8,10 @@ const formatDuration = (seconds: number) => {
 
 export function SummaryCard() {
   const { exportSummary, report, setWindow, status, window } = useSummaryReport();
+  // A just-started first session is counted before its first prediction. A completed
+  // zero-prediction session is still real history (for example, capture permission failed),
+  // so the backend reports that state separately.
+  const hasHistory = report.sampleCount > 0 || report.completedSessionCount > 0;
 
   return (
     <section className="card insights-card">
@@ -18,18 +22,32 @@ export function SummaryCard() {
           <option value="week">This week</option>
         </select>
       </div>
-      <div className="insight-tiles">
-        <div className="insight-tile"><p className="insight-tile-value">{formatDuration(report.focusSeconds)}</p><p className="insight-tile-label">Focus time</p></div>
-        <div className="insight-tile"><p className="insight-tile-value">{report.sessionCount}</p><p className="insight-tile-label">Sessions</p></div>
-        <div className="insight-tile"><p className="insight-tile-value">{Math.round(report.avgFocusScore)}</p><p className="insight-tile-label">Avg focus</p></div>
-        <div className="insight-tile"><p className="insight-tile-value">{report.longestFocusStreak}</p><p className="insight-tile-label">Best streak</p></div>
-      </div>
-      <p className="helper-text">
-        {report.topContextApp ? `Most common context: ${report.topContextApp}.` : "No context leader yet."}
-        {` ${Math.round(report.distractedFraction * 100)}% of predictions were distracted.`}
-      </p>
+      {hasHistory ? (
+        <>
+          <div className="insight-tiles">
+            <div className="insight-tile"><p className="insight-tile-value">{formatDuration(report.focusSeconds)}</p><p className="insight-tile-label">Focus time</p></div>
+            <div className="insight-tile"><p className="insight-tile-value">{report.sessionCount}</p><p className="insight-tile-label">Sessions</p></div>
+            <div className="insight-tile"><p className="insight-tile-value">{Math.round(report.avgFocusScore)}</p><p className="insight-tile-label">Avg focus</p></div>
+            <div className="insight-tile"><p className="insight-tile-value">{report.longestFocusStreak}</p><p className="insight-tile-label">Best streak</p></div>
+          </div>
+          <p className="helper-text">
+            {report.topContextApp ? `Most common context: ${report.topContextApp}.` : "No context leader yet."}
+            {` ${Math.round(report.distractedFraction * 100)}% of predictions were distracted.`}
+          </p>
+        </>
+      ) : (
+        <p className="helper-text">
+          No summary data yet. Complete a session to unlock daily and weekly reports.
+        </p>
+      )}
       <div className="button-row">
-        <button className="secondary-button" onClick={() => void exportSummary()}>Export summary</button>
+        <button
+          className="secondary-button"
+          disabled={!hasHistory}
+          onClick={() => void exportSummary()}
+        >
+          Export summary
+        </button>
       </div>
       {status ? <p className="helper-text">{status}</p> : null}
     </section>

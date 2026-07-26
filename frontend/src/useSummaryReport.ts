@@ -6,6 +6,7 @@ const EMPTY_REPORT: SummaryReport = {
   window: "day",
   generatedAt: "",
   sessionCount: 0,
+  completedSessionCount: 0,
   focusSeconds: 0,
   sampleCount: 0,
   avgFocusScore: 0,

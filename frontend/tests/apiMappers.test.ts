@@ -140,6 +140,7 @@ assert.equal(analytics.topApps[0].appName, "Cursor");
 const report = mapSummaryReport({
   window: "week",
   session_count: 4,
+  completed_session_count: 3,
   focus_seconds: 3600,
   avg_focus_score: 81,
   distracted_fraction: 0.2,
@@ -148,6 +149,7 @@ const report = mapSummaryReport({
 });
 assert.equal(report.window, "week");
 assert.equal(report.focusSeconds, 3600);
+assert.equal(report.completedSessionCount, 3);
 
 const categories = mapGoalCategories([{ name: "coding", keywords: ["code", "bug"] }]);
 assert.deepEqual(categories, [{ name: "coding", keywords: ["code", "bug"] }]);
