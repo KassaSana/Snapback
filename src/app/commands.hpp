@@ -139,6 +139,10 @@ inline void register_commands(webview::webview& w, AppState& state,
         state.set_privacy_exclusions(std::move(exclusions));
         return json(state.privacy_settings());
     });
+    bind_cmd(w, "delete_all_activity_data", [&state](const json&) {
+        state.delete_all_activity_data();
+        return json(nullptr);
+    });
     bind_cmd(w, "get_goal_categories", [&state](const json&) {
         return json(state.goal_categories());
     });

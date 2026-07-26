@@ -125,6 +125,36 @@ TEST_CASE("storage gates prediction and feature writes to active sessions") {
                     std::runtime_error);
 }
 
+TEST_CASE("delete all activity data preserves user configuration") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto session = storage->create_session("Private work", FocusMode::Normal);
+    storage->insert_prediction(prediction(session.session_id, 75.0, 0.2, "PRODUCTIVE"));
+    FeatureVector features;
+    storage->insert_feature_snapshot(session.session_id, features);
+    storage->insert_label(session.session_id, FocusLabel::Productive, "manual");
+    ContextSnapshotDto context;
+    context.app_name = "Editor";
+    context.window_title = "private.txt";
+    context.timestamp = "2026-07-11T19:00:00Z";
+    storage->save_context_snapshot(session.session_id, context);
+    storage->upsert_app_rule("Editor", AppRuleKind::Allow, std::nullopt);
+
+    storage->delete_all_activity_data();
+
+    CHECK(storage->active_session() == std::nullopt);
+    CHECK(storage->recent_sessions(10).empty());
+    CHECK(storage->recent_predictions(10).empty());
+    CHECK(storage->list_context_snapshots(session.session_id, 10).empty());
+    REQUIRE(storage->list_app_rules().size() == 1);
+
+    TempDir temp;
+    const auto exported = storage->export_training_csv(temp.path);
+    CHECK(exported.feature_count == 0);
+    CHECK(exported.label_count == 0);
+}
+
 TEST_CASE("storage persists prediction model identity") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());

@@ -705,6 +705,23 @@ std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
     return rows;
 }
 
+void Storage::delete_all_activity_data() {
+    Transaction transaction(*this);
+    // Keep the order explicit instead of depending on every historical database having
+    // ON DELETE CASCADE. app_rules is deliberately absent: it is user configuration, not
+    // captured activity.
+    exec(db_,
+         R"sql(
+            DELETE FROM feature_snapshots;
+            DELETE FROM context_snapshots;
+            DELETE FROM snapback_events;
+            DELETE FROM labels;
+            DELETE FROM predictions;
+            DELETE FROM sessions;
+         )sql");
+    transaction.commit();
+}
+
 SessionRecap Storage::recap(const std::string& session_id) {
     SessionRecord session;
     {

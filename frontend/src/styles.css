@@ -552,6 +552,30 @@ h1 {
   flex-wrap: wrap;
 }
 
+.privacy-danger-zone {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(14, 17, 22, 0.12);
+}
+
+.privacy-danger-zone h3 {
+  margin: 0 0 0.35rem;
+}
+
+.danger-button {
+  border: 1px solid #b84a4a;
+  background: #8f3030;
+  color: #fff;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #a63a3a;
+}
+
+.success {
+  color: var(--success, #3b8f68);
+}
+
 .field {
   display: flex;
   flex-direction: column;

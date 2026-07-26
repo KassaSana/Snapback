@@ -168,12 +168,23 @@ export const useSession = ({
     setLabelStatusWarning(false);
   }, [setLabelStatus, setLabelStatusWarning]);
 
+  const clearActivitySession = useCallback(() => {
+    setSessionGoal("");
+    setSessionRecord(null);
+    setSessionId(null);
+    setRecap(null);
+    setSurveyPending(false);
+    resetTimelineRefreshGate();
+    void refreshContextTimeline(null);
+  }, [refreshContextTimeline, resetTimelineRefreshGate]);
+
   const sessionStatusLabel = useMemo(
     () => (sessionRecord ? sessionRecord.status.toLowerCase() : "idle"),
     [sessionRecord],
   );
 
   return {
+    clearActivitySession,
     focusMode,
     handleFocusModeChange,
     handleLabel,

@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { PrivacySettings } from "./api";
 
 type PrivacyCardProps = {
@@ -6,10 +8,12 @@ type PrivacyCardProps = {
   exclusionWarning: string | null;
   exclusionInput: string;
   onAddExclusion: () => void | Promise<void>;
+  onDeleteAllActivityData: () => void | Promise<void>;
   onPrivateModeChange: (enabled: boolean) => void | Promise<void>;
   onRemoveExclusion: (app: string) => void | Promise<void>;
   setExclusionInput: (value: string) => void;
   settings: PrivacySettings | null;
+  deletionStatus: string | null;
 };
 
 export function PrivacyCard({
@@ -18,11 +22,15 @@ export function PrivacyCard({
   exclusionWarning,
   exclusionInput,
   onAddExclusion,
+  onDeleteAllActivityData,
   onPrivateModeChange,
   onRemoveExclusion,
   setExclusionInput,
   settings,
+  deletionStatus,
 }: PrivacyCardProps) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
   return (
     <section className="card config-card">
       <div className="card-header">
@@ -78,6 +86,43 @@ export function PrivacyCard({
           ))
         )}
       </ul>
+      <div className="privacy-danger-zone">
+        <h3>Delete activity data</h3>
+        <p className="helper-text">
+          Permanently delete every session, prediction, label, and captured context stored
+          on this device. Privacy exclusions and app rules are kept.
+        </p>
+        {confirmingDelete ? (
+          <div className="button-row">
+            <button
+              className="danger-button"
+              disabled={busy}
+              onClick={() => {
+                setConfirmingDelete(false);
+                void onDeleteAllActivityData();
+              }}
+            >
+              Confirm permanent deletion
+            </button>
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => setConfirmingDelete(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            className="danger-button"
+            disabled={busy}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Delete all activity data
+          </button>
+        )}
+      </div>
+      {deletionStatus ? <p className="helper-text success">{deletionStatus}</p> : null}
       {error ? <p className="helper-text alert">{error}</p> : null}
     </section>
   );

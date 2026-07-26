@@ -427,10 +427,12 @@ internals, and the benchmark harness.
 
 - **7.6 — There is no way for a user to delete their own data.** `M`
 
-  Full sweep of `src/app/commands.hpp`. Present: `set_private_mode`,
-  `set_privacy_exclusions`, `get_privacy_settings`, 90-day auto-prune. **Absent:** delete all
-  data now; delete a single session; export my data in a legible form (`export_training_data`
-  produces ML-shaped CSV); open the data folder.
+  **PARTIAL 2026-07-26:** Settings now provides a two-step, permanent “delete all activity
+  data” action. The native command removes sessions, predictions, feature/context snapshots,
+  labels, and Snapback events atomically, resets live session state, and deliberately
+  preserves privacy settings and app rules. Still absent: delete a single session; export my
+  data in a legible form (`export_training_data` produces ML-shaped CSV); open the data
+  folder.
 
   For an app whose core function is recording every keystroke and window title, "you may
   inspect and destroy what I collected" isn't a nice-to-have — it's what makes local-only

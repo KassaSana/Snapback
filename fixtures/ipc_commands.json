@@ -24,6 +24,7 @@
   "set_goal_categories",
   "set_private_mode",
   "set_privacy_exclusions",
+  "delete_all_activity_data",
   "get_autostart",
   "set_autostart",
   "set_focus_mode",

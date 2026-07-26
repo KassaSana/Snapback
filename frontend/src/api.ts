@@ -401,6 +401,7 @@ export const api = {
     });
     return mapPrivacySettings(raw);
   },
+  deleteAllActivityData: () => invoke("delete_all_activity_data"),
   getAutostart: async () => {
     const raw = await invoke<Record<string, unknown>>("get_autostart");
     return mapAutostartStatus(raw);

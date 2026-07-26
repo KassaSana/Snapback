@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+﻿import { useCallback, useState } from "react";
 
 import { useAppEffects } from "./useAppEffects";
 
@@ -43,7 +43,6 @@ export default function App() {
   const [surface, setSurface] = useState<Surface>("now");
   const feedback = useFeedback();
   const autostart = useAutostart();
-  const privacy = usePrivacy();
   const { analytics, refreshAnalytics } = useAnalytics();
 
   const live = useLiveData();
@@ -88,6 +87,7 @@ export default function App() {
   } = useHealth();
 
   const {
+    clearActivitySession,
     focusMode,
     handleFocusModeChange,
     handleLabel,
@@ -160,6 +160,27 @@ export default function App() {
     setRuleNote,
     setRulePattern,
   } = useAppRules();
+
+  const handleActivityDataDeleted = useCallback(async () => {
+    clearActivitySession();
+    live.clearActivityData();
+    await Promise.all([
+      refreshInsights(),
+      refreshFocusSummary(),
+      refreshAnalytics(),
+      refreshHealth(),
+      refreshPomodoroStatus(),
+    ]);
+  }, [
+    clearActivitySession,
+    live.clearActivityData,
+    refreshAnalytics,
+    refreshFocusSummary,
+    refreshHealth,
+    refreshInsights,
+    refreshPomodoroStatus,
+  ]);
+  const privacy = usePrivacy(handleActivityDataDeleted);
 
   useAppEffects({
     refreshHealth,
@@ -373,7 +394,9 @@ export default function App() {
           error={privacy.error}
           exclusionWarning={privacy.exclusionWarning}
           exclusionInput={privacy.exclusionInput}
+          deletionStatus={privacy.deletionStatus}
           onAddExclusion={privacy.addExclusion}
+          onDeleteAllActivityData={privacy.deleteAllActivityData}
           onPrivateModeChange={privacy.setPrivateMode}
           onRemoveExclusion={privacy.removeExclusion}
           setExclusionInput={privacy.setExclusionInput}

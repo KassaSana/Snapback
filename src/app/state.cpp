@@ -366,6 +366,27 @@ std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
     return out;
 }
 
+void AppState::delete_all_activity_data() {
+    // Block the compute path while deleting so an in-flight capture event cannot recreate
+    // activity between the DELETE transaction and the in-memory reset.
+    std::lock_guard state_lock(mutex_);
+    std::lock_guard store_lock(storage_mutex_);
+    storage_.delete_all_activity_data();
+    active_session_.reset();
+    latest_prediction_.reset();
+    latest_snapback_.reset();
+    last_prediction_at_ms_.reset();
+    last_prediction_secs_ = -1.0;
+    last_event_secs_ = 0.0;
+    prediction_dirty_ = false;
+    hyperfocus_latched_ = false;
+    hyperfocus_minutes_.reset();
+    pomodoro_.reset();
+    features_.reset_for_session(std::nullopt);
+    context_tracker_.reset();
+    context_tracker_.set_goal_categories(settings_.goal_categories);
+}
+
 ExportTrainingResult AppState::export_training_data(
     const std::filesystem::path& out_dir, const std::optional<std::string>& session_id) {
     std::lock_guard lock(storage_mutex_);
