@@ -534,12 +534,10 @@ internals, and the benchmark harness.
   Extract to a named, documented table recording where each value came from and why.
   Not cosmetic.
 
-- **7.17 — `stop()` never resets the dropped-event counter.** `S`
-
-  `CaptureThread::stop()` (`capture_thread.cpp:30`) leaves `dropped_` intact, so
-  `capture_events_dropped` is cumulative across start/stop cycles within a process. Probably
-  intended — but undocumented, so the number can't be read as "drops this session." Decide
-  and write it down.
+- **7.17 — DONE 2026-07-26.** `capture_events_dropped` now means drops in the current
+  capture run. `CaptureThread::start()` resets the counter only after it accepts a real
+  restart, so a duplicate `start()` cannot erase live backpressure evidence. A restart
+  regression test pins that health contract.
 
 ---
 

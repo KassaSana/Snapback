@@ -31,6 +31,10 @@ void CaptureThread::start(InputHook* hook) {
     if (hook_thread_.joinable()) hook_thread_.join();
 
     stop_requested_.store(false, std::memory_order_release);
+    // Health reports drops for the current capture run, not the lifetime of the process.
+    // Reset only after accepting a real restart so an ignored duplicate start cannot erase
+    // evidence of backpressure while the existing hook is still running.
+    dropped_.store(0, std::memory_order_relaxed);
     failed_.store(false, std::memory_order_release);
     has_event_.store(false, std::memory_order_release);
     last_event_ms_.store(0, std::memory_order_relaxed);

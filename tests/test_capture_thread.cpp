@@ -158,6 +158,23 @@ TEST_CASE("CaptureThread counts drops once the ring is full") {
     capture.stop();
 }
 
+TEST_CASE("CaptureThread resets its drop count for each capture run") {
+    constexpr int kOverflow = 8;
+    ScriptedHook first(static_cast<int>(CaptureThread::kCapacity) + kOverflow);
+    CaptureThread capture;
+    capture.start(&first);
+    REQUIRE(wait_for_emit(first));
+    CHECK(capture.events_dropped() == kOverflow + 1);
+    capture.stop();
+    CHECK(drain(capture) == CaptureThread::kCapacity - 1);
+
+    ScriptedHook second(1);
+    capture.start(&second);
+    REQUIRE(wait_for_emit(second));
+    CHECK(capture.events_dropped() == 0);
+    capture.stop();
+}
+
 TEST_CASE("CaptureThread ignores a second start") {
     // Regression guard: this used to assign over a joinable std::thread, which calls
     // std::terminate. It was survivable only because AppState::start_engine happened to
