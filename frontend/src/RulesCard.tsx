@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import type { AppRuleKind, AppRuleRecord } from "./api";
 
 type RulesCardProps = {
@@ -16,7 +18,7 @@ type RulesCardProps = {
   setRulePattern: (value: string) => void;
 };
 
-export function RulesCard({
+export const RulesCard = memo(function RulesCard({
   appRules,
   handleAddAppRule,
   handleDeleteAppRule,
@@ -104,4 +106,4 @@ export function RulesCard({
       {rulesStatus ? <p className="helper-text">{rulesStatus}</p> : null}
     </section>
   );
-}
+});

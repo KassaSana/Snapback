@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
 import {
   captureIsReady,
@@ -20,7 +20,7 @@ type PermissionWizardProps = {
   onFocusModeChange: (mode: FocusMode) => void;
 };
 
-export function PermissionWizard({
+export const PermissionWizard = memo(function PermissionWizard({
   healthChecked,
   captureProbeConfirmed,
   captureRunning,
@@ -110,4 +110,4 @@ export function PermissionWizard({
       </div>
     </div>
   );
-}
+});

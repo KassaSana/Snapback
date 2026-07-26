@@ -5,6 +5,8 @@
 // arrow-key movement for free-ish. Roadmap 10.3 (accessibility) is still open, but the
 // shell is the one place worth getting right up front — every surface inherits it.
 
+import { memo } from "react";
+
 export const SURFACES = ["now", "review", "settings"] as const;
 
 export type Surface = (typeof SURFACES)[number];
@@ -28,7 +30,7 @@ type Props = {
   onChange: (surface: Surface) => void;
 };
 
-export function SurfaceNav({ active, onChange }: Props) {
+export const SurfaceNav = memo(function SurfaceNav({ active, onChange }: Props) {
   // Left/Right move between tabs, Home/End jump to the ends — the standard tablist
   // contract. Without this, a keyboard user can reach the tabs but not traverse them.
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -72,4 +74,4 @@ export function SurfaceNav({ active, onChange }: Props) {
       </div>
     </nav>
   );
-}
+});

@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { formatTime, type SessionRecord } from "./api";
 import { FOCUS_MODES, type FocusMode } from "./useSession";
 
@@ -13,7 +15,7 @@ type SessionControlCardProps = {
   setSessionGoal: (value: string) => void;
 };
 
-export function SessionControlCard({
+export const SessionControlCard = memo(function SessionControlCard({
   focusMode,
   handleFocusModeChange,
   handleStartSession,
@@ -78,4 +80,4 @@ export function SessionControlCard({
       </div>
     </section>
   );
-}
+});

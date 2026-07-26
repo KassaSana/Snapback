@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import type { FocusSummary } from "./api";
 import { Tile } from "./InsightsCard";
 
@@ -5,7 +7,7 @@ type FocusSummaryCardProps = {
   focusSummary: FocusSummary;
 };
 
-export function FocusSummaryCard({ focusSummary }: FocusSummaryCardProps) {
+export const FocusSummaryCard = memo(function FocusSummaryCard({ focusSummary }: FocusSummaryCardProps) {
   const { sampleCount, avgFocusScore, peakFocusScore, distractedFraction, longestFocusStreak } =
     focusSummary;
 
@@ -32,4 +34,4 @@ export function FocusSummaryCard({ focusSummary }: FocusSummaryCardProps) {
       )}
     </section>
   );
-}
+});

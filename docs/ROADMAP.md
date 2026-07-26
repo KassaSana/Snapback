@@ -1030,11 +1030,11 @@ structure alone — a real review would likely find more.
   overlay respects reduced-motion and OS contrast settings. A focus tool that fights
   assistive tech is a bad look.
 
-- **10.4 — Re-render cost on the prediction event.** `S`
-  Predictions emit up to once per second (`state.cpp:713`), and `useAppEffects.ts` runs three
-  timers on top. Nobody has measured what re-renders on each event. For an app that runs all
-  day in the background, idle CPU is a feature — a dashboard that burns cycles while
-  minimized undercuts the product's premise. Measure before optimizing.
+- **10.4 — DONE 2026-07-26.** A render probe confirmed that prediction-owned parent state
+  re-invoked stable cards on every event. Memo boundaries now isolate the stable app shell
+  and non-live cards on all three surfaces. The hero, activity history, and signals remain
+  live; the regression test advances parent telemetry and proves unchanged Now, Review, and
+  Settings cards do not render again.
 
 - **10.5 — Frontend has coverage tooling but no gate.** `S`
   `@vitest/coverage-v8` is configured (`vite.config.ts:16`, `npm run test:coverage`) but no

@@ -1,6 +1,8 @@
+import { memo } from "react";
+
 import { useDiagnostics } from "./useDiagnostics";
 
-export function DiagnosticsCard() {
+export const DiagnosticsCard = memo(function DiagnosticsCard() {
   const { diagnostics, exportBundle, refresh, status } = useDiagnostics();
   const { health, recentLogs } = diagnostics;
 
@@ -45,4 +47,4 @@ export function DiagnosticsCard() {
       {status ? <p className="helper-text">{status}</p> : null}
     </section>
   );
-}
+});

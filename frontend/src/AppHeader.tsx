@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { classifierBackendLabel, formatTrainingMetrics } from "./trainingHints";
 import { summarizePermissions } from "./healthHints";
 
@@ -25,7 +27,7 @@ const modelFileLabel = (path: string | null) => {
   return segments[segments.length - 1] ?? path;
 };
 
-export function AppHeader({
+export const AppHeader = memo(function AppHeader({
   activeWindowAvailable,
   captureFailed,
   captureProbeConfirmed,
@@ -105,4 +107,4 @@ export function AppHeader({
       </div>
     </header>
   );
-}
+});

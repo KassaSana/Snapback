@@ -1,8 +1,10 @@
+import { memo } from "react";
+
 import type { AnalyticsSummary } from "./api";
 
 type AnalyticsCardProps = { analytics: AnalyticsSummary };
 
-export function AnalyticsCard({ analytics }: AnalyticsCardProps) {
+export const AnalyticsCard = memo(function AnalyticsCard({ analytics }: AnalyticsCardProps) {
   const maxFocus = Math.max(1, ...analytics.hourly.map((entry) => entry.avgFocusScore));
   const hourMap = new Map(analytics.hourly.map((entry) => [entry.hour, entry]));
 
@@ -40,4 +42,4 @@ export function AnalyticsCard({ analytics }: AnalyticsCardProps) {
       )}
     </section>
   );
-}
+});

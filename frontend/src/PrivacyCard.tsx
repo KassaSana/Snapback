@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import type { PrivacySettings } from "./api";
 
@@ -16,7 +16,7 @@ type PrivacyCardProps = {
   deletionStatus: string | null;
 };
 
-export function PrivacyCard({
+export const PrivacyCard = memo(function PrivacyCard({
   busy,
   error,
   exclusionWarning,
@@ -126,4 +126,4 @@ export function PrivacyCard({
       {error ? <p className="helper-text alert">{error}</p> : null}
     </section>
   );
-}
+});

@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { useSummaryReport } from "./useSummaryReport";
 
 const formatDuration = (seconds: number) => {
@@ -6,7 +8,7 @@ const formatDuration = (seconds: number) => {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 };
 
-export function SummaryCard() {
+export const SummaryCard = memo(function SummaryCard() {
   const { exportSummary, report, setWindow, status, window } = useSummaryReport();
   // A just-started first session is counted before its first prediction. A completed
   // zero-prediction session is still real history (for example, capture permission failed),
@@ -52,4 +54,4 @@ export function SummaryCard() {
       {status ? <p className="helper-text">{status}</p> : null}
     </section>
   );
-}
+});

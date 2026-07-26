@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 type PermissionsCardProps = {
   captureEventsDropped: number;
   captureFailed: boolean;
@@ -11,7 +13,7 @@ type PermissionsCardProps = {
   permissionSteps: string[];
 };
 
-export function PermissionsCard({
+export const PermissionsCard = memo(function PermissionsCard({
   captureEventsDropped,
   captureFailed,
   captureFailureReason,
@@ -81,4 +83,4 @@ export function PermissionsCard({
       </div>
     </section>
   );
-}
+});

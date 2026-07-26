@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 
 import type { SessionSummary } from "./api";
 import {
@@ -65,7 +65,7 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
   );
 }
 
-export function InsightsCard({ sessionHistory }: InsightsCardProps) {
+export const InsightsCard = memo(function InsightsCard({ sessionHistory }: InsightsCardProps) {
   const aggregates = useMemo(
     () => computeInsightsAggregates(sessionHistory),
     [sessionHistory],
@@ -102,4 +102,4 @@ export function InsightsCard({ sessionHistory }: InsightsCardProps) {
       )}
     </section>
   );
-}
+});
