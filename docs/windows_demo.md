@@ -2,16 +2,9 @@
 
 This is the local Windows demo path for the C++ port. It builds the reused React
 frontend into `frontend/dist`, copies those assets next to `snapback.exe`, and
-launches the native C++ webview shell against the bundled files.
-
-> ⚠️ **`-UseVite` currently does nothing.** Audited 2026-07-23 (Roadmap 12.2). The script
-> builds `--config Release` (`windows_demo.ps1:128-130`), which defines `NDEBUG`, and the
-> 8.4 security fix made `main.cpp:196` ignore `SNAPBACK_FRONTEND_URL` in exactly that case
-> — release builds always load the bundled frontend. So the switch sets an environment
-> variable the app deliberately does not read. Worse, the documented
-> `-UseVite -SkipFrontend` combination skips building the bundle *and* cannot reach Vite,
-> leaving nothing to load. Tracked as Roadmap **8.7**; until it is resolved, treat the
-> bundled-frontend path as the only working demo flow.
+launches the native C++ webview shell against the bundled files. Pass `-UseVite` for a
+Debug build connected to a local Vite server with live reload; release builds continue to
+ignore frontend URL overrides.
 
 ## One-Command Demo
 
@@ -36,6 +29,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1
 
 # Reuse an already-running Vite server.
 powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -UseVite -SkipFrontend
+
+# Start Vite, build Debug, test, and launch against the dev server.
+powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -UseVite
 ```
 
 ## What The Script Does
@@ -43,7 +39,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -UseVite -Sk
 1. Runs frontend typecheck and `npm run build`.
 2. Configures CMake with `SNAPBACK_BUILD_APP=ON` and `SNAPBACK_ONNX=OFF`.
 3. Copies `frontend/dist` beside `snapback.exe` as `frontend/`.
-4. Builds `snapback_tests`, runs `ctest`, then builds `snapback.exe`.
+4. Builds `snapback_tests`, runs `ctest`, then builds `snapback.exe` in Release by default
+   or Debug with `-UseVite`.
 5. Launches `snapback.exe` with:
    - `SNAPBACK_DATA_DIR=.demo/data`
    - optional `SNAPBACK_FRONTEND_URL=http://127.0.0.1:5173` when `-UseVite` is passed
@@ -52,6 +49,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -UseVite -Sk
 
 The `.demo/data` folder keeps demo sessions, labels, exports, and `focoflow.db`
 away from your normal `%APPDATA%\snapback` data.
+
+`-UseVite` accepts only a loopback `http://` URL and probes it before building. With
+`-SkipFrontend`, the probe fails loudly unless an existing server is reachable.
 
 ## Manual Demo Steps
 
@@ -127,9 +127,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate_windows_package.ps1
 
 `src/main.cpp` reads demo/runtime knobs from the environment:
 
-- `SNAPBACK_FRONTEND_URL` selects the webview URL. The default remains
-  the bundled `frontend/index.html`, falling back to `http://localhost:5173`
-  only when bundled assets are absent.
+- `SNAPBACK_FRONTEND_URL` selects the webview URL in Debug builds. Release builds always
+  use the bundled `frontend/index.html` and fail closed if it is absent.
 - `SNAPBACK_DATA_DIR` overrides the SQLite/app-data folder. Without it, Windows
   uses `%APPDATA%\snapback`.
 - `SNAPBACK_OVERLAY_TEST=1` shows a sample native overlay on startup.

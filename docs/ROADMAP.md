@@ -669,20 +669,11 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   sibling QA hooks (`SNAPBACK_OVERLAY_TEST`, `SNAPBACK_NOTIFICATION_TEST`,
   `SNAPBACK_GUI_SESSION_SMOKE`) are benign — keep them.
 
-- **8.7 — The 8.4 gate silently killed the demo's `-UseVite` flow.** `S`
-  Found 2026-07-23 by the 12.2 doc audit. `scripts/windows_demo.ps1` builds
-  `--config Release` (lines 128-130), so `NDEBUG` is defined, so `main.cpp:196` ignores
-  `SNAPBACK_FRONTEND_URL`. `-UseVite` therefore sets an environment variable the app
-  deliberately does not read — it fails **silently**, loading the bundled frontend instead.
-  The documented `-UseVite -SkipFrontend` combination is worse: it skips building the
-  bundle too, so there is nothing to load.
-
-  This is not an argument to weaken 8.4 — the gate is correct. It is that the fix landed
-  without checking who called the thing it disabled. Options: allowlist
-  `http://127.0.0.1:*` / `http://localhost:*` (offered in 8.4's own text, and gated by
-  **8.5**'s threat model), have the demo script build `RelWithDebInfo`/`Debug` when
-  `-UseVite` is passed, or drop `-UseVite` and document the bundled path as the only one.
-  **Whichever is chosen, the script should fail loudly rather than ignore the switch.**
+- **8.7 — DONE 2026-07-26.** `windows_demo.ps1 -UseVite` now builds and tests Debug,
+  validates a loopback HTTP URL, and verifies the server is reachable before continuing.
+  `-UseVite -SkipFrontend` reuses an existing server and fails loudly when none is running.
+  Release demos retain the 8.4 bundled-frontend security boundary. The Windows CI smoke
+  exercises the Vite/Debug route.
 
 - **8.5 — Write a threat model.** `M` `decision`
 
