@@ -234,8 +234,7 @@ inline void register_commands(webview::webview& w, AppState& state,
 // on the UI
 // thread (see AppState's emit hook, which marshals via webview.dispatch).
 inline void emit(webview::webview& w, const char* event, const std::string& json_payload) {
-    w.eval("window.__snapback && window.__snapback.emit(\"" + std::string(event) +
-           "\", " + json_payload + ")");
+    w.eval(detail::event_dispatch_script(event, json_payload));
 }
 
 }  // namespace snapback

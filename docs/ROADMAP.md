@@ -615,28 +615,10 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
   *A thread that dies on an exception must not take the process with it.*
 
-- **8.2 — `emit()` splices JSON into a JavaScript `eval` string.** `S`
-
-  ```cpp
-  inline void emit(webview::webview& w, const char* event, const std::string& json_payload) {
-      w.eval("window.__snapback && window.__snapback.emit(\"" + std::string(event) +
-             "\", " + json_payload + ")");                            // commands.hpp:222
-  }
-  ```
-
-  `event` is always a compile-time literal; `json_payload` is `dump()`, which escapes quotes,
-  backslashes, and control characters. **Not currently exploitable.**
-
-  It is listed because it is string concatenation into a live interpreter carrying
-  attacker-influenced content (window titles), with one property holding the line: that JSON
-  is a subset of JavaScript. That subset has a famous exception — **U+2028/U+2029 are valid
-  raw in JSON strings but were line terminators in JS before ES2019**, and `dump()` defaults
-  to `ensure_ascii = false`, so they *are* emitted raw. Modern WebView2/WKWebView/WebKitGTK
-  are all ES2019+, so it holds today. The margin is one assumption wide.
-
-  **Fix:** pass through a parse boundary instead of splicing — encode the payload as a
-  properly-escaped JS string literal and `JSON.parse` it, or set it on a global and call a
-  zero-argument function.
+- **8.2 — DONE 2026-07-26.** Host events now cross into the webview as escaped string
+  literals and reconstruct payloads through `JSON.parse`; neither the event nor its JSON is
+  executable source. ASCII-only encoding also keeps U+2028/U+2029 out of the evaluated
+  script, with a webview-free regression test covering quotes and the line separator.
 
 - **8.3 — DONE 2026-07-22.** Bundled `frontend/index.html` now declares a Content Security
   Policy with same-origin scripts, explicit font/style origins, and no arbitrary script sources.
