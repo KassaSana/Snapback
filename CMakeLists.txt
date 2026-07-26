@@ -141,6 +141,7 @@ endif()
 add_library(snapback_app STATIC
   src/app/autostart.cpp
   src/app/frontend_assets.cpp
+  src/app/single_instance.cpp
   src/app/settings.cpp
   src/app/state.cpp
   src/app/support_bundle.cpp
@@ -167,6 +168,12 @@ add_test(NAME snapback_tests COMMAND snapback_tests)
 
 add_executable(snapback_feature_parity_export tools/feature_parity_export.cpp)
 target_link_libraries(snapback_feature_parity_export PRIVATE snapback_core)
+
+add_executable(snapback_instance_probe tools/single_instance_probe.cpp)
+target_link_libraries(snapback_instance_probe PRIVATE snapback_app)
+add_dependencies(snapback_tests snapback_instance_probe)
+target_compile_definitions(snapback_tests PRIVATE
+  SNAPBACK_INSTANCE_PROBE="$<TARGET_FILE:snapback_instance_probe>")
 
 if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_benchmarks benchmarks/bench_snapback.cpp)

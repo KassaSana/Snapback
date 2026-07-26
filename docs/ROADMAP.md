@@ -970,11 +970,11 @@ small; the tier is large because nobody has walked that path yet.
   export stays disabled until a completed session or prediction exists, and Review-surface
   regression verifies all four empty states together.
 
-- **9.8 — Single-instance guard.** `S`
-  Nothing prevents two Snapback processes running at once. Both would install OS-wide input
-  hooks, both would open the same SQLite file, and both would write predictions for
-  overlapping sessions. WAL makes this survivable rather than corrupting, but the data is
-  garbage and the CPU cost doubles. Autostart plus a manual launch is the obvious way in.
+- **9.8 — DONE 2026-07-26.** Snapback now acquires a process-lifetime OS lock in its data
+  directory before opening SQLite or starting capture. A second launch exits cleanly, real
+  lock failures remain errors, and crashes cannot leave a stale logical lock because
+  ownership belongs to the native handle. Cross-platform unit tests cover contention,
+  moves, release, and unusable paths.
 
 - **9.9 — DONE 2026-07-26.** The diagnostics card now exports a one-click JSON support
   bundle containing health, recent logs, version, and OS/build identity. Both the UI and
