@@ -30,6 +30,7 @@ const emptyDiagnostics: DiagnosticsSnapshot = {
     },
   },
   recentLogs: [],
+  supportBundlePrivacyNotice: "",
 };
 
 export function useDiagnostics() {
@@ -49,5 +50,18 @@ export function useDiagnostics() {
     void refresh();
   }, [refresh]);
 
-  return { diagnostics, refresh, status };
+  const exportBundle = useCallback(async () => {
+    try {
+      const result = await api.exportSupportBundle();
+      setDiagnostics((current) => ({
+        ...current,
+        supportBundlePrivacyNotice: result.privacyNotice,
+      }));
+      setStatus(`Support bundle exported to ${result.outputPath}`);
+    } catch {
+      setStatus("Could not export the support bundle.");
+    }
+  }, []);
+
+  return { diagnostics, exportBundle, refresh, status };
 }

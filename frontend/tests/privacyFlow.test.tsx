@@ -22,6 +22,7 @@ const boundary = vi.hoisted(() => {
       case "set_privacy_exclusions":
         state.privacy = { ...state.privacy, excluded_apps: args?.excludedApps ?? [] };
         return state.privacy;
+      case "delete_all_activity_data": return null;
       case "get_health": return state.health;
       case "get_settings": return { default_focus_mode: "normal" };
       case "get_active_session": case "get_latest_prediction": return null;
@@ -72,5 +73,20 @@ describe("privacy controls", () => {
     const input = await screen.findByPlaceholderText("Banking, 1Password");
     fireEvent.change(input, { target: { value: "a" } });
     expect(screen.getByText("A one-character exclusion can hide many unrelated apps.")).toBeInTheDocument();
+  });
+
+  it("requires confirmation before deleting all local activity data", async () => {
+    renderApp("settings");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete all activity data" }));
+
+    expect(boundary.invoke).not.toHaveBeenCalledWith("delete_all_activity_data");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm permanent deletion" }));
+
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("delete_all_activity_data"),
+    );
+    expect(
+      await screen.findByText("All locally collected activity data was deleted."),
+    ).toBeInTheDocument();
   });
 });

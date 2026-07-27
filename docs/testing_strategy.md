@@ -149,6 +149,14 @@ In order (`scripts/windows_demo.ps1:77-130`): builds `frontend/dist` (`npm ci`,
 **runs CTest** → builds `snapback.exe`, with the frontend bundle copied next to it. The
 tests run *before* the app is built, so a red suite stops the demo.
 
+The `-UseVite` variant selects Debug (the only configuration that honors
+`SNAPBACK_FRONTEND_URL`), starts or verifies the loopback dev server, and fails before launch
+if the server is unreachable:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows_demo.ps1 -UseVite -NoLaunch
+```
+
 GUI smoke:
 
 ```powershell

@@ -140,6 +140,7 @@ assert.equal(analytics.topApps[0].appName, "Cursor");
 const report = mapSummaryReport({
   window: "week",
   session_count: 4,
+  completed_session_count: 3,
   focus_seconds: 3600,
   avg_focus_score: 81,
   distracted_fraction: 0.2,
@@ -148,6 +149,7 @@ const report = mapSummaryReport({
 });
 assert.equal(report.window, "week");
 assert.equal(report.focusSeconds, 3600);
+assert.equal(report.completedSessionCount, 3);
 
 const categories = mapGoalCategories([{ name: "coding", keywords: ["code", "bug"] }]);
 assert.deepEqual(categories, [{ name: "coding", keywords: ["code", "bug"] }]);
@@ -156,10 +158,12 @@ const diagnostics = mapDiagnosticsSnapshot({
   version: "0.2.0",
   health: { status: "online", capture_running: true, classifier: { backend: "heuristic" } },
   recent_logs: ["2026-07-19T00:00:00Z [INFO] ready"],
+  supportBundlePrivacyNotice: "Review before sharing.",
 });
 assert.equal(diagnostics.version, "0.2.0");
 assert.equal(diagnostics.health.status, "online");
 assert.equal(diagnostics.recentLogs[0].includes("ready"), true);
+assert.equal(diagnostics.supportBundlePrivacyNotice, "Review before sharing.");
 
 const trainDeployed = mapTrainFromExportResult({
   success: true,

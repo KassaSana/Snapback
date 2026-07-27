@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { formatScore, type FocusLabel, type SessionRecap } from "./api";
 
 type SessionReviewCardsProps = {
@@ -7,7 +9,7 @@ type SessionReviewCardsProps = {
   surveyPending: boolean;
 };
 
-export function SessionReviewCards({
+export const SessionReviewCards = memo(function SessionReviewCards({
   handleLabel,
   handleSkipSurvey,
   recap,
@@ -79,4 +81,4 @@ export function SessionReviewCards({
       ) : null}
     </>
   );
-}
+});

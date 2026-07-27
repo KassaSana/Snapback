@@ -113,4 +113,18 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
     }
 }
 
+// Builds the one JavaScript expression the host evaluates to deliver an event. Both values
+// cross as escaped string literals, and the payload is reconstructed through JSON.parse
+// inside the webview. `ensure_ascii=true` keeps U+2028/U+2029 out of JavaScript source even
+// on engines that still treat those valid JSON characters as line terminators.
+inline std::string event_dispatch_script(std::string_view event,
+                                         std::string_view json_payload) {
+    const auto js_event =
+        nlohmann::json(std::string(event)).dump(-1, ' ', /*ensure_ascii=*/true);
+    const auto js_payload =
+        nlohmann::json(std::string(json_payload)).dump(-1, ' ', /*ensure_ascii=*/true);
+    return "window.__snapback && window.__snapback.emit(" + js_event +
+           ", JSON.parse(" + js_payload + "))";
+}
+
 }  // namespace snapback::detail

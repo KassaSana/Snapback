@@ -402,6 +402,7 @@ void to_json(json& j, const SummaryReport& v) {
     j = json{{"window", v.window},
              {"generatedAt", v.generated_at},
              {"sessionCount", v.session_count},
+             {"completedSessionCount", v.completed_session_count},
              {"focusSeconds", v.focus_seconds},
              {"sampleCount", v.sample_count},
              {"avgFocusScore", v.avg_focus_score},
@@ -413,6 +414,7 @@ void from_json(const json& j, SummaryReport& v) {
     v.window = get_or<std::string>(j, "window", "day");
     v.generated_at = get_or<std::string>(j, "generatedAt", "");
     v.session_count = get_or<std::size_t>(j, "sessionCount", 0);
+    v.completed_session_count = get_or<std::size_t>(j, "completedSessionCount", 0);
     v.focus_seconds = get_or<std::uint64_t>(j, "focusSeconds", 0);
     v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
     v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);

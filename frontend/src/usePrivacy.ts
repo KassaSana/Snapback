@@ -9,11 +9,12 @@ export const privacyExclusionWarning = (value: string): string | null => {
   return null;
 };
 
-export const usePrivacy = () => {
+export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) => {
   const [settings, setSettings] = useState<PrivacySettings | null>(null);
   const [exclusionInput, setExclusionInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletionStatus, setDeletionStatus] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -68,9 +69,31 @@ export const usePrivacy = () => {
     [saveExclusions, settings],
   );
 
+  const deleteAllActivityData = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setDeletionStatus(null);
+    try {
+      await api.deleteAllActivityData();
+      try {
+        await onActivityDataDeleted?.();
+      } catch {
+        // The backend deletion has already succeeded. A failed best-effort UI refresh
+        // must not tell the user that their stored activity still exists.
+      }
+      setDeletionStatus("All locally collected activity data was deleted.");
+    } catch {
+      setError("Could not delete activity data.");
+    } finally {
+      setBusy(false);
+    }
+  }, [onActivityDataDeleted]);
+
   return {
     addExclusion,
     busy,
+    deleteAllActivityData,
+    deletionStatus,
     error,
     exclusionWarning: privacyExclusionWarning(exclusionInput),
     exclusionInput,

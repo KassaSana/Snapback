@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import { formatPomodoroRemaining, type PomodoroStatus } from "./api";
 
 type PomodoroCardProps = {
@@ -13,7 +15,7 @@ const PHASE_LABELS: Record<PomodoroStatus["phase"], string> = {
   longBreak: "Long break",
 };
 
-export function PomodoroCard({ pomodoroStatus, sessionActive, onStart, onStop }: PomodoroCardProps) {
+export const PomodoroCard = memo(function PomodoroCard({ pomodoroStatus, sessionActive, onStart, onStop }: PomodoroCardProps) {
   const { running, phase, completedWorkIntervals, remainingMs } = pomodoroStatus;
 
   return (
@@ -51,4 +53,4 @@ export function PomodoroCard({ pomodoroStatus, sessionActive, onStart, onStop }:
       )}
     </section>
   );
-}
+});

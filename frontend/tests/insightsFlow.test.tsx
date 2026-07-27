@@ -6,10 +6,14 @@ const boundary = vi.hoisted(() => {
     health: Record<string, unknown>;
     history: Record<string, unknown>[];
     focusSummary: Record<string, unknown>;
+    analytics: Record<string, unknown>;
+    summary: Record<string, unknown>;
   } = {
     health: {},
     history: [],
     focusSummary: {},
+    analytics: {},
+    summary: {},
   };
 
   const invoke = vi.fn(async (cmd: string): Promise<unknown> => {
@@ -20,6 +24,10 @@ const boundary = vi.hoisted(() => {
         return state.history;
       case "get_focus_summary":
         return state.focusSummary;
+      case "get_analytics":
+        return state.analytics;
+      case "get_summary_report":
+        return state.summary;
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -87,6 +95,8 @@ beforeEach(() => {
   boundary.state.health = healthyCaptureRunning();
   boundary.state.history = [];
   boundary.state.focusSummary = {};
+  boundary.state.analytics = {};
+  boundary.state.summary = {};
 });
 
 afterEach(() => {
@@ -154,5 +164,46 @@ describe("Focus summary card", () => {
       expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { limit: 200 }),
     );
     expect(within(card).getByText(/No predictions recorded yet/i)).toBeInTheDocument();
+  });
+});
+
+describe("Review first-run states", () => {
+  it("explains all four empty analytics surfaces without presenting zeroes as insights", async () => {
+    boundary.state.history = [];
+    boundary.state.analytics = { sample_count: 0 };
+    // The backend counts an active session before its first prediction. That is still a
+    // first-run state, not one zero-valued session worth exporting.
+    boundary.state.summary = {
+      window: "day",
+      sample_count: 0,
+      session_count: 1,
+      completed_session_count: 0,
+    };
+    boundary.state.focusSummary = { sample_count: 0 };
+    renderApp("review");
+
+    expect(await screen.findByText(/No completed sessions yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/No prediction data yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/No summary data yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/No predictions recorded yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export summary" })).toBeDisabled();
+  });
+
+  it("keeps a completed zero-prediction session available for review and export", async () => {
+    boundary.state.summary = {
+      window: "day",
+      sample_count: 0,
+      session_count: 1,
+      completed_session_count: 1,
+      focus_seconds: 12,
+    };
+    renderApp("review");
+
+    const summary = screen.getByRole("heading", { name: "Summary" }).closest("section");
+    expect(summary).not.toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Export summary" })).toBeEnabled(),
+    );
+    expect(within(summary as HTMLElement).queryByText(/No summary data yet/i)).toBeNull();
   });
 });

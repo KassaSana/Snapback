@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import type { AutostartStatus } from "./api";
 
 type SettingsCardProps = {
@@ -7,7 +9,7 @@ type SettingsCardProps = {
   status: AutostartStatus | null;
 };
 
-export function SettingsCard({
+export const SettingsCard = memo(function SettingsCard({
   busy,
   error,
   onAutostartChange,
@@ -39,4 +41,4 @@ export function SettingsCard({
       ) : null}
     </section>
   );
-}
+});

@@ -427,10 +427,12 @@ internals, and the benchmark harness.
 
 - **7.6 — There is no way for a user to delete their own data.** `M`
 
-  Full sweep of `src/app/commands.hpp`. Present: `set_private_mode`,
-  `set_privacy_exclusions`, `get_privacy_settings`, 90-day auto-prune. **Absent:** delete all
-  data now; delete a single session; export my data in a legible form (`export_training_data`
-  produces ML-shaped CSV); open the data folder.
+  **PARTIAL 2026-07-26:** Settings now provides a two-step, permanent “delete all activity
+  data” action. The native command removes sessions, predictions, feature/context snapshots,
+  labels, and Snapback events atomically, resets live session state, and deliberately
+  preserves privacy settings and app rules. Still absent: delete a single session; export my
+  data in a legible form (`export_training_data` produces ML-shaped CSV); open the data
+  folder.
 
   For an app whose core function is recording every keystroke and window title, "you may
   inspect and destroy what I collected" isn't a nice-to-have — it's what makes local-only
@@ -534,12 +536,10 @@ internals, and the benchmark harness.
   Extract to a named, documented table recording where each value came from and why.
   Not cosmetic.
 
-- **7.17 — `stop()` never resets the dropped-event counter.** `S`
-
-  `CaptureThread::stop()` (`capture_thread.cpp:30`) leaves `dropped_` intact, so
-  `capture_events_dropped` is cumulative across start/stop cycles within a process. Probably
-  intended — but undocumented, so the number can't be read as "drops this session." Decide
-  and write it down.
+- **7.17 — DONE 2026-07-26.** `capture_events_dropped` now means drops in the current
+  capture run. `CaptureThread::start()` resets the counter only after it accepts a real
+  restart, so a duplicate `start()` cannot erase live backpressure evidence. A restart
+  regression test pins that health contract.
 
 ---
 
@@ -617,28 +617,10 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
   *A thread that dies on an exception must not take the process with it.*
 
-- **8.2 — `emit()` splices JSON into a JavaScript `eval` string.** `S`
-
-  ```cpp
-  inline void emit(webview::webview& w, const char* event, const std::string& json_payload) {
-      w.eval("window.__snapback && window.__snapback.emit(\"" + std::string(event) +
-             "\", " + json_payload + ")");                            // commands.hpp:222
-  }
-  ```
-
-  `event` is always a compile-time literal; `json_payload` is `dump()`, which escapes quotes,
-  backslashes, and control characters. **Not currently exploitable.**
-
-  It is listed because it is string concatenation into a live interpreter carrying
-  attacker-influenced content (window titles), with one property holding the line: that JSON
-  is a subset of JavaScript. That subset has a famous exception — **U+2028/U+2029 are valid
-  raw in JSON strings but were line terminators in JS before ES2019**, and `dump()` defaults
-  to `ensure_ascii = false`, so they *are* emitted raw. Modern WebView2/WKWebView/WebKitGTK
-  are all ES2019+, so it holds today. The margin is one assumption wide.
-
-  **Fix:** pass through a parse boundary instead of splicing — encode the payload as a
-  properly-escaped JS string literal and `JSON.parse` it, or set it on a global and call a
-  zero-argument function.
+- **8.2 — DONE 2026-07-26.** Host events now cross into the webview as escaped string
+  literals and reconstruct payloads through `JSON.parse`; neither the event nor its JSON is
+  executable source. ASCII-only encoding also keeps U+2028/U+2029 out of the evaluated
+  script, with a webview-free regression test covering quotes and the line separator.
 
 - **8.3 — DONE 2026-07-22.** Bundled `frontend/index.html` now declares a Content Security
   Policy with same-origin scripts, explicit font/style origins, and no arbitrary script sources.
@@ -687,20 +669,11 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   sibling QA hooks (`SNAPBACK_OVERLAY_TEST`, `SNAPBACK_NOTIFICATION_TEST`,
   `SNAPBACK_GUI_SESSION_SMOKE`) are benign — keep them.
 
-- **8.7 — The 8.4 gate silently killed the demo's `-UseVite` flow.** `S`
-  Found 2026-07-23 by the 12.2 doc audit. `scripts/windows_demo.ps1` builds
-  `--config Release` (lines 128-130), so `NDEBUG` is defined, so `main.cpp:196` ignores
-  `SNAPBACK_FRONTEND_URL`. `-UseVite` therefore sets an environment variable the app
-  deliberately does not read — it fails **silently**, loading the bundled frontend instead.
-  The documented `-UseVite -SkipFrontend` combination is worse: it skips building the
-  bundle too, so there is nothing to load.
-
-  This is not an argument to weaken 8.4 — the gate is correct. It is that the fix landed
-  without checking who called the thing it disabled. Options: allowlist
-  `http://127.0.0.1:*` / `http://localhost:*` (offered in 8.4's own text, and gated by
-  **8.5**'s threat model), have the demo script build `RelWithDebInfo`/`Debug` when
-  `-UseVite` is passed, or drop `-UseVite` and document the bundled path as the only one.
-  **Whichever is chosen, the script should fail loudly rather than ignore the switch.**
+- **8.7 — DONE 2026-07-26.** `windows_demo.ps1 -UseVite` now builds and tests Debug,
+  validates a loopback HTTP URL, and verifies the server is reachable before continuing.
+  `-UseVite -SkipFrontend` reuses an existing server and fails loudly when none is running.
+  Release demos retain the 8.4 bundled-frontend security boundary. The Windows CI smoke
+  exercises the Vite/Debug route.
 
 - **8.5 — Write a threat model.** `M` `decision`
 
@@ -985,23 +958,21 @@ small; the tier is large because nobody has walked that path yet.
   most of these render as a dashboard that simply stops updating, which is
   indistinguishable from "you're doing great."
 
-- **9.7 — Empty states.** `S`
-  Every analytics surface is built for a user with history. A brand-new user's first run
-  shows analytics, summary reports, insights, and focus summary — all computed over zero
-  rows. Verify what each renders (0? NaN? a blank chart?) and design the first-run state.
-  Cheap, and it's literally the first thing every new user sees.
+- **9.7 — DONE 2026-07-26.** Insights, trends, summary reports, and recent focus now all
+  render explicit first-run guidance instead of zero-valued metrics or blank charts. Summary
+  export stays disabled until a completed session or prediction exists, and Review-surface
+  regression verifies all four empty states together.
 
-- **9.8 — Single-instance guard.** `S`
-  Nothing prevents two Snapback processes running at once. Both would install OS-wide input
-  hooks, both would open the same SQLite file, and both would write predictions for
-  overlapping sessions. WAL makes this survivable rather than corrupting, but the data is
-  garbage and the CPU cost doubles. Autostart plus a manual launch is the obvious way in.
+- **9.8 — DONE 2026-07-26.** Snapback now acquires a process-lifetime OS lock in its data
+  directory before opening SQLite or starting capture. A second launch exits cleanly, real
+  lock failures remain errors, and crashes cannot leave a stale logical lock because
+  ownership belongs to the native handle. Cross-platform unit tests cover contention,
+  moves, release, and unusable paths.
 
-- **9.9 — Support bundle export.** `S`
-  4.10 added an in-app diagnostics panel; the natural completion is a one-click "export
-  diagnostics" that writes health status, recent log tail, version (9.2), and OS/build info
-  to a file the user can attach to a bug report — with an explicit note about what it does
-  and does not contain. Pairs with 7.6's data-export work; same plumbing.
+- **9.9 — DONE 2026-07-26.** The diagnostics card now exports a one-click JSON support
+  bundle containing health, recent logs, version, and OS/build identity. Both the UI and
+  file state exactly what is included, what is excluded, and that logs may expose local
+  paths or error details; native and UI regressions pin the privacy boundary.
 
 ---
 
@@ -1046,20 +1017,10 @@ structure alone — a real review would likely find more.
   a settings/advanced split?) before more cards land — and 7.6, 9.6, and 9.7 all want to add
   surfaces.
 
-- **10.7 — The four new surface components shipped with no tests.** `S`
-  Opened 2026-07-25 by the sync. `FocusStateHero.tsx`, `SurfaceNav.tsx`,
-  `VerdictFeedback.tsx`, and `SignalsCard.tsx` were added on `fix-macos-app-launch` with no
-  `*.test.tsx` between them. [CLAUDE.md](../CLAUDE.md) says every production module needs a
-  test before it is considered complete, so **this is the only standing violation of that
-  rule in the repo** — filed rather than quietly forgiven, because 10.2's work is otherwise
-  done and would look finished.
-
-  Not equally urgent across the four. `SurfaceNav` and `FocusStateHero` are the ones worth
-  real tests: nav is now the only path to two thirds of the app, so a regression there hides
-  every Review and Settings card, and the hero is the surface that decides what the user
-  believes about their focus *state* — the exact thing 0.3 proved the backend can get
-  silently wrong. `VerdictFeedback` writes training labels, so it should at least be tested
-  to submit what it displays. `SignalsCard` is presentational and can ride on the others.
+- **10.7 — DONE 2026-07-26.** `FocusStateHero`, `SurfaceNav`, `VerdictFeedback`, and
+  `SignalsCard` now have direct component tests. The suite covers verdict evidence and
+  feedback, tab selection/ARIA wiring/keyboard focus, concrete correction labels, and signal
+  list rendering including the empty state.
 
 - **10.3 — Accessibility has never been assessed.** `M`
   No audit has been done. Specifically worth checking: keyboard navigation through the card
@@ -1069,11 +1030,11 @@ structure alone — a real review would likely find more.
   overlay respects reduced-motion and OS contrast settings. A focus tool that fights
   assistive tech is a bad look.
 
-- **10.4 — Re-render cost on the prediction event.** `S`
-  Predictions emit up to once per second (`state.cpp:713`), and `useAppEffects.ts` runs three
-  timers on top. Nobody has measured what re-renders on each event. For an app that runs all
-  day in the background, idle CPU is a feature — a dashboard that burns cycles while
-  minimized undercuts the product's premise. Measure before optimizing.
+- **10.4 — DONE 2026-07-26.** A render probe confirmed that prediction-owned parent state
+  re-invoked stable cards on every event. Memo boundaries now isolate the stable app shell
+  and non-live cards on all three surfaces. The hero, activity history, and signals remain
+  live; the regression test advances parent telemetry and proves unchanged Now, Review, and
+  Settings cards do not render again.
 
 - **10.5 — Frontend has coverage tooling but no gate.** `S`
   `@vitest/coverage-v8` is configured (`vite.config.ts:16`, `npm run test:coverage`) but no

@@ -2,10 +2,11 @@
 //
 // Boot order:
 //   1. resolve the app data directory
-//   2. optionally load the ONNX model
-//   3. open SQLite storage
-//   4. build AppState and start the engine
-//   5. create the webview, bind IPC, load the React build, run the loop
+//   2. acquire the single-instance lock
+//   3. optionally load the ONNX model
+//   4. open SQLite storage
+//   5. build AppState and start the engine
+//   6. create the webview, bind IPC, load the React build, run the loop
 #include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
 
 #include <cstdint>
@@ -23,6 +24,7 @@
 #include "app/frontend_assets.hpp"
 #include "app/ipc_shim.hpp"
 #include "app/notification.hpp"
+#include "app/single_instance.hpp"
 #include "app/state.hpp"
 #include "app/tray.hpp"
 #include "capture/permissions.hpp"
@@ -116,6 +118,15 @@ int main() {
 
     const auto data_dir = app_data_dir();
     std::filesystem::create_directories(data_dir);
+
+    // Acquire this before opening even the rotating log: a losing process must not rotate
+    // the live instance's file out from under it. The lock is tied to this object's OS
+    // handle, so crashes release it automatically and a stale lock file is harmless.
+    auto instance_guard = SingleInstanceGuard::acquire(data_dir / "snapback.lock");
+    if (!instance_guard.acquired()) {
+        std::cerr << instance_guard.message() << '\n';
+        return instance_guard.status() == SingleInstanceStatus::AlreadyRunning ? 0 : 1;
+    }
 
     // One leveled logger for the process, writing to a rotating file next to
     // the DB instead of the console (nothing owns a terminal once this ships as a GUI

@@ -74,6 +74,7 @@ public:
     // Aggregate the most recent `limit` predictions into recap stats (avg/peak/streak).
     FocusSummary focus_summary(std::size_t limit = 200);
     std::vector<SessionSummary> session_history(std::size_t limit);
+    void delete_all_activity_data();
     ExportTrainingResult export_training_data(
         const std::filesystem::path& out_dir,
         const std::optional<std::string>& session_id = std::nullopt);

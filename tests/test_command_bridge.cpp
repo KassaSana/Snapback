@@ -49,6 +49,35 @@ TEST_CASE("run_json_command converts a thrown exception into the error envelope"
     CHECK(parsed.at("__snapback_error") == "boom");
 }
 
+TEST_CASE("event_dispatch_script crosses an escaped JSON parse boundary") {
+    const std::string line_separator = "\xE2\x80\xA8";
+    const std::string payload =
+        std::string(R"({"title":"before)") + line_separator + R"(after","quote":"\""})";
+
+    const std::string event = "predic\"tion";
+    const auto script = detail::event_dispatch_script(event, payload);
+    const std::string prefix = "window.__snapback && window.__snapback.emit(";
+    const std::string separator = ", JSON.parse(";
+    REQUIRE(script.starts_with(prefix));
+    REQUIRE(script.ends_with("))"));
+    const auto separator_at = script.find(separator, prefix.size());
+    REQUIRE(separator_at != std::string::npos);
+
+    // The generated JavaScript literals use JSON's string grammar, so decoding each one
+    // with the same JSON parser proves the exact event and payload make a round trip. Exact
+    // prefix/suffix checks also reject appended executable source.
+    const auto event_literal =
+        script.substr(prefix.size(), separator_at - prefix.size());
+    const auto payload_begin = separator_at + separator.size();
+    const auto payload_literal =
+        script.substr(payload_begin, script.size() - payload_begin - 2);
+    CHECK(json::parse(event_literal).get<std::string>() == event);
+    const auto decoded_payload = json::parse(payload_literal).get<std::string>();
+    CHECK(json::parse(decoded_payload) == json::parse(payload));
+    CHECK(script.find(line_separator) == std::string::npos);
+    CHECK(script.find("\\u2028") != std::string::npos);
+}
+
 TEST_CASE("validation helpers trim, reject blanks, and cap length") {
     CHECK(detail::validate_required_text("Goal", "  ship it  ", 280) == "ship it");
     CHECK_THROWS_AS(detail::validate_required_text("Goal", "   ", 280), std::runtime_error);

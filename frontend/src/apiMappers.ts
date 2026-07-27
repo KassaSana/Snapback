@@ -103,6 +103,9 @@ export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
     window: (window === "week" ? "week" : "day") as SummaryWindow,
     generatedAt: String(raw.generated_at ?? raw.generatedAt ?? ""),
     sessionCount: Number(raw.session_count ?? raw.sessionCount ?? 0),
+    completedSessionCount: Number(
+      raw.completed_session_count ?? raw.completedSessionCount ?? 0,
+    ),
     focusSeconds: Number(raw.focus_seconds ?? raw.focusSeconds ?? 0),
     sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
     avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
@@ -209,6 +212,7 @@ export function mapDiagnosticsSnapshot(raw: Record<string, unknown>): Diagnostic
     version: String(raw.version ?? "0.0.0-dev"),
     health: mapHealth((raw.health as Record<string, unknown>) ?? {}),
     recentLogs: Array.isArray(logs) ? logs.map((line) => String(line)) : [],
+    supportBundlePrivacyNotice: String(raw.supportBundlePrivacyNotice ?? ""),
   };
 }
 

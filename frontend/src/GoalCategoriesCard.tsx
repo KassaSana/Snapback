@@ -1,6 +1,8 @@
+import { memo } from "react";
+
 import { useGoalCategories } from "./useGoalCategories";
 
-export function GoalCategoriesCard() {
+export const GoalCategoriesCard = memo(function GoalCategoriesCard() {
   const { categories, save, status, update } = useGoalCategories();
 
   return (
@@ -28,4 +30,4 @@ export function GoalCategoriesCard() {
       {status ? <p className="helper-text">{status}</p> : null}
     </section>
   );
-}
+});

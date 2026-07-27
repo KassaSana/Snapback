@@ -16,6 +16,7 @@
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
 #include "app/state.hpp"
+#include "app/support_bundle.hpp"
 #include "app/training_deploy.hpp"
 #include "snapback/overlay.hpp"
 
@@ -42,7 +43,17 @@ inline void register_commands(webview::webview& w, AppState& state,
 
     // --- Health + predictions ---
     bind_cmd(w, "get_health", [&state](const json&) { return json(state.health()); });
-    bind_cmd(w, "get_diagnostics", [&state](const json&) { return json(state.diagnostics()); });
+    bind_cmd(w, "get_diagnostics", [&state](const json&) {
+        auto result = json(state.diagnostics());
+        result["supportBundlePrivacyNotice"] = kSupportBundlePrivacyNotice;
+        return result;
+    });
+    bind_cmd(w, "export_support_bundle", [&state, data_dir](const json&) {
+        const auto exported =
+            export_support_bundle(data_dir / "exports" / "support", state.diagnostics());
+        return json{{"outputPath", exported.output_path},
+                    {"privacyNotice", exported.privacy_notice}};
+    });
     bind_cmd(w, "get_latest_prediction", [&state](const json&) {
         auto p = state.latest_prediction();
         return p ? json(*p) : json(nullptr);
@@ -127,6 +138,10 @@ inline void register_commands(webview::webview& w, AppState& state,
         }
         state.set_privacy_exclusions(std::move(exclusions));
         return json(state.privacy_settings());
+    });
+    bind_cmd(w, "delete_all_activity_data", [&state](const json&) {
+        state.delete_all_activity_data();
+        return json(nullptr);
     });
     bind_cmd(w, "get_goal_categories", [&state](const json&) {
         return json(state.goal_categories());
@@ -223,8 +238,7 @@ inline void register_commands(webview::webview& w, AppState& state,
 // on the UI
 // thread (see AppState's emit hook, which marshals via webview.dispatch).
 inline void emit(webview::webview& w, const char* event, const std::string& json_payload) {
-    w.eval("window.__snapback && window.__snapback.emit(\"" + std::string(event) +
-           "\", " + json_payload + ")");
+    w.eval(detail::event_dispatch_script(event, json_payload));
 }
 
 }  // namespace snapback

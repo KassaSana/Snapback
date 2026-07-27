@@ -1,7 +1,9 @@
+import { memo } from "react";
+
 import { useDiagnostics } from "./useDiagnostics";
 
-export function DiagnosticsCard() {
-  const { diagnostics, refresh, status } = useDiagnostics();
+export const DiagnosticsCard = memo(function DiagnosticsCard() {
+  const { diagnostics, exportBundle, refresh, status } = useDiagnostics();
   const { health, recentLogs } = diagnostics;
 
   return (
@@ -34,7 +36,15 @@ export function DiagnosticsCard() {
       <div className="diagnostics-log" aria-label="Recent log lines">
         {recentLogs.length > 0 ? recentLogs.map((line, index) => <code key={`${line}-${index}`}>{line}</code>) : <span className="helper-text">No recent log lines.</span>}
       </div>
+      {diagnostics.supportBundlePrivacyNotice ? (
+        <p className="helper-text">{diagnostics.supportBundlePrivacyNotice}</p>
+      ) : null}
+      <div className="button-row">
+        <button className="secondary-button" onClick={() => void exportBundle()}>
+          Export support bundle
+        </button>
+      </div>
       {status ? <p className="helper-text">{status}</p> : null}
     </section>
   );
-}
+});

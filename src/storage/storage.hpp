@@ -75,6 +75,9 @@ public:
     std::optional<SessionRecord> active_session();
     std::vector<SessionRecord> recent_sessions(std::size_t limit);
     SessionRecap recap(const std::string& session_id);
+    // Atomically removes every session and its collected activity while preserving
+    // user configuration such as app rules.
+    void delete_all_activity_data();
 
     // Infers and saves an automatic session label on stop.
     static FocusLabel infer_session_label(const SessionRecap& recap);

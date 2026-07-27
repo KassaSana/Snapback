@@ -419,6 +419,27 @@ TEST_CASE("AppState persists privacy settings and suppresses private events") {
           std::vector<std::string>{"Banking", "1Password"});
 }
 
+TEST_CASE("AppState deletes collected activity and resets the live session") {
+    auto state = make_state();
+    const auto session = state->start_session("Delete this", FocusMode::Normal);
+    state->start_pomodoro();
+    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
+    state->upsert_app_rule("Cursor", AppRuleKind::Allow, std::nullopt);
+    REQUIRE(state->active_session().has_value());
+    REQUIRE(state->latest_prediction().has_value());
+
+    state->delete_all_activity_data();
+
+    CHECK(state->active_session() == std::nullopt);
+    CHECK(state->latest_prediction() == std::nullopt);
+    CHECK(state->prediction_history(10).empty());
+    CHECK(state->session_history(10).empty());
+    CHECK_FALSE(state->pomodoro_status().running);
+    REQUIRE(state->app_rules().size() == 1);
+    CHECK(state->app_rules().front().pattern == "Cursor");
+    CHECK(state->get_session(session.session_id) == std::nullopt);
+}
+
 TEST_CASE("AppState excludes matching apps without affecting other apps") {
     auto state = make_state();
     state->set_privacy_exclusions({"1Password"});
@@ -503,6 +524,24 @@ TEST_CASE("AppState creates and exports day or week summary reports") {
     CHECK(exported.window == "week");
     CHECK(std::filesystem::exists(exported.output_path));
     CHECK(read_file(exported.output_path).find("\"window\": \"week\"") != std::string::npos);
+}
+
+TEST_CASE("AppState summary distinguishes active from completed sessions without predictions") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage));
+    const auto session = state->start_session("Permission recovery", FocusMode::Normal);
+
+    auto active_report = state->summary_report("day");
+    CHECK(active_report.session_count == 1);
+    CHECK(active_report.completed_session_count == 0);
+    CHECK(active_report.sample_count == 0);
+
+    state->stop_session(session.session_id);
+    auto completed_report = state->summary_report("day");
+    CHECK(completed_report.session_count == 1);
+    CHECK(completed_report.completed_session_count == 1);
+    CHECK(completed_report.sample_count == 0);
 }
 
 TEST_CASE("AppState persists editable goal categories") {

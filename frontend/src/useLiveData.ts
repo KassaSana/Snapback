@@ -114,6 +114,15 @@ export const useLiveData = () => {
     setHyperfocusNote(payload.message);
   }, []);
 
+  const clearActivityData = useCallback(() => {
+    setPrediction(null);
+    setPredictionHistory([]);
+    setHyperfocusNote(null);
+    setSnapbackNote(null);
+    setContextTimeline([]);
+    lastTimelineRefreshAtRef.current = null;
+  }, []);
+
   const signals = useMemo(() => buildSignals(prediction), [prediction]);
   const riskValue = prediction?.distractionRisk ?? null;
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
@@ -121,6 +130,7 @@ export const useLiveData = () => {
 
   return {
     contextTimeline,
+    clearActivityData,
     handleDismissSnapback,
     handleHyperfocus,
     handlePrediction,

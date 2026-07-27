@@ -301,7 +301,7 @@ jobs:
       - name: Run Windows demo no-launch smoke
         shell: pwsh
         timeout-minutes: 30
-        run: .\scripts\windows_demo.ps1 -NoLaunch
+        run: .\scripts\windows_demo.ps1 -UseVite -NoLaunch
 
       - name: Upload demo logs
         if: always()

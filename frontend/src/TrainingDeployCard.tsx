@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 import type { FocusLabel, TrainingDeployStatus } from "./api";
 import {
   buildTrainingReadinessBlockers,
@@ -33,7 +35,7 @@ type TrainingDeployCardProps = {
   trainingInProgress: boolean;
 };
 
-export function TrainingDeployCard({
+export const TrainingDeployCard = memo(function TrainingDeployCard({
   canTrainFromExport,
   classifierBackend,
   classifierModelId,
@@ -227,4 +229,4 @@ export function TrainingDeployCard({
       </div>
     </section>
   );
-}
+});
