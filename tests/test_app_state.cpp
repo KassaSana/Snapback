@@ -41,9 +41,10 @@ public:
         }
     }
 
-    void stop() override { running_.store(false, std::memory_order_relaxed); }
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
 
     bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+    bool stopped() const { return !running_.load(std::memory_order_acquire); }
 
 private:
     std::atomic<bool> running_{true};
@@ -72,7 +73,7 @@ public:
         }
     }
 
-    void stop() override { running_.store(false, std::memory_order_relaxed); }
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
 
 private:
     std::atomic<bool> running_{true};
@@ -83,7 +84,7 @@ public:
     void run(InputCallback, const std::atomic<bool>&) override {
         returned_.store(true, std::memory_order_release);
     }
-    void stop() override {}
+    void stop() noexcept override {}
 
     bool returned() const { return returned_.load(std::memory_order_acquire); }
 
@@ -713,6 +714,20 @@ TEST_CASE("AppState health reflects offline engine before capture starts") {
     CHECK(health.status == "offline");
     CHECK_FALSE(health.capture_running);
     CHECK(health.classifier.backend == "heuristic");
+}
+
+TEST_CASE("AppState destruction stops a running engine") {
+    OneShotHook hook;
+    {
+        auto state = make_state();
+        state->start_engine_for_test(&hook);
+        for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        REQUIRE(hook.emitted());
+    }
+
+    CHECK(hook.stopped());
 }
 
 TEST_CASE("AppState health reports a capture hook that stopped unexpectedly") {

@@ -39,13 +39,14 @@ public:
     // somewhere other than stderr.
     explicit AppState(Storage storage, std::filesystem::path app_data_dir = {},
                       Logger* logger = nullptr);
+    ~AppState() noexcept;
 
     // Spawn capture and the engine tick thread.
     void start_engine();
     // Test seam: run the same engine loop with an injected hook instead of installing
     // the platform-wide input hook.
     void start_engine_for_test(InputHook* hook);
-    void stop_engine();
+    void stop_engine() noexcept;
 
     // Host->frontend event sink, set by main.cpp once the webview exists. Called with
     // (event_name, json_payload) when the tick produces a new prediction or snapback.

@@ -97,7 +97,7 @@ public:
         release_run_loop();
     }
 
-    void stop() override {
+    void stop() noexcept override {
         // Stop the HOOK thread's run loop, not the caller's. This used to be
         // CFRunLoopStop(CFRunLoopGetCurrent()), which on the UI thread targeted the app's
         // own run loop — wrong loop, and under the webview potentially a live one. It only

@@ -43,7 +43,7 @@ public:
         }
     }
 
-    void stop() override {}
+    void stop() noexcept override {}
 };
 
 }  // namespace

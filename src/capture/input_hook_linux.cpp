@@ -99,7 +99,7 @@ public:
         fds_.clear();
     }
 
-    void stop() override {}
+    void stop() noexcept override {}
 
 private:
     void run_polling_fallback(const std::atomic<bool>& stop_requested) {

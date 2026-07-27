@@ -31,8 +31,9 @@ public:
     // Calling start() twice without stop() is a no-op, not a crash: assigning over a
     // joinable std::thread calls std::terminate. That invariant used to live in the caller
     // (AppState::start_engine's CAS); it belongs here.
+    ~CaptureThread() noexcept { stop(); }
     void start(InputHook* hook = nullptr);
-    void stop();
+    void stop() noexcept;
 
     // Engine side: drain one event, or nullopt if the buffer is empty.
     std::optional<CaptureEvent> next_event() { return buffer_.pop(); }

@@ -137,7 +137,7 @@ public:
         g_hook_thread_id.store(0, std::memory_order_release);
     }
 
-    void stop() override {
+    void stop() noexcept override {
         if (const DWORD thread_id = g_hook_thread_id.load(std::memory_order_acquire);
             thread_id != 0) {
             PostThreadMessageW(thread_id, WM_QUIT, 0, 0);

@@ -81,6 +81,11 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     context_tracker_.set_goal_categories(settings_.goal_categories);
 }
 
+AppState::~AppState() noexcept {
+    set_emit_hook(nullptr);
+    stop_engine();
+}
+
 std::string AppState::now_rfc3339() {
     const std::time_t now = std::time(nullptr);
     std::tm tm{};
@@ -180,30 +185,36 @@ void AppState::start_engine_impl(InputHook* hook) {
         // needs to touch storage_ to discover it (keeps the hot path storage-free).
         if (!active_session_) active_session_ = storage_.active_session();
     }
-    capture_.start(hook);
-    engine_thread_ = std::thread([this] {
-        while (engine_running_.load(std::memory_order_relaxed)) {
-            try {
-                engine_tick();
-            } catch (const std::exception& error) {
+    try {
+        capture_.start(hook);
+        engine_thread_ = std::thread([this] {
+            while (engine_running_.load(std::memory_order_relaxed)) {
                 try {
-                    std::ostringstream message;
-                    message << "engine tick failed: " << error.what();
-                    log().error(message.str());
+                    engine_tick();
+                } catch (const std::exception& error) {
+                    try {
+                        std::ostringstream message;
+                        message << "engine tick failed: " << error.what();
+                        log().error(message.str());
+                    } catch (...) {
+                        // Logging must not turn a contained engine failure into an
+                        // unhandled exception on this thread.
+                    }
                 } catch (...) {
-                    // Logging must not turn a contained engine failure into an
-                    // unhandled exception on this thread.
+                    try {
+                        log().error("engine tick failed: unknown exception");
+                    } catch (...) {
+                        // Keep the thread boundary intact even if the logger fails.
+                    }
                 }
-            } catch (...) {
-                try {
-                    log().error("engine tick failed: unknown exception");
-                } catch (...) {
-                    // Keep the thread boundary intact even if the logger fails.
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    });
+        });
+    } catch (...) {
+        engine_running_.store(false, std::memory_order_release);
+        capture_.stop();
+        throw;
+    }
 }
 
 void AppState::set_emit_hook(EmitHook hook) {
@@ -211,7 +222,7 @@ void AppState::set_emit_hook(EmitHook hook) {
     emit_hook_ = std::move(hook);
 }
 
-void AppState::stop_engine() {
+void AppState::stop_engine() noexcept {
     engine_running_.store(false, std::memory_order_relaxed);
     capture_.stop();
     if (engine_thread_.joinable()) engine_thread_.join();

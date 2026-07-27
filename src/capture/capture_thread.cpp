@@ -74,7 +74,7 @@ void CaptureThread::start(InputHook* hook) {
     });
 }
 
-void CaptureThread::stop() {
+void CaptureThread::stop() noexcept {
     // Stop the same hook start() ran, not the singleton — otherwise an injected fake would
     // never be told to return and the join below would hang forever.
     stop_requested_.store(true, std::memory_order_release);

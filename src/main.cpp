@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -40,6 +41,22 @@
 #endif
 
 namespace {
+
+class EngineLifetime {
+public:
+    explicit EngineLifetime(snapback::AppState& state) : state_(&state) {}
+    ~EngineLifetime() noexcept { stop(); }
+
+    void stop() noexcept {
+        if (!state_) return;
+        state_->set_emit_hook(nullptr);
+        state_->stop_engine();
+        state_ = nullptr;
+    }
+
+private:
+    snapback::AppState* state_;
+};
 
 std::optional<std::string> env_var(const char* name) {
 #if defined(_WIN32)
@@ -151,12 +168,13 @@ int main() {
     logger.info("snapback " SNAPBACK_VERSION " starting");
     logger.info("data dir: " + data_dir.string());
 
-    auto storage = Storage::open(data_dir, &logger);
-    if (!storage) {
-        logger.error("failed to open storage at startup");
-        return 1;
-    }
-    logger.info("storage opened: " + (data_dir / "focoflow.db").string());
+    try {
+        auto storage = Storage::open(data_dir, &logger);
+        if (!storage) {
+            logger.error("failed to open storage at startup");
+            return 1;
+        }
+        logger.info("storage opened: " + (data_dir / "focoflow.db").string());
 
     // Heap-allocate AppState: it embeds the 64K-slot capture ring buffer inline (~5 MB),
     // which blows the default 1 MB stack if placed as a local. The tests do the same via
@@ -185,6 +203,9 @@ int main() {
         [state = state.get()] { state->dismiss_snapback(); });
 
     webview::webview w(/*debug=*/true, nullptr);
+    // This guard is declared after the webview, so exception unwinding stops
+    // capture and event dispatch before the webview itself is destroyed.
+    EngineLifetime engine_lifetime(*state);
     w.set_title("Snapback");
     w.set_size(1100, 760, WEBVIEW_HINT_NONE);
 
@@ -299,7 +320,13 @@ int main() {
 
     w.run();
 
-    state->set_emit_hook(nullptr);  // stop emitting into a torn-down webview
-    state->stop_engine();
-    return 0;
+        engine_lifetime.stop();
+        return 0;
+    } catch (const std::exception& error) {
+        logger.error(std::string("startup/runtime failure: ") + error.what());
+        return 1;
+    } catch (...) {
+        logger.error("startup/runtime failure: unknown exception");
+        return 1;
+    }
 }

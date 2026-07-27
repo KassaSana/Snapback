@@ -41,9 +41,10 @@ public:
         }
     }
 
-    void stop() override { running_.store(false, std::memory_order_relaxed); }
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
 
     bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+    bool stopped() const { return !running_.load(std::memory_order_acquire); }
 
 private:
     int count_;
@@ -56,7 +57,7 @@ public:
     void run(InputCallback, const std::atomic<bool>&) override {
         returned_.store(true, std::memory_order_release);
     }
-    void stop() override {}
+    void stop() noexcept override {}
 
     bool returned() const { return returned_.load(std::memory_order_acquire); }
 
@@ -77,7 +78,7 @@ public:
         }
     }
 
-    void stop() override { released_.store(true, std::memory_order_release); }
+    void stop() noexcept override { released_.store(true, std::memory_order_release); }
 
     bool saw_stop_on_entry() const {
         return saw_stop_on_entry_.load(std::memory_order_acquire);
@@ -219,6 +220,17 @@ TEST_CASE("CaptureThread stop is safe without a start") {
     CaptureThread capture;
     capture.stop();
     CHECK_FALSE(capture.running());
+}
+
+TEST_CASE("CaptureThread destruction stops a running hook") {
+    ScriptedHook hook(1);
+    {
+        CaptureThread capture;
+        capture.start(&hook);
+        REQUIRE(wait_for_emit(hook));
+    }
+
+    CHECK(hook.stopped());
 }
 
 TEST_CASE("CaptureThread preserves a stop requested before the hook enters run") {

@@ -28,7 +28,7 @@ public:
     // blocking OS loop so it can observe the flag promptly.
     virtual void run(InputCallback on_event,
                      const std::atomic<bool>& stop_requested) = 0;
-    virtual void stop() = 0;
+    virtual void stop() noexcept = 0;
 
     // The implementation selects the platform backend.
     static InputHook& instance();
