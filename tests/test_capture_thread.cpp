@@ -26,7 +26,7 @@ class ScriptedHook final : public InputHook {
 public:
     explicit ScriptedHook(int count) : count_(count) {}
 
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
         for (int i = 0; i < count_ && running_.load(std::memory_order_relaxed); ++i) {
             CaptureEvent ev;
             ev.event_type = EventType::KeyPress;
@@ -53,13 +53,39 @@ private:
 
 class ReturningHook final : public InputHook {
 public:
-    void run(InputCallback) override { returned_.store(true, std::memory_order_release); }
+    void run(InputCallback, const std::atomic<bool>&) override {
+        returned_.store(true, std::memory_order_release);
+    }
     void stop() override {}
 
     bool returned() const { return returned_.load(std::memory_order_acquire); }
 
 private:
     std::atomic<bool> returned_{false};
+};
+
+class DelayedEntryHook final : public InputHook {
+public:
+    void run(InputCallback, const std::atomic<bool>& stop_requested) override {
+        while (!released_.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        saw_stop_on_entry_.store(stop_requested.load(std::memory_order_acquire),
+                                 std::memory_order_release);
+        while (!stop_requested.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    }
+
+    void stop() override { released_.store(true, std::memory_order_release); }
+
+    bool saw_stop_on_entry() const {
+        return saw_stop_on_entry_.load(std::memory_order_acquire);
+    }
+
+private:
+    std::atomic<bool> released_{false};
+    std::atomic<bool> saw_stop_on_entry_{false};
 };
 
 // Bounded wait: a bug fails the test instead of hanging CI.
@@ -193,6 +219,18 @@ TEST_CASE("CaptureThread stop is safe without a start") {
     CaptureThread capture;
     capture.stop();
     CHECK_FALSE(capture.running());
+}
+
+TEST_CASE("CaptureThread preserves a stop requested before the hook enters run") {
+    DelayedEntryHook hook;
+    CaptureThread capture;
+
+    capture.start(&hook);
+    capture.stop();
+
+    CHECK(hook.saw_stop_on_entry());
+    CHECK_FALSE(capture.running());
+    CHECK_FALSE(capture.failed());
 }
 
 TEST_CASE("CaptureThread can restart after stop") {

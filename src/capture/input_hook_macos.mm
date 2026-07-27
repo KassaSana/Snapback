@@ -41,9 +41,10 @@ EventType map_event(CGEventType type) {
 
 class MacInputHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event,
+             const std::atomic<bool>& stop_requested) override {
         callback_ = std::move(on_event);
-        running_.store(true, std::memory_order_relaxed);
+        if (stop_requested.load(std::memory_order_acquire)) return;
 
         // Publish THIS thread's run loop so stop() — which is called from the caller's
         // thread, not ours — can wake the right one. Retained because stop() may touch it
@@ -66,7 +67,7 @@ public:
         if (!tap_) {
             // No Accessibility / Input Monitoring permission. Degrade to window polling
             // rather than going silent (check_capture_permissions() reports the cause).
-            run_polling_fallback();
+            run_polling_fallback(stop_requested);
             release_run_loop();
             return;
         }
@@ -76,7 +77,7 @@ public:
         CGEventTapEnable(tap_, true);
 
         refresh_active_window(true);  // seed the cache so the first event isn't blank
-        while (running_.load(std::memory_order_relaxed)) {
+        while (!stop_requested.load(std::memory_order_acquire)) {
             // returnAfterSourceHandled=true, so this returns as soon as one event is
             // handled; the timeout doubles as the cache-refresh cadence when idle.
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, kWindowRefreshSecs, true);
@@ -97,7 +98,6 @@ public:
     }
 
     void stop() override {
-        running_.store(false, std::memory_order_relaxed);
         // Stop the HOOK thread's run loop, not the caller's. This used to be
         // CFRunLoopStop(CFRunLoopGetCurrent()), which on the UI thread targeted the app's
         // own run loop — wrong loop, and under the webview potentially a live one. It only
@@ -200,10 +200,10 @@ private:
         }
     }
 
-    void run_polling_fallback() {
+    void run_polling_fallback(const std::atomic<bool>& stop_requested) {
         std::string last_app;
         std::string last_title;
-        while (running_.load(std::memory_order_relaxed)) {
+        while (!stop_requested.load(std::memory_order_acquire)) {
             if (auto active = query_active_window()) {
                 if (active->app_name != last_app || active->window_title != last_title) {
                     CaptureEvent ev;
@@ -222,7 +222,6 @@ private:
     }
 
     InputCallback callback_;
-    std::atomic<bool> running_{false};
     CFMachPortRef tap_ = nullptr;
     CFRunLoopSourceRef run_loop_source_ = nullptr;
     std::atomic<CFRunLoopRef> run_loop_{nullptr};  // published by run(), read by stop()

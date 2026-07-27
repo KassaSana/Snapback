@@ -6,6 +6,7 @@
 
 #include "capture/active_window.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <string>
 #include <windows.h>
@@ -17,9 +18,7 @@ namespace {
 // pointer, so the active callback has to live at namespace scope. Single hook
 // instance only — matches how capture runs as one engine.
 InputCallback g_on_event;
-HHOOK g_keyboard_hook = nullptr;
-HHOOK g_mouse_hook = nullptr;
-DWORD g_hook_thread_id = 0;
+std::atomic<DWORD> g_hook_thread_id{0};
 POINT g_last_mouse_pos{};
 double g_last_mouse_ts = 0.0;
 bool g_have_last_mouse = false;
@@ -101,26 +100,47 @@ LRESULT CALLBACK mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
 
 class WindowsInputHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
-        g_hook_thread_id = GetCurrentThreadId();
+    void run(InputCallback on_event,
+             const std::atomic<bool>& stop_requested) override {
+        if (stop_requested.load(std::memory_order_acquire)) return;
+
+        // PostThreadMessage fails until the target thread owns a message queue.
+        // Create it before publishing the id used by stop().
+        MSG msg{};
+        PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+        g_hook_thread_id.store(GetCurrentThreadId(), std::memory_order_release);
+        if (stop_requested.load(std::memory_order_acquire)) {
+            g_hook_thread_id.store(0, std::memory_order_release);
+            return;
+        }
+
         g_on_event = std::move(on_event);
-        g_keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_proc, nullptr, 0);
-        g_mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, mouse_proc, nullptr, 0);
+        HHOOK keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_proc, nullptr, 0);
+        HHOOK mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, mouse_proc, nullptr, 0);
+        if (!keyboard_hook || !mouse_hook) {
+            if (keyboard_hook) UnhookWindowsHookEx(keyboard_hook);
+            if (mouse_hook) UnhookWindowsHookEx(mouse_hook);
+            g_on_event = {};
+            g_hook_thread_id.store(0, std::memory_order_release);
+            return;
+        }
 
         // A low-level hook only fires while this thread pumps messages.
-        MSG msg;
-        while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        while (!stop_requested.load(std::memory_order_acquire) &&
+               GetMessageW(&msg, nullptr, 0, 0) > 0) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        UnhookWindowsHookEx(keyboard_hook);
+        UnhookWindowsHookEx(mouse_hook);
+        g_on_event = {};
+        g_hook_thread_id.store(0, std::memory_order_release);
     }
 
     void stop() override {
-        if (g_keyboard_hook) { UnhookWindowsHookEx(g_keyboard_hook); g_keyboard_hook = nullptr; }
-        if (g_mouse_hook) { UnhookWindowsHookEx(g_mouse_hook); g_mouse_hook = nullptr; }
-        if (g_hook_thread_id != 0) {
-            PostThreadMessageW(g_hook_thread_id, WM_QUIT, 0, 0);
-            g_hook_thread_id = 0;
+        if (const DWORD thread_id = g_hook_thread_id.load(std::memory_order_acquire);
+            thread_id != 0) {
+            PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
         }
     }
 };

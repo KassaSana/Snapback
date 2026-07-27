@@ -61,7 +61,7 @@ void CaptureThread::start(InputHook* hook) {
                 } catch (...) {
                     dropped_.fetch_add(1, std::memory_order_relaxed);
                 }
-            });
+            }, stop_requested_);
             if (!stop_requested_.load(std::memory_order_acquire)) {
                 record_failure("input hook stopped unexpectedly");
             }

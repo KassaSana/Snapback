@@ -5,6 +5,7 @@
 // See input_hook_windows.cpp / input_hook_macos.cpp / input_hook_x11.cpp.
 #pragma once
 
+#include <atomic>
 #include <functional>
 
 #include "types.hpp"
@@ -22,8 +23,11 @@ public:
 
     // Installs OS hooks and blocks running the OS event loop (WH_KEYBOARD_LL needs
     // a message pump on Windows; CGEventTap needs a CFRunLoop on macOS). Run on its
-    // own std::thread. Returns when stop() is called.
-    virtual void run(InputCallback on_event) = 0;
+    // own std::thread. The shared stop flag remains authoritative when stop() arrives
+    // before the platform event loop has finished starting. stop() wakes any
+    // blocking OS loop so it can observe the flag promptly.
+    virtual void run(InputCallback on_event,
+                     const std::atomic<bool>& stop_requested) = 0;
     virtual void stop() = 0;
 
     // The implementation selects the platform backend.

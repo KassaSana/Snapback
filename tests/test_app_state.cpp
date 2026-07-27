@@ -27,7 +27,7 @@ namespace {
 
 class OneShotHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
         CaptureEvent event;
         event.event_type = EventType::KeyPress;
         event.timestamp_secs = 1.0;
@@ -55,7 +55,7 @@ private:
 // guards was a feature that had correct logic, a passing unit test, and no caller.
 class HyperfocusHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
         CaptureEvent first;
         first.event_type = EventType::KeyPress;
         first.timestamp_secs = 1.0;
@@ -80,7 +80,9 @@ private:
 
 class ReturningHook final : public InputHook {
 public:
-    void run(InputCallback) override { returned_.store(true, std::memory_order_release); }
+    void run(InputCallback, const std::atomic<bool>&) override {
+        returned_.store(true, std::memory_order_release);
+    }
     void stop() override {}
 
     bool returned() const { return returned_.load(std::memory_order_acquire); }

@@ -19,12 +19,13 @@ double now_secs() {
 
 class PollingInputHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
-        running_.store(true, std::memory_order_relaxed);
+    void run(InputCallback on_event,
+             const std::atomic<bool>& stop_requested) override {
+        if (stop_requested.load(std::memory_order_acquire)) return;
         std::string last_app;
         std::string last_title;
 
-        while (running_.load(std::memory_order_relaxed)) {
+        while (!stop_requested.load(std::memory_order_acquire)) {
             if (auto active = query_active_window()) {
                 if (active->app_name != last_app || active->window_title != last_title) {
                     CaptureEvent ev;
@@ -42,12 +43,7 @@ public:
         }
     }
 
-    void stop() override {
-        running_.store(false, std::memory_order_relaxed);
-    }
-
-private:
-    std::atomic<bool> running_{false};
+    void stop() override {}
 };
 
 }  // namespace
