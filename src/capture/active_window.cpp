@@ -10,18 +10,28 @@
 #endif
 
 namespace snapback {
-namespace {
 
 #if defined(_WIN32)
+namespace detail {
 std::string utf8_from_wide(const wchar_t* value) {
     if (!value || value[0] == L'\0') return {};
     const int needed = WideCharToMultiByte(CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
     if (needed <= 1) return {};
-    std::string out(static_cast<std::size_t>(needed - 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, value, -1, out.data(), needed, nullptr, nullptr);
+    // `needed` includes the trailing NUL, so the writable buffer must include it too.
+    // The previous code allocated needed - 1 bytes and then authorized a needed-byte
+    // write, which wrote one byte beyond the string's size.
+    std::string out(static_cast<std::size_t>(needed), '\0');
+    if (WideCharToMultiByte(CP_UTF8, 0, value, -1, out.data(), needed, nullptr, nullptr) !=
+        needed) {
+        return {};
+    }
+    out.pop_back();
     return out;
 }
+}  // namespace detail
 #endif
+
+namespace {
 
 std::optional<std::string> run_command(const std::string& command) {
 #if defined(_WIN32)
@@ -106,8 +116,8 @@ std::optional<ActiveWindow> query_active_window() {
     }
 
     ActiveWindow win;
-    win.app_name = utf8_from_wide(app_name);
-    win.window_title = utf8_from_wide(title);
+    win.app_name = detail::utf8_from_wide(app_name);
+    win.window_title = detail::utf8_from_wide(title);
     return win;
 #elif defined(__APPLE__)
     // The title lookup is wrapped in `try` so that losing it does not cost us the app name
