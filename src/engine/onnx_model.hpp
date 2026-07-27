@@ -42,7 +42,8 @@ public:
     static std::optional<std::string> model_id_for_path(
         const std::filesystem::path& model_path);
 
-    // Resolves the model path from the app data directory.
+    // Resolves only the quality-gated deployed model from the app data directory.
+    // Training-export candidates are never runtime-loadable.
     static std::optional<std::filesystem::path> resolve_model_path(
         const std::filesystem::path& app_data_dir);
 
