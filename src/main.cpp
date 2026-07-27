@@ -210,9 +210,15 @@ int main() {
     // Host->frontend events: the engine tick runs off-thread, but webview.eval and the
     // Win32 overlay must run on the UI thread — so marshal via dispatch. Copy
     // event/payload by value; the tick's strings don't outlive the hook call.
-    state->set_emit_hook([&w](const char* event, const std::string& payload) {
+    state->set_emit_hook([&w, state = state.get()](const char* event,
+                                                   const std::string& payload,
+                                                   AppState::ActivityEpoch activity_epoch) {
         std::string ev = event;
-        w.dispatch([&w, ev, payload] {
+        w.dispatch([&w, state, ev, payload, activity_epoch] {
+            // The engine thread only queues this closure. A delete command may execute on
+            // the UI thread before the queue reaches us, so reject the stale tick here,
+            // immediately before every user-visible side effect.
+            if (!state->activity_epoch_is_current(activity_epoch)) return;
             emit(w, ev.c_str(), payload);
             // On the return-from-distraction edge, also pop the native overlay card and a
             // toast — the toast is the one that reaches the user when the

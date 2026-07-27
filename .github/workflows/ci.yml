@@ -265,9 +265,9 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
-      - name: Unit and component tests
+      - name: Unit tests and component coverage gate
         working-directory: frontend
-        run: npm run test
+        run: npm run test:ci
 
       - name: Build frontend assets
         working-directory: frontend

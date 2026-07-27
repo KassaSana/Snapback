@@ -11,6 +11,7 @@
     "test:unit": "tsx tests/utils.test.ts && tsx tests/apiMappers.test.ts && tsx tests/trainingHints.test.ts && tsx tests/appRulePreview.test.ts && tsx tests/healthHints.test.ts && tsx tests/timelineRefresh.test.ts && tsx tests/permissionWizardState.test.ts && tsx tests/healthPoll.test.ts && tsx tests/insightsMetrics.test.ts",
     "test:components": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:ci": "npm run test:unit && npm run test:coverage",
     "test": "npm run test:unit && npm run test:components"
   },
   "dependencies": {},

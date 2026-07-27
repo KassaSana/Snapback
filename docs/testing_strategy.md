@@ -38,6 +38,11 @@ This runs:
 - frontend unit/component tests
 - frontend production build
 
+CI runs `npm run test:ci`, which executes the pure TypeScript unit scripts and the Vitest
+component suite with V8 coverage. The global component-suite floors are 76% statements,
+66% branches, 74% functions, and 77% lines; `frontend/coverage/` remains generated and
+gitignored.
+
 Fast variant (C++ only):
 
 ```powershell

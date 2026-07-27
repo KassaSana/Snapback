@@ -367,10 +367,12 @@ std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
 }
 
 void AppState::delete_all_activity_data() {
-    // Block the compute path while deleting so an in-flight capture event cannot recreate
-    // activity between the DELETE transaction and the in-memory reset.
+    // The boundary fences off-lock persistence in engine_tick(). Incrementing the epoch
+    // also invalidates any event already queued for asynchronous UI dispatch.
     std::lock_guard state_lock(mutex_);
+    std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
+    activity_epoch_.fetch_add(1, std::memory_order_release);
     storage_.delete_all_activity_data();
     active_session_.reset();
     latest_prediction_.reset();
@@ -694,11 +696,15 @@ void AppState::submit_label(const std::string& session_id, FocusLabel label,
 
 void AppState::process_event_for_test(const CaptureEvent& event) {
     std::optional<PersistJob> job;
+    std::uint64_t activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
+        activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         job = compute_event(event);
     }
     if (job) {
+        std::lock_guard activity_lock(activity_boundary_mutex_);
+        if (activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
         std::lock_guard lock(storage_mutex_);
         Storage::Transaction txn(storage_);
         persist(*job);
@@ -707,10 +713,10 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
 }
 
 void AppState::engine_tick() {
-    // Three phases with different locks so a disk write never blocks a UI read:
+    // Three phases with different locks so a disk write never blocks an ordinary UI read:
     //   1) drain + classify under mutex_ (in-memory only), collecting persist jobs;
     //   2) flush them under storage_mutex_ in ONE transaction, after releasing mutex_;
-    //   3) emit to the frontend holding no lock (the hook hops to the UI thread).
+    //   3) queue epoch-tagged events holding no lock (the hook hops to the UI thread).
     EmitHook hook;
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
@@ -718,8 +724,10 @@ void AppState::engine_tick() {
     std::optional<std::uint64_t> hyper_to_emit;
     std::vector<PersistJob> jobs;
     IdleTransition idle_edge = IdleTransition::None;
+    std::uint64_t tick_activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
+        tick_activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         bool had_input = false;
         while (auto ev = capture_.next_event()) {
             if (is_input_event(ev->event_type)) had_input = true;
@@ -745,24 +753,41 @@ void AppState::engine_tick() {
         }
     }
 
-    if (!jobs.empty()) {
-        std::lock_guard lock(storage_mutex_);
-        Storage::Transaction txn(storage_);  // one commit for the whole drain
-        for (const auto& job : jobs) persist(job);
-        txn.commit();
+    {
+        // If deletion won the boundary after phase 1, discard every buffered row and
+        // event. If this tick won, deletion waits until persistence has completed.
+        std::lock_guard activity_lock(activity_boundary_mutex_);
+        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
+        if (!jobs.empty()) {
+            std::lock_guard lock(storage_mutex_);
+            Storage::Transaction txn(storage_);  // one commit for the whole drain
+            for (const auto& job : jobs) persist(job);
+            txn.commit();
+        }
     }
 
     if (!hook) return;
-    if (idle_edge == IdleTransition::WentIdle) hook("idle", "{\"idle\":true}");
-    if (idle_edge == IdleTransition::WokeUp) hook("idle", "{\"idle\":false}");
-    if (pred_to_emit) hook("prediction", nlohmann::json(*pred_to_emit).dump());
-    if (snap_to_emit) hook("snapback", nlohmann::json(*snap_to_emit).dump());
-    if (pomodoro_to_emit) hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump());
+    if (idle_edge == IdleTransition::WentIdle) {
+        hook("idle", "{\"idle\":true}", tick_activity_epoch);
+    }
+    if (idle_edge == IdleTransition::WokeUp) {
+        hook("idle", "{\"idle\":false}", tick_activity_epoch);
+    }
+    if (pred_to_emit) {
+        hook("prediction", nlohmann::json(*pred_to_emit).dump(), tick_activity_epoch);
+    }
+    if (snap_to_emit) {
+        hook("snapback", nlohmann::json(*snap_to_emit).dump(), tick_activity_epoch);
+    }
+    if (pomodoro_to_emit) {
+        hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump(), tick_activity_epoch);
+    }
     if (hyper_to_emit) {
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
         hook("hyperfocus", nlohmann::json{{"message", note.body},
                                           {"minutes", *hyper_to_emit}}
-                               .dump());
+                               .dump(),
+             tick_activity_epoch);
     }
 }
 

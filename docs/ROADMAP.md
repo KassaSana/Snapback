@@ -1036,16 +1036,11 @@ structure alone — a real review would likely find more.
   live; the regression test advances parent telemetry and proves unchanged Now, Review, and
   Settings cards do not render again.
 
-- **10.5 — Frontend has coverage tooling but no gate.** `S`
-  `@vitest/coverage-v8` is configured (`vite.config.ts:16`, `npm run test:coverage`) but no
-  CI job runs it and no threshold is enforced. Either wire it up with a floor or drop the
-  dependency — right now it's a capability nobody uses.
-
-  *Amended 2026-07-24:* the generated report was **checked into git** — 38 files under
-  `frontend/coverage/`, so every local `npm run test:coverage` produced a 30-file diff, and
-  the committed copy had gone stale (missing the 17 components added since it was generated).
-  Now untracked and gitignored. Current measured baseline, if a floor gets set: 75% statements
-  / 66% branches / 73% functions.
+- **10.5 — DONE 2026-07-26.** The measured component-suite baseline is 76.86% statements,
+  66.72% branches, 74.20% functions, and 77.66% lines. Vitest now enforces rounded-down
+  global floors of 76/66/74/77, and the frontend CI job runs pure TypeScript unit tests plus
+  the coverage-gated component suite through `npm run test:ci`. The generated HTML report
+  remains gitignored.
 
 - **10.6 — No C++ coverage measurement at all.** `M`
   The frontend can measure coverage; the C++ side cannot. Given how many bugs in Tiers 5/7

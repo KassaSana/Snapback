@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <ctime>
 #include <cstdint>
 #include <filesystem>
@@ -783,7 +784,7 @@ TEST_CASE("AppState contains engine tick exceptions and keeps the engine online"
     auto state = std::make_unique<AppState>(std::move(*storage), std::filesystem::path{}, &logger);
     OneShotHook hook;
 
-    state->set_emit_hook([](const char*, const std::string&) {
+    state->set_emit_hook([](const char*, const std::string&, AppState::ActivityEpoch) {
         throw std::runtime_error("intentional emit failure");
     });
     state->start_engine_for_test(&hook);
@@ -810,6 +811,45 @@ TEST_CASE("AppState contains engine tick exceptions and keeps the engine online"
     state->stop_engine();
 }
 
+TEST_CASE("activity deletion invalidates asynchronously queued prediction emissions") {
+    auto state = make_state();
+    OneShotHook hook;
+    std::mutex queue_mutex;
+    std::condition_variable queue_changed;
+    struct QueuedEvent {
+        std::string name;
+        AppState::ActivityEpoch epoch;
+    };
+    std::vector<QueuedEvent> queued;
+
+    state->set_emit_hook([&](const char* name, const std::string&,
+                             AppState::ActivityEpoch epoch) {
+        if (std::string(name) != "prediction") return;
+        std::lock_guard lock(queue_mutex);
+        queued.push_back(QueuedEvent{name, epoch});
+        queue_changed.notify_all();
+    });
+    state->start_session("Delete during emission", FocusMode::Normal);
+    state->start_engine_for_test(&hook);
+
+    {
+        std::unique_lock lock(queue_mutex);
+        REQUIRE(queue_changed.wait_for(lock, std::chrono::seconds(5),
+                                       [&] { return !queued.empty(); }));
+    }
+
+    state->delete_all_activity_data();
+    state->stop_engine();
+
+    std::size_t delivered = 0;
+    for (const auto& event : queued) {
+        if (state->activity_epoch_is_current(event.epoch)) ++delivered;
+    }
+    CHECK(delivered == 0);
+    CHECK(state->active_session() == std::nullopt);
+    CHECK(state->prediction_history(10).empty());
+}
+
 
 TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
     auto storage = Storage::open_memory();
@@ -820,7 +860,8 @@ TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
     std::mutex seen_mutex;
     std::vector<std::string> events;
     std::string payload;
-    state->set_emit_hook([&](const char* name, const std::string& body) {
+    state->set_emit_hook([&](const char* name, const std::string& body,
+                             AppState::ActivityEpoch) {
         std::lock_guard lock(seen_mutex);
         events.emplace_back(name);
         if (std::string(name) == "hyperfocus") payload = body;

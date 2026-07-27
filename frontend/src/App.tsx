@@ -1,4 +1,4 @@
-﻿import { useCallback, useState } from "react";
+﻿import { useCallback, useMemo, useState } from "react";
 
 import { useAppEffects } from "./useAppEffects";
 
@@ -49,6 +49,7 @@ export default function App() {
 
   const { sessionHistory, refreshInsights } = useInsights();
   const { focusSummary, refreshFocusSummary } = useFocusSummary();
+
   const {
     pomodoroStatus,
     refreshPomodoroStatus,
@@ -86,6 +87,21 @@ export default function App() {
     setPersistenceFailureReason,
   } = useHealth();
 
+  const captureReadiness = useMemo(
+    () => ({
+      captureRunning,
+      captureFailed,
+      permissionCaptureAvailable,
+      activeWindowAvailable,
+    }),
+    [
+      activeWindowAvailable,
+      captureFailed,
+      captureRunning,
+      permissionCaptureAvailable,
+    ],
+  );
+
   const {
     clearActivitySession,
     focusMode,
@@ -108,12 +124,7 @@ export default function App() {
     setActionError: feedback.setActionError,
     setLabelStatus: feedback.setLabelStatus,
     setLabelStatusWarning: feedback.setLabelStatusWarning,
-    captureReadiness: {
-      captureRunning,
-      captureFailed,
-      permissionCaptureAvailable,
-      activeWindowAvailable,
-    },
+    captureReadiness,
   });
 
   const {
