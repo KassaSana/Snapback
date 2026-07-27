@@ -7,12 +7,23 @@ using namespace snapback;
 TEST_CASE("permission status reports a non-empty platform message") {
     auto status = check_capture_permissions(true);
 
-    CHECK(status.capture_probe_confirmed);
+    CHECK(status.capture_probe_confirmed ==
+          (status.capture_available && status.active_window_available));
     CHECK_FALSE(status.message.empty());
 #if defined(_WIN32)
     CHECK(status.capture_available);
     CHECK(status.active_window_available);
 #endif
+}
+
+TEST_CASE("permission probe requires a running usable capture backend") {
+    const auto stopped = check_capture_permissions(false);
+    CHECK_FALSE(stopped.capture_probe_confirmed);
+
+    const auto running = check_capture_permissions(true);
+    if (!running.capture_available || !running.active_window_available) {
+        CHECK_FALSE(running.capture_probe_confirmed);
+    }
 }
 
 TEST_CASE("checking permissions never changes the reported state") {

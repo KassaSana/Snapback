@@ -8,7 +8,7 @@ export type PermissionWizardInput = {
   healthChecked: boolean;
   /** true once the user has gotten capture working or dismissed the wizard. */
   firstRunAcknowledged: boolean;
-  /** true when capture is confirmed usable (listener running or probe passed). */
+  /** true when capture is confirmed usable (listener running and probe passed). */
   captureReady: boolean;
 };
 
@@ -29,11 +29,11 @@ export const shouldShowPermissionWizard = ({
   return true;
 };
 
-/** Capture is usable if the listener is running or the probe confirmed access. */
+/** Capture is usable only when the listener is running and its capability probe passed. */
 export const captureIsReady = (
   captureRunning: boolean,
   captureProbeConfirmed: boolean,
-): boolean => captureRunning || captureProbeConfirmed;
+): boolean => captureRunning && captureProbeConfirmed;
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 

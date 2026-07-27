@@ -37,7 +37,9 @@ const boundary = vi.hoisted(() => {
       case "get_health":
         return {
           status: "online",
-          capture_running: false,
+          // The native capture thread is alive even when macOS denied the event tap
+          // and it fell back to window polling. That must not hide onboarding.
+          capture_running: true,
           capture_failed: false,
           capture_events_dropped: 0,
           permissions: state.permissions,
