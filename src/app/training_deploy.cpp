@@ -235,18 +235,56 @@ std::string build_failure_message(int exit_code, const std::string& log_tail) {
 }
 
 bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
-                                   const std::filesystem::path& export_path) {
-    const auto export_model = export_path / "model.onnx";
-    if (!std::filesystem::is_regular_file(export_model)) return false;
+                                   const std::filesystem::path& candidate_model,
+                                   const nlohmann::json& quality_metadata) {
+    if (!std::filesystem::is_regular_file(candidate_model)) return false;
     std::filesystem::create_directories(app_data_dir);
 
     const auto deployed_model = app_data_dir / "model.onnx";
+    const auto deployed_quality = app_data_dir / "model_quality.json";
     const auto previous_model = app_data_dir / "model.onnx.previous";
+    const auto previous_quality = app_data_dir / "model_quality.json.previous";
+    const auto staged_model = app_data_dir / "model.onnx.deploying";
+    const auto staged_quality = app_data_dir / "model_quality.json.deploying";
+    const auto backup_model = app_data_dir / "model.onnx.deploy-backup";
+    const auto backup_quality = app_data_dir / "model_quality.json.deploy-backup";
+
+    for (const auto& temporary :
+         {staged_model, staged_quality, backup_model, backup_quality}) {
+        std::filesystem::remove(temporary);
+    }
+
+    // Stage and validate both artifacts before touching the live pair. In particular,
+    // metadata write failure must not leave a new model with the old accepted baseline.
+    std::filesystem::copy_file(candidate_model, staged_model);
+    const auto identity = OnnxModel::model_id_for_path(staged_model);
+    if (!identity) {
+        std::filesystem::remove(staged_model);
+        return false;
+    }
+    {
+        std::ofstream quality_file(staged_quality, std::ios::trunc);
+        if (!quality_file) {
+            std::filesystem::remove(staged_model);
+            return false;
+        }
+        auto metadata = quality_metadata;
+        metadata["modelId"] = *identity;
+        quality_file << metadata.dump(2);
+        quality_file.flush();
+        if (!quality_file) {
+            std::filesystem::remove(staged_model);
+            std::filesystem::remove(staged_quality);
+            return false;
+        }
+    }
+
+    const bool had_model = std::filesystem::is_regular_file(deployed_model);
+    const bool had_quality = std::filesystem::is_regular_file(deployed_quality);
+    // Preserve the accepted pair as the user-visible rollback target before promotion.
     if (std::filesystem::is_regular_file(deployed_model)) {
         std::filesystem::copy_file(deployed_model, previous_model,
                                    std::filesystem::copy_options::overwrite_existing);
-        const auto deployed_quality = app_data_dir / "model_quality.json";
-        const auto previous_quality = app_data_dir / "model_quality.json.previous";
         if (std::filesystem::is_regular_file(deployed_quality)) {
             std::filesystem::copy_file(deployed_quality, previous_quality,
                                        std::filesystem::copy_options::overwrite_existing);
@@ -255,8 +293,32 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
             std::filesystem::remove(previous_quality, ignored);
         }
     }
-    std::filesystem::copy_file(export_model, app_data_dir / "model.onnx",
-                               std::filesystem::copy_options::overwrite_existing);
+
+    try {
+        if (had_model) std::filesystem::rename(deployed_model, backup_model);
+        if (had_quality) std::filesystem::rename(deployed_quality, backup_quality);
+        std::filesystem::rename(staged_model, deployed_model);
+        std::filesystem::rename(staged_quality, deployed_quality);
+    } catch (...) {
+        // A failed second promotion must restore both old artifacts, never a mixed pair.
+        std::error_code ignored;
+        std::filesystem::remove(deployed_model, ignored);
+        std::filesystem::remove(deployed_quality, ignored);
+        if (std::filesystem::is_regular_file(backup_model)) {
+            std::filesystem::rename(backup_model, deployed_model);
+        }
+        if (std::filesystem::is_regular_file(backup_quality)) {
+            std::filesystem::rename(backup_quality, deployed_quality);
+        }
+        std::filesystem::remove(staged_model, ignored);
+        std::filesystem::remove(staged_quality, ignored);
+        throw;
+    }
+    // Promotion is complete. Backup cleanup is not part of the transaction: a cleanup
+    // failure must not tear down a valid new pair after one old backup was already removed.
+    std::error_code ignored;
+    std::filesystem::remove(backup_model, ignored);
+    std::filesystem::remove(backup_quality, ignored);
     return true;
 }
 
@@ -288,6 +350,15 @@ void swap_optional_file(const std::filesystem::path& first,
 }
 
 }  // namespace
+
+bool deploy_model_candidate(const std::filesystem::path& app_data_dir,
+                            const std::filesystem::path& candidate_model,
+                            const ModelQualityDecision& quality) {
+    if (!quality.accepted || quality.metric.empty()) return false;
+    return sync_trained_model_to_app_dir(
+        app_data_dir, candidate_model,
+        nlohmann::json{{"metric", quality.metric}, {"score", quality.candidate_score}});
+}
 
 ModelQualityDecision evaluate_model_quality(
     const nlohmann::json& candidate_metrics,
@@ -502,20 +573,9 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
         }
         if (quality.accepted) {
             try {
-                if (!sync_trained_model_to_app_dir(app_data_dir, out_dir)) {
-                    sync_warning = "model.onnx was not found after training";
-                } else {
-                    const auto identity = OnnxModel::model_id_for_path(app_data_dir / "model.onnx");
-                    std::ofstream quality_file(app_data_dir / "model_quality.json",
-                                               std::ios::trunc);
-                    if (!quality_file || !identity) {
-                        sync_warning = "could not persist model quality metadata";
-                    } else {
-                        quality_file << nlohmann::json{{"metric", quality.metric},
-                                                       {"score", quality.candidate_score},
-                                                       {"modelId", *identity}}
-                                          .dump(2);
-                    }
+                if (!deploy_model_candidate(app_data_dir, out_dir / "model.onnx", quality)) {
+                    sync_warning =
+                        "could not stage model.onnx and its quality metadata";
                 }
             } catch (const std::exception& err) {
                 sync_warning = err.what();

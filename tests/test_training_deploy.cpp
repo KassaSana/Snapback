@@ -119,6 +119,55 @@ TEST_CASE("model quality gate requires held-out quality and protects the deploye
     CHECK(in_sample_only.reason.find("held-out") != std::string::npos);
 }
 
+TEST_CASE("model deployment promotes the model and quality metadata as one pair") {
+    TempDir app_data;
+    TempDir candidate;
+    write_text(app_data.path / "model.onnx", "old-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.7}");
+    write_text(candidate.path / "model.onnx", "new-model");
+
+    training_deploy::ModelQualityDecision quality;
+    quality.accepted = true;
+    quality.metric = "cv_accuracy";
+    quality.candidate_score = 0.8;
+    REQUIRE(training_deploy::deploy_model_candidate(
+        app_data.path, candidate.path / "model.onnx", quality));
+
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    const auto deployed_quality =
+        nlohmann::json::parse(read_text(app_data.path / "model_quality.json"));
+    CHECK(deployed_quality.at("metric") == "cv_accuracy");
+    CHECK(deployed_quality.at("score").get<double>() == doctest::Approx(0.8));
+    CHECK(deployed_quality.contains("modelId"));
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "old-model");
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.7") !=
+          std::string::npos);
+}
+
+TEST_CASE("model deployment leaves the accepted pair unchanged when metadata cannot stage") {
+    TempDir app_data;
+    TempDir candidate;
+    write_text(app_data.path / "model.onnx", "accepted-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(candidate.path / "model.onnx", "candidate-model");
+    // A non-empty directory at the staging path forces preparation to fail before the
+    // live model is touched.
+    write_text(app_data.path / "model_quality.json.deploying" / "blocked", "x");
+
+    training_deploy::ModelQualityDecision quality;
+    quality.accepted = true;
+    quality.metric = "cv_accuracy";
+    quality.candidate_score = 0.8;
+    CHECK_THROWS(training_deploy::deploy_model_candidate(
+        app_data.path, candidate.path / "model.onnx", quality));
+
+    CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.75") !=
+          std::string::npos);
+}
+
 TEST_CASE("rollback_model swaps the deployed model and quality metadata") {
     TempDir app_data;
     write_text(app_data.path / "model.onnx", "new-model");

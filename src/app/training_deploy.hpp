@@ -27,6 +27,12 @@ struct ModelQualityDecision {
     std::string reason;
 };
 
+// Promote a candidate model and its accepted quality baseline as one recoverable pair.
+// Both artifacts are staged before the live deployment is changed.
+bool deploy_model_candidate(const std::filesystem::path& app_data_dir,
+                            const std::filesystem::path& candidate_model,
+                            const ModelQualityDecision& quality);
+
 // Gate a candidate model before it can replace the deployed model. The candidate metrics must
 // contain a held-out/validation/CV accuracy; in-sample-only metrics are deliberately rejected.
 ModelQualityDecision evaluate_model_quality(
