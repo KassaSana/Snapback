@@ -9,6 +9,8 @@
 namespace snapback::training_deploy {
 
 std::filesystem::path export_dir(const std::filesystem::path& app_data_dir);
+// Complete or roll back an interrupted model deployment before resolving the live model.
+void recover_model_deployment(const std::filesystem::path& app_data_dir);
 bool rollback_available(const std::filesystem::path& app_data_dir);
 // Restore the previous deployed model and its quality metadata. The swap keeps the current
 // model as the next rollback target, so a user can undo an undo.

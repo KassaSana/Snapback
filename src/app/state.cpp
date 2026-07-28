@@ -16,6 +16,7 @@
 #include "capture/permissions.hpp"
 #include "app/version.hpp"
 #include "app/notification.hpp"
+#include "app/training_deploy.hpp"
 #include "engine/app_context.hpp"
 #include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
@@ -650,6 +651,7 @@ ClassifierStatus AppState::classifier_status() const {
 
 ClassifierStatus AppState::reload_classifier_model() {
     std::lock_guard lock(mutex_);
+    training_deploy::recover_model_deployment(app_data_dir_);
     if (const auto model = OnnxModel::resolve_model_path(app_data_dir_)) {
         OnnxModel::instance().init(*model);
     } else {

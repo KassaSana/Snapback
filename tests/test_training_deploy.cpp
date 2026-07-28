@@ -163,7 +163,7 @@ TEST_CASE("model deployment leaves the accepted pair unchanged when metadata can
     quality.accepted = true;
     quality.metric = "cv_accuracy";
     quality.candidate_score = 0.8;
-    CHECK_THROWS(training_deploy::deploy_model_candidate(
+    CHECK_FALSE(training_deploy::deploy_model_candidate(
         app_data.path, candidate.path / "model.onnx", quality));
 
     CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
@@ -172,6 +172,62 @@ TEST_CASE("model deployment leaves the accepted pair unchanged when metadata can
     CHECK(read_text(app_data.path / "model.onnx.previous") == "older-model");
     CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.65") !=
           std::string::npos);
+}
+
+TEST_CASE("model deployment recovery rolls back an interrupted uncommitted promotion") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "candidate-model");
+    write_text(app_data.path / "model.onnx.deploy-backup", "accepted-model");
+    write_text(app_data.path / "model_quality.json.deploy-backup",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model_quality.json.deploying",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+    write_text(app_data.path / "model.onnx.previous", "accepted-model");
+    write_text(app_data.path / "model.onnx.previous.deploy-backup", "older-model");
+    write_text(app_data.path / "model_quality.json.previous",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model_quality.json.previous.deploy-backup",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.65}");
+    write_text(app_data.path / "model_deploy.transaction.json",
+               "{\"hadModel\":true,\"hadQuality\":true,"
+               "\"hadPreviousModel\":true,\"hadPreviousQuality\":true}");
+
+    training_deploy::recover_model_deployment(app_data.path);
+
+    CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.75") !=
+          std::string::npos);
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "older-model");
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.65") !=
+          std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_quality.json.deploying"));
+}
+
+TEST_CASE("model deployment recovery keeps a committed pair during interrupted cleanup") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+    write_text(app_data.path / "model.onnx.deploy-backup", "old-model");
+    write_text(app_data.path / "model_quality.json.deploy-backup",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.7}");
+    write_text(app_data.path / "model.onnx.previous", "old-model");
+    write_text(app_data.path / "model.onnx.previous.deploy-backup", "older-model");
+    write_text(app_data.path / "model_deploy.transaction.json",
+               "{\"hadModel\":true,\"hadQuality\":true,"
+               "\"hadPreviousModel\":true,\"hadPreviousQuality\":false}");
+    write_text(app_data.path / "model_deploy.transaction.committed", "committed\n");
+
+    training_deploy::recover_model_deployment(app_data.path);
+
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.8") !=
+          std::string::npos);
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "old-model");
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model.onnx.deploy-backup"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.committed"));
 }
 
 TEST_CASE("rollback_model swaps the deployed model and quality metadata") {

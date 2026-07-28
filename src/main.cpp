@@ -27,6 +27,7 @@
 #include "app/notification.hpp"
 #include "app/single_instance.hpp"
 #include "app/state.hpp"
+#include "app/training_deploy.hpp"
 #include "app/tray.hpp"
 #include "capture/permissions.hpp"
 #include "engine/onnx_model.hpp"
@@ -154,11 +155,17 @@ int main() {
     Logger logger(pick_startup_log_sink(log_file, std::cerr),
                   level_from_string(env_var("SNAPBACK_LOG").value_or("")));
 
+    try {
+        training_deploy::recover_model_deployment(data_dir);
 #if defined(SNAPBACK_ONNX)
-    if (auto model = OnnxModel::resolve_model_path(data_dir)) {
-        OnnxModel::instance().init(*model);
-    }
+        if (auto model = OnnxModel::resolve_model_path(data_dir)) {
+            OnnxModel::instance().init(*model);
+        }
 #endif
+    } catch (const std::exception& error) {
+        logger.error(std::string("model deployment recovery failed: ") + error.what());
+        return 1;
+    }
 
     // Observability: log the startup sequence, one line per step, at INFO. This exists
     // because the log file was empty through an entire successful startup — so when the
