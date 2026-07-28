@@ -424,13 +424,26 @@ TEST_CASE("AppState persists privacy settings and suppresses private events") {
 }
 
 TEST_CASE("AppState deletes collected activity and resets the live session") {
-    auto state = make_state();
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
     const auto session = state->start_session("Delete this", FocusMode::Normal);
     state->start_pomodoro();
     state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
     state->upsert_app_rule("Cursor", AppRuleKind::Allow, std::nullopt);
     REQUIRE(state->active_session().has_value());
     REQUIRE(state->latest_prediction().has_value());
+
+    const auto training_export = temp.path / "exports" / "training" / "features.csv";
+    const auto summary_export = temp.path / "exports" / "summaries" / "summary_week.json";
+    const auto support_export = temp.path / "exports" / "support" / "support.json";
+    const auto deployed_model = temp.path / "model.onnx";
+    for (const auto& file :
+         {training_export, summary_export, support_export, deployed_model}) {
+        std::filesystem::create_directories(file.parent_path());
+        std::ofstream(file) << "private-derived-data";
+    }
 
     state->delete_all_activity_data();
 
@@ -442,6 +455,10 @@ TEST_CASE("AppState deletes collected activity and resets the live session") {
     REQUIRE(state->app_rules().size() == 1);
     CHECK(state->app_rules().front().pattern == "Cursor");
     CHECK(state->get_session(session.session_id) == std::nullopt);
+    CHECK_FALSE(std::filesystem::exists(training_export));
+    CHECK_FALSE(std::filesystem::exists(summary_export));
+    CHECK(std::filesystem::exists(support_export));
+    CHECK(std::filesystem::exists(deployed_model));
 }
 
 TEST_CASE("AppState excludes matching apps without affecting other apps") {

@@ -70,6 +70,18 @@ std::string cutoff_rfc3339(int days_ago) {
     return out.str();
 }
 
+void delete_activity_exports(const std::filesystem::path& app_data_dir) {
+    if (app_data_dir.empty()) return;
+    for (const auto* directory : {"training", "summaries"}) {
+        std::error_code error;
+        std::filesystem::remove_all(app_data_dir / "exports" / directory, error);
+        if (error) {
+            throw std::runtime_error("failed to delete activity exports from " +
+                                     std::string(directory) + ": " + error.message());
+        }
+    }
+}
+
 }  // namespace
 
 AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger)
@@ -384,6 +396,11 @@ void AppState::delete_all_activity_data() {
     std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
     activity_epoch_.fetch_add(1, std::memory_order_release);
+    // Exported CSVs and summary reports are copies of the rows below. Remove them
+    // first so a successful "delete all" cannot leave activity elsewhere under
+    // the app's data directory. Support bundles and deployed model/config files
+    // are deliberately outside this privacy scope.
+    delete_activity_exports(app_data_dir_);
     storage_.delete_all_activity_data();
     active_session_.reset();
     latest_prediction_.reset();

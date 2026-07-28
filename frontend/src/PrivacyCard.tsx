@@ -90,7 +90,8 @@ export const PrivacyCard = memo(function PrivacyCard({
         <h3>Delete activity data</h3>
         <p className="helper-text">
           Permanently delete every session, prediction, label, and captured context stored
-          on this device. Privacy exclusions and app rules are kept.
+          on this device, including training CSVs and exported summaries. Privacy exclusions,
+          app rules, support bundles, and deployed models are kept.
         </p>
         {confirmingDelete ? (
           <div className="button-row">
