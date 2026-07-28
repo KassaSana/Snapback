@@ -247,6 +247,7 @@ struct DeploymentPaths {
           previous_model_backup(root / "model.onnx.previous.deploy-backup"),
           previous_quality_backup(root / "model_quality.json.previous.deploy-backup"),
           marker(root / "model_deploy.transaction.json"),
+          marker_temp(root / "model_deploy.transaction.json.tmp"),
           committed(root / "model_deploy.transaction.committed") {}
 
     std::filesystem::path deployed_model;
@@ -260,6 +261,7 @@ struct DeploymentPaths {
     std::filesystem::path previous_model_backup;
     std::filesystem::path previous_quality_backup;
     std::filesystem::path marker;
+    std::filesystem::path marker_temp;
     std::filesystem::path committed;
 };
 
@@ -271,11 +273,20 @@ void write_file_checked(const std::filesystem::path& path, const std::string& co
     if (!out) throw std::runtime_error("could not finish writing " + path.filename().string());
 }
 
+void write_marker_atomically(const DeploymentPaths& paths,
+                             const nlohmann::json& state) {
+    std::error_code ignored;
+    std::filesystem::remove(paths.marker_temp, ignored);
+    write_file_checked(paths.marker_temp, state.dump());
+    std::filesystem::rename(paths.marker_temp, paths.marker);
+}
+
 void cleanup_deployment_files(const DeploymentPaths& paths) {
     std::error_code ignored;
     for (const auto& path : {paths.staged_model, paths.staged_quality, paths.backup_model,
                              paths.backup_quality, paths.previous_model_backup,
-                             paths.previous_quality_backup, paths.committed, paths.marker}) {
+                             paths.previous_quality_backup, paths.marker_temp,
+                             paths.committed, paths.marker}) {
         std::filesystem::remove(path, ignored);
     }
 }
@@ -283,9 +294,13 @@ void cleanup_deployment_files(const DeploymentPaths& paths) {
 void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
     const DeploymentPaths paths(app_data_dir);
     if (!std::filesystem::is_regular_file(paths.marker)) {
-        // The marker is removed last on successful cleanup. A sentinel without it can only
-        // be stale cleanup debris and must not bless a future transaction as committed.
+        // Without an atomically published marker, live files were never touched. Clean
+        // staging debris from a crash before publication; a stale sentinel must not bless
+        // a future transaction as committed.
         std::error_code ignored;
+        std::filesystem::remove(paths.staged_model, ignored);
+        std::filesystem::remove(paths.staged_quality, ignored);
+        std::filesystem::remove(paths.marker_temp, ignored);
         std::filesystem::remove(paths.committed, ignored);
         return;
     }
@@ -363,13 +378,11 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
     const bool had_previous_model = std::filesystem::is_regular_file(paths.previous_model);
     const bool had_previous_quality = std::filesystem::is_regular_file(paths.previous_quality);
     try {
-        write_file_checked(
-            paths.marker,
-            nlohmann::json{{"hadModel", had_model},
-                           {"hadQuality", had_quality},
-                           {"hadPreviousModel", had_previous_model},
-                           {"hadPreviousQuality", had_previous_quality}}
-                .dump());
+        write_marker_atomically(
+            paths, nlohmann::json{{"hadModel", had_model},
+                                  {"hadQuality", had_quality},
+                                  {"hadPreviousModel", had_previous_model},
+                                  {"hadPreviousQuality", had_previous_quality}});
 
         // Preserve the accepted pair as the user-visible rollback target before promotion.
         if (had_model) {

@@ -204,6 +204,28 @@ TEST_CASE("model deployment recovery rolls back an interrupted uncommitted promo
     CHECK_FALSE(std::filesystem::exists(app_data.path / "model_quality.json.deploying"));
 }
 
+TEST_CASE("model deployment recovery cleans staging left before marker publication") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "accepted-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model.onnx.deploying", "candidate-model");
+    write_text(app_data.path / "model_quality.json.deploying", "partial");
+    write_text(app_data.path / "model_deploy.transaction.json.tmp", "{\"hadModel\"");
+    write_text(app_data.path / "model_deploy.transaction.committed", "stale");
+
+    training_deploy::recover_model_deployment(app_data.path);
+
+    CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.75") !=
+          std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model.onnx.deploying"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_quality.json.deploying"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json.tmp"));
+    CHECK_FALSE(
+        std::filesystem::exists(app_data.path / "model_deploy.transaction.committed"));
+}
+
 TEST_CASE("model deployment recovery keeps a committed pair during interrupted cleanup") {
     TempDir app_data;
     write_text(app_data.path / "model.onnx", "new-model");
