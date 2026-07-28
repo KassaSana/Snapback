@@ -281,14 +281,31 @@ void write_marker_atomically(const DeploymentPaths& paths,
     std::filesystem::rename(paths.marker_temp, paths.marker);
 }
 
-void cleanup_deployment_files(const DeploymentPaths& paths) {
-    std::error_code ignored;
+bool remove_if_present(const std::filesystem::path& path) {
+    std::error_code remove_error;
+    std::filesystem::remove(path, remove_error);
+    std::error_code exists_error;
+    const bool still_exists = std::filesystem::exists(path, exists_error);
+    return !remove_error && !exists_error && !still_exists;
+}
+
+bool cleanup_deployment_files(const DeploymentPaths& paths) {
+    bool debris_removed = true;
     for (const auto& path : {paths.staged_model, paths.staged_quality, paths.backup_model,
                              paths.backup_quality, paths.previous_model_backup,
-                             paths.previous_quality_backup, paths.marker_temp,
-                             paths.committed, paths.marker}) {
-        std::filesystem::remove(path, ignored);
+                             paths.previous_quality_backup, paths.marker_temp}) {
+        debris_removed = remove_if_present(path) && debris_removed;
     }
+    if (!debris_removed) {
+        // Keep both control files so recovery continues to recognize a committed
+        // promotion and retries cleanup without rolling it back.
+        return false;
+    }
+
+    // Removing the marker first is safe because a leftover sentinel is treated as stale.
+    // Removing the sentinel first would make a marker-removal failure look uncommitted.
+    if (!remove_if_present(paths.marker)) return false;
+    return remove_if_present(paths.committed);
 }
 
 void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
@@ -297,11 +314,18 @@ void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
         // Without an atomically published marker, live files were never touched. Clean
         // staging debris from a crash before publication; a stale sentinel must not bless
         // a future transaction as committed.
-        std::error_code ignored;
-        std::filesystem::remove(paths.staged_model, ignored);
-        std::filesystem::remove(paths.staged_quality, ignored);
-        std::filesystem::remove(paths.marker_temp, ignored);
-        std::filesystem::remove(paths.committed, ignored);
+        bool debris_removed = true;
+        for (const auto& path :
+             {paths.staged_model, paths.staged_quality, paths.backup_model,
+              paths.backup_quality, paths.previous_model_backup,
+              paths.previous_quality_backup, paths.marker_temp, paths.committed}) {
+            debris_removed = remove_if_present(path) && debris_removed;
+        }
+        if (!debris_removed) {
+            throw std::runtime_error(
+                "could not clean incomplete model deployment files; retry after "
+                "releasing files in use");
+        }
         return;
     }
 
@@ -310,7 +334,11 @@ void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
         throw std::runtime_error("model deployment recovery marker is invalid");
     }
     if (std::filesystem::is_regular_file(paths.committed)) {
-        cleanup_deployment_files(paths);
+        if (!cleanup_deployment_files(paths)) {
+            throw std::runtime_error(
+                "could not finish committed model deployment cleanup; retry after "
+                "releasing files in use");
+        }
         return;
     }
 
@@ -337,15 +365,25 @@ void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
     restore(paths.deployed_quality, paths.backup_quality, had_quality);
     restore(paths.previous_model, paths.previous_model_backup, had_previous_model);
     restore(paths.previous_quality, paths.previous_quality_backup, had_previous_quality);
-    cleanup_deployment_files(paths);
+    if (!cleanup_deployment_files(paths)) {
+        throw std::runtime_error(
+            "could not finish rolled-back model deployment cleanup; retry after "
+            "releasing files in use");
+    }
 }
 
 bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
-                                   const std::filesystem::path& candidate_model,
-                                   const nlohmann::json& quality_metadata) {
+    const std::filesystem::path& candidate_model,
+    const nlohmann::json& quality_metadata) {
     if (!std::filesystem::is_regular_file(candidate_model)) return false;
     std::filesystem::create_directories(app_data_dir);
-    recover_model_deployment_impl(app_data_dir);
+    try {
+        recover_model_deployment_impl(app_data_dir);
+    } catch (...) {
+        // A deployment cannot safely start until interrupted-transaction debris is
+        // recoverable. Leave the accepted pair untouched and let a later attempt retry.
+        return false;
+    }
     const DeploymentPaths paths(app_data_dir);
 
     // Stage and validate both artifacts before touching the live pair. In particular,
@@ -416,6 +454,8 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
     }
     // The commit sentinel makes cleanup crash-safe: recovery keeps the new pair if cleanup
     // was interrupted after the promotion committed.
+    // Cleanup failure does not undo a committed promotion. The retained marker and
+    // sentinel make the next recovery retry cleanup before another deployment starts.
     cleanup_deployment_files(paths);
     return true;
 }
