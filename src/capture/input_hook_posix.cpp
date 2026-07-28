@@ -34,7 +34,7 @@ public:
                     ev.timestamp_secs = now_secs();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
-                    on_event(ev);
+                    on_event(std::move(ev));
                     last_app = active->app_name;
                     last_title = active->window_title;
                 }

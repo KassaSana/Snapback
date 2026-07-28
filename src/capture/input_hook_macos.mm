@@ -137,12 +137,11 @@ private:
             // forking a process per keystroke and per mouse-move, inside the tap callback.
             // That blew the tap's deadline, which triggered the disable above. The cache
             // is refreshed by run() on this same thread, so no lock is needed.
-            ev.app_name = self->cached_app_;
-            ev.window_title = self->cached_title_;
+            ev.captured_context = self->cached_context_;
             if (ev.event_type == EventType::MouseMove) {
                 ev.mouse_speed = 0;
             }
-            self->callback_(ev);
+            self->callback_(std::move(ev));
         } catch (...) {
             // Never throw through the event tap callback.
         }
@@ -159,10 +158,13 @@ private:
         auto active = query_active_window();
         if (!active) return;
 
-        const bool app_changed = !force && active->app_name != cached_app_;
-        const bool title_changed = !force && active->window_title != cached_title_;
-        cached_app_ = active->app_name;
-        cached_title_ = active->window_title;
+        const bool app_changed =
+            !force && cached_context_ && active->app_name != cached_context_->app_name;
+        const bool title_changed =
+            !force && cached_context_ && active->window_title != cached_context_->window_title;
+        if (!force && cached_context_ && !app_changed && !title_changed) return;
+        cached_context_ = std::make_shared<CaptureContext>(
+            CaptureContext{std::move(active->app_name), std::move(active->window_title)});
 
         // Emit the change as an event, not just into the cache.
         //
@@ -188,9 +190,8 @@ private:
             ev.event_type =
                 app_changed ? EventType::WindowFocusChange : EventType::WindowTitleChange;
             ev.timestamp_secs = now;
-            ev.app_name = cached_app_;
-            ev.window_title = cached_title_;
-            callback_(ev);
+            ev.captured_context = cached_context_;
+            callback_(std::move(ev));
         }
     }
 
@@ -212,7 +213,7 @@ private:
                     ev.timestamp_secs = now_secs();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
-                    callback_(ev);
+                    callback_(std::move(ev));
                     last_app = active->app_name;
                     last_title = active->window_title;
                 }
@@ -227,8 +228,7 @@ private:
     std::atomic<CFRunLoopRef> run_loop_{nullptr};  // published by run(), read by stop()
 
     // Foreground-window cache. Hook-thread-only (see refresh_active_window).
-    std::string cached_app_;
-    std::string cached_title_;
+    std::shared_ptr<const CaptureContext> cached_context_;
     double last_window_refresh_secs_ = 0.0;
 };
 

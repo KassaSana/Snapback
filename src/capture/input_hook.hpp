@@ -15,7 +15,7 @@ namespace snapback {
 // Called from the OS hook thread for every keyboard/mouse event. Keep it fast and
 // allocation-free: on Windows this runs inside the low-level hook and blocks the
 // whole input queue while it executes.
-using InputCallback = std::function<void(const CaptureEvent&)>;
+using InputCallback = std::function<void(CaptureEvent)>;
 
 class InputHook {
 public:

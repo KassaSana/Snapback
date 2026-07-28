@@ -8,7 +8,7 @@
 
 #include <atomic>
 #include <cmath>
-#include <string>
+#include <memory>
 #include <windows.h>
 
 namespace snapback {
@@ -27,31 +27,34 @@ double now_secs() {
     return static_cast<double>(GetTickCount64()) / 1000.0;
 }
 
-// Cache the active-window lookup by foreground HWND. query_active_window() does an
-// OpenProcess + GetModuleBaseNameW + UTF-16->UTF-8 conversion that must NOT run on every
-// keystroke/mouse-move inside a low-level hook callback: slow LL-hook callbacks cause
-// system-wide input lag and Windows silently drops events past LowLevelHooksTimeout.
-// GetForegroundWindow() is cheap, so we only pay the expensive query when the focused
-// window actually changes; otherwise we reuse the cached strings. (Hook-thread only, so
-// no synchronization is needed on these statics.)
-HWND g_cached_hwnd = nullptr;
-std::string g_cached_app;
-std::string g_cached_title;
+// Immutable foreground context is refreshed by the message loop's timer, outside the
+// low-level callbacks. The callbacks only copy this shared pointer and move the event into
+// the queue: no process lookup, UTF conversion, string copy, or allocation can block the
+// system-wide Windows input path.
+std::shared_ptr<const CaptureContext> g_cached_context;
 
-void enrich_context(CaptureEvent& ev) {
-    const HWND foreground = GetForegroundWindow();
-    if (foreground != g_cached_hwnd) {
-        g_cached_hwnd = foreground;
-        if (auto active = query_active_window()) {
-            g_cached_app = active->app_name;
-            g_cached_title = active->window_title;
-        } else {
-            g_cached_app.clear();
-            g_cached_title.clear();
-        }
+void refresh_context(bool emit_change) {
+    CaptureContext next;
+    if (auto active = query_active_window()) {
+        next.app_name = std::move(active->app_name);
+        next.window_title = std::move(active->window_title);
     }
-    ev.app_name = g_cached_app;
-    ev.window_title = g_cached_title;
+
+    const bool had_context = static_cast<bool>(g_cached_context);
+    const bool app_changed = had_context && next.app_name != g_cached_context->app_name;
+    const bool title_changed =
+        had_context && next.window_title != g_cached_context->window_title;
+    if (had_context && !app_changed && !title_changed) return;
+
+    g_cached_context = std::make_shared<CaptureContext>(std::move(next));
+    if (emit_change && had_context && g_on_event) {
+        CaptureEvent event;
+        event.event_type =
+            app_changed ? EventType::WindowFocusChange : EventType::WindowTitleChange;
+        event.timestamp_secs = now_secs();
+        event.captured_context = g_cached_context;
+        g_on_event(std::move(event));
+    }
 }
 
 LRESULT CALLBACK keyboard_proc(int code, WPARAM wparam, LPARAM lparam) {
@@ -61,8 +64,8 @@ LRESULT CALLBACK keyboard_proc(int code, WPARAM wparam, LPARAM lparam) {
         ev.event_type = (wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN)
                             ? EventType::KeyPress
                             : EventType::KeyRelease;
-        enrich_context(ev);
-        g_on_event(ev);
+        ev.captured_context = g_cached_context;
+        g_on_event(std::move(ev));
     }
     return CallNextHookEx(nullptr, code, wparam, lparam);
 }
@@ -92,8 +95,8 @@ LRESULT CALLBACK mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
                 g_have_last_mouse = true;
             }
         }
-        enrich_context(ev);
-        g_on_event(ev);
+        ev.captured_context = g_cached_context;
+        g_on_event(std::move(ev));
     }
     return CallNextHookEx(nullptr, code, wparam, lparam);
 }
@@ -115,25 +118,37 @@ public:
         }
 
         g_on_event = std::move(on_event);
+        g_cached_context.reset();
+        g_have_last_mouse = false;
+        refresh_context(false);
         HHOOK keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_proc, nullptr, 0);
         HHOOK mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, mouse_proc, nullptr, 0);
         if (!keyboard_hook || !mouse_hook) {
             if (keyboard_hook) UnhookWindowsHookEx(keyboard_hook);
             if (mouse_hook) UnhookWindowsHookEx(mouse_hook);
             g_on_event = {};
+            g_cached_context.reset();
             g_hook_thread_id.store(0, std::memory_order_release);
             return;
         }
 
+        constexpr UINT kContextRefreshMs = 500;
+        const UINT_PTR context_timer = SetTimer(nullptr, 0, kContextRefreshMs, nullptr);
         // A low-level hook only fires while this thread pumps messages.
         while (!stop_requested.load(std::memory_order_acquire) &&
                GetMessageW(&msg, nullptr, 0, 0) > 0) {
+            if (context_timer != 0 && msg.message == WM_TIMER &&
+                msg.wParam == context_timer) {
+                refresh_context(true);
+            }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        if (context_timer != 0) KillTimer(nullptr, context_timer);
         UnhookWindowsHookEx(keyboard_hook);
         UnhookWindowsHookEx(mouse_hook);
         g_on_event = {};
+        g_cached_context.reset();
         g_hook_thread_id.store(0, std::memory_order_release);
     }
 

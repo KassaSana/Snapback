@@ -70,7 +70,7 @@ public:
                         out.app_name = active->app_name;
                         out.window_title = active->window_title;
                     }
-                    callback_(out);
+                    callback_(std::move(out));
                     got_event = true;
                 }
             }
@@ -83,7 +83,7 @@ public:
                     ev.timestamp_secs = now_secs();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
-                    callback_(ev);
+                    callback_(std::move(ev));
                     last_app = active->app_name;
                     last_title = active->window_title;
                     got_event = true;
@@ -114,7 +114,7 @@ private:
                     ev.timestamp_secs = now_secs();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
-                    callback_(ev);
+                    callback_(std::move(ev));
                     last_app = active->app_name;
                     last_title = active->window_title;
                 }

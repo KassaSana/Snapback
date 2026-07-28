@@ -24,14 +24,18 @@ namespace {
 // then idles until stop(), the way a real InputHook blocks on its OS event loop.
 class ScriptedHook final : public InputHook {
 public:
-    explicit ScriptedHook(int count) : count_(count) {}
+    explicit ScriptedHook(int count)
+        : count_(count),
+          context_(std::make_shared<CaptureContext>(
+              CaptureContext{"TestEditor", "capture_thread.cpp"})) {}
 
     void run(InputCallback on_event, const std::atomic<bool>&) override {
         for (int i = 0; i < count_ && running_.load(std::memory_order_relaxed); ++i) {
             CaptureEvent ev;
             ev.event_type = EventType::KeyPress;
             ev.timestamp_secs = static_cast<double>(i);
-            on_event(ev);
+            ev.captured_context = context_;
+            on_event(std::move(ev));
         }
         // Release: pairs with the acquire in emitted(), so a consumer that observes this
         // flag is guaranteed to see every push above.
@@ -48,6 +52,7 @@ public:
 
 private:
     int count_;
+    std::shared_ptr<const CaptureContext> context_;
     std::atomic<bool> running_{true};
     std::atomic<bool> emitted_{false};
 };
@@ -141,6 +146,9 @@ TEST_CASE("CaptureThread drains hook events in FIFO order") {
         CHECK(ev->event_type == EventType::KeyPress);
         // The ring must preserve order: event i carries timestamp i.
         CHECK(ev->timestamp_secs == doctest::Approx(static_cast<double>(drained)));
+        CHECK(ev->app_name == "TestEditor");
+        CHECK(ev->window_title == "capture_thread.cpp");
+        CHECK_FALSE(ev->captured_context);
         ++drained;
     }
     CHECK(drained == 10);

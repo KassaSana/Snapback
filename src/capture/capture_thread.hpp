@@ -36,7 +36,11 @@ public:
     void stop() noexcept;
 
     // Engine side: drain one event, or nullopt if the buffer is empty.
-    std::optional<CaptureEvent> next_event() { return buffer_.pop(); }
+    std::optional<CaptureEvent> next_event() {
+        auto event = buffer_.pop();
+        if (event) event->materialize_captured_context();
+        return event;
+    }
 
     std::uint64_t events_dropped() const { return dropped_.load(std::memory_order_relaxed); }
     bool running() const { return running_.load(std::memory_order_relaxed); }

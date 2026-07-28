@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -118,6 +119,14 @@ LabelSource label_source_parse(const std::optional<std::string>& value);
 // Structs
 // ---------------------------------------------------------------------------
 
+// Immutable context shared by hot-path input events. Platform hooks replace this only
+// when the foreground window changes, so keyboard/mouse callbacks can hand context to the
+// capture queue without allocating or copying strings.
+struct CaptureContext {
+    std::string app_name;
+    std::string window_title;
+};
+
 // CaptureEvent — internal capture-to-engine record. snake_case wire.
 struct CaptureEvent {
     EventType event_type{EventType::KeyPress};
@@ -128,6 +137,16 @@ struct CaptureEvent {
     std::int32_t mouse_y{};
     std::uint32_t mouse_speed{};
     std::uint32_t idle_duration_ms{};
+    // Internal-only producer representation. CaptureThread resolves it into the string
+    // fields after dequeueing, on the engine side of the OS callback boundary.
+    std::shared_ptr<const CaptureContext> captured_context;
+
+    void materialize_captured_context() {
+        if (!captured_context) return;
+        app_name = captured_context->app_name;
+        window_title = captured_context->window_title;
+        captured_context.reset();
+    }
 };
 
 // PredictionRecord (camelCase).

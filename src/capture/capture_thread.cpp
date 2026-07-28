@@ -45,14 +45,15 @@ void CaptureThread::start(InputHook* hook) {
     hook_ = hook ? hook : &InputHook::instance();
     hook_thread_ = std::thread([this] {
         try {
-            hook_->run([this](const CaptureEvent& ev) noexcept {
+            hook_->run([this](CaptureEvent ev) noexcept {
                 // This runs inside the OS low-level hook callback; a C++ exception unwinding
-                // through that boundary is undefined behavior, so swallow everything. A copy
-                // that throws (e.g. OOM on the string members) is counted as a drop.
+                // through that boundary is undefined behavior, so swallow everything.
                 try {
                     // If the engine isn't draining fast enough the buffer fills and we drop,
                     // Record the drop so health reporting can surface backpressure.
-                    if (!buffer_.push(ev)) {
+                    // The event is moved end-to-end. Live input events carry immutable shared
+                    // context, so this queue handoff copies neither context string.
+                    if (!buffer_.push(std::move(ev))) {
                         dropped_.fetch_add(1, std::memory_order_relaxed);
                     } else {
                         last_event_ms_.store(steady_now_ms(), std::memory_order_relaxed);
