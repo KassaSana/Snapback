@@ -248,9 +248,13 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
     const auto staged_quality = app_data_dir / "model_quality.json.deploying";
     const auto backup_model = app_data_dir / "model.onnx.deploy-backup";
     const auto backup_quality = app_data_dir / "model_quality.json.deploy-backup";
+    const auto previous_model_backup = app_data_dir / "model.onnx.previous.deploy-backup";
+    const auto previous_quality_backup =
+        app_data_dir / "model_quality.json.previous.deploy-backup";
 
-    for (const auto& temporary :
-         {staged_model, staged_quality, backup_model, backup_quality}) {
+    for (const auto& temporary : {staged_model, staged_quality, backup_model,
+                                  backup_quality, previous_model_backup,
+                                  previous_quality_backup}) {
         std::filesystem::remove(temporary);
     }
 
@@ -281,16 +285,41 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
 
     const bool had_model = std::filesystem::is_regular_file(deployed_model);
     const bool had_quality = std::filesystem::is_regular_file(deployed_quality);
+    const bool had_previous_model = std::filesystem::is_regular_file(previous_model);
+    const bool had_previous_quality = std::filesystem::is_regular_file(previous_quality);
+    auto restore_previous_pair = [&] {
+        std::error_code ignored;
+        std::filesystem::remove(previous_model, ignored);
+        std::filesystem::remove(previous_quality, ignored);
+        if (std::filesystem::is_regular_file(previous_model_backup)) {
+            std::filesystem::rename(previous_model_backup, previous_model);
+        }
+        if (std::filesystem::is_regular_file(previous_quality_backup)) {
+            std::filesystem::rename(previous_quality_backup, previous_quality);
+        }
+    };
+
     // Preserve the accepted pair as the user-visible rollback target before promotion.
-    if (std::filesystem::is_regular_file(deployed_model)) {
-        std::filesystem::copy_file(deployed_model, previous_model,
-                                   std::filesystem::copy_options::overwrite_existing);
-        if (std::filesystem::is_regular_file(deployed_quality)) {
-            std::filesystem::copy_file(deployed_quality, previous_quality,
-                                       std::filesystem::copy_options::overwrite_existing);
-        } else {
+    bool replaced_previous_pair = false;
+    if (had_model) {
+        try {
+            if (had_previous_model) {
+                std::filesystem::rename(previous_model, previous_model_backup);
+            }
+            if (had_previous_quality) {
+                std::filesystem::rename(previous_quality, previous_quality_backup);
+            }
+            std::filesystem::copy_file(deployed_model, previous_model);
+            if (had_quality) {
+                std::filesystem::copy_file(deployed_quality, previous_quality);
+            }
+            replaced_previous_pair = true;
+        } catch (...) {
+            restore_previous_pair();
             std::error_code ignored;
-            std::filesystem::remove(previous_quality, ignored);
+            std::filesystem::remove(staged_model, ignored);
+            std::filesystem::remove(staged_quality, ignored);
+            throw;
         }
     }
 
@@ -310,6 +339,7 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
         if (std::filesystem::is_regular_file(backup_quality)) {
             std::filesystem::rename(backup_quality, deployed_quality);
         }
+        if (replaced_previous_pair) restore_previous_pair();
         std::filesystem::remove(staged_model, ignored);
         std::filesystem::remove(staged_quality, ignored);
         throw;
@@ -319,6 +349,8 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
     std::error_code ignored;
     std::filesystem::remove(backup_model, ignored);
     std::filesystem::remove(backup_quality, ignored);
+    std::filesystem::remove(previous_model_backup, ignored);
+    std::filesystem::remove(previous_quality_backup, ignored);
     return true;
 }
 

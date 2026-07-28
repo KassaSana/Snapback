@@ -151,6 +151,9 @@ TEST_CASE("model deployment leaves the accepted pair unchanged when metadata can
     write_text(app_data.path / "model.onnx", "accepted-model");
     write_text(app_data.path / "model_quality.json",
                "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model.onnx.previous", "older-model");
+    write_text(app_data.path / "model_quality.json.previous",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.65}");
     write_text(candidate.path / "model.onnx", "candidate-model");
     // A non-empty directory at the staging path forces preparation to fail before the
     // live model is touched.
@@ -165,6 +168,9 @@ TEST_CASE("model deployment leaves the accepted pair unchanged when metadata can
 
     CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
     CHECK(read_text(app_data.path / "model_quality.json").find("0.75") !=
+          std::string::npos);
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "older-model");
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.65") !=
           std::string::npos);
 }
 
