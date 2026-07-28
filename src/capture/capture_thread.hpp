@@ -45,6 +45,9 @@ public:
     std::uint64_t events_dropped() const { return dropped_.load(std::memory_order_relaxed); }
     bool running() const { return running_.load(std::memory_order_relaxed); }
     bool failed() const { return failed_.load(std::memory_order_acquire); }
+    bool input_observed() const {
+        return input_observed_.load(std::memory_order_acquire);
+    }
     std::optional<std::string> failure_reason() const;
     std::optional<std::int64_t> last_event_age_ms() const;
 
@@ -60,6 +63,7 @@ private:
     std::atomic<bool> stop_requested_{false};
     std::atomic<bool> failed_{false};
     std::atomic<bool> has_event_{false};
+    std::atomic<bool> input_observed_{false};
     std::atomic<std::int64_t> last_event_ms_{0};
     mutable std::mutex failure_mutex_;
     std::string failure_reason_;

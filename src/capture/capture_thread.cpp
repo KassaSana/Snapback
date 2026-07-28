@@ -37,6 +37,7 @@ void CaptureThread::start(InputHook* hook) {
     dropped_.store(0, std::memory_order_relaxed);
     failed_.store(false, std::memory_order_release);
     has_event_.store(false, std::memory_order_release);
+    input_observed_.store(false, std::memory_order_release);
     last_event_ms_.store(0, std::memory_order_relaxed);
     {
         std::lock_guard lock(failure_mutex_);
@@ -49,6 +50,11 @@ void CaptureThread::start(InputHook* hook) {
                 // This runs inside the OS low-level hook callback; a C++ exception unwinding
                 // through that boundary is undefined behavior, so swallow everything.
                 try {
+                    const bool direct_input =
+                        ev.event_type == EventType::KeyPress ||
+                        ev.event_type == EventType::KeyRelease ||
+                        ev.event_type == EventType::MouseMove ||
+                        ev.event_type == EventType::MouseClick;
                     // If the engine isn't draining fast enough the buffer fills and we drop,
                     // Record the drop so health reporting can surface backpressure.
                     // The event is moved end-to-end. Live input events carry immutable shared
@@ -58,6 +64,9 @@ void CaptureThread::start(InputHook* hook) {
                     } else {
                         last_event_ms_.store(steady_now_ms(), std::memory_order_relaxed);
                         has_event_.store(true, std::memory_order_release);
+                        if (direct_input) {
+                            input_observed_.store(true, std::memory_order_release);
+                        }
                     }
                 } catch (...) {
                     dropped_.fetch_add(1, std::memory_order_relaxed);

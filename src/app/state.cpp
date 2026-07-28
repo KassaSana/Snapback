@@ -315,7 +315,7 @@ HealthStatus AppState::health() const {
                                           : !active_session_ ? "no_session"
                                                              : "none";
     h.permissions =
-        check_capture_permissions(capture_.running(), event_age_ms.has_value());
+        check_capture_permissions(capture_.running(), capture_.input_observed());
     h.classifier.backend = classifier_.backend();
     h.classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
     h.classifier.model_path = OnnxModel::instance().model_path();
@@ -666,8 +666,7 @@ ClassifierStatus AppState::reload_classifier_model() {
 
 PermissionStatus AppState::refresh_permissions() {
     std::lock_guard lock(mutex_);
-    return check_capture_permissions(capture_.running(),
-                                     capture_.last_event_age_ms().has_value());
+    return check_capture_permissions(capture_.running(), capture_.input_observed());
 }
 
 PermissionStatus AppState::request_permissions() {
@@ -677,8 +676,7 @@ PermissionStatus AppState::request_permissions() {
     // decided). Re-probing rather than trusting the prompt's return value keeps one code
     // path — check_capture_permissions — as the single source of truth for the status DTO.
     request_capture_permissions();
-    return check_capture_permissions(capture_.running(),
-                                     capture_.last_event_age_ms().has_value());
+    return check_capture_permissions(capture_.running(), capture_.input_observed());
 }
 
 void AppState::reload_app_rules_unlocked() {

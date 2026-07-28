@@ -25,15 +25,16 @@ namespace {
 // then idles until stop(), the way a real InputHook blocks on its OS event loop.
 class ScriptedHook final : public InputHook {
 public:
-    explicit ScriptedHook(int count)
+    explicit ScriptedHook(int count, EventType event_type = EventType::KeyPress)
         : count_(count),
+          event_type_(event_type),
           context_(std::make_shared<CaptureContext>(
               CaptureContext{"TestEditor", "capture_thread.cpp"})) {}
 
     void run(InputCallback on_event, const std::atomic<bool>&) override {
         for (int i = 0; i < count_ && running_.load(std::memory_order_relaxed); ++i) {
             CaptureEvent ev;
-            ev.event_type = EventType::KeyPress;
+            ev.event_type = event_type_;
             ev.timestamp_secs = static_cast<double>(i);
             ev.captured_context = context_;
             on_event(std::move(ev));
@@ -53,6 +54,7 @@ public:
 
 private:
     int count_;
+    EventType event_type_;
     std::shared_ptr<const CaptureContext> context_;
     std::atomic<bool> running_{true};
     std::atomic<bool> emitted_{false};
@@ -164,7 +166,19 @@ TEST_CASE("CaptureThread drains hook events in FIFO order") {
     }
     CHECK(drained == 10);
     CHECK(capture.last_event_age_ms().has_value());
+    CHECK(capture.input_observed());
     CHECK(capture.events_dropped() == 0);
+    capture.stop();
+}
+
+TEST_CASE("CaptureThread does not treat polling-only context as observed input") {
+    ScriptedHook hook(1, EventType::WindowFocusChange);
+    CaptureThread capture;
+    capture.start(&hook);
+    REQUIRE(wait_for_emit(hook));
+
+    CHECK(capture.last_event_age_ms().has_value());
+    CHECK_FALSE(capture.input_observed());
     capture.stop();
 }
 
