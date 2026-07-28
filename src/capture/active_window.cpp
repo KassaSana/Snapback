@@ -54,6 +54,33 @@ std::optional<std::string> run_command(const std::string& command) {
 #endif
 }
 
+#if defined(_WIN32)
+std::optional<ActiveWindow> query_active_window_for_hwnd(HWND hwnd) {
+    if (!hwnd) return std::nullopt;
+
+    wchar_t title[512] = {};
+    GetWindowTextW(hwnd, title, 512);
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    wchar_t app_name[MAX_PATH] = {};
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+                                 FALSE, pid);
+    if (process) {
+        if (GetModuleBaseNameW(process, nullptr, app_name, MAX_PATH) == 0) {
+            DWORD size = MAX_PATH;
+            QueryFullProcessImageNameW(process, 0, app_name, &size);
+        }
+        CloseHandle(process);
+    }
+
+    ActiveWindow win;
+    win.app_name = detail::utf8_from_wide(app_name);
+    win.window_title = detail::utf8_from_wide(title);
+    return win;
+}
+#endif
+
 #if defined(__APPLE__)
 // Ask a browser for its own tab title.
 //
@@ -96,29 +123,7 @@ std::optional<std::string> browser_tab_title(const std::string& app_name) {
 
 std::optional<ActiveWindow> query_active_window() {
 #if defined(_WIN32)
-    HWND hwnd = GetForegroundWindow();
-    if (!hwnd) return std::nullopt;
-
-    wchar_t title[512] = {};
-    GetWindowTextW(hwnd, title, 512);
-
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    wchar_t app_name[MAX_PATH] = {};
-    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
-                                 FALSE, pid);
-    if (process) {
-        if (GetModuleBaseNameW(process, nullptr, app_name, MAX_PATH) == 0) {
-            DWORD size = MAX_PATH;
-            QueryFullProcessImageNameW(process, 0, app_name, &size);
-        }
-        CloseHandle(process);
-    }
-
-    ActiveWindow win;
-    win.app_name = detail::utf8_from_wide(app_name);
-    win.window_title = detail::utf8_from_wide(title);
-    return win;
+    return query_active_window_for_hwnd(GetForegroundWindow());
 #elif defined(__APPLE__)
     // The title lookup is wrapped in `try` so that losing it does not cost us the app name
     // too. Before this, both statements were unguarded: `name of front window` fails for
@@ -165,5 +170,11 @@ std::optional<ActiveWindow> query_active_window() {
     return std::nullopt;
 #endif
 }
+
+#if defined(_WIN32)
+std::optional<ActiveWindow> query_active_window_for_native_handle(void* native_handle) {
+    return query_active_window_for_hwnd(static_cast<HWND>(native_handle));
+}
+#endif
 
 }  // namespace snapback

@@ -5,6 +5,7 @@
 #include "capture/input_hook.hpp"
 
 #include "capture/active_window.hpp"
+#include "capture/input_context.hpp"
 
 #include <atomic>
 #include <cmath>
@@ -32,10 +33,12 @@ double now_secs() {
 // the queue: no process lookup, UTF conversion, string copy, or allocation can block the
 // system-wide Windows input path.
 std::shared_ptr<const CaptureContext> g_cached_context;
+HWND g_cached_hwnd = nullptr;
 
 void refresh_context(bool emit_change) {
+    const HWND foreground = GetForegroundWindow();
     CaptureContext next;
-    if (auto active = query_active_window()) {
+    if (auto active = query_active_window_for_native_handle(foreground)) {
         next.app_name = std::move(active->app_name);
         next.window_title = std::move(active->window_title);
     }
@@ -44,9 +47,13 @@ void refresh_context(bool emit_change) {
     const bool app_changed = had_context && next.app_name != g_cached_context->app_name;
     const bool title_changed =
         had_context && next.window_title != g_cached_context->window_title;
-    if (had_context && !app_changed && !title_changed) return;
+    if (had_context && !app_changed && !title_changed) {
+        g_cached_hwnd = foreground;
+        return;
+    }
 
     g_cached_context = std::make_shared<CaptureContext>(std::move(next));
+    g_cached_hwnd = foreground;
     if (emit_change && had_context && g_on_event) {
         CaptureEvent event;
         event.event_type =
@@ -59,6 +66,10 @@ void refresh_context(bool emit_change) {
 
 LRESULT CALLBACK keyboard_proc(int code, WPARAM wparam, LPARAM lparam) {
     if (code == HC_ACTION && g_on_event) {
+        if (!detail::context_matches_foreground(GetForegroundWindow(), g_cached_hwnd,
+                                                static_cast<bool>(g_cached_context))) {
+            return CallNextHookEx(nullptr, code, wparam, lparam);
+        }
         CaptureEvent ev;
         ev.timestamp_secs = now_secs();
         ev.event_type = (wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN)
@@ -72,6 +83,10 @@ LRESULT CALLBACK keyboard_proc(int code, WPARAM wparam, LPARAM lparam) {
 
 LRESULT CALLBACK mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
     if (code == HC_ACTION && g_on_event) {
+        if (!detail::context_matches_foreground(GetForegroundWindow(), g_cached_hwnd,
+                                                static_cast<bool>(g_cached_context))) {
+            return CallNextHookEx(nullptr, code, wparam, lparam);
+        }
         const auto* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
         CaptureEvent ev;
         ev.timestamp_secs = now_secs();
@@ -119,6 +134,7 @@ public:
 
         g_on_event = std::move(on_event);
         g_cached_context.reset();
+        g_cached_hwnd = nullptr;
         g_have_last_mouse = false;
         refresh_context(false);
         HHOOK keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_proc, nullptr, 0);
@@ -128,6 +144,7 @@ public:
             if (mouse_hook) UnhookWindowsHookEx(mouse_hook);
             g_on_event = {};
             g_cached_context.reset();
+            g_cached_hwnd = nullptr;
             g_hook_thread_id.store(0, std::memory_order_release);
             return;
         }
@@ -149,6 +166,7 @@ public:
         UnhookWindowsHookEx(mouse_hook);
         g_on_event = {};
         g_cached_context.reset();
+        g_cached_hwnd = nullptr;
         g_hook_thread_id.store(0, std::memory_order_release);
     }
 

@@ -15,6 +15,7 @@
 #include <thread>
 
 #include "capture/capture_thread.hpp"
+#include "capture/input_context.hpp"
 
 using namespace snapback;
 
@@ -134,6 +135,16 @@ std::size_t drain(CaptureThread& capture) {
 // SIGSEGV-ing only on Windows CI.
 static_assert(sizeof(CaptureThread) < 4096,
               "CaptureThread must stay stack-friendly; ring storage belongs on the heap");
+
+TEST_CASE("input context fails closed when the foreground window changes") {
+    int captured_window = 0;
+    int other_window = 0;
+
+    CHECK(detail::context_matches_foreground(&captured_window, &captured_window, true));
+    CHECK_FALSE(detail::context_matches_foreground(&other_window, &captured_window, true));
+    CHECK_FALSE(detail::context_matches_foreground(nullptr, &captured_window, true));
+    CHECK_FALSE(detail::context_matches_foreground(&captured_window, &captured_window, false));
+}
 
 TEST_CASE("CaptureThread drains hook events in FIFO order") {
     ScriptedHook hook(10);

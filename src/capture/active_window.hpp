@@ -22,4 +22,10 @@ std::string utf8_from_wide(const wchar_t* value);
 // Returns nullopt if permissions are missing or no window is focused.
 std::optional<ActiveWindow> query_active_window();
 
+#if defined(_WIN32)
+// Query a specific HWND supplied as an opaque pointer. The Windows input hook uses this to
+// bind a context snapshot to the exact foreground handle it later validates in callbacks.
+std::optional<ActiveWindow> query_active_window_for_native_handle(void* native_handle);
+#endif
+
 }  // namespace snapback
