@@ -747,6 +747,24 @@ TEST_CASE("AppState destruction stops a running engine") {
     CHECK(hook.stopped());
 }
 
+TEST_CASE("AppState confirms capture only after the backend delivers an event") {
+    auto state = make_state();
+    CHECK_FALSE(state->health().permissions.capture_probe_confirmed);
+
+    OneShotHook hook;
+    state->start_engine_for_test(&hook);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted());
+
+    const auto health = state->health();
+    CHECK(health.permissions.capture_probe_confirmed ==
+          (health.permissions.capture_available &&
+           health.permissions.active_window_available));
+    state->stop_engine();
+}
+
 TEST_CASE("AppState health reports a capture hook that stopped unexpectedly") {
     auto state = make_state();
     ReturningHook hook;

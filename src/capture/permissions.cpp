@@ -21,7 +21,7 @@ bool command_available(const char* command) {
 
 }  // namespace
 
-PermissionStatus check_capture_permissions(bool capture_running) {
+PermissionStatus check_capture_permissions(bool capture_running, bool capture_observed) {
     PermissionStatus status;
 
 #if defined(_WIN32)
@@ -58,11 +58,11 @@ PermissionStatus check_capture_permissions(bool capture_running) {
     }
 #endif
 
-    // A live thread alone is not proof that capture is usable: macOS deliberately
-    // falls back to window polling when the event tap lacks permission. Confirm the
-    // probe only when the listener is running and the platform capability checks pass.
-    status.capture_probe_confirmed =
-        capture_running && status.capture_available && status.active_window_available;
+    // Capability checks and a live thread describe prerequisites, not observed behavior.
+    // Only a successfully queued event proves that the running backend reached the engine.
+    status.capture_probe_confirmed = capture_running && capture_observed &&
+                                     status.capture_available &&
+                                     status.active_window_available;
     return status;
 }
 

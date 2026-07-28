@@ -5,7 +5,9 @@
 namespace snapback {
 
 // Read-only probe: never shows a dialog. Safe to call on every health poll.
-PermissionStatus check_capture_permissions(bool capture_running);
+// `capture_observed` must come from the live backend (for example, a successfully queued
+// event), not from platform capability checks or thread liveness.
+PermissionStatus check_capture_permissions(bool capture_running, bool capture_observed = false);
 
 // Actively ask the OS for capture permission, showing the system dialog if one exists.
 // Returns true if permission is already held (in which case no dialog appears).
