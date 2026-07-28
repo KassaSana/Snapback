@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -51,7 +52,10 @@ public:
         // while this thread is still unwinding.
         CFRunLoopRef loop = CFRunLoopGetCurrent();
         CFRetain(loop);
-        run_loop_.store(loop, std::memory_order_release);
+        {
+            std::lock_guard lock(run_loop_mutex_);
+            run_loop_ = loop;
+        }
 
         CGEventMask mask = CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp) |
                            CGEventMaskBit(kCGEventLeftMouseDown) |
@@ -102,9 +106,8 @@ public:
         // CFRunLoopStop(CFRunLoopGetCurrent()), which on the UI thread targeted the app's
         // own run loop — wrong loop, and under the webview potentially a live one. It only
         // appeared to work because run() polls with a timeout and rechecks running_.
-        if (CFRunLoopRef loop = run_loop_.load(std::memory_order_acquire)) {
-            CFRunLoopStop(loop);
-        }
+        std::lock_guard lock(run_loop_mutex_);
+        if (run_loop_) CFRunLoopStop(run_loop_);
     }
 
 private:
@@ -196,9 +199,13 @@ private:
     }
 
     void release_run_loop() {
-        if (CFRunLoopRef loop = run_loop_.exchange(nullptr, std::memory_order_acq_rel)) {
-            CFRelease(loop);
+        CFRunLoopRef loop = nullptr;
+        {
+            std::lock_guard lock(run_loop_mutex_);
+            loop = run_loop_;
+            run_loop_ = nullptr;
         }
+        if (loop) CFRelease(loop);
     }
 
     void run_polling_fallback(const std::atomic<bool>& stop_requested) {
@@ -225,7 +232,11 @@ private:
     InputCallback callback_;
     CFMachPortRef tap_ = nullptr;
     CFRunLoopSourceRef run_loop_source_ = nullptr;
-    std::atomic<CFRunLoopRef> run_loop_{nullptr};  // published by run(), read by stop()
+    // stop() and the hook thread touch the same retained CF object. The mutex protects the
+    // pointee lifetime, not merely the pointer value: release cannot run until a concurrent
+    // CFRunLoopStop has returned.
+    std::mutex run_loop_mutex_;
+    CFRunLoopRef run_loop_ = nullptr;
 
     // Foreground-window cache. Hook-thread-only (see refresh_active_window).
     std::shared_ptr<const CaptureContext> cached_context_;
