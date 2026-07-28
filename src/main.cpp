@@ -176,9 +176,9 @@ int main() {
         }
         logger.info("storage opened: " + (data_dir / "focoflow.db").string());
 
-    // Heap-allocate AppState: it embeds the 64K-slot capture ring buffer inline (~5 MB),
-    // which blows the default 1 MB stack if placed as a local. The tests do the same via
-    // make_unique. A unique_ptr keeps ownership + lifetime clear.
+    // Keep AppState heap-owned so callbacks registered below can borrow one stable
+    // process-lifetime address. RingBuffer independently heap-backs its 64K slots, so
+    // AppState itself remains stack-friendly.
     auto state = std::make_unique<AppState>(std::move(*storage), data_dir, &logger);
     state->start_engine();
 
