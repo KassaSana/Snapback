@@ -168,6 +168,15 @@ describe("Focus summary card", () => {
 });
 
 describe("Review first-run states", () => {
+  it("labels summary choices as rolling windows", async () => {
+    renderApp("review");
+
+    expect(await screen.findByRole("option", { name: "Last 24 hours" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Last 7 days" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Today" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "This week" })).not.toBeInTheDocument();
+  });
+
   it("explains all four empty analytics surfaces without presenting zeroes as insights", async () => {
     boundary.state.history = [];
     boundary.state.analytics = { sample_count: 0 };

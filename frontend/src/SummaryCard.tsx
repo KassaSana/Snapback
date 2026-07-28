@@ -20,8 +20,8 @@ export const SummaryCard = memo(function SummaryCard() {
       <div className="card-header">
         <h2>Summary</h2>
         <select aria-label="Summary window" value={window} onChange={(event) => setWindow(event.target.value as "day" | "week")}>
-          <option value="day">Today</option>
-          <option value="week">This week</option>
+          <option value="day">Last 24 hours</option>
+          <option value="week">Last 7 days</option>
         </select>
       </div>
       {hasHistory ? (
@@ -39,7 +39,7 @@ export const SummaryCard = memo(function SummaryCard() {
         </>
       ) : (
         <p className="helper-text">
-          No summary data yet. Complete a session to unlock daily and weekly reports.
+          No summary data yet. Complete a session to unlock 24-hour and 7-day reports.
         </p>
       )}
       <div className="button-row">
