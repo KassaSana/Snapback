@@ -140,7 +140,16 @@ describe("App first-run permission wizard", () => {
   });
 
   it("hides the wizard once capture is confirmed running", async () => {
-    boundary.state.health = health({ capture_running: true });
+    boundary.state.health = health({
+      capture_running: true,
+      permissions: {
+        capture_available: true,
+        capture_probe_confirmed: true,
+        active_window_available: true,
+        message: "",
+        setup_steps: [],
+      },
+    });
     render(<App />);
 
     // Wait for the Now surface to settle, then assert the wizard never appears. (Was
