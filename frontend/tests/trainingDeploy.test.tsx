@@ -75,6 +75,15 @@ afterEach(() => {
 });
 
 describe("Training / deploy card", () => {
+  it("describes the available feedback controls without claiming global hotkeys", async () => {
+    renderApp("settings");
+
+    expect(
+      await screen.findByText(/Use these controls to label it while a session is active/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Global hotkeys/i)).not.toBeInTheDocument();
+  });
+
   it("disables 'Train from export' until export + repo + python are ready", async () => {
     boundary.state.deployStatus = { ...readyToTrain(), has_export: false };
     renderApp("settings");

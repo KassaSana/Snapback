@@ -74,8 +74,8 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
         <span className="pill">train the model</span>
       </div>
       <p className="helper-text">
-        One tap — was that moment actually focused? Global hotkeys: Ctrl+Shift+1 deep, 2 focused,
-        3 drift, 4 distracted (works from any app during a session).
+        Was that moment actually focused? Use these controls to label it while a session is
+        active.
       </p>
       <div className="button-row feedback-row">
         <button className="secondary-button" onClick={() => void handleLabel("DEEP_FOCUS")}>
