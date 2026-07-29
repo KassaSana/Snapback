@@ -13,9 +13,14 @@
 // (dismiss_recovery), so a platform where nothing can dismiss would latch after the first
 // snapback of a session. The IPC path keeps that exit reachable here.
 //
-// Replace with real implementations per platform: ROADMAP 3.1 (macOS NSPanel) and
-// 3.2 (Linux X11/Wayland overlay).
-#if !defined(_WIN32)
+// macOS now has a real one (overlay_macos.mm, ROADMAP 3.1); Linux is still to come
+// (ROADMAP 3.2, X11/Wayland). The guard excludes both platforms that define
+// Overlay::instance() elsewhere, so adding a native backend cannot produce a duplicate
+// symbol even if CMake keeps listing this file.
+//
+// The paragraph above still describes Linux exactly: there, the web UI's Dismiss button
+// remains the only exit from Recovering.
+#if !defined(_WIN32) && !defined(__APPLE__)
 
 #include "snapback/overlay.hpp"
 
@@ -47,4 +52,4 @@ Overlay& Overlay::instance() {
 
 }  // namespace snapback
 
-#endif  // !_WIN32
+#endif  // !_WIN32 && !__APPLE__

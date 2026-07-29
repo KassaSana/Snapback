@@ -200,14 +200,15 @@ if(SNAPBACK_BUILD_APP)
   if(WIN32)
     target_sources(snapback PRIVATE src/snapback/overlay_windows.cpp src/app/tray_windows.cpp)
   elseif(APPLE)
-    # ROADMAP 3.1: a real NSStatusItem tray. The overlay is still the no-op fallback.
-    # Both stubs guard themselves on __APPLE__ as well, so a native backend replaces one
-    # without risking a duplicate Overlay::instance()/Tray::instance().
+    # ROADMAP 3.1: a real NSStatusItem tray and a real NSPanel overlay. Both stubs also
+    # guard themselves on __APPLE__, so listing one here by mistake cannot produce a
+    # duplicate Overlay::instance()/Tray::instance().
     target_sources(snapback PRIVATE
-      src/snapback/overlay_stub.cpp
+      src/snapback/overlay_macos.mm
       src/app/tray_macos.mm
       src/app/mac_ui.mm)
-    set_source_files_properties(src/app/tray_macos.mm src/app/mac_ui.mm
+    set_source_files_properties(
+      src/snapback/overlay_macos.mm src/app/tray_macos.mm src/app/mac_ui.mm
       PROPERTIES COMPILE_FLAGS "-x objective-c++")
     target_link_libraries(snapback PRIVATE "-framework Cocoa")
   else()
