@@ -127,6 +127,15 @@ delivery is the only missing piece.
 **Accepting this closes 9.1.** Every blocker below is now a scoped piece of work rather than
 an open question.
 
+> **Progress note, 2026-07-28.** Three of the six blockers are now cleared: **0.3**
+> (live-Mac capture, 2026-07-25), **3.1** (macOS tray + native `NSPanel` overlay), and the
+> **macOS launch smoke** (`macos-gui-smoke` in `ci.yml`). The Context section above is left
+> as written — it describes the state at the time of the decision, and its claim that "tray
+> and overlay are deliberate no-ops" on macOS is no longer true of the code. The live
+> blocker table is in [ROADMAP.md](../ROADMAP.md), which is the source of truth; it also
+> records that 3.1 and the smoke were verified by hand on the author's Mac but have not yet
+> run on a CI runner. **The status of this ADR is unchanged — `Accepted`, not superseded.**
+
 ## Why
 
 Option B wins on **dogfooding**, not on user demand. The author's machine is macOS, so a
@@ -149,7 +158,8 @@ something it does not deliver.
 - The roadmap gains a real filter: an item is v1 work only if it appears above, and
   everything else is explicitly post-v1. This is what makes ~80 items tractable.
 - `src/snapback/overlay_stub.cpp` and `src/app/tray_stub.cpp` stop being acceptable on
-  macOS and stay acceptable on Linux.
+  macOS and stay acceptable on Linux. *(Carried out 2026-07-28: both now guard on
+  `!_WIN32 && !__APPLE__`, so Linux is their only remaining consumer.)*
 - Linux desktop link coverage in CI stays — it is cheap and it caught a real bug — but a
   Linux desktop *bug* is no longer a release blocker.
 - Unblocks prioritization of Tiers 3, 7, and 9. Does not unblock any coding on Decision

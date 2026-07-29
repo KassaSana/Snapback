@@ -60,15 +60,22 @@ has 31 named values and a fixed training-column order. The scenarios in
 Platform-specific code is isolated behind small interfaces:
 
 - Windows low-level hooks, active-window lookup, overlay, tray, and autostart.
-- macOS `CGEventTap`, accessibility permissions, and active-window lookup including browser
-  tab titles. **Overlay and tray are no-op stubs**, so nothing reaches the user outside the
-  app window: `Tray::show_notification()` returns `false` without calling the OS, and the
-  snapback renders only in the web UI. Closing that is Roadmap 3.1, a v1 release blocker
-  under [ADR-0002](adr/0002-v1-supports-windows-and-macos.md).
+- macOS `CGEventTap`, accessibility permissions, active-window lookup including browser
+  tab titles, an `NSStatusItem` tray (`src/app/tray_macos.mm`), and a native `NSPanel`
+  overlay (`src/snapback/overlay_macos.mm`) matching the Windows card's geometry and
+  dismiss behavior. `mac_ui.mm` holds the AppKit shims `main.cpp` needs so that translation
+  unit stays plain C++. Native **notifications** remain absent —
+  `Tray::show_notification()` still returns `false` without calling the OS, because
+  `UNUserNotificationCenter` needs a bundle identifier that arrives with packaging
+  (Roadmap 3.3).
 - Linux input capture and desktop stubs where native UI support is pending.
 
-The stubs live in `src/snapback/overlay_stub.cpp` and `src/app/tray_stub.cpp` and exist so
-the desktop app links off Windows at all. Read their header comments before replacing them —
-they record which behavior is load-bearing and which is merely absent.
+The remaining stubs live in `src/snapback/overlay_stub.cpp` and `src/app/tray_stub.cpp`.
+They now cover Linux only — both guard on `!_WIN32 && !__APPLE__` — and exist so the
+desktop app links there at all. Read their header comments before replacing them: they
+record which behavior is load-bearing and which is merely absent. The load-bearing one is
+dismissal, because `ContextTracker`'s `Recovering` state has exactly one exit
+(`dismiss_recovery`); on Linux the web UI's Dismiss button is still the only thing that
+reaches it.
 
 The headless core remains buildable without the webview or ONNX runtime.

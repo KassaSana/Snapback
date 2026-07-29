@@ -27,11 +27,12 @@ not a broken tree.**
 | Target | Windows | macOS | Linux |
 |--------|---------|-------|-------|
 | `snapback_tests` (headless core) | ✅ | ✅ | ✅ |
-| `snapback` (desktop app, `SNAPBACK_BUILD_APP=ON`) | ✅ | ✅ links, tray/overlay are no-ops | ✅ links, tray/overlay are no-ops |
+| `snapback` (desktop app, `SNAPBACK_BUILD_APP=ON`) | ✅ | ✅ | ✅ links, tray/overlay are no-ops |
 | Benchmarks (`SNAPBACK_BUILD_BENCHMARKS=ON`) | ✅ | ✅ | ✅ |
 | ONNX backend (`SNAPBACK_ONNX=ON`) | CI only | buildable, but no runtime vendored and no CI job | CI only |
 | Real input capture | ✅ | ✅ needs Accessibility permission | ✅ needs `/dev/input` access |
-| Tray + overlay | ✅ | ❌ stub | ❌ stub |
+| Tray + overlay | ✅ | ✅ | ❌ stub |
+| Native notifications | ✅ | ❌ needs a bundle id (Roadmap 3.3) | ❌ |
 | Packaging / signing | ✅ | ❌ | ❌ |
 
 Why the ❌s, concretely:
@@ -45,9 +46,16 @@ Why the ❌s, concretely:
   so a macOS build works if you drop a matching `libonnxruntime.dylib` under
   `third_party/onnxruntime/lib`. But **no CI job builds ONNX on macOS**, so that path is
   unproven — treat a local success as your own result, not a guarantee.
-- **Tray and overlay** off Windows are deliberate no-op stubs (`tray_stub.cpp`,
-  `overlay_stub.cpp`) that exist so the app *links*. Real ones are Roadmap 3.1 / 3.2. The
-  app runs; those two surfaces just do nothing.
+- **Tray and overlay on Linux** are deliberate no-op stubs (`tray_stub.cpp`,
+  `overlay_stub.cpp`) that exist so the app *links*. Real ones are Roadmap 3.2. The app
+  runs; those two surfaces just do nothing. macOS has real ones as of Roadmap 3.1
+  (`tray_macos.mm`, `overlay_macos.mm`) — verified by running the app, and its launch is
+  covered in CI by [`scripts/gui_smoke_macos.sh`](../scripts/gui_smoke_macos.sh).
+- **Native notifications on macOS** are the one tray behavior still missing.
+  `Tray::show_notification()` returns `false` without calling the OS, on purpose:
+  `UNUserNotificationCenter` needs a bundle identifier, which arrives with packaging
+  (Roadmap 3.3). The `false` is a contract, not an oversight — callers may start trusting
+  it to decide whether to fall back, so do not flip it before delivery is real.
 - **Packaging** drives `signtool`, IExpress, and CPack/NSIS — Windows tooling. See
   [scripts/README.md](../scripts/README.md).
 - **`overlay_windows.cpp`, `tray_windows.cpp`, `input_hook_windows.cpp`, and
@@ -120,14 +128,26 @@ Roadmap 8.4). A blank window almost always means "no bundle."
 On Windows, use the runbook instead — it wires the demo data dir and the tray:
 [windows_demo.md](windows_demo.md).
 
+On macOS, [`scripts/gui_smoke_macos.sh`](../scripts/gui_smoke_macos.sh) does the whole
+sequence above and then checks it worked: it launches the binary, drives a session
+start/stop through storage from the UI thread, requires the run loop to exit on its own,
+and fails if the webview landed on `about:blank` instead of the bundle. It is the same
+script CI runs, so a local failure is a real failure.
+
+```sh
+./scripts/gui_smoke_macos.sh                  # frontend + build + launch
+./scripts/gui_smoke_macos.sh --skip-frontend --no-build   # just relaunch and re-check
+```
+
 ## 5. Permissions for real capture
 
 Capture is the one part that cannot be verified headlessly.
 
 - **macOS** — needs **Accessibility** (System Settings → Privacy & Security →
   Accessibility). `permissions.cpp:33` probes it with `AXIsProcessTrustedWithOptions`. The
-  `CGEventTap` is real, was silently dying under load until 2026-07-20, and **has still
-  never been verified on live hardware** — that is Roadmap 0.3.
+  `CGEventTap` is real, was silently dying under load until 2026-07-20, and **was verified
+  on live hardware 2026-07-25** (Roadmap 0.3) — that run is also what found macOS capture
+  stamping stale window titles onto events.
 - **Linux** — reads `/dev/input` directly (evdev). Your user usually needs to be in the
   `input` group; without access it falls back to active-window polling, which yields
   window changes but no keystroke/mouse events.
@@ -166,7 +186,9 @@ install compatibility across releases.
 | Symptom | Cause |
 |---------|-------|
 | `SNAPBACK_ONNX requires the platform ONNX Runtime files` | `third_party/onnxruntime` is not vendored. Leave `SNAPBACK_ONNX=OFF`. |
-| Undefined `Overlay::instance` / `Tray::instance` off Windows | The stub sources are missing from the target — they exist precisely to satisfy this link. |
+| Undefined `Overlay::instance` / `Tray::instance` on Linux | The stub sources are missing from the target — they exist precisely to satisfy this link. On Windows and macOS the real backends define them. |
+| Duplicate `Overlay::instance` / `Tray::instance` on macOS | A stub was listed in the target alongside the native `.mm`. Both stubs also self-guard on `__APPLE__`, so this should be impossible — if it happens, the guard was removed. |
+| macOS tray icon appears but its menu never responds | The `NSStatusItem` was created off the main thread. `Tray::install()` returns early rather than crashing in that case, so a missing or dead menu is the only symptom. |
 | App window is blank | `frontend/dist` was not built before the app. |
 | `ctest` finds no tests | You built `snapback` but not `snapback_tests`. |
 | A doc references a file that isn't there | Run `python3 scripts/check_doc_paths.py` — it is the CI guard for exactly that. |
