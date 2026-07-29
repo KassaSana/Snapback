@@ -25,8 +25,25 @@ struct ScreenPoint {
 };
 
 // Top-right placement within a monitor's work area, with a margin.
+//
+// Answers in the top-left-origin, y-grows-downward convention: y is the distance measured
+// *downward* from the work area's top edge. That is what Win32 wants directly; Cocoa needs
+// cocoa_origin_y() below.
 ScreenPoint top_right_position(ScreenPoint monitor_pos, ScreenPoint monitor_size,
                                int window_width, int margin);
+
+// Convert a top-down y into the y Cocoa wants.
+//
+// Cocoa positions a window by its BOTTOM-left corner on an axis that grows *upward* from
+// the bottom of the primary screen, so both the direction and the reference corner differ
+// from what top_right_position() returns. `work_area_top` is the top edge of the target
+// screen's visible frame in that same Cocoa space (NSMaxY of NSScreen.visibleFrame).
+//
+// This is a pure function with tests rather than three lines inside the .mm file because
+// getting it wrong fails quietly: the card lands at the bottom of the screen, or off it
+// entirely on a display that is not the primary one. The result is legitimately negative
+// for a screen mounted below the primary, so callers must not clamp it to zero.
+int cocoa_origin_y(int work_area_top, int top_down_y, int window_height);
 
 // The multi-line text drawn in the card, built from the snapback payload.
 std::string overlay_text(const SnapbackPayload& payload);
