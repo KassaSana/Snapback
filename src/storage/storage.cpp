@@ -913,6 +913,34 @@ void Storage::delete_all_activity_data() {
     transaction.commit();
 }
 
+bool Storage::delete_session(const std::string& session_id) {
+    Transaction transaction(*this);
+    {
+        // Check inside the transaction, not before it: BEGIN IMMEDIATE already holds the
+        // write lock here, so the answer cannot change between the check and the deletes.
+        Stmt exists(db_, "SELECT 1 FROM sessions WHERE session_id = ?1");
+        exists.bind(1, session_id);
+        if (!exists.step_row()) return false;  // ~Transaction rolls back the empty txn
+    }
+
+    // Child rows first, in the same order and for the same reason as
+    // delete_all_activity_data: historical databases were not all created with
+    // ON DELETE CASCADE, so relying on it would leave orphans on exactly the old files
+    // Roadmap 7.11's fixtures exist to represent.
+    for (const char* sql : {"DELETE FROM feature_snapshots WHERE session_id = ?1",
+                            "DELETE FROM context_snapshots WHERE session_id = ?1",
+                            "DELETE FROM snapback_events WHERE session_id = ?1",
+                            "DELETE FROM labels WHERE session_id = ?1",
+                            "DELETE FROM predictions WHERE session_id = ?1",
+                            "DELETE FROM sessions WHERE session_id = ?1"}) {
+        Stmt stmt(db_, sql);
+        stmt.bind(1, session_id);
+        stmt.step_row();
+    }
+    transaction.commit();
+    return true;
+}
+
 SessionRecap Storage::recap(const std::string& session_id) {
     SessionRecord session;
     {

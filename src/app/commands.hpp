@@ -143,6 +143,16 @@ inline void register_commands(webview::webview& w, AppState& state,
         state.delete_all_activity_data();
         return json(nullptr);
     });
+    // Roadmap 7.6: "delete everything" was the only eraser available, which makes removing
+    // one bad session cost the user their whole history. Reports whether a row was actually
+    // removed rather than returning null, so the UI can distinguish a stale list entry from
+    // a successful delete instead of silently claiming success for an id that never existed.
+    bind_cmd(w, "delete_session", [&state](const json& a) {
+        auto sid = detail::validate_required_text("Session ID",
+                                                  a.at("sessionId").get<std::string>(),
+                                                  detail::kMaxSessionIdLen);
+        return json(state.delete_session(sid));
+    });
     bind_cmd(w, "get_goal_categories", [&state](const json&) {
         return json(state.goal_categories());
     });

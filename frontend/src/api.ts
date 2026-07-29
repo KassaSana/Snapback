@@ -402,6 +402,10 @@ export const api = {
     return mapPrivacySettings(raw);
   },
   deleteAllActivityData: () => invoke("delete_all_activity_data"),
+  // Resolves false when the session was already gone — the caller should refresh its list
+  // rather than report a successful delete for a row that no longer existed.
+  deleteSession: (sessionId: string) =>
+    invoke<boolean>("delete_session", { sessionId }),
   getAutostart: async () => {
     const raw = await invoke<Record<string, unknown>>("get_autostart");
     return mapAutostartStatus(raw);

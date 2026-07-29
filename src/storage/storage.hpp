@@ -116,6 +116,15 @@ public:
     // user configuration such as app rules.
     void delete_all_activity_data();
 
+    // Atomically removes one session and everything collected during it. Returns false if
+    // no such session exists, so a caller can tell "already gone" from "deleted" rather
+    // than reporting success for a typo'd id.
+    //
+    // Deliberately not gated on the session being finished: a user who wants a session gone
+    // may well want it gone *because* it is running. Callers own stopping it first — see
+    // AppState::delete_session, which is where the live in-memory state is also cleared.
+    bool delete_session(const std::string& session_id);
+
     // Infers and saves an automatic session label on stop.
     static FocusLabel infer_session_label(const SessionRecap& recap);
     FocusLabel save_auto_session_label(const std::string& session_id);

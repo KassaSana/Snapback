@@ -84,6 +84,11 @@ public:
     FocusSummary focus_summary(std::size_t limit = 200);
     std::vector<SessionSummary> session_history(std::size_t limit);
     void delete_all_activity_data();
+
+    // Removes one session and everything recorded during it. Returns false when no such
+    // session exists. If it is the session currently being filled, the live engine state is
+    // reset too, so nothing keeps writing to a row that is gone.
+    bool delete_session(const std::string& session_id);
     ExportTrainingResult export_training_data(
         const std::filesystem::path& out_dir,
         const std::optional<std::string>& session_id = std::nullopt);

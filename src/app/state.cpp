@@ -291,6 +291,41 @@ std::optional<SessionRecord> AppState::get_session(const std::string& session_id
     return storage_.get_session(session_id);
 }
 
+bool AppState::delete_session(const std::string& session_id) {
+    // Same three locks and the same order as delete_all_activity_data, for the same reason:
+    // the activity boundary fences off-lock persistence in engine_tick(), so a tick already
+    // in flight cannot write rows back into a session between the delete and the state
+    // reset. Bumping the epoch also invalidates any event already queued for the UI.
+    std::lock_guard state_lock(mutex_);
+    std::lock_guard activity_lock(activity_boundary_mutex_);
+    std::lock_guard store_lock(storage_mutex_);
+
+    const bool deleted = storage_.delete_session(session_id);
+    if (!deleted) return false;
+
+    activity_epoch_.fetch_add(1, std::memory_order_release);
+
+    // Deleting the session the engine is currently filling would otherwise leave the app
+    // pointing at a row that no longer exists — the next tick would try to persist against
+    // a missing foreign key, and the UI would keep rendering a session the user just
+    // erased. Reset exactly what stop_session() resets, plus the derived prediction state.
+    if (active_session_ && active_session_->session_id == session_id) {
+        pomodoro_.reset();
+        active_session_.reset();
+        features_.reset_for_session(std::nullopt);
+        context_tracker_.reset();
+        context_tracker_.set_goal_categories(settings_.goal_categories);
+        latest_prediction_.reset();
+        latest_snapback_.reset();
+        last_prediction_at_ms_.reset();
+        last_prediction_secs_ = -1.0;
+        prediction_dirty_ = false;
+        hyperfocus_latched_ = false;
+        hyperfocus_minutes_.reset();
+    }
+    return true;
+}
+
 HealthStatus AppState::health() const {
     std::lock_guard lock(mutex_);
     HealthStatus h;

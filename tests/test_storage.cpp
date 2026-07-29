@@ -649,6 +649,64 @@ TEST_CASE("context_app_counts filters by session start when given a cutoff") {
     CHECK(included.at("Cursor") == 1);
 }
 
+// --- Single-session deletion (Roadmap 7.6) -----------------------------------------------
+
+TEST_CASE("delete_session removes the session and every row collected during it") {
+    // Until this existed the only eraser was delete_all_activity_data, so removing one bad
+    // session cost the user their entire history.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto doomed = storage->create_session("doomed", FocusMode::Normal);
+    storage->insert_prediction(prediction(doomed.session_id, 60.0, 0.3, "PRODUCTIVE"));
+    storage->insert_label(doomed.session_id, FocusLabel::Productive, "manual");
+    storage->save_context_snapshot(doomed.session_id, snapshot("Cursor", ts(1)));
+    FeatureVector f;
+    f.seconds_since_session_start() = 12.0;
+    storage->insert_feature_snapshot(doomed.session_id, f);
+    storage->stop_session(doomed.session_id);
+
+    // A second session must be entirely unaffected — the failure this guards against is a
+    // DELETE that forgot its WHERE clause.
+    const auto keeper = storage->create_session("keeper", FocusMode::Normal);
+    storage->insert_prediction(prediction(keeper.session_id, 70.0, 0.2, "PRODUCTIVE"));
+    storage->save_context_snapshot(keeper.session_id, snapshot("Safari", ts(1)));
+
+    CHECK(storage->delete_session(doomed.session_id));
+
+    CHECK_FALSE(storage->get_session(doomed.session_id).has_value());
+    CHECK(storage->list_context_snapshots(doomed.session_id, 10).empty());
+    CHECK(storage->get_session(keeper.session_id).has_value());
+    const auto remaining = storage->recent_predictions(10);
+    REQUIRE(remaining.size() == 1);
+    CHECK(remaining[0].session_id == keeper.session_id);
+    CHECK(storage->list_context_snapshots(keeper.session_id, 10).size() == 1);
+}
+
+TEST_CASE("delete_session reports whether anything was deleted") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("once", FocusMode::Normal);
+
+    CHECK(storage->delete_session(session.session_id));
+    // Returning false rather than throwing keeps a double-click on Delete harmless, while
+    // still letting the caller tell "already gone" from "deleted".
+    CHECK_FALSE(storage->delete_session(session.session_id));
+    CHECK_FALSE(storage->delete_session("no-such-session"));
+}
+
+TEST_CASE("delete_session preserves app rules") {
+    // App rules are user configuration, not captured activity — the same boundary
+    // delete_all_activity_data draws.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    storage->upsert_app_rule("figma.com", AppRuleKind::Allow, std::nullopt);
+    const auto session = storage->create_session("with rules", FocusMode::Normal);
+
+    REQUIRE(storage->delete_session(session.session_id));
+    CHECK(storage->list_app_rules().size() == 1);
+}
+
 TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash spikes") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
