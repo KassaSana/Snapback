@@ -216,6 +216,18 @@ void ensure_prediction_model_id_column(sqlite3* db) {
              "DEFAULT 'heuristic:snapback-features-v1-31'");
 }
 
+int read_user_version(sqlite3* db) {
+    Stmt version(db, "PRAGMA user_version");
+    if (!version.step_row()) return 0;
+    return sqlite3_column_int(version.get(), 0);
+}
+
+void write_user_version(sqlite3* db, int version) {
+    // PRAGMA does not accept bound parameters, so this is built as text. `version` is an
+    // int from kSchemaVersion, never user input, so there is nothing here to inject.
+    exec(db, ("PRAGMA user_version = " + std::to_string(version)).c_str());
+}
+
 std::string utc_now_rfc3339() {
     const std::time_t now = std::time(nullptr);
     std::tm tm{};
@@ -422,8 +434,18 @@ void Storage::Transaction::commit() {
     done_ = true;
 }
 
-void Storage::migrate() {
-    exec(db_,
+namespace {
+
+// --- Schema migrations -------------------------------------------------------------------
+//
+// Ordered and append-only. `version` is the user_version the database carries *after* the
+// step runs, so the runner applies every entry with version > the stored one. See
+// kSchemaVersion in storage.hpp for the two rules these must obey — in particular that each
+// one is idempotent, because user_version 0 means "fresh file" and "install from before
+// versioning" indistinguishably, and both replay from 0.
+
+void migrate_baseline_schema(sqlite3* db) {
+    exec(db,
          R"sql(
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT PRIMARY KEY,
@@ -556,10 +578,61 @@ void Storage::migrate() {
             CREATE INDEX IF NOT EXISTS idx_context_snapshots_session_ts
                 ON context_snapshots(session_id, timestamp);
          )sql");
-    // Older databases predate model provenance. Upgrade this one column in place;
-    // the broader ordered migration system remains Roadmap 7.3.
-    ensure_prediction_model_id_column(db_);
 }
+
+// Databases written before model provenance existed lack predictions.model_id. Kept as a
+// separate step rather than folded into the baseline because a pre-versioning install
+// already has the `predictions` table, so `CREATE TABLE IF NOT EXISTS` would skip it and
+// the column would never appear.
+void migrate_prediction_model_id(sqlite3* db) { ensure_prediction_model_id_column(db); }
+
+struct Migration {
+    int version;
+    const char* name;
+    void (*apply)(sqlite3* db);
+};
+
+constexpr Migration kMigrations[] = {
+    {1, "baseline schema", migrate_baseline_schema},
+    {2, "predictions.model_id", migrate_prediction_model_id},
+};
+
+static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
+static_assert(kMigrations[std::size(kMigrations) - 1].version == kSchemaVersion,
+              "kSchemaVersion must match the last migration; bump one when you add the other");
+
+}  // namespace
+
+void Storage::migrate() {
+    const int from = read_user_version(db_);
+
+    // A database stamped newer than this build understands was written by a later version
+    // of Snapback. Opening it anyway is the dangerous option, not the friendly one: our
+    // INSERTs omit columns that build may have added as NOT NULL, and our reads would
+    // silently ignore data the user can still see in the newer build. Refuse loudly and
+    // leave the file untouched — Storage::open turns this into a logged nullopt.
+    if (from > kSchemaVersion) {
+        throw std::runtime_error("database schema version " + std::to_string(from) +
+                                 " is newer than this build understands (" +
+                                 std::to_string(kSchemaVersion) +
+                                 "); it was written by a later version of Snapback");
+    }
+
+    if (from == kSchemaVersion) return;  // already current; skip the DDL entirely
+
+    // One transaction for the whole upgrade. SQLite makes DDL transactional, so a failure
+    // half-way through rolls back to the version we started at rather than leaving a
+    // database that is neither the old shape nor the new one.
+    Transaction tx(*this);
+    for (const Migration& migration : kMigrations) {
+        if (migration.version <= from) continue;
+        migration.apply(db_);
+    }
+    write_user_version(db_, kSchemaVersion);
+    tx.commit();
+}
+
+int Storage::schema_version() { return read_user_version(db_); }
 
 void Storage::finalize_cache() {
     // Cached statements must be finalized before sqlite3_close, or close returns BUSY.

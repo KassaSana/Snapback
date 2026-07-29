@@ -22,6 +22,21 @@ namespace snapback {
 inline constexpr int kDefaultRetentionDays = 90;
 inline constexpr std::size_t kVacuumMinDeletedRows = 500;
 
+// The schema version this build writes and understands, stored in `PRAGMA user_version`.
+//
+// Bump this and append to the migration list in storage.cpp whenever the schema changes.
+// Two rules that the migration runner depends on and cannot check for you:
+//
+//   1. **Every migration must be idempotent.** `user_version` 0 is ambiguous — it means
+//      either a brand-new file or an install from before versioning existed, which already
+//      has the full schema. Nothing can tell those apart after the fact, so the runner
+//      replays from 0 on both and relies on each step being a no-op when its work is
+//      already done (`CREATE TABLE IF NOT EXISTS`, PRAGMA-check-then-`ALTER`).
+//   2. **Never edit a released migration.** Append a new one. Editing one changes what an
+//      already-upgraded database was built from, which is precisely the drift versioning
+//      exists to prevent.
+inline constexpr int kSchemaVersion = 2;
+
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
     std::size_t context_snapshots_deleted = 0;
@@ -132,6 +147,10 @@ public:
     // Test seam: the SQLite query plan for `sql`, one line per step. Lets a test assert an
     // index is actually *used*, not merely present.
     std::vector<std::string> query_plan(const std::string& sql);
+
+    // The `PRAGMA user_version` this database currently carries. Equals kSchemaVersion for
+    // any database this build has opened successfully.
+    int schema_version();
 
 private:
     explicit Storage(sqlite3* db) : db_(db) {}

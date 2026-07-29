@@ -196,6 +196,138 @@ TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
     CHECK(latest->model_id == "heuristic:snapback-features-v1-31");
 }
 
+// --- Schema versioning (Roadmap 7.3) -----------------------------------------------------
+
+TEST_CASE("a fresh database is stamped with the current schema version") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    CHECK(storage->schema_version() == kSchemaVersion);
+}
+
+TEST_CASE("Storage::open stamps a schema version on disk and keeps it across reopens") {
+    TempDir temp;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        CHECK(storage->schema_version() == kSchemaVersion);
+    }
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+}
+
+TEST_CASE("an unversioned database with a full schema is adopted, not rebuilt") {
+    // The case every existing install is in: `user_version` is 0 because versioning did not
+    // exist when the file was written, but the schema is already complete. The runner cannot
+    // distinguish this from a brand-new file, so it replays every migration — which is only
+    // safe because each one is idempotent. What must survive is the data.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("pre-versioning", FocusMode::Normal).session_id;
+    }
+
+    // Rewind the stamp to simulate a database written before this commit existed.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(db, "PRAGMA user_version = 0;", nullptr, nullptr, nullptr) ==
+            SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+    // The session is still there — replaying the baseline did not drop or recreate a table.
+    CHECK(reopened->get_session(session_id).has_value());
+}
+
+TEST_CASE("a legacy database is migrated and then stamped current") {
+    // The 7.3 gap in one test: an on-disk database from an older schema (no model_id, no
+    // user_version) must come out of open() both upgraded *and* versioned, so the next
+    // launch takes the fast path instead of replaying DDL forever.
+    TempDir temp;
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const char* legacy_schema =
+        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, goal TEXT NOT NULL, "
+        "status TEXT NOT NULL, focus_mode TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT);"
+        "CREATE TABLE predictions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, "
+        "focus_score REAL NOT NULL, distraction_risk REAL NOT NULL, focus_state TEXT NOT NULL, "
+        "thrash_score REAL NOT NULL DEFAULT 0.0, drift_score REAL NOT NULL DEFAULT 0.0, "
+        "goal_alignment REAL NOT NULL DEFAULT 0.5, timestamp TEXT NOT NULL);"
+        "INSERT INTO sessions VALUES ('legacy', 'legacy', 'ACTIVE', 'normal', "
+        "'2026-07-11T19:00:00Z', NULL);";
+    REQUIRE(sqlite3_exec(db, legacy_schema, nullptr, nullptr, nullptr) == SQLITE_OK);
+    // A legacy file carries no stamp at all — user_version stays at SQLite's default 0.
+    sqlite3_close(db);
+
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    CHECK(storage->schema_version() == kSchemaVersion);
+    // Tables the legacy schema never had must exist now.
+    CHECK(storage->list_app_rules().empty());
+    CHECK(storage->get_session("legacy").has_value());
+}
+
+TEST_CASE("a database from a newer build is refused instead of opened") {
+    // The failure this prevents is silent and one-directional: a later Snapback could add a
+    // NOT NULL column, and this build's INSERTs — which know nothing about it — would either
+    // fail at runtime or write rows the newer build considers malformed. Downgrading is rare;
+    // corrupting the user's history because of it is unacceptable, so open() fails closed.
+    TempDir temp;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+    }
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto bump = "PRAGMA user_version = " + std::to_string(kSchemaVersion + 1) + ";";
+    REQUIRE(sqlite3_exec(db, bump.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    auto storage = Storage::open(temp.path, &logger);
+
+    CHECK_FALSE(storage.has_value());
+    // Refusing is only useful if the user can tell *why*; a bare nullopt reads as "the app
+    // is broken" rather than "you downgraded".
+    const auto logged = log_out.str();
+    CHECK(logged.find("newer than this build") != std::string::npos);
+}
+
+TEST_CASE("refusing a newer database leaves it untouched") {
+    // The whole point of failing closed is that re-upgrading recovers the user's data. If
+    // the refused open had rewritten the stamp or dropped a table, that would be false.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("from the future", FocusMode::Normal).session_id;
+    }
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto bump = "PRAGMA user_version = " + std::to_string(kSchemaVersion + 5) + ";";
+    REQUIRE(sqlite3_exec(db, bump.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    REQUIRE_FALSE(Storage::open(temp.path).has_value());
+
+    // Put the stamp back the way a newer build would have left it after a downgrade+upgrade
+    // cycle, and the data must still be there.
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto restore = "PRAGMA user_version = " + std::to_string(kSchemaVersion) + ";";
+    REQUIRE(sqlite3_exec(db, restore.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto recovered = Storage::open(temp.path);
+    REQUIRE(recovered.has_value());
+    CHECK(recovered->get_session(session_id).has_value());
+}
+
 TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash spikes") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
