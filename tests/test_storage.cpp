@@ -328,6 +328,168 @@ TEST_CASE("refusing a newer database leaves it untouched") {
     CHECK(recovered->get_session(session_id).has_value());
 }
 
+// --- Pre-existing database fixtures (Roadmap 7.11) ---------------------------------------
+//
+// Every other test in this file starts from a database this build just created, which means
+// they all agree with themselves by construction. These start from a file some *other*
+// process left behind — the only shape that matters in the field, since CLAUDE.md pins the
+// filename to focoflow.db specifically so earlier installs' data is picked up.
+//
+// The fixtures are built in-process rather than committed as binary .db files on purpose: a
+// checked-in database cannot be code-reviewed, and it silently stops representing "what an
+// old build wrote" the moment someone regenerates it from a current build.
+
+namespace {
+
+// Copies a live database *and its WAL sidecars* to a new directory. Copying while the
+// original connection is still open is what makes the copy dirty: the committed rows are in
+// the -wal file and have not been checkpointed back into the main database yet, which is
+// exactly the on-disk state a killed process leaves behind.
+void copy_db_with_wal(const std::filesystem::path& from_dir,
+                      const std::filesystem::path& to_dir) {
+    std::filesystem::create_directories(to_dir);
+    for (const char* suffix : {"", "-wal", "-shm"}) {
+        const auto src = from_dir / ("focoflow.db" + std::string(suffix));
+        if (!std::filesystem::exists(src)) continue;
+        std::filesystem::copy_file(src, to_dir / src.filename(),
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("committed rows survive an unclean shutdown via WAL recovery") {
+    // For an always-on tray app that users quit with Force Quit or Task Manager, this *is*
+    // the normal shutdown path. Nothing tested it, so a change to journal_mode or a
+    // checkpoint-on-close could have started discarding the last writes of every session
+    // without a single test noticing.
+    TempDir live;
+    TempDir crashed;
+    std::string session_id;
+    {
+        auto storage = Storage::open(live.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("unclean shutdown", FocusMode::Normal).session_id;
+        storage->insert_prediction(prediction(session_id, 71.0, 0.2, "PRODUCTIVE"));
+
+        // Snapshot mid-life: the connection is still open, so the WAL is still dirty.
+        REQUIRE(std::filesystem::exists(live.path / "focoflow.db-wal"));
+        copy_db_with_wal(live.path, crashed.path);
+    }
+
+    auto recovered = Storage::open(crashed.path);
+    REQUIRE(recovered.has_value());
+    CHECK(recovered->get_session(session_id).has_value());
+    const auto predictions = recovered->recent_predictions(10);
+    REQUIRE(predictions.size() == 1);
+    CHECK(predictions[0].focus_score == doctest::Approx(71.0));
+}
+
+TEST_CASE("a corrupt database is refused with a logged reason, not a crash") {
+    // A truncated or overwritten file is what a full disk or a bad sync client leaves. The
+    // requirement is not that we repair it — it is that the app says so instead of dying or
+    // silently starting with an empty history.
+    TempDir temp;
+    {
+        std::ofstream junk(temp.path / "focoflow.db", std::ios::binary);
+        junk << "this is definitely not a SQLite database, not even a little bit";
+    }
+
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    auto storage = Storage::open(temp.path, &logger);
+
+    CHECK_FALSE(storage.has_value());
+    const auto logged = log_out.str();
+    CHECK(logged.find("ERROR") != std::string::npos);
+    CHECK(logged.find("focoflow.db") != std::string::npos);
+}
+
+TEST_CASE("an aged database is pruned on open") {
+    // Retention has only ever been exercised against rows inserted moments earlier in the
+    // same process. This is the real shape: a file that sat on disk long enough for its
+    // contents to age past the window, opened fresh.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("aged", FocusMode::Normal).session_id;
+    }
+
+    // Backdate a prediction well past kDefaultRetentionDays by writing it directly, the way
+    // an install from months ago would have left it.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto insert =
+        "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, "
+        "timestamp) VALUES ('" + session_id + "', 40.0, 0.4, 'PRODUCTIVE', '2020-01-01T00:00:00Z');";
+    REQUIRE(sqlite3_exec(db, insert.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->recent_predictions(10).empty());
+    // Pruning runtime rows must not take the session with it — sessions are the user's
+    // history, predictions are regenerable telemetry.
+    CHECK(reopened->get_session(session_id).has_value());
+}
+
+TEST_CASE("a database carrying unknown tables and columns still opens") {
+    // "Foreign-authored" in practice means a file a newer build, a migration we later revert,
+    // or a user's own sqlite3 session has added things to. A superset must be tolerated:
+    // every write in this codebase names its columns, so extra ones are simply not our
+    // business.
+    TempDir temp;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+    }
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const char* foreign_objects =
+        "CREATE TABLE someone_elses_table (id INTEGER PRIMARY KEY, note TEXT);"
+        "ALTER TABLE sessions ADD COLUMN experimental_tag TEXT;";
+    REQUIRE(sqlite3_exec(db, foreign_objects, nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    const auto session = reopened->create_session("after foreign columns", FocusMode::Normal);
+    CHECK(reopened->get_session(session.session_id).has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+}
+
+TEST_CASE("reopening a populated database preserves every table's contents") {
+    // The blunt end-to-end version: write one of everything, close, reopen, and read it all
+    // back. Catches a migration that drops and recreates a table — which the IF NOT EXISTS
+    // baseline cannot do today, but a future ALTER-heavy migration easily could.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("round trip", FocusMode::Deep).session_id;
+        storage->insert_prediction(prediction(session_id, 80.0, 0.1, "DEEP_FOCUS"));
+        storage->insert_label(session_id, FocusLabel::Productive, "manual");
+        storage->upsert_app_rule("figma.com", AppRuleKind::Allow, "design work");
+        FeatureVector f;
+        f.seconds_since_session_start() = 42.0;
+        storage->insert_feature_snapshot(session_id, f);
+    }
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->get_session(session_id).has_value());
+    CHECK(reopened->recent_predictions(10).size() == 1);
+    REQUIRE(reopened->list_app_rules().size() == 1);
+    CHECK(reopened->list_app_rules()[0].pattern == "figma.com");
+    // recap() reads across predictions and snapback_events, so a non-zero average is proof
+    // the reopened handle can still join the tables, not just SELECT from one.
+    const auto recap = reopened->recap(session_id);
+    CHECK(recap.avg_focus_score == doctest::Approx(80.0));
+}
+
 TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash spikes") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
