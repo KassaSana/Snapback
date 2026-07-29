@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include <sqlite3.h>
 
@@ -560,6 +561,52 @@ TEST_CASE("recent_session_summaries matches the per-session recap it replaces") 
     // That is ROADMAP 7.16's "ordering within a second is undefined" showing up in practice
     // — matching recent_sessions() above is the invariant that actually holds.
     CHECK(running.session_id != busy.session_id);
+}
+
+TEST_CASE("recent_session_summaries keeps aggregates attached under same-second ties") {
+    // The defect this guards: recent_session_summaries runs three queries that each
+    // re-derive "the most recent N sessions". started_at has only second resolution
+    // (ROADMAP 7.16), so sessions created in one test body — or by a user starting and
+    // stopping quickly — all tie. If two of those queries broke the tie differently, a
+    // session would appear in the result with its aggregates silently zeroed.
+    //
+    // Every session here shares one started_at, so the ordering is decided entirely by the
+    // tiebreak. Each carries a distinct focus score, which is what makes a mismatch visible:
+    // without a total order the aggregate rows land on the wrong sessions or nowhere.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    std::unordered_map<std::string, double> expected_focus;
+    for (int i = 0; i < 8; ++i) {
+        const auto session = storage->create_session("tie" + std::to_string(i), FocusMode::Normal);
+        const double focus = 10.0 * (i + 1);
+        storage->insert_prediction(prediction(session.session_id, focus, 0.2, "PRODUCTIVE"));
+        storage->backdate_session_for_test(session.session_id, "2026-07-11T19:00:00Z");
+        expected_focus[session.session_id] = focus;
+    }
+
+    const auto summaries = storage->recent_session_summaries(5);
+    REQUIRE(summaries.size() == 5);
+    for (const auto& summary : summaries) {
+        CAPTURE(summary.record.session_id);
+        // The aggregate must belong to *this* session, not to whichever one a second query
+        // happened to pick for the same slot.
+        CHECK(summary.recap.avg_focus_score ==
+              doctest::Approx(expected_focus.at(summary.record.session_id)));
+    }
+
+    // And the selection must be repeatable: same input, same five sessions, same order.
+    const auto again = storage->recent_session_summaries(5);
+    REQUIRE(again.size() == summaries.size());
+    for (std::size_t i = 0; i < again.size(); ++i) {
+        CHECK(again[i].record.session_id == summaries[i].record.session_id);
+    }
+    // recent_sessions() must agree too — session_history renders whichever one it is given.
+    const auto records = storage->recent_sessions(5);
+    REQUIRE(records.size() == summaries.size());
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        CHECK(records[i].session_id == summaries[i].record.session_id);
+    }
 }
 
 TEST_CASE("recent_session_summaries honours its limit and handles an empty database") {

@@ -474,6 +474,14 @@ internals, and the benchmark harness.
   >
   > Note this also affects users, not just tests: the history list's order is arbitrary among
   > sessions started in the same second. Rare, but it is the same root cause.
+  >
+  > *Partly mitigated 2026-07-29.* Every session-selection query now orders by
+  > `started_at DESC, session_id DESC`. Because `session_id` is the primary key that is a
+  > **total order**, so the history list is at least *stable* — the same sessions come back
+  > in the same order every time, and 7.12's three queries agree on which sessions they are
+  > talking about. It is explicitly **not** a fix for this item: `session_id` is a random
+  > UUIDv4, so ties are broken arbitrarily rather than chronologically. Recovering true
+  > within-second order still needs the decision below.
 
   **7.3 is now done, which changes the shape of applying this.** There is an ordered
   migration list to append to, so converting a column's storage type is a migration rather

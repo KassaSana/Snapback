@@ -763,7 +763,8 @@ SessionRecord Storage::stop_session(const std::string& session_id) {
 std::optional<SessionRecord> Storage::active_session() {
     Stmt stmt(db_,
               "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-              "FROM sessions WHERE status = 'ACTIVE' ORDER BY started_at DESC LIMIT 1");
+              "FROM sessions WHERE status = 'ACTIVE' "
+              "ORDER BY started_at DESC, session_id DESC LIMIT 1");
     if (!stmt.step_row()) return std::nullopt;
     return read_session(stmt.get());
 }
@@ -771,7 +772,7 @@ std::optional<SessionRecord> Storage::active_session() {
 std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
     Stmt stmt(db_,
               "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-              "FROM sessions ORDER BY started_at DESC LIMIT ?1");
+              "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1");
     stmt.bind(1, static_cast<std::int64_t>(limit));
     std::vector<SessionRecord> rows;
     while (stmt.step_row()) rows.push_back(read_session(stmt.get()));
@@ -779,6 +780,18 @@ std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
 }
 
 std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit) {
+    // All three queries below re-derive "the most recent `limit` sessions" independently,
+    // so they must agree on *which* sessions those are. `started_at` has only second
+    // resolution (ROADMAP 7.16), which makes ties common rather than exotic, and SQLite does
+    // not promise that two differently-shaped queries break a tie the same way. If they
+    // disagreed, a session present in the result would miss its aggregates and silently
+    // report zeros. `session_id` is the primary key, so adding it to the ORDER BY gives a
+    // total order and removes the ambiguity.
+    //
+    // It is a determinism tiebreak, not a chronological one: session_id is a random UUIDv4,
+    // so this makes the order *stable*, not *correct*. Recovering true sub-second order is
+    // 7.16's job.
+
     // Query 1: the sessions themselves, plus the duration recap() computes separately.
     // Ordering and LIMIT match recent_sessions() exactly so the two stay interchangeable.
     std::vector<SessionSummary> out;
@@ -788,7 +801,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
                   "SELECT session_id, goal, status, focus_mode, started_at, ended_at, "
                   "CAST(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
                   "julianday(started_at)) * 86400) AS INTEGER) "
-                  "FROM sessions ORDER BY started_at DESC LIMIT ?1");
+                  "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1");
         stmt.bind(1, static_cast<std::int64_t>(limit));
         while (stmt.step_row()) {
             SessionSummary summary;
@@ -810,7 +823,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
     {
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
-                  "                ORDER BY started_at DESC LIMIT ?1) "
+                  "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
                   "SELECT p.session_id, "
                   "COALESCE(AVG(p.focus_score), 0), "
                   "COALESCE(AVG(p.distraction_risk), 0), "
@@ -837,7 +850,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
     {
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
-                  "                ORDER BY started_at DESC LIMIT ?1) "
+                  "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
                   "SELECT e.session_id, COUNT(*) "
                   "FROM snapback_events e JOIN recent r ON e.session_id = r.session_id "
                   "GROUP BY e.session_id");
@@ -858,7 +871,7 @@ void Storage::backdate_session_for_test(const std::string& session_id,
     Stmt stmt(db_, "UPDATE sessions SET started_at = ?2 WHERE session_id = ?1");
     stmt.bind(1, session_id);
     stmt.bind(2, started_at);
-    stmt.step_row();
+    stmt.step_done();
 }
 
 std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
@@ -871,7 +884,7 @@ std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
         "WITH recent AS ("
         "  SELECT session_id FROM sessions"
         "  WHERE (?3 IS NULL OR (started_at IS NOT NULL AND started_at >= ?3))"
-        "  ORDER BY started_at DESC LIMIT ?1"
+        "  ORDER BY started_at DESC, session_id DESC LIMIT ?1"
         "), capped AS ("
         "  SELECT c.app_name,"
         "         ROW_NUMBER() OVER (PARTITION BY c.session_id ORDER BY c.timestamp ASC) AS rn"
@@ -885,7 +898,7 @@ std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
     if (started_after) {
         stmt.bind(3, *started_after);
     } else {
-        sqlite3_bind_null(stmt.get(), 3);
+        stmt.bind_null(3);  // the wrapper checks the return code; the raw call does not
     }
 
     std::unordered_map<std::string, std::size_t> counts;
@@ -935,7 +948,9 @@ bool Storage::delete_session(const std::string& session_id) {
                             "DELETE FROM sessions WHERE session_id = ?1"}) {
         Stmt stmt(db_, sql);
         stmt.bind(1, session_id);
-        stmt.step_row();
+        // step_done(), not step_row(): a DELETE returns no rows, and step_done throws if one
+        // somehow appears instead of silently reporting "no row" the way step_row would.
+        stmt.step_done();
     }
     transaction.commit();
     return true;
