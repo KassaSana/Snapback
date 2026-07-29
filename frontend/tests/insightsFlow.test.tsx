@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => {
@@ -8,20 +8,35 @@ const boundary = vi.hoisted(() => {
     focusSummary: Record<string, unknown>;
     analytics: Record<string, unknown>;
     summary: Record<string, unknown>;
+    deleteThrows: boolean;
+    historyThrows: boolean;
   } = {
     health: {},
     history: [],
     focusSummary: {},
     analytics: {},
     summary: {},
+    deleteThrows: false,
+    historyThrows: false,
   };
 
-  const invoke = vi.fn(async (cmd: string): Promise<unknown> => {
+  const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
     switch (cmd) {
       case "get_health":
         return state.health;
       case "get_session_history":
+        if (state.historyThrows) throw new Error("history unavailable");
         return state.history;
+      // Mirrors the native contract: delete the row if it is there, and report whether one
+      // was actually removed (Storage::delete_session → AppState::delete_session).
+      case "delete_session": {
+        if (state.deleteThrows) throw new Error("delete failed");
+        const before = state.history.length;
+        state.history = state.history.filter(
+          (entry) => (entry.record as { sessionId: string }).sessionId !== args?.sessionId,
+        );
+        return state.history.length !== before;
+      }
       case "get_focus_summary":
         return state.focusSummary;
       case "get_analytics":
@@ -97,6 +112,8 @@ beforeEach(() => {
   boundary.state.focusSummary = {};
   boundary.state.analytics = {};
   boundary.state.summary = {};
+  boundary.state.deleteThrows = false;
+  boundary.state.historyThrows = false;
 });
 
 afterEach(() => {
@@ -128,6 +145,102 @@ describe("Insights card", () => {
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }));
     expect(within(card).getByText(/No completed sessions yet/i)).toBeInTheDocument();
     expect(card.querySelectorAll("rect.chart-bar")).toHaveLength(0);
+  });
+});
+
+// Roadmap 7.6. The native `delete_session` command has been tested since 2026-07-29; what was
+// missing was any way for a user to reach it. These tests are about the reachable path.
+describe("Session deletion from Insights", () => {
+  const goalSummary = (id: string, goal: string) => {
+    const base = rawSummary(id, 50, 0, 0);
+    return { record: { ...base.record, goal }, recap: { ...base.recap, goal } };
+  };
+
+  const loadTwoSessions = async () => {
+    boundary.state.history = [goalSummary("a", "alpha"), goalSummary("b", "bravo")];
+    renderApp("review");
+    await screen.findByRole("heading", { name: "Insights" });
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }),
+    );
+  };
+
+  it("names each session on its delete button rather than a bare 'Delete'", async () => {
+    await loadTwoSessions();
+    expect(screen.getByRole("button", { name: "Delete session alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete session bravo" })).toBeInTheDocument();
+  });
+
+  it("does not delete on the first click, then deletes only the confirmed session", async () => {
+    await loadTwoSessions();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
+    expect(boundary.invoke).not.toHaveBeenCalledWith("delete_session", expect.anything());
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("delete_session", { sessionId: "a" }),
+    );
+
+    await waitFor(() => expect(screen.getByText("Session deleted.")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Delete session alpha" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete session bravo" })).toBeInTheDocument();
+  });
+
+  it("cancelling leaves the session and never reaches the backend", async () => {
+    await loadTwoSessions();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(boundary.invoke).not.toHaveBeenCalledWith("delete_session", expect.anything());
+    expect(screen.getByRole("button", { name: "Delete session alpha" })).toBeInTheDocument();
+  });
+
+  // The native command returns false when no row matched. Saying "deleted" there would claim
+  // work SQLite did not do, so the wording has to differ even though the row goes either way.
+  it("reports a stale row honestly instead of claiming a delete", async () => {
+    await loadTwoSessions();
+    // Something else removed it between the list load and the click.
+    boundary.state.history = [goalSummary("b", "bravo")];
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("That session was already gone.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Session deleted.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete session alpha" })).toBeNull();
+  });
+
+  // The delete is authoritative once it returns, so a failed refetch must not resurrect the
+  // row on screen. `refreshInsights` keeps its last good data by design, which is exactly the
+  // trap: without the local prune, this test shows a session the database no longer has.
+  it("keeps the row gone even when the follow-up refresh fails", async () => {
+    await loadTwoSessions();
+    boundary.state.historyThrows = true;
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Delete session alpha" })).toBeNull(),
+    );
+    expect(screen.getByRole("button", { name: "Delete session bravo" })).toBeInTheDocument();
+  });
+
+  it("surfaces a failed delete and keeps the session listed", async () => {
+    await loadTwoSessions();
+    boundary.state.deleteThrows = true;
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Could not delete that session.")).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Delete session alpha" })).toBeInTheDocument();
   });
 });
 

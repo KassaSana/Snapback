@@ -1,13 +1,19 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 
-import type { SessionSummary } from "./api";
+import { formatScore, type SessionSummary } from "./api";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
+  sessionRowLabel,
   toChronological,
 } from "./insightsMetrics";
+import { formatTime } from "./utils";
 
 type InsightsCardProps = {
+  deleteError?: string | null;
+  deleteStatus?: string | null;
+  deletingSessionId?: string | null;
+  onDeleteSession?: (sessionId: string) => void | Promise<void>;
   sessionHistory: SessionSummary[];
 };
 
@@ -65,7 +71,85 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
   );
 }
 
-export const InsightsCard = memo(function InsightsCard({ sessionHistory }: InsightsCardProps) {
+// Roadmap 7.6: "you may inspect and destroy what I collected." The two-step confirm matches
+// the Privacy card's danger zone — one click can never delete a session, because there is no
+// undo behind this button, and a mis-click costs the user data they cannot get back.
+function SessionDeleteList({
+  deletingSessionId,
+  onDelete,
+  summaries,
+}: {
+  deletingSessionId: string | null;
+  onDelete: (sessionId: string) => void | Promise<void>;
+  summaries: SessionSummary[];
+}) {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  return (
+    <ul className="rules-list session-list">
+      {summaries.map((summary, index) => {
+        const sessionId = summary.record.sessionId;
+        const label = sessionRowLabel(summary);
+        const busy = deletingSessionId === sessionId;
+        const confirming = confirmingId === sessionId;
+
+        return (
+          <li className="rules-item" key={sessionId || index}>
+            <div className="session-row-detail">
+              <span className="rules-pattern">{label}</span>
+              <p className="rules-note">
+                {formatTime(summary.record.startedAt)} ·{" "}
+                {Math.round(summary.recap.durationSecs / 60)} min · focus{" "}
+                {formatScore(summary.recap.avgFocusScore)}
+              </p>
+            </div>
+            {/* A row with no session id cannot be addressed by `delete_session`, so it gets
+                no button rather than a button that silently does nothing. */}
+            {sessionId === "" ? null : confirming ? (
+              <div className="button-row">
+                <button
+                  className="danger-button rules-delete"
+                  disabled={busy}
+                  aria-label={`Confirm delete session ${label}`}
+                  onClick={() => {
+                    setConfirmingId(null);
+                    void onDelete(sessionId);
+                  }}
+                >
+                  Confirm delete
+                </button>
+                <button
+                  className="secondary-button rules-delete"
+                  disabled={busy}
+                  onClick={() => setConfirmingId(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                className="secondary-button rules-delete"
+                disabled={busy}
+                aria-label={`Delete session ${label}`}
+                onClick={() => setConfirmingId(sessionId)}
+              >
+                Delete
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export const InsightsCard = memo(function InsightsCard({
+  deleteError = null,
+  deleteStatus = null,
+  deletingSessionId = null,
+  onDeleteSession,
+  sessionHistory,
+}: InsightsCardProps) {
   const aggregates = useMemo(
     () => computeInsightsAggregates(sessionHistory),
     [sessionHistory],
@@ -98,6 +182,22 @@ export const InsightsCard = memo(function InsightsCard({ sessionHistory }: Insig
           <p className="insights-caption">
             Avg focus score (0–100) per session · oldest → newest
           </p>
+          {onDeleteSession ? (
+            <div className="session-delete-zone">
+              <h3>Delete a session</h3>
+              <p className="helper-text">
+                Removes that session and everything recorded under it — predictions, captured
+                window context, and labels. Permanent, and it changes the numbers above.
+              </p>
+              <SessionDeleteList
+                deletingSessionId={deletingSessionId}
+                onDelete={onDeleteSession}
+                summaries={sessionHistory}
+              />
+              {deleteStatus ? <p className="helper-text success">{deleteStatus}</p> : null}
+              {deleteError ? <p className="helper-text alert">{deleteError}</p> : null}
+            </div>
+          ) : null}
         </>
       )}
     </section>

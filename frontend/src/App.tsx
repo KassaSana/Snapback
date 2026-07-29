@@ -47,7 +47,6 @@ export default function App() {
 
   const live = useLiveData();
 
-  const { sessionHistory, refreshInsights } = useInsights();
   const { focusSummary, refreshFocusSummary } = useFocusSummary();
 
   const {
@@ -171,6 +170,41 @@ export default function App() {
     setRuleNote,
     setRulePattern,
   } = useAppRules();
+
+  // Deleting one session (Roadmap 7.6) invalidates less than deleting everything, but it is
+  // not local to the Insights card: the aggregates on other surfaces counted that session's
+  // predictions, and if it was the *running* session the native command already tore down the
+  // live engine state, so the UI must stop showing a session that no longer exists.
+  //
+  // `useInsights` is called here rather than at the top of the component because this callback
+  // closes over `useSession`/`useLiveData` state, and a hook argument has to be defined before
+  // the hook that receives it.
+  const handleSessionDeleted = useCallback(
+    async (deletedSessionId: string) => {
+      if (deletedSessionId === sessionId) {
+        clearActivitySession();
+        live.clearActivityData();
+      }
+      await Promise.all([refreshFocusSummary(), refreshAnalytics(), refreshHealth()]);
+    },
+    [
+      clearActivitySession,
+      live.clearActivityData,
+      refreshAnalytics,
+      refreshFocusSummary,
+      refreshHealth,
+      sessionId,
+    ],
+  );
+
+  const {
+    deleteError: sessionDeleteError,
+    deleteSession: handleDeleteSession,
+    deleteStatus: sessionDeleteStatus,
+    deletingSessionId,
+    refreshInsights,
+    sessionHistory,
+  } = useInsights(handleSessionDeleted);
 
   const handleActivityDataDeleted = useCallback(async () => {
     clearActivitySession();
@@ -316,7 +350,13 @@ export default function App() {
 
         {surface === "review" && (
           <>
-        <InsightsCard sessionHistory={sessionHistory} />
+        <InsightsCard
+          deleteError={sessionDeleteError}
+          deleteStatus={sessionDeleteStatus}
+          deletingSessionId={deletingSessionId}
+          onDeleteSession={handleDeleteSession}
+          sessionHistory={sessionHistory}
+        />
 
         <AnalyticsCard analytics={analytics} />
 

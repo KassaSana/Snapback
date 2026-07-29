@@ -842,6 +842,28 @@ h1 {
   color: var(--muted);
 }
 
+/* Per-session deletion (Roadmap 7.6). Set apart from the trend chart above it with the
+   same top border the Privacy danger zone uses, so a destructive list never reads as
+   part of the surrounding read-only summary. */
+.session-delete-zone {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.session-delete-zone h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.session-list {
+  margin-top: 12px;
+}
+
+.session-row-detail {
+  min-width: 0;
+}
+
 .rules-delete {
   flex-shrink: 0;
 }
