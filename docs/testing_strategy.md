@@ -78,7 +78,8 @@ and prove the Windows desktop shell can be built against WebView2.
 
 GitHub Actions workflow: `.github/workflows/ci.yml`
 
-The current jobs are:
+The current jobs are — **twelve** of them, though `cpp-headless` appears on two rows because
+it proves two different things:
 
 | Job | What it proves |
 |-----|----------------|
@@ -199,7 +200,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate_windows_package.ps1
 ## Sensible Next Steps
 
 1. Add Playwright or WinAppDriver smoke coverage that clicks through the webview.
-   *(Roadmap 10.1 — the IPC seam is the one place nothing tests.)*
+   *(Roadmap 10.1.)*
+
+   > *Corrected 2026-07-29:* this line used to say "the IPC seam is the one place nothing
+   > tests." That is not true and was pessimistic in the direction that invites redundant
+   > work. `tests/test_ipc_contract.cpp` pins the command names three ways — the `bind_cmd`
+   > list, the frontend's `invoke` calls, and the canonical `fixtures/ipc_commands.json` —
+   > and `tests/test_command_bridge.cpp` covers the dispatcher: arg unwrapping, the error
+   > envelope, the escaped-JSON event boundary, the validation helpers, and two real
+   > handlers round-tripping with camelCase keys.
+   >
+   > What is genuinely untested is narrower and worth stating precisely: **nothing drives
+   > the real `webview.bind()` round trip in a running process.** Every test above calls the
+   > handler layer directly, so a break *between* `bind()` and the browser — the injected
+   > shim, promise resolution, a webview API change — would pass CI. That is 10.1's actual
+   > target.
 2. ~~Add signing once a certificate is available.~~ **Signing is wired** in `release.yml`;
    what is missing is the certificate itself (Roadmap 0.4b).
 3. ~~Add NSIS/WiX installer generation.~~ **NSIS is already configured** —

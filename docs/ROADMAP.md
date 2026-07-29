@@ -23,7 +23,15 @@ entries duplicated the [Done archive](#done-archive) below. Don't reopen a paral
 and an ordered migration list), most of **7.11** (five pre-existing-database fixtures),
 **7.12** (SQL aggregation), and the delete-a-single-session half of **7.6**. ADR-0002 is now
 **four of six release blockers cleared**, and none of the remaining two is implementation
-work.
+work. Measured, not assumed: **241 C++ test cases / 1303 assertions** and **72 frontend
+tests** green, typecheck clean. *Not* seen by CI — see the caveat under the blocker table.
+
+Reviewing that pass found a real defect in its own 7.12 work: three queries each re-derived
+"the most recent N sessions", and second-resolution timestamps made ties likely enough that
+they could disagree and silently zero a session's aggregates. Fixed by giving every
+session-selection query a total order. **The lesson is that a batched rewrite needs a test
+that the batch still belongs to the right row**, not just that the numbers are right in the
+happy case.
 
 The 2026-07-28 pass closed **3.1** (macOS tray + native `NSPanel` overlay) and the **macOS
 launch smoke**. Both were verified by running the app on Kassa's Mac; neither has been seen
@@ -78,7 +86,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 |---|------|---------|
 | 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
-| 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
+| 3 | **6.2** red-master rule | The last Tier 6 item, and a `decision` — needs Kassa. **6.3 is done and CI-confirmed** (run `30168981559`), so Tier 6 is no longer a CI outage |
 | 4 | ~~**9.1** define what v1 means~~ | **Done 2026-07-25** — [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is `Accepted`. Windows + macOS, six blockers, and macOS v1 ships a native `NSPanel` overlay |
 | 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
@@ -135,9 +143,14 @@ an Apple Developer account and one decision session.
 
 ---
 
-## Tier 6 — CI is red (blocking)
+## Tier 6 — CI health
 
-Opened by the 2026-07-20 staff review against run `29728565319`.
+Opened by the 2026-07-20 staff review against run `29728565319`, when this tier was titled
+"CI is red (blocking)". **It is not red any more:** 6.1, 6.3, and 6.4 are all done and
+CI-confirmed, and run `30168981559` (2026-07-25) was green on all three OSes. The only item
+left is **6.2, a process decision** — what to do when master goes red — which is not itself
+a CI failure. Retitled 2026-07-29 so the heading stops claiming a blocking outage that
+ended three days earlier.
 
 - **6.1 — DONE, CI-confirmed 2026-07-22.** Moved to the [Done archive](#done-archive).
   Both Windows jobs are green as of run `29890010902`; the 138 previously-skipped test
@@ -182,6 +195,11 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
   > now the only legal include site for `webview.h` and scrubs the macro pollution right
   > after the include (same pattern as `tests/doctest_wrapper.hpp`). Verified to link on
   > macOS; Ubuntu is CI-verified only, so the next master run is the proof.
+  >
+  > **CI-confirmed 2026-07-25** by run `30168981559`, green on all three OSes for every job
+  > but `docs-smoke` — which covers both halves: the decoupled jobs ran, and the Ubuntu
+  > desktop build linked. This item is **done**; it stays here rather than moving to the
+  > archive because the X11 lesson above is still the reason `webview_compat.hpp` exists.
 
 - **6.4 — DONE, CI-confirmed 2026-07-22.** Moved to the [Done archive](#done-archive).
   Remaining loose ends: `action-gh-release` 2→3 (PR #19) still open by choice, and the
@@ -1121,12 +1139,24 @@ structure alone — a real review would likely find more.
 
 - **10.1 — Nothing tests the real binary against the real UI.** `L`
   There is **no E2E framework** — no Playwright, no Cypress, nothing in
-  `frontend/package.json`. Frontend tests mock `invoke()`; C++ tests run headless. **The
-  actual seam between them — the webview bridge — is tested only by
-  `test_ipc_contract`'s name matching.** So a command whose *name* matches but whose payload
-  shape drifted passes every test and breaks the UI at runtime, which is precisely the
-  failure CLAUDE.md calls "silently breaks the UI." The `windows-desktop-integration` job is
-  the closest thing and it's currently skipped (6.3).
+  `frontend/package.json`. Frontend tests mock `invoke()`; C++ tests run headless.
+
+  Be precise about what *is* covered, because this entry used to overstate the gap.
+  `test_ipc_contract` pins command names three ways (the `bind_cmd` list, the frontend's
+  `invoke` calls, and `fixtures/ipc_commands.json`), and `test_command_bridge` covers the
+  dispatcher itself — arg unwrapping, the error envelope, the escaped-JSON event boundary,
+  the validation helpers, and two real handlers round-tripping with camelCase keys.
+
+  **What nothing exercises is the real `webview.bind()` round trip in a running process.**
+  Every test above calls the handler layer directly, so a break *between* `bind()` and the
+  browser — the injected shim, promise resolution, a webview API change — passes CI. A
+  command whose payload shape drifted in a handler *without* a bridge test is the same
+  story, and both are the failure CLAUDE.md calls "silently breaks the UI."
+
+  > *Corrected 2026-07-29:* this entry said `windows-desktop-integration` "is currently
+  > skipped (6.3)". It is not — 6.3 removed its `needs:` on 2026-07-22 and it now runs
+  > unconditionally. It also said the seam is tested "only by `test_ipc_contract`'s name
+  > matching", which ignored `test_command_bridge` entirely.
 
 - **10.2 — DONE 2026-07-25.** Decided in
   [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`) and shipped on

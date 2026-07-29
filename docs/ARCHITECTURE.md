@@ -26,7 +26,12 @@ webview when the desktop target is enabled.
 | `src/storage/` | SQLite schema, versioned migrations, transactions, sessions, predictions, exports, and retention |
 | `src/snapback/` | Context tracker, title parsing, and platform overlay |
 | `src/app/` | App state, command registration, settings, tray, notifications, and frontend assets |
+| `src/util/` | Header-only leaf utilities with no project dependencies: the leveled rotating logger and monotonic-clock helpers |
 | `frontend/src/` | React views, API mappers, and the project-owned native bridge |
+
+`src/main.cpp` is deliberately absent from the table: it is not a module but the single
+translation unit that wires them together, and it is the only place that knows about all of
+them at once.
 
 ## Threading
 

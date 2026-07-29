@@ -13,6 +13,8 @@ system webview. The current module map and runtime boundaries are documented in
 | Heuristic classifier by default | The app remains useful without a model artifact. |
 | ONNX as an optional backend | Model inference is isolated behind a small classifier seam. |
 | SQLite with short transactions | Durable history is local and writes do not hold locks across UI work. |
+| Versioned, append-only migrations | `focoflow.db` is opened across releases, so the schema carries a `user_version` and each change is a step that can be replayed idempotently. A database from a newer build is refused, not opened. |
+| Reads aggregate in SQL, not in C++ | The UI thread and the engine thread share one storage mutex, so a slow read is paid for in dropped capture events rather than latency alone. |
 | Project-owned browser bridge | The frontend depends only on the commands and events this app exposes. |
 | Exact feature-vector fixtures | A checked-in golden file catches input-order and calculation drift. |
 
