@@ -490,6 +490,165 @@ TEST_CASE("reopening a populated database preserves every table's contents") {
     CHECK(recap.avg_focus_score == doctest::Approx(80.0));
 }
 
+// --- Batched history/analytics queries (Roadmap 7.12) ------------------------------------
+
+namespace {
+
+ContextSnapshotDto snapshot(const std::string& app, const std::string& timestamp) {
+    ContextSnapshotDto snap;
+    snap.app_name = app;
+    snap.window_title = app + " window";
+    snap.summary = "in " + app;
+    snap.timestamp = timestamp;
+    return snap;
+}
+
+// Two-digit second suffix, so snapshots sort in insertion order under ORDER BY timestamp.
+std::string ts(int second) {
+    std::ostringstream out;
+    out << "2026-07-11T19:" << std::setfill('0') << std::setw(2) << (second / 60) << ":"
+        << std::setw(2) << (second % 60) << "Z";
+    return out.str();
+}
+
+}  // namespace
+
+TEST_CASE("recent_session_summaries matches the per-session recap it replaces") {
+    // The whole point of the batched query is that it is a pure performance change. Anything
+    // it computes differently from recap() is a silent behavior change in the history view,
+    // so compare the two directly rather than asserting hand-written expected numbers.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    // Deliberately uneven: a session with predictions of both kinds, one with none at all,
+    // and one still running. Sessions with no predictions are the case where a JOIN-based
+    // rewrite most easily drops a row entirely.
+    const auto busy = storage->create_session("busy", FocusMode::Deep);
+    storage->insert_prediction(prediction(busy.session_id, 90.0, 0.1, "DEEP_FOCUS"));
+    storage->insert_prediction(prediction(busy.session_id, 30.0, 0.9, "DISTRACTED"));
+    storage->insert_prediction(prediction(busy.session_id, 55.0, 0.4, "PRODUCTIVE"));
+    storage->stop_session(busy.session_id);
+
+    const auto quiet = storage->create_session("quiet", FocusMode::Normal);
+    storage->stop_session(quiet.session_id);
+
+    const auto running = storage->create_session("running", FocusMode::Normal);
+
+    const auto summaries = storage->recent_session_summaries(10);
+    REQUIRE(summaries.size() == 3);
+
+    // Order must match recent_sessions() exactly, since callers render it directly.
+    const auto records = storage->recent_sessions(10);
+    REQUIRE(records.size() == summaries.size());
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        CHECK(summaries[i].record.session_id == records[i].session_id);
+
+        const auto expected = storage->recap(records[i].session_id);
+        const auto& actual = summaries[i].recap;
+        CHECK(actual.session_id == expected.session_id);
+        CHECK(actual.goal == expected.goal);
+        CHECK(actual.avg_focus_score == doctest::Approx(expected.avg_focus_score));
+        CHECK(actual.avg_distraction_risk == doctest::Approx(expected.avg_distraction_risk));
+        CHECK(actual.deep_focus_pct == doctest::Approx(expected.deep_focus_pct));
+        CHECK(actual.thrash_spikes == expected.thrash_spikes);
+        CHECK(actual.snapback_count == expected.snapback_count);
+        CHECK(actual.duration_secs == expected.duration_secs);
+    }
+    // Deliberately no assertion that `running` sorts first. started_at comes from
+    // now_rfc3339(), which has whole-second resolution, so three sessions created in the
+    // same second tie under ORDER BY started_at DESC and their relative order is undefined.
+    // That is ROADMAP 7.16's "ordering within a second is undefined" showing up in practice
+    // — matching recent_sessions() above is the invariant that actually holds.
+    CHECK(running.session_id != busy.session_id);
+}
+
+TEST_CASE("recent_session_summaries honours its limit and handles an empty database") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    CHECK(storage->recent_session_summaries(10).empty());
+
+    for (int i = 0; i < 5; ++i) {
+        const auto session = storage->create_session("s" + std::to_string(i), FocusMode::Normal);
+        storage->stop_session(session.session_id);
+    }
+    CHECK(storage->recent_session_summaries(3).size() == 3);
+    CHECK(storage->recent_session_summaries(50).size() == 5);
+}
+
+TEST_CASE("context_app_counts caps snapshots per session") {
+    // The subtle half of the rewrite. The old loop asked for at most N snapshots per session
+    // via list_context_snapshots' LIMIT; counting every row instead would let one very long
+    // session dominate the app ranking, which is a different answer, not a faster one.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto marathon = storage->create_session("marathon", FocusMode::Normal);
+    for (int i = 0; i < 10; ++i) {
+        storage->save_context_snapshot(marathon.session_id, snapshot("Cursor", ts(i)));
+    }
+    const auto brief = storage->create_session("brief", FocusMode::Normal);
+    for (int i = 0; i < 2; ++i) {
+        storage->save_context_snapshot(brief.session_id, snapshot("Safari", ts(i)));
+    }
+
+    const auto capped = storage->context_app_counts(10, 3);
+    CHECK(capped.at("Cursor") == 3);  // capped, not 10
+    CHECK(capped.at("Safari") == 2);  // under the cap, so untouched
+
+    const auto uncapped = storage->context_app_counts(10, 100);
+    CHECK(uncapped.at("Cursor") == 10);
+}
+
+TEST_CASE("context_app_counts takes the oldest snapshots within the cap") {
+    // list_context_snapshots orders ASC, so its LIMIT keeps the *earliest* rows. A rewrite
+    // that ordered DESC would still respect the cap while counting different apps.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("ordered", FocusMode::Normal);
+    storage->save_context_snapshot(session.session_id, snapshot("First", ts(1)));
+    storage->save_context_snapshot(session.session_id, snapshot("Second", ts(2)));
+    storage->save_context_snapshot(session.session_id, snapshot("Third", ts(3)));
+
+    const auto counts = storage->context_app_counts(10, 1);
+    CHECK(counts.size() == 1);
+    CHECK(counts.count("First") == 1);
+}
+
+TEST_CASE("context_app_counts honours the session limit and skips blank app names") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto older = storage->create_session("older", FocusMode::Normal);
+    storage->save_context_snapshot(older.session_id, snapshot("Older", ts(1)));
+    const auto newer = storage->create_session("newer", FocusMode::Normal);
+    storage->save_context_snapshot(newer.session_id, snapshot("Newer", ts(1)));
+    // A snapshot with no app name must not become an empty-string entry in the ranking.
+    storage->save_context_snapshot(newer.session_id, snapshot("", ts(2)));
+
+    // Backdate the older session explicitly. Both were created in the same wall-clock
+    // second, and started_at has only second resolution (ROADMAP 7.16), so without this the
+    // LIMIT 1 below would pick between two tied rows arbitrarily and the test would flake.
+    storage->backdate_session_for_test(older.session_id, "2020-01-01T00:00:00Z");
+
+    const auto one_session = storage->context_app_counts(1, 100);
+    CHECK(one_session.count("Newer") == 1);
+    CHECK(one_session.count("Older") == 0);
+    CHECK(one_session.count("") == 0);
+}
+
+TEST_CASE("context_app_counts filters by session start when given a cutoff") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("recent", FocusMode::Normal);
+    storage->save_context_snapshot(session.session_id, snapshot("Cursor", ts(1)));
+
+    // The session was created moments ago, so a far-future cutoff excludes it and a past
+    // one keeps it.
+    CHECK(storage->context_app_counts(10, 100, std::string("2099-01-01T00:00:00Z")).empty());
+    const auto included =
+        storage->context_app_counts(10, 100, std::string("2000-01-01T00:00:00Z"));
+    CHECK(included.at("Cursor") == 1);
+}
+
 TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash spikes") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());

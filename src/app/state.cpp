@@ -384,11 +384,9 @@ FocusSummary AppState::focus_summary(std::size_t limit) {
 
 std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
     std::lock_guard lock(storage_mutex_);
-    std::vector<SessionSummary> out;
-    for (auto& record : storage_.recent_sessions(limit)) {
-        out.push_back(SessionSummary{record, storage_.recap(record.session_id)});
-    }
-    return out;
+    // Was 1 + 5N queries (recap() is five statements), all holding storage_mutex_ — which
+    // the engine tick also takes to persist, so opening history could stall capture writes.
+    return storage_.recent_session_summaries(limit);
 }
 
 void AppState::delete_all_activity_data() {
@@ -487,13 +485,10 @@ AnalyticsSummary AppState::analytics() const {
             static_cast<double>(bucket.distracted) / static_cast<double>(bucket.count)});
     }
 
-    std::unordered_map<std::string, std::size_t> app_counts;
-    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(200)) {
-        for (const auto& snapshot : const_cast<Storage&>(storage_).list_context_snapshots(
-                 session.session_id, 200)) {
-            if (!snapshot.app_name.empty()) ++app_counts[snapshot.app_name];
-        }
-    }
+    // Was recent_sessions(200) x list_context_snapshots(..., 200) — up to 40,000 fully
+    // materialized rows read under the storage lock to compute a group-by. Same caps, same
+    // answer, one query.
+    const auto app_counts = const_cast<Storage&>(storage_).context_app_counts(200, 200);
     std::vector<AnalyticsApp> apps;
     apps.reserve(app_counts.size());
     for (const auto& [app, count] : app_counts) apps.push_back(AnalyticsApp{app, count});
@@ -528,7 +523,6 @@ SummaryReport AppState::summary_report(const std::string& window) const {
 
     std::size_t distracted = 0;
     std::size_t current_streak = 0;
-    std::unordered_map<std::string, std::size_t> context_counts;
     for (const auto& prediction : const_cast<Storage&>(storage_).predictions_since(cutoff)) {
         ++report.sample_count;
         report.avg_focus_score += prediction.focus_score;
@@ -547,22 +541,32 @@ SummaryReport AppState::summary_report(const std::string& window) const {
             static_cast<double>(distracted) / static_cast<double>(report.sample_count);
     }
 
-    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(500)) {
+    // One pass over sessions that already carry their recap, instead of a recap() (five
+    // queries) per completed session. The cutoff filter stays here rather than moving into
+    // SQL so the 500-session cap keeps applying to the *most recent* sessions first, which
+    // is what the original loop did.
+    for (const auto& summary : const_cast<Storage&>(storage_).recent_session_summaries(500)) {
+        const auto& session = summary.record;
         if (!session.started_at || *session.started_at < cutoff) continue;
         ++report.session_count;
         if (session.status == "COMPLETED") {
             ++report.completed_session_count;
-            report.focus_seconds += const_cast<Storage&>(storage_).recap(session.session_id).duration_secs;
-        }
-        for (const auto& snapshot : const_cast<Storage&>(storage_).list_context_snapshots(
-                 session.session_id, 200)) {
-            if (!snapshot.app_name.empty()) ++context_counts[snapshot.app_name];
+            report.focus_seconds += summary.recap.duration_secs;
         }
     }
+    // Same 500/200 caps as the loop above used, aggregated in SQL rather than by reading up
+    // to 100,000 snapshot rows into memory.
+    const auto context_counts =
+        const_cast<Storage&>(storage_).context_app_counts(500, 200, cutoff);
+    // Highest count wins, ties broken by the lexicographically smaller app name — same rule
+    // as before, but tracking the running best directly instead of re-looking-it-up, since
+    // the counts now arrive in a const map.
+    std::size_t top_count = 0;
     for (const auto& [app, count] : context_counts) {
-        if (report.top_context_app.empty() || count > context_counts[report.top_context_app] ||
-            (count == context_counts[report.top_context_app] && app < report.top_context_app)) {
+        if (report.top_context_app.empty() || count > top_count ||
+            (count == top_count && app < report.top_context_app)) {
             report.top_context_app = app;
+            top_count = count;
         }
     }
     return report;

@@ -90,6 +90,28 @@ public:
     std::optional<SessionRecord> active_session();
     std::vector<SessionRecord> recent_sessions(std::size_t limit);
     SessionRecap recap(const std::string& session_id);
+
+    // recent_sessions(limit) + recap() for each, in three queries instead of 1 + 5N.
+    //
+    // recap() issues five statements per session, so the loop it replaces cost 1 + 5N
+    // round trips — all of them under AppState's storage mutex, which the engine tick also
+    // takes to persist. Opening a history view could therefore stall capture writes, and a
+    // bounded ring buffer turns a stall into dropped events. Results are identical to the
+    // per-session path, which a test pins by comparing the two.
+    std::vector<SessionSummary> recent_session_summaries(std::size_t limit);
+
+    // Counts context snapshots per app across the most recent `session_limit` sessions,
+    // taking at most `per_session_limit` snapshots from each (the oldest ones, matching
+    // list_context_snapshots' ORDER BY timestamp ASC LIMIT). When `started_after` is set,
+    // only sessions started at or after it are counted.
+    //
+    // The per-session cap is preserved rather than dropped because it changes the answer:
+    // it is what stops one very long session from dominating the app ranking. Doing it in
+    // SQL needs a window function, which is worth it — the loop this replaces materialized
+    // up to session_limit x per_session_limit full rows to compute a group-by.
+    std::unordered_map<std::string, std::size_t> context_app_counts(
+        std::size_t session_limit, std::size_t per_session_limit,
+        const std::optional<std::string>& started_after = std::nullopt);
     // Atomically removes every session and its collected activity while preserving
     // user configuration such as app rules.
     void delete_all_activity_data();
@@ -151,6 +173,12 @@ public:
     // The `PRAGMA user_version` this database currently carries. Equals kSchemaVersion for
     // any database this build has opened successfully.
     int schema_version();
+
+    // Test seam: force a session's started_at. Sessions created in one test body all land in
+    // the same wall-clock second — now_rfc3339() has whole-second resolution — so anything
+    // asserting on `ORDER BY started_at` ordering needs a way to separate them or it flakes
+    // on tied rows. See ROADMAP 7.16, which is about fixing the representation itself.
+    void backdate_session_for_test(const std::string& session_id, const std::string& started_at);
 
 private:
     explicit Storage(sqlite3* db) : db_(db) {}

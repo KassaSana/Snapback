@@ -778,6 +778,124 @@ std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
     return rows;
 }
 
+std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit) {
+    // Query 1: the sessions themselves, plus the duration recap() computes separately.
+    // Ordering and LIMIT match recent_sessions() exactly so the two stay interchangeable.
+    std::vector<SessionSummary> out;
+    std::unordered_map<std::string, std::size_t> index_of;
+    {
+        Stmt stmt(db_,
+                  "SELECT session_id, goal, status, focus_mode, started_at, ended_at, "
+                  "CAST(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
+                  "julianday(started_at)) * 86400) AS INTEGER) "
+                  "FROM sessions ORDER BY started_at DESC LIMIT ?1");
+        stmt.bind(1, static_cast<std::int64_t>(limit));
+        while (stmt.step_row()) {
+            SessionSummary summary;
+            summary.record = read_session(stmt.get());
+            summary.recap.session_id = summary.record.session_id;
+            summary.recap.goal = summary.record.goal;
+            summary.recap.duration_secs =
+                static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 6));
+            index_of.emplace(summary.record.session_id, out.size());
+            out.push_back(std::move(summary));
+        }
+    }
+    if (out.empty()) return out;
+
+    // Query 2: every prediction aggregate recap() computes, grouped in one pass. The
+    // expressions are copied verbatim from recap() — including the deliberate absolute 0.7
+    // thrash bar, which is a product decision documented there and in ROADMAP 5.4, not a
+    // threshold to unify here.
+    {
+        Stmt stmt(db_,
+                  "WITH recent AS (SELECT session_id FROM sessions "
+                  "                ORDER BY started_at DESC LIMIT ?1) "
+                  "SELECT p.session_id, "
+                  "COALESCE(AVG(p.focus_score), 0), "
+                  "COALESCE(AVG(p.distraction_risk), 0), "
+                  "COALESCE(100.0 * SUM(CASE WHEN p.focus_state = 'DEEP_FOCUS' THEN 1 ELSE 0 END) / "
+                  "NULLIF(COUNT(*), 0), 0), "
+                  "SUM(CASE WHEN p.distraction_risk >= 0.7 AND p.focus_state = 'DISTRACTED' "
+                  "         THEN 1 ELSE 0 END) "
+                  "FROM predictions p JOIN recent r ON p.session_id = r.session_id "
+                  "GROUP BY p.session_id");
+        stmt.bind(1, static_cast<std::int64_t>(limit));
+        while (stmt.step_row()) {
+            const auto it = index_of.find(column_text(stmt.get(), 0));
+            if (it == index_of.end()) continue;
+            SessionRecap& recap = out[it->second].recap;
+            recap.avg_focus_score = sqlite3_column_double(stmt.get(), 1);
+            recap.avg_distraction_risk = sqlite3_column_double(stmt.get(), 2);
+            recap.deep_focus_pct = sqlite3_column_double(stmt.get(), 3);
+            recap.thrash_spikes = static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
+        }
+    }
+
+    // Query 3: snapback counts. Sessions with no events simply do not appear, which leaves
+    // the zero-initialized default in place — the same answer COUNT(*) gives.
+    {
+        Stmt stmt(db_,
+                  "WITH recent AS (SELECT session_id FROM sessions "
+                  "                ORDER BY started_at DESC LIMIT ?1) "
+                  "SELECT e.session_id, COUNT(*) "
+                  "FROM snapback_events e JOIN recent r ON e.session_id = r.session_id "
+                  "GROUP BY e.session_id");
+        stmt.bind(1, static_cast<std::int64_t>(limit));
+        while (stmt.step_row()) {
+            const auto it = index_of.find(column_text(stmt.get(), 0));
+            if (it == index_of.end()) continue;
+            out[it->second].recap.snapback_count =
+                static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 1));
+        }
+    }
+
+    return out;
+}
+
+void Storage::backdate_session_for_test(const std::string& session_id,
+                                        const std::string& started_at) {
+    Stmt stmt(db_, "UPDATE sessions SET started_at = ?2 WHERE session_id = ?1");
+    stmt.bind(1, session_id);
+    stmt.bind(2, started_at);
+    stmt.step_row();
+}
+
+std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
+    std::size_t session_limit, std::size_t per_session_limit,
+    const std::optional<std::string>& started_after) {
+    // ROW_NUMBER reproduces list_context_snapshots' "ORDER BY timestamp ASC LIMIT n" per
+    // session, so the per-session cap survives the move into SQL. Without it this would
+    // count every snapshot and quietly change which app ranks first.
+    const char* sql =
+        "WITH recent AS ("
+        "  SELECT session_id FROM sessions"
+        "  WHERE (?3 IS NULL OR (started_at IS NOT NULL AND started_at >= ?3))"
+        "  ORDER BY started_at DESC LIMIT ?1"
+        "), capped AS ("
+        "  SELECT c.app_name,"
+        "         ROW_NUMBER() OVER (PARTITION BY c.session_id ORDER BY c.timestamp ASC) AS rn"
+        "  FROM context_snapshots c JOIN recent r ON c.session_id = r.session_id"
+        ") "
+        "SELECT app_name, COUNT(*) FROM capped "
+        "WHERE rn <= ?2 AND app_name <> '' GROUP BY app_name";
+    Stmt stmt(db_, sql);
+    stmt.bind(1, static_cast<std::int64_t>(session_limit));
+    stmt.bind(2, static_cast<std::int64_t>(per_session_limit));
+    if (started_after) {
+        stmt.bind(3, *started_after);
+    } else {
+        sqlite3_bind_null(stmt.get(), 3);
+    }
+
+    std::unordered_map<std::string, std::size_t> counts;
+    while (stmt.step_row()) {
+        counts.emplace(column_text(stmt.get(), 0),
+                       static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1)));
+    }
+    return counts;
+}
+
 void Storage::delete_all_activity_data() {
     Transaction transaction(*this);
     // Keep the order explicit instead of depending on every historical database having
