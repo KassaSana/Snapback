@@ -24,6 +24,7 @@
 #include "app/commands.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/ipc_shim.hpp"
+#include "app/mac_ui.hpp"
 #include "app/notification.hpp"
 #include "app/single_instance.hpp"
 #include "app/state.hpp"
@@ -222,7 +223,9 @@ int main() {
     register_commands(w, *state, data_dir);
 
     // System tray (Phase 8): left-click/double-click or the "Show" menu item brings the
-    // window forward; "Quit" ends the run loop.
+    // window forward; "Quit" ends the run loop. Both branches read the native window
+    // handle out of the webview once, here on the UI thread, because that is the only
+    // thread either platform's window APIs may be touched from.
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
@@ -232,6 +235,14 @@ int main() {
                 SetForegroundWindow(main_hwnd);
             },
             [&w] { w.terminate(); });
+    }
+#elif defined(__APPLE__)
+    // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
+    // it becomes AppKit again, so main.cpp stays plain C++ (see mac_ui.hpp).
+    if (auto win = w.window(); win.ok()) {
+        void* main_window = win.value();
+        Tray::instance().install([main_window] { mac::bring_window_to_front(main_window); },
+                                 [&w] { w.terminate(); });
     }
 #endif
 

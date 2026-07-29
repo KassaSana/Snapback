@@ -11,9 +11,11 @@
 // Every current caller treats a notification as a best-effort nudge and ignores the
 // result, which is why a false return is safe rather than a silent lie.
 //
-// Replace with real implementations per platform: ROADMAP 3.1 (macOS NSStatusItem) and
-// 3.2 (Linux libappindicator).
-#if !defined(_WIN32)
+// macOS now has a real one (tray_macos.mm, ROADMAP 3.1); Linux is still to come
+// (ROADMAP 3.2, libappindicator). The guard excludes both platforms that define
+// Tray::instance() elsewhere, so adding a native backend cannot produce a duplicate
+// symbol even if CMake keeps listing this file.
+#if !defined(_WIN32) && !defined(__APPLE__)
 
 #include "app/tray.hpp"
 
@@ -48,4 +50,4 @@ Tray& Tray::instance() {
 
 }  // namespace snapback
 
-#endif  // !_WIN32
+#endif  // !_WIN32 && !__APPLE__

@@ -1,0 +1,138 @@
+// macOS system tray: an NSStatusItem in the menu bar with an NSMenu built from the shared
+// tray_menu_entries() model. Roadmap 3.1.
+//
+// Two things differ from the Windows tray and are worth stating, because both are places
+// where copying tray_windows.cpp would have produced something subtly wrong.
+//
+// 1. There is no message-only window and no message pump of our own. Cocoa delivers menu
+//    clicks through the responder chain on the main thread's run loop, which webview
+//    already runs. That is why install() refuses to do anything off the main thread: an
+//    NSStatusItem created on a worker thread is undefined behaviour, and the symptom is a
+//    menu bar item that exists but never responds.
+//
+// 2. Notifications stay unimplemented on purpose. Posting one needs UNUserNotification-
+//    Center, which needs a bundle identifier, which we do not have until Roadmap 3.3
+//    packages the .app. show_notification() therefore keeps returning false — the same
+//    contract NoopTray documents, for the same reason: a caller may start trusting the
+//    return value to decide whether to fall back, and "true" here would be a lie.
+#if defined(__APPLE__)
+
+#include "app/tray.hpp"
+
+#import <Cocoa/Cocoa.h>
+
+#include <functional>
+#include <utility>
+
+// Bridges NSMenuItem clicks back into the C++ callbacks. Compiled without ARC (CMake
+// passes plain -x objective-c++), so std::function ivars are constructed and destroyed
+// normally and manual retain/release rules apply to the Cocoa objects below.
+@interface SnapbackTrayTarget : NSObject {
+    std::function<void()> onShow_;
+    std::function<void()> onQuit_;
+}
+- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit;
+- (void)menuItemClicked:(NSMenuItem*)sender;
+@end
+
+@implementation SnapbackTrayTarget
+
+- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit {
+    onShow_ = std::move(onShow);
+    onQuit_ = std::move(onQuit);
+}
+
+- (void)menuItemClicked:(NSMenuItem*)sender {
+    // The item's tag carries the shared command id, so this goes through exactly the same
+    // tested mapping the Win32 WM_COMMAND path uses instead of switching on the title.
+    switch (snapback::tray_action_for(static_cast<unsigned int>(sender.tag))) {
+        case snapback::TrayAction::Show:
+            if (onShow_) onShow_();
+            break;
+        case snapback::TrayAction::Quit:
+            if (onQuit_) onQuit_();
+            break;
+        case snapback::TrayAction::None:
+            break;
+    }
+}
+
+@end
+
+namespace snapback {
+namespace {
+
+class MacTray final : public Tray {
+public:
+    ~MacTray() override {
+        if (status_item_) {
+            [[NSStatusBar systemStatusBar] removeStatusItem:status_item_];
+            [status_item_ release];
+        }
+        [target_ release];
+    }
+
+    void install(std::function<void()> on_show, std::function<void()> on_quit) override {
+        // AppKit is main-thread-only. Returning instead of asserting keeps a mis-wired
+        // caller from taking the process down, and the missing menu bar item is a loud
+        // enough symptom on its own.
+        if (![NSThread isMainThread]) return;
+
+        if (!target_) target_ = [[SnapbackTrayTarget alloc] init];
+        [target_ setOnShow:std::move(on_show) onQuit:std::move(on_quit)];
+
+        if (!status_item_) {
+            // systemStatusBar owns the item, so retain it to keep our pointer valid for
+            // the process lifetime; the destructor removes it before releasing.
+            status_item_ = [[[NSStatusBar systemStatusBar]
+                statusItemWithLength:NSVariableStatusItemLength] retain];
+            // A text glyph, not an image: there is no icon resource to load until 3.3
+            // gives us a bundle to carry one. `button` is nil only on pre-10.10 systems.
+            status_item_.button.title = @"◎";
+            status_item_.button.toolTip = @"Snapback";
+        }
+
+        status_item_.menu = build_menu();
+    }
+
+    // Deliberately unimplemented until Roadmap 3.3 — see the file header.
+    bool show_notification(const NotificationPayload&) override { return false; }
+
+private:
+    NSMenu* build_menu() const {
+        NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"Snapback"] autorelease];
+        // Cocoa's default auto-enabling asks a validator whether each item is live; we
+        // have no validator, so items would arrive permanently greyed out.
+        menu.autoenablesItems = NO;
+
+        for (const TrayMenuEntry& entry : tray_menu_entries()) {
+            if (tray_menu_entry_is_separator(entry)) {
+                [menu addItem:[NSMenuItem separatorItem]];
+                continue;
+            }
+            NSMenuItem* item =
+                [[[NSMenuItem alloc] initWithTitle:@(entry.label)
+                                            action:@selector(menuItemClicked:)
+                                     keyEquivalent:@""] autorelease];
+            item.target = target_;
+            item.tag = static_cast<NSInteger>(entry.command_id);
+            item.enabled = YES;
+            [menu addItem:item];
+        }
+        return menu;
+    }
+
+    NSStatusItem* status_item_ = nil;
+    SnapbackTrayTarget* target_ = nil;
+};
+
+}  // namespace
+
+Tray& Tray::instance() {
+    static MacTray tray;
+    return tray;
+}
+
+}  // namespace snapback
+
+#endif  // __APPLE__
