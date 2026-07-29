@@ -127,9 +127,12 @@ delivery is the only missing piece.
 **Accepting this closes 9.1.** Every blocker below is now a scoped piece of work rather than
 an open question.
 
-> **Progress note, 2026-07-28.** Three of the six blockers are now cleared: **0.3**
-> (live-Mac capture, 2026-07-25), **3.1** (macOS tray + native `NSPanel` overlay), and the
-> **macOS launch smoke** (`macos-gui-smoke` in `ci.yml`). The Context section above is left
+> **Progress note, updated 2026-07-29.** Four of the six blockers are now cleared: **0.3**
+> (live-Mac capture, 2026-07-25), **3.1** (macOS tray + native `NSPanel` overlay,
+> 2026-07-28), the **macOS launch smoke** (`macos-gui-smoke` in `ci.yml`, 2026-07-28), and
+> **7.3** (schema versioning with an ordered migration list and a downgrade guard,
+> 2026-07-29). **Neither remaining blocker is implementation work** — one is an Apple
+> Developer account, the other is Decision session A. The Context section above is left
 > as written — it describes the state at the time of the decision, and its claim that "tray
 > and overlay are deliberate no-ops" on macOS is no longer true of the code. The live
 > blocker table is in [ROADMAP.md](../ROADMAP.md), which is the source of truth; it also

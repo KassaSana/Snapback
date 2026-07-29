@@ -23,7 +23,7 @@ webview when the desktop target is enabled.
 | `src/types.*` | Shared records, enums, and JSON wire mappings |
 | `src/capture/` | Platform input hooks, active-window lookup, permissions, and SPSC buffering |
 | `src/engine/` | Feature extraction, heuristic/ONNX classification, focus modes, and summaries |
-| `src/storage/` | SQLite schema, transactions, sessions, predictions, exports, and retention |
+| `src/storage/` | SQLite schema, versioned migrations, transactions, sessions, predictions, exports, and retention |
 | `src/snapback/` | Context tracker, title parsing, and platform overlay |
 | `src/app/` | App state, command registration, settings, tray, notifications, and frontend assets |
 | `frontend/src/` | React views, API mappers, and the project-owned native bridge |
@@ -34,6 +34,24 @@ The OS hook invokes a lightweight callback that writes to the bounded ring. The
 engine thread is the only consumer and owns feature extraction/classification.
 App state protects storage and mutable configuration with mutexes. Native events
 are copied and dispatched to the UI thread before JavaScript is evaluated.
+
+The UI thread and the engine thread take the *same* storage mutex, so a slow read
+answering the UI blocks the tick's persist phase — and a bounded ring turns a long
+enough block into dropped events. That is why the history and analytics read paths
+aggregate in SQL rather than looping over sessions (Roadmap 7.12): the cost of a
+query here is paid in capture fidelity, not just latency.
+
+## Schema versioning
+
+`focoflow.db` carries its schema version in `PRAGMA user_version`, and `Storage::migrate()`
+applies an ordered, append-only migration list inside one transaction. Two rules make it
+work and neither can be enforced by the compiler, so they are stated on `kSchemaVersion`:
+**every migration must be idempotent**, because version 0 means both "new file" and
+"install from before versioning existed" and cannot be told apart; and **a released
+migration is never edited**, only appended to.
+
+A database stamped *newer* than the running build is refused rather than opened, so a
+downgrade cannot write rows a later build considers malformed.
 
 ## IPC
 

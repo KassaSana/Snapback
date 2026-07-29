@@ -19,10 +19,20 @@ sync — it tracked `2.4b` as a task while this file correctly tracked the same 
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-07-28** — that pass closed **3.1** (macOS tray +
-native `NSPanel` overlay) and the **macOS launch smoke**, taking ADR-0002 from one of six
-release blockers cleared to three. Both were verified by running the app on Kassa's Mac;
-neither has been seen by CI yet, for the reason recorded under the blocker table.
+**Last synced against the code: 2026-07-29** — that pass closed **7.3** (schema versioning
+and an ordered migration list), most of **7.11** (five pre-existing-database fixtures),
+**7.12** (SQL aggregation), and the delete-a-single-session half of **7.6**. ADR-0002 is now
+**four of six release blockers cleared**, and none of the remaining two is implementation
+work.
+
+The 2026-07-28 pass closed **3.1** (macOS tray + native `NSPanel` overlay) and the **macOS
+launch smoke**. Both were verified by running the app on Kassa's Mac; neither has been seen
+by CI yet, for the reason recorded under the blocker table.
+
+*Three rows of the sequence table below were stale on 2026-07-29* — 9.7, 9.8, and 10.7 were
+all finished on 2026-07-26 but still listed as open, one of them described as "the only
+standing `CLAUDE.md` violation". Corrected in place. This file drifts in **both** directions:
+Tier 12 found it pessimistic about the code, and this found it pessimistic about itself.
 
 Earlier context: three passes landed on
 2026-07-20 — five product features (privacy, analytics, summary reports, goal categories,
@@ -76,27 +86,29 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 8 | ~~**0.3** live-Mac verification~~ | **Done 2026-07-25** — the tap runs on real hardware and the run found macOS capture was **half-blind**. First ADR-0002 release blocker cleared |
 | 9 | ~~**3.1** macOS tray + native overlay~~ | **Done 2026-07-28** — real `NSStatusItem` and `NSPanel`, verified by running the app. Second ADR-0002 blocker cleared |
 | 10 | ~~macOS launch smoke in CI~~ | **Done 2026-07-28** — `macos-gui-smoke` launches the app, not just links it. Third ADR-0002 blocker cleared |
-| 11 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
-| 12 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
-| 13 | **7.16** timestamp representation, then 7.3, 7.11 | Analytics windows and local-hour buckets are done; the timestamp decision now scopes migrations and fixtures |
-| 14 | **7.3 + 7.11** migrations + DB fixtures | Unblocks the schema-drift CI job and 9.4's upgrade path |
+| 11 | ~~**7.3 + 7.11 + 7.12** migrations, DB fixtures, N+1~~ | **Done 2026-07-29** — schema versioning with a downgrade guard, five pre-existing-database fixtures, and SQL aggregation. **Fourth ADR-0002 blocker cleared.** A *large* fixture and a perf measurement are the deliberate leftovers |
+| 12 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
+| 13 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
+| 14 | **7.16** timestamp representation | Now the only thing gating 5.5, 7.1, and 7.2. 7.3 landed the migration list, so applying the decision is a migration rather than a rewrite |
 | 15 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
 | 16 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
-| 17 | ~~**9.2** version~~, **9.7, 9.8** empty states, single-instance | **9.2 done 2026-07-22**; the remaining two are visible to the first stranger who runs this |
-| 18 | **7.5, 7.6, 7.8** | Independent, pick up any time |
+| 17 | ~~**9.2** version, **9.7** empty states, **9.8** single-instance~~ | **9.2 done 2026-07-22; 9.7 and 9.8 done 2026-07-26** — this row sat stale for three days claiming two finished items were open |
+| 18 | **7.6** (UI slice), **7.8** | 7.5 done 2026-07-22; 7.6's native delete-session command exists as of 2026-07-29 but nothing renders it. 7.8 is a `decision` |
 | 19 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
-| 20 | **7.12 + 7.13** perf | After 4.4 benchmarking, so the fix is measured not guessed |
+| 20 | **4.4** perf gate, then measure 7.12 | 7.13 done 2026-07-22 and 7.12 done 2026-07-29 — but neither was *measured*, and 7.11's missing large fixture is the entry point |
 | 21 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
-| 22 | **10.7** test the four new surface components | Shipped 2026-07-25 with no tests — the only standing `CLAUDE.md` violation |
+| 22 | ~~**10.7** test the four new surface components~~ | **Done 2026-07-26** — likewise stale; there is no standing `CLAUDE.md` test violation today |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
 outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
 now done, which is what makes the blocker table below meaningful.
 
-**Next up is 3.3 — and it is paperwork before it is code.** 3.1 landed 2026-07-28, so the
-implementation half of the macOS blockers is finished. What remains is an Apple Developer
-account (long lead time, gates nothing else), one decision, and one schema item.
+**Next up is 3.3 — and it is paperwork before it is code.** 3.1 landed 2026-07-28 and 7.3
+on 2026-07-29, so **every v1 blocker that was implementation work is now done**. What
+remains is an Apple Developer account (long lead time, gates nothing else) and one decision
+session. If the goal is to ship, the account application is the thing to start today,
+because it is the only blocker whose clock runs independently of anyone working.
 
 **ADR-0002 release-blocker status after 2026-07-28:**
 
@@ -107,10 +119,11 @@ account (long lead time, gates nothing else), one decision, and one schema item.
 | 3 | **3.3** macOS packaging + notarization | ⬜ **Next.** Longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest — and it is what unblocks macOS notifications |
 | 4 | macOS launch smoke in CI | ✅ Done 2026-07-28 — `macos-gui-smoke` runs `scripts/gui_smoke_macos.sh` |
 | 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
-| 6 | **7.3** schema migrations | ⬜ Untouched |
+| 6 | **7.3** schema migrations | ✅ Done 2026-07-29 — `user_version`, an ordered migration list, and a downgrade guard |
 
-Note the shape of what remains: three of six are done, one is paperwork with a long lead
-time, one is a question, and one is ordinary implementation work. That is a tractable v1.
+Note the shape of what remains: **four of six are done**, one is paperwork with a long lead
+time, and one is a question. No implementation work is left on this list — v1 now waits on
+an Apple Developer account and one decision session.
 
 > **Unverified in CI as of 2026-07-28.** 3.1 and the launch smoke were both verified on
 > Kassa's Mac, and the smoke was confirmed to fail as well as pass. But CI runs only on
@@ -301,24 +314,37 @@ internals, and the benchmark harness.
   "daily" summary is a rolling 24 h window, not the user's calendar day. Possibly intended,
   nowhere written down, and users read "day" as "today."
 
-- **7.3 — No schema migrations, on a database earlier installs already wrote.** `M`
-  *(Split out of 4.5 and promoted — 4.5 keeps the optional-encryption half.)*
+- **7.3 — DONE 2026-07-29.** `M` — sixth and last ADR-0002 release blocker that was pure
+  implementation. `migrate()` now reads `PRAGMA user_version`, applies only the steps above
+  it from an ordered append-only list inside one transaction, and stamps the result. SQLite
+  makes DDL transactional, so a failed upgrade rolls back to the version it started at
+  instead of leaving a database that is neither shape.
 
-  Schema is all `CREATE TABLE IF NOT EXISTS`. No `PRAGMA user_version`, no `schema_version`
-  table, **no `ALTER TABLE` anywhere in the codebase.**
+  Two design points worth keeping. **`user_version` 0 is ambiguous** — it means both "brand
+  new file" and "install from before versioning", which describes every database in the
+  field today. Nothing can tell them apart after the fact, so the runner replays from 0 on
+  both and depends on every migration being idempotent; that rule and "never edit a released
+  migration" are stated on `kSchemaVersion`, and a `static_assert` ties it to the last entry.
+  And a database **stamped newer than the build refuses to open**: a later Snapback could add
+  a `NOT NULL` column this build knows nothing about, so failing closed keeps the file
+  recoverable instead of writing rows the newer build considers malformed.
 
-  Worse here than in a typical app: `CLAUDE.md` mandates the filename stay `focoflow.db`
-  **specifically for install compatibility** with earlier installs. We are promising to open
-  databases we did not create. On an existing DB, `CREATE TABLE IF NOT EXISTS` is a no-op —
-  it reconciles nothing. Any column the C++ schema has that the user's file lacks produces a
-  runtime `no such column` on first insert, for upgrading users only.
+  > *Two claims in the original finding were false when checked, and are preserved here
+  > because the lesson is the point.* It said "**no `ALTER TABLE` anywhere in the
+  > codebase**" — there was one, `ensure_prediction_model_id_column` at `storage.cpp:215`,
+  > which is now migration 2 rather than an ad-hoc special case. And it said "**we have never
+  > once opened a real pre-existing `focoflow.db`**" — `tests/test_storage.cpp` already had a
+  > case that built a legacy schema on disk and opened it. What was genuinely missing was the
+  > version stamp, the ordering, and the downgrade guard. Checking before building changed
+  > what got built; see also the note at the head of Tier 5.
 
-  Every test starts from a fresh temp DB. **We have never once opened a real pre-existing
-  `focoflow.db`.**
+  The original finding was:
 
-  **Minimum viable:** set `user_version`, add an ordered migration list, and add a test that
-  opens a fixture DB built from an *older* schema and asserts every current query still runs.
-  That fixture is the artifact actually missing — see 7.11.
+  **No schema migrations, on a database earlier installs already wrote.** `CLAUDE.md`
+  mandates the filename stay `focoflow.db` **specifically for install compatibility**, so we
+  promise to open databases we did not create. On an existing DB `CREATE TABLE IF NOT EXISTS`
+  is a no-op — it reconciles nothing — and any column the C++ schema has that the user's file
+  lacks produces a runtime `no such column` on first insert, for upgrading users only.
 
 - **7.4 — DONE 2026-07-22.** `CaptureThread` now marks a returned hook as stopped and failed,
   records a diagnostic reason, tracks monotonic event arrival age, and safely joins a finished
@@ -438,16 +464,40 @@ internals, and the benchmark harness.
   *already* inconsistent), index compatibility, presentation zone — and all four fall out.
   This is a domain-modeling conversation and an ADR, not four patches.
 
+  > *Observed 2026-07-29, not theorized.* Writing 7.12's tests surfaced the fourth bullet in
+  > practice: two sessions created in the same wall-clock second **tie** under `ORDER BY
+  > started_at DESC`, and which one comes back first is undefined. Two tests were written
+  > against the assumption that the newest session sorts first and failed. They now set
+  > `started_at` explicitly through `Storage::backdate_session_for_test`. That seam is a
+  > workaround for this item and should be reconsidered when 7.16 is settled — if timestamps
+  > gain sub-second resolution, the tests can go back to relying on insertion order.
+  >
+  > Note this also affects users, not just tests: the history list's order is arbitrary among
+  > sessions started in the same second. Rare, but it is the same root cause.
+
+  **7.3 is now done, which changes the shape of applying this.** There is an ordered
+  migration list to append to, so converting a column's storage type is a migration rather
+  than a rewrite — the mechanism is no longer part of the cost.
+
 ### Product gaps
 
 - **7.6 — There is no way for a user to delete their own data.** `M`
 
-  **PARTIAL 2026-07-26:** Settings now provides a two-step, permanent “delete all activity
-  data” action. The native command removes sessions, predictions, feature/context snapshots,
-  labels, and Snapback events atomically, resets live session state, and deliberately
-  preserves privacy settings and app rules. Still absent: delete a single session; export my
-  data in a legible form (`export_training_data` produces ML-shaped CSV); open the data
-  folder.
+  **PARTIAL 2026-07-26, extended 2026-07-29:** Settings provides a two-step, permanent
+  “delete all activity data” action. The native command removes sessions, predictions,
+  feature/context snapshots, labels, and Snapback events atomically, resets live session
+  state, and deliberately preserves privacy settings and app rules.
+
+  **Delete a single session landed 2026-07-29** — `delete_session` in `commands.hpp`, backed
+  by `Storage::delete_session` and `AppState::delete_session`. It clears live engine state
+  when the deleted session is the active one, and returns whether a row was actually removed
+  so the UI can tell a stale list entry from a successful delete. Note the native command
+  exists and is under test, but **no React surface calls it yet** — `api.deleteSession` is
+  wired in `frontend/src/api.ts` and nothing renders a button. That UI is the remaining
+  slice.
+
+  Still absent: **the delete-session UI**; export my data in a legible form
+  (`export_training_data` produces ML-shaped CSV); open the data folder.
 
   For an app whose core function is recording every keystroke and window title, "you may
   inspect and destroy what I collected" isn't a nice-to-have — it's what makes local-only
@@ -478,23 +528,57 @@ internals, and the benchmark harness.
   `private_mode` / `none`). **This single change makes every silent failure mode in this
   file visible** — 7.4, 7.9, and 8.1 all surface through it.
 
-- **7.11 — No test ever opens a pre-existing database.** `M`
+- **7.11 — MOSTLY DONE 2026-07-29.** `M` — five of the six fixture shapes now exist in
+  `tests/test_storage.cpp`, built in-process rather than committed as binary `.db` files (a
+  checked-in database cannot be reviewed, and stops representing "what an old build wrote"
+  the moment someone regenerates it from a current one).
 
-  The general form of 7.3. Every storage test builds a fresh temp DB. Untested as a result:
-  migration (7.3), retention against aged data (5.5), index usage as tables grow (7.12),
-  recovery from a corrupt or partially-written DB, and **WAL recovery after unclean
+  Covered: **unclean shutdown / WAL recovery** — the database is copied together with its
+  `-wal` and `-shm` sidecars while the original connection is still open, so the committed
+  rows are still in the WAL; **corrupt**, which must be refused with a logged reason rather
+  than crashing or starting with a silently empty history; **aged**, pruned on open without
+  taking its sessions with it; **foreign-authored**, carrying unknown tables and columns;
+  and a full close/reopen round trip across all five activity tables.
+
+  **Still missing: a *large* fixture.** That one is the entry point for 7.12's index-usage
+  question — "does the plan still use an index at 100k rows" cannot be asked of a database
+  with four rows in it — and it is the natural first case for 4.4's perf gate. Left open
+  deliberately rather than marked done.
+
+  The original finding was:
+
+  **No test ever opens a pre-existing database.** The general form of 7.3. Untested as a
+  result: migration (7.3), retention against aged data (5.5), index usage as tables grow
+  (7.12), recovery from a corrupt or partially-written DB, and **WAL recovery after unclean
   shutdown** — which, for an always-on tray app users will kill via Task Manager, is the
   *normal* shutdown path, not an edge case.
 
-  Build a fixture corpus (fresh, aged, large, foreign-authored, corrupt) and run the storage
-  suite against each.
-
 ### Performance
 
-- **7.12 — Analytics and history do N+1 queries under the storage lock.** `M`
+- **7.12 — DONE 2026-07-29.** `M` — all three call sites now aggregate in SQL.
+  `Storage::recent_session_summaries()` replaces `recent_sessions()` + a `recap()` per
+  session (five statements each) with three queries; `Storage::context_app_counts()`
+  replaces the snapshot loops with one.
 
-  `analytics()` (`state.cpp:355`), `summary_report()` (`state.cpp:415`), and
-  `session_history()` (`state.cpp:309`) all loop over sessions issuing per-session queries:
+  The part worth reviewing is what was **preserved**: the per-session snapshot cap. It exists
+  only because the old code passed a limit to a paginated API, but it changes the answer — it
+  is what stops one very long session from dominating the app ranking — so it survives as a
+  `ROW_NUMBER()` window function instead of being quietly dropped. Its tests pin both the cap
+  and that it keeps the *oldest* rows, matching `list_context_snapshots`' `ORDER BY timestamp
+  ASC`. The prediction aggregates are copied verbatim from `recap()`, **including the
+  deliberate absolute 0.7 thrash bar that 5.4 warns against unifying**, and the parity test
+  compares batched output against `recap()` field by field rather than against hand-written
+  numbers.
+
+  **Not covered: whether this is fast enough.** The rewrite removes O(N) round trips, but
+  nothing measures it — that needs 7.11's missing *large* fixture and 4.4's perf gate. Treat
+  the win as structural, not benchmarked.
+
+  The original finding was:
+
+  **Analytics and history do N+1 queries under the storage lock.** `analytics()`,
+  `summary_report()`, and `session_history()` all loop over sessions issuing per-session
+  queries:
 
   - `analytics()`: `recent_sessions(200)` × `list_context_snapshots(…, 200)` — up to 40,000
     rows — then a **second** `recent_sessions(200)` loop calling `recap()` (itself 4 queries).
