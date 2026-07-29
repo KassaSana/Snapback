@@ -39,19 +39,28 @@ public:
     // somewhere other than stderr.
     explicit AppState(Storage storage, std::filesystem::path app_data_dir = {},
                       Logger* logger = nullptr);
+    ~AppState() noexcept;
 
     // Spawn capture and the engine tick thread.
     void start_engine();
     // Test seam: run the same engine loop with an injected hook instead of installing
     // the platform-wide input hook.
     void start_engine_for_test(InputHook* hook);
-    void stop_engine();
+    void stop_engine() noexcept;
 
     // Host->frontend event sink, set by main.cpp once the webview exists. Called with
     // (event_name, json_payload) when the tick produces a new prediction or snapback.
     // The hook itself must be thread-safe (main.cpp marshals to the UI thread).
-    using EmitHook = std::function<void(const char* event, const std::string& json_payload)>;
+    using ActivityEpoch = std::uint64_t;
+    using EmitHook =
+        std::function<void(const char* event, const std::string& json_payload,
+                           ActivityEpoch activity_epoch)>;
     void set_emit_hook(EmitHook hook);
+    // UI dispatch is asynchronous. Event closures carry the epoch from their engine tick
+    // and call this immediately before touching the webview, overlay, or notification.
+    bool activity_epoch_is_current(ActivityEpoch epoch) const noexcept {
+        return activity_epoch_.load(std::memory_order_acquire) == epoch;
+    }
 
     // Called by the IPC commands (app/commands.cpp). Guarded by mutex_.
     SessionRecord start_session(const std::string& goal, FocusMode mode);
@@ -173,9 +182,15 @@ private:
     const Logger& log() const { return logger_ ? *logger_ : local_logger_; }
 
     // Lock order (deadlock-free): always acquire mutex_ BEFORE storage_mutex_, never the
-    // reverse. mutex_ guards in-memory state; storage_mutex_ serializes all storage_ access
-    // (so cross-thread transactions never interleave). Hot UI reads take only mutex_.
+    // reverse. Activity deletion additionally takes activity_boundary_mutex_ between them;
+    // the engine's persistence tail takes activity_boundary_mutex_ before storage_mutex_.
+    // Asynchronous emissions take neither: they carry and validate activity_epoch_ on the
+    // UI thread. mutex_ guards in-memory state; storage_mutex_ serializes all storage_
+    // access. Hot UI reads take only mutex_.
     mutable std::mutex mutex_;
+    // Fences the off-lock persistence phase against activity deletion. Asynchronous UI
+    // emissions carry activity_epoch_ and validate it in the dispatched UI closure.
+    mutable std::mutex activity_boundary_mutex_;
     mutable std::mutex storage_mutex_;
     Storage storage_;
     std::filesystem::path app_data_dir_;
@@ -199,6 +214,7 @@ private:
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event
     bool prediction_dirty_ = false;  // a new prediction awaits emission this tick
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
+    std::atomic<std::uint64_t> activity_epoch_{0};
 
     EmitHook emit_hook_;
     std::thread engine_thread_;

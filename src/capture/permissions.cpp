@@ -21,9 +21,8 @@ bool command_available(const char* command) {
 
 }  // namespace
 
-PermissionStatus check_capture_permissions(bool capture_running) {
+PermissionStatus check_capture_permissions(bool capture_running, bool capture_observed) {
     PermissionStatus status;
-    status.capture_probe_confirmed = capture_running;
 
 #if defined(_WIN32)
     status.capture_available = true;
@@ -59,6 +58,11 @@ PermissionStatus check_capture_permissions(bool capture_running) {
     }
 #endif
 
+    // Capability checks and a live thread describe prerequisites, not observed behavior.
+    // Only a successfully queued event proves that the running backend reached the engine.
+    status.capture_probe_confirmed = capture_running && capture_observed &&
+                                     status.capture_available &&
+                                     status.active_window_available;
     return status;
 }
 

@@ -15,6 +15,7 @@
 #include <thread>
 
 #include "capture/capture_thread.hpp"
+#include "capture/input_context.hpp"
 
 using namespace snapback;
 
@@ -24,14 +25,19 @@ namespace {
 // then idles until stop(), the way a real InputHook blocks on its OS event loop.
 class ScriptedHook final : public InputHook {
 public:
-    explicit ScriptedHook(int count) : count_(count) {}
+    explicit ScriptedHook(int count, EventType event_type = EventType::KeyPress)
+        : count_(count),
+          event_type_(event_type),
+          context_(std::make_shared<CaptureContext>(
+              CaptureContext{"TestEditor", "capture_thread.cpp"})) {}
 
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
         for (int i = 0; i < count_ && running_.load(std::memory_order_relaxed); ++i) {
             CaptureEvent ev;
-            ev.event_type = EventType::KeyPress;
+            ev.event_type = event_type_;
             ev.timestamp_secs = static_cast<double>(i);
-            on_event(ev);
+            ev.captured_context = context_;
+            on_event(std::move(ev));
         }
         // Release: pairs with the acquire in emitted(), so a consumer that observes this
         // flag is guaranteed to see every push above.
@@ -41,25 +47,54 @@ public:
         }
     }
 
-    void stop() override { running_.store(false, std::memory_order_relaxed); }
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
 
     bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+    bool stopped() const { return !running_.load(std::memory_order_acquire); }
 
 private:
     int count_;
+    EventType event_type_;
+    std::shared_ptr<const CaptureContext> context_;
     std::atomic<bool> running_{true};
     std::atomic<bool> emitted_{false};
 };
 
 class ReturningHook final : public InputHook {
 public:
-    void run(InputCallback) override { returned_.store(true, std::memory_order_release); }
-    void stop() override {}
+    void run(InputCallback, const std::atomic<bool>&) override {
+        returned_.store(true, std::memory_order_release);
+    }
+    void stop() noexcept override {}
 
     bool returned() const { return returned_.load(std::memory_order_acquire); }
 
 private:
     std::atomic<bool> returned_{false};
+};
+
+class DelayedEntryHook final : public InputHook {
+public:
+    void run(InputCallback, const std::atomic<bool>& stop_requested) override {
+        while (!released_.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        saw_stop_on_entry_.store(stop_requested.load(std::memory_order_acquire),
+                                 std::memory_order_release);
+        while (!stop_requested.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+    }
+
+    void stop() noexcept override { released_.store(true, std::memory_order_release); }
+
+    bool saw_stop_on_entry() const {
+        return saw_stop_on_entry_.load(std::memory_order_acquire);
+    }
+
+private:
+    std::atomic<bool> released_{false};
+    std::atomic<bool> saw_stop_on_entry_{false};
 };
 
 // Bounded wait: a bug fails the test instead of hanging CI.
@@ -103,6 +138,16 @@ std::size_t drain(CaptureThread& capture) {
 static_assert(sizeof(CaptureThread) < 4096,
               "CaptureThread must stay stack-friendly; ring storage belongs on the heap");
 
+TEST_CASE("input context fails closed when the foreground window changes") {
+    int captured_window = 0;
+    int other_window = 0;
+
+    CHECK(detail::context_matches_foreground(&captured_window, &captured_window, true));
+    CHECK_FALSE(detail::context_matches_foreground(&other_window, &captured_window, true));
+    CHECK_FALSE(detail::context_matches_foreground(nullptr, &captured_window, true));
+    CHECK_FALSE(detail::context_matches_foreground(&captured_window, &captured_window, false));
+}
+
 TEST_CASE("CaptureThread drains hook events in FIFO order") {
     ScriptedHook hook(10);
     CaptureThread capture;
@@ -114,11 +159,26 @@ TEST_CASE("CaptureThread drains hook events in FIFO order") {
         CHECK(ev->event_type == EventType::KeyPress);
         // The ring must preserve order: event i carries timestamp i.
         CHECK(ev->timestamp_secs == doctest::Approx(static_cast<double>(drained)));
+        CHECK(ev->app_name == "TestEditor");
+        CHECK(ev->window_title == "capture_thread.cpp");
+        CHECK_FALSE(ev->captured_context);
         ++drained;
     }
     CHECK(drained == 10);
     CHECK(capture.last_event_age_ms().has_value());
+    CHECK(capture.input_observed());
     CHECK(capture.events_dropped() == 0);
+    capture.stop();
+}
+
+TEST_CASE("CaptureThread does not treat polling-only context as observed input") {
+    ScriptedHook hook(1, EventType::WindowFocusChange);
+    CaptureThread capture;
+    capture.start(&hook);
+    REQUIRE(wait_for_emit(hook));
+
+    CHECK(capture.last_event_age_ms().has_value());
+    CHECK_FALSE(capture.input_observed());
     capture.stop();
 }
 
@@ -193,6 +253,29 @@ TEST_CASE("CaptureThread stop is safe without a start") {
     CaptureThread capture;
     capture.stop();
     CHECK_FALSE(capture.running());
+}
+
+TEST_CASE("CaptureThread destruction stops a running hook") {
+    ScriptedHook hook(1);
+    {
+        CaptureThread capture;
+        capture.start(&hook);
+        REQUIRE(wait_for_emit(hook));
+    }
+
+    CHECK(hook.stopped());
+}
+
+TEST_CASE("CaptureThread preserves a stop requested before the hook enters run") {
+    DelayedEntryHook hook;
+    CaptureThread capture;
+
+    capture.start(&hook);
+    capture.stop();
+
+    CHECK(hook.saw_stop_on_entry());
+    CHECK_FALSE(capture.running());
+    CHECK_FALSE(capture.failed());
 }
 
 TEST_CASE("CaptureThread can restart after stop") {

@@ -75,6 +75,15 @@ afterEach(() => {
 });
 
 describe("Training / deploy card", () => {
+  it("describes the available feedback controls without claiming global hotkeys", async () => {
+    renderApp("settings");
+
+    expect(
+      await screen.findByText(/Use these controls to label it while a session is active/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Global hotkeys/i)).not.toBeInTheDocument();
+  });
+
   it("disables 'Train from export' until export + repo + python are ready", async () => {
     boundary.state.deployStatus = { ...readyToTrain(), has_export: false };
     renderApp("settings");
@@ -103,6 +112,22 @@ describe("Training / deploy card", () => {
     expect(await screen.findByText(/Deploy not ready/i)).toBeInTheDocument();
     // Critical: a non-deployable train must not swap the live classifier.
     expect(boundary.invoke).not.toHaveBeenCalledWith("reload_classifier_model");
+  });
+
+  it("does not offer reload for an export rejected by the quality gate", async () => {
+    boundary.state.deployStatus = {
+      ...readyToTrain(),
+      model_onnx_exists: true,
+      quality_gate: {
+        passed: false,
+        reason: "Model rejected: held_out_accuracy=0.59 is below the threshold.",
+      },
+    };
+    renderApp("settings");
+
+    const reloadButton = await screen.findByRole("button", { name: "Reload model" });
+    expect(reloadButton).toBeDisabled();
+    expect(screen.getByText("Candidate did not pass the quality gate")).toBeInTheDocument();
   });
 
   it("surfaces a failure message and does not reload when training fails", async () => {

@@ -118,9 +118,17 @@ private:
         POINT pt{};
         GetCursorPos(&pt);
         HMENU menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, kTrayCmdShow, L"Show Snapback");
-        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu, MF_STRING, kTrayCmdQuit, L"Quit");
+        // Built from the shared model rather than a literal list, so a menu item added
+        // here cannot silently go missing from the macOS menu (tray_macos.mm) or vice
+        // versa. The labels are ASCII today; utf8_to_wide keeps that from being a
+        // constraint.
+        for (const TrayMenuEntry& entry : tray_menu_entries()) {
+            if (tray_menu_entry_is_separator(entry)) {
+                AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+                continue;
+            }
+            AppendMenuW(menu, MF_STRING, entry.command_id, utf8_to_wide(entry.label).c_str());
+        }
         // Required so the menu dismisses correctly when the user clicks elsewhere.
         SetForegroundWindow(hwnd_);
         TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);

@@ -199,10 +199,22 @@ if(SNAPBACK_BUILD_APP)
   )
   if(WIN32)
     target_sources(snapback PRIVATE src/snapback/overlay_windows.cpp src/app/tray_windows.cpp)
+  elseif(APPLE)
+    # ROADMAP 3.1: a real NSStatusItem tray and a real NSPanel overlay. Both stubs also
+    # guard themselves on __APPLE__, so listing one here by mistake cannot produce a
+    # duplicate Overlay::instance()/Tray::instance().
+    target_sources(snapback PRIVATE
+      src/snapback/overlay_macos.mm
+      src/app/tray_macos.mm
+      src/app/mac_ui.mm)
+    set_source_files_properties(
+      src/snapback/overlay_macos.mm src/app/tray_macos.mm src/app/mac_ui.mm
+      PROPERTIES COMPILE_FLAGS "-x objective-c++")
+    target_link_libraries(snapback PRIVATE "-framework Cocoa")
   else()
-    # Overlay::instance()/Tray::instance() live ONLY in the *_windows.cpp files above, so
-    # without these no-op fallbacks the app fails to link off Windows (undefined symbols).
-    # Real implementations: ROADMAP 3.1 (macOS) / 3.2 (Linux).
+    # Overlay::instance()/Tray::instance() live ONLY in the platform files above, so
+    # without these no-op fallbacks the app fails to link (undefined symbols).
+    # Real implementation still to come: ROADMAP 3.2 (Linux).
     target_sources(snapback PRIVATE src/snapback/overlay_stub.cpp src/app/tray_stub.cpp)
   endif()
   # snapback_app already PUBLIC-links snapback_core (which itself PUBLIC-links sqlite3)

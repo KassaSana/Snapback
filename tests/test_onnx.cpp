@@ -27,14 +27,14 @@ void touch(const std::filesystem::path& p) {
 }
 }  // namespace
 
-TEST_CASE("resolve_model_path prefers the app dir, then the training-export dir") {
+TEST_CASE("resolve_model_path ignores ungated training-export candidates") {
     auto dir = make_temp_dir();
     CHECK(OnnxModel::resolve_model_path(dir) == std::nullopt);
 
     touch(dir / "exports" / "training" / "model.onnx");
-    CHECK(OnnxModel::resolve_model_path(dir) == dir / "exports" / "training" / "model.onnx");
+    CHECK(OnnxModel::resolve_model_path(dir) == std::nullopt);
 
-    touch(dir / "model.onnx");  // app-dir copy wins
+    touch(dir / "model.onnx");
     CHECK(OnnxModel::resolve_model_path(dir) == dir / "model.onnx");
 
     std::error_code ec;

@@ -19,7 +19,12 @@ sync — it tracked `2.4b` as a task while this file correctly tracked the same 
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-07-25.** Earlier context: three passes landed on
+**Last synced against the code: 2026-07-28** — that pass closed **3.1** (macOS tray +
+native `NSPanel` overlay) and the **macOS launch smoke**, taking ADR-0002 from one of six
+release blockers cleared to three. Both were verified by running the app on Kassa's Mac;
+neither has been seen by CI yet, for the reason recorded under the blocker table.
+
+Earlier context: three passes landed on
 2026-07-20 — five product features (privacy, analytics, summary reports, goal categories,
 diagnostics); Tier 0's four wiring gaps; an engine/storage audit that opened **Tier 5**; and
 a staff review of CI, security, and the app/storage/capture paths that opened **Tiers 6, 7,
@@ -69,41 +74,51 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
 | 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
 | 8 | ~~**0.3** live-Mac verification~~ | **Done 2026-07-25** — the tap runs on real hardware and the run found macOS capture was **half-blind**. First ADR-0002 release blocker cleared |
-| 9 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
-| 10 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
-| 11 | **7.16** timestamp representation, then 7.3, 7.11 | Analytics windows and local-hour buckets are done; the timestamp decision now scopes migrations and fixtures |
-| 12 | **7.3 + 7.11** migrations + DB fixtures | Unblocks the schema-drift CI job and 9.4's upgrade path |
-| 13 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
-| 14 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
-| 15 | ~~**9.2** version~~, **9.7, 9.8** empty states, single-instance | **9.2 done 2026-07-22**; the remaining two are visible to the first stranger who runs this |
-| 16 | **7.5, 7.6, 7.8** | Independent, pick up any time |
-| 17 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
-| 18 | **7.12 + 7.13** perf | After 4.4 benchmarking, so the fix is measured not guessed |
-| 19 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
-| 20 | **10.7** test the four new surface components | Shipped 2026-07-25 with no tests — the only standing `CLAUDE.md` violation |
+| 9 | ~~**3.1** macOS tray + native overlay~~ | **Done 2026-07-28** — real `NSStatusItem` and `NSPanel`, verified by running the app. Second ADR-0002 blocker cleared |
+| 10 | ~~macOS launch smoke in CI~~ | **Done 2026-07-28** — `macos-gui-smoke` launches the app, not just links it. Third ADR-0002 blocker cleared |
+| 11 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
+| 12 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
+| 13 | **7.16** timestamp representation, then 7.3, 7.11 | Analytics windows and local-hour buckets are done; the timestamp decision now scopes migrations and fixtures |
+| 14 | **7.3 + 7.11** migrations + DB fixtures | Unblocks the schema-drift CI job and 9.4's upgrade path |
+| 15 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
+| 16 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
+| 17 | ~~**9.2** version~~, **9.7, 9.8** empty states, single-instance | **9.2 done 2026-07-22**; the remaining two are visible to the first stranger who runs this |
+| 18 | **7.5, 7.6, 7.8** | Independent, pick up any time |
+| 19 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
+| 20 | **7.12 + 7.13** perf | After 4.4 benchmarking, so the fix is measured not guessed |
+| 21 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
+| 22 | **10.7** test the four new surface components | Shipped 2026-07-25 with no tests — the only standing `CLAUDE.md` violation |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
 outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
 now done, which is what makes the blocker table below meaningful.
 
-**Next up is 3.1 — and it is finally plain code, not a decision.** The overlay sub-decision
-was settled 2026-07-25 (native `NSPanel`, see ADR-0002), so with 0.3 and 9.1 both done there
-is nothing left blocking macOS work except writing it.
+**Next up is 3.3 — and it is paperwork before it is code.** 3.1 landed 2026-07-28, so the
+implementation half of the macOS blockers is finished. What remains is an Apple Developer
+account (long lead time, gates nothing else), one decision, and one schema item.
 
-**ADR-0002 release-blocker status after 2026-07-25:**
+**ADR-0002 release-blocker status after 2026-07-28:**
 
 | # | Blocker | State |
 |---|---------|-------|
-| 1 | **0.3** live-Mac capture | ✅ Done |
-| 2 | **3.1** macOS tray + native `NSPanel` overlay | ⬜ **Next.** Scope settled; no external dependency |
-| 3 | **3.3** macOS packaging + notarization | ⬜ Not started — longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest |
-| 4 | macOS launch smoke in CI | 🟡 App launches by hand; CI still builds without launching |
+| 1 | **0.3** live-Mac capture | ✅ Done 2026-07-25 |
+| 2 | **3.1** macOS tray + native `NSPanel` overlay | ✅ Done 2026-07-28 — verified by running the app |
+| 3 | **3.3** macOS packaging + notarization | ⬜ **Next.** Longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest — and it is what unblocks macOS notifications |
+| 4 | macOS launch smoke in CI | ✅ Done 2026-07-28 — `macos-gui-smoke` runs `scripts/gui_smoke_macos.sh` |
 | 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
 | 6 | **7.3** schema migrations | ⬜ Untouched |
 
-Note the shape of what remains: four of the six are ordinary implementation work, one is
-paperwork with a long lead time, and exactly one is a question. That is a tractable v1.
+Note the shape of what remains: three of six are done, one is paperwork with a long lead
+time, one is a question, and one is ordinary implementation work. That is a tractable v1.
+
+> **Unverified in CI as of 2026-07-28.** 3.1 and the launch smoke were both verified on
+> Kassa's Mac, and the smoke was confirmed to fail as well as pass. But CI runs only on
+> `master` and PRs, so `macos-gui-smoke` has never executed on a GitHub runner. The open
+> question is whether a hosted `macos-latest` runner gives `WKWebView` a usable window
+> session; if it does not, that job fails on its first real run and needs either a different
+> host or a narrower assertion. Open a PR to find out — do not assume this blocker is closed
+> until a run says so.
 
 ---
 
@@ -737,28 +752,58 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   (`~/Library/LaunchAgents/`) on macOS and a systemd **user** unit on Linux. Concrete scope of
   the follow-up noted on 1.3.
 
-- **3.1 — macOS tray + native overlay.** `M` — **v1 release blocker, and the next thing to
-  build.** Scope settled 2026-07-25 by [ADR-0002](adr/0002-v1-supports-windows-and-macos.md):
-  macOS v1 ships a **native `NSPanel` overlay**, not a notification.
+- **3.1 — macOS tray + native overlay. DONE 2026-07-28.** `M` — second ADR-0002 v1 release
+  blocker cleared. Scope was settled 2026-07-25 by
+  [ADR-0002](adr/0002-v1-supports-windows-and-macos.md): macOS v1 ships a **native
+  `NSPanel` overlay**, not a notification.
 
-  Replaces the no-op stubs in `src/snapback/overlay_stub.cpp` / `src/app/tray_stub.cpp`:
-  an `NSStatusItem` tray menu and an always-on-top overlay panel matching Windows.
-  `src/snapback/overlay_windows.cpp` (149 lines) is the reference for what "matching" means.
+  What landed, in four commits:
 
-  Two things the stubs already tell you, so read them before starting. `overlay_stub.cpp`
-  records that `ContextTracker`'s `Recovering` state has exactly **one** exit
-  (`dismiss_recovery`), so the overlay's dismiss path is load-bearing, not decoration — a
-  panel that shows but cannot dismiss latches the state machine after the first snapback of
-  a session. And `tray_stub.cpp` records that `show_notification()` returns `false`
-  deliberately; **keep returning `false` until real delivery exists**, because its comment
-  warns that callers may start trusting the return value to decide whether to fall back.
+  - `src/app/tray_macos.mm` — an `NSStatusItem` tray. The menu rows moved into
+    `src/app/tray_common.cpp` as `tray_menu_entries()`, so Windows and macOS translate one
+    shared list instead of each owning a copy that can drift.
+  - `src/app/mac_ui.mm` — the AppKit shim behind "Show Snapback", kept out of `main.cpp` so
+    that translation unit stays plain C++ rather than Objective-C++.
+  - `cocoa_origin_y()` in `src/snapback/overlay_common.cpp` — the top-down → Cocoa
+    bottom-up placement flip, pure and tested on all three CI hosts.
+  - `src/snapback/overlay_macos.mm` — the panel itself, matching
+    `src/snapback/overlay_windows.cpp` on geometry, colours, 9s self-dismiss, and
+    click-to-dismiss.
 
-  Notification delivery is explicitly *not* part of this item — it needs a bundle ID and so
-  waits on 3.3. See ADR-0002's correction note for why that ordering is the whole reason the
-  overlay was chosen.
+  **Verified by running the app on Kassa's Mac**, not just by building it: the card lands
+  top-right below the menu bar, a synthesized click dismisses it, it self-dismisses at 9s,
+  the tray menu renders both items enabled, and its Quit ends the run loop.
+
+  Both things the stubs warned about were honoured. `ContextTracker`'s `Recovering` state
+  still has exactly **one** exit (`dismiss_recovery`), so the panel's content view answers
+  `hitTest:` with itself — otherwise the text label would swallow the dismiss click and
+  latch the state machine after the first snapback of a session. And
+  `show_notification()` still returns `false`: delivery needs a bundle ID and waits on 3.3.
+  **Keep returning `false` until real delivery exists**, because callers may start trusting
+  the return value to decide whether to fall back.
+
+  Notification delivery was explicitly *not* part of this item. See ADR-0002's correction
+  note for why that ordering is the whole reason the overlay was chosen.
+
+- **macOS launch smoke in CI — DONE 2026-07-28.** `S` — fourth ADR-0002 blocker.
+  `scripts/gui_smoke_macos.sh`, wired as the `macos-gui-smoke` job. `desktop-app-build`
+  proved the macOS binary *links*; nothing proved it *starts*, and both ways it can fail to
+  start are invisible at link time (a webview that cannot create its window, and a missing
+  frontend bundle, which renders an empty window rather than an error).
+
+  The script reuses `main.cpp`'s existing `SNAPBACK_GUI_SESSION_SMOKE` hook, so it is a real
+  round trip — a session started and stopped through `AppState` and SQLite from the UI
+  thread — and then requires the run loop to exit on its own, which is the same path the
+  tray's Quit item drives. **See the caveat under the blocker table: this has passed on
+  Kassa's Mac but has never run on a GitHub runner.**
 
 - **3.2 — Linux tray + overlay.** `M`
-  Same stubs as 3.1. `libappindicator` tray + an overlay window (X11/Wayland caveats noted).
+  `libappindicator` tray + an overlay window (X11/Wayland caveats noted). Since 3.1 landed,
+  Linux is the **only** remaining user of `src/app/tray_stub.cpp` and
+  `src/snapback/overlay_stub.cpp`; both now guard on `!_WIN32 && !__APPLE__`. Read
+  `src/app/tray_macos.mm` and `src/snapback/overlay_macos.mm` first — they are the worked
+  example of replacing these two stubs, including the shared `tray_menu_entries()` model a
+  third platform should reuse rather than re-list.
 
 - **3.3 — macOS packaging.** `L` — `.app` bundle + notarization + DMG.
 
@@ -1036,16 +1081,11 @@ structure alone — a real review would likely find more.
   live; the regression test advances parent telemetry and proves unchanged Now, Review, and
   Settings cards do not render again.
 
-- **10.5 — Frontend has coverage tooling but no gate.** `S`
-  `@vitest/coverage-v8` is configured (`vite.config.ts:16`, `npm run test:coverage`) but no
-  CI job runs it and no threshold is enforced. Either wire it up with a floor or drop the
-  dependency — right now it's a capability nobody uses.
-
-  *Amended 2026-07-24:* the generated report was **checked into git** — 38 files under
-  `frontend/coverage/`, so every local `npm run test:coverage` produced a 30-file diff, and
-  the committed copy had gone stale (missing the 17 components added since it was generated).
-  Now untracked and gitignored. Current measured baseline, if a floor gets set: 75% statements
-  / 66% branches / 73% functions.
+- **10.5 — DONE 2026-07-26.** The measured component-suite baseline is 76.86% statements,
+  66.72% branches, 74.20% functions, and 77.66% lines. Vitest now enforces rounded-down
+  global floors of 76/66/74/77, and the frontend CI job runs pure TypeScript unit tests plus
+  the coverage-gated component suite through `npm run test:ci`. The generated HTML report
+  remains gitignored.
 
 - **10.6 — No C++ coverage measurement at all.** `M`
   The frontend can measure coverage; the C++ side cannot. Given how many bugs in Tiers 5/7
@@ -1325,6 +1365,10 @@ Completed work. Kept for history; further detail lives in the git log.
   runtime that is not in this repo, tray and overlay are deliberate no-op stubs off Windows,
   and four Windows-only sources cannot compile on this host at all — which is why **red
   Windows CI means those four are covered nowhere**, not merely less well.
+
+  > *Superseded 2026-07-28 by 3.1:* "off Windows" in the paragraph above now means Linux
+  > only. macOS has real ones. The page itself was updated; this entry is left as written
+  > because it records what 12.4 found at the time.
 
 - **12.5 — The operational scripts were unrunnable on the dev machine** — the two scripts
   that were never Windows-specific are now ported: `test_local.sh` and `run_benchmarks.sh`.

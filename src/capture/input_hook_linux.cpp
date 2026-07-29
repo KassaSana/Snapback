@@ -39,18 +39,19 @@ std::vector<int> open_input_devices() {
 
 class LinuxInputHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event,
+             const std::atomic<bool>& stop_requested) override {
         callback_ = std::move(on_event);
-        running_.store(true, std::memory_order_relaxed);
+        if (stop_requested.load(std::memory_order_acquire)) return;
         fds_ = open_input_devices();
         if (fds_.empty()) {
-            run_polling_fallback();
+            run_polling_fallback(stop_requested);
             return;
         }
 
         std::string last_app;
         std::string last_title;
-        while (running_.load(std::memory_order_relaxed)) {
+        while (!stop_requested.load(std::memory_order_acquire)) {
             bool got_event = false;
             for (int fd : fds_) {
                 input_event ev{};
@@ -69,7 +70,7 @@ public:
                         out.app_name = active->app_name;
                         out.window_title = active->window_title;
                     }
-                    callback_(out);
+                    callback_(std::move(out));
                     got_event = true;
                 }
             }
@@ -82,7 +83,7 @@ public:
                     ev.timestamp_secs = now_secs();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
-                    callback_(ev);
+                    callback_(std::move(ev));
                     last_app = active->app_name;
                     last_title = active->window_title;
                     got_event = true;
@@ -98,15 +99,13 @@ public:
         fds_.clear();
     }
 
-    void stop() override {
-        running_.store(false, std::memory_order_relaxed);
-    }
+    void stop() noexcept override {}
 
 private:
-    void run_polling_fallback() {
+    void run_polling_fallback(const std::atomic<bool>& stop_requested) {
         std::string last_app;
         std::string last_title;
-        while (running_.load(std::memory_order_relaxed)) {
+        while (!stop_requested.load(std::memory_order_acquire)) {
             if (auto active = query_active_window()) {
                 if (active->app_name != last_app || active->window_title != last_title) {
                     CaptureEvent ev;
@@ -115,7 +114,7 @@ private:
                     ev.timestamp_secs = now_secs();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
-                    callback_(ev);
+                    callback_(std::move(ev));
                     last_app = active->app_name;
                     last_title = active->window_title;
                 }
@@ -125,7 +124,6 @@ private:
     }
 
     InputCallback callback_;
-    std::atomic<bool> running_{false};
     std::vector<int> fds_;
 };
 

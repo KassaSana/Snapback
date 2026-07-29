@@ -119,6 +119,177 @@ TEST_CASE("model quality gate requires held-out quality and protects the deploye
     CHECK(in_sample_only.reason.find("held-out") != std::string::npos);
 }
 
+TEST_CASE("model deployment promotes the model and quality metadata as one pair") {
+    TempDir app_data;
+    TempDir candidate;
+    write_text(app_data.path / "model.onnx", "old-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.7}");
+    write_text(candidate.path / "model.onnx", "new-model");
+
+    training_deploy::ModelQualityDecision quality;
+    quality.accepted = true;
+    quality.metric = "cv_accuracy";
+    quality.candidate_score = 0.8;
+    REQUIRE(training_deploy::deploy_model_candidate(
+        app_data.path, candidate.path / "model.onnx", quality));
+
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    const auto deployed_quality =
+        nlohmann::json::parse(read_text(app_data.path / "model_quality.json"));
+    CHECK(deployed_quality.at("metric") == "cv_accuracy");
+    CHECK(deployed_quality.at("score").get<double>() == doctest::Approx(0.8));
+    CHECK(deployed_quality.contains("modelId"));
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "old-model");
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.7") !=
+          std::string::npos);
+}
+
+TEST_CASE("model deployment leaves the accepted pair unchanged when metadata cannot stage") {
+    TempDir app_data;
+    TempDir candidate;
+    write_text(app_data.path / "model.onnx", "accepted-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model.onnx.previous", "older-model");
+    write_text(app_data.path / "model_quality.json.previous",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.65}");
+    write_text(candidate.path / "model.onnx", "candidate-model");
+    // A non-empty directory at the staging path forces preparation to fail before the
+    // live model is touched.
+    write_text(app_data.path / "model_quality.json.deploying" / "blocked", "x");
+
+    training_deploy::ModelQualityDecision quality;
+    quality.accepted = true;
+    quality.metric = "cv_accuracy";
+    quality.candidate_score = 0.8;
+    CHECK_FALSE(training_deploy::deploy_model_candidate(
+        app_data.path, candidate.path / "model.onnx", quality));
+
+    CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.75") !=
+          std::string::npos);
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "older-model");
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.65") !=
+          std::string::npos);
+}
+
+TEST_CASE("model deployment recovery rolls back an interrupted uncommitted promotion") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "candidate-model");
+    write_text(app_data.path / "model.onnx.deploy-backup", "accepted-model");
+    write_text(app_data.path / "model_quality.json.deploy-backup",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model_quality.json.deploying",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+    write_text(app_data.path / "model.onnx.previous", "accepted-model");
+    write_text(app_data.path / "model.onnx.previous.deploy-backup", "older-model");
+    write_text(app_data.path / "model_quality.json.previous",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model_quality.json.previous.deploy-backup",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.65}");
+    write_text(app_data.path / "model_deploy.transaction.json",
+               "{\"hadModel\":true,\"hadQuality\":true,"
+               "\"hadPreviousModel\":true,\"hadPreviousQuality\":true}");
+
+    training_deploy::recover_model_deployment(app_data.path);
+
+    CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.75") !=
+          std::string::npos);
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "older-model");
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.65") !=
+          std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_quality.json.deploying"));
+}
+
+TEST_CASE("model deployment recovery cleans staging left before marker publication") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "accepted-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.75}");
+    write_text(app_data.path / "model.onnx.deploying", "candidate-model");
+    write_text(app_data.path / "model_quality.json.deploying", "partial");
+    write_text(app_data.path / "model.onnx.deploy-backup", "orphaned-model");
+    write_text(app_data.path / "model_quality.json.deploy-backup", "orphaned-quality");
+    write_text(app_data.path / "model.onnx.previous.deploy-backup", "orphaned-previous");
+    write_text(app_data.path / "model_quality.json.previous.deploy-backup",
+               "orphaned-previous-quality");
+    write_text(app_data.path / "model_deploy.transaction.json.tmp", "{\"hadModel\"");
+    write_text(app_data.path / "model_deploy.transaction.committed", "stale");
+
+    training_deploy::recover_model_deployment(app_data.path);
+
+    CHECK(read_text(app_data.path / "model.onnx") == "accepted-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.75") !=
+          std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model.onnx.deploying"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_quality.json.deploying"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model.onnx.deploy-backup"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_quality.json.deploy-backup"));
+    CHECK_FALSE(
+        std::filesystem::exists(app_data.path / "model.onnx.previous.deploy-backup"));
+    CHECK_FALSE(
+        std::filesystem::exists(app_data.path / "model_quality.json.previous.deploy-backup"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json.tmp"));
+    CHECK_FALSE(
+        std::filesystem::exists(app_data.path / "model_deploy.transaction.committed"));
+}
+
+TEST_CASE("model deployment recovery keeps a committed pair during interrupted cleanup") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+    write_text(app_data.path / "model.onnx.deploy-backup", "old-model");
+    write_text(app_data.path / "model_quality.json.deploy-backup",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.7}");
+    write_text(app_data.path / "model.onnx.previous", "old-model");
+    write_text(app_data.path / "model.onnx.previous.deploy-backup", "older-model");
+    write_text(app_data.path / "model_deploy.transaction.json",
+               "{\"hadModel\":true,\"hadQuality\":true,"
+               "\"hadPreviousModel\":true,\"hadPreviousQuality\":false}");
+    write_text(app_data.path / "model_deploy.transaction.committed", "committed\n");
+
+    training_deploy::recover_model_deployment(app_data.path);
+
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.8") !=
+          std::string::npos);
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "old-model");
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model.onnx.deploy-backup"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.committed"));
+}
+
+TEST_CASE("model deployment recovery retains commit state until debris cleanup succeeds") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+    write_text(app_data.path / "model_deploy.transaction.json",
+               "{\"hadModel\":true,\"hadQuality\":true,"
+               "\"hadPreviousModel\":false,\"hadPreviousQuality\":false}");
+    write_text(app_data.path / "model_deploy.transaction.committed", "committed\n");
+    write_text(app_data.path / "model.onnx.deploy-backup" / "locked", "x");
+
+    CHECK_THROWS(training_deploy::recover_model_deployment(app_data.path));
+
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    CHECK(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
+    CHECK(std::filesystem::exists(app_data.path / "model_deploy.transaction.committed"));
+
+    std::filesystem::remove(app_data.path / "model.onnx.deploy-backup" / "locked");
+    training_deploy::recover_model_deployment(app_data.path);
+
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model.onnx.deploy-backup"));
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
+    CHECK_FALSE(
+        std::filesystem::exists(app_data.path / "model_deploy.transaction.committed"));
+}
+
 TEST_CASE("rollback_model swaps the deployed model and quality metadata") {
     TempDir app_data;
     write_text(app_data.path / "model.onnx", "new-model");

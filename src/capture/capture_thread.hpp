@@ -31,15 +31,23 @@ public:
     // Calling start() twice without stop() is a no-op, not a crash: assigning over a
     // joinable std::thread calls std::terminate. That invariant used to live in the caller
     // (AppState::start_engine's CAS); it belongs here.
+    ~CaptureThread() noexcept { stop(); }
     void start(InputHook* hook = nullptr);
-    void stop();
+    void stop() noexcept;
 
     // Engine side: drain one event, or nullopt if the buffer is empty.
-    std::optional<CaptureEvent> next_event() { return buffer_.pop(); }
+    std::optional<CaptureEvent> next_event() {
+        auto event = buffer_.pop();
+        if (event) event->materialize_captured_context();
+        return event;
+    }
 
     std::uint64_t events_dropped() const { return dropped_.load(std::memory_order_relaxed); }
     bool running() const { return running_.load(std::memory_order_relaxed); }
     bool failed() const { return failed_.load(std::memory_order_acquire); }
+    bool input_observed() const {
+        return input_observed_.load(std::memory_order_acquire);
+    }
     std::optional<std::string> failure_reason() const;
     std::optional<std::int64_t> last_event_age_ms() const;
 
@@ -55,6 +63,7 @@ private:
     std::atomic<bool> stop_requested_{false};
     std::atomic<bool> failed_{false};
     std::atomic<bool> has_event_{false};
+    std::atomic<bool> input_observed_{false};
     std::atomic<std::int64_t> last_event_ms_{0};
     mutable std::mutex failure_mutex_;
     std::string failure_reason_;

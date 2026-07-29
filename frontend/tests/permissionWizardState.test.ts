@@ -52,8 +52,9 @@ assert.equal(
 
 // --- captureIsReady ---
 
-assert.equal(captureIsReady(true, false), true); // listener running
-assert.equal(captureIsReady(false, true), true); // probe confirmed
+assert.equal(captureIsReady(true, true), true); // listener and probe agree
+assert.equal(captureIsReady(true, false), false); // fallback thread is not enough
+assert.equal(captureIsReady(false, true), false); // stale probe is not enough
 assert.equal(captureIsReady(false, false), false); // neither
 
 // --- storage helpers (fake Storage) ---

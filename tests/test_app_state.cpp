@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <ctime>
 #include <cstdint>
 #include <filesystem>
@@ -26,7 +27,7 @@ namespace {
 
 class OneShotHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
         CaptureEvent event;
         event.event_type = EventType::KeyPress;
         event.timestamp_secs = 1.0;
@@ -40,9 +41,10 @@ public:
         }
     }
 
-    void stop() override { running_.store(false, std::memory_order_relaxed); }
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
 
     bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+    bool stopped() const { return !running_.load(std::memory_order_acquire); }
 
 private:
     std::atomic<bool> running_{true};
@@ -54,7 +56,7 @@ private:
 // guards was a feature that had correct logic, a passing unit test, and no caller.
 class HyperfocusHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
         CaptureEvent first;
         first.event_type = EventType::KeyPress;
         first.timestamp_secs = 1.0;
@@ -71,7 +73,7 @@ public:
         }
     }
 
-    void stop() override { running_.store(false, std::memory_order_relaxed); }
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
 
 private:
     std::atomic<bool> running_{true};
@@ -79,8 +81,10 @@ private:
 
 class ReturningHook final : public InputHook {
 public:
-    void run(InputCallback) override { returned_.store(true, std::memory_order_release); }
-    void stop() override {}
+    void run(InputCallback, const std::atomic<bool>&) override {
+        returned_.store(true, std::memory_order_release);
+    }
+    void stop() noexcept override {}
 
     bool returned() const { return returned_.load(std::memory_order_acquire); }
 
@@ -420,13 +424,26 @@ TEST_CASE("AppState persists privacy settings and suppresses private events") {
 }
 
 TEST_CASE("AppState deletes collected activity and resets the live session") {
-    auto state = make_state();
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
     const auto session = state->start_session("Delete this", FocusMode::Normal);
     state->start_pomodoro();
     state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
     state->upsert_app_rule("Cursor", AppRuleKind::Allow, std::nullopt);
     REQUIRE(state->active_session().has_value());
     REQUIRE(state->latest_prediction().has_value());
+
+    const auto training_export = temp.path / "exports" / "training" / "features.csv";
+    const auto summary_export = temp.path / "exports" / "summaries" / "summary_week.json";
+    const auto support_export = temp.path / "exports" / "support" / "support.json";
+    const auto deployed_model = temp.path / "model.onnx";
+    for (const auto& file :
+         {training_export, summary_export, support_export, deployed_model}) {
+        std::filesystem::create_directories(file.parent_path());
+        std::ofstream(file) << "private-derived-data";
+    }
 
     state->delete_all_activity_data();
 
@@ -438,6 +455,10 @@ TEST_CASE("AppState deletes collected activity and resets the live session") {
     REQUIRE(state->app_rules().size() == 1);
     CHECK(state->app_rules().front().pattern == "Cursor");
     CHECK(state->get_session(session.session_id) == std::nullopt);
+    CHECK_FALSE(std::filesystem::exists(training_export));
+    CHECK_FALSE(std::filesystem::exists(summary_export));
+    CHECK(std::filesystem::exists(support_export));
+    CHECK(std::filesystem::exists(deployed_model));
 }
 
 TEST_CASE("AppState excludes matching apps without affecting other apps") {
@@ -712,6 +733,38 @@ TEST_CASE("AppState health reflects offline engine before capture starts") {
     CHECK(health.classifier.backend == "heuristic");
 }
 
+TEST_CASE("AppState destruction stops a running engine") {
+    OneShotHook hook;
+    {
+        auto state = make_state();
+        state->start_engine_for_test(&hook);
+        for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        REQUIRE(hook.emitted());
+    }
+
+    CHECK(hook.stopped());
+}
+
+TEST_CASE("AppState confirms capture only after the backend delivers an event") {
+    auto state = make_state();
+    CHECK_FALSE(state->health().permissions.capture_probe_confirmed);
+
+    OneShotHook hook;
+    state->start_engine_for_test(&hook);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted());
+
+    const auto health = state->health();
+    CHECK(health.permissions.capture_probe_confirmed ==
+          (health.permissions.capture_available &&
+           health.permissions.active_window_available));
+    state->stop_engine();
+}
+
 TEST_CASE("AppState health reports a capture hook that stopped unexpectedly") {
     auto state = make_state();
     ReturningHook hook;
@@ -783,7 +836,7 @@ TEST_CASE("AppState contains engine tick exceptions and keeps the engine online"
     auto state = std::make_unique<AppState>(std::move(*storage), std::filesystem::path{}, &logger);
     OneShotHook hook;
 
-    state->set_emit_hook([](const char*, const std::string&) {
+    state->set_emit_hook([](const char*, const std::string&, AppState::ActivityEpoch) {
         throw std::runtime_error("intentional emit failure");
     });
     state->start_engine_for_test(&hook);
@@ -810,6 +863,45 @@ TEST_CASE("AppState contains engine tick exceptions and keeps the engine online"
     state->stop_engine();
 }
 
+TEST_CASE("activity deletion invalidates asynchronously queued prediction emissions") {
+    auto state = make_state();
+    OneShotHook hook;
+    std::mutex queue_mutex;
+    std::condition_variable queue_changed;
+    struct QueuedEvent {
+        std::string name;
+        AppState::ActivityEpoch epoch;
+    };
+    std::vector<QueuedEvent> queued;
+
+    state->set_emit_hook([&](const char* name, const std::string&,
+                             AppState::ActivityEpoch epoch) {
+        if (std::string(name) != "prediction") return;
+        std::lock_guard lock(queue_mutex);
+        queued.push_back(QueuedEvent{name, epoch});
+        queue_changed.notify_all();
+    });
+    state->start_session("Delete during emission", FocusMode::Normal);
+    state->start_engine_for_test(&hook);
+
+    {
+        std::unique_lock lock(queue_mutex);
+        REQUIRE(queue_changed.wait_for(lock, std::chrono::seconds(5),
+                                       [&] { return !queued.empty(); }));
+    }
+
+    state->delete_all_activity_data();
+    state->stop_engine();
+
+    std::size_t delivered = 0;
+    for (const auto& event : queued) {
+        if (state->activity_epoch_is_current(event.epoch)) ++delivered;
+    }
+    CHECK(delivered == 0);
+    CHECK(state->active_session() == std::nullopt);
+    CHECK(state->prediction_history(10).empty());
+}
+
 
 TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
     auto storage = Storage::open_memory();
@@ -820,7 +912,8 @@ TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
     std::mutex seen_mutex;
     std::vector<std::string> events;
     std::string payload;
-    state->set_emit_hook([&](const char* name, const std::string& body) {
+    state->set_emit_hook([&](const char* name, const std::string& body,
+                             AppState::ActivityEpoch) {
         std::lock_guard lock(seen_mutex);
         events.emplace_back(name);
         if (std::string(name) == "hyperfocus") payload = body;

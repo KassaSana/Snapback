@@ -14,12 +14,11 @@ OnnxModel& OnnxModel::instance() {
 
 std::optional<std::filesystem::path> OnnxModel::resolve_model_path(
     const std::filesystem::path& app_data_dir) {
-    // Check the app data dir, then the training-export dir, in that order.
-    for (const std::filesystem::path candidate :
-         {app_data_dir / "model.onnx",
-          app_data_dir / "exports" / "training" / "model.onnx"}) {
-        if (std::filesystem::is_regular_file(candidate)) return candidate;
-    }
+    // Only the app-dir copy has passed training_deploy's quality gate. The export
+    // directory is staging: rejected candidates deliberately remain there for
+    // inspection, so treating it as a runtime fallback bypasses the gate.
+    const auto deployed_model = app_data_dir / "model.onnx";
+    if (std::filesystem::is_regular_file(deployed_model)) return deployed_model;
     return std::nullopt;
 }
 

@@ -234,29 +234,229 @@ std::string build_failure_message(int exit_code, const std::string& log_tail) {
     return "Training failed. Check the training log for details.";
 }
 
-bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
-                                   const std::filesystem::path& export_path) {
-    const auto export_model = export_path / "model.onnx";
-    if (!std::filesystem::is_regular_file(export_model)) return false;
-    std::filesystem::create_directories(app_data_dir);
+struct DeploymentPaths {
+    explicit DeploymentPaths(const std::filesystem::path& root)
+        : deployed_model(root / "model.onnx"),
+          deployed_quality(root / "model_quality.json"),
+          previous_model(root / "model.onnx.previous"),
+          previous_quality(root / "model_quality.json.previous"),
+          staged_model(root / "model.onnx.deploying"),
+          staged_quality(root / "model_quality.json.deploying"),
+          backup_model(root / "model.onnx.deploy-backup"),
+          backup_quality(root / "model_quality.json.deploy-backup"),
+          previous_model_backup(root / "model.onnx.previous.deploy-backup"),
+          previous_quality_backup(root / "model_quality.json.previous.deploy-backup"),
+          marker(root / "model_deploy.transaction.json"),
+          marker_temp(root / "model_deploy.transaction.json.tmp"),
+          committed(root / "model_deploy.transaction.committed") {}
 
-    const auto deployed_model = app_data_dir / "model.onnx";
-    const auto previous_model = app_data_dir / "model.onnx.previous";
-    if (std::filesystem::is_regular_file(deployed_model)) {
-        std::filesystem::copy_file(deployed_model, previous_model,
-                                   std::filesystem::copy_options::overwrite_existing);
-        const auto deployed_quality = app_data_dir / "model_quality.json";
-        const auto previous_quality = app_data_dir / "model_quality.json.previous";
-        if (std::filesystem::is_regular_file(deployed_quality)) {
-            std::filesystem::copy_file(deployed_quality, previous_quality,
-                                       std::filesystem::copy_options::overwrite_existing);
-        } else {
+    std::filesystem::path deployed_model;
+    std::filesystem::path deployed_quality;
+    std::filesystem::path previous_model;
+    std::filesystem::path previous_quality;
+    std::filesystem::path staged_model;
+    std::filesystem::path staged_quality;
+    std::filesystem::path backup_model;
+    std::filesystem::path backup_quality;
+    std::filesystem::path previous_model_backup;
+    std::filesystem::path previous_quality_backup;
+    std::filesystem::path marker;
+    std::filesystem::path marker_temp;
+    std::filesystem::path committed;
+};
+
+void write_file_checked(const std::filesystem::path& path, const std::string& contents) {
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) throw std::runtime_error("could not write " + path.filename().string());
+    out << contents;
+    out.flush();
+    if (!out) throw std::runtime_error("could not finish writing " + path.filename().string());
+}
+
+void write_marker_atomically(const DeploymentPaths& paths,
+                             const nlohmann::json& state) {
+    std::error_code ignored;
+    std::filesystem::remove(paths.marker_temp, ignored);
+    write_file_checked(paths.marker_temp, state.dump());
+    std::filesystem::rename(paths.marker_temp, paths.marker);
+}
+
+bool remove_if_present(const std::filesystem::path& path) {
+    std::error_code remove_error;
+    std::filesystem::remove(path, remove_error);
+    std::error_code exists_error;
+    const bool still_exists = std::filesystem::exists(path, exists_error);
+    return !remove_error && !exists_error && !still_exists;
+}
+
+bool cleanup_deployment_files(const DeploymentPaths& paths) {
+    bool debris_removed = true;
+    for (const auto& path : {paths.staged_model, paths.staged_quality, paths.backup_model,
+                             paths.backup_quality, paths.previous_model_backup,
+                             paths.previous_quality_backup, paths.marker_temp}) {
+        debris_removed = remove_if_present(path) && debris_removed;
+    }
+    if (!debris_removed) {
+        // Keep both control files so recovery continues to recognize a committed
+        // promotion and retries cleanup without rolling it back.
+        return false;
+    }
+
+    // Removing the marker first is safe because a leftover sentinel is treated as stale.
+    // Removing the sentinel first would make a marker-removal failure look uncommitted.
+    if (!remove_if_present(paths.marker)) return false;
+    return remove_if_present(paths.committed);
+}
+
+void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
+    const DeploymentPaths paths(app_data_dir);
+    if (!std::filesystem::is_regular_file(paths.marker)) {
+        // Without an atomically published marker, live files were never touched. Clean
+        // staging debris from a crash before publication; a stale sentinel must not bless
+        // a future transaction as committed.
+        bool debris_removed = true;
+        for (const auto& path :
+             {paths.staged_model, paths.staged_quality, paths.backup_model,
+              paths.backup_quality, paths.previous_model_backup,
+              paths.previous_quality_backup, paths.marker_temp, paths.committed}) {
+            debris_removed = remove_if_present(path) && debris_removed;
+        }
+        if (!debris_removed) {
+            throw std::runtime_error(
+                "could not clean incomplete model deployment files; retry after "
+                "releasing files in use");
+        }
+        return;
+    }
+
+    const auto state = parse_json_object(paths.marker);
+    if (!state) {
+        throw std::runtime_error("model deployment recovery marker is invalid");
+    }
+    if (std::filesystem::is_regular_file(paths.committed)) {
+        if (!cleanup_deployment_files(paths)) {
+            throw std::runtime_error(
+                "could not finish committed model deployment cleanup; retry after "
+                "releasing files in use");
+        }
+        return;
+    }
+
+    const bool had_model = state->value("hadModel", false);
+    const bool had_quality = state->value("hadQuality", false);
+    const bool had_previous_model = state->value("hadPreviousModel", false);
+    const bool had_previous_quality = state->value("hadPreviousQuality", false);
+
+    auto restore = [](const std::filesystem::path& destination,
+                      const std::filesystem::path& backup, bool existed) {
+        if (std::filesystem::is_regular_file(backup)) {
             std::error_code ignored;
-            std::filesystem::remove(previous_quality, ignored);
+            std::filesystem::remove(destination, ignored);
+            std::filesystem::rename(backup, destination);
+        } else if (!existed) {
+            std::error_code ignored;
+            std::filesystem::remove(destination, ignored);
+        }
+        // If `existed` is true and no backup exists, the transaction had not moved the
+        // original yet; leave the original destination untouched.
+    };
+
+    restore(paths.deployed_model, paths.backup_model, had_model);
+    restore(paths.deployed_quality, paths.backup_quality, had_quality);
+    restore(paths.previous_model, paths.previous_model_backup, had_previous_model);
+    restore(paths.previous_quality, paths.previous_quality_backup, had_previous_quality);
+    if (!cleanup_deployment_files(paths)) {
+        throw std::runtime_error(
+            "could not finish rolled-back model deployment cleanup; retry after "
+            "releasing files in use");
+    }
+}
+
+bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
+    const std::filesystem::path& candidate_model,
+    const nlohmann::json& quality_metadata) {
+    if (!std::filesystem::is_regular_file(candidate_model)) return false;
+    std::filesystem::create_directories(app_data_dir);
+    try {
+        recover_model_deployment_impl(app_data_dir);
+    } catch (...) {
+        // A deployment cannot safely start until interrupted-transaction debris is
+        // recoverable. Leave the accepted pair untouched and let a later attempt retry.
+        return false;
+    }
+    const DeploymentPaths paths(app_data_dir);
+
+    // Stage and validate both artifacts before touching the live pair. In particular,
+    // metadata write failure must not leave a new model with the old accepted baseline.
+    std::filesystem::copy_file(candidate_model, paths.staged_model);
+    const auto identity = OnnxModel::model_id_for_path(paths.staged_model);
+    if (!identity) {
+        std::filesystem::remove(paths.staged_model);
+        return false;
+    }
+    {
+        std::ofstream quality_file(paths.staged_quality, std::ios::trunc);
+        if (!quality_file) {
+            std::filesystem::remove(paths.staged_model);
+            return false;
+        }
+        auto metadata = quality_metadata;
+        metadata["modelId"] = *identity;
+        quality_file << metadata.dump(2);
+        quality_file.flush();
+        if (!quality_file) {
+            std::filesystem::remove(paths.staged_model);
+            std::filesystem::remove(paths.staged_quality);
+            return false;
         }
     }
-    std::filesystem::copy_file(export_model, app_data_dir / "model.onnx",
-                               std::filesystem::copy_options::overwrite_existing);
+
+    const bool had_model = std::filesystem::is_regular_file(paths.deployed_model);
+    const bool had_quality = std::filesystem::is_regular_file(paths.deployed_quality);
+    const bool had_previous_model = std::filesystem::is_regular_file(paths.previous_model);
+    const bool had_previous_quality = std::filesystem::is_regular_file(paths.previous_quality);
+    try {
+        write_marker_atomically(
+            paths, nlohmann::json{{"hadModel", had_model},
+                                  {"hadQuality", had_quality},
+                                  {"hadPreviousModel", had_previous_model},
+                                  {"hadPreviousQuality", had_previous_quality}});
+
+        // Preserve the accepted pair as the user-visible rollback target before promotion.
+        if (had_model) {
+            if (had_previous_model) {
+                std::filesystem::rename(paths.previous_model, paths.previous_model_backup);
+            }
+            if (had_previous_quality) {
+                std::filesystem::rename(paths.previous_quality,
+                                        paths.previous_quality_backup);
+            }
+            std::filesystem::copy_file(paths.deployed_model, paths.previous_model);
+            if (had_quality) {
+                std::filesystem::copy_file(paths.deployed_quality, paths.previous_quality);
+            }
+        }
+
+        if (had_model) std::filesystem::rename(paths.deployed_model, paths.backup_model);
+        if (had_quality) {
+            std::filesystem::rename(paths.deployed_quality, paths.backup_quality);
+        }
+        std::filesystem::rename(paths.staged_model, paths.deployed_model);
+        std::filesystem::rename(paths.staged_quality, paths.deployed_quality);
+        write_file_checked(paths.committed, "committed\n");
+    } catch (...) {
+        if (std::filesystem::is_regular_file(paths.marker)) {
+            recover_model_deployment_impl(app_data_dir);
+        } else {
+            cleanup_deployment_files(paths);
+        }
+        throw;
+    }
+    // The commit sentinel makes cleanup crash-safe: recovery keeps the new pair if cleanup
+    // was interrupted after the promotion committed.
+    // Cleanup failure does not undo a committed promotion. The retained marker and
+    // sentinel make the next recovery retry cleanup before another deployment starts.
+    cleanup_deployment_files(paths);
     return true;
 }
 
@@ -288,6 +488,19 @@ void swap_optional_file(const std::filesystem::path& first,
 }
 
 }  // namespace
+
+void recover_model_deployment(const std::filesystem::path& app_data_dir) {
+    recover_model_deployment_impl(app_data_dir);
+}
+
+bool deploy_model_candidate(const std::filesystem::path& app_data_dir,
+                            const std::filesystem::path& candidate_model,
+                            const ModelQualityDecision& quality) {
+    if (!quality.accepted || quality.metric.empty()) return false;
+    return sync_trained_model_to_app_dir(
+        app_data_dir, candidate_model,
+        nlohmann::json{{"metric", quality.metric}, {"score", quality.candidate_score}});
+}
 
 ModelQualityDecision evaluate_model_quality(
     const nlohmann::json& candidate_metrics,
@@ -350,6 +563,7 @@ bool rollback_available(const std::filesystem::path& app_data_dir) {
 }
 
 nlohmann::json rollback_model(const std::filesystem::path& app_data_dir) {
+    recover_model_deployment(app_data_dir);
     const auto current = app_data_dir / "model.onnx";
     const auto previous = app_data_dir / "model.onnx.previous";
     if (!rollback_available(app_data_dir)) {
@@ -502,20 +716,9 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
         }
         if (quality.accepted) {
             try {
-                if (!sync_trained_model_to_app_dir(app_data_dir, out_dir)) {
-                    sync_warning = "model.onnx was not found after training";
-                } else {
-                    const auto identity = OnnxModel::model_id_for_path(app_data_dir / "model.onnx");
-                    std::ofstream quality_file(app_data_dir / "model_quality.json",
-                                               std::ios::trunc);
-                    if (!quality_file || !identity) {
-                        sync_warning = "could not persist model quality metadata";
-                    } else {
-                        quality_file << nlohmann::json{{"metric", quality.metric},
-                                                       {"score", quality.candidate_score},
-                                                       {"modelId", *identity}}
-                                          .dump(2);
-                    }
+                if (!deploy_model_candidate(app_data_dir, out_dir / "model.onnx", quality)) {
+                    sync_warning =
+                        "could not stage model.onnx and its quality metadata";
                 }
             } catch (const std::exception& err) {
                 sync_warning = err.what();

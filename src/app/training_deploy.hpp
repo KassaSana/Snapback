@@ -9,6 +9,8 @@
 namespace snapback::training_deploy {
 
 std::filesystem::path export_dir(const std::filesystem::path& app_data_dir);
+// Complete or roll back an interrupted model deployment before resolving the live model.
+void recover_model_deployment(const std::filesystem::path& app_data_dir);
 bool rollback_available(const std::filesystem::path& app_data_dir);
 // Restore the previous deployed model and its quality metadata. The swap keeps the current
 // model as the next rollback target, so a user can undo an undo.
@@ -26,6 +28,12 @@ struct ModelQualityDecision {
     double threshold{};
     std::string reason;
 };
+
+// Promote a candidate model and its accepted quality baseline as one recoverable pair.
+// Both artifacts are staged before the live deployment is changed.
+bool deploy_model_candidate(const std::filesystem::path& app_data_dir,
+                            const std::filesystem::path& candidate_model,
+                            const ModelQualityDecision& quality);
 
 // Gate a candidate model before it can replace the deployed model. The candidate metrics must
 // contain a held-out/validation/CV accuracy; in-sample-only metrics are deliberately rejected.

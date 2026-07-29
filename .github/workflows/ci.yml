@@ -265,9 +265,9 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
-      - name: Unit and component tests
+      - name: Unit tests and component coverage gate
         working-directory: frontend
-        run: npm run test
+        run: npm run test:ci
 
       - name: Build frontend assets
         working-directory: frontend
@@ -314,8 +314,10 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
-  # Desktop app link on macOS + Linux. Build only — the GUI is never launched
-  # (that would hang), so this job exists purely to prove `snapback` still links.
+  # Desktop app link on macOS + Linux. Build only — this job never launches the
+  # GUI, so it exists purely to prove `snapback` still links. On macOS the launch
+  # itself is now covered by macos-gui-smoke below; on Linux, building remains the
+  # only guarantee there is.
   #
   # Why it exists: every other job configures with SNAPBACK_BUILD_APP=OFF, and the
   # only job that built the real binary was Windows-only. That left main.cpp
@@ -352,6 +354,50 @@ jobs:
       - name: Build desktop app (link check, no launch)
         timeout-minutes: 20
         run: cmake --build build --target snapback --config Release
+
+  # ---------------------------------------------------------------------------
+  # macOS GUI launch smoke — ADR-0002 release blocker.
+  #
+  # desktop-app-build above proves the macOS binary links. It does not prove it
+  # starts, and the two ways it can fail to start are both invisible at link
+  # time: a webview that cannot create its window, and a frontend bundle that
+  # never got copied next to the executable (an empty window, not an error).
+  # scripts/gui_smoke_macos.sh launches the real binary, drives a session
+  # start/stop through AppState and SQLite from the UI thread, and requires the
+  # run loop to exit on its own.
+  #
+  # No `needs:` for the same Roadmap 6.3 reason as the two jobs above: this
+  # depends on the code compiling, not on the headless suite passing.
+  # ---------------------------------------------------------------------------
+  macos-gui-smoke:
+    name: macOS GUI launch smoke
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The bundle must exist before CMake configures — the copy that puts
+      # frontend/dist next to the executable is wired at configure time, which
+      # the script's own ordering depends on.
+      - name: Launch smoke
+        timeout-minutes: 25
+        run: ./scripts/gui_smoke_macos.sh
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-gui-smoke-logs
+          path: .demo/gui-smoke-data-macos/*.log
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
   # Docs invariants.

@@ -13,6 +13,7 @@ documented way to run the test suite did not run on the machine it was documente
 | `check_doc_paths.py` | any OS | verifies that documented repository paths exist |
 | `windows_demo.ps1` | **Windows only** | MSVC build + CTest + launches `snapback.exe` |
 | `gui_smoke_windows.ps1` | **Windows only** | Verifies a real Snapback window appears |
+| `gui_smoke_macos.sh` | **macOS only** | Launches the app and requires a session round trip, a loaded bundle, and a clean run-loop exit |
 | `package_windows.ps1` | **Windows only** | CPack ZIP, IExpress installer, Authenticode signing |
 | `validate_windows_package.ps1` | **Windows only** | Checks an extracted package |
 | `install_windows_package.ps1` | **Windows only** | Installs a built package locally |

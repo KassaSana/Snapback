@@ -38,6 +38,11 @@ This runs:
 - frontend unit/component tests
 - frontend production build
 
+CI runs `npm run test:ci`, which executes the pure TypeScript unit scripts and the Vitest
+component suite with V8 coverage. The global component-suite floors are 76% statements,
+66% branches, 74% functions, and 77% lines; `frontend/coverage/` remains generated and
+gitignored.
+
 Fast variant (C++ only):
 
 ```powershell
@@ -87,10 +92,12 @@ The current jobs are:
 | `benchmark-smoke` | the benchmark targets still build and run |
 | `frontend-mock` | npm install, typecheck, tests, build |
 | `windows-desktop-integration` | runs `scripts/windows_demo.ps1 -NoLaunch` |
-| `desktop-app-build` | the desktop app **links** on each OS |
+| `desktop-app-build` | the desktop app **links** on macOS and Linux |
+| `macos-gui-smoke` | the desktop app **launches** on macOS (`scripts/gui_smoke_macos.sh`) |
 | `docs-smoke` | demo runbook linkage, **and** that every path a doc names exists (`scripts/check_doc_paths.py`) |
 
-`windows-desktop-integration` and `desktop-app-build` deliberately have **no `needs:`** —
+`windows-desktop-integration`, `desktop-app-build`, and `macos-gui-smoke` deliberately have
+**no `needs:`** —
 they run even when the core suite is red, because a broken core is exactly when the desktop
 guard's answer matters. Do not give them one (Roadmap 6.3).
 
@@ -102,9 +109,17 @@ implementations are still stubs." They are not. `input_hook_macos.mm` is a real
 `CGEventTap`, `input_hook_linux.cpp` is real evdev with a polling fallback, and
 `active_window.cpp` has real per-OS branches. What the macOS/Linux jobs *do* skip is
 **exercising** capture — they run headless, with no live desktop session, so the backends
-compile and link but never see an event. Verifying macOS capture on real hardware is
-Roadmap 0.3. The stubs that do remain are the **overlay and tray** off Windows
-(`overlay_stub.cpp`, `tray_stub.cpp`) — Roadmap 3.1/3.2.
+compile and link but never see an event. Verifying macOS capture on real hardware was
+Roadmap 0.3, done 2026-07-25. The stubs that do remain are the **overlay and tray on
+Linux** (`overlay_stub.cpp`, `tray_stub.cpp`) — Roadmap 3.2.
+
+**Update (2026-07-28):** macOS is no longer in that sentence. Roadmap 3.1 landed a real
+`NSStatusItem` tray and a native `NSPanel` overlay, and `macos-gui-smoke` in `ci.yml` now
+*launches* the built app rather than only linking it — a session start/stop round trip
+through storage on the UI thread, plus a required clean run-loop exit. That closes the one
+gap this section describes for macOS: the backends are still not sent synthetic input, but
+the app is at least proven to start, render its bundle, and shut down. Linux remains
+build-only.
 
 ## 3. Production Smoke
 

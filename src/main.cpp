@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -23,9 +24,11 @@
 #include "app/commands.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/ipc_shim.hpp"
+#include "app/mac_ui.hpp"
 #include "app/notification.hpp"
 #include "app/single_instance.hpp"
 #include "app/state.hpp"
+#include "app/training_deploy.hpp"
 #include "app/tray.hpp"
 #include "capture/permissions.hpp"
 #include "engine/onnx_model.hpp"
@@ -40,6 +43,22 @@
 #endif
 
 namespace {
+
+class EngineLifetime {
+public:
+    explicit EngineLifetime(snapback::AppState& state) : state_(&state) {}
+    ~EngineLifetime() noexcept { stop(); }
+
+    void stop() noexcept {
+        if (!state_) return;
+        state_->set_emit_hook(nullptr);
+        state_->stop_engine();
+        state_ = nullptr;
+    }
+
+private:
+    snapback::AppState* state_;
+};
 
 std::optional<std::string> env_var(const char* name) {
 #if defined(_WIN32)
@@ -137,11 +156,17 @@ int main() {
     Logger logger(pick_startup_log_sink(log_file, std::cerr),
                   level_from_string(env_var("SNAPBACK_LOG").value_or("")));
 
+    try {
+        training_deploy::recover_model_deployment(data_dir);
 #if defined(SNAPBACK_ONNX)
-    if (auto model = OnnxModel::resolve_model_path(data_dir)) {
-        OnnxModel::instance().init(*model);
-    }
+        if (auto model = OnnxModel::resolve_model_path(data_dir)) {
+            OnnxModel::instance().init(*model);
+        }
 #endif
+    } catch (const std::exception& error) {
+        logger.error(std::string("model deployment recovery failed: ") + error.what());
+        return 1;
+    }
 
     // Observability: log the startup sequence, one line per step, at INFO. This exists
     // because the log file was empty through an entire successful startup — so when the
@@ -151,16 +176,17 @@ int main() {
     logger.info("snapback " SNAPBACK_VERSION " starting");
     logger.info("data dir: " + data_dir.string());
 
-    auto storage = Storage::open(data_dir, &logger);
-    if (!storage) {
-        logger.error("failed to open storage at startup");
-        return 1;
-    }
-    logger.info("storage opened: " + (data_dir / "focoflow.db").string());
+    try {
+        auto storage = Storage::open(data_dir, &logger);
+        if (!storage) {
+            logger.error("failed to open storage at startup");
+            return 1;
+        }
+        logger.info("storage opened: " + (data_dir / "focoflow.db").string());
 
-    // Heap-allocate AppState: it embeds the 64K-slot capture ring buffer inline (~5 MB),
-    // which blows the default 1 MB stack if placed as a local. The tests do the same via
-    // make_unique. A unique_ptr keeps ownership + lifetime clear.
+    // Keep AppState heap-owned so callbacks registered below can borrow one stable
+    // process-lifetime address. RingBuffer independently heap-backs its 64K slots, so
+    // AppState itself remains stack-friendly.
     auto state = std::make_unique<AppState>(std::move(*storage), data_dir, &logger);
     state->start_engine();
 
@@ -185,6 +211,9 @@ int main() {
         [state = state.get()] { state->dismiss_snapback(); });
 
     webview::webview w(/*debug=*/true, nullptr);
+    // This guard is declared after the webview, so exception unwinding stops
+    // capture and event dispatch before the webview itself is destroyed.
+    EngineLifetime engine_lifetime(*state);
     w.set_title("Snapback");
     w.set_size(1100, 760, WEBVIEW_HINT_NONE);
 
@@ -194,7 +223,9 @@ int main() {
     register_commands(w, *state, data_dir);
 
     // System tray (Phase 8): left-click/double-click or the "Show" menu item brings the
-    // window forward; "Quit" ends the run loop.
+    // window forward; "Quit" ends the run loop. Both branches read the native window
+    // handle out of the webview once, here on the UI thread, because that is the only
+    // thread either platform's window APIs may be touched from.
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
@@ -205,14 +236,28 @@ int main() {
             },
             [&w] { w.terminate(); });
     }
+#elif defined(__APPLE__)
+    // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
+    // it becomes AppKit again, so main.cpp stays plain C++ (see mac_ui.hpp).
+    if (auto win = w.window(); win.ok()) {
+        void* main_window = win.value();
+        Tray::instance().install([main_window] { mac::bring_window_to_front(main_window); },
+                                 [&w] { w.terminate(); });
+    }
 #endif
 
     // Host->frontend events: the engine tick runs off-thread, but webview.eval and the
     // Win32 overlay must run on the UI thread — so marshal via dispatch. Copy
     // event/payload by value; the tick's strings don't outlive the hook call.
-    state->set_emit_hook([&w](const char* event, const std::string& payload) {
+    state->set_emit_hook([&w, state = state.get()](const char* event,
+                                                   const std::string& payload,
+                                                   AppState::ActivityEpoch activity_epoch) {
         std::string ev = event;
-        w.dispatch([&w, ev, payload] {
+        w.dispatch([&w, state, ev, payload, activity_epoch] {
+            // The engine thread only queues this closure. A delete command may execute on
+            // the UI thread before the queue reaches us, so reject the stale tick here,
+            // immediately before every user-visible side effect.
+            if (!state->activity_epoch_is_current(activity_epoch)) return;
             emit(w, ev.c_str(), payload);
             // On the return-from-distraction edge, also pop the native overlay card and a
             // toast — the toast is the one that reaches the user when the
@@ -293,7 +338,13 @@ int main() {
 
     w.run();
 
-    state->set_emit_hook(nullptr);  // stop emitting into a torn-down webview
-    state->stop_engine();
-    return 0;
+        engine_lifetime.stop();
+        return 0;
+    } catch (const std::exception& error) {
+        logger.error(std::string("startup/runtime failure: ") + error.what());
+        return 1;
+    } catch (...) {
+        logger.error("startup/runtime failure: unknown exception");
+        return 1;
+    }
 }

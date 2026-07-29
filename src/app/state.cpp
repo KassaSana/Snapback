@@ -16,6 +16,7 @@
 #include "capture/permissions.hpp"
 #include "app/version.hpp"
 #include "app/notification.hpp"
+#include "app/training_deploy.hpp"
 #include "engine/app_context.hpp"
 #include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
@@ -70,6 +71,18 @@ std::string cutoff_rfc3339(int days_ago) {
     return out.str();
 }
 
+void delete_activity_exports(const std::filesystem::path& app_data_dir) {
+    if (app_data_dir.empty()) return;
+    for (const auto* directory : {"training", "summaries"}) {
+        std::error_code error;
+        std::filesystem::remove_all(app_data_dir / "exports" / directory, error);
+        if (error) {
+            throw std::runtime_error("failed to delete activity exports from " +
+                                     std::string(directory) + ": " + error.message());
+        }
+    }
+}
+
 }  // namespace
 
 AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger)
@@ -79,6 +92,11 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     }
     focus_mode_ = settings_.default_focus_mode;
     context_tracker_.set_goal_categories(settings_.goal_categories);
+}
+
+AppState::~AppState() noexcept {
+    set_emit_hook(nullptr);
+    stop_engine();
 }
 
 std::string AppState::now_rfc3339() {
@@ -180,30 +198,36 @@ void AppState::start_engine_impl(InputHook* hook) {
         // needs to touch storage_ to discover it (keeps the hot path storage-free).
         if (!active_session_) active_session_ = storage_.active_session();
     }
-    capture_.start(hook);
-    engine_thread_ = std::thread([this] {
-        while (engine_running_.load(std::memory_order_relaxed)) {
-            try {
-                engine_tick();
-            } catch (const std::exception& error) {
+    try {
+        capture_.start(hook);
+        engine_thread_ = std::thread([this] {
+            while (engine_running_.load(std::memory_order_relaxed)) {
                 try {
-                    std::ostringstream message;
-                    message << "engine tick failed: " << error.what();
-                    log().error(message.str());
+                    engine_tick();
+                } catch (const std::exception& error) {
+                    try {
+                        std::ostringstream message;
+                        message << "engine tick failed: " << error.what();
+                        log().error(message.str());
+                    } catch (...) {
+                        // Logging must not turn a contained engine failure into an
+                        // unhandled exception on this thread.
+                    }
                 } catch (...) {
-                    // Logging must not turn a contained engine failure into an
-                    // unhandled exception on this thread.
+                    try {
+                        log().error("engine tick failed: unknown exception");
+                    } catch (...) {
+                        // Keep the thread boundary intact even if the logger fails.
+                    }
                 }
-            } catch (...) {
-                try {
-                    log().error("engine tick failed: unknown exception");
-                } catch (...) {
-                    // Keep the thread boundary intact even if the logger fails.
-                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    });
+        });
+    } catch (...) {
+        engine_running_.store(false, std::memory_order_release);
+        capture_.stop();
+        throw;
+    }
 }
 
 void AppState::set_emit_hook(EmitHook hook) {
@@ -211,7 +235,7 @@ void AppState::set_emit_hook(EmitHook hook) {
     emit_hook_ = std::move(hook);
 }
 
-void AppState::stop_engine() {
+void AppState::stop_engine() noexcept {
     engine_running_.store(false, std::memory_order_relaxed);
     capture_.stop();
     if (engine_thread_.joinable()) engine_thread_.join();
@@ -291,7 +315,8 @@ HealthStatus AppState::health() const {
                                           : idle_          ? "idle"
                                           : !active_session_ ? "no_session"
                                                              : "none";
-    h.permissions = check_capture_permissions(capture_.running());
+    h.permissions =
+        check_capture_permissions(capture_.running(), capture_.input_observed());
     h.classifier.backend = classifier_.backend();
     h.classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
     h.classifier.model_path = OnnxModel::instance().model_path();
@@ -367,10 +392,17 @@ std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
 }
 
 void AppState::delete_all_activity_data() {
-    // Block the compute path while deleting so an in-flight capture event cannot recreate
-    // activity between the DELETE transaction and the in-memory reset.
+    // The boundary fences off-lock persistence in engine_tick(). Incrementing the epoch
+    // also invalidates any event already queued for asynchronous UI dispatch.
     std::lock_guard state_lock(mutex_);
+    std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
+    activity_epoch_.fetch_add(1, std::memory_order_release);
+    // Exported CSVs and summary reports are copies of the rows below. Remove them
+    // first so a successful "delete all" cannot leave activity elsewhere under
+    // the app's data directory. Support bundles and deployed model/config files
+    // are deliberately outside this privacy scope.
+    delete_activity_exports(app_data_dir_);
     storage_.delete_all_activity_data();
     active_session_.reset();
     latest_prediction_.reset();
@@ -619,6 +651,7 @@ ClassifierStatus AppState::classifier_status() const {
 
 ClassifierStatus AppState::reload_classifier_model() {
     std::lock_guard lock(mutex_);
+    training_deploy::recover_model_deployment(app_data_dir_);
     if (const auto model = OnnxModel::resolve_model_path(app_data_dir_)) {
         OnnxModel::instance().init(*model);
     } else {
@@ -635,7 +668,7 @@ ClassifierStatus AppState::reload_classifier_model() {
 
 PermissionStatus AppState::refresh_permissions() {
     std::lock_guard lock(mutex_);
-    return check_capture_permissions(capture_.running());
+    return check_capture_permissions(capture_.running(), capture_.input_observed());
 }
 
 PermissionStatus AppState::request_permissions() {
@@ -645,7 +678,7 @@ PermissionStatus AppState::request_permissions() {
     // decided). Re-probing rather than trusting the prompt's return value keeps one code
     // path — check_capture_permissions — as the single source of truth for the status DTO.
     request_capture_permissions();
-    return check_capture_permissions(capture_.running());
+    return check_capture_permissions(capture_.running(), capture_.input_observed());
 }
 
 void AppState::reload_app_rules_unlocked() {
@@ -694,11 +727,15 @@ void AppState::submit_label(const std::string& session_id, FocusLabel label,
 
 void AppState::process_event_for_test(const CaptureEvent& event) {
     std::optional<PersistJob> job;
+    std::uint64_t activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
+        activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         job = compute_event(event);
     }
     if (job) {
+        std::lock_guard activity_lock(activity_boundary_mutex_);
+        if (activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
         std::lock_guard lock(storage_mutex_);
         Storage::Transaction txn(storage_);
         persist(*job);
@@ -707,10 +744,10 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
 }
 
 void AppState::engine_tick() {
-    // Three phases with different locks so a disk write never blocks a UI read:
+    // Three phases with different locks so a disk write never blocks an ordinary UI read:
     //   1) drain + classify under mutex_ (in-memory only), collecting persist jobs;
     //   2) flush them under storage_mutex_ in ONE transaction, after releasing mutex_;
-    //   3) emit to the frontend holding no lock (the hook hops to the UI thread).
+    //   3) queue epoch-tagged events holding no lock (the hook hops to the UI thread).
     EmitHook hook;
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
@@ -718,8 +755,10 @@ void AppState::engine_tick() {
     std::optional<std::uint64_t> hyper_to_emit;
     std::vector<PersistJob> jobs;
     IdleTransition idle_edge = IdleTransition::None;
+    std::uint64_t tick_activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
+        tick_activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         bool had_input = false;
         while (auto ev = capture_.next_event()) {
             if (is_input_event(ev->event_type)) had_input = true;
@@ -745,24 +784,41 @@ void AppState::engine_tick() {
         }
     }
 
-    if (!jobs.empty()) {
-        std::lock_guard lock(storage_mutex_);
-        Storage::Transaction txn(storage_);  // one commit for the whole drain
-        for (const auto& job : jobs) persist(job);
-        txn.commit();
+    {
+        // If deletion won the boundary after phase 1, discard every buffered row and
+        // event. If this tick won, deletion waits until persistence has completed.
+        std::lock_guard activity_lock(activity_boundary_mutex_);
+        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
+        if (!jobs.empty()) {
+            std::lock_guard lock(storage_mutex_);
+            Storage::Transaction txn(storage_);  // one commit for the whole drain
+            for (const auto& job : jobs) persist(job);
+            txn.commit();
+        }
     }
 
     if (!hook) return;
-    if (idle_edge == IdleTransition::WentIdle) hook("idle", "{\"idle\":true}");
-    if (idle_edge == IdleTransition::WokeUp) hook("idle", "{\"idle\":false}");
-    if (pred_to_emit) hook("prediction", nlohmann::json(*pred_to_emit).dump());
-    if (snap_to_emit) hook("snapback", nlohmann::json(*snap_to_emit).dump());
-    if (pomodoro_to_emit) hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump());
+    if (idle_edge == IdleTransition::WentIdle) {
+        hook("idle", "{\"idle\":true}", tick_activity_epoch);
+    }
+    if (idle_edge == IdleTransition::WokeUp) {
+        hook("idle", "{\"idle\":false}", tick_activity_epoch);
+    }
+    if (pred_to_emit) {
+        hook("prediction", nlohmann::json(*pred_to_emit).dump(), tick_activity_epoch);
+    }
+    if (snap_to_emit) {
+        hook("snapback", nlohmann::json(*snap_to_emit).dump(), tick_activity_epoch);
+    }
+    if (pomodoro_to_emit) {
+        hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump(), tick_activity_epoch);
+    }
     if (hyper_to_emit) {
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
         hook("hyperfocus", nlohmann::json{{"message", note.body},
                                           {"minutes", *hyper_to_emit}}
-                               .dump());
+                               .dump(),
+             tick_activity_epoch);
     }
 }
 

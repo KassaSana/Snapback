@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -41,16 +42,20 @@ EventType map_event(CGEventType type) {
 
 class MacInputHook final : public InputHook {
 public:
-    void run(InputCallback on_event) override {
+    void run(InputCallback on_event,
+             const std::atomic<bool>& stop_requested) override {
         callback_ = std::move(on_event);
-        running_.store(true, std::memory_order_relaxed);
+        if (stop_requested.load(std::memory_order_acquire)) return;
 
         // Publish THIS thread's run loop so stop() — which is called from the caller's
         // thread, not ours — can wake the right one. Retained because stop() may touch it
         // while this thread is still unwinding.
         CFRunLoopRef loop = CFRunLoopGetCurrent();
         CFRetain(loop);
-        run_loop_.store(loop, std::memory_order_release);
+        {
+            std::lock_guard lock(run_loop_mutex_);
+            run_loop_ = loop;
+        }
 
         CGEventMask mask = CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp) |
                            CGEventMaskBit(kCGEventLeftMouseDown) |
@@ -66,7 +71,7 @@ public:
         if (!tap_) {
             // No Accessibility / Input Monitoring permission. Degrade to window polling
             // rather than going silent (check_capture_permissions() reports the cause).
-            run_polling_fallback();
+            run_polling_fallback(stop_requested);
             release_run_loop();
             return;
         }
@@ -76,7 +81,7 @@ public:
         CGEventTapEnable(tap_, true);
 
         refresh_active_window(true);  // seed the cache so the first event isn't blank
-        while (running_.load(std::memory_order_relaxed)) {
+        while (!stop_requested.load(std::memory_order_acquire)) {
             // returnAfterSourceHandled=true, so this returns as soon as one event is
             // handled; the timeout doubles as the cache-refresh cadence when idle.
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, kWindowRefreshSecs, true);
@@ -96,15 +101,13 @@ public:
         release_run_loop();
     }
 
-    void stop() override {
-        running_.store(false, std::memory_order_relaxed);
+    void stop() noexcept override {
         // Stop the HOOK thread's run loop, not the caller's. This used to be
         // CFRunLoopStop(CFRunLoopGetCurrent()), which on the UI thread targeted the app's
         // own run loop — wrong loop, and under the webview potentially a live one. It only
         // appeared to work because run() polls with a timeout and rechecks running_.
-        if (CFRunLoopRef loop = run_loop_.load(std::memory_order_acquire)) {
-            CFRunLoopStop(loop);
-        }
+        std::lock_guard lock(run_loop_mutex_);
+        if (run_loop_) CFRunLoopStop(run_loop_);
     }
 
 private:
@@ -137,12 +140,11 @@ private:
             // forking a process per keystroke and per mouse-move, inside the tap callback.
             // That blew the tap's deadline, which triggered the disable above. The cache
             // is refreshed by run() on this same thread, so no lock is needed.
-            ev.app_name = self->cached_app_;
-            ev.window_title = self->cached_title_;
+            ev.captured_context = self->cached_context_;
             if (ev.event_type == EventType::MouseMove) {
                 ev.mouse_speed = 0;
             }
-            self->callback_(ev);
+            self->callback_(std::move(ev));
         } catch (...) {
             // Never throw through the event tap callback.
         }
@@ -159,10 +161,13 @@ private:
         auto active = query_active_window();
         if (!active) return;
 
-        const bool app_changed = !force && active->app_name != cached_app_;
-        const bool title_changed = !force && active->window_title != cached_title_;
-        cached_app_ = active->app_name;
-        cached_title_ = active->window_title;
+        const bool app_changed =
+            !force && cached_context_ && active->app_name != cached_context_->app_name;
+        const bool title_changed =
+            !force && cached_context_ && active->window_title != cached_context_->window_title;
+        if (!force && cached_context_ && !app_changed && !title_changed) return;
+        cached_context_ = std::make_shared<CaptureContext>(
+            CaptureContext{std::move(active->app_name), std::move(active->window_title)});
 
         // Emit the change as an event, not just into the cache.
         //
@@ -188,22 +193,25 @@ private:
             ev.event_type =
                 app_changed ? EventType::WindowFocusChange : EventType::WindowTitleChange;
             ev.timestamp_secs = now;
-            ev.app_name = cached_app_;
-            ev.window_title = cached_title_;
-            callback_(ev);
+            ev.captured_context = cached_context_;
+            callback_(std::move(ev));
         }
     }
 
     void release_run_loop() {
-        if (CFRunLoopRef loop = run_loop_.exchange(nullptr, std::memory_order_acq_rel)) {
-            CFRelease(loop);
+        CFRunLoopRef loop = nullptr;
+        {
+            std::lock_guard lock(run_loop_mutex_);
+            loop = run_loop_;
+            run_loop_ = nullptr;
         }
+        if (loop) CFRelease(loop);
     }
 
-    void run_polling_fallback() {
+    void run_polling_fallback(const std::atomic<bool>& stop_requested) {
         std::string last_app;
         std::string last_title;
-        while (running_.load(std::memory_order_relaxed)) {
+        while (!stop_requested.load(std::memory_order_acquire)) {
             if (auto active = query_active_window()) {
                 if (active->app_name != last_app || active->window_title != last_title) {
                     CaptureEvent ev;
@@ -212,7 +220,7 @@ private:
                     ev.timestamp_secs = now_secs();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
-                    callback_(ev);
+                    callback_(std::move(ev));
                     last_app = active->app_name;
                     last_title = active->window_title;
                 }
@@ -222,14 +230,16 @@ private:
     }
 
     InputCallback callback_;
-    std::atomic<bool> running_{false};
     CFMachPortRef tap_ = nullptr;
     CFRunLoopSourceRef run_loop_source_ = nullptr;
-    std::atomic<CFRunLoopRef> run_loop_{nullptr};  // published by run(), read by stop()
+    // stop() and the hook thread touch the same retained CF object. The mutex protects the
+    // pointee lifetime, not merely the pointer value: release cannot run until a concurrent
+    // CFRunLoopStop has returned.
+    std::mutex run_loop_mutex_;
+    CFRunLoopRef run_loop_ = nullptr;
 
     // Foreground-window cache. Hook-thread-only (see refresh_active_window).
-    std::string cached_app_;
-    std::string cached_title_;
+    std::shared_ptr<const CaptureContext> cached_context_;
     double last_window_refresh_secs_ = 0.0;
 };
 

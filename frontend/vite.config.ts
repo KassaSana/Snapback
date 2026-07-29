@@ -12,15 +12,20 @@ export default defineConfig({
     include: ["tests/**/*.test.tsx"],
     setupFiles: ["tests/setup.ts"],
     coverage: {
-      // Report-only for now (no thresholds). NOTE: this measures the vitest
-      // component suite only. Pure-logic modules (insightsMetrics, healthPoll,
-      // permissionWizardState, apiMappers, utils, …) are covered by the
-      // `tsx tests/*.test.ts` scripts, so their numbers here read artificially
-      // low. See docs/TEST_BACKLOG.md #5.
+      // This measures the Vitest component suite. Pure-logic modules also have
+      // lightweight `tsx tests/*.test.ts` coverage, but those scripts do not feed V8's
+      // aggregate. Floors are rounded down from the 2026-07-26 measured baseline so CI
+      // catches regressions without pretending the component-only number is total coverage.
       provider: "v8",
       reporter: ["text", "html"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/main.tsx", "src/vite-env.d.ts"],
+      thresholds: {
+        statements: 76,
+        branches: 66,
+        functions: 74,
+        lines: 77,
+      },
     },
   },
   clearScreen: false,
