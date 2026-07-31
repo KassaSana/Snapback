@@ -101,7 +101,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 15 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
 | 16 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
 | 17 | ~~**9.2** version, **9.7** empty states, **9.8** single-instance~~ | **9.2 done 2026-07-22; 9.7 and 9.8 done 2026-07-26** — this row sat stale for three days claiming two finished items were open |
-| 18 | **7.6** (UI slice), **7.8** | 7.5 done 2026-07-22; 7.6's native delete-session command exists as of 2026-07-29 but nothing renders it. 7.8 is a `decision` |
+| 18 | ~~**7.6**~~, **7.8** | **7.6 done 2026-07-30** — delete-session UI, open data folder, and a legible Markdown export. 7.8 is a `decision` and all that is left in this row |
 | 19 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
 | 20 | **4.4** perf gate, then measure 7.12 | 7.13 done 2026-07-22 and 7.12 done 2026-07-29 — but neither was *measured*, and 7.11's missing large fixture is the entry point |
 | 21 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
@@ -318,7 +318,18 @@ internals, and the benchmark harness.
   **Regression test must fail first:** seed >10,000 predictions across several days, assert
   the weekly `sample_count` exceeds 10,000, watch it go red against today's code.
 
-- **7.2 — Hourly analytics are bucketed in UTC and presented as local time.** `S`
+- **7.2 — PARTLY STALE, corrected 2026-07-30.** `S` The UTC-bucketing half **was already
+  fixed** and this entry never said so: `AppState::analytics()` calls
+  `local_hour_from_rfc3339(prediction.timestamp)`, not the character-slicing `timestamp_hour()`
+  this text describes. Found while picking work off this file — the third time an item here has
+  described a gap that the code had already closed (see 0.3 and the note on trusting this file).
+
+  **Still open** is the second half below: `cutoff_rfc3339()` treats "1 day" as a rolling
+  24 hours rather than the user's calendar day. The Review surface now *labels* its windows
+  "Last 24 hours" / "Last 7 days" (9.7), so the UI is honest about it; whether the underlying
+  window should change is a product decision, not a bug.
+
+  The original finding was:
 
   `timestamp_hour()` (`state.cpp:51`) slices characters 11–12 out of strings built by
   `now_rfc3339()` (`state.cpp:69`), which uses `gmtime_r`/`gmtime_s` and appends `Z` — UTC.
@@ -517,13 +528,26 @@ internals, and the benchmark harness.
   **Delete a single session landed 2026-07-29** — `delete_session` in `commands.hpp`, backed
   by `Storage::delete_session` and `AppState::delete_session`. It clears live engine state
   when the deleted session is the active one, and returns whether a row was actually removed
-  so the UI can tell a stale list entry from a successful delete. Note the native command
-  exists and is under test, but **no React surface calls it yet** — `api.deleteSession` is
-  wired in `frontend/src/api.ts` and nothing renders a button. That UI is the remaining
-  slice.
+  so the UI can tell a stale list entry from a successful delete.
 
-  Still absent: **the delete-session UI**; export my data in a legible form
-  (`export_training_data` produces ML-shaped CSV); open the data folder.
+  **DONE 2026-07-30.** The three remaining slices landed together:
+
+  - **Delete-session UI** — the Insights card lists each session with a two-step delete.
+    `useInsights` prunes the row locally *before* refetching, because `refreshInsights`
+    swallows its errors by design and would otherwise leave a deleted session on screen; a
+    regression test drives the failing-refetch path specifically. The `false` return is
+    surfaced as "That session was already gone" rather than "deleted".
+  - **Open the data folder** — `open_data_folder` in `commands.hpp`, backed by
+    `src/app/reveal_path.hpp`. `NSWorkspace` on macOS and `ShellExecuteW` on Windows, so
+    neither starts a shell or a child process; POSIX spawns `xdg-open` with an argv array. The
+    command returns the path whether or not the open succeeded, because "here is where it is"
+    is the only answer an unsupported platform can give.
+  - **Export my data in a legible form** — `export_my_data`, backed by
+    `src/app/data_export.hpp`, writes one Markdown file of sessions and the windows captured
+    during them. The renderer is pure and takes already-fetched rows, which is what makes the
+    Markdown-table escaping testable: an unescaped `|` in a window title shifts every later
+    column and quietly turns the archive into an inaccurate record. Truncation is stated in
+    the file rather than applied silently.
 
   For an app whose core function is recording every keystroke and window title, "you may
   inspect and destroy what I collected" isn't a nice-to-have — it's what makes local-only
@@ -856,11 +880,31 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 3 — Cross-platform breadth & packaging
 
-- **3.0 — Autostart on macOS and Linux.** `M`
-  `autostart.cpp:77-81` is a hard-coded `return false` off Windows, so the settings toggle
-  correctly greys out — the feature is simply absent. Needs a launchd `LaunchAgent` plist
-  (`~/Library/LaunchAgents/`) on macOS and a systemd **user** unit on Linux. Concrete scope of
-  the follow-up noted on 1.3.
+- **3.0 — DONE 2026-07-30.** `M` — autostart on macOS and Linux. macOS installs a launchd
+  `LaunchAgent` plist in `~/Library/LaunchAgents`; Linux writes a systemd **user** unit *and*
+  the `graphical-session.target.wants` symlink that `systemctl --user enable` would create —
+  writing the unit alone leaves it installed-but-off, which would show a checked toggle with
+  nothing starting. Neither backend spawns `launchctl` or `systemctl`.
+
+  Both mechanisms live in their own translation units
+  (`src/app/autostart_launchd.cpp`, `src/app/autostart_systemd.cpp`) that **compile and are
+  tested on every OS**, with the target directory passed in as an argument. That is a direct
+  answer to **11.7**: the tests run against a temp directory and cannot register anything to
+  start at login. It is not hypothetical — the first run after the launchd backend landed,
+  the *old* `test_autostart.cpp` case (which asserted "no backend off Windows" by calling
+  `set_autostart_enabled(true)`) registered the **test binary** as a real login item on the
+  dev Mac. A test asserting a no-op stops being harmless the moment the no-op gains an
+  implementation.
+
+  Escaping is the part with teeth in both: XML for the plist (`&` in a path makes it
+  unparseable, and launchd ignores a malformed agent *silently*), and systemd's `%` specifier
+  for the unit (`%h` expands to the home directory). Generated plist output was checked with
+  `plutil -lint`. Neither backend sets `KeepAlive`/`Restart=`, so a login item cannot relaunch
+  itself when the user quits.
+
+  Not covered: desktops that do not integrate with systemd never reach
+  `graphical-session.target`, so the unit is written but never triggered there. The XDG
+  `~/.config/autostart/*.desktop` fallback is the follow-up if a Linux user reports it.
 
 - **3.1 — macOS tray + native overlay. DONE 2026-07-28.** `M` — second ADR-0002 v1 release
   blocker cleared. Scope was settled 2026-07-25 by
@@ -1253,6 +1297,16 @@ structure alone — a real review would likely find more.
   `tests/test_autostart.cpp:26` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
   that the write succeeds, so a passing suite depends on ambient machine state rather than on
   our code.
+
+  **Windows is still the open half.** The macOS and Linux backends added by 3.0 on 2026-07-30
+  take their target directory as an argument, so `test_autostart_launchd.cpp` and
+  `test_autostart_systemd.cpp` run entirely inside a temp directory — that shape is the fix
+  this item is asking for, and it can be copied onto the registry backend by injecting the key
+  path. **This stopped being theoretical on 2026-07-30:** the first suite run after the launchd
+  backend landed left a real `~/Library/LaunchAgents/com.snapback.app.plist` on the dev Mac,
+  pointing at `build/snapback_tests`, because the old "no backend off Windows" case called
+  `set_autostart_enabled(true)` expecting a no-op. It was caught by the test failing for a
+  different reason and removed by hand.
 
   **Measured flake rate: 2 of the first 6 observed Windows job runs (~33%), alternating
   between the two jobs on identical code.**
