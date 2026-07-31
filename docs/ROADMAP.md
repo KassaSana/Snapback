@@ -1462,7 +1462,26 @@ structure alone — a real review would likely find more.
   probabilities sum to 1; and monotonicity where the model claims it (more thrash never
   *decreases* distraction risk). Would have caught 5.2 and 5.3 mechanically.
 
-- **11.3 — Golden-file test for the feature vector.** `S`
+- **11.3 — ALREADY DONE; entry was stale, corrected 2026-07-31.** `S` No code was written for
+  this. `fixtures/feature_parity/golden.json` and
+  `TEST_CASE("feature vectors match the checked-in golden fixture")` already exist and do
+  exactly what the item asks: replay each scenario, then diff all 31 features **by name at
+  their index** against the checked-in file, plus a count assertion. Comparing name-at-index
+  is what makes it catch a *reordering* and not merely a value change. It is JSON rather than
+  the CSV the item imagined, which changes nothing.
+
+  Verified live rather than assumed, because a golden test that never actually compares is the
+  obvious way for this to be quietly worthless: perturbing one value in `golden.json` fails the
+  test, and the clean fixture passes 172 assertions.
+
+  **This is the fourth time an item here has described a gap the code had already closed** —
+  see 0.3, 7.2, and the note on trusting this file. The instruction at the top is load-bearing:
+  *when an item claims something is missing, check whether it is actually missing before
+  rebuilding it.* Checking cost two minutes; rebuilding it would have cost an afternoon and
+  produced a second, competing golden fixture.
+
+  The original finding was:
+
   The feature-vector order is declared a contract with the model and the CSV exporter
   (CLAUDE.md), enforced only by the dual-language parity job. A checked-in golden CSV for a
   fixed input, diffed on every run, makes a reordering fail loudly and locally rather than in
