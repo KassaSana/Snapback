@@ -465,6 +465,38 @@ internals, and the benchmark harness.
   Options: clamp `focus_score` in the guardrails; drop score from surfaces showing state; or
   document them as "model opinion" vs "policy verdict" and label them so in the UI.
 
+- **7.18 — The drift guardrail *upgrades* DISTRACTED to PSEUDO_PRODUCTIVE.** `S` `decision`
+  — **settle with 7.7; they are the same seam.** Found 2026-07-31 by 11.2's property tests.
+
+  `apply_focus_guardrails()` excludes only `DEEP_FOCUS` from the drift branch:
+
+  ```cpp
+  } else if (drift >= kDriftPseudo && scores.focus_state != "DEEP_FOCUS") {
+      scores.focus_state = "PSEUDO_PRODUCTIVE";
+  ```
+
+  So a row the model called **DISTRACTED**, whose `distraction_risk` sits under the mode's
+  threshold, gets **softened** when drift is high. Minimal repro: probabilities
+  `{0.30, 0.25, 0.25, 0.20}` (argmax DISTRACTED, risk 0.30, Normal threshold 0.70) with
+  `drift = 0.60` comes out `PSEUDO_PRODUCTIVE` — which scores **50 instead of 25**.
+
+  **Why this is a decision and not a patch.** Guardrails exist to catch distraction, so a
+  guardrail that makes a distracted user look better reads as an oversight — and the explicit
+  protection of `DEEP_FOCUS` on the same line suggests the author was thinking about which
+  states to exempt and missed one. But changing it changes the meaning of **every stored
+  prediction**, moves the classifier parity fixture, and lands in the same territory as 7.7:
+  what is the model's opinion allowed to say versus what is policy allowed to overrule. This
+  file's own warning applies — *a third of the open backlog is decisions mistaken for bugs, and
+  that mistake has twice produced a "fix" that had to be reverted.*
+
+  Options: exclude `DISTRACTED` from the drift branch as well; make the branch explicitly
+  ordered (policy may only lower a state); or document the drift rule as "re-classify
+  ambiguous productivity" and accept that it can raise a weakly-distracted row.
+
+  **Pinned meanwhile.** `tests/test_classifier_properties.cpp` carries a characterization test
+  that asserts the *current* behaviour, so it cannot change silently — and so that settling
+  this item produces a failing test pointing right at it.
+
 - **7.8 — `set_focus_mode` permanently rewrites the user's default.** `S` `decision`
 
   `set_focus_mode()` (`state.cpp:324`) sets the live mode *and* writes
@@ -1395,7 +1427,34 @@ structure alone — a real review would likely find more.
   crash blinds us to everything after it. Register test cases as separate CTest entries, or
   shard the binary, so a crash costs one result instead of the run.
 
-- **11.2 — Property-based tests for the numeric core.** `M`
+- **11.2 — DONE 2026-07-31.** `M` `tests/test_classifier_properties.cpp` asserts eight
+  properties over 5,000 generated feature vectors × 3 focus modes — **186,380 assertions**
+  covering score ranges, label validity, determinism, thrash monotonicity, and the ONNX
+  normalisation seam.
+
+  **It earned its keep on the first run: see 7.18.** The property "guardrails only ever move
+  the state toward distraction" failed on 246 assertions, and the cause is a real asymmetry —
+  the drift branch exempts `DEEP_FOCUS` but not `DISTRACTED`, so a weakly-distracted row gets
+  *upgraded*. That is the thing this item promised ("would have caught 5.2 and 5.3
+  mechanically") and it delivered on a defect nobody had filed.
+
+  Two choices in how it is written, both of which are the point rather than incidental:
+
+  - **The seed is fixed** (`0x5EEDC0FFEE1234`). A property test that draws fresh randomness
+    each run turns a real defect into an intermittent one and teaches everyone to re-run it —
+    exactly the failure mode 11.1 spent this week untangling out of the capture layer. Same
+    corpus every run, every host; widening it is a deliberate edit.
+  - **The generator is adversarial on purpose.** One draw in eight is negative, enormous, or
+    exactly zero. Feature extraction is supposed to keep these sane, but the classifier is a
+    separate module and its guarantees must not rest on its caller behaving — a snapshot
+    replayed from an older build can hand it anything.
+
+  **The failing property was pinned, not deleted.** Weakening a test until it passes is how a
+  finding gets lost. The guaranteed half (the DISTRACTED-forcing conditions) is asserted as a
+  property; the divergence is a characterization test that fails the moment 7.18 is settled.
+
+  The original finding was:
+
   `features.cpp` and `classifier.cpp` are pure functions over a feature vector — the ideal
   target for property testing, and currently covered only by example-based cases. Properties
   worth asserting: `focus_score` always in `[0,100]`; `distraction_risk` always in `[0,1]`;
