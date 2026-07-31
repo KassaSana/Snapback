@@ -158,11 +158,6 @@ PomodoroStatus AppState::start_pomodoro() {
     return start_pomodoro_unlocked(steady_now_ms());
 }
 
-PomodoroStatus AppState::start_pomodoro_for_test(std::int64_t now_ms) {
-    std::lock_guard lock(mutex_);
-    return start_pomodoro_unlocked(now_ms);
-}
-
 PomodoroStatus AppState::stop_pomodoro() {
     std::lock_guard lock(mutex_);
     pomodoro_.stop();

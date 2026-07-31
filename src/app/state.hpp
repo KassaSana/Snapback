@@ -149,22 +149,37 @@ public:
     void submit_label(const std::string& session_id, FocusLabel label, const std::string& source,
                       std::optional<std::string> notes = std::nullopt);
 
-    // Test/headless seam: run one captured event through the same prediction path.
-    void process_event_for_test(const CaptureEvent& event);
-
     // True once the user has gone AFK (no input for the idle threshold). Flips back on
     // the next real input. The engine tick maintains it; the frontend gets an "idle" event.
     bool is_idle() const;
 
-    // Test/headless seam for the idle wiring: apply one idle-detection step at `now_ms`
-    // (had_input = an input event was seen since the last step) and return the edge.
-    IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
+private:
+    // ROADMAP 7.14: the three seams below used to be public.
+    //
+    // They exist because the engine tick is the only production caller of the idle and
+    // pomodoro state machines, and it reads the clock itself — so a deterministic test had to
+    // pass `now_ms` in by hand. 11.4's injected clock removed that need for
+    // `start_pomodoro_for_test`, which is **deleted**: a test sets a `ManualClock` and calls
+    // the real `start_pomodoro()`.
+    //
+    // The remaining three cannot be deleted the same way, because their production entry
+    // point is the tick *thread* rather than a method — driving them through public API would
+    // mean running the engine and waiting, which is the sleep-based testing 11.4 exists to
+    // avoid. So they are private, reachable only through `AppStateTestAccess`
+    // (`tests/app_state_test_access.hpp`). That is a smaller claim than "gone", and the
+    // difference is stated honestly on 7.14: they are no longer *public API* — nothing outside
+    // the tests can call them, and they cannot be mistaken for supported behaviour — but they
+    // are still compiled in. Closing that gap needs a synchronous `tick_once` seam, which is a
+    // design question rather than an access-control one.
+    friend struct AppStateTestAccess;
 
-    // Deterministic seams for the same timer operations used by IPC/engine_tick.
-    PomodoroStatus start_pomodoro_for_test(std::int64_t now_ms);
+    // Run one captured event through the same prediction path the tick uses.
+    void process_event_for_test(const CaptureEvent& event);
+    // Apply one idle-detection step at `now_ms` (had_input = an input event was seen since
+    // the last step) and return the edge.
+    IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
     std::optional<PomodoroStatus> update_pomodoro_for_test(std::int64_t now_ms);
 
-private:
     void start_engine_impl(InputHook* hook);
     // A tick's writes, computed under mutex_ (no storage I/O) and flushed later under
     // storage_mutex_. Keeping persistence out of the state lock is what stops a disk

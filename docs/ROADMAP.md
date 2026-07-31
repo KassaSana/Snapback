@@ -729,7 +729,32 @@ internals, and the benchmark harness.
 
 ### Hygiene
 
-- **7.14 — Test-only methods on the production `AppState` class.** `S`
+- **7.14 — DONE 2026-07-31.** `S` **None of the four is public API any more**, verified by
+  compiling a non-friend caller and watching all three surviving ones fail with *"is a private
+  member of `snapback::AppState`"*.
+
+  - **`start_pomodoro_for_test` is deleted outright.** 11.4's injected clock made it
+    redundant: its test now sets a `ManualClock` and calls the real `start_pomodoro()`, which
+    is strictly better than what it replaced — it exercises the production path instead of a
+    parallel one that could drift from it.
+  - **The other three are private**, reachable only through `AppStateTestAccess`
+    (`tests/app_state_test_access.hpp`), which `AppState` befriends and nothing else can use.
+    49 call sites converted mechanically.
+
+  **What is honestly *not* fixed.** The item says these are "public production API compiled
+  into the shipping binary." The public half is fixed; **the compiled-in half is not.** Those
+  three cannot be deleted the way the pomodoro one was, because their production caller is the
+  engine *tick thread* rather than a method — driving them through public API would mean
+  starting the engine and waiting out real durations, which is exactly the sleep-based testing
+  11.4 exists to avoid. Closing that gap needs a synchronous `tick_once` seam, which is a
+  design question and not an access-control one. Recorded rather than glossed, because "no
+  longer public" and "gone" are different claims and only one of them is true.
+
+  `start_engine_for_test(InputHook*)` is deliberately left alone and is **not** an instance of
+  this problem: injecting a fake hook is ordinary dependency injection, not a workaround for
+  an unreachable clock.
+
+  The original finding was:
 
   `process_event_for_test`, `update_idle_for_test`, `start_pomodoro_for_test`, and
   `update_pomodoro_for_test` (`state.hpp`) are public production API compiled into the
