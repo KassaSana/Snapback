@@ -1487,7 +1487,33 @@ structure alone — a real review would likely find more.
   fixed input, diffed on every run, makes a reordering fail loudly and locally rather than in
   a cross-language job people may not read.
 
-- **11.4 — A deterministic clock, injected.** `M`
+- **11.4 — PARTLY DONE 2026-07-31.** `M` `src/util/clock.hpp` defines a two-method `Clock`
+  (monotonic `steady_ms()` + wall `wall_time()`) with a `SystemClock` for production, and
+  `AppState` takes an optional `Clock*` alongside its existing optional `Logger*` — same
+  injection idiom, so every existing call site compiles unchanged. `now_rfc3339()` and
+  `steady_now_ms()` stopped being static and now read through the seam, which is the point:
+  reading the time is something an *instance* does, not something any code can do from
+  anywhere. `tests/manual_clock.hpp` holds the fake, deliberately under `tests/` — shipping a
+  test clock in `src/` would be a poor answer to 7.14.
+
+  **Two clocks, not one, and that is load-bearing.** Wall time can jump backwards across a DST
+  change or an NTP correction; a duration derived from it goes negative and an idle timer
+  concludes the user has been away for -1 hour. Only `steady_ms()` is used for elapsed time,
+  and the seam makes that case *testable* rather than merely asserted in a comment.
+
+  **What is NOT done: Storage still reads its own clock.** The first draft of the test
+  asserted a session's `started_at` carried the injected time and failed with today's real
+  date — **sessions are stamped by `Storage`, not by `AppState`.** Storage has six
+  `utc_now_rfc3339()` call sites plus two SQL `CURRENT_TIMESTAMP` uses, and injecting there
+  means changing how `Storage` is constructed (`open`, `open_memory`, and its move
+  semantics), which is a separate change rather than a bigger version of this one. The item
+  stays open for that half; the claim made here is scoped to `AppState` and no wider.
+
+  **This unblocks 7.14**, which is the reason to have done it: all four `_for_test` methods
+  are `AppState` methods that exist only to pass `now_ms` in by hand.
+
+  The original finding was:
+
   Time is read directly in at least three places (`state.cpp:69`, `:82`,
   `storage.cpp`'s `CURRENT_TIMESTAMP`). This forces sleep-based tests, blocks testing
   idle/pomodoro/throttle interactions at real durations, and is the direct cause of the

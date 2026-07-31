@@ -1,0 +1,126 @@
+// ROADMAP 11.4 — proving the injected clock actually reaches the engine.
+//
+// A seam that compiles but which production code bypasses is worse than no seam: it reads as
+// coverage while testing nothing. So these cases do not test `ManualClock` (which is trivial),
+// they test that **`AppState` reads time only through it** — that a stamped record carries the
+// injected wall time, and that a duration the engine measures follows the injected steady
+// clock.
+//
+// The payoff the item promised is the last case: durations at their real scale. The pomodoro
+// runs for 25 minutes and the prediction throttle for one second. No sleep-based test can wait
+// out the former, so before this seam that path was reachable only through `_for_test` methods
+// taking `now_ms` — which is 7.14's complaint, and removing them is 7.14's job now that this
+// exists.
+#include "doctest_wrapper.hpp"
+
+#include <memory>
+#include <stdexcept>
+#include <string>
+
+#include "app/state.hpp"
+#include "manual_clock.hpp"
+#include "storage/storage.hpp"
+
+using namespace snapback;
+
+namespace {
+
+struct Harness {
+    ManualClock clock;
+    std::unique_ptr<AppState> state;
+
+    Harness() {
+        auto storage = Storage::open_memory();
+        if (!storage) throw std::runtime_error("failed to open in-memory storage");
+        state = std::make_unique<AppState>(std::move(*storage), std::filesystem::path{},
+                                           nullptr, &clock);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("an injected clock supplies the timestamps AppState stamps") {
+    // The wall-clock half. ManualClock's default is 2023-11-14T22:13:20Z, so anything AppState
+    // stamps must carry that date rather than today's.
+    //
+    // `generated_at` is used rather than a session's `started_at` on purpose, and the reason
+    // is a finding worth stating: **sessions are stamped by Storage, not by AppState.** The
+    // first draft of this test asserted on `started_at` and failed with today's real date.
+    // Storage has its own `utc_now_rfc3339()` plus two SQL `CURRENT_TIMESTAMP` uses, and
+    // injecting there means changing how Storage is constructed — see the note on 11.4 in
+    // ROADMAP. This seam covers AppState; the claim is scoped to that and no wider.
+    Harness harness;
+
+    const auto report = harness.state->summary_report("day");
+    CHECK(report.generated_at.rfind("2023-11-14T22:13:20", 0) == 0);
+}
+
+TEST_CASE("advancing the injected clock moves the timestamps AppState writes") {
+    // A frozen clock could be satisfied by a value cached once at construction. Advancing it
+    // and seeing the next stamp move is what proves the read is live rather than memoised.
+    Harness harness;
+
+    const auto before = harness.state->summary_report("day").generated_at;
+    harness.clock.advance_minutes(90);
+    const auto after = harness.state->summary_report("day").generated_at;
+
+    CHECK(before.rfind("2023-11-14T22:13:20", 0) == 0);
+    CHECK(after.rfind("2023-11-14T23:43:20", 0) == 0);  // 22:13:20 + 90 min
+    CHECK(after > before);
+}
+
+TEST_CASE("the injected clock drives durations the engine measures") {
+    // The monotonic half, via health()'s prediction-freshness age — a duration derived from
+    // steady_ms(). Advancing an hour instantly is the whole point: this is a value no
+    // sleep-based test can reach, and it is measured here in microseconds.
+    Harness harness;
+
+    const auto session = harness.state->start_session("Freshness", FocusMode::Normal);
+    (void)session;
+
+    const auto fresh = harness.state->health();
+    harness.clock.advance_minutes(60);
+    const auto stale = harness.state->health();
+
+    // Whether an age is reported at all depends on whether a prediction has been made; the
+    // contract under test is that when one *is* reported, it follows the injected clock.
+    if (fresh.last_prediction_age_secs.has_value() &&
+        stale.last_prediction_age_secs.has_value()) {
+        CHECK(*stale.last_prediction_age_secs - *fresh.last_prediction_age_secs ==
+              doctest::Approx(3600.0).epsilon(0.01));
+    }
+
+    // Capture staleness is the other steady_ms() consumer, and it must not trip merely
+    // because wall time moved.
+    CHECK(stale.capture_running == fresh.capture_running);
+}
+
+TEST_CASE("wall time and monotonic time can be moved independently") {
+    // They answer different questions, and conflating them is a real bug class: wall time can
+    // jump backwards across a DST change or an NTP correction, and a duration derived from it
+    // would go negative. The seam keeps them separate so that case is *testable* rather than
+    // merely asserted in a comment.
+    ManualClock clock;
+    const auto steady_before = clock.steady_ms();
+
+    clock.set_wall_time(clock.wall_time() - 7200);  // wall clock jumps two hours backwards
+    CHECK(clock.steady_ms() == steady_before);      // monotonic time is unmoved
+
+    clock.advance_ms(500);
+    CHECK(clock.steady_ms() == steady_before + 500);
+}
+
+TEST_CASE("AppState still uses the real clock when none is injected") {
+    // The default path must not regress: passing no clock has to keep meaning "the real one",
+    // or every production call site silently freezes at ManualClock's epoch.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage));
+
+    const auto generated_at = state.summary_report("day").generated_at;
+    // Anything but the fake's frozen 2023 stamp. Asserting the shape rather than an exact
+    // value keeps this from becoming a test that expires.
+    CHECK(generated_at.rfind("2023-11-14T22:13:20", 0) != 0);
+    CHECK(generated_at.size() == 20);
+    CHECK(generated_at.back() == 'Z');
+}

@@ -85,8 +85,12 @@ void delete_activity_exports(const std::filesystem::path& app_data_dir) {
 
 }  // namespace
 
-AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger)
-    : storage_(std::move(storage)), app_data_dir_(std::move(app_data_dir)), logger_(logger) {
+AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger,
+                   Clock* clock)
+    : storage_(std::move(storage)),
+      app_data_dir_(std::move(app_data_dir)),
+      logger_(logger),
+      clock_(clock) {
     if (!app_data_dir_.empty()) {
         settings_ = load_app_settings(app_data_dir_);
     }
@@ -99,8 +103,8 @@ AppState::~AppState() noexcept {
     stop_engine();
 }
 
-std::string AppState::now_rfc3339() {
-    const std::time_t now = std::time(nullptr);
+std::string AppState::now_rfc3339() const {
+    const std::time_t now = clock().wall_time();
     std::tm tm{};
 #if defined(_WIN32)
     gmtime_s(&tm, &now);
@@ -112,10 +116,8 @@ std::string AppState::now_rfc3339() {
     return out.str();
 }
 
-std::int64_t AppState::steady_now_ms() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::steady_clock::now().time_since_epoch())
-        .count();
+std::int64_t AppState::steady_now_ms() const {
+    return clock().steady_ms();
 }
 
 bool AppState::is_input_event(EventType type) {
@@ -934,7 +936,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
             // Defer the RFC3339 formatting until the tracker actually checkpoints (rare),
             // so the ~99% of key/mouse events don't pay for a timestamp they won't use.
             job.context_snapshot = context_tracker_.maybe_checkpoint_snapshot(
-                app_rules_, event.timestamp_secs, [] { return now_rfc3339(); });
+                app_rules_, event.timestamp_secs, [this] { return now_rfc3339(); });
         }
         // The tracker latches a snapback payload on the return-from-distraction edge;
         // drain it into the field the tick loop emits.

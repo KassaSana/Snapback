@@ -27,6 +27,7 @@
 #include "app/settings.hpp"
 #include "storage/storage.hpp"
 #include "types.hpp"
+#include "util/clock.hpp"
 #include "util/logger.hpp"
 #include "util/ranked_mutex.hpp"
 
@@ -36,11 +37,17 @@ inline constexpr std::int64_t kCaptureStallThresholdMs = 30'000;
 
 class AppState {
 public:
-    // `logger` is optional (defaults to null) so existing call sites keep compiling
-    // unchanged; pass one to route non-fatal warnings (e.g. a failed auto-label save)
-    // somewhere other than stderr.
+    // `logger` and `clock` are both optional (default null) so existing call sites keep
+    // compiling unchanged. Pass a logger to route non-fatal warnings (e.g. a failed
+    // auto-label save) somewhere other than stderr.
+    //
+    // ROADMAP 11.4: pass a `clock` to make time an input rather than an ambient fact. The
+    // engine's idle threshold, the pomodoro's 25 minutes, and the one-prediction-per-second
+    // throttle are all durations no sleep-based test can reach, so before this seam they were
+    // exercised only through `_for_test` methods that took `now_ms` as an argument — which is
+    // exactly what 7.14 objects to. A test clock can advance an hour instantly.
     explicit AppState(Storage storage, std::filesystem::path app_data_dir = {},
-                      Logger* logger = nullptr);
+                      Logger* logger = nullptr, Clock* clock = nullptr);
     ~AppState() noexcept;
 
     // Spawn capture and the engine tick thread.
@@ -185,8 +192,13 @@ private:
     static std::vector<std::string> normalize_privacy_exclusions(
         std::vector<std::string> exclusions);
     bool is_private_event_unlocked(const CaptureEvent& event) const;
-    static std::string now_rfc3339();
-    static std::int64_t steady_now_ms();  // monotonic clock for idle timing
+    // ROADMAP 11.4: these were static and read the process clock directly. They now go
+    // through clock(), so an injected clock reaches every timestamp the engine writes and
+    // every duration it measures. Non-static as a consequence, which is the point — reading
+    // the time is now something an *instance* does, not something anyone can do from
+    // anywhere.
+    std::string now_rfc3339() const;
+    std::int64_t steady_now_ms() const;  // monotonic clock for idle timing
     static bool is_input_event(EventType type);  // key/mouse = real user activity
     // Advance the idle state machine one step. Requires mutex_. Returns the transition
     // edge so the tick loop can emit it. Sets idle_ from the resulting state.
@@ -195,6 +207,13 @@ private:
     // Injected logger if one was passed in, otherwise the stderr fallback below.
     Logger& log() { return logger_ ? *logger_ : local_logger_; }
     const Logger& log() const { return logger_ ? *logger_ : local_logger_; }
+    // Same shape for time: injected clock if one was passed in, otherwise the real one.
+    // Written as an if rather than a ternary because the two arms differ in both type and
+    // constness, which the conditional operator will not reconcile.
+    const Clock& clock() const {
+        if (clock_) return *clock_;
+        return local_clock_;
+    }
 
     // Lock order (deadlock-free): always acquire mutex_ BEFORE storage_mutex_, never the
     // reverse. Activity deletion additionally takes activity_boundary_mutex_ between them;
@@ -218,6 +237,8 @@ private:
     std::filesystem::path app_data_dir_;
     Logger* logger_ = nullptr;
     Logger local_logger_{std::cerr};
+    Clock* clock_ = nullptr;
+    SystemClock local_clock_;
     CaptureThread capture_;
     FeatureExtractor features_;
     Classifier classifier_;
