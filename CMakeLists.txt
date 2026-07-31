@@ -22,13 +22,21 @@ include(FetchContent)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # --- Always fetched: header-only deps used by the core lib and the tests. ---
+#
+# ROADMAP 8.6: every GIT_TAG here is a commit SHA, never a tag name. A git tag is a mutable
+# pointer — upstream can move it, and a fetched dependency is source we compile into the
+# shipping binary without review. Dependabot watches our Actions and our npm tree; it does
+# not watch these, so nothing else would notice. `scripts/check_dependency_pins.py` fails CI
+# if a pin here is anything but a 40-character hash, and `docs/dependencies.md` records how
+# to bump one. The human-readable version stays in the comment beside each pin, because a
+# bare hash tells a reader nothing.
 FetchContent_Declare(nlohmann_json
   GIT_REPOSITORY https://github.com/nlohmann/json
-  GIT_TAG        v3.11.3
+  GIT_TAG        9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03  # v3.11.3
   GIT_SHALLOW    TRUE)
 FetchContent_Declare(doctest
   GIT_REPOSITORY https://github.com/doctest/doctest
-  GIT_TAG        v2.4.11
+  GIT_TAG        ae7a13539fb71f270b87eb2e874fbac80bc8dda2  # v2.4.11
   GIT_SHALLOW    TRUE)
 set(DOCTEST_NO_INSTALL ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(nlohmann_json doctest)
@@ -202,9 +210,14 @@ endif()
 
 # --- the desktop app (later phases) ---
 if(SNAPBACK_BUILD_APP)
+  # ROADMAP 8.6. Note this is the *commit* the 0.12.0 tag points at, not the tag object:
+  # webview uses an annotated tag, so `git ls-remote refs/tags/0.12.0` answers 782c12cc,
+  # which is the tag object and is not a commit CMake can check out. The peeled ref
+  # (`refs/tags/0.12.0^{}`) is the commit below. json and doctest use lightweight tags, where
+  # the distinction does not arise — which is exactly why it is easy to get wrong here.
   FetchContent_Declare(webview
     GIT_REPOSITORY https://github.com/webview/webview
-    GIT_TAG        0.12.0)
+    GIT_TAG        3ab4b5d722438fc8a13e6ca830c5e2372d19a01d)  # 0.12.0
   FetchContent_MakeAvailable(webview)
 
   add_executable(snapback

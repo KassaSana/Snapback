@@ -839,7 +839,32 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   then decides whether SQLCipher (4.5) is a requirement or a nice-to-have, and is the honest
   input to 7.6.
 
-- **8.6 — No dependency pinning story for FetchContent.** `S`
+- **8.6 — DONE 2026-07-31.** `S` All three git dependencies are pinned to commit SHAs with
+  the human-readable version in a trailing comment; SQLite already had a `URL_HASH`.
+  [`docs/dependencies.md`](dependencies.md) is the update process, and
+  `scripts/check_dependency_pins.py` fails CI on any `GIT_TAG` that is not a 40-character
+  hash or any `URL` without a `URL_HASH` — verified by putting `v2.4.11` back and watching it
+  go red. Policies that live only in a doc are the ones that rot.
+
+  **The trap worth knowing about: `webview` uses an *annotated* tag.** `git ls-remote
+  refs/tags/0.12.0` answers `782c12cc`, which is the **tag object**, not a commit — CMake
+  cannot check that out. The commit is the peeled ref, `refs/tags/0.12.0^{}`. `nlohmann/json`
+  and `doctest` use lightweight tags where the distinction does not arise, so the obvious
+  command gives the right answer for two of the three pins and the wrong one for the third.
+  That asymmetry is written down in `docs/dependencies.md` because it is exactly the kind of
+  thing that gets rediscovered by a failing build a year from now.
+
+  **`GIT_SHALLOW TRUE` survives the change** — GitHub serves `git fetch --depth 1 <sha>`, so
+  the pins cost nothing in clone time. That was measured, not assumed. And the pins were
+  verified by configuring a *fresh* build tree: `FetchContent` will not re-fetch into an
+  existing `build/_deps`, so a configure against the usual tree would have proved nothing.
+
+  **Deliberately still open:** nothing watches these projects for advisories. Pinning buys
+  reproducibility, not currency, and arguably makes staleness *more* likely now that no tag
+  quietly pulls in patch releases. That trade is recorded in `docs/dependencies.md` and
+  belongs with 8.5's threat model rather than here.
+
+  The original finding was:
 
   C++ deps come via CMake `FetchContent` (`webview/webview`, `nlohmann/json`, `doctest`).
   Dependabot covers Actions and frontend npm but **not** these — nothing watches them for
