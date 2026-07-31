@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "app/state.hpp"
+#include "app_state_test_access.hpp"
 #include "bench_util.hpp"
 #include "capture/active_window.hpp"
 #include "capture/ring_buffer.hpp"
@@ -166,7 +167,7 @@ void bench_lock_contention() {
                 // +2s per event so the 1 Hz prediction throttle never skips: every event
                 // runs the full classify + insert under the lock (worst-case hold).
                 ts += 2.0;
-                state->process_event_for_test(
+                AppStateTestAccess::process_event(*state, 
                     make_event(EventType::KeyPress, ts, kApp, kLongTitle));
             }
         });

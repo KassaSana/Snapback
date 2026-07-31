@@ -218,13 +218,17 @@ target_compile_definitions(snapback_tests PRIVATE
 
 if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_benchmarks benchmarks/bench_snapback.cpp)
-  target_include_directories(snapback_benchmarks PRIVATE benchmarks)
+  # ROADMAP 7.14: the benchmarks drive the same private event seam the tests do, through the
+  # same AppStateTestAccess friend. `tests/` is on the include path for that one header —
+  # benchmarks are non-shipping harness code, same category as tests, and the alternative is
+  # putting a test hook back on the production class's public API.
+  target_include_directories(snapback_benchmarks PRIVATE benchmarks tests)
   # snapback_app already PUBLIC-links snapback_core + snapback_capture transitively.
   target_link_libraries(snapback_benchmarks PRIVATE snapback_app)
 
   # Targeted hot-path micro-benchmarks (producer/consumer/lock/SQLite).
   add_executable(snapback_hotpath_benchmarks benchmarks/bench_hotpaths.cpp)
-  target_include_directories(snapback_hotpath_benchmarks PRIVATE benchmarks)
+  target_include_directories(snapback_hotpath_benchmarks PRIVATE benchmarks tests)
   target_link_libraries(snapback_hotpath_benchmarks PRIVATE snapback_app)
 endif()
 

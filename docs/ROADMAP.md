@@ -754,6 +754,20 @@ internals, and the benchmark harness.
   this problem: injecting a fake hook is ordinary dependency injection, not a workaround for
   an unreachable clock.
 
+  > **The benchmarks were a caller too, and only CI knew.** The first version of this change
+  > converted the call sites in `tests/` and never grepped `benchmarks/` — but
+  > `bench_snapback.cpp` and `bench_hotpaths.cpp` drive the same event seam, and
+  > `Benchmark smoke / linux` went red on PR #40 with *"is private within this context"*.
+  > It is invisible locally because benchmarks build only behind
+  > `-DSNAPBACK_BUILD_BENCHMARKS=ON`, which no default configure sets, so a full local
+  > `ctest` run stays green while the tree does not compile.
+  >
+  > **A grep scoped to `tests/` is not a grep for "who calls this."** Both benchmark targets
+  > now take `tests/` on their include path and go through the same `AppStateTestAccess`
+  > friend — non-shipping harness code either way, and the alternative was putting a test hook
+  > back on the production class's public API. Verified afterwards by configuring with
+  > benchmarks ON and running `snapback_benchmarks` the way the CI job does.
+
   The original finding was:
 
   `process_event_for_test`, `update_idle_for_test`, `start_pomodoro_for_test`, and
