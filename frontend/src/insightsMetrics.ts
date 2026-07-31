@@ -38,3 +38,14 @@ export const toChronological = (summaries: SessionSummary[]): SessionSummary[] =
 /** Bar height as a percent of the 0–100 focus-score domain, clamped. */
 export const focusBarHeightPct = (avgFocusScore: number): number =>
   Math.max(0, Math.min(100, avgFocusScore));
+
+/**
+ * How a session is named in the delete list (Roadmap 7.6). Also the accessible name of its
+ * delete button, so a destructive control never reads as a bare "Delete" — the user is
+ * about to permanently remove one specific session and the button must say which.
+ *
+ * `recap.goal` and `record.goal` come from different queries and can disagree when a goal
+ * was edited mid-session; the recap is the one the row's numbers describe, so it wins.
+ */
+export const sessionRowLabel = (summary: SessionSummary): string =>
+  summary.recap.goal?.trim() || summary.record.goal?.trim() || "Untitled session";

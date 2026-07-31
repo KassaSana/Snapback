@@ -15,6 +15,7 @@
 
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
+#include "app/reveal_path.hpp"
 #include "app/state.hpp"
 #include "app/support_bundle.hpp"
 #include "app/training_deploy.hpp"
@@ -143,6 +144,25 @@ inline void register_commands(webview::webview& w, AppState& state,
         state.delete_all_activity_data();
         return json(nullptr);
     });
+    // Roadmap 7.6: "delete everything" was the only eraser available, which makes removing
+    // one bad session cost the user their whole history. Reports whether a row was actually
+    // removed rather than returning null, so the UI can distinguish a stale list entry from
+    // a successful delete instead of silently claiming success for an id that never existed.
+    bind_cmd(w, "delete_session", [&state](const json& a) {
+        auto sid = detail::validate_required_text("Session ID",
+                                                  a.at("sessionId").get<std::string>(),
+                                                  detail::kMaxSessionIdLen);
+        return json(state.delete_session(sid));
+    });
+    // Roadmap 7.6: "local-only" is a claim the user cannot check without being able to reach
+    // the files. `path` comes back whether or not the file manager opened, because "we could
+    // not open it, here is where it is" is still an answer the user can act on — and on a
+    // platform with no backend it is the *only* one.
+    bind_cmd(w, "open_data_folder", [data_dir](const json&) {
+        return json{{"path", data_dir.string()},
+                    {"supported", reveal_supported()},
+                    {"opened", reveal_directory(data_dir)}};
+    });
     bind_cmd(w, "get_goal_categories", [&state](const json&) {
         return json(state.goal_categories());
     });
@@ -212,6 +232,17 @@ inline void register_commands(webview::webview& w, AppState& state,
     bind_cmd(w, "export_training_data", [&state, data_dir](const json& a) {
         const auto out_dir = data_dir / "exports" / "training";
         return json(state.export_training_data(out_dir, detail::opt_string(a, "sessionId")));
+    });
+
+    // Roadmap 7.6: the legible counterpart to export_training_data. Separate command and
+    // separate directory because they answer different questions and have different audiences
+    // — one is for a training script, this one is for the person being recorded.
+    bind_cmd(w, "export_my_data", [&state, data_dir](const json&) {
+        const auto result = state.export_personal_data(data_dir / "exports" / "personal");
+        return json{{"outputPath", result.output_path},
+                    {"sessionCount", result.session_count},
+                    {"windowCount", result.window_count},
+                    {"truncated", result.truncated}};
     });
 
     // --- Training pipeline ---

@@ -15,6 +15,8 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletionStatus, setDeletionStatus] = useState<string | null>(null);
+  const [dataFolderStatus, setDataFolderStatus] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -69,6 +71,45 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
     [saveExclusions, settings],
   );
 
+  // Roadmap 7.6. Deliberately not a toggle or a stored setting — one shot, and the outcome is
+  // reported as text rather than by opening a window the user may not see (on macOS Finder can
+  // come forward behind Snapback's own window, which looks like nothing happened).
+  const openDataFolder = useCallback(async () => {
+    setError(null);
+    setDataFolderStatus(null);
+    try {
+      const result = await api.openDataFolder();
+      if (!result.supported) {
+        setDataFolderStatus(`This build cannot open a file manager. Your data is in ${result.path}`);
+      } else if (result.opened) {
+        setDataFolderStatus(`Opened ${result.path}`);
+      } else {
+        setDataFolderStatus(`Could not open the folder. Your data is in ${result.path}`);
+      }
+    } catch {
+      setError("Could not locate the data folder.");
+    }
+  }, []);
+
+  // Roadmap 7.6. Reports the counts, not just "done": an export that wrote nothing because the
+  // history is empty looks identical to a broken one unless the numbers are on screen.
+  const exportMyData = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setExportStatus(null);
+    try {
+      const result = await api.exportMyData();
+      const sessions = `${result.sessionCount} session${result.sessionCount === 1 ? "" : "s"}`;
+      const windows = `${result.windowCount} captured window${result.windowCount === 1 ? "" : "s"}`;
+      const limited = result.truncated ? " Older sessions were left out." : "";
+      setExportStatus(`Wrote ${sessions} and ${windows} to ${result.outputPath}.${limited}`);
+    } catch {
+      setError("Could not export your data.");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   const deleteAllActivityData = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -92,11 +133,15 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
   return {
     addExclusion,
     busy,
+    dataFolderStatus,
     deleteAllActivityData,
     deletionStatus,
     error,
     exclusionWarning: privacyExclusionWarning(exclusionInput),
     exclusionInput,
+    exportMyData,
+    exportStatus,
+    openDataFolder,
     removeExclusion,
     setExclusionInput,
     setPrivateMode,

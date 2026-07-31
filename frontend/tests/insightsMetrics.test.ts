@@ -4,6 +4,7 @@ import type { SessionSummary } from "../src/api";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
+  sessionRowLabel,
   toChronological,
 } from "../src/insightsMetrics";
 
@@ -57,5 +58,28 @@ assert.equal(list[0].record.sessionId, "a");
 assert.equal(focusBarHeightPct(150), 100);
 assert.equal(focusBarHeightPct(-5), 0);
 assert.equal(focusBarHeightPct(42), 42);
+
+// Row label (Roadmap 7.6): the recap's goal wins, then the record's, then a placeholder —
+// never an empty accessible name on a permanently destructive button.
+const labelled = summary("a", 0, 0, 0);
+assert.equal(sessionRowLabel(labelled), "g");
+
+const recapGoalWins: SessionSummary = {
+  record: { ...labelled.record, goal: "stale goal" },
+  recap: { ...labelled.recap, goal: "edited goal" },
+};
+assert.equal(sessionRowLabel(recapGoalWins), "edited goal");
+
+const onlyRecordGoal: SessionSummary = {
+  record: { ...labelled.record, goal: "record goal" },
+  recap: { ...labelled.recap, goal: "   " },
+};
+assert.equal(sessionRowLabel(onlyRecordGoal), "record goal");
+
+const noGoal: SessionSummary = {
+  record: { ...labelled.record, goal: "" },
+  recap: { ...labelled.recap, goal: "" },
+};
+assert.equal(sessionRowLabel(noGoal), "Untitled session");
 
 console.log("insightsMetrics.test.ts passed");

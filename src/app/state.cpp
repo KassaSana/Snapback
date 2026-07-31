@@ -291,6 +291,41 @@ std::optional<SessionRecord> AppState::get_session(const std::string& session_id
     return storage_.get_session(session_id);
 }
 
+bool AppState::delete_session(const std::string& session_id) {
+    // Same three locks and the same order as delete_all_activity_data, for the same reason:
+    // the activity boundary fences off-lock persistence in engine_tick(), so a tick already
+    // in flight cannot write rows back into a session between the delete and the state
+    // reset. Bumping the epoch also invalidates any event already queued for the UI.
+    std::lock_guard state_lock(mutex_);
+    std::lock_guard activity_lock(activity_boundary_mutex_);
+    std::lock_guard store_lock(storage_mutex_);
+
+    const bool deleted = storage_.delete_session(session_id);
+    if (!deleted) return false;
+
+    activity_epoch_.fetch_add(1, std::memory_order_release);
+
+    // Deleting the session the engine is currently filling would otherwise leave the app
+    // pointing at a row that no longer exists — the next tick would try to persist against
+    // a missing foreign key, and the UI would keep rendering a session the user just
+    // erased. Reset exactly what stop_session() resets, plus the derived prediction state.
+    if (active_session_ && active_session_->session_id == session_id) {
+        pomodoro_.reset();
+        active_session_.reset();
+        features_.reset_for_session(std::nullopt);
+        context_tracker_.reset();
+        context_tracker_.set_goal_categories(settings_.goal_categories);
+        latest_prediction_.reset();
+        latest_snapback_.reset();
+        last_prediction_at_ms_.reset();
+        last_prediction_secs_ = -1.0;
+        prediction_dirty_ = false;
+        hyperfocus_latched_ = false;
+        hyperfocus_minutes_.reset();
+    }
+    return true;
+}
+
 HealthStatus AppState::health() const {
     std::lock_guard lock(mutex_);
     HealthStatus h;
@@ -384,11 +419,9 @@ FocusSummary AppState::focus_summary(std::size_t limit) {
 
 std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
     std::lock_guard lock(storage_mutex_);
-    std::vector<SessionSummary> out;
-    for (auto& record : storage_.recent_sessions(limit)) {
-        out.push_back(SessionSummary{record, storage_.recap(record.session_id)});
-    }
-    return out;
+    // Was 1 + 5N queries (recap() is five statements), all holding storage_mutex_ — which
+    // the engine tick also takes to persist, so opening history could stall capture writes.
+    return storage_.recent_session_summaries(limit);
 }
 
 void AppState::delete_all_activity_data() {
@@ -423,6 +456,57 @@ ExportTrainingResult AppState::export_training_data(
     const std::filesystem::path& out_dir, const std::optional<std::string>& session_id) {
     std::lock_guard lock(storage_mutex_);
     return storage_.export_training_csv(out_dir, session_id);
+}
+
+PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path& out_dir,
+                                                     std::size_t session_limit,
+                                                     std::size_t windows_per_session) {
+    PersonalArchive archive;
+    archive.generated_at = now_rfc3339();
+    archive.app_version = SNAPBACK_VERSION;
+
+    {
+        std::lock_guard lock(storage_mutex_);
+        // One extra of each so truncation is *observed* rather than assumed. Asking for
+        // limit+1 and finding it means "there is more"; asking for limit and finding limit
+        // cannot tell a database with exactly `limit` rows from one with a million.
+        auto summaries = storage_.recent_session_summaries(session_limit + 1);
+        archive.sessions_truncated = summaries.size() > session_limit;
+        if (archive.sessions_truncated) summaries.resize(session_limit);
+
+        archive.sessions.reserve(summaries.size());
+        for (auto& summary : summaries) {
+            PersonalArchiveSession session;
+            auto context =
+                storage_.list_context_snapshots(summary.record.session_id, windows_per_session + 1);
+            session.context_truncated = context.size() > windows_per_session;
+            if (session.context_truncated) context.resize(windows_per_session);
+
+            session.record = std::move(summary.record);
+            session.recap = std::move(summary.recap);
+            session.context = std::move(context);
+            archive.sessions.push_back(std::move(session));
+        }
+    }
+    // Rendering and file IO happen outside the storage lock: the engine tick takes the same
+    // mutex to persist predictions, and writing a multi-megabyte archive under it would stall
+    // capture writes into a bounded ring buffer — the stall-becomes-dropped-events path that
+    // recent_session_summaries exists to avoid.
+
+    PersonalArchiveExport result;
+    result.session_count = archive.sessions.size();
+    for (const auto& session : archive.sessions) result.window_count += session.context.size();
+    result.truncated = archive.sessions_truncated;
+
+    std::filesystem::create_directories(out_dir);
+    const auto path = out_dir / "snapback_my_data.md";
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) throw std::runtime_error("failed to write the data export");
+    out << render_personal_archive(archive);
+    if (!out) throw std::runtime_error("failed to write the data export");
+
+    result.output_path = path.string();
+    return result;
 }
 
 void AppState::set_focus_mode(FocusMode mode) {
@@ -487,13 +571,10 @@ AnalyticsSummary AppState::analytics() const {
             static_cast<double>(bucket.distracted) / static_cast<double>(bucket.count)});
     }
 
-    std::unordered_map<std::string, std::size_t> app_counts;
-    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(200)) {
-        for (const auto& snapshot : const_cast<Storage&>(storage_).list_context_snapshots(
-                 session.session_id, 200)) {
-            if (!snapshot.app_name.empty()) ++app_counts[snapshot.app_name];
-        }
-    }
+    // Was recent_sessions(200) x list_context_snapshots(..., 200) — up to 40,000 fully
+    // materialized rows read under the storage lock to compute a group-by. Same caps, same
+    // answer, one query.
+    const auto app_counts = const_cast<Storage&>(storage_).context_app_counts(200, 200);
     std::vector<AnalyticsApp> apps;
     apps.reserve(app_counts.size());
     for (const auto& [app, count] : app_counts) apps.push_back(AnalyticsApp{app, count});
@@ -528,7 +609,6 @@ SummaryReport AppState::summary_report(const std::string& window) const {
 
     std::size_t distracted = 0;
     std::size_t current_streak = 0;
-    std::unordered_map<std::string, std::size_t> context_counts;
     for (const auto& prediction : const_cast<Storage&>(storage_).predictions_since(cutoff)) {
         ++report.sample_count;
         report.avg_focus_score += prediction.focus_score;
@@ -547,22 +627,32 @@ SummaryReport AppState::summary_report(const std::string& window) const {
             static_cast<double>(distracted) / static_cast<double>(report.sample_count);
     }
 
-    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(500)) {
+    // One pass over sessions that already carry their recap, instead of a recap() (five
+    // queries) per completed session. The cutoff filter stays here rather than moving into
+    // SQL so the 500-session cap keeps applying to the *most recent* sessions first, which
+    // is what the original loop did.
+    for (const auto& summary : const_cast<Storage&>(storage_).recent_session_summaries(500)) {
+        const auto& session = summary.record;
         if (!session.started_at || *session.started_at < cutoff) continue;
         ++report.session_count;
         if (session.status == "COMPLETED") {
             ++report.completed_session_count;
-            report.focus_seconds += const_cast<Storage&>(storage_).recap(session.session_id).duration_secs;
-        }
-        for (const auto& snapshot : const_cast<Storage&>(storage_).list_context_snapshots(
-                 session.session_id, 200)) {
-            if (!snapshot.app_name.empty()) ++context_counts[snapshot.app_name];
+            report.focus_seconds += summary.recap.duration_secs;
         }
     }
+    // Same 500/200 caps as the loop above used, aggregated in SQL rather than by reading up
+    // to 100,000 snapshot rows into memory.
+    const auto context_counts =
+        const_cast<Storage&>(storage_).context_app_counts(500, 200, cutoff);
+    // Highest count wins, ties broken by the lexicographically smaller app name — same rule
+    // as before, but tracking the running best directly instead of re-looking-it-up, since
+    // the counts now arrive in a const map.
+    std::size_t top_count = 0;
     for (const auto& [app, count] : context_counts) {
-        if (report.top_context_app.empty() || count > context_counts[report.top_context_app] ||
-            (count == context_counts[report.top_context_app] && app < report.top_context_app)) {
+        if (report.top_context_app.empty() || count > top_count ||
+            (count == top_count && app < report.top_context_app)) {
             report.top_context_app = app;
+            top_count = count;
         }
     }
     return report;

@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include <sqlite3.h>
 
@@ -194,6 +195,563 @@ TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
     const auto latest = storage->latest_prediction();
     REQUIRE(latest.has_value());
     CHECK(latest->model_id == "heuristic:snapback-features-v1-31");
+}
+
+// --- Schema versioning (Roadmap 7.3) -----------------------------------------------------
+
+TEST_CASE("a fresh database is stamped with the current schema version") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    CHECK(storage->schema_version() == kSchemaVersion);
+}
+
+TEST_CASE("Storage::open stamps a schema version on disk and keeps it across reopens") {
+    TempDir temp;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        CHECK(storage->schema_version() == kSchemaVersion);
+    }
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+}
+
+TEST_CASE("an unversioned database with a full schema is adopted, not rebuilt") {
+    // The case every existing install is in: `user_version` is 0 because versioning did not
+    // exist when the file was written, but the schema is already complete. The runner cannot
+    // distinguish this from a brand-new file, so it replays every migration — which is only
+    // safe because each one is idempotent. What must survive is the data.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("pre-versioning", FocusMode::Normal).session_id;
+    }
+
+    // Rewind the stamp to simulate a database written before this commit existed.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(db, "PRAGMA user_version = 0;", nullptr, nullptr, nullptr) ==
+            SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+    // The session is still there — replaying the baseline did not drop or recreate a table.
+    CHECK(reopened->get_session(session_id).has_value());
+}
+
+TEST_CASE("a legacy database is migrated and then stamped current") {
+    // The 7.3 gap in one test: an on-disk database from an older schema (no model_id, no
+    // user_version) must come out of open() both upgraded *and* versioned, so the next
+    // launch takes the fast path instead of replaying DDL forever.
+    TempDir temp;
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const char* legacy_schema =
+        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, goal TEXT NOT NULL, "
+        "status TEXT NOT NULL, focus_mode TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT);"
+        "CREATE TABLE predictions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, "
+        "focus_score REAL NOT NULL, distraction_risk REAL NOT NULL, focus_state TEXT NOT NULL, "
+        "thrash_score REAL NOT NULL DEFAULT 0.0, drift_score REAL NOT NULL DEFAULT 0.0, "
+        "goal_alignment REAL NOT NULL DEFAULT 0.5, timestamp TEXT NOT NULL);"
+        "INSERT INTO sessions VALUES ('legacy', 'legacy', 'ACTIVE', 'normal', "
+        "'2026-07-11T19:00:00Z', NULL);";
+    REQUIRE(sqlite3_exec(db, legacy_schema, nullptr, nullptr, nullptr) == SQLITE_OK);
+    // A legacy file carries no stamp at all — user_version stays at SQLite's default 0.
+    sqlite3_close(db);
+
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    CHECK(storage->schema_version() == kSchemaVersion);
+    // Tables the legacy schema never had must exist now.
+    CHECK(storage->list_app_rules().empty());
+    CHECK(storage->get_session("legacy").has_value());
+}
+
+TEST_CASE("a database from a newer build is refused instead of opened") {
+    // The failure this prevents is silent and one-directional: a later Snapback could add a
+    // NOT NULL column, and this build's INSERTs — which know nothing about it — would either
+    // fail at runtime or write rows the newer build considers malformed. Downgrading is rare;
+    // corrupting the user's history because of it is unacceptable, so open() fails closed.
+    TempDir temp;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+    }
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto bump = "PRAGMA user_version = " + std::to_string(kSchemaVersion + 1) + ";";
+    REQUIRE(sqlite3_exec(db, bump.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    auto storage = Storage::open(temp.path, &logger);
+
+    CHECK_FALSE(storage.has_value());
+    // Refusing is only useful if the user can tell *why*; a bare nullopt reads as "the app
+    // is broken" rather than "you downgraded".
+    const auto logged = log_out.str();
+    CHECK(logged.find("newer than this build") != std::string::npos);
+}
+
+TEST_CASE("refusing a newer database leaves it untouched") {
+    // The whole point of failing closed is that re-upgrading recovers the user's data. If
+    // the refused open had rewritten the stamp or dropped a table, that would be false.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("from the future", FocusMode::Normal).session_id;
+    }
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto bump = "PRAGMA user_version = " + std::to_string(kSchemaVersion + 5) + ";";
+    REQUIRE(sqlite3_exec(db, bump.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    REQUIRE_FALSE(Storage::open(temp.path).has_value());
+
+    // Put the stamp back the way a newer build would have left it after a downgrade+upgrade
+    // cycle, and the data must still be there.
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto restore = "PRAGMA user_version = " + std::to_string(kSchemaVersion) + ";";
+    REQUIRE(sqlite3_exec(db, restore.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto recovered = Storage::open(temp.path);
+    REQUIRE(recovered.has_value());
+    CHECK(recovered->get_session(session_id).has_value());
+}
+
+// --- Pre-existing database fixtures (Roadmap 7.11) ---------------------------------------
+//
+// Every other test in this file starts from a database this build just created, which means
+// they all agree with themselves by construction. These start from a file some *other*
+// process left behind — the only shape that matters in the field, since CLAUDE.md pins the
+// filename to focoflow.db specifically so earlier installs' data is picked up.
+//
+// The fixtures are built in-process rather than committed as binary .db files on purpose: a
+// checked-in database cannot be code-reviewed, and it silently stops representing "what an
+// old build wrote" the moment someone regenerates it from a current build.
+
+namespace {
+
+// Copies a live database *and its WAL sidecars* to a new directory. Copying while the
+// original connection is still open is what makes the copy dirty: the committed rows are in
+// the -wal file and have not been checkpointed back into the main database yet, which is
+// exactly the on-disk state a killed process leaves behind.
+void copy_db_with_wal(const std::filesystem::path& from_dir,
+                      const std::filesystem::path& to_dir) {
+    std::filesystem::create_directories(to_dir);
+    for (const char* suffix : {"", "-wal", "-shm"}) {
+        const auto src = from_dir / ("focoflow.db" + std::string(suffix));
+        if (!std::filesystem::exists(src)) continue;
+        std::filesystem::copy_file(src, to_dir / src.filename(),
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
+}
+
+}  // namespace
+
+TEST_CASE("committed rows survive an unclean shutdown via WAL recovery") {
+    // For an always-on tray app that users quit with Force Quit or Task Manager, this *is*
+    // the normal shutdown path. Nothing tested it, so a change to journal_mode or a
+    // checkpoint-on-close could have started discarding the last writes of every session
+    // without a single test noticing.
+    TempDir live;
+    TempDir crashed;
+    std::string session_id;
+    {
+        auto storage = Storage::open(live.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("unclean shutdown", FocusMode::Normal).session_id;
+        storage->insert_prediction(prediction(session_id, 71.0, 0.2, "PRODUCTIVE"));
+
+        // Snapshot mid-life: the connection is still open, so the WAL is still dirty.
+        REQUIRE(std::filesystem::exists(live.path / "focoflow.db-wal"));
+        copy_db_with_wal(live.path, crashed.path);
+    }
+
+    auto recovered = Storage::open(crashed.path);
+    REQUIRE(recovered.has_value());
+    CHECK(recovered->get_session(session_id).has_value());
+    const auto predictions = recovered->recent_predictions(10);
+    REQUIRE(predictions.size() == 1);
+    CHECK(predictions[0].focus_score == doctest::Approx(71.0));
+}
+
+TEST_CASE("a corrupt database is refused with a logged reason, not a crash") {
+    // A truncated or overwritten file is what a full disk or a bad sync client leaves. The
+    // requirement is not that we repair it — it is that the app says so instead of dying or
+    // silently starting with an empty history.
+    TempDir temp;
+    {
+        std::ofstream junk(temp.path / "focoflow.db", std::ios::binary);
+        junk << "this is definitely not a SQLite database, not even a little bit";
+    }
+
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    auto storage = Storage::open(temp.path, &logger);
+
+    CHECK_FALSE(storage.has_value());
+    const auto logged = log_out.str();
+    CHECK(logged.find("ERROR") != std::string::npos);
+    CHECK(logged.find("focoflow.db") != std::string::npos);
+}
+
+TEST_CASE("an aged database is pruned on open") {
+    // Retention has only ever been exercised against rows inserted moments earlier in the
+    // same process. This is the real shape: a file that sat on disk long enough for its
+    // contents to age past the window, opened fresh.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("aged", FocusMode::Normal).session_id;
+    }
+
+    // Backdate a prediction well past kDefaultRetentionDays by writing it directly, the way
+    // an install from months ago would have left it.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto insert =
+        "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, "
+        "timestamp) VALUES ('" + session_id + "', 40.0, 0.4, 'PRODUCTIVE', '2020-01-01T00:00:00Z');";
+    REQUIRE(sqlite3_exec(db, insert.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->recent_predictions(10).empty());
+    // Pruning runtime rows must not take the session with it — sessions are the user's
+    // history, predictions are regenerable telemetry.
+    CHECK(reopened->get_session(session_id).has_value());
+}
+
+TEST_CASE("a database carrying unknown tables and columns still opens") {
+    // "Foreign-authored" in practice means a file a newer build, a migration we later revert,
+    // or a user's own sqlite3 session has added things to. A superset must be tolerated:
+    // every write in this codebase names its columns, so extra ones are simply not our
+    // business.
+    TempDir temp;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+    }
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const char* foreign_objects =
+        "CREATE TABLE someone_elses_table (id INTEGER PRIMARY KEY, note TEXT);"
+        "ALTER TABLE sessions ADD COLUMN experimental_tag TEXT;";
+    REQUIRE(sqlite3_exec(db, foreign_objects, nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    const auto session = reopened->create_session("after foreign columns", FocusMode::Normal);
+    CHECK(reopened->get_session(session.session_id).has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+}
+
+TEST_CASE("reopening a populated database preserves every table's contents") {
+    // The blunt end-to-end version: write one of everything, close, reopen, and read it all
+    // back. Catches a migration that drops and recreates a table — which the IF NOT EXISTS
+    // baseline cannot do today, but a future ALTER-heavy migration easily could.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("round trip", FocusMode::Deep).session_id;
+        storage->insert_prediction(prediction(session_id, 80.0, 0.1, "DEEP_FOCUS"));
+        storage->insert_label(session_id, FocusLabel::Productive, "manual");
+        storage->upsert_app_rule("figma.com", AppRuleKind::Allow, "design work");
+        FeatureVector f;
+        f.seconds_since_session_start() = 42.0;
+        storage->insert_feature_snapshot(session_id, f);
+    }
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->get_session(session_id).has_value());
+    CHECK(reopened->recent_predictions(10).size() == 1);
+    REQUIRE(reopened->list_app_rules().size() == 1);
+    CHECK(reopened->list_app_rules()[0].pattern == "figma.com");
+    // recap() reads across predictions and snapback_events, so a non-zero average is proof
+    // the reopened handle can still join the tables, not just SELECT from one.
+    const auto recap = reopened->recap(session_id);
+    CHECK(recap.avg_focus_score == doctest::Approx(80.0));
+}
+
+// --- Batched history/analytics queries (Roadmap 7.12) ------------------------------------
+
+namespace {
+
+ContextSnapshotDto snapshot(const std::string& app, const std::string& timestamp) {
+    ContextSnapshotDto snap;
+    snap.app_name = app;
+    snap.window_title = app + " window";
+    snap.summary = "in " + app;
+    snap.timestamp = timestamp;
+    return snap;
+}
+
+// Two-digit second suffix, so snapshots sort in insertion order under ORDER BY timestamp.
+std::string ts(int second) {
+    std::ostringstream out;
+    out << "2026-07-11T19:" << std::setfill('0') << std::setw(2) << (second / 60) << ":"
+        << std::setw(2) << (second % 60) << "Z";
+    return out.str();
+}
+
+}  // namespace
+
+TEST_CASE("recent_session_summaries matches the per-session recap it replaces") {
+    // The whole point of the batched query is that it is a pure performance change. Anything
+    // it computes differently from recap() is a silent behavior change in the history view,
+    // so compare the two directly rather than asserting hand-written expected numbers.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    // Deliberately uneven: a session with predictions of both kinds, one with none at all,
+    // and one still running. Sessions with no predictions are the case where a JOIN-based
+    // rewrite most easily drops a row entirely.
+    const auto busy = storage->create_session("busy", FocusMode::Deep);
+    storage->insert_prediction(prediction(busy.session_id, 90.0, 0.1, "DEEP_FOCUS"));
+    storage->insert_prediction(prediction(busy.session_id, 30.0, 0.9, "DISTRACTED"));
+    storage->insert_prediction(prediction(busy.session_id, 55.0, 0.4, "PRODUCTIVE"));
+    storage->stop_session(busy.session_id);
+
+    const auto quiet = storage->create_session("quiet", FocusMode::Normal);
+    storage->stop_session(quiet.session_id);
+
+    const auto running = storage->create_session("running", FocusMode::Normal);
+
+    const auto summaries = storage->recent_session_summaries(10);
+    REQUIRE(summaries.size() == 3);
+
+    // Order must match recent_sessions() exactly, since callers render it directly.
+    const auto records = storage->recent_sessions(10);
+    REQUIRE(records.size() == summaries.size());
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        CHECK(summaries[i].record.session_id == records[i].session_id);
+
+        const auto expected = storage->recap(records[i].session_id);
+        const auto& actual = summaries[i].recap;
+        CHECK(actual.session_id == expected.session_id);
+        CHECK(actual.goal == expected.goal);
+        CHECK(actual.avg_focus_score == doctest::Approx(expected.avg_focus_score));
+        CHECK(actual.avg_distraction_risk == doctest::Approx(expected.avg_distraction_risk));
+        CHECK(actual.deep_focus_pct == doctest::Approx(expected.deep_focus_pct));
+        CHECK(actual.thrash_spikes == expected.thrash_spikes);
+        CHECK(actual.snapback_count == expected.snapback_count);
+        CHECK(actual.duration_secs == expected.duration_secs);
+    }
+    // Deliberately no assertion that `running` sorts first. started_at comes from
+    // now_rfc3339(), which has whole-second resolution, so three sessions created in the
+    // same second tie under ORDER BY started_at DESC and their relative order is undefined.
+    // That is ROADMAP 7.16's "ordering within a second is undefined" showing up in practice
+    // — matching recent_sessions() above is the invariant that actually holds.
+    CHECK(running.session_id != busy.session_id);
+}
+
+TEST_CASE("recent_session_summaries keeps aggregates attached under same-second ties") {
+    // The defect this guards: recent_session_summaries runs three queries that each
+    // re-derive "the most recent N sessions". started_at has only second resolution
+    // (ROADMAP 7.16), so sessions created in one test body — or by a user starting and
+    // stopping quickly — all tie. If two of those queries broke the tie differently, a
+    // session would appear in the result with its aggregates silently zeroed.
+    //
+    // Every session here shares one started_at, so the ordering is decided entirely by the
+    // tiebreak. Each carries a distinct focus score, which is what makes a mismatch visible:
+    // without a total order the aggregate rows land on the wrong sessions or nowhere.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    std::unordered_map<std::string, double> expected_focus;
+    for (int i = 0; i < 8; ++i) {
+        const auto session = storage->create_session("tie" + std::to_string(i), FocusMode::Normal);
+        const double focus = 10.0 * (i + 1);
+        storage->insert_prediction(prediction(session.session_id, focus, 0.2, "PRODUCTIVE"));
+        storage->backdate_session_for_test(session.session_id, "2026-07-11T19:00:00Z");
+        expected_focus[session.session_id] = focus;
+    }
+
+    const auto summaries = storage->recent_session_summaries(5);
+    REQUIRE(summaries.size() == 5);
+    for (const auto& summary : summaries) {
+        CAPTURE(summary.record.session_id);
+        // The aggregate must belong to *this* session, not to whichever one a second query
+        // happened to pick for the same slot.
+        CHECK(summary.recap.avg_focus_score ==
+              doctest::Approx(expected_focus.at(summary.record.session_id)));
+    }
+
+    // And the selection must be repeatable: same input, same five sessions, same order.
+    const auto again = storage->recent_session_summaries(5);
+    REQUIRE(again.size() == summaries.size());
+    for (std::size_t i = 0; i < again.size(); ++i) {
+        CHECK(again[i].record.session_id == summaries[i].record.session_id);
+    }
+    // recent_sessions() must agree too — session_history renders whichever one it is given.
+    const auto records = storage->recent_sessions(5);
+    REQUIRE(records.size() == summaries.size());
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        CHECK(records[i].session_id == summaries[i].record.session_id);
+    }
+}
+
+TEST_CASE("recent_session_summaries honours its limit and handles an empty database") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    CHECK(storage->recent_session_summaries(10).empty());
+
+    for (int i = 0; i < 5; ++i) {
+        const auto session = storage->create_session("s" + std::to_string(i), FocusMode::Normal);
+        storage->stop_session(session.session_id);
+    }
+    CHECK(storage->recent_session_summaries(3).size() == 3);
+    CHECK(storage->recent_session_summaries(50).size() == 5);
+}
+
+TEST_CASE("context_app_counts caps snapshots per session") {
+    // The subtle half of the rewrite. The old loop asked for at most N snapshots per session
+    // via list_context_snapshots' LIMIT; counting every row instead would let one very long
+    // session dominate the app ranking, which is a different answer, not a faster one.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto marathon = storage->create_session("marathon", FocusMode::Normal);
+    for (int i = 0; i < 10; ++i) {
+        storage->save_context_snapshot(marathon.session_id, snapshot("Cursor", ts(i)));
+    }
+    const auto brief = storage->create_session("brief", FocusMode::Normal);
+    for (int i = 0; i < 2; ++i) {
+        storage->save_context_snapshot(brief.session_id, snapshot("Safari", ts(i)));
+    }
+
+    const auto capped = storage->context_app_counts(10, 3);
+    CHECK(capped.at("Cursor") == 3);  // capped, not 10
+    CHECK(capped.at("Safari") == 2);  // under the cap, so untouched
+
+    const auto uncapped = storage->context_app_counts(10, 100);
+    CHECK(uncapped.at("Cursor") == 10);
+}
+
+TEST_CASE("context_app_counts takes the oldest snapshots within the cap") {
+    // list_context_snapshots orders ASC, so its LIMIT keeps the *earliest* rows. A rewrite
+    // that ordered DESC would still respect the cap while counting different apps.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("ordered", FocusMode::Normal);
+    storage->save_context_snapshot(session.session_id, snapshot("First", ts(1)));
+    storage->save_context_snapshot(session.session_id, snapshot("Second", ts(2)));
+    storage->save_context_snapshot(session.session_id, snapshot("Third", ts(3)));
+
+    const auto counts = storage->context_app_counts(10, 1);
+    CHECK(counts.size() == 1);
+    CHECK(counts.count("First") == 1);
+}
+
+TEST_CASE("context_app_counts honours the session limit and skips blank app names") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto older = storage->create_session("older", FocusMode::Normal);
+    storage->save_context_snapshot(older.session_id, snapshot("Older", ts(1)));
+    const auto newer = storage->create_session("newer", FocusMode::Normal);
+    storage->save_context_snapshot(newer.session_id, snapshot("Newer", ts(1)));
+    // A snapshot with no app name must not become an empty-string entry in the ranking.
+    storage->save_context_snapshot(newer.session_id, snapshot("", ts(2)));
+
+    // Backdate the older session explicitly. Both were created in the same wall-clock
+    // second, and started_at has only second resolution (ROADMAP 7.16), so without this the
+    // LIMIT 1 below would pick between two tied rows arbitrarily and the test would flake.
+    storage->backdate_session_for_test(older.session_id, "2020-01-01T00:00:00Z");
+
+    const auto one_session = storage->context_app_counts(1, 100);
+    CHECK(one_session.count("Newer") == 1);
+    CHECK(one_session.count("Older") == 0);
+    CHECK(one_session.count("") == 0);
+}
+
+TEST_CASE("context_app_counts filters by session start when given a cutoff") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("recent", FocusMode::Normal);
+    storage->save_context_snapshot(session.session_id, snapshot("Cursor", ts(1)));
+
+    // The session was created moments ago, so a far-future cutoff excludes it and a past
+    // one keeps it.
+    CHECK(storage->context_app_counts(10, 100, std::string("2099-01-01T00:00:00Z")).empty());
+    const auto included =
+        storage->context_app_counts(10, 100, std::string("2000-01-01T00:00:00Z"));
+    CHECK(included.at("Cursor") == 1);
+}
+
+// --- Single-session deletion (Roadmap 7.6) -----------------------------------------------
+
+TEST_CASE("delete_session removes the session and every row collected during it") {
+    // Until this existed the only eraser was delete_all_activity_data, so removing one bad
+    // session cost the user their entire history.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    const auto doomed = storage->create_session("doomed", FocusMode::Normal);
+    storage->insert_prediction(prediction(doomed.session_id, 60.0, 0.3, "PRODUCTIVE"));
+    storage->insert_label(doomed.session_id, FocusLabel::Productive, "manual");
+    storage->save_context_snapshot(doomed.session_id, snapshot("Cursor", ts(1)));
+    FeatureVector f;
+    f.seconds_since_session_start() = 12.0;
+    storage->insert_feature_snapshot(doomed.session_id, f);
+    storage->stop_session(doomed.session_id);
+
+    // A second session must be entirely unaffected — the failure this guards against is a
+    // DELETE that forgot its WHERE clause.
+    const auto keeper = storage->create_session("keeper", FocusMode::Normal);
+    storage->insert_prediction(prediction(keeper.session_id, 70.0, 0.2, "PRODUCTIVE"));
+    storage->save_context_snapshot(keeper.session_id, snapshot("Safari", ts(1)));
+
+    CHECK(storage->delete_session(doomed.session_id));
+
+    CHECK_FALSE(storage->get_session(doomed.session_id).has_value());
+    CHECK(storage->list_context_snapshots(doomed.session_id, 10).empty());
+    CHECK(storage->get_session(keeper.session_id).has_value());
+    const auto remaining = storage->recent_predictions(10);
+    REQUIRE(remaining.size() == 1);
+    CHECK(remaining[0].session_id == keeper.session_id);
+    CHECK(storage->list_context_snapshots(keeper.session_id, 10).size() == 1);
+}
+
+TEST_CASE("delete_session reports whether anything was deleted") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("once", FocusMode::Normal);
+
+    CHECK(storage->delete_session(session.session_id));
+    // Returning false rather than throwing keeps a double-click on Delete harmless, while
+    // still letting the caller tell "already gone" from "deleted".
+    CHECK_FALSE(storage->delete_session(session.session_id));
+    CHECK_FALSE(storage->delete_session("no-such-session"));
+}
+
+TEST_CASE("delete_session preserves app rules") {
+    // App rules are user configuration, not captured activity — the same boundary
+    // delete_all_activity_data draws.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    storage->upsert_app_rule("figma.com", AppRuleKind::Allow, std::nullopt);
+    const auto session = storage->create_session("with rules", FocusMode::Normal);
+
+    REQUIRE(storage->delete_session(session.session_id));
+    CHECK(storage->list_app_rules().size() == 1);
 }
 
 TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash spikes") {

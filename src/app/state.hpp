@@ -23,6 +23,7 @@
 #include "engine/idle_detector.hpp"
 #include "engine/pomodoro.hpp"
 #include "snapback/tracker.hpp"
+#include "app/data_export.hpp"
 #include "app/settings.hpp"
 #include "storage/storage.hpp"
 #include "types.hpp"
@@ -84,9 +85,22 @@ public:
     FocusSummary focus_summary(std::size_t limit = 200);
     std::vector<SessionSummary> session_history(std::size_t limit);
     void delete_all_activity_data();
+
+    // Removes one session and everything recorded during it. Returns false when no such
+    // session exists. If it is the session currently being filled, the live engine state is
+    // reset too, so nothing keeps writing to a row that is gone.
+    bool delete_session(const std::string& session_id);
     ExportTrainingResult export_training_data(
         const std::filesystem::path& out_dir,
         const std::optional<std::string>& session_id = std::nullopt);
+
+    // Roadmap 7.6: the human-readable counterpart to export_training_data — what Snapback
+    // recorded *about you*, as Markdown, rather than a feature matrix for a model. Caps are
+    // arguments rather than constants so a test can drive truncation with three rows instead
+    // of thousands, and so the honest "there is more than this" line has a test at all.
+    PersonalArchiveExport export_personal_data(const std::filesystem::path& out_dir,
+                                               std::size_t session_limit = 200,
+                                               std::size_t windows_per_session = 500);
     void set_focus_mode(FocusMode mode);
     AppSettings settings() const;
     PrivacySettings privacy_settings() const;

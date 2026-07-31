@@ -163,12 +163,15 @@ All optional. Read in `main.cpp`.
 | `SNAPBACK_LOG` | `TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`/`OFF` (default `INFO`) |
 | `SNAPBACK_FRONTEND_URL` | Point the webview at a dev server — **debug builds only**; release ignores it (Roadmap 8.4, and see 8.7) |
 | `SNAPBACK_OVERLAY_TEST` | Pop a sample overlay on launch |
-| `SNAPBACK_NOTIFICATION_TEST` | Fire a sample notification on launch |
+| `SNAPBACK_NOTIFICATION_TEST` | Fire a sample notification on launch (Windows only — macOS returns `false` until 3.3) |
+| `SNAPBACK_GUI_SESSION_SMOKE` | Start and stop a session through storage on the UI thread, write `gui_session_smoke.ok` into the data directory, then terminate. What the launch smokes on both OSes assert against |
 | `SNAPBACK_BENCH_MINUTES` | Benchmark trace length |
 
 Default data directory: `%APPDATA%\snapback` on Windows, `~/.snapback` elsewhere
 (`main.cpp:51-61`). **The database file is named `focoflow.db`** and that is deliberate —
-install compatibility across releases.
+install compatibility across releases. Since Roadmap 7.3 the file also carries a schema
+version in `PRAGMA user_version`; a database written by a *newer* Snapback than the one you
+are running is refused rather than opened, and the log says so.
 
 ## 7. Benchmarks
 
@@ -191,5 +194,6 @@ install compatibility across releases.
 | macOS tray icon appears but its menu never responds | The `NSStatusItem` was created off the main thread. `Tray::install()` returns early rather than crashing in that case, so a missing or dead menu is the only symptom. |
 | App window is blank | `frontend/dist` was not built before the app. |
 | `ctest` finds no tests | You built `snapback` but not `snapback_tests`. |
+| `database schema version N is newer than this build understands` | You downgraded Snapback, or pointed an old build at a newer profile's data directory. The file is left untouched — run the newer build again, or point `SNAPBACK_DATA_DIR` elsewhere. Opening it anyway could write rows the newer build considers malformed, so it fails closed (Roadmap 7.3). |
 | A doc references a file that isn't there | Run `python3 scripts/check_doc_paths.py` — it is the CI guard for exactly that. |
 | X11 macros (`KeyPress`, `None`, `Status`) break a Linux build | Something included `webview.h` directly. `app/webview_compat.hpp` is the only legal include site (Roadmap 6.3). |

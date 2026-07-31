@@ -47,10 +47,28 @@ TEST_CASE("autostart_enabled round-trips through the real Windows registry") {
     if (had_prior_state) set_autostart_enabled(true);
 }
 
+#elif defined(__APPLE__)
+
+// Roadmap 3.0 gave macOS a launchd backend. This test case deliberately does NOT call
+// set_autostart_enabled: that writes ~/Library/LaunchAgents, and when this file still had the
+// "no backend off Windows" case below, the first run after the backend landed registered the
+// *test binary* to launch at every login. That is Roadmap 11.7's complaint reproduced exactly
+// — a test asserting a no-op stops being harmless the moment the no-op becomes an
+// implementation.
+//
+// The install/remove round trip is covered hermetically in test_autostart_launchd.cpp, which
+// passes a temp directory. Nothing here may touch the developer's real login items.
+TEST_CASE("autostart reports a launchd backend on macOS") {
+    CHECK(autostart_supported());
+    // Reads the filesystem and answers either way without throwing; which answer depends on
+    // whether the developer running the suite has Snapback set to start at login.
+    (void)autostart_enabled();
+}
+
 #else
 
-// No backend yet on this platform (Roadmap 1.3 follow-up: launchd/systemd) — must
-// degrade to a documented no-op, never throw or silently claim success.
+// No backend on this platform — must degrade to a documented no-op, never throw or silently
+// claim success. Linux gains a systemd user unit in Roadmap 3.0's second half.
 TEST_CASE("autostart is a documented no-op on platforms without a backend yet") {
     CHECK_FALSE(autostart_supported());
     CHECK_FALSE(autostart_enabled());

@@ -228,6 +228,25 @@ export type PrivacySettings = {
   localOnly: boolean;
 };
 
+// Roadmap 7.6. The counts travel with the path so the UI can say "12 sessions, 340 windows"
+// rather than only naming a file — the difference between "it worked" and "here is what it
+// holds", which is the whole point of a legible export.
+export type MyDataExportResult = {
+  outputPath: string;
+  sessionCount: number;
+  windowCount: number;
+  truncated: boolean;
+};
+
+// Roadmap 7.6. `opened` and `supported` are separate answers: an unsupported platform never
+// opens anything, but a supported one can still be refused by the OS, and the UI says
+// different things about "this build cannot" and "that did not work this time".
+export type OpenDataFolderResult = {
+  opened: boolean;
+  path: string;
+  supported: boolean;
+};
+
 export type AnalyticsHour = {
   hour: number;
   sampleCount: number;
@@ -402,6 +421,29 @@ export const api = {
     return mapPrivacySettings(raw);
   },
   deleteAllActivityData: () => invoke("delete_all_activity_data"),
+  // Resolves false when the session was already gone — the caller should refresh its list
+  // rather than report a successful delete for a row that no longer existed.
+  deleteSession: (sessionId: string) =>
+    invoke<boolean>("delete_session", { sessionId }),
+  exportMyData: async () => {
+    const raw = await invoke<Record<string, unknown>>("export_my_data");
+    return {
+      outputPath: typeof raw.outputPath === "string" ? raw.outputPath : "",
+      sessionCount: Number(raw.sessionCount ?? 0),
+      windowCount: Number(raw.windowCount ?? 0),
+      truncated: Boolean(raw.truncated),
+    } satisfies MyDataExportResult;
+  },
+  // `path` is populated even when `opened` is false, so a platform without a file-manager
+  // backend (or an OS that refused) can still tell the user where their data lives.
+  openDataFolder: async () => {
+    const raw = await invoke<Record<string, unknown>>("open_data_folder");
+    return {
+      opened: Boolean(raw.opened),
+      path: typeof raw.path === "string" ? raw.path : "",
+      supported: Boolean(raw.supported),
+    } satisfies OpenDataFolderResult;
+  },
   getAutostart: async () => {
     const raw = await invoke<Record<string, unknown>>("get_autostart");
     return mapAutostartStatus(raw);

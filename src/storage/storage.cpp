@@ -216,6 +216,18 @@ void ensure_prediction_model_id_column(sqlite3* db) {
              "DEFAULT 'heuristic:snapback-features-v1-31'");
 }
 
+int read_user_version(sqlite3* db) {
+    Stmt version(db, "PRAGMA user_version");
+    if (!version.step_row()) return 0;
+    return sqlite3_column_int(version.get(), 0);
+}
+
+void write_user_version(sqlite3* db, int version) {
+    // PRAGMA does not accept bound parameters, so this is built as text. `version` is an
+    // int from kSchemaVersion, never user input, so there is nothing here to inject.
+    exec(db, ("PRAGMA user_version = " + std::to_string(version)).c_str());
+}
+
 std::string utc_now_rfc3339() {
     const std::time_t now = std::time(nullptr);
     std::tm tm{};
@@ -422,8 +434,18 @@ void Storage::Transaction::commit() {
     done_ = true;
 }
 
-void Storage::migrate() {
-    exec(db_,
+namespace {
+
+// --- Schema migrations -------------------------------------------------------------------
+//
+// Ordered and append-only. `version` is the user_version the database carries *after* the
+// step runs, so the runner applies every entry with version > the stored one. See
+// kSchemaVersion in storage.hpp for the two rules these must obey — in particular that each
+// one is idempotent, because user_version 0 means "fresh file" and "install from before
+// versioning" indistinguishably, and both replay from 0.
+
+void migrate_baseline_schema(sqlite3* db) {
+    exec(db,
          R"sql(
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT PRIMARY KEY,
@@ -556,10 +578,61 @@ void Storage::migrate() {
             CREATE INDEX IF NOT EXISTS idx_context_snapshots_session_ts
                 ON context_snapshots(session_id, timestamp);
          )sql");
-    // Older databases predate model provenance. Upgrade this one column in place;
-    // the broader ordered migration system remains Roadmap 7.3.
-    ensure_prediction_model_id_column(db_);
 }
+
+// Databases written before model provenance existed lack predictions.model_id. Kept as a
+// separate step rather than folded into the baseline because a pre-versioning install
+// already has the `predictions` table, so `CREATE TABLE IF NOT EXISTS` would skip it and
+// the column would never appear.
+void migrate_prediction_model_id(sqlite3* db) { ensure_prediction_model_id_column(db); }
+
+struct Migration {
+    int version;
+    const char* name;
+    void (*apply)(sqlite3* db);
+};
+
+constexpr Migration kMigrations[] = {
+    {1, "baseline schema", migrate_baseline_schema},
+    {2, "predictions.model_id", migrate_prediction_model_id},
+};
+
+static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
+static_assert(kMigrations[std::size(kMigrations) - 1].version == kSchemaVersion,
+              "kSchemaVersion must match the last migration; bump one when you add the other");
+
+}  // namespace
+
+void Storage::migrate() {
+    const int from = read_user_version(db_);
+
+    // A database stamped newer than this build understands was written by a later version
+    // of Snapback. Opening it anyway is the dangerous option, not the friendly one: our
+    // INSERTs omit columns that build may have added as NOT NULL, and our reads would
+    // silently ignore data the user can still see in the newer build. Refuse loudly and
+    // leave the file untouched — Storage::open turns this into a logged nullopt.
+    if (from > kSchemaVersion) {
+        throw std::runtime_error("database schema version " + std::to_string(from) +
+                                 " is newer than this build understands (" +
+                                 std::to_string(kSchemaVersion) +
+                                 "); it was written by a later version of Snapback");
+    }
+
+    if (from == kSchemaVersion) return;  // already current; skip the DDL entirely
+
+    // One transaction for the whole upgrade. SQLite makes DDL transactional, so a failure
+    // half-way through rolls back to the version we started at rather than leaving a
+    // database that is neither the old shape nor the new one.
+    Transaction tx(*this);
+    for (const Migration& migration : kMigrations) {
+        if (migration.version <= from) continue;
+        migration.apply(db_);
+    }
+    write_user_version(db_, kSchemaVersion);
+    tx.commit();
+}
+
+int Storage::schema_version() { return read_user_version(db_); }
 
 void Storage::finalize_cache() {
     // Cached statements must be finalized before sqlite3_close, or close returns BUSY.
@@ -690,7 +763,8 @@ SessionRecord Storage::stop_session(const std::string& session_id) {
 std::optional<SessionRecord> Storage::active_session() {
     Stmt stmt(db_,
               "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-              "FROM sessions WHERE status = 'ACTIVE' ORDER BY started_at DESC LIMIT 1");
+              "FROM sessions WHERE status = 'ACTIVE' "
+              "ORDER BY started_at DESC, session_id DESC LIMIT 1");
     if (!stmt.step_row()) return std::nullopt;
     return read_session(stmt.get());
 }
@@ -698,11 +772,141 @@ std::optional<SessionRecord> Storage::active_session() {
 std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
     Stmt stmt(db_,
               "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-              "FROM sessions ORDER BY started_at DESC LIMIT ?1");
+              "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1");
     stmt.bind(1, static_cast<std::int64_t>(limit));
     std::vector<SessionRecord> rows;
     while (stmt.step_row()) rows.push_back(read_session(stmt.get()));
     return rows;
+}
+
+std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit) {
+    // All three queries below re-derive "the most recent `limit` sessions" independently,
+    // so they must agree on *which* sessions those are. `started_at` has only second
+    // resolution (ROADMAP 7.16), which makes ties common rather than exotic, and SQLite does
+    // not promise that two differently-shaped queries break a tie the same way. If they
+    // disagreed, a session present in the result would miss its aggregates and silently
+    // report zeros. `session_id` is the primary key, so adding it to the ORDER BY gives a
+    // total order and removes the ambiguity.
+    //
+    // It is a determinism tiebreak, not a chronological one: session_id is a random UUIDv4,
+    // so this makes the order *stable*, not *correct*. Recovering true sub-second order is
+    // 7.16's job.
+
+    // Query 1: the sessions themselves, plus the duration recap() computes separately.
+    // Ordering and LIMIT match recent_sessions() exactly so the two stay interchangeable.
+    std::vector<SessionSummary> out;
+    std::unordered_map<std::string, std::size_t> index_of;
+    {
+        Stmt stmt(db_,
+                  "SELECT session_id, goal, status, focus_mode, started_at, ended_at, "
+                  "CAST(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
+                  "julianday(started_at)) * 86400) AS INTEGER) "
+                  "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1");
+        stmt.bind(1, static_cast<std::int64_t>(limit));
+        while (stmt.step_row()) {
+            SessionSummary summary;
+            summary.record = read_session(stmt.get());
+            summary.recap.session_id = summary.record.session_id;
+            summary.recap.goal = summary.record.goal;
+            summary.recap.duration_secs =
+                static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 6));
+            index_of.emplace(summary.record.session_id, out.size());
+            out.push_back(std::move(summary));
+        }
+    }
+    if (out.empty()) return out;
+
+    // Query 2: every prediction aggregate recap() computes, grouped in one pass. The
+    // expressions are copied verbatim from recap() — including the deliberate absolute 0.7
+    // thrash bar, which is a product decision documented there and in ROADMAP 5.4, not a
+    // threshold to unify here.
+    {
+        Stmt stmt(db_,
+                  "WITH recent AS (SELECT session_id FROM sessions "
+                  "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
+                  "SELECT p.session_id, "
+                  "COALESCE(AVG(p.focus_score), 0), "
+                  "COALESCE(AVG(p.distraction_risk), 0), "
+                  "COALESCE(100.0 * SUM(CASE WHEN p.focus_state = 'DEEP_FOCUS' THEN 1 ELSE 0 END) / "
+                  "NULLIF(COUNT(*), 0), 0), "
+                  "SUM(CASE WHEN p.distraction_risk >= 0.7 AND p.focus_state = 'DISTRACTED' "
+                  "         THEN 1 ELSE 0 END) "
+                  "FROM predictions p JOIN recent r ON p.session_id = r.session_id "
+                  "GROUP BY p.session_id");
+        stmt.bind(1, static_cast<std::int64_t>(limit));
+        while (stmt.step_row()) {
+            const auto it = index_of.find(column_text(stmt.get(), 0));
+            if (it == index_of.end()) continue;
+            SessionRecap& recap = out[it->second].recap;
+            recap.avg_focus_score = sqlite3_column_double(stmt.get(), 1);
+            recap.avg_distraction_risk = sqlite3_column_double(stmt.get(), 2);
+            recap.deep_focus_pct = sqlite3_column_double(stmt.get(), 3);
+            recap.thrash_spikes = static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
+        }
+    }
+
+    // Query 3: snapback counts. Sessions with no events simply do not appear, which leaves
+    // the zero-initialized default in place — the same answer COUNT(*) gives.
+    {
+        Stmt stmt(db_,
+                  "WITH recent AS (SELECT session_id FROM sessions "
+                  "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
+                  "SELECT e.session_id, COUNT(*) "
+                  "FROM snapback_events e JOIN recent r ON e.session_id = r.session_id "
+                  "GROUP BY e.session_id");
+        stmt.bind(1, static_cast<std::int64_t>(limit));
+        while (stmt.step_row()) {
+            const auto it = index_of.find(column_text(stmt.get(), 0));
+            if (it == index_of.end()) continue;
+            out[it->second].recap.snapback_count =
+                static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 1));
+        }
+    }
+
+    return out;
+}
+
+void Storage::backdate_session_for_test(const std::string& session_id,
+                                        const std::string& started_at) {
+    Stmt stmt(db_, "UPDATE sessions SET started_at = ?2 WHERE session_id = ?1");
+    stmt.bind(1, session_id);
+    stmt.bind(2, started_at);
+    stmt.step_done();
+}
+
+std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
+    std::size_t session_limit, std::size_t per_session_limit,
+    const std::optional<std::string>& started_after) {
+    // ROW_NUMBER reproduces list_context_snapshots' "ORDER BY timestamp ASC LIMIT n" per
+    // session, so the per-session cap survives the move into SQL. Without it this would
+    // count every snapshot and quietly change which app ranks first.
+    const char* sql =
+        "WITH recent AS ("
+        "  SELECT session_id FROM sessions"
+        "  WHERE (?3 IS NULL OR (started_at IS NOT NULL AND started_at >= ?3))"
+        "  ORDER BY started_at DESC, session_id DESC LIMIT ?1"
+        "), capped AS ("
+        "  SELECT c.app_name,"
+        "         ROW_NUMBER() OVER (PARTITION BY c.session_id ORDER BY c.timestamp ASC) AS rn"
+        "  FROM context_snapshots c JOIN recent r ON c.session_id = r.session_id"
+        ") "
+        "SELECT app_name, COUNT(*) FROM capped "
+        "WHERE rn <= ?2 AND app_name <> '' GROUP BY app_name";
+    Stmt stmt(db_, sql);
+    stmt.bind(1, static_cast<std::int64_t>(session_limit));
+    stmt.bind(2, static_cast<std::int64_t>(per_session_limit));
+    if (started_after) {
+        stmt.bind(3, *started_after);
+    } else {
+        stmt.bind_null(3);  // the wrapper checks the return code; the raw call does not
+    }
+
+    std::unordered_map<std::string, std::size_t> counts;
+    while (stmt.step_row()) {
+        counts.emplace(column_text(stmt.get(), 0),
+                       static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1)));
+    }
+    return counts;
 }
 
 void Storage::delete_all_activity_data() {
@@ -720,6 +924,36 @@ void Storage::delete_all_activity_data() {
             DELETE FROM sessions;
          )sql");
     transaction.commit();
+}
+
+bool Storage::delete_session(const std::string& session_id) {
+    Transaction transaction(*this);
+    {
+        // Check inside the transaction, not before it: BEGIN IMMEDIATE already holds the
+        // write lock here, so the answer cannot change between the check and the deletes.
+        Stmt exists(db_, "SELECT 1 FROM sessions WHERE session_id = ?1");
+        exists.bind(1, session_id);
+        if (!exists.step_row()) return false;  // ~Transaction rolls back the empty txn
+    }
+
+    // Child rows first, in the same order and for the same reason as
+    // delete_all_activity_data: historical databases were not all created with
+    // ON DELETE CASCADE, so relying on it would leave orphans on exactly the old files
+    // Roadmap 7.11's fixtures exist to represent.
+    for (const char* sql : {"DELETE FROM feature_snapshots WHERE session_id = ?1",
+                            "DELETE FROM context_snapshots WHERE session_id = ?1",
+                            "DELETE FROM snapback_events WHERE session_id = ?1",
+                            "DELETE FROM labels WHERE session_id = ?1",
+                            "DELETE FROM predictions WHERE session_id = ?1",
+                            "DELETE FROM sessions WHERE session_id = ?1"}) {
+        Stmt stmt(db_, sql);
+        stmt.bind(1, session_id);
+        // step_done(), not step_row(): a DELETE returns no rows, and step_done throws if one
+        // somehow appears instead of silently reporting "no row" the way step_row would.
+        stmt.step_done();
+    }
+    transaction.commit();
+    return true;
 }
 
 SessionRecap Storage::recap(const std::string& session_id) {

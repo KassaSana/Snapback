@@ -461,6 +461,56 @@ TEST_CASE("AppState deletes collected activity and resets the live session") {
     CHECK(std::filesystem::exists(deployed_model));
 }
 
+TEST_CASE("AppState::delete_session removes one session and leaves the rest alone") {
+    auto state = make_state();
+    const auto keeper = state->start_session("Keeper", FocusMode::Normal);
+    state->stop_session(keeper.session_id);
+    const auto doomed = state->start_session("Doomed", FocusMode::Normal);
+    state->stop_session(doomed.session_id);
+
+    CHECK(state->delete_session(doomed.session_id));
+
+    CHECK(state->get_session(doomed.session_id) == std::nullopt);
+    REQUIRE(state->session_history(10).size() == 1);
+    CHECK(state->session_history(10).front().record.session_id == keeper.session_id);
+}
+
+TEST_CASE("AppState::delete_session clears live state when the active session is deleted") {
+    // The dangerous case. Deleting the row the engine is currently filling would leave
+    // active_session_ pointing at a session that no longer exists: the next tick would try
+    // to persist against a missing foreign key, and the UI would keep rendering a session
+    // the user just erased.
+    auto state = make_state();
+    const auto session = state->start_session("Live", FocusMode::Deep);
+    REQUIRE(state->active_session().has_value());
+
+    CHECK(state->delete_session(session.session_id));
+
+    CHECK(state->active_session() == std::nullopt);
+    CHECK(state->latest_prediction() == std::nullopt);
+    CHECK(state->session_history(10).empty());
+    CHECK_FALSE(state->pomodoro_status().running);
+}
+
+TEST_CASE("AppState::delete_session reports a missing session instead of throwing") {
+    auto state = make_state();
+    CHECK_FALSE(state->delete_session("never-existed"));
+}
+
+TEST_CASE("AppState::delete_session invalidates events already queued for the UI") {
+    // Same reasoning as delete_all_activity_data: an event describing the deleted session
+    // may already be sitting in the dispatch queue, and delivering it would repopulate the
+    // UI with data the user just erased.
+    auto state = make_state();
+    const auto session = state->start_session("Queued", FocusMode::Normal);
+    // A fresh AppState starts at epoch 0, and events captured before the delete carry it.
+    REQUIRE(state->activity_epoch_is_current(0));
+
+    REQUIRE(state->delete_session(session.session_id));
+
+    CHECK_FALSE(state->activity_epoch_is_current(0));
+}
+
 TEST_CASE("AppState excludes matching apps without affecting other apps") {
     auto state = make_state();
     state->set_privacy_exclusions({"1Password"});
@@ -943,4 +993,61 @@ TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
     // Latched: one unbroken stretch produces exactly one nudge, not one per tick.
     std::lock_guard lock(seen_mutex);
     CHECK(std::count(events.begin(), events.end(), "hyperfocus") == 1);
+}
+
+// Roadmap 7.6 — the legible export, end to end through the real storage path. The renderer is
+// unit-tested in test_data_export.cpp; what is only observable here is that the rows reaching
+// it are the rows the database actually holds.
+TEST_CASE("AppState exports a legible archive of what was recorded") {
+    auto state = make_state();
+    const auto session = state->start_session("write the export", FocusMode::Normal);
+    state->process_event_for_test(ev(EventType::WindowFocusChange, 1000.0, "Cursor"));
+    state->process_event_for_test(ev(EventType::KeyPress, 1002.0, "Cursor"));
+    state->stop_session(session.session_id);
+
+    TempDir temp;
+    const auto exported = state->export_personal_data(temp.path);
+
+    CHECK(exported.session_count == 1);
+    CHECK_FALSE(exported.truncated);
+    CHECK(std::filesystem::exists(exported.output_path));
+
+    const auto markdown = read_file(exported.output_path);
+    CHECK(markdown.find("# Your Snapback data") != std::string::npos);
+    CHECK(markdown.find("write the export") != std::string::npos);
+    CHECK(markdown.find(session.session_id) != std::string::npos);
+    // The export must name what it holds before the user forwards it anywhere.
+    CHECK(markdown.find("window titles") != std::string::npos);
+}
+
+TEST_CASE("AppState admits when the archive left older sessions out") {
+    auto state = make_state();
+    for (int i = 0; i < 3; ++i) {
+        const auto session =
+            state->start_session("session " + std::to_string(i), FocusMode::Normal);
+        state->stop_session(session.session_id);
+    }
+
+    TempDir temp;
+    // Caps are parameters precisely so this case is reachable without writing thousands of
+    // rows: two of three sessions exported means the "there is more" line must appear.
+    const auto exported = state->export_personal_data(temp.path, /*session_limit=*/2);
+
+    CHECK(exported.session_count == 2);
+    CHECK(exported.truncated);
+    CHECK(read_file(exported.output_path).find("older sessions exist beyond this export's limit") !=
+          std::string::npos);
+}
+
+TEST_CASE("AppState exports a document, not an empty file, with no history") {
+    auto state = make_state();
+
+    TempDir temp;
+    const auto exported = state->export_personal_data(temp.path);
+
+    CHECK(exported.session_count == 0);
+    CHECK(exported.window_count == 0);
+    const auto markdown = read_file(exported.output_path);
+    CHECK_FALSE(markdown.empty());
+    CHECK(markdown.find("No sessions have been recorded yet") != std::string::npos);
 }

@@ -19,10 +19,28 @@ sync — it tracked `2.4b` as a task while this file correctly tracked the same 
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-07-28** — that pass closed **3.1** (macOS tray +
-native `NSPanel` overlay) and the **macOS launch smoke**, taking ADR-0002 from one of six
-release blockers cleared to three. Both were verified by running the app on Kassa's Mac;
-neither has been seen by CI yet, for the reason recorded under the blocker table.
+**Last synced against the code: 2026-07-29** — that pass closed **7.3** (schema versioning
+and an ordered migration list), most of **7.11** (five pre-existing-database fixtures),
+**7.12** (SQL aggregation), and the delete-a-single-session half of **7.6**. ADR-0002 is now
+**four of six release blockers cleared**, and none of the remaining two is implementation
+work. Measured, not assumed: **241 C++ test cases / 1303 assertions** and **72 frontend
+tests** green, typecheck clean. *Not* seen by CI — see the caveat under the blocker table.
+
+Reviewing that pass found a real defect in its own 7.12 work: three queries each re-derived
+"the most recent N sessions", and second-resolution timestamps made ties likely enough that
+they could disagree and silently zero a session's aggregates. Fixed by giving every
+session-selection query a total order. **The lesson is that a batched rewrite needs a test
+that the batch still belongs to the right row**, not just that the numbers are right in the
+happy case.
+
+The 2026-07-28 pass closed **3.1** (macOS tray + native `NSPanel` overlay) and the **macOS
+launch smoke**. Both were verified by running the app on Kassa's Mac; neither has been seen
+by CI yet, for the reason recorded under the blocker table.
+
+*Three rows of the sequence table below were stale on 2026-07-29* — 9.7, 9.8, and 10.7 were
+all finished on 2026-07-26 but still listed as open, one of them described as "the only
+standing `CLAUDE.md` violation". Corrected in place. This file drifts in **both** directions:
+Tier 12 found it pessimistic about the code, and this found it pessimistic about itself.
 
 Earlier context: three passes landed on
 2026-07-20 — five product features (privacy, analytics, summary reports, goal categories,
@@ -68,7 +86,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 |---|------|---------|
 | 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
 | 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
-| 3 | **6.2** red-master rule (**6.3** decoupling done, awaiting CI) | 6.2 is a `decision` — needs Kassa |
+| 3 | **6.2** red-master rule | The last Tier 6 item, and a `decision` — needs Kassa. **6.3 is done and CI-confirmed** (run `30168981559`), so Tier 6 is no longer a CI outage |
 | 4 | ~~**9.1** define what v1 means~~ | **Done 2026-07-25** — [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is `Accepted`. Windows + macOS, six blockers, and macOS v1 ships a native `NSPanel` overlay |
 | 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
 | 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
@@ -76,27 +94,29 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 8 | ~~**0.3** live-Mac verification~~ | **Done 2026-07-25** — the tap runs on real hardware and the run found macOS capture was **half-blind**. First ADR-0002 release blocker cleared |
 | 9 | ~~**3.1** macOS tray + native overlay~~ | **Done 2026-07-28** — real `NSStatusItem` and `NSPanel`, verified by running the app. Second ADR-0002 blocker cleared |
 | 10 | ~~macOS launch smoke in CI~~ | **Done 2026-07-28** — `macos-gui-smoke` launches the app, not just links it. Third ADR-0002 blocker cleared |
-| 11 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
-| 12 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
-| 13 | **7.16** timestamp representation, then 7.3, 7.11 | Analytics windows and local-hour buckets are done; the timestamp decision now scopes migrations and fixtures |
-| 14 | **7.3 + 7.11** migrations + DB fixtures | Unblocks the schema-drift CI job and 9.4's upgrade path |
+| 11 | ~~**7.3 + 7.11 + 7.12** migrations, DB fixtures, N+1~~ | **Done 2026-07-29** — schema versioning with a downgrade guard, five pre-existing-database fixtures, and SQL aggregation. **Fourth ADR-0002 blocker cleared.** A *large* fixture and a perf measurement are the deliberate leftovers |
+| 12 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
+| 13 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
+| 14 | **7.16** timestamp representation | Now the only thing gating 5.5, 7.1, and 7.2. 7.3 landed the migration list, so applying the decision is a migration rather than a rewrite |
 | 15 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
 | 16 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
-| 17 | ~~**9.2** version~~, **9.7, 9.8** empty states, single-instance | **9.2 done 2026-07-22**; the remaining two are visible to the first stranger who runs this |
-| 18 | **7.5, 7.6, 7.8** | Independent, pick up any time |
+| 17 | ~~**9.2** version, **9.7** empty states, **9.8** single-instance~~ | **9.2 done 2026-07-22; 9.7 and 9.8 done 2026-07-26** — this row sat stale for three days claiming two finished items were open |
+| 18 | ~~**7.6**~~, **7.8** | **7.6 done 2026-07-30** — delete-session UI, open data folder, and a legible Markdown export. 7.8 is a `decision` and all that is left in this row |
 | 19 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
-| 20 | **7.12 + 7.13** perf | After 4.4 benchmarking, so the fix is measured not guessed |
+| 20 | **4.4** perf gate, then measure 7.12 | 7.13 done 2026-07-22 and 7.12 done 2026-07-29 — but neither was *measured*, and 7.11's missing large fixture is the entry point |
 | 21 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
-| 22 | **10.7** test the four new surface components | Shipped 2026-07-25 with no tests — the only standing `CLAUDE.md` violation |
+| 22 | ~~**10.7** test the four new surface components~~ | **Done 2026-07-26** — likewise stale; there is no standing `CLAUDE.md` test violation today |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
 outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
 now done, which is what makes the blocker table below meaningful.
 
-**Next up is 3.3 — and it is paperwork before it is code.** 3.1 landed 2026-07-28, so the
-implementation half of the macOS blockers is finished. What remains is an Apple Developer
-account (long lead time, gates nothing else), one decision, and one schema item.
+**Next up is 3.3 — and it is paperwork before it is code.** 3.1 landed 2026-07-28 and 7.3
+on 2026-07-29, so **every v1 blocker that was implementation work is now done**. What
+remains is an Apple Developer account (long lead time, gates nothing else) and one decision
+session. If the goal is to ship, the account application is the thing to start today,
+because it is the only blocker whose clock runs independently of anyone working.
 
 **ADR-0002 release-blocker status after 2026-07-28:**
 
@@ -107,10 +127,11 @@ account (long lead time, gates nothing else), one decision, and one schema item.
 | 3 | **3.3** macOS packaging + notarization | ⬜ **Next.** Longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest — and it is what unblocks macOS notifications |
 | 4 | macOS launch smoke in CI | ✅ Done 2026-07-28 — `macos-gui-smoke` runs `scripts/gui_smoke_macos.sh` |
 | 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
-| 6 | **7.3** schema migrations | ⬜ Untouched |
+| 6 | **7.3** schema migrations | ✅ Done 2026-07-29 — `user_version`, an ordered migration list, and a downgrade guard |
 
-Note the shape of what remains: three of six are done, one is paperwork with a long lead
-time, one is a question, and one is ordinary implementation work. That is a tractable v1.
+Note the shape of what remains: **four of six are done**, one is paperwork with a long lead
+time, and one is a question. No implementation work is left on this list — v1 now waits on
+an Apple Developer account and one decision session.
 
 > **Unverified in CI as of 2026-07-28.** 3.1 and the launch smoke were both verified on
 > Kassa's Mac, and the smoke was confirmed to fail as well as pass. But CI runs only on
@@ -122,9 +143,14 @@ time, one is a question, and one is ordinary implementation work. That is a trac
 
 ---
 
-## Tier 6 — CI is red (blocking)
+## Tier 6 — CI health
 
-Opened by the 2026-07-20 staff review against run `29728565319`.
+Opened by the 2026-07-20 staff review against run `29728565319`, when this tier was titled
+"CI is red (blocking)". **It is not red any more:** 6.1, 6.3, and 6.4 are all done and
+CI-confirmed, and run `30168981559` (2026-07-25) was green on all three OSes. The only item
+left is **6.2, a process decision** — what to do when master goes red — which is not itself
+a CI failure. Retitled 2026-07-29 so the heading stops claiming a blocking outage that
+ended three days earlier.
 
 - **6.1 — DONE, CI-confirmed 2026-07-22.** Moved to the [Done archive](#done-archive).
   Both Windows jobs are green as of run `29890010902`; the 138 previously-skipped test
@@ -169,6 +195,11 @@ Opened by the 2026-07-20 staff review against run `29728565319`.
   > now the only legal include site for `webview.h` and scrubs the macro pollution right
   > after the include (same pattern as `tests/doctest_wrapper.hpp`). Verified to link on
   > macOS; Ubuntu is CI-verified only, so the next master run is the proof.
+  >
+  > **CI-confirmed 2026-07-25** by run `30168981559`, green on all three OSes for every job
+  > but `docs-smoke` — which covers both halves: the decoupled jobs ran, and the Ubuntu
+  > desktop build linked. This item is **done**; it stays here rather than moving to the
+  > archive because the X11 lesson above is still the reason `webview_compat.hpp` exists.
 
 - **6.4 — DONE, CI-confirmed 2026-07-22.** Moved to the [Done archive](#done-archive).
   Remaining loose ends: `action-gh-release` 2→3 (PR #19) still open by choice, and the
@@ -287,7 +318,18 @@ internals, and the benchmark harness.
   **Regression test must fail first:** seed >10,000 predictions across several days, assert
   the weekly `sample_count` exceeds 10,000, watch it go red against today's code.
 
-- **7.2 — Hourly analytics are bucketed in UTC and presented as local time.** `S`
+- **7.2 — PARTLY STALE, corrected 2026-07-30.** `S` The UTC-bucketing half **was already
+  fixed** and this entry never said so: `AppState::analytics()` calls
+  `local_hour_from_rfc3339(prediction.timestamp)`, not the character-slicing `timestamp_hour()`
+  this text describes. Found while picking work off this file — the third time an item here has
+  described a gap that the code had already closed (see 0.3 and the note on trusting this file).
+
+  **Still open** is the second half below: `cutoff_rfc3339()` treats "1 day" as a rolling
+  24 hours rather than the user's calendar day. The Review surface now *labels* its windows
+  "Last 24 hours" / "Last 7 days" (9.7), so the UI is honest about it; whether the underlying
+  window should change is a product decision, not a bug.
+
+  The original finding was:
 
   `timestamp_hour()` (`state.cpp:51`) slices characters 11–12 out of strings built by
   `now_rfc3339()` (`state.cpp:69`), which uses `gmtime_r`/`gmtime_s` and appends `Z` — UTC.
@@ -301,24 +343,37 @@ internals, and the benchmark harness.
   "daily" summary is a rolling 24 h window, not the user's calendar day. Possibly intended,
   nowhere written down, and users read "day" as "today."
 
-- **7.3 — No schema migrations, on a database earlier installs already wrote.** `M`
-  *(Split out of 4.5 and promoted — 4.5 keeps the optional-encryption half.)*
+- **7.3 — DONE 2026-07-29.** `M` — sixth and last ADR-0002 release blocker that was pure
+  implementation. `migrate()` now reads `PRAGMA user_version`, applies only the steps above
+  it from an ordered append-only list inside one transaction, and stamps the result. SQLite
+  makes DDL transactional, so a failed upgrade rolls back to the version it started at
+  instead of leaving a database that is neither shape.
 
-  Schema is all `CREATE TABLE IF NOT EXISTS`. No `PRAGMA user_version`, no `schema_version`
-  table, **no `ALTER TABLE` anywhere in the codebase.**
+  Two design points worth keeping. **`user_version` 0 is ambiguous** — it means both "brand
+  new file" and "install from before versioning", which describes every database in the
+  field today. Nothing can tell them apart after the fact, so the runner replays from 0 on
+  both and depends on every migration being idempotent; that rule and "never edit a released
+  migration" are stated on `kSchemaVersion`, and a `static_assert` ties it to the last entry.
+  And a database **stamped newer than the build refuses to open**: a later Snapback could add
+  a `NOT NULL` column this build knows nothing about, so failing closed keeps the file
+  recoverable instead of writing rows the newer build considers malformed.
 
-  Worse here than in a typical app: `CLAUDE.md` mandates the filename stay `focoflow.db`
-  **specifically for install compatibility** with earlier installs. We are promising to open
-  databases we did not create. On an existing DB, `CREATE TABLE IF NOT EXISTS` is a no-op —
-  it reconciles nothing. Any column the C++ schema has that the user's file lacks produces a
-  runtime `no such column` on first insert, for upgrading users only.
+  > *Two claims in the original finding were false when checked, and are preserved here
+  > because the lesson is the point.* It said "**no `ALTER TABLE` anywhere in the
+  > codebase**" — there was one, `ensure_prediction_model_id_column` at `storage.cpp:215`,
+  > which is now migration 2 rather than an ad-hoc special case. And it said "**we have never
+  > once opened a real pre-existing `focoflow.db`**" — `tests/test_storage.cpp` already had a
+  > case that built a legacy schema on disk and opened it. What was genuinely missing was the
+  > version stamp, the ordering, and the downgrade guard. Checking before building changed
+  > what got built; see also the note at the head of Tier 5.
 
-  Every test starts from a fresh temp DB. **We have never once opened a real pre-existing
-  `focoflow.db`.**
+  The original finding was:
 
-  **Minimum viable:** set `user_version`, add an ordered migration list, and add a test that
-  opens a fixture DB built from an *older* schema and asserts every current query still runs.
-  That fixture is the artifact actually missing — see 7.11.
+  **No schema migrations, on a database earlier installs already wrote.** `CLAUDE.md`
+  mandates the filename stay `focoflow.db` **specifically for install compatibility**, so we
+  promise to open databases we did not create. On an existing DB `CREATE TABLE IF NOT EXISTS`
+  is a no-op — it reconciles nothing — and any column the C++ schema has that the user's file
+  lacks produces a runtime `no such column` on first insert, for upgrading users only.
 
 - **7.4 — DONE 2026-07-22.** `CaptureThread` now marks a returned hook as stopped and failed,
   records a diagnostic reason, tracks monotonic event arrival age, and safely joins a finished
@@ -438,16 +493,61 @@ internals, and the benchmark harness.
   *already* inconsistent), index compatibility, presentation zone — and all four fall out.
   This is a domain-modeling conversation and an ADR, not four patches.
 
+  > *Observed 2026-07-29, not theorized.* Writing 7.12's tests surfaced the fourth bullet in
+  > practice: two sessions created in the same wall-clock second **tie** under `ORDER BY
+  > started_at DESC`, and which one comes back first is undefined. Two tests were written
+  > against the assumption that the newest session sorts first and failed. They now set
+  > `started_at` explicitly through `Storage::backdate_session_for_test`. That seam is a
+  > workaround for this item and should be reconsidered when 7.16 is settled — if timestamps
+  > gain sub-second resolution, the tests can go back to relying on insertion order.
+  >
+  > Note this also affects users, not just tests: the history list's order is arbitrary among
+  > sessions started in the same second. Rare, but it is the same root cause.
+  >
+  > *Partly mitigated 2026-07-29.* Every session-selection query now orders by
+  > `started_at DESC, session_id DESC`. Because `session_id` is the primary key that is a
+  > **total order**, so the history list is at least *stable* — the same sessions come back
+  > in the same order every time, and 7.12's three queries agree on which sessions they are
+  > talking about. It is explicitly **not** a fix for this item: `session_id` is a random
+  > UUIDv4, so ties are broken arbitrarily rather than chronologically. Recovering true
+  > within-second order still needs the decision below.
+
+  **7.3 is now done, which changes the shape of applying this.** There is an ordered
+  migration list to append to, so converting a column's storage type is a migration rather
+  than a rewrite — the mechanism is no longer part of the cost.
+
 ### Product gaps
 
 - **7.6 — There is no way for a user to delete their own data.** `M`
 
-  **PARTIAL 2026-07-26:** Settings now provides a two-step, permanent “delete all activity
-  data” action. The native command removes sessions, predictions, feature/context snapshots,
-  labels, and Snapback events atomically, resets live session state, and deliberately
-  preserves privacy settings and app rules. Still absent: delete a single session; export my
-  data in a legible form (`export_training_data` produces ML-shaped CSV); open the data
-  folder.
+  **PARTIAL 2026-07-26, extended 2026-07-29:** Settings provides a two-step, permanent
+  “delete all activity data” action. The native command removes sessions, predictions,
+  feature/context snapshots, labels, and Snapback events atomically, resets live session
+  state, and deliberately preserves privacy settings and app rules.
+
+  **Delete a single session landed 2026-07-29** — `delete_session` in `commands.hpp`, backed
+  by `Storage::delete_session` and `AppState::delete_session`. It clears live engine state
+  when the deleted session is the active one, and returns whether a row was actually removed
+  so the UI can tell a stale list entry from a successful delete.
+
+  **DONE 2026-07-30.** The three remaining slices landed together:
+
+  - **Delete-session UI** — the Insights card lists each session with a two-step delete.
+    `useInsights` prunes the row locally *before* refetching, because `refreshInsights`
+    swallows its errors by design and would otherwise leave a deleted session on screen; a
+    regression test drives the failing-refetch path specifically. The `false` return is
+    surfaced as "That session was already gone" rather than "deleted".
+  - **Open the data folder** — `open_data_folder` in `commands.hpp`, backed by
+    `src/app/reveal_path.hpp`. `NSWorkspace` on macOS and `ShellExecuteW` on Windows, so
+    neither starts a shell or a child process; POSIX spawns `xdg-open` with an argv array. The
+    command returns the path whether or not the open succeeded, because "here is where it is"
+    is the only answer an unsupported platform can give.
+  - **Export my data in a legible form** — `export_my_data`, backed by
+    `src/app/data_export.hpp`, writes one Markdown file of sessions and the windows captured
+    during them. The renderer is pure and takes already-fetched rows, which is what makes the
+    Markdown-table escaping testable: an unescaped `|` in a window title shifts every later
+    column and quietly turns the archive into an inaccurate record. Truncation is stated in
+    the file rather than applied silently.
 
   For an app whose core function is recording every keystroke and window title, "you may
   inspect and destroy what I collected" isn't a nice-to-have — it's what makes local-only
@@ -478,23 +578,57 @@ internals, and the benchmark harness.
   `private_mode` / `none`). **This single change makes every silent failure mode in this
   file visible** — 7.4, 7.9, and 8.1 all surface through it.
 
-- **7.11 — No test ever opens a pre-existing database.** `M`
+- **7.11 — MOSTLY DONE 2026-07-29.** `M` — five of the six fixture shapes now exist in
+  `tests/test_storage.cpp`, built in-process rather than committed as binary `.db` files (a
+  checked-in database cannot be reviewed, and stops representing "what an old build wrote"
+  the moment someone regenerates it from a current one).
 
-  The general form of 7.3. Every storage test builds a fresh temp DB. Untested as a result:
-  migration (7.3), retention against aged data (5.5), index usage as tables grow (7.12),
-  recovery from a corrupt or partially-written DB, and **WAL recovery after unclean
+  Covered: **unclean shutdown / WAL recovery** — the database is copied together with its
+  `-wal` and `-shm` sidecars while the original connection is still open, so the committed
+  rows are still in the WAL; **corrupt**, which must be refused with a logged reason rather
+  than crashing or starting with a silently empty history; **aged**, pruned on open without
+  taking its sessions with it; **foreign-authored**, carrying unknown tables and columns;
+  and a full close/reopen round trip across all five activity tables.
+
+  **Still missing: a *large* fixture.** That one is the entry point for 7.12's index-usage
+  question — "does the plan still use an index at 100k rows" cannot be asked of a database
+  with four rows in it — and it is the natural first case for 4.4's perf gate. Left open
+  deliberately rather than marked done.
+
+  The original finding was:
+
+  **No test ever opens a pre-existing database.** The general form of 7.3. Untested as a
+  result: migration (7.3), retention against aged data (5.5), index usage as tables grow
+  (7.12), recovery from a corrupt or partially-written DB, and **WAL recovery after unclean
   shutdown** — which, for an always-on tray app users will kill via Task Manager, is the
   *normal* shutdown path, not an edge case.
 
-  Build a fixture corpus (fresh, aged, large, foreign-authored, corrupt) and run the storage
-  suite against each.
-
 ### Performance
 
-- **7.12 — Analytics and history do N+1 queries under the storage lock.** `M`
+- **7.12 — DONE 2026-07-29.** `M` — all three call sites now aggregate in SQL.
+  `Storage::recent_session_summaries()` replaces `recent_sessions()` + a `recap()` per
+  session (five statements each) with three queries; `Storage::context_app_counts()`
+  replaces the snapshot loops with one.
 
-  `analytics()` (`state.cpp:355`), `summary_report()` (`state.cpp:415`), and
-  `session_history()` (`state.cpp:309`) all loop over sessions issuing per-session queries:
+  The part worth reviewing is what was **preserved**: the per-session snapshot cap. It exists
+  only because the old code passed a limit to a paginated API, but it changes the answer — it
+  is what stops one very long session from dominating the app ranking — so it survives as a
+  `ROW_NUMBER()` window function instead of being quietly dropped. Its tests pin both the cap
+  and that it keeps the *oldest* rows, matching `list_context_snapshots`' `ORDER BY timestamp
+  ASC`. The prediction aggregates are copied verbatim from `recap()`, **including the
+  deliberate absolute 0.7 thrash bar that 5.4 warns against unifying**, and the parity test
+  compares batched output against `recap()` field by field rather than against hand-written
+  numbers.
+
+  **Not covered: whether this is fast enough.** The rewrite removes O(N) round trips, but
+  nothing measures it — that needs 7.11's missing *large* fixture and 4.4's perf gate. Treat
+  the win as structural, not benchmarked.
+
+  The original finding was:
+
+  **Analytics and history do N+1 queries under the storage lock.** `analytics()`,
+  `summary_report()`, and `session_history()` all loop over sessions issuing per-session
+  queries:
 
   - `analytics()`: `recent_sessions(200)` × `list_context_snapshots(…, 200)` — up to 40,000
     rows — then a **second** `recent_sessions(200)` loop calling `recap()` (itself 4 queries).
@@ -746,11 +880,31 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 3 — Cross-platform breadth & packaging
 
-- **3.0 — Autostart on macOS and Linux.** `M`
-  `autostart.cpp:77-81` is a hard-coded `return false` off Windows, so the settings toggle
-  correctly greys out — the feature is simply absent. Needs a launchd `LaunchAgent` plist
-  (`~/Library/LaunchAgents/`) on macOS and a systemd **user** unit on Linux. Concrete scope of
-  the follow-up noted on 1.3.
+- **3.0 — DONE 2026-07-30.** `M` — autostart on macOS and Linux. macOS installs a launchd
+  `LaunchAgent` plist in `~/Library/LaunchAgents`; Linux writes a systemd **user** unit *and*
+  the `graphical-session.target.wants` symlink that `systemctl --user enable` would create —
+  writing the unit alone leaves it installed-but-off, which would show a checked toggle with
+  nothing starting. Neither backend spawns `launchctl` or `systemctl`.
+
+  Both mechanisms live in their own translation units
+  (`src/app/autostart_launchd.cpp`, `src/app/autostart_systemd.cpp`) that **compile and are
+  tested on every OS**, with the target directory passed in as an argument. That is a direct
+  answer to **11.7**: the tests run against a temp directory and cannot register anything to
+  start at login. It is not hypothetical — the first run after the launchd backend landed,
+  the *old* `test_autostart.cpp` case (which asserted "no backend off Windows" by calling
+  `set_autostart_enabled(true)`) registered the **test binary** as a real login item on the
+  dev Mac. A test asserting a no-op stops being harmless the moment the no-op gains an
+  implementation.
+
+  Escaping is the part with teeth in both: XML for the plist (`&` in a path makes it
+  unparseable, and launchd ignores a malformed agent *silently*), and systemd's `%` specifier
+  for the unit (`%h` expands to the home directory). Generated plist output was checked with
+  `plutil -lint`. Neither backend sets `KeepAlive`/`Restart=`, so a login item cannot relaunch
+  itself when the user quits.
+
+  Not covered: desktops that do not integrate with systemd never reach
+  `graphical-session.target`, so the unit is written but never triggered there. The XDG
+  `~/.config/autostart/*.desktop` fallback is the follow-up if a Linux user reports it.
 
 - **3.1 — macOS tray + native overlay. DONE 2026-07-28.** `M` — second ADR-0002 v1 release
   blocker cleared. Scope was settled 2026-07-25 by
@@ -1029,12 +1183,24 @@ structure alone — a real review would likely find more.
 
 - **10.1 — Nothing tests the real binary against the real UI.** `L`
   There is **no E2E framework** — no Playwright, no Cypress, nothing in
-  `frontend/package.json`. Frontend tests mock `invoke()`; C++ tests run headless. **The
-  actual seam between them — the webview bridge — is tested only by
-  `test_ipc_contract`'s name matching.** So a command whose *name* matches but whose payload
-  shape drifted passes every test and breaks the UI at runtime, which is precisely the
-  failure CLAUDE.md calls "silently breaks the UI." The `windows-desktop-integration` job is
-  the closest thing and it's currently skipped (6.3).
+  `frontend/package.json`. Frontend tests mock `invoke()`; C++ tests run headless.
+
+  Be precise about what *is* covered, because this entry used to overstate the gap.
+  `test_ipc_contract` pins command names three ways (the `bind_cmd` list, the frontend's
+  `invoke` calls, and `fixtures/ipc_commands.json`), and `test_command_bridge` covers the
+  dispatcher itself — arg unwrapping, the error envelope, the escaped-JSON event boundary,
+  the validation helpers, and two real handlers round-tripping with camelCase keys.
+
+  **What nothing exercises is the real `webview.bind()` round trip in a running process.**
+  Every test above calls the handler layer directly, so a break *between* `bind()` and the
+  browser — the injected shim, promise resolution, a webview API change — passes CI. A
+  command whose payload shape drifted in a handler *without* a bridge test is the same
+  story, and both are the failure CLAUDE.md calls "silently breaks the UI."
+
+  > *Corrected 2026-07-29:* this entry said `windows-desktop-integration` "is currently
+  > skipped (6.3)". It is not — 6.3 removed its `needs:` on 2026-07-22 and it now runs
+  > unconditionally. It also said the seam is tested "only by `test_ipc_contract`'s name
+  > matching", which ignored `test_command_bridge` entirely.
 
 - **10.2 — DONE 2026-07-25.** Decided in
   [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`) and shipped on
@@ -1131,6 +1297,16 @@ structure alone — a real review would likely find more.
   `tests/test_autostart.cpp:26` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
   that the write succeeds, so a passing suite depends on ambient machine state rather than on
   our code.
+
+  **Windows is still the open half.** The macOS and Linux backends added by 3.0 on 2026-07-30
+  take their target directory as an argument, so `test_autostart_launchd.cpp` and
+  `test_autostart_systemd.cpp` run entirely inside a temp directory — that shape is the fix
+  this item is asking for, and it can be copied onto the registry backend by injecting the key
+  path. **This stopped being theoretical on 2026-07-30:** the first suite run after the launchd
+  backend landed left a real `~/Library/LaunchAgents/com.snapback.app.plist` on the dev Mac,
+  pointing at `build/snapback_tests`, because the old "no backend off Windows" case called
+  `set_autostart_enabled(true)` expecting a no-op. It was caught by the test failing for a
+  different reason and removed by hand.
 
   **Measured flake rate: 2 of the first 6 observed Windows job runs (~33%), alternating
   between the two jobs on identical code.**
