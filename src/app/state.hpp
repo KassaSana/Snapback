@@ -28,6 +28,7 @@
 #include "storage/storage.hpp"
 #include "types.hpp"
 #include "util/logger.hpp"
+#include "util/ranked_mutex.hpp"
 
 namespace snapback {
 
@@ -201,11 +202,18 @@ private:
     // Asynchronous emissions take neither: they carry and validate activity_epoch_ on the
     // UI thread. mutex_ guards in-memory state; storage_mutex_ serializes all storage_
     // access. Hot UI reads take only mutex_.
-    mutable std::mutex mutex_;
+    //
+    // ROADMAP 11.6: the paragraph above is no longer the only thing holding that order.
+    // These are RankedMutex, so an inverted acquisition reports itself on the first run
+    // through the bad path rather than waiting for two threads to collide. The ranks in
+    // LockRank are the same ordering, written where the lock is instead of where the
+    // convention is. Every call site is `std::lock_guard lock(...)` with a deduced argument,
+    // so they needed no change.
+    mutable RankedMutex mutex_{LockRank::State};
     // Fences the off-lock persistence phase against activity deletion. Asynchronous UI
     // emissions carry activity_epoch_ and validate it in the dispatched UI closure.
-    mutable std::mutex activity_boundary_mutex_;
-    mutable std::mutex storage_mutex_;
+    mutable RankedMutex activity_boundary_mutex_{LockRank::ActivityBoundary};
+    mutable RankedMutex storage_mutex_{LockRank::Storage};
     Storage storage_;
     std::filesystem::path app_data_dir_;
     Logger* logger_ = nullptr;

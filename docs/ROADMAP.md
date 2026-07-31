@@ -1440,7 +1440,39 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
   forever") point opposite directions, and the constant currently arbitrates. Make it a
   setting, and decide the default deliberately. Ties to **7.6** and **8.5**.
 
-- **11.6 — Lock ordering is documented but not enforced.** `S`
+- **11.6 — DONE 2026-07-31.** `S` `src/util/ranked_mutex.hpp` gives each lock its position in
+  the order (`LockRank::State` → `ActivityBoundary` → `Storage`), and `AppState`'s three
+  mutexes are now `RankedMutex`. An inverted or equal-rank acquisition reports itself on the
+  first single-threaded run through the bad path — no race, no scheduler luck. Every call site
+  is `std::lock_guard lock(...)` with a deduced argument, so none of them changed.
+
+  Three things are worth carrying out of it.
+
+  **The check is compiled into release builds, not just debug.** Tracking is a fixed
+  eight-slot thread-local array, so acquisition costs no allocation and a handful of
+  instructions. Only the *response* varies: abort under `!NDEBUG` so a developer gets the
+  stack, log-and-continue in release, because crashing a user's app over a deadlock that has
+  not happened is worse than the warning. The main CI test job builds `Release`, so a
+  debug-only check would have run in exactly one job.
+
+  **The first draft's own bookkeeping was the bug.** It stored one "innermost rank" that each
+  mutex restored on unlock — correct only if locks are released LIFO. `std::unique_lock` lets
+  you release an outer lock while an inner one is held, and when a test did, the thread-local
+  was left permanently wrong and *every later lock on that thread* reported a violation that
+  never happened. Two of the eleven tests failed for that reason and neither had a real
+  inversion in it. **A diagnostic that goes wrong after the first mistake is worse than none**
+  — it turns one bug into a wall of false reports. The fix is the held-rank array, which is
+  correct under any release order and reports a non-LIFO release once, as its own finding.
+
+  **The AppState regression test only covers the methods it calls.** An inversion was planted
+  in `upsert_app_rule` to check the guard bites and the test stayed green, because the draft
+  called eight methods and that was not one of them. The test now names every `AppState`
+  method that touches `storage_mutex_` or `activity_boundary_mutex_`, and with the plant back
+  in it fails. Same shape as 7.1 and 5.3: **the suite passed because it never took the
+  branch.**
+
+  The original finding was:
+
   `state.hpp:161` states the invariant: *always acquire `mutex_` before `storage_mutex_`,
   never the reverse.* Nothing enforces it — no wrapper type, no runtime assertion, no test.
   It holds today because a careful author held it, and the codebase now has three mixed-lock
