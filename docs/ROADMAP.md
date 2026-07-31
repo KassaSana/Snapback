@@ -1434,6 +1434,29 @@ structure alone — a real review would likely find more.
   `set_autostart_enabled(true)` expecting a no-op. It was caught by the test failing for a
   different reason and removed by hand.
 
+  > **And it happened again the next day, on Linux — fixed 2026-07-31.** The 2026-07-30 fix
+  > patched the macOS arm and left the structure intact, so when 3.0's second half gave Linux
+  > a systemd backend, Linux kept falling into the `#else` "no backend yet" arm. CI run
+  > `30607879815` failed on all four Linux jobs, and the failing assertions say what happened:
+  > `CHECK_FALSE(set_autostart_enabled(true))` failed *and* so did the `CHECK_FALSE(
+  > autostart_enabled())` after it — **the test installed a real systemd user unit onto the
+  > GitHub runner and left it enabled.**
+  >
+  > **The lesson is about the guard, not the assertion.** A `#else` arm is a claim about
+  > "every platform that has no backend *yet*", and it silently shrinks each time one lands —
+  > while the single line inside it that mutates the machine keeps running. Patching the arm
+  > that broke leaves the next platform to rediscover it, which is precisely what happened
+  > twice in two days.
+  >
+  > The no-op contract is now **driven by the runtime answer**: it early-returns when
+  > `autostart_supported()` is true, so `set_autostart_enabled(true)` can only execute where
+  > it is defined to do nothing. Adding a fourth backend cannot reintroduce this, with or
+  > without anyone remembering this file. Verified locally by forcing the stub backend to
+  > compile on macOS: the case runs 3 assertions with the stub and 0 with a real backend.
+  >
+  > This does not close 11.7 — Windows still round-trips the real registry — but it removes
+  > the mechanism by which *every* platform inherited the hazard.
+
   **Measured flake rate: 2 of the first 6 observed Windows job runs (~33%), alternating
   between the two jobs on identical code.**
 
