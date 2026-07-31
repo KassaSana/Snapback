@@ -874,6 +874,11 @@ void Storage::backdate_session_for_test(const std::string& session_id,
     stmt.step_done();
 }
 
+void Storage::analyze_for_test() {
+    Stmt stmt(db_, "ANALYZE");
+    stmt.step_done();
+}
+
 std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
     std::size_t session_limit, std::size_t per_session_limit,
     const std::optional<std::string>& started_after) {

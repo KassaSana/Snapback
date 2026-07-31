@@ -578,7 +578,43 @@ internals, and the benchmark harness.
   `private_mode` / `none`). **This single change makes every silent failure mode in this
   file visible** — 7.4, 7.9, and 8.1 all surface through it.
 
-- **7.11 — MOSTLY DONE 2026-07-29.** `M` — five of the six fixture shapes now exist in
+- **7.11 — DONE 2026-07-31.** `M` — the sixth shape, the **large** fixture, landed today:
+  60 sessions × 200 predictions = **12,000 rows**, seeded across 20 days in one transaction
+  (12,000 autocommitted inserts would be 12,000 fsyncs; the whole fixture runs in 0.3s). It
+  buys three things the small fixtures structurally could not.
+
+  **1. 7.1's own regression test, which was never written.** 7.1's write-up specified it —
+  *"seed >10,000 predictions across several days, assert the weekly `sample_count` exceeds
+  10,000, watch it go red"* — and 7.1 was marked DONE without it. The fix is real, but
+  **nothing pinned it**, so a reintroduced cap would have left every existing test passing.
+  Before today no test in this repo seeded more than a handful of rows, which is exactly what
+  made the original bug invisible to the suite.
+
+  **2. Index usage under real statistics.** The existing plan assertions run against an
+  *empty* database, and that cannot fail for the reason we care about: with no stats SQLite
+  plans structurally, so it has no basis on which to prefer a scan. The new case runs
+  `ANALYZE` (new `Storage::analyze_for_test()`) over 12,000 rows, which is the adversarial
+  case for 7.13's indexes — the planner now *can* decide a scan is cheaper, and doesn't.
+  Verified by deleting `idx_predictions_ts` and watching the `TEMP B-TREE` assertion fail.
+
+  **3. Batched-vs-per-session parity at a scale that exercises the window function.** 7.12
+  proved parity on a few rows, which does not touch `ROW_NUMBER()`'s partitioning, the
+  per-session cap, or the tie-breaking 7.16 forced into the `ORDER BY`. The comparison now
+  runs field by field across 60 sessions.
+
+  One thing worth recording from writing it: the first run reported **0 rows for every
+  assertion**, because `Storage::Transaction` rolls back unless `commit()` is called. *A seed
+  that silently seeds nothing is indistinguishable from a query that correctly returns
+  nothing* — which is the same failure shape as everything else in this tier.
+
+  **Still not done: the timing measurement.** This fixture is 4.4's entry point, but nothing
+  here asserts a duration; wall-clock bounds on a shared CI runner buy flakes, not signal.
+  7.12 remains structural-not-benchmarked until 4.4 lands a real harness.
+
+  The original partial entry follows.
+
+- **7.11 (earlier state) — five of six shapes, 2026-07-29.** `M` — five of the six fixture
+  shapes now exist in
   `tests/test_storage.cpp`, built in-process rather than committed as binary `.db` files (a
   checked-in database cannot be reviewed, and stops representing "what an old build wrote"
   the moment someone regenerates it from a current one).
@@ -590,10 +626,7 @@ internals, and the benchmark harness.
   taking its sessions with it; **foreign-authored**, carrying unknown tables and columns;
   and a full close/reopen round trip across all five activity tables.
 
-  **Still missing: a *large* fixture.** That one is the entry point for 7.12's index-usage
-  question — "does the plan still use an index at 100k rows" cannot be asked of a database
-  with four rows in it — and it is the natural first case for 4.4's perf gate. Left open
-  deliberately rather than marked done.
+  **The missing *large* fixture is now DONE 2026-07-31** — see the entry above.
 
   The original finding was:
 
@@ -621,8 +654,11 @@ internals, and the benchmark harness.
   numbers.
 
   **Not covered: whether this is fast enough.** The rewrite removes O(N) round trips, but
-  nothing measures it — that needs 7.11's missing *large* fixture and 4.4's perf gate. Treat
-  the win as structural, not benchmarked.
+  nothing measures it. 7.11's large fixture landed 2026-07-31 and now pins *correctness* at
+  12,000 rows — batched output matches the per-session path field by field across 60 sessions
+  — but it deliberately asserts no timing, because wall-clock bounds on a shared CI runner buy
+  flakes rather than signal. Still needs 4.4's perf gate. Treat the win as structural, not
+  benchmarked.
 
   The original finding was:
 

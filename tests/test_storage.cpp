@@ -1103,3 +1103,176 @@ TEST_CASE("export still succeeds on a writable destination") {
     CHECK(std::filesystem::is_regular_file(temp.path / "features.csv"));
     CHECK(std::filesystem::is_regular_file(temp.path / "labels.csv"));
 }
+
+// --- ROADMAP 7.11: the large fixture -----------------------------------------------------
+//
+// Five of the six fixture shapes landed on 2026-07-29; this is the sixth, and it was left
+// open deliberately because it is the entry point for the questions 7.12 and 4.4 could not
+// ask. "Does the plan still use an index at scale" and "did the 10,000-row cap really go
+// away" cannot be asked of a database with four rows in it, and until now **no test in this
+// repo seeded more than a handful.**
+//
+// That matters most for 7.1. Its own write-up specified the regression test — *"seed >10,000
+// predictions across several days, assert the weekly sample_count exceeds 10,000, watch it
+// go red against today's code"* — and 7.1 was marked DONE without it ever being written. The
+// fix is real (the window is in SQL now), but nothing pinned it, so a future change could
+// reintroduce a cap and every existing test would still pass. Every test seeds far fewer
+// than 10,000 rows, which is precisely what made the original bug structurally invisible.
+namespace {
+
+// Builds a database with more rows than any cap the code has ever had. Sessions are spread
+// across `days` so window queries have something to actually exclude.
+struct LargeFixture {
+    static constexpr std::size_t kSessions = 60;
+    static constexpr std::size_t kPredictionsPerSession = 200;  // 12,000 predictions
+    static constexpr std::size_t kSnapshotsPerSession = 5;
+
+    std::vector<std::string> session_ids;
+    std::size_t recent_predictions = 0;  // predictions inside the last 24h
+
+    void seed(Storage& storage) {
+        // One transaction for the whole seed: 12,000 autocommitted inserts would each be
+        // their own fsync and turn a 2-second test into a 2-minute one.
+        Storage::Transaction txn(storage);
+        for (std::size_t s = 0; s < kSessions; ++s) {
+            const auto session =
+                storage.create_session("Large fixture " + std::to_string(s), FocusMode::Normal);
+            session_ids.push_back(session.session_id);
+
+            // Sessions march backwards one day at a time from 2026-07-20.
+            const int day = 20 - static_cast<int>(s % 20);
+            char started[32];
+            std::snprintf(started, sizeof(started), "2026-07-%02dT08:00:00Z", day);
+            storage.backdate_session_for_test(session.session_id, started);
+
+            for (std::size_t p = 0; p < kPredictionsPerSession; ++p) {
+                auto record = prediction(session.session_id, 40.0 + (p % 60),
+                                         (p % 10) / 10.0,
+                                         p % 3 == 0 ? "DISTRACTED" : "PRODUCTIVE");
+                char stamp[32];
+                std::snprintf(stamp, sizeof(stamp), "2026-07-%02dT%02d:%02d:%02dZ", day,
+                              8 + static_cast<int>(p / 60) % 12,
+                              static_cast<int>(p % 60), static_cast<int>(p % 60));
+                record.timestamp = stamp;
+                storage.insert_prediction(record);
+                if (day == 20) ++recent_predictions;
+            }
+
+            for (std::size_t c = 0; c < kSnapshotsPerSession; ++c) {
+                ContextSnapshotDto snap;
+                snap.app_name = c % 2 == 0 ? "Cursor" : "Chrome";
+                snap.window_title = "file" + std::to_string(c) + ".cpp";
+                std::snprintf(started, sizeof(started), "2026-07-%02dT09:%02d:00Z", day,
+                              static_cast<int>(c));
+                snap.timestamp = started;
+                storage.save_context_snapshot(session.session_id, snap);
+            }
+            storage.end_session(session.session_id);
+        }
+        // Transaction rolls back in its destructor unless committed. Forgetting this made
+        // every assertion below read 0 rows on the first run — a seed that silently seeds
+        // nothing looks exactly like a query that returns nothing.
+        txn.commit();
+    }
+
+    static constexpr std::size_t total_predictions() {
+        return kSessions * kPredictionsPerSession;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a large database answers window queries past the old row cap") {
+    // The regression test 7.1 asked for and never got. 12,000 predictions is above the
+    // 10,000-row ceiling that recent_predictions(10000) used to impose, so a reintroduced cap
+    // shows up here as a short count rather than as a plausible-looking wrong answer.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+
+    const auto all = storage->predictions_since(std::nullopt);
+    CHECK(all.size() == LargeFixture::total_predictions());
+    CHECK(all.size() > 10'000);
+
+    // A window that excludes most of the corpus must still be computed in SQL over the whole
+    // table, not over a truncated prefix of it.
+    const auto windowed = storage->predictions_since("2026-07-20T00:00:00Z");
+    CHECK(windowed.size() == fixture.recent_predictions);
+    CHECK(windowed.size() > 0);
+    CHECK(windowed.size() < all.size());
+    for (const auto& row : windowed) {
+        CHECK(row.timestamp >= "2026-07-20T00:00:00Z");
+    }
+}
+
+TEST_CASE("a large database still serves the hot queries from an index") {
+    // The plan assertions elsewhere in this file run against an *empty* database. Without
+    // stats SQLite plans structurally, so an empty table cannot distinguish "the planner
+    // will use this index" from "the planner has no reason not to". ANALYZE gives it real
+    // counts, which is the state a long-lived install drifts toward and the only state in
+    // which the question 7.12 asked is actually being answered.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+    storage->analyze_for_test();
+
+    auto uses_index = [&](const std::string& sql) {
+        bool indexed = false;
+        for (const auto& step : storage->query_plan(sql)) {
+            if (step.find("USING INDEX") != std::string::npos ||
+                step.find("USING COVERING INDEX") != std::string::npos) {
+                indexed = true;
+            }
+            CHECK(step.find("TEMP B-TREE") == std::string::npos);
+        }
+        return indexed;
+    };
+
+    CHECK(uses_index("SELECT session_id FROM predictions ORDER BY timestamp DESC LIMIT 1"));
+    CHECK(uses_index(
+        "SELECT session_id FROM predictions WHERE timestamp >= '2026-07-20T00:00:00Z' "
+        "ORDER BY timestamp DESC"));
+    CHECK(uses_index(
+        "SELECT session_id FROM sessions WHERE status = 'ACTIVE' ORDER BY started_at DESC LIMIT 1"));
+    CHECK(uses_index(
+        "SELECT COUNT(*) FROM snapback_events WHERE session_id = '" +
+        fixture.session_ids.front() + "'"));
+}
+
+TEST_CASE("batched aggregation over a large database matches the per-session path") {
+    // 7.12 replaced 1 + 5N round trips with three queries and proved parity on a database of
+    // a few rows. Parity on four rows does not exercise the window function's partitioning,
+    // the per-session cap, or the tie-breaking that 7.16 forced into the ORDER BY. This runs
+    // the same field-by-field comparison against 60 sessions.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+
+    const auto summaries = storage->recent_session_summaries(LargeFixture::kSessions);
+    REQUIRE(summaries.size() == LargeFixture::kSessions);
+
+    for (const auto& summary : summaries) {
+        const auto expected = storage->recap(summary.record.session_id);
+        CHECK(summary.recap.session_id == expected.session_id);
+        CHECK(summary.recap.avg_focus_score == doctest::Approx(expected.avg_focus_score));
+        CHECK(summary.recap.avg_distraction_risk ==
+              doctest::Approx(expected.avg_distraction_risk));
+        CHECK(summary.recap.deep_focus_pct == doctest::Approx(expected.deep_focus_pct));
+        CHECK(summary.recap.snapback_count == expected.snapback_count);
+        CHECK(summary.recap.thrash_spikes == expected.thrash_spikes);
+    }
+
+    // The per-session snapshot cap is what stops one long session dominating the ranking, so
+    // it has to hold when there are enough sessions for that to matter.
+    const auto counts = storage->context_app_counts(LargeFixture::kSessions, 3);
+    std::size_t total = 0;
+    for (const auto& [app, count] : counts) total += count;
+    CHECK(total == LargeFixture::kSessions * 3);
+    CHECK(counts.at("Cursor") > 0);
+}
