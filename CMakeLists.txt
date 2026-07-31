@@ -141,6 +141,7 @@ endif()
 add_library(snapback_app STATIC
   src/app/autostart.cpp
   src/app/autostart_launchd.cpp
+  src/app/autostart_systemd.cpp
   src/app/data_export.cpp
   src/app/frontend_assets.cpp
   src/app/reveal_path.cpp

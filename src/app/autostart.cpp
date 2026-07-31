@@ -1,6 +1,7 @@
 #include "app/autostart.hpp"
 
 #include "app/autostart_launchd.hpp"
+#include "app/autostart_systemd.hpp"
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -90,6 +91,24 @@ bool set_autostart_enabled(bool enabled) {
     const auto executable = launchd::current_executable_path();
     if (executable.empty()) return false;
     return launchd::install_agent(dir, executable);
+}
+
+#elif defined(__linux__)  // Roadmap 3.0
+
+// Same shape as the launchd branch: the mechanism is in autostart_systemd.cpp so it is
+// compiled and tested on all three CI hosts, and this file only chooses the directory.
+bool autostart_enabled() { return systemd::unit_enabled(systemd::user_unit_dir()); }
+
+bool autostart_supported() { return true; }
+
+bool set_autostart_enabled(bool enabled) {
+    const auto dir = systemd::user_unit_dir();
+    if (dir.empty()) return false;  // neither XDG_CONFIG_HOME nor HOME: no user session
+    if (!enabled) return systemd::remove_unit(dir);
+
+    const auto executable = systemd::current_executable_path();
+    if (executable.empty()) return false;
+    return systemd::install_unit(dir, executable);
 }
 
 #else  // no start-on-login backend on this platform
