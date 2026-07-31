@@ -185,7 +185,27 @@ target_compile_definitions(snapback_tests PRIVATE
   SNAPBACK_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/fixtures"
   SNAPBACK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 stage_onnxruntime(snapback_tests)
-add_test(NAME snapback_tests COMMAND snapback_tests)
+
+# ROADMAP 11.1: register every doctest case as its own CTest test rather than the whole
+# binary as one.
+#
+# The reason is 6.1. A single SIGSEGV took the process down and CTest could only report the
+# one entry it knew about as failed — the 138 cases that never got to run were reported as
+# *skipped*, which reads like "nothing to see here" rather than "we have no idea whether
+# these pass." A crash cost us the answer to every question after it, and the missing
+# coverage was invisible in exactly the situation where it mattered most.
+#
+# doctest_discover_tests asks the built binary for its case list and emits one add_test per
+# case, so a crash now costs one result. It also makes CI's per-test `--timeout` mean what it
+# says: previously the timeout covered all 295 cases at once, so one hung test was
+# indistinguishable from a slow suite.
+#
+# The cost is one process launch per case instead of one for the run. Measured on this Mac:
+# 2.4s as a single binary, and the per-case run is the price of not being blind after a
+# crash. Cases are also better isolated than before — global state cannot leak between them.
+list(APPEND CMAKE_MODULE_PATH "${doctest_SOURCE_DIR}/scripts/cmake")
+include(doctest)
+doctest_discover_tests(snapback_tests)
 
 add_executable(snapback_feature_parity_export tools/feature_parity_export.cpp)
 target_link_libraries(snapback_feature_parity_export PRIVATE snapback_core)

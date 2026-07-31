@@ -1288,7 +1288,35 @@ structure alone — a real review would likely find more.
 
 ## Tier 11 — Test infrastructure
 
-- **11.1 — One crash hides every test behind it.** `S`
+- **11.1 — DONE 2026-07-31.** `S` `doctest_discover_tests` now registers each case as its own
+  CTest entry: **296 entries instead of 1**, so a crash costs one result instead of the run.
+  CI's per-test `--timeout` also starts meaning what it says — it used to cover all 295 cases
+  at once, making one hung test indistinguishable from a slow suite. Cost measured on this
+  Mac: 2.4s as a single binary, 7.2s as 296 processes. That is the price of not being blind
+  after a crash, and it buys per-case isolation of global state for free.
+
+  **It immediately found a production bug, which is the part worth keeping.** Splitting the
+  suite turned a dismissed flake into a reproducible single failure: *AppState health reports
+  a capture hook that stopped unexpectedly* failed about **1 run in 40**. The flaky assertion
+  was the honest one. `CaptureThread::record_failure()` set `failed_` and left `running_`
+  true until the thread body ended a mutex acquisition and a string assignment later, and
+  `AppState::health()` loads the two flags separately — so the diagnostics panel could report
+  **"capture failed" and "running: true" in the same report**. Same contradiction shape as
+  7.7. Fixed by clearing `running_` before setting `failed_`; 0 failures in 200 runs after.
+
+  Note what had been hiding it. `CaptureThread reports a hook that returns as failed` waits
+  for `running()` to go false *before* asserting, so it sidesteps the window rather than
+  pinning it. The new `CaptureThread never reports failed and running at the same time` spins
+  instead of sleeping so it samples inside the window, and reports 3 contradictions in 200
+  attempts with the stores put back the wrong way round — a deterministic catch where the
+  old one was a 2.5% coin flip.
+
+  **The general lesson: one CTest entry per binary does not just lose results after a crash,
+  it launders per-case flakiness into "the suite is flaky."** One bad case in a 295-case
+  process is noise you re-run; one bad case out of 296 entries is a bug report with a name.
+
+  The original finding was:
+
   6.1 made this concrete: a single SIGSEGV aborted the run and **138 test cases were
   reported as *skipped*.** The whole suite is one CTest entry (`snapback_tests`), so any
   crash blinds us to everything after it. Register test cases as separate CTest entries, or
