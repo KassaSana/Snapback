@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const boundary = vi.hoisted(() => {
   const state = {
     privacy: { private_mode: false, excluded_apps: [], local_only: true } as Record<string, unknown>,
+    dataFolder: { path: "", supported: true, opened: true } as Record<string, unknown>,
+    dataFolderThrows: false,
     health: {
       status: "online",
       capture_running: true,
@@ -23,6 +25,9 @@ const boundary = vi.hoisted(() => {
         state.privacy = { ...state.privacy, excluded_apps: args?.excludedApps ?? [] };
         return state.privacy;
       case "delete_all_activity_data": return null;
+      case "open_data_folder":
+        if (state.dataFolderThrows) throw new Error("no data dir");
+        return state.dataFolder;
       case "get_health": return state.health;
       case "get_settings": return { default_focus_mode: "normal" };
       case "get_active_session": case "get_latest_prediction": return null;
@@ -43,6 +48,8 @@ import { renderApp } from "./renderApp";
 beforeEach(() => {
   boundary.invoke.mockClear();
   boundary.state.privacy = { private_mode: false, excluded_apps: [], local_only: true };
+  boundary.state.dataFolder = { path: "", supported: true, opened: true };
+  boundary.state.dataFolderThrows = false;
 });
 
 afterEach(() => cleanup());
@@ -88,5 +95,51 @@ describe("privacy controls", () => {
     expect(
       await screen.findByText("All locally collected activity data was deleted."),
     ).toBeInTheDocument();
+  });
+});
+
+// Roadmap 7.6, "open the data folder". Every case here reports the path, because the point of
+// the feature is telling the user where their data is — opening the file manager is only the
+// convenient version of that answer.
+describe("data folder", () => {
+  const clickShowDataFolder = async () => {
+    renderApp("settings");
+    fireEvent.click(await screen.findByRole("button", { name: "Show data folder" }));
+  };
+
+  it("opens the folder and names the path it opened", async () => {
+    boundary.state.dataFolder = { path: "/Users/kassa/Snapback", supported: true, opened: true };
+    await clickShowDataFolder();
+
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("open_data_folder"));
+    expect(await screen.findByText("Opened /Users/kassa/Snapback")).toBeInTheDocument();
+  });
+
+  it("still shows the path when the OS refused to open it", async () => {
+    boundary.state.dataFolder = { path: "/Users/kassa/Snapback", supported: true, opened: false };
+    await clickShowDataFolder();
+
+    expect(
+      await screen.findByText("Could not open the folder. Your data is in /Users/kassa/Snapback"),
+    ).toBeInTheDocument();
+  });
+
+  // A platform with no file-manager backend must not read as a failure — nothing is broken,
+  // this build simply cannot open a window, and the path is the complete answer.
+  it("distinguishes an unsupported platform from a failure", async () => {
+    boundary.state.dataFolder = { path: "/var/lib/snapback", supported: false, opened: false };
+    await clickShowDataFolder();
+
+    expect(
+      await screen.findByText("This build cannot open a file manager. Your data is in /var/lib/snapback"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Could not open the folder/)).toBeNull();
+  });
+
+  it("reports a failed command instead of an empty path", async () => {
+    boundary.state.dataFolderThrows = true;
+    await clickShowDataFolder();
+
+    expect(await screen.findByText("Could not locate the data folder.")).toBeInTheDocument();
   });
 });

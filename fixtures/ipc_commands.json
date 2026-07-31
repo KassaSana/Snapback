@@ -26,6 +26,7 @@
   "set_privacy_exclusions",
   "delete_all_activity_data",
   "delete_session",
+  "open_data_folder",
   "get_autostart",
   "set_autostart",
   "set_focus_mode",

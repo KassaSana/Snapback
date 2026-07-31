@@ -552,14 +552,26 @@ h1 {
   flex-wrap: wrap;
 }
 
-.privacy-danger-zone {
+.privacy-danger-zone,
+.privacy-inspect-zone {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid rgba(14, 17, 22, 0.12);
 }
 
-.privacy-danger-zone h3 {
+.privacy-danger-zone h3,
+.privacy-inspect-zone h3 {
   margin: 0 0 0.35rem;
+}
+
+/* The data folder path (Roadmap 7.6). Monospaced and selectable because when opening fails
+   this line is the only way the user can find their own files — it has to be copyable. */
+.data-folder-path {
+  margin-top: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .danger-button {

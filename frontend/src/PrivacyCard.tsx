@@ -4,11 +4,13 @@ import type { PrivacySettings } from "./api";
 
 type PrivacyCardProps = {
   busy: boolean;
+  dataFolderStatus?: string | null;
   error: string | null;
   exclusionWarning: string | null;
   exclusionInput: string;
   onAddExclusion: () => void | Promise<void>;
   onDeleteAllActivityData: () => void | Promise<void>;
+  onOpenDataFolder?: () => void | Promise<void>;
   onPrivateModeChange: (enabled: boolean) => void | Promise<void>;
   onRemoveExclusion: (app: string) => void | Promise<void>;
   setExclusionInput: (value: string) => void;
@@ -18,11 +20,13 @@ type PrivacyCardProps = {
 
 export const PrivacyCard = memo(function PrivacyCard({
   busy,
+  dataFolderStatus = null,
   error,
   exclusionWarning,
   exclusionInput,
   onAddExclusion,
   onDeleteAllActivityData,
+  onOpenDataFolder,
   onPrivateModeChange,
   onRemoveExclusion,
   setExclusionInput,
@@ -86,6 +90,27 @@ export const PrivacyCard = memo(function PrivacyCard({
           ))
         )}
       </ul>
+      {/* Roadmap 7.6. Inspecting comes before destroying, so this sits above the danger zone:
+          the user should be able to look at what was collected before deciding to delete it. */}
+      {onOpenDataFolder ? (
+        <div className="privacy-inspect-zone">
+          <h3>Your data on this device</h3>
+          <p className="helper-text">
+            Everything Snapback records lives in one folder — the database, exported CSVs, and
+            logs. Nothing leaves this device.
+          </p>
+          <button
+            className="secondary-button"
+            disabled={busy}
+            onClick={() => void onOpenDataFolder()}
+          >
+            Show data folder
+          </button>
+          {/* The path is rendered as selectable text, not just spoken by the file manager:
+              if opening failed, this line is the whole answer. */}
+          {dataFolderStatus ? <p className="helper-text data-folder-path">{dataFolderStatus}</p> : null}
+        </div>
+      ) : null}
       <div className="privacy-danger-zone">
         <h3>Delete activity data</h3>
         <p className="helper-text">

@@ -228,6 +228,15 @@ export type PrivacySettings = {
   localOnly: boolean;
 };
 
+// Roadmap 7.6. `opened` and `supported` are separate answers: an unsupported platform never
+// opens anything, but a supported one can still be refused by the OS, and the UI says
+// different things about "this build cannot" and "that did not work this time".
+export type OpenDataFolderResult = {
+  opened: boolean;
+  path: string;
+  supported: boolean;
+};
+
 export type AnalyticsHour = {
   hour: number;
   sampleCount: number;
@@ -406,6 +415,16 @@ export const api = {
   // rather than report a successful delete for a row that no longer existed.
   deleteSession: (sessionId: string) =>
     invoke<boolean>("delete_session", { sessionId }),
+  // `path` is populated even when `opened` is false, so a platform without a file-manager
+  // backend (or an OS that refused) can still tell the user where their data lives.
+  openDataFolder: async () => {
+    const raw = await invoke<Record<string, unknown>>("open_data_folder");
+    return {
+      opened: Boolean(raw.opened),
+      path: typeof raw.path === "string" ? raw.path : "",
+      supported: Boolean(raw.supported),
+    } satisfies OpenDataFolderResult;
+  },
   getAutostart: async () => {
     const raw = await invoke<Record<string, unknown>>("get_autostart");
     return mapAutostartStatus(raw);

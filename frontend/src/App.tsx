@@ -442,12 +442,14 @@ export default function App() {
 
         <PrivacyCard
           busy={privacy.busy}
+          dataFolderStatus={privacy.dataFolderStatus}
           error={privacy.error}
           exclusionWarning={privacy.exclusionWarning}
           exclusionInput={privacy.exclusionInput}
           deletionStatus={privacy.deletionStatus}
           onAddExclusion={privacy.addExclusion}
           onDeleteAllActivityData={privacy.deleteAllActivityData}
+          onOpenDataFolder={privacy.openDataFolder}
           onPrivateModeChange={privacy.setPrivateMode}
           onRemoveExclusion={privacy.removeExclusion}
           setExclusionInput={privacy.setExclusionInput}

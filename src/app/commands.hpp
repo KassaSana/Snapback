@@ -15,6 +15,7 @@
 
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
+#include "app/reveal_path.hpp"
 #include "app/state.hpp"
 #include "app/support_bundle.hpp"
 #include "app/training_deploy.hpp"
@@ -152,6 +153,15 @@ inline void register_commands(webview::webview& w, AppState& state,
                                                   a.at("sessionId").get<std::string>(),
                                                   detail::kMaxSessionIdLen);
         return json(state.delete_session(sid));
+    });
+    // Roadmap 7.6: "local-only" is a claim the user cannot check without being able to reach
+    // the files. `path` comes back whether or not the file manager opened, because "we could
+    // not open it, here is where it is" is still an answer the user can act on — and on a
+    // platform with no backend it is the *only* one.
+    bind_cmd(w, "open_data_folder", [data_dir](const json&) {
+        return json{{"path", data_dir.string()},
+                    {"supported", reveal_supported()},
+                    {"opened", reveal_directory(data_dir)}};
     });
     bind_cmd(w, "get_goal_categories", [&state](const json&) {
         return json(state.goal_categories());
