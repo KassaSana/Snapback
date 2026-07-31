@@ -6,6 +6,8 @@ const boundary = vi.hoisted(() => {
     privacy: { private_mode: false, excluded_apps: [], local_only: true } as Record<string, unknown>,
     dataFolder: { path: "", supported: true, opened: true } as Record<string, unknown>,
     dataFolderThrows: false,
+    myDataExport: {} as Record<string, unknown>,
+    exportThrows: false,
     health: {
       status: "online",
       capture_running: true,
@@ -28,6 +30,9 @@ const boundary = vi.hoisted(() => {
       case "open_data_folder":
         if (state.dataFolderThrows) throw new Error("no data dir");
         return state.dataFolder;
+      case "export_my_data":
+        if (state.exportThrows) throw new Error("export failed");
+        return state.myDataExport;
       case "get_health": return state.health;
       case "get_settings": return { default_focus_mode: "normal" };
       case "get_active_session": case "get_latest_prediction": return null;
@@ -50,6 +55,13 @@ beforeEach(() => {
   boundary.state.privacy = { private_mode: false, excluded_apps: [], local_only: true };
   boundary.state.dataFolder = { path: "", supported: true, opened: true };
   boundary.state.dataFolderThrows = false;
+  boundary.state.myDataExport = {
+    outputPath: "/data/exports/personal/snapback_my_data.md",
+    sessionCount: 3,
+    windowCount: 40,
+    truncated: false,
+  };
+  boundary.state.exportThrows = false;
 });
 
 afterEach(() => cleanup());
@@ -141,5 +153,62 @@ describe("data folder", () => {
     await clickShowDataFolder();
 
     expect(await screen.findByText("Could not locate the data folder.")).toBeInTheDocument();
+  });
+});
+
+// Roadmap 7.6, "export my data in a legible form" — distinct from "Export training data",
+// which writes a feature matrix for the model rather than a record a person can read.
+describe("legible data export", () => {
+  const clickExport = async () => {
+    renderApp("settings");
+    fireEvent.click(await screen.findByRole("button", { name: "Export my data" }));
+  };
+
+  it("names the file and what it holds, not just success", async () => {
+    await clickExport();
+
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("export_my_data"));
+    expect(
+      await screen.findByText(
+        "Wrote 3 sessions and 40 captured windows to /data/exports/personal/snapback_my_data.md.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  // An export of an empty history is a success, and it has to read as one — otherwise a
+  // first-run user cannot tell "nothing was collected" from "the export broke".
+  it("treats an empty history as a successful export of nothing", async () => {
+    boundary.state.myDataExport = {
+      outputPath: "/data/snapback_my_data.md",
+      sessionCount: 0,
+      windowCount: 0,
+      truncated: false,
+    };
+    await clickExport();
+
+    expect(
+      await screen.findByText("Wrote 0 sessions and 0 captured windows to /data/snapback_my_data.md."),
+    ).toBeInTheDocument();
+  });
+
+  it("passes the truncation warning through instead of implying completeness", async () => {
+    boundary.state.myDataExport = {
+      outputPath: "/data/snapback_my_data.md",
+      sessionCount: 1,
+      windowCount: 1,
+      truncated: true,
+    };
+    await clickExport();
+
+    expect(await screen.findByText(/Older sessions were left out\./)).toBeInTheDocument();
+    // Singular, so a one-session export does not read as machine output.
+    expect(screen.getByText(/Wrote 1 session and 1 captured window /)).toBeInTheDocument();
+  });
+
+  it("surfaces a failed export", async () => {
+    boundary.state.exportThrows = true;
+    await clickExport();
+
+    expect(await screen.findByText("Could not export your data.")).toBeInTheDocument();
   });
 });

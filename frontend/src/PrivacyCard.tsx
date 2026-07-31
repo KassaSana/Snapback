@@ -8,8 +8,10 @@ type PrivacyCardProps = {
   error: string | null;
   exclusionWarning: string | null;
   exclusionInput: string;
+  exportStatus?: string | null;
   onAddExclusion: () => void | Promise<void>;
   onDeleteAllActivityData: () => void | Promise<void>;
+  onExportMyData?: () => void | Promise<void>;
   onOpenDataFolder?: () => void | Promise<void>;
   onPrivateModeChange: (enabled: boolean) => void | Promise<void>;
   onRemoveExclusion: (app: string) => void | Promise<void>;
@@ -24,8 +26,10 @@ export const PrivacyCard = memo(function PrivacyCard({
   error,
   exclusionWarning,
   exclusionInput,
+  exportStatus = null,
   onAddExclusion,
   onDeleteAllActivityData,
+  onExportMyData,
   onOpenDataFolder,
   onPrivateModeChange,
   onRemoveExclusion,
@@ -99,13 +103,33 @@ export const PrivacyCard = memo(function PrivacyCard({
             Everything Snapback records lives in one folder — the database, exported CSVs, and
             logs. Nothing leaves this device.
           </p>
-          <button
-            className="secondary-button"
-            disabled={busy}
-            onClick={() => void onOpenDataFolder()}
-          >
-            Show data folder
-          </button>
+          <div className="button-row">
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() => void onOpenDataFolder()}
+            >
+              Show data folder
+            </button>
+            {onExportMyData ? (
+              <button
+                className="secondary-button"
+                disabled={busy}
+                onClick={() => void onExportMyData()}
+              >
+                Export my data
+              </button>
+            ) : null}
+          </div>
+          {/* Named for what it is, not how it is stored: this is the readable record, as
+              opposed to "Export training data", which produces a feature matrix. */}
+          {onExportMyData ? (
+            <p className="helper-text">
+              “Export my data” writes one readable Markdown file of your sessions and the
+              windows captured during them.
+            </p>
+          ) : null}
+          {exportStatus ? <p className="helper-text data-folder-path">{exportStatus}</p> : null}
           {/* The path is rendered as selectable text, not just spoken by the file manager:
               if opening failed, this line is the whole answer. */}
           {dataFolderStatus ? <p className="helper-text data-folder-path">{dataFolderStatus}</p> : null}

@@ -234,6 +234,17 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(state.export_training_data(out_dir, detail::opt_string(a, "sessionId")));
     });
 
+    // Roadmap 7.6: the legible counterpart to export_training_data. Separate command and
+    // separate directory because they answer different questions and have different audiences
+    // — one is for a training script, this one is for the person being recorded.
+    bind_cmd(w, "export_my_data", [&state, data_dir](const json&) {
+        const auto result = state.export_personal_data(data_dir / "exports" / "personal");
+        return json{{"outputPath", result.output_path},
+                    {"sessionCount", result.session_count},
+                    {"windowCount", result.window_count},
+                    {"truncated", result.truncated}};
+    });
+
     // --- Training pipeline ---
     bind_cmd(w, "get_training_deploy_status", [data_dir](const json&) {
         return training_deploy::training_deploy_status(data_dir);

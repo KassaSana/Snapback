@@ -39,6 +39,7 @@
   "refresh_permissions",
   "request_permissions",
   "export_training_data",
+  "export_my_data",
   "get_training_deploy_status",
   "set_training_repo_path",
   "train_from_export",

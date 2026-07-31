@@ -446,9 +446,11 @@ export default function App() {
           error={privacy.error}
           exclusionWarning={privacy.exclusionWarning}
           exclusionInput={privacy.exclusionInput}
+          exportStatus={privacy.exportStatus}
           deletionStatus={privacy.deletionStatus}
           onAddExclusion={privacy.addExclusion}
           onDeleteAllActivityData={privacy.deleteAllActivityData}
+          onExportMyData={privacy.exportMyData}
           onOpenDataFolder={privacy.openDataFolder}
           onPrivateModeChange={privacy.setPrivateMode}
           onRemoveExclusion={privacy.removeExclusion}

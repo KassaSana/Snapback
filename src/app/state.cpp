@@ -458,6 +458,57 @@ ExportTrainingResult AppState::export_training_data(
     return storage_.export_training_csv(out_dir, session_id);
 }
 
+PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path& out_dir,
+                                                     std::size_t session_limit,
+                                                     std::size_t windows_per_session) {
+    PersonalArchive archive;
+    archive.generated_at = now_rfc3339();
+    archive.app_version = SNAPBACK_VERSION;
+
+    {
+        std::lock_guard lock(storage_mutex_);
+        // One extra of each so truncation is *observed* rather than assumed. Asking for
+        // limit+1 and finding it means "there is more"; asking for limit and finding limit
+        // cannot tell a database with exactly `limit` rows from one with a million.
+        auto summaries = storage_.recent_session_summaries(session_limit + 1);
+        archive.sessions_truncated = summaries.size() > session_limit;
+        if (archive.sessions_truncated) summaries.resize(session_limit);
+
+        archive.sessions.reserve(summaries.size());
+        for (auto& summary : summaries) {
+            PersonalArchiveSession session;
+            auto context =
+                storage_.list_context_snapshots(summary.record.session_id, windows_per_session + 1);
+            session.context_truncated = context.size() > windows_per_session;
+            if (session.context_truncated) context.resize(windows_per_session);
+
+            session.record = std::move(summary.record);
+            session.recap = std::move(summary.recap);
+            session.context = std::move(context);
+            archive.sessions.push_back(std::move(session));
+        }
+    }
+    // Rendering and file IO happen outside the storage lock: the engine tick takes the same
+    // mutex to persist predictions, and writing a multi-megabyte archive under it would stall
+    // capture writes into a bounded ring buffer — the stall-becomes-dropped-events path that
+    // recent_session_summaries exists to avoid.
+
+    PersonalArchiveExport result;
+    result.session_count = archive.sessions.size();
+    for (const auto& session : archive.sessions) result.window_count += session.context.size();
+    result.truncated = archive.sessions_truncated;
+
+    std::filesystem::create_directories(out_dir);
+    const auto path = out_dir / "snapback_my_data.md";
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) throw std::runtime_error("failed to write the data export");
+    out << render_personal_archive(archive);
+    if (!out) throw std::runtime_error("failed to write the data export");
+
+    result.output_path = path.string();
+    return result;
+}
+
 void AppState::set_focus_mode(FocusMode mode) {
     std::lock_guard lock(mutex_);
     focus_mode_ = mode;
