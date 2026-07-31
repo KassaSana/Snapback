@@ -37,7 +37,10 @@ export const SettingsCard = memo(function SettingsCard({
       </label>
       {error ? <p className="helper-text alert">{error}</p> : null}
       {!supported ? (
-        <p className="helper-text">Start-on-login is currently available on Windows.</p>
+        // Roadmap 3.0 added the macOS launchd backend, so this line named the wrong platforms
+        // the moment that landed. It is driven by `supported` from the native side rather than
+        // by a hardcoded OS check, so the only thing to keep true is the sentence itself.
+        <p className="helper-text">Start-on-login is available on Windows and macOS.</p>
       ) : null}
     </section>
   );
