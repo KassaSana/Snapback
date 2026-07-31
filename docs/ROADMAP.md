@@ -670,7 +670,44 @@ internals, and the benchmark harness.
   idle/pomodoro/throttle interactions at real time scales without sleeping. Exactly the
   "find a testable seam" move that made 5.1's fix possible.
 
-- **7.15 — Classifier weights are ~20 undocumented magic numbers.** `M`
+- **7.15 — DONE 2026-07-31.** `M` Every literal is now named in
+  `src/engine/classifier_tuning.hpp` and grouped by **role rather than by location**, because
+  role is what 1.2 and 2.3 actually need:
+
+  - `policy` — what counts as distracted. Survives 2.3 (a model predicts a class; it does not
+    decide that thrashing means distracted) and is **1.2's answer space**.
+  - `scale` — normalisers turning a raw count or duration into 0..1. Claims about human
+    behaviour: "four app switches in 30s is as thrashy as it gets."
+  - `weight` — the linear-blend coefficients. **This is the group 2.3 replaces**; nothing
+    else in the file is learnable.
+  - `shape` — how the four class scores are carved out of one another. Structural, not dials.
+
+  **The convex combinations are now `static_assert`ed.** `thrash`, `drift`, and `deep_work`
+  each sum to 1, which is what keeps their scores in 0..1 without leaning on the clamp.
+  Changing one weight without the others rescales the score instead of reweighting it, and
+  that is now a compile error rather than a silent drift in every stored prediction.
+
+  **On provenance: there is none, and that is the real finding.** The item asked to record
+  "where each value came from." Git says every value arrived in the port commit `1cffcb9
+  refactor: C++` with no derivation and no rationale, and history goes no further back for
+  this file. So the header says that plainly rather than inventing a story. These are
+  hand-tuned numbers never validated against labelled data; **naming them does not make them
+  right, it makes them arguable**, which is the point.
+
+  Two things the naming exposed that were invisible as bare literals. The **distracted
+  accumulator is deliberately not a convex combination** — it sums to 0.80 with a negative
+  term, so behaviour alone cannot reach a distraction of 1.0; entertainment context and goal
+  misalignment carry the rest. Nobody recorded whether that ceiling was intended. And the
+  **goal bias is applied twice at different strengths** (0.25 on drift, 0.35 on distraction)
+  with nothing saying why distraction should be more goal-sensitive.
+
+  **Verified as a pure extraction.** The feature-parity golden pins the *feature vector*, not
+  classifier output, so it could not have caught a moved number here. Predictions were hashed
+  over a 2,700-point grid of feature/mode combinations before and after: identical
+  (`15294597689842095536`). 296/296 tests green.
+
+  The original finding was:
+
   **Land before 1.2 is implemented, ideally before 2.3.**
 
   `classifier.cpp` carries dozens of unnamed constants: `0.45/0.25/0.30` in `thrash_score`,
