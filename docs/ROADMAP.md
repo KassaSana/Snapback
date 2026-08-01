@@ -15,11 +15,13 @@ ordering, immutable dependency pins, per-case CTest registration, classifier pro
 the large storage fixture, injected clocks, and private test seams. The August 1 performance
 pass moved hot live reads to an immutable snapshot and added contention/lifecycle coverage.
 Locally, **318 C++ cases** and **86 frontend component tests** pass, frontend unit scripts and
-typecheck are clean, and the exact branch remains unverified by remote CI until it is pushed.
+typecheck are clean. PR #40 then ran the exact merged work through all **15 hosted CI jobs**;
+all passed, including `macos-gui-smoke`.
 
-The formal v1 blocker list is **three of six verified complete**. Packaging and Decision
-session A remain open, and the implemented macOS launch smoke still needs one successful
-hosted CI run. None is an unidentified coding gap.
+The formal v1 blocker list is **four of six verified complete**. Packaging and Decision
+session A are the two remaining blockers. The broader audit below did find release-hardening
+work outside ADR-0002; those items must be closed before publishing even though they do not
+change the blocker count.
 
 **A note on trusting this file.** Past audits found items here that were simply wrong: 0.3
 described work that was already written (and broken), 2.4 sits in the Done archive on the
@@ -37,7 +39,8 @@ check that the code has a caller.**
   repeatedly here and has twice produced a "fix" that had to be reverted.
 
 Work each item on the standard loop: code → test → senior-to-junior explanation → commit
-(terse one-liner, Kassa's identity, zero AI attribution). Claude commits; only Kassa pushes.
+(terse one-liner, Kassa's identity, zero AI attribution). Local work may be committed with
+Kassa's configured identity; only Kassa pushes.
 
 ---
 
@@ -48,25 +51,28 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | # | Item | Why now |
 |---|------|---------|
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
-| 2 | macOS launch-smoke CI verification | Push/open a PR and require one successful hosted `macos-gui-smoke` run before closing the blocker |
-| 3 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | The only remaining product decision on the v1 blocker list |
-| 4 | **6.2** red-master rule | Finish the process decision already isolated on its branch |
-| 5 | **Decision session B**: 4.11 | Settle title-parser behavior before changing a long-standing contract |
-| 6 | **7.16** timestamp representation | Unblocks retention and time-window correctness work |
-| 7 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
-| 8 | **10.1** real webview E2E | Covers the remaining native-to-browser integration seam |
-| 9 | **4.4** performance gate | Benchmarks and baselines exist; CI thresholds still do not |
-| 10 | **2.3 / Tier 13** model retraining | Biggest remaining product-depth project after release decisions |
+| 2 | **8.8** release webview debug mode | Small, high-impact release security fix: production currently enables the debugging surface |
+| 3 | **8.9** verify ONNX downloads | Close the executable-dependency integrity hole in two CI jobs |
+| 4 | **7.20**, then **7.19** | Make session replacement and settings persistence crash-safe before asking users to trust their data |
+| 5 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | The only remaining product decision on the v1 blocker list |
+| 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
+| 7 | **9.11** release-tag trust chain | A `v*` tag must not bypass the full CI and version checks |
+| 8 | **Decision session B**: 4.11 | Settle title-parser behavior before changing a long-standing contract |
+| 9 | **7.16** timestamp representation | Unblocks retention and time-window correctness work |
+| 10 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
+| 11 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
+| 12 | **4.4 / 14.1** performance gate + storage query lane | Measure first; split the SQLite reader only if contention is reproduced |
+| 13 | **2.3 / Tier 13** model retraining | Biggest remaining product-depth project after release decisions |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
-shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
-outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
-now done, which is what makes the blocker table below meaningful.
+shippable product** — if the goal is "someone else uses this," its remaining release-readiness
+items outrank most product-depth work. 9.1 was that argument's headline item and is now done,
+which is what makes the blocker table below meaningful.
 
-**Next up is 3.3 — paperwork before code.** Every v1 blocker that was already-scoped
-implementation work is done. The Apple Developer account has independent lead time, so its
-application should start while the launch smoke awaits hosted CI and Decision session A is
-being settled.
+**Next up is 3.3's external paperwork, in parallel with 8.8 in code.** The Apple Developer
+account has independent lead time, so its application should start while the small release
+security and data-integrity findings are fixed. Decision session A remains the other formal
+blocker.
 
 **ADR-0002 release-blocker status as of 2026-08-01:**
 
@@ -75,13 +81,13 @@ being settled.
 | 1 | **0.3** live-Mac capture | ✅ Done 2026-07-25 |
 | 2 | **3.1** macOS tray + native `NSPanel` overlay | ✅ Done 2026-07-28 — verified by running the app |
 | 3 | **3.3** macOS packaging + notarization | ⬜ **Next.** Longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest — and it is what unblocks macOS notifications |
-| 4 | macOS launch smoke in CI | 🟨 Implemented and locally verified 2026-07-28; awaiting a successful hosted `macos-gui-smoke` run |
+| 4 | macOS launch smoke in CI | ✅ Done 2026-08-01 — PR #40's hosted `macos-gui-smoke` passed with the other 14 CI jobs |
 | 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
 | 6 | **7.3** schema migrations | ✅ Done 2026-07-29 — `user_version`, an ordered migration list, and a downgrade guard |
 
-Note the shape of what remains: **three of six are verified done**, one is implemented but
-awaits hosted CI, one is paperwork with a long lead time, and one is a question. No
-already-scoped implementation gap is left on this list.
+Note the shape of what remains: **four of six are verified done**, one is paperwork with a
+long lead time, and one is a question. No already-scoped implementation gap is left on this
+formal blocker list; the release-hardening findings in 8.8, 8.9, 9.11, and 9.12 are separate.
 
 ---
 
@@ -213,8 +219,16 @@ ended three days earlier.
 - **0.4b — Provision the signing certificate.** `S` (external dependency)
   The `-SignCertificate` path is wired into `.github/workflows/release.yml` behind the
   `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` secret; releases stay unsigned until an EV cert is
-  purchased and the secret set. Document the acquisition steps in
-  [PACKAGING.md](PACKAGING.md) when doing this.
+  purchased and the secret set. **The current wiring is not sufficient:**
+  `package_windows.ps1` creates the CPack ZIP and embeds that ZIP in the IExpress installer
+  *before* it signs the build-tree `snapback.exe`. The uploaded ZIP and installer payload
+  therefore still contain the unsigned executable even when the secret exists; only the
+  loose build-tree binary and the outer installer receive signatures.
+
+  Move signing before CPack/IExpress, then extract both uploaded artifacts and verify the
+  packaged `snapback.exe` with `Get-AuthenticodeSignature`. Document certificate acquisition
+  and the verification path in [PACKAGING.md](PACKAGING.md) when doing this. Until that is
+  proven, README must describe Windows signing as wired but incomplete, not done.
 
 ---
 
@@ -386,6 +400,28 @@ internals, and the benchmark harness.
   against over-broad patterns. Since over-exclusion looks identical to a dead capture hook
   (7.4), this needs at minimum a UI warning when a rule matches an implausible share of
   observed apps.
+
+- **7.19 — Settings persistence can silently erase configuration.** `S`
+
+  `load_app_settings()` catches every parse/type error and returns defaults without logging.
+  `save_app_settings()` opens the only `settings.json` with `trunc`, writes directly to it,
+  and never flushes or checks the stream afterward. A crash, disk-full condition, or partial
+  write can therefore leave an empty/corrupt file that the next launch silently converts to
+  defaults.
+
+  Write and flush a sibling temporary file, atomically replace the destination, retain or
+  recover a last-known-good backup, and log malformed input. Tests must cover malformed JSON,
+  a failed final write/replace, and recovery without changing the existing settings schema.
+
+- **7.20 — Replacing the active session is not atomic.** `S`
+
+  `Storage::create_session()` first marks every active session completed and only then inserts
+  the replacement, without a transaction spanning both statements. If the insert fails, the
+  old session is already closed and the requested new one does not exist.
+
+  Perform close-and-create in one transaction. Add a deterministic failure seam or constraint
+  fixture that makes the insert fail, then assert the previous session remains active after
+  rollback. Preserve the current rule that starting a session replaces an existing one.
 
 ### Decisions — do not code these yet
 
@@ -957,6 +993,28 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   advisories and nothing verifies what got fetched. Pin to commit SHAs rather than tags (tags
   are mutable) and note the update process.
 
+- **8.8 — Release builds enable the webview debugging surface.** `S`
+
+  `main.cpp` constructs `webview::webview` with `debug=true` unconditionally. That is useful
+  for local development, but it belongs behind the same Debug-build boundary as the frontend
+  URL override. The page owns a privileged native command surface, so production developer
+  tools are a materially different risk than ordinary browser debugging.
+
+  Pass `true` only in Debug builds and `false` in Release/RelWithDebInfo. Put the build-mode
+  decision in a small pure helper and regression-test both compile-time configurations rather
+  than relying on inspection of `main.cpp`.
+
+- **8.9 — ONNX Runtime CI downloads are versioned but not integrity-checked.** `S`
+
+  The Windows and Linux ONNX jobs download executable runtime archives from release URLs and
+  extract them without verifying a digest. Item 8.6's guard covers CMake downloads, not these
+  workflow downloads, so its broad claim that fetched dependencies are immutable was
+  incomplete.
+
+  Record the SHA-256 for each platform archive, verify it before extraction, and extend the
+  dependency-pin guard (or add a focused workflow guard) so a future version bump cannot omit
+  the hashes. Keep the human-readable ONNX version beside the digests.
+
 ---
 
 ## Tier 1 — Ship a polished Windows-first v1
@@ -1050,8 +1108,9 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   Notification delivery was explicitly *not* part of this item. See ADR-0002's correction
   note for why that ordering is the whole reason the overlay was chosen.
 
-- **macOS launch smoke in CI — IMPLEMENTED LOCALLY 2026-07-28; HOSTED CONFIRMATION OPEN.**
-  `S` — fourth ADR-0002 blocker.
+- **macOS launch smoke in CI — DONE, HOSTED 2026-08-01.** `S` — fourth ADR-0002
+  blocker. PR #40 ran `macos-gui-smoke` successfully on GitHub's macOS runner, alongside 14
+  other passing jobs.
   `scripts/gui_smoke_macos.sh`, wired as the `macos-gui-smoke` job. `desktop-app-build`
   proved the macOS binary *links*; nothing proved it *starts*, and both ways it can fail to
   start are invisible at link time (a webview that cannot create its window, and a missing
@@ -1060,8 +1119,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   The script reuses `main.cpp`'s existing `SNAPBACK_GUI_SESSION_SMOKE` hook, so it is a real
   round trip — a session started and stopped through `AppState` and SQLite from the UI
   thread — and then requires the run loop to exit on its own, which is the same path the
-  tray's Quit item drives. It has passed on Kassa's Mac but has never run successfully on a
-  GitHub runner; close this item only after a hosted `macos-gui-smoke` run passes.
+  tray's Quit item drives. It first passed on Kassa's Mac and is now confirmed in hosted CI.
 
 - **3.2 — Linux tray + overlay.** `M`
   `libappindicator` tray + an overlay window (X11/Wayland caveats noted). Since 3.1 landed,
@@ -1254,10 +1312,17 @@ small; the tier is large because nobody has walked that path yet.
 
 - **9.4 — Walk the upgrade path once, deliberately.** `M`
   Nobody has ever installed version A and then upgraded to version B. Unknowns worth
-  resolving before a stranger hits them: does the DB survive (7.3 says probably not); does
-  the HKCU Run key survive a reinstall to a new path, or does autostart silently point at a
-  deleted binary; do settings persist; does a running instance get replaced cleanly?
-  Depends on 7.3.
+  resolving before a stranger hits them: does the DB survive through 7.3's migration runner;
+  does the HKCU Run key survive a reinstall to a new path, or does autostart silently point
+  at a deleted binary; do settings persist; does a running instance get replaced cleanly?
+
+  **The current installer has not earned a successful baseline:**
+  `install_windows_package.ps1` passes a wildcard path to `Copy-Item -LiteralPath`, so `*`
+  is treated literally instead of expanding the package contents. CI validates the ZIP but
+  never installs it. Fix that as part of this item, then install v0.2.0, create recognizable
+  data, upgrade to the candidate, and prove the executable, autostart path, settings, and
+  `focoflow.db` are discovered and migrated rather than appearing lost under the C++ app's
+  current data-directory rules.
 
 - **9.5 — Uninstall leaves no surprises.** `S`
   Decide and implement what uninstall removes. Today it plausibly leaves behind: the
@@ -1267,12 +1332,18 @@ small; the tier is large because nobody has walked that path yet.
   four** — the user believes they removed it. Ties to 7.6 and 8.5.
 
 - **9.6 — Failure UX: what does the user actually see when it breaks?** `M`
-  The backend will soon report rich failure states (7.4, 7.10, 8.1), but there is no designed
+  The backend reports several rich failure states (7.4, 7.10, 8.1), but there is no designed
   response to any of them. Specify what the UI does when: capture permission is revoked
   *mid-session* (macOS lets the user do this at any time); the hook dies; the disk is full so
   writes fail; the DB is locked by another instance; predictions have gone stale. Right now
   most of these render as a dashboard that simply stops updating, which is
   indistinguishable from "you're doing great."
+
+  **Concrete persistence gap:** exceptions escaping the engine persistence phase are logged,
+  but no durable failure state reaches `HealthStatus` and no retry policy stops the engine
+  from repeating the same failed write. The frontend already has a `persistence-failed`
+  event shape. Wire the native state and event, degrade health truthfully, avoid a hot retry
+  loop, and test disk-full/locked failures.
 
 - **9.7 — DONE 2026-07-26.** Insights, trends, summary reports, and recent focus now all
   render explicit first-run guidance instead of zero-valued metrics or blank charts. Summary
@@ -1289,6 +1360,29 @@ small; the tier is large because nobody has walked that path yet.
   bundle containing health, recent logs, version, and OS/build identity. Both the UI and
   file state exactly what is included, what is excluded, and that logs may expose local
   paths or error details; native and UI regressions pin the privacy boundary.
+
+- **9.11 — A release tag can bypass the full CI and version contract.** `S`
+
+  `release.yml` publishes any pushed `v*` tag. The full 15-job CI workflow runs only for
+  pushes/PRs targeting `main` or `master`, while release runs a narrower Windows package
+  path and never proves that the tag names CMake's `PROJECT_VERSION`. A tag can therefore
+  publish an arbitrary commit that never passed the macOS/Linux/sanitizer/ONNX matrix or a
+  version whose artifact metadata disagrees with its tag.
+
+  Before publishing, require the tagged commit to be reachable from protected `master`, fail
+  unless the tag is exactly `v${PROJECT_VERSION}`, and require the release candidate's full
+  CI conclusion (or run the equivalent checks in a reusable workflow). This complements 6.2;
+  branch protection alone does not protect an arbitrary tag.
+
+- **9.12 — Choose a project license and package dependency notices.** `S` `decision`
+
+  The repository has no `LICENSE`, `NOTICE`, or third-party notice file, while CPack points
+  `CPACK_RESOURCE_FILE_LICENSE` at README. That is neither a project license nor an inventory
+  of dependency obligations, and a public repository is not automatically open source.
+
+  Kassa must choose the project license. Then add the real license file, audit the licenses
+  of bundled/runtime dependencies, generate the required third-party notices, include both
+  in every package, and test their presence in extracted release artifacts.
 
 ---
 
@@ -1632,28 +1726,23 @@ later moved.
 
 - **12.6 — Global label hotkeys were never built, and nothing recorded that.** `M`
   Found 2026-07-23 while reconciling 12.1. The design called for global hotkeys that label
-  the current window focused/distracted without leaving the app. **Nothing in `src/`,
-  `tests/`, or `frontend/src` mentions them.** It stayed invisible because
+  the current window focused/distracted without leaving the app. **The frontend event and
+  notification scaffolding now exists, but no native code registers an OS-global shortcut or
+  emits the label-hotkey event.** It stayed invisible because
   `ARCHITECTURE.md`'s module map never listed the capability — the map only covered what
   someone intended to build, so a skipped module left no trace anywhere.
 
   Filed here because the doc audit is what surfaced it. It needs hand-written per-OS hotkey
-  registration, which is presumably why it was skipped. *Decide whether v1 needs it (**9.1**) before building it.*
+  registration, which is presumably why it was skipped. ADR-0002's six-item blocker list does
+  not include it, so this is post-v1 unless that accepted scope is explicitly revised.
 
 ---
 
 ## Tier 13 — Model lifecycle (breaking down 2.3)
 
-**2.3 is currently one `L` item that hides at least six.** "Wire the trainer, produce a
-`model.onnx`" is the easy half; everything about *operating* a model the user can't inspect
-is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
-
-- **13.3 — Nothing stops a worse model from being deployed.** `M`
-  `train_from_export` parses `metrics.json` but no gate consumes it. A retraining run that
-  produces a *less* accurate model deploys exactly like a good one, and the user's experience
-  silently degrades with no signal. Needs a held-out evaluation and a threshold: refuse to
-  deploy below baseline, and say why. **This is the item that makes on-device personalization
-  safe rather than a coin flip.**
+**2.3 was one `L` item that hid at least six.** The deployment identity, quality gate, and
+rollback are complete as 13.1–13.4 in the Done archive. The two unresolved product decisions
+below still determine whether and how the retraining loop should operate.
 
 - **13.5 — Is there enough labelled data to train on at all?** `S` `decision`
   Unexamined. Labels come from explicit user submissions plus auto-labels at session end —
@@ -1668,6 +1757,12 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
   signals. Nobody has specified what *should* win, or how to tell when the model has drifted
   far enough from the heuristic to be distrusted. Relates directly to **7.7** (score vs
   state) and **5.3** (confidence gating) — arguably the same decision session.
+
+  Once behavior is settled, localize ownership too: `Classifier` reaches into the process-wide
+  `OnnxModel::instance()`, while `AppState` separately loads it and reads its identity, and
+  tests need cleanup guards for leaked singleton state. Put model lifecycle behind an owned
+  classifier adapter without changing the chosen policy. Do not make that seam change first;
+  it would disguise a behavior decision as architecture cleanup.
 
 ---
 
@@ -1729,6 +1824,68 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
 
 ---
 
+## Tier 14 — Architecture leverage (2026-08-01 deep-module scan)
+
+These are not “large file” complaints. Each item identifies a shallow seam where callers
+must understand implementation details. Only work with a concrete acceptance boundary is
+kept here; already-deep modules and completed performance work were rejected during the scan.
+
+- **14.1 — Benchmark a separate SQLite query lane.** `M` `performance`
+
+  The immutable live snapshot removed state-lock contention, but every storage-backed UI
+  report still takes `storage_mutex_`, the same seam the engine uses to persist. WAL already
+  permits concurrent readers and a writer. A deep `ActivityQueries` module owning a read
+  connection could hide reporting SQL and let the engine's `Storage` connection remain the
+  sole writer.
+
+  **Do not implement from structure alone.** First extend the month-scale benchmark to run
+  the largest session-history/analytics/summary reads concurrently with persistence and
+  measure writer delay and dropped-event risk. If the result is immaterial, close this item
+  with the numbers and keep one connection. If it reproduces contention, introduce the read
+  lane, pin snapshot/after-delete semantics, and require the benchmark to show the gain.
+
+- **14.2 — Make one synchronous engine cycle the production test seam.** `M`
+
+  `engine_tick()` owns the real drain → idle/pomodoro → compute → persist → emit sequence,
+  while tests and both benchmark targets include `tests/app_state_test_access.hpp` to reach
+  three narrower private methods. Deleting that friend seam would force tests back to threads
+  and sleeps; its forwarding interface is shallow because it exposes which internals to call.
+
+  Extract a deterministic engine-cycle module whose `step` returns persistence jobs, emitted
+  events, and updated live state. The production thread and tests must call the same step;
+  persistence and UI dispatch remain adapters outside it. Delete the three private test
+  methods and remove the benchmarks' dependency on the `tests/` include path. This is the
+  concrete completion path for 7.14 and the remaining testability half of 11.4.
+
+- **14.3 — Make the command registry the authoritative native contract.** `M`
+
+  Command names, argument defaults, validation, result casing, TypeScript DTOs, mappers,
+  fixtures, and mocks are parallel hand-maintained descriptions across `commands.hpp`,
+  `api.ts`, and `apiMappers.ts`. The contract test uses source-text matching for names, while
+  selected command tests manually recreate handler lambdas. That catches some drift but still
+  lets a real registered handler's payload shape diverge.
+
+  Introduce a webview-free `CommandRegistry` that owns the real descriptors and handlers;
+  make webview binding a thin adapter over it. Every registered handler must be invokable by
+  name in native tests, and the frontend contract fixture must be generated from or validated
+  against the same manifest. This complements 10.1's real-webview E2E; neither replaces the
+  other.
+
+- **14.4 — Move frontend invalidation into workflow modules.** `M`
+
+  `App.tsx` coordinates roughly a dozen feature states and passes 29 values into
+  `useAppEffects`; deletion and session actions know which unrelated stores must refresh.
+  Tests reproduce that knowledge with large command-switch mocks. Deep Now, Review, and
+  Preferences workflow modules should own subscriptions, refresh consequences, and failure
+  propagation, exposing smaller action/result interfaces to the surfaces.
+
+  Preserve ADR-0003's Now/Review/Settings placement. Acceptance is workflow-level tests in
+  which one public action proves every required invalidation without `App` manually calling
+  each refresh function. Schedule this after release blockers; it is locality leverage, not a
+  prerequisite to ship.
+
+---
+
 ## Recurring health checks
 
 Checks to run on a cadence, not one-off tasks. Several are automatable; where so, that's
@@ -1737,14 +1894,20 @@ itself a backlog item below.
 ### Before every release
 
 - [ ] Open a **pre-existing** `focoflow.db` written by an earlier install and run a
-      full session end-to-end. *Blocked on the 7.11 fixtures.*
+      full session end-to-end. The 7.11 fixture corpus now makes this directly runnable.
 - [ ] Kill the process uncleanly mid-session, restart, confirm WAL recovery and that the
       orphaned `ACTIVE` session resumes (`state.cpp:158` claims to handle this — verify it).
 - [ ] Run a session on each OS long enough to exceed the ring buffer under load, and confirm
-      `capture_events_dropped` reflects reality. *Blocked on 7.4.*
+      `capture_events_dropped` reflects reality; 7.4/7.17 expose the signal, this validates
+      it under a real desktop workload.
 - [ ] Confirm every `invoke(...)` string in `frontend/src/api.ts` resolves in
       `commands.hpp`. `test_ipc_contract` covers the C++ side; confirm it covers the TS side
-      too. This contract is easy to drift and a mismatch fails silently at runtime.
+      too. This contract is easy to drift and a mismatch fails silently at runtime; 14.3 is
+      the structural fix.
+- [ ] Confirm the release tag equals CMake's version, names a commit reachable from protected
+      `master`, and carries the full CI result required by 9.11.
+- [ ] Extract every release artifact and verify the project license, dependency notices,
+      frontend bundle, executable signature where required, and launchable binary are inside.
 - [ ] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
       the full pipeline. Covers 8.1 and 8.2 in one test.
 
@@ -1779,8 +1942,9 @@ itself a backlog item below.
 - [ ] **Scale job:** seed a month of synthetic usage; assert analytics/summary return correct
       counts inside a time budget. Would have caught 7.1; guards 7.12.
 - [ ] **Health-truthfulness job:** force each failure mode (dead hook, over-broad exclusion,
-      no session) and assert `HealthStatus` reports something other than healthy. *Blocked on
-      7.4 and 7.10.* The point is that health fields must never be literals again.
+      persistence failure, no session) and assert `HealthStatus` reports something other than
+      healthy. Capture/prediction fields are unblocked by 7.4 and 7.10; persistence waits on
+      9.6. The point is that health fields must never be literals again.
 - [ ] **Stack-size assertion:** `static_assert(sizeof(AppState) < N)`. One line, permanently
       prevents 6.1's class of regression.
 - [ ] **Dead-header job:** automate the dead-code sweep above. It's the check that would have
