@@ -26,7 +26,7 @@ The React frontend is plain TypeScript and React. It uses the project-owned
 | Native notifications | ✅ Windows · ❌ macOS — needs a bundle id from [Roadmap 3.3](docs/ROADMAP.md) |
 | Linux capture with polling fallback | ✅ |
 | Linux tray and overlay | ❌ Stubbed — [Roadmap 3.2](docs/ROADMAP.md) |
-| Packaging and signing | ✅ Windows · ❌ macOS and Linux |
+| Packaging and signing | ⚠️ Windows package builds; packaged signing is incomplete ([Roadmap 0.4b](docs/ROADMAP.md)) · ❌ macOS and Linux |
 | C++ feature-vector golden fixtures and IPC contract tests | ✅ |
 | CI on Windows, macOS, and Linux plus sanitizer jobs | ✅ |
 | CI launches the app, not just links it | ✅ Windows · ✅ macOS · ❌ Linux |

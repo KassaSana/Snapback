@@ -139,6 +139,11 @@ an open question.
 > records that 3.1 and the smoke were verified by hand on the author's Mac but have not yet
 > run on a CI runner. **The status of this ADR is unchanged — `Accepted`, not superseded.**
 
+> **Progress correction, 2026-08-01.** The final sentence above is now historical: PR #40's
+> hosted `macos-gui-smoke` passed on GitHub's macOS runner with the other 14 CI jobs. Four of
+> six blockers remain cleared; the two open blockers are still 3.3 packaging/notarization and
+> Decision session A. The live table remains in [ROADMAP.md](../ROADMAP.md).
+
 ## Why
 
 Option B wins on **dogfooding**, not on user demand. The author's machine is macOS, so a
