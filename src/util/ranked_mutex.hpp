@@ -31,7 +31,8 @@ namespace snapback {
 // Equal ranks are a violation too: two locks nobody has ordered can be taken in either order
 // by two threads, which is the deadlock this type exists to prevent.
 enum class LockRank : int {
-    // AppState::mutex_ — in-memory state. Hot UI reads take only this one.
+    // AppState::mutex_ — mutable in-memory state. Hot live reads use AppState's immutable
+    // snapshot; mutations and less-frequent configuration reads still take this lock.
     State = 100,
     // AppState::activity_boundary_mutex_ — fences the off-lock persistence phase against
     // activity deletion.

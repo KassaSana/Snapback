@@ -222,7 +222,7 @@ TEST_CASE("app state respects its own lock order") {
     (void)state->app_rules();
     state->delete_app_rule(rule.id);
 
-    // Read paths that reach storage.
+    // Read paths (the first three are snapshot-backed; the remainder reach storage).
     (void)state->health();
     (void)state->get_session(session.session_id);
     (void)state->active_session();

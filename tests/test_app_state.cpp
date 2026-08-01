@@ -506,6 +506,38 @@ TEST_CASE("AppState::delete_session clears live state when the active session is
     CHECK_FALSE(state->pomodoro_status().running);
 }
 
+TEST_CASE("AppState::delete_session evicts a deleted inactive latest prediction") {
+    auto state = make_state();
+    const auto doomed = state->start_session("Predicted then deleted", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+    state->stop_session(doomed.session_id);
+    const auto keeper = state->start_session("Still active", FocusMode::Normal);
+    REQUIRE(state->latest_prediction().has_value());
+    REQUIRE(state->latest_prediction()->session_id == doomed.session_id);
+
+    REQUIRE(state->delete_session(doomed.session_id));
+
+    REQUIRE(state->active_session().has_value());
+    CHECK(state->active_session()->session_id == keeper.session_id);
+    CHECK(state->latest_prediction() == std::nullopt);
+}
+
+TEST_CASE("AppState::delete_session retains the latest prediction from another session") {
+    auto state = make_state();
+    const auto keeper = state->start_session("Keep prediction", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+    state->stop_session(keeper.session_id);
+    const auto doomed = state->start_session("Delete active session", FocusMode::Normal);
+    REQUIRE(state->latest_prediction().has_value());
+    REQUIRE(state->latest_prediction()->session_id == keeper.session_id);
+
+    REQUIRE(state->delete_session(doomed.session_id));
+
+    CHECK(state->active_session() == std::nullopt);
+    REQUIRE(state->latest_prediction().has_value());
+    CHECK(state->latest_prediction()->session_id == keeper.session_id);
+}
+
 TEST_CASE("AppState::delete_session reports a missing session instead of throwing") {
     auto state = make_state();
     CHECK_FALSE(state->delete_session("never-existed"));
@@ -786,6 +818,124 @@ TEST_CASE("AppState serves concurrent reads during a writer without deadlock or 
     REQUIRE(latest.has_value());
     CHECK(latest->session_id == session.session_id);
     CHECK(state->session_recap(session.session_id).session_id == session.session_id);
+}
+
+TEST_CASE("AppState live reads do not wait for engine mutation") {
+    // The engine computes under its state lock. Live UI reads must use the published read
+    // snapshot instead of joining that critical section, or an event burst (and especially
+    // ONNX inference) turns directly into UI tail latency.
+    auto state = make_state();
+    const auto session = state->start_session("non-blocking live reads", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+
+    std::atomic<bool> state_lock_held{false};
+    std::atomic<bool> release_state_lock{false};
+    std::thread holder([&] {
+        AppStateTestAccess::while_holding_state_lock(*state, [&] {
+            state_lock_held.store(true, std::memory_order_release);
+            while (!release_state_lock.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        });
+    });
+
+    while (!state_lock_held.load(std::memory_order_acquire)) std::this_thread::yield();
+
+    std::atomic<bool> reads_finished{false};
+    std::atomic<bool> reads_returned_expected_values{false};
+    std::thread reader([&] {
+        const auto health = state->health();
+        const auto latest = state->latest_prediction();
+        const auto active = state->active_session();
+        const auto snapback = state->latest_snapback();
+        const auto classifier = state->classifier_status();
+        const auto permissions = state->refresh_permissions();
+        (void)permissions;
+        const bool idle = state->is_idle();
+        reads_returned_expected_values.store(
+            health.prediction_suppression_reason == "none" && latest.has_value() &&
+                latest->session_id == session.session_id && active.has_value() &&
+                active->session_id == session.session_id && !snapback.has_value() &&
+                classifier.backend == "heuristic" && !idle,
+            std::memory_order_release);
+        reads_finished.store(true, std::memory_order_release);
+    });
+
+    // Give the reader a generous scheduling window while the mutation lock stays held. A
+    // correct live-read seam finishes; the old getters block until that lock is released.
+    for (int attempt = 0; attempt < 200 &&
+                          !reads_finished.load(std::memory_order_acquire);
+         ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const bool finished_while_state_locked = reads_finished.load(std::memory_order_acquire);
+
+    release_state_lock.store(true, std::memory_order_release);
+    holder.join();
+    reader.join();
+
+    CHECK(finished_while_state_locked);
+    CHECK(reads_returned_expected_values.load(std::memory_order_acquire));
+}
+
+TEST_CASE("AppState empty live reads do not fall through to storage") {
+    auto state = make_state();
+
+    std::atomic<bool> locks_held{false};
+    std::atomic<bool> release_locks{false};
+    std::thread holder([&] {
+        AppStateTestAccess::while_holding_state_and_storage_locks(*state, [&] {
+            locks_held.store(true, std::memory_order_release);
+            while (!release_locks.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        });
+    });
+    while (!locks_held.load(std::memory_order_acquire)) std::this_thread::yield();
+
+    std::atomic<bool> reads_finished{false};
+    std::atomic<bool> reads_were_empty{false};
+    std::thread reader([&] {
+        reads_were_empty.store(!state->active_session().has_value() &&
+                                   !state->latest_prediction().has_value(),
+                               std::memory_order_release);
+        reads_finished.store(true, std::memory_order_release);
+    });
+
+    for (int attempt = 0; attempt < 200 &&
+                          !reads_finished.load(std::memory_order_acquire);
+         ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const bool finished_while_locks_held = reads_finished.load(std::memory_order_acquire);
+
+    release_locks.store(true, std::memory_order_release);
+    holder.join();
+    reader.join();
+
+    CHECK(finished_while_locks_held);
+    CHECK(reads_were_empty.load(std::memory_order_acquire));
+}
+
+TEST_CASE("AppState hydrates persisted live values before publishing its first snapshot") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("resume cached state", FocusMode::Deep);
+    PredictionRecord prediction;
+    prediction.session_id = session.session_id;
+    prediction.focus_score = 81.0;
+    prediction.distraction_risk = 0.1;
+    prediction.focus_state = "PRODUCTIVE";
+    prediction.goal_alignment = 0.9;
+    prediction.timestamp = "2026-08-01T12:00:00Z";
+    storage->insert_prediction(prediction);
+
+    AppState state(std::move(*storage));
+
+    REQUIRE(state.active_session().has_value());
+    CHECK(state.active_session()->session_id == session.session_id);
+    REQUIRE(state.latest_prediction().has_value());
+    CHECK(state.latest_prediction()->focus_score == doctest::Approx(81.0));
 }
 
 TEST_CASE("AppState health reflects offline engine before capture starts") {

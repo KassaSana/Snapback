@@ -15,6 +15,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <mutex>
 #include <optional>
 
 #include "app/state.hpp"
@@ -22,6 +24,18 @@
 namespace snapback {
 
 struct AppStateTestAccess {
+    static void while_holding_state_lock(AppState& state, const std::function<void()>& body) {
+        std::lock_guard lock(state.mutex_);
+        body();
+    }
+
+    static void while_holding_state_and_storage_locks(AppState& state,
+                                                       const std::function<void()>& body) {
+        std::lock_guard state_lock(state.mutex_);
+        std::lock_guard storage_lock(state.storage_mutex_);
+        body();
+    }
+
     static void process_event(AppState& state, const CaptureEvent& event) {
         state.process_event_for_test(event);
     }

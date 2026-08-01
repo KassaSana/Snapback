@@ -71,7 +71,8 @@ public:
         return activity_epoch_.load(std::memory_order_acquire) == epoch;
     }
 
-    // Called by the IPC commands (app/commands.cpp). Guarded by mutex_.
+    // Called by the IPC commands. Mutations use mutex_; hot live reads consume the
+    // immutable snapshot published after each relevant mutation.
     SessionRecord start_session(const std::string& goal, FocusMode mode);
     void stop_session();
     SessionRecord stop_session(const std::string& session_id);
@@ -173,6 +174,25 @@ private:
     // design question rather than an access-control one.
     friend struct AppStateTestAccess;
 
+    // Immutable state published after a mutation finishes. Live UI reads load this snapshot
+    // without joining the engine's compute critical section; storage-backed reads retain
+    // their existing storage seam. The snapshot is private because callers should keep using
+    // AppState's domain interface rather than learning its publication mechanism.
+    struct LiveReadSnapshot {
+        std::optional<SessionRecord> active_session;
+        std::optional<PredictionRecord> latest_prediction;
+        std::optional<SnapbackPayload> latest_snapback;
+        std::optional<std::int64_t> last_prediction_at_ms;
+        ClassifierStatus classifier;
+        bool private_mode{};
+        bool idle{};
+    };
+
+    std::shared_ptr<const LiveReadSnapshot> live_read_snapshot() const noexcept;
+    // Requires mutex_ after construction. A dirty flag avoids allocating on empty 100 ms
+    // engine ticks; publication happens only when a field above has changed.
+    void publish_live_read_unlocked();
+
     // Run one captured event through the same prediction path the tick uses.
     void process_event_for_test(const CaptureEvent& event);
     // Apply one idle-detection step at `now_ms` (had_input = an input event was seen since
@@ -234,8 +254,8 @@ private:
     // reverse. Activity deletion additionally takes activity_boundary_mutex_ between them;
     // the engine's persistence tail takes activity_boundary_mutex_ before storage_mutex_.
     // Asynchronous emissions take neither: they carry and validate activity_epoch_ on the
-    // UI thread. mutex_ guards in-memory state; storage_mutex_ serializes all storage_
-    // access. Hot UI reads take only mutex_.
+    // UI thread. mutex_ guards mutable in-memory state; storage_mutex_ serializes all
+    // storage_ access. Hot UI reads consume the immutable live snapshot and take neither.
     //
     // ROADMAP 11.6: the paragraph above is no longer the only thing holding that order.
     // These are RankedMutex, so an inverted acquisition reports itself on the first run
@@ -272,6 +292,11 @@ private:
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event
     bool prediction_dirty_ = false;  // a new prediction awaits emission this tick
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
+    bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
+    // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple
+    // libc++ shipped with the supported command-line tools does not provide the C++20 class
+    // specialization, while atomic_load/store(shared_ptr*) are available cross-platform.
+    std::shared_ptr<const LiveReadSnapshot> live_read_snapshot_;
     std::atomic<std::uint64_t> activity_epoch_{0};
 
     EmitHook emit_hook_;
