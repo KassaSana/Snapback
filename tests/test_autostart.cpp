@@ -65,15 +65,48 @@ TEST_CASE("autostart reports a launchd backend on macOS") {
     (void)autostart_enabled();
 }
 
-#else
+#elif defined(__linux__)
 
-// No backend on this platform — must degrade to a documented no-op, never throw or silently
-// claim success. Linux gains a systemd user unit in Roadmap 3.0's second half.
-TEST_CASE("autostart is a documented no-op on platforms without a backend yet") {
-    CHECK_FALSE(autostart_supported());
+// Roadmap 3.0's second half gave Linux a systemd user unit. Same rule as macOS above: this
+// case must not call set_autostart_enabled, because on Linux that now writes a real unit
+// into ~/.config/systemd/user plus the graphical-session.target.wants symlink. The
+// install/remove round trip is covered hermetically in test_autostart_systemd.cpp, which
+// takes its target directory as an argument.
+TEST_CASE("autostart reports a systemd backend on Linux") {
+    CHECK(autostart_supported());
+    (void)autostart_enabled();
+}
+
+#endif
+
+// The no-op contract, driven by what the code reports rather than by a duplicated platform
+// list.
+//
+// This used to be the `#else` arm of the platform chain above, and it is how CI run
+// 30607879815 came to **write a real systemd user unit onto a GitHub runner**: the chain
+// guarded only _WIN32 and __APPLE__, so when commit 2c89f8c gave Linux a backend, Linux kept
+// falling into the "no backend" arm and its `CHECK_FALSE(set_autostart_enabled(true))`
+// started performing the install it was asserting could not happen.
+//
+// The macOS fix for the identical incident a day earlier did not generalise, because **the
+// stale thing was the guard, not the assertion.** A `#else` arm is a claim about every
+// platform that does not have a backend *yet*, and it silently shrinks every time one lands
+// — while the one line inside it that mutates the machine keeps running.
+//
+// So the branch is now the runtime answer. `set_autostart_enabled(true)` can only execute
+// where `autostart_supported()` is false, which is precisely where it is defined to do
+// nothing. Adding a fourth backend cannot reintroduce this, with or without anyone
+// remembering to update this file.
+TEST_CASE("autostart never claims a success it cannot deliver") {
+    if (autostart_supported()) {
+        // A backend exists; the round trip belongs in the hermetic per-backend tests, which
+        // write to a temp directory instead of the login session. Reading must still be
+        // total: answer either way, never throw.
+        (void)autostart_enabled();
+        return;
+    }
+
     CHECK_FALSE(autostart_enabled());
     CHECK_FALSE(set_autostart_enabled(true));
     CHECK_FALSE(autostart_enabled());
 }
-
-#endif

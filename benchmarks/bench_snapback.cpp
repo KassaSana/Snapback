@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "app/state.hpp"
+#include "app_state_test_access.hpp"
 #include "bench_util.hpp"
 #include "engine/classifier.hpp"
 #include "engine/features.hpp"
@@ -102,7 +103,7 @@ Stats time_app_state_replay(const std::vector<CaptureEvent>& trace) {
     Timer total;
     for (const auto& ev : trace) {
         Timer per_event;
-        state->process_event_for_test(ev);
+        AppStateTestAccess::process_event(*state, ev);
         samples.push_back(per_event.elapsed_ms() * 1000.0);
     }
     return summarize(std::move(samples), total.elapsed_ms());

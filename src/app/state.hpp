@@ -27,7 +27,9 @@
 #include "app/settings.hpp"
 #include "storage/storage.hpp"
 #include "types.hpp"
+#include "util/clock.hpp"
 #include "util/logger.hpp"
+#include "util/ranked_mutex.hpp"
 
 namespace snapback {
 
@@ -35,11 +37,17 @@ inline constexpr std::int64_t kCaptureStallThresholdMs = 30'000;
 
 class AppState {
 public:
-    // `logger` is optional (defaults to null) so existing call sites keep compiling
-    // unchanged; pass one to route non-fatal warnings (e.g. a failed auto-label save)
-    // somewhere other than stderr.
+    // `logger` and `clock` are both optional (default null) so existing call sites keep
+    // compiling unchanged. Pass a logger to route non-fatal warnings (e.g. a failed
+    // auto-label save) somewhere other than stderr.
+    //
+    // ROADMAP 11.4: pass a `clock` to make time an input rather than an ambient fact. The
+    // engine's idle threshold, the pomodoro's 25 minutes, and the one-prediction-per-second
+    // throttle are all durations no sleep-based test can reach, so before this seam they were
+    // exercised only through `_for_test` methods that took `now_ms` as an argument — which is
+    // exactly what 7.14 objects to. A test clock can advance an hour instantly.
     explicit AppState(Storage storage, std::filesystem::path app_data_dir = {},
-                      Logger* logger = nullptr);
+                      Logger* logger = nullptr, Clock* clock = nullptr);
     ~AppState() noexcept;
 
     // Spawn capture and the engine tick thread.
@@ -63,7 +71,8 @@ public:
         return activity_epoch_.load(std::memory_order_acquire) == epoch;
     }
 
-    // Called by the IPC commands (app/commands.cpp). Guarded by mutex_.
+    // Called by the IPC commands. Mutations use mutex_; hot live reads consume the
+    // immutable snapshot published after each relevant mutation.
     SessionRecord start_session(const std::string& goal, FocusMode mode);
     void stop_session();
     SessionRecord stop_session(const std::string& session_id);
@@ -141,22 +150,56 @@ public:
     void submit_label(const std::string& session_id, FocusLabel label, const std::string& source,
                       std::optional<std::string> notes = std::nullopt);
 
-    // Test/headless seam: run one captured event through the same prediction path.
-    void process_event_for_test(const CaptureEvent& event);
-
     // True once the user has gone AFK (no input for the idle threshold). Flips back on
     // the next real input. The engine tick maintains it; the frontend gets an "idle" event.
     bool is_idle() const;
 
-    // Test/headless seam for the idle wiring: apply one idle-detection step at `now_ms`
-    // (had_input = an input event was seen since the last step) and return the edge.
-    IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
+private:
+    // ROADMAP 7.14: the three seams below used to be public.
+    //
+    // They exist because the engine tick is the only production caller of the idle and
+    // pomodoro state machines, and it reads the clock itself — so a deterministic test had to
+    // pass `now_ms` in by hand. 11.4's injected clock removed that need for
+    // `start_pomodoro_for_test`, which is **deleted**: a test sets a `ManualClock` and calls
+    // the real `start_pomodoro()`.
+    //
+    // The remaining three cannot be deleted the same way, because their production entry
+    // point is the tick *thread* rather than a method — driving them through public API would
+    // mean running the engine and waiting, which is the sleep-based testing 11.4 exists to
+    // avoid. So they are private, reachable only through `AppStateTestAccess`
+    // (`tests/app_state_test_access.hpp`). That is a smaller claim than "gone", and the
+    // difference is stated honestly on 7.14: they are no longer *public API* — nothing outside
+    // the tests can call them, and they cannot be mistaken for supported behaviour — but they
+    // are still compiled in. Closing that gap needs a synchronous `tick_once` seam, which is a
+    // design question rather than an access-control one.
+    friend struct AppStateTestAccess;
 
-    // Deterministic seams for the same timer operations used by IPC/engine_tick.
-    PomodoroStatus start_pomodoro_for_test(std::int64_t now_ms);
+    // Immutable state published after a mutation finishes. Live UI reads load this snapshot
+    // without joining the engine's compute critical section; storage-backed reads retain
+    // their existing storage seam. The snapshot is private because callers should keep using
+    // AppState's domain interface rather than learning its publication mechanism.
+    struct LiveReadSnapshot {
+        std::optional<SessionRecord> active_session;
+        std::optional<PredictionRecord> latest_prediction;
+        std::optional<SnapbackPayload> latest_snapback;
+        std::optional<std::int64_t> last_prediction_at_ms;
+        ClassifierStatus classifier;
+        bool private_mode{};
+        bool idle{};
+    };
+
+    std::shared_ptr<const LiveReadSnapshot> live_read_snapshot() const noexcept;
+    // Requires mutex_ after construction. A dirty flag avoids allocating on empty 100 ms
+    // engine ticks; publication happens only when a field above has changed.
+    void publish_live_read_unlocked();
+
+    // Run one captured event through the same prediction path the tick uses.
+    void process_event_for_test(const CaptureEvent& event);
+    // Apply one idle-detection step at `now_ms` (had_input = an input event was seen since
+    // the last step) and return the edge.
+    IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
     std::optional<PomodoroStatus> update_pomodoro_for_test(std::int64_t now_ms);
 
-private:
     void start_engine_impl(InputHook* hook);
     // A tick's writes, computed under mutex_ (no storage I/O) and flushed later under
     // storage_mutex_. Keeping persistence out of the state lock is what stops a disk
@@ -184,8 +227,13 @@ private:
     static std::vector<std::string> normalize_privacy_exclusions(
         std::vector<std::string> exclusions);
     bool is_private_event_unlocked(const CaptureEvent& event) const;
-    static std::string now_rfc3339();
-    static std::int64_t steady_now_ms();  // monotonic clock for idle timing
+    // ROADMAP 11.4: these were static and read the process clock directly. They now go
+    // through clock(), so an injected clock reaches every timestamp the engine writes and
+    // every duration it measures. Non-static as a consequence, which is the point — reading
+    // the time is now something an *instance* does, not something anyone can do from
+    // anywhere.
+    std::string now_rfc3339() const;
+    std::int64_t steady_now_ms() const;  // monotonic clock for idle timing
     static bool is_input_event(EventType type);  // key/mouse = real user activity
     // Advance the idle state machine one step. Requires mutex_. Returns the transition
     // edge so the tick loop can emit it. Sets idle_ from the resulting state.
@@ -194,22 +242,38 @@ private:
     // Injected logger if one was passed in, otherwise the stderr fallback below.
     Logger& log() { return logger_ ? *logger_ : local_logger_; }
     const Logger& log() const { return logger_ ? *logger_ : local_logger_; }
+    // Same shape for time: injected clock if one was passed in, otherwise the real one.
+    // Written as an if rather than a ternary because the two arms differ in both type and
+    // constness, which the conditional operator will not reconcile.
+    const Clock& clock() const {
+        if (clock_) return *clock_;
+        return local_clock_;
+    }
 
     // Lock order (deadlock-free): always acquire mutex_ BEFORE storage_mutex_, never the
     // reverse. Activity deletion additionally takes activity_boundary_mutex_ between them;
     // the engine's persistence tail takes activity_boundary_mutex_ before storage_mutex_.
     // Asynchronous emissions take neither: they carry and validate activity_epoch_ on the
-    // UI thread. mutex_ guards in-memory state; storage_mutex_ serializes all storage_
-    // access. Hot UI reads take only mutex_.
-    mutable std::mutex mutex_;
+    // UI thread. mutex_ guards mutable in-memory state; storage_mutex_ serializes all
+    // storage_ access. Hot UI reads consume the immutable live snapshot and take neither.
+    //
+    // ROADMAP 11.6: the paragraph above is no longer the only thing holding that order.
+    // These are RankedMutex, so an inverted acquisition reports itself on the first run
+    // through the bad path rather than waiting for two threads to collide. The ranks in
+    // LockRank are the same ordering, written where the lock is instead of where the
+    // convention is. Every call site is `std::lock_guard lock(...)` with a deduced argument,
+    // so they needed no change.
+    mutable RankedMutex mutex_{LockRank::State};
     // Fences the off-lock persistence phase against activity deletion. Asynchronous UI
     // emissions carry activity_epoch_ and validate it in the dispatched UI closure.
-    mutable std::mutex activity_boundary_mutex_;
-    mutable std::mutex storage_mutex_;
+    mutable RankedMutex activity_boundary_mutex_{LockRank::ActivityBoundary};
+    mutable RankedMutex storage_mutex_{LockRank::Storage};
     Storage storage_;
     std::filesystem::path app_data_dir_;
     Logger* logger_ = nullptr;
     Logger local_logger_{std::cerr};
+    Clock* clock_ = nullptr;
+    SystemClock local_clock_;
     CaptureThread capture_;
     FeatureExtractor features_;
     Classifier classifier_;
@@ -228,6 +292,11 @@ private:
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event
     bool prediction_dirty_ = false;  // a new prediction awaits emission this tick
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
+    bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
+    // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple
+    // libc++ shipped with the supported command-line tools does not provide the C++20 class
+    // specialization, while atomic_load/store(shared_ptr*) are available cross-platform.
+    std::shared_ptr<const LiveReadSnapshot> live_read_snapshot_;
     std::atomic<std::uint64_t> activity_epoch_{0};
 
     EmitHook emit_hook_;

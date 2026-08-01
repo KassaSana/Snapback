@@ -419,3 +419,9 @@ jobs:
       # created or had moved, and nothing caught it. This makes that mechanical.
       - name: Every path a doc names must exist
         run: python3 scripts/check_doc_paths.py
+
+      # Roadmap 8.6. Dependabot watches Actions and npm but not CMake FetchContent, so a
+      # dependency pinned to a mutable tag is source we compile and ship with nothing
+      # watching it. Cheap to check, and only a guard stops the policy from rotting.
+      - name: Every fetched dependency must be pinned to an immutable revision
+        run: python3 scripts/check_dependency_pins.py --verbose

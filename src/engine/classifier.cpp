@@ -5,52 +5,69 @@
 #include <cmath>
 
 #include "engine/app_context.hpp"
+#include "engine/classifier_tuning.hpp"
 #include "engine/onnx_model.hpp"
 
 namespace snapback {
 namespace {
 
-constexpr std::array<const char*, 4> kStateLabels = {
-    "DISTRACTED", "PSEUDO_PRODUCTIVE", "PRODUCTIVE", "DEEP_FOCUS"};
-constexpr std::array<double, 4> kFocusLevels = {25.0, 50.0, 75.0, 100.0};
-constexpr double kThrashDistractedThreshold = 0.75;
-constexpr double kDriftPseudoThreshold = 0.55;
+// ROADMAP 7.15: every literal that used to sit inline in this file now has a name and a
+// role in engine/classifier_tuning.hpp. Read that file to understand the model; read this
+// one to understand the arithmetic. The extraction changed no value — the feature-parity
+// golden fixture is what proves that.
+using namespace snapback::tuning;
 
 double clamp(double value, double lo, double hi) {
     return std::max(lo, std::min(hi, value));
 }
 
 double thrash_score(const FeatureVector& f) {
-    const double switches_30s = std::min(f.context_switches_30s() / 4.0, 1.0);
-    const double switches_5min = std::min(f.context_switches_5min() / 10.0, 1.0);
-    const double unique_apps = clamp((f.unique_apps_5min() - 1.0) / 5.0, 0.0, 1.0);
-    return clamp(switches_30s * 0.45 + switches_5min * 0.25 + unique_apps * 0.30, 0.0, 1.0);
+    const double switches_30s =
+        std::min(f.context_switches_30s() / scale::kSwitches30sFull, 1.0);
+    const double switches_5min =
+        std::min(f.context_switches_5min() / scale::kSwitches5minFull, 1.0);
+    const double unique_apps =
+        clamp((f.unique_apps_5min() - 1.0) / scale::kUniqueAppsSpan, 0.0, 1.0);
+    return clamp(switches_30s * weight::kThrashSwitches30s +
+                     switches_5min * weight::kThrashSwitches5min +
+                     unique_apps * weight::kThrashUniqueApps,
+                 0.0, 1.0);
 }
 
 double drift_score(const FeatureVector& f) {
     const double title_churn = f.window_title_changed_30s() > 0.5 ? 1.0 : 0.0;
-    const double keystroke_chaos = f.keystroke_count() >= 3.0
-                                       ? std::min(f.keystroke_interval_std() / 1.2, 1.0)
-                                       : 0.0;
-    const double unsettled = std::min(f.context_switches_30s() / 3.0, 1.0);
-    const double in_work_context = f.is_ide() > 0.5 || f.is_productivity() > 0.5
-                                       ? 1.0
-                                       : (f.is_browser() > 0.5 || f.is_communication() > 0.5 ? 0.85 : 0.4);
-    return clamp((title_churn * 0.45 + keystroke_chaos * 0.30 + unsettled * 0.25) *
+    const double keystroke_chaos =
+        f.keystroke_count() >= scale::kMinKeystrokesForChaos
+            ? std::min(f.keystroke_interval_std() / scale::kKeystrokeChaosFull, 1.0)
+            : 0.0;
+    const double unsettled =
+        std::min(f.context_switches_30s() / scale::kSwitchesUnsettledFull, 1.0);
+    const double in_work_context =
+        f.is_ide() > 0.5 || f.is_productivity() > 0.5
+            ? shape::kDriftContextWork
+            : (f.is_browser() > 0.5 || f.is_communication() > 0.5
+                   ? shape::kDriftContextBrowserOrComms
+                   : shape::kDriftContextUnknown);
+    return clamp((title_churn * weight::kDriftTitleChurn +
+                  keystroke_chaos * weight::kDriftKeystrokeChaos +
+                  unsettled * weight::kDriftUnsettled) *
                      in_work_context,
                  0.0, 1.0);
 }
 
 double deep_work_score(const FeatureVector& f, double thrash, double drift) {
-    const double settled = std::min(f.time_in_current_app() / 180.0, 1.0);
-    const double steady_typing = f.keystroke_count() >= 4.0
-                                     ? std::max(0.0, 1.0 - std::min(f.keystroke_interval_std(), 1.0))
-                                     : 0.3;
-    const double low_switch = std::max(0.0, 1.0 - std::min(f.context_switches_30s() / 2.0, 1.0));
+    const double settled = std::min(f.time_in_current_app() / scale::kSettledSeconds, 1.0);
+    const double steady_typing =
+        f.keystroke_count() >= scale::kMinKeystrokesForSteady
+            ? std::max(0.0, 1.0 - std::min(f.keystroke_interval_std(), 1.0))
+            : scale::kSteadyTypingUnknown;
+    const double low_switch =
+        std::max(0.0, 1.0 - std::min(f.context_switches_30s() / scale::kSwitchesLowFull, 1.0));
     const double stability = (1.0 - thrash) * (1.0 - drift);
     const double momentum = clamp(f.focus_momentum(), 0.0, 1.0);
-    return clamp(settled * 0.30 + steady_typing * 0.20 + low_switch * 0.15 +
-                     stability * 0.20 + momentum * 0.15,
+    return clamp(settled * weight::kDeepSettled + steady_typing * weight::kDeepSteadyTyping +
+                     low_switch * weight::kDeepLowSwitch + stability * weight::kDeepStability +
+                     momentum * weight::kDeepMomentum,
                  0.0, 1.0);
 }
 
@@ -67,7 +84,7 @@ PredictionScores scores_from_probas(const std::array<double, 4>& raw,
     }
 
     PredictionScores out;
-    out.distraction_risk = clamp(p[0] + thrash * 0.15, 0.0, 1.0);
+    out.distraction_risk = clamp(p[0] + thrash * shape::kThrashRiskBump, 0.0, 1.0);
     for (std::size_t i = 0; i < p.size(); ++i) out.focus_score += kFocusLevels[i] * p[i];
     const auto best = std::max_element(p.begin(), p.end());
     out.focus_state = kStateLabels[static_cast<std::size_t>(std::distance(p.begin(), best))];
@@ -130,10 +147,10 @@ ContextSignals compute_context_signals(const FeatureVector& f,
     const auto ctx = classify_app_context(f.app_name, f.window_title, rules);
     const double alignment =
         snapback::goal_alignment_score(session_goal, ctx, f.window_title, categories);
-    const double bias = alignment - 0.5;
+    const double bias = alignment - shape::kGoalBiasMidpoint;
     ContextSignals out;
     out.thrash = thrash_score(f);
-    out.drift = clamp(drift_score(f) - bias * 0.25, 0.0, 1.0);
+    out.drift = clamp(drift_score(f) - bias * shape::kGoalBiasOnDrift, 0.0, 1.0);
     out.goal_alignment = alignment;
     out.personal_block = ctx.personal_block;
     return out;
@@ -155,10 +172,10 @@ PredictionScores Classifier::predict_heuristic(const FeatureVector& f,
                                                const std::vector<GoalCategory>& categories) const {
     const auto ctx = classify_app_context(f.app_name, f.window_title, rules);
     const double alignment = snapback::goal_alignment_score(session_goal, ctx, f.window_title, categories);
-    const double bias = alignment - 0.5;
+    const double bias = alignment - shape::kGoalBiasMidpoint;
 
     const double thrash = thrash_score(f);
-    const double drift = clamp(drift_score(f) - bias * 0.25, 0.0, 1.0);
+    const double drift = clamp(drift_score(f) - bias * shape::kGoalBiasOnDrift, 0.0, 1.0);
     const double deep = deep_work_score(f, thrash, drift);
 
     const double is_entertainment = (ctx.is_entertainment || ctx.personal_block) ? 1.0 : 0.0;
@@ -166,19 +183,22 @@ PredictionScores Classifier::predict_heuristic(const FeatureVector& f,
     const double in_work_app = ((ctx.is_ide || ctx.is_productivity) && !ctx.personal_block) ? 1.0 : 0.0;
 
     double distracted = 0.0;
-    distracted += thrash * 0.30;
-    distracted += std::min(f.idle_time_30s() / 8.0, 1.0) * 0.15;
-    distracted += (1.0 - std::min(f.keystroke_rate() / 4.0, 1.0)) * 0.10;
-    distracted += (1.0 - std::min(f.time_in_current_app() / 120.0, 1.0)) * 0.10;
-    distracted += is_entertainment * 0.20;
-    distracted += is_communication * 0.05;
-    distracted -= in_work_app * 0.10;
-    distracted = clamp(distracted - bias * 0.35, 0.0, 1.0);
+    distracted += thrash * weight::kDistractedThrash;
+    distracted += std::min(f.idle_time_30s() / scale::kIdleFull, 1.0) * weight::kDistractedIdle;
+    distracted += (1.0 - std::min(f.keystroke_rate() / scale::kKeystrokeRateFull, 1.0)) *
+                  weight::kDistractedLowKeystrokes;
+    distracted += (1.0 - std::min(f.time_in_current_app() / scale::kJustArrivedSeconds, 1.0)) *
+                  weight::kDistractedJustArrived;
+    distracted += is_entertainment * weight::kDistractedEntertainment;
+    distracted += is_communication * weight::kDistractedCommunication;
+    distracted -= in_work_app * weight::kDistractedWorkAppCredit;
+    distracted = clamp(distracted - bias * shape::kGoalBiasOnDistracted, 0.0, 1.0);
 
-    const double pseudo = clamp(drift * (1.0 - distracted * 0.6), 0.0, 1.0);
+    const double pseudo =
+        clamp(drift * (1.0 - distracted * shape::kPseudoDistractedDiscount), 0.0, 1.0);
     const double remaining = std::max(0.0, 1.0 - distracted - pseudo);
-    const double productive = remaining * (1.0 - deep * 0.65);
-    const double deep_prob = std::max(0.0, remaining * deep * 0.65);
+    const double productive = remaining * (1.0 - deep * shape::kDeepShareOfRemaining);
+    const double deep_prob = std::max(0.0, remaining * deep * shape::kDeepShareOfRemaining);
 
     auto scores = scores_from_probas({distracted, pseudo, productive, deep_prob},
                                      thrash, drift, alignment);
@@ -196,10 +216,10 @@ PredictionScores apply_focus_guardrails(PredictionScores scores,
                                         bool personal_block,
                                         FocusMode mode) {
     if (scores.distraction_risk >= risk_threshold(mode) ||
-        thrash >= kThrashDistractedThreshold ||
+        thrash >= tuning::policy::kThrashDistracted ||
         personal_block) {
         scores.focus_state = "DISTRACTED";
-    } else if (drift >= kDriftPseudoThreshold && scores.focus_state != "DEEP_FOCUS") {
+    } else if (drift >= tuning::policy::kDriftPseudo && scores.focus_state != "DEEP_FOCUS") {
         scores.focus_state = "PSEUDO_PRODUCTIVE";
     }
     return scores;

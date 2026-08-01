@@ -47,9 +47,10 @@ neither:
 
 - **`benchmarks.yml`** — *manual only* (`workflow_dispatch`), takes a `minutes` input,
   uploads a `benchmark-results` artifact. This is the one that produces numbers.
-- **`benchmark-smoke`** in `ci.yml` — runs on every push, and only proves the benchmark
-  targets still build and run. **It is not a performance regression gate**; nothing
-  compares its output to the baseline below.
+- **`benchmark-smoke`** in `ci.yml` — runs on every push and proves only that
+  `snapback_benchmarks` builds and runs. It does not run `snapback_hotpath_benchmarks`, and
+  **it is not a performance regression gate**; nothing compares output to the baselines
+  below.
 
 ## What It Measures
 
@@ -126,10 +127,9 @@ reads must stay responsive under the *worst* case, not just on average.
 
 ## Measured results (12th Gen Intel i5-12500H, Release/MSVC)
 
-These are the deltas from the performance pass. **This file is where they live** — an
-earlier version pointed at `docs/system_architecture.md` §7 for them, but §7 is
-"Critique & Architectural Debt" and carries the *limits*, not the measurements. They are
-the reference baseline; re-run and compare after changes to the files listed above.
+These are the reference deltas from the performance passes. Re-run and compare after changes
+to the files listed above; keep measurements here rather than in architecture or roadmap
+documents.
 
 ⚠️ **These numbers are from a Windows machine (i5-12500H, Release/MSVC).** The development
 host is macOS, so a local run is not comparable to this table — compare like-for-like or
@@ -157,6 +157,30 @@ you will read a platform difference as a regression.
 → worst-case UI-read stall dropped **~415×** (90 ms → 0.2 ms). The tick now holds `mutex_`
 only for the in-memory compute and writes to SQLite under a separate lock, so reads no longer
 wait on disk.
+
+**Immutable live-read snapshot** (2026-08-01, same macOS Release build before/after):
+
+| Build stage | mean | p50 | p99 | max |
+|---|---|---|---|---|
+| Live reads join engine `mutex_` | 209.39 µs | 0.75 µs | **5,289.71 µs** | **101,846.58 µs** |
+| Live reads consume published snapshot | **0.72 µs** | **0.71 µs** | **0.79 µs** | **77.50 µs** |
+
+→ the contended p99 fell by roughly **6,700×** without changing the uncontended path. The
+writer is intentionally adversarial: it drives a full prediction on every event through the
+private synchronous test seam. This measures isolation from engine mutation, not a typical
+human-paced workload. The regression tests hold the engine state mutex (and, separately,
+the storage mutex for empty optionals) and prove live reads still finish with the expected
+published values.
+
+The benchmark now also times one complete UI read set (`health`, prediction, session,
+snapback, classifier, permissions and idle). Two immediate Release runs produced a
+contended p99 of **2.96–4.00 µs** and an uncontended p99 of **1.50–1.54 µs**. Reproduce both
+the focused and complete-read measurements with:
+
+```bash
+cmake --build build --config Release --target snapback_hotpath_benchmarks
+./build/snapback_hotpath_benchmarks
+```
 
 **Producer `RingBuffer::push()`** — the OS-hook hot path:
 

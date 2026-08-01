@@ -1,62 +1,25 @@
 # ROADMAP.md — the single source of truth for what to build next
 
-**This file is the live backlog.** Every open task lives here — feature work, wiring gaps,
-CI breakage, security hardening, chores. If it's not in this file, it's not planned; if it's
-done, it either moves to the [Done archive](#done-archive) at the bottom or stays in place
-marked **DONE** with the original finding preserved beneath it — the second form is used
-when the finding still teaches something. [CLAUDE.md](../CLAUDE.md) names this file as the
-source of truth for open work and carries no backlog of its own; when any other doc
+**This file is the live backlog.** Every open task lives here. Completed work moves to the
+[Done archive](#done-archive) or remains marked **DONE** only when its explanation still
+teaches a useful constraint. This is the source of truth; when another status document
 disagrees with this one, this one wins.
-
-> *Corrected 2026-07-25:* this paragraph used to describe "`CLAUDE.md`'s status table." There
-> is no such table — `CLAUDE.md` has five sections and none of them track status. The claim
-> was a leftover from a structure that no longer exists, and it is a good illustration of why
-> Tier 12 exists: `scripts/check_doc_paths.py` cannot catch it, because nothing about it is a
-> path. It was found by reading the file that tells you how to trust this file.
 
 **There is no second backlog.** `docs/TODO.md` used to carry open items and drifted out of
 sync — it tracked `2.4b` as a task while this file correctly tracked the same work as the
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-07-29** — that pass closed **7.3** (schema versioning
-and an ordered migration list), most of **7.11** (five pre-existing-database fixtures),
-**7.12** (SQL aggregation), and the delete-a-single-session half of **7.6**. ADR-0002 is now
-**four of six release blockers cleared**, and none of the remaining two is implementation
-work. Measured, not assumed: **241 C++ test cases / 1303 assertions** and **72 frontend
-tests** green, typecheck clean. *Not* seen by CI — see the caveat under the blocker table.
+**Last synced against the code: 2026-08-01.** The July 31 hardening pass added ranked lock
+ordering, immutable dependency pins, per-case CTest registration, classifier properties,
+the large storage fixture, injected clocks, and private test seams. The August 1 performance
+pass moved hot live reads to an immutable snapshot and added contention/lifecycle coverage.
+Locally, **318 C++ cases** and **86 frontend component tests** pass, frontend unit scripts and
+typecheck are clean, and the exact branch remains unverified by remote CI until it is pushed.
 
-Reviewing that pass found a real defect in its own 7.12 work: three queries each re-derived
-"the most recent N sessions", and second-resolution timestamps made ties likely enough that
-they could disagree and silently zero a session's aggregates. Fixed by giving every
-session-selection query a total order. **The lesson is that a batched rewrite needs a test
-that the batch still belongs to the right row**, not just that the numbers are right in the
-happy case.
-
-The 2026-07-28 pass closed **3.1** (macOS tray + native `NSPanel` overlay) and the **macOS
-launch smoke**. Both were verified by running the app on Kassa's Mac; neither has been seen
-by CI yet, for the reason recorded under the blocker table.
-
-*Three rows of the sequence table below were stale on 2026-07-29* — 9.7, 9.8, and 10.7 were
-all finished on 2026-07-26 but still listed as open, one of them described as "the only
-standing `CLAUDE.md` violation". Corrected in place. This file drifts in **both** directions:
-Tier 12 found it pessimistic about the code, and this found it pessimistic about itself.
-
-Earlier context: three passes landed on
-2026-07-20 — five product features (privacy, analytics, summary reports, goal categories,
-diagnostics); Tier 0's four wiring gaps; an engine/storage audit that opened **Tier 5**; and
-a staff review of CI, security, and the app/storage/capture paths that opened **Tiers 6, 7,
-and 8**. **Windows CI went green again 2026-07-22** (6.1 fixed); the first real run of the
-Linux desktop guard then failed on X11 macro pollution — fixed, see 6.3's note.
-
-**The 2026-07-25 sync** covers the `fix-macos-app-launch` branch, which is the largest
-single change since the port: the macOS app now launches and captures for real (**0.3**,
-the #1 v1 blocker), and the dashboard was split into three surfaces (**10.2**). Measured,
-not assumed: **181 C++ test cases / 943 assertions** and **56 frontend tests** green,
-typecheck clean, and CI run `30168981559` green on all three OSes for every job except
-`docs-smoke`. Two things that sync turned up are recorded where they belong: 0.3's live run
-found that macOS capture was **half-blind** (see 0.3), and Tier 8's "what is already right"
-list had gone **stale in the unsafe direction** (see the note there).
+The formal v1 blocker list is **three of six verified complete**. Packaging and Decision
+session A remain open, and the implemented macOS launch smoke still needs one successful
+hosted CI run. None is an unidentified coding gap.
 
 **A note on trusting this file.** Past audits found items here that were simply wrong: 0.3
 described work that was already written (and broken), 2.4 sits in the Done archive on the
@@ -84,62 +47,41 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 
 | # | Item | Why now |
 |---|------|---------|
-| 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
-| 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
-| 3 | **6.2** red-master rule | The last Tier 6 item, and a `decision` — needs Kassa. **6.3 is done and CI-confirmed** (run `30168981559`), so Tier 6 is no longer a CI outage |
-| 4 | ~~**9.1** define what v1 means~~ | **Done 2026-07-25** — [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is `Accepted`. Windows + macOS, six blockers, and macOS v1 ships a native `NSPanel` overlay |
-| 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
-| 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
-| 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
-| 8 | ~~**0.3** live-Mac verification~~ | **Done 2026-07-25** — the tap runs on real hardware and the run found macOS capture was **half-blind**. First ADR-0002 release blocker cleared |
-| 9 | ~~**3.1** macOS tray + native overlay~~ | **Done 2026-07-28** — real `NSStatusItem` and `NSPanel`, verified by running the app. Second ADR-0002 blocker cleared |
-| 10 | ~~macOS launch smoke in CI~~ | **Done 2026-07-28** — `macos-gui-smoke` launches the app, not just links it. Third ADR-0002 blocker cleared |
-| 11 | ~~**7.3 + 7.11 + 7.12** migrations, DB fixtures, N+1~~ | **Done 2026-07-29** — schema versioning with a downgrade guard, five pre-existing-database fixtures, and SQL aggregation. **Fourth ADR-0002 blocker cleared.** A *large* fixture and a perf measurement are the deliberate leftovers |
-| 12 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
-| 13 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
-| 14 | **7.16** timestamp representation | Now the only thing gating 5.5, 7.1, and 7.2. 7.3 landed the migration list, so applying the decision is a migration rather than a rewrite |
-| 15 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
-| 16 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
-| 17 | ~~**9.2** version, **9.7** empty states, **9.8** single-instance~~ | **9.2 done 2026-07-22; 9.7 and 9.8 done 2026-07-26** — this row sat stale for three days claiming two finished items were open |
-| 18 | ~~**7.6**~~, **7.8** | **7.6 done 2026-07-30** — delete-session UI, open data folder, and a legible Markdown export. 7.8 is a `decision` and all that is left in this row |
-| 19 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
-| 20 | **4.4** perf gate, then measure 7.12 | 7.13 done 2026-07-22 and 7.12 done 2026-07-29 — but neither was *measured*, and 7.11's missing large fixture is the entry point |
-| 21 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
-| 22 | ~~**10.7** test the four new surface components~~ | **Done 2026-07-26** — likewise stale; there is no standing `CLAUDE.md` test violation today |
+| 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
+| 2 | macOS launch-smoke CI verification | Push/open a PR and require one successful hosted `macos-gui-smoke` run before closing the blocker |
+| 3 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | The only remaining product decision on the v1 blocker list |
+| 4 | **6.2** red-master rule | Finish the process decision already isolated on its branch |
+| 5 | **Decision session B**: 4.11 | Settle title-parser behavior before changing a long-standing contract |
+| 6 | **7.16** timestamp representation | Unblocks retention and time-window correctness work |
+| 7 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
+| 8 | **10.1** real webview E2E | Covers the remaining native-to-browser integration seam |
+| 9 | **4.4** performance gate | Benchmarks and baselines exist; CI thresholds still do not |
+| 10 | **2.3 / Tier 13** model retraining | Biggest remaining product-depth project after release decisions |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
 outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
 now done, which is what makes the blocker table below meaningful.
 
-**Next up is 3.3 — and it is paperwork before it is code.** 3.1 landed 2026-07-28 and 7.3
-on 2026-07-29, so **every v1 blocker that was implementation work is now done**. What
-remains is an Apple Developer account (long lead time, gates nothing else) and one decision
-session. If the goal is to ship, the account application is the thing to start today,
-because it is the only blocker whose clock runs independently of anyone working.
+**Next up is 3.3 — paperwork before code.** Every v1 blocker that was already-scoped
+implementation work is done. The Apple Developer account has independent lead time, so its
+application should start while the launch smoke awaits hosted CI and Decision session A is
+being settled.
 
-**ADR-0002 release-blocker status after 2026-07-28:**
+**ADR-0002 release-blocker status as of 2026-08-01:**
 
 | # | Blocker | State |
 |---|---------|-------|
 | 1 | **0.3** live-Mac capture | ✅ Done 2026-07-25 |
 | 2 | **3.1** macOS tray + native `NSPanel` overlay | ✅ Done 2026-07-28 — verified by running the app |
 | 3 | **3.3** macOS packaging + notarization | ⬜ **Next.** Longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest — and it is what unblocks macOS notifications |
-| 4 | macOS launch smoke in CI | ✅ Done 2026-07-28 — `macos-gui-smoke` runs `scripts/gui_smoke_macos.sh` |
+| 4 | macOS launch smoke in CI | 🟨 Implemented and locally verified 2026-07-28; awaiting a successful hosted `macos-gui-smoke` run |
 | 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
 | 6 | **7.3** schema migrations | ✅ Done 2026-07-29 — `user_version`, an ordered migration list, and a downgrade guard |
 
-Note the shape of what remains: **four of six are done**, one is paperwork with a long lead
-time, and one is a question. No implementation work is left on this list — v1 now waits on
-an Apple Developer account and one decision session.
-
-> **Unverified in CI as of 2026-07-28.** 3.1 and the launch smoke were both verified on
-> Kassa's Mac, and the smoke was confirmed to fail as well as pass. But CI runs only on
-> `master` and PRs, so `macos-gui-smoke` has never executed on a GitHub runner. The open
-> question is whether a hosted `macos-latest` runner gives `WKWebView` a usable window
-> session; if it does not, that job fails on its first real run and needs either a different
-> host or a narrower assertion. Open a PR to find out — do not assume this blocker is closed
-> until a run says so.
+Note the shape of what remains: **three of six are verified done**, one is implemented but
+awaits hosted CI, one is paperwork with a long lead time, and one is a question. No
+already-scoped implementation gap is left on this list.
 
 ---
 
@@ -369,9 +311,9 @@ internals, and the benchmark harness.
 
   The original finding was:
 
-  **No schema migrations, on a database earlier installs already wrote.** `CLAUDE.md`
-  mandates the filename stay `focoflow.db` **specifically for install compatibility**, so we
-  promise to open databases we did not create. On an existing DB `CREATE TABLE IF NOT EXISTS`
+  **No schema migrations, on a database earlier installs already wrote.** The compatibility
+  contract keeps the filename `focoflow.db`, so we promise to open databases we did not
+  create. On an existing DB `CREATE TABLE IF NOT EXISTS`
   is a no-op — it reconciles nothing — and any column the C++ schema has that the user's file
   lacks produces a runtime `no such column` on first insert, for upgrading users only.
 
@@ -464,6 +406,38 @@ internals, and the benchmark harness.
 
   Options: clamp `focus_score` in the guardrails; drop score from surfaces showing state; or
   document them as "model opinion" vs "policy verdict" and label them so in the UI.
+
+- **7.18 — The drift guardrail *upgrades* DISTRACTED to PSEUDO_PRODUCTIVE.** `S` `decision`
+  — **settle with 7.7; they are the same seam.** Found 2026-07-31 by 11.2's property tests.
+
+  `apply_focus_guardrails()` excludes only `DEEP_FOCUS` from the drift branch:
+
+  ```cpp
+  } else if (drift >= kDriftPseudo && scores.focus_state != "DEEP_FOCUS") {
+      scores.focus_state = "PSEUDO_PRODUCTIVE";
+  ```
+
+  So a row the model called **DISTRACTED**, whose `distraction_risk` sits under the mode's
+  threshold, gets **softened** when drift is high. Minimal repro: probabilities
+  `{0.30, 0.25, 0.25, 0.20}` (argmax DISTRACTED, risk 0.30, Normal threshold 0.70) with
+  `drift = 0.60` comes out `PSEUDO_PRODUCTIVE` — which scores **50 instead of 25**.
+
+  **Why this is a decision and not a patch.** Guardrails exist to catch distraction, so a
+  guardrail that makes a distracted user look better reads as an oversight — and the explicit
+  protection of `DEEP_FOCUS` on the same line suggests the author was thinking about which
+  states to exempt and missed one. But changing it changes the meaning of **every stored
+  prediction**, moves the classifier parity fixture, and lands in the same territory as 7.7:
+  what is the model's opinion allowed to say versus what is policy allowed to overrule. This
+  file's own warning applies — *a third of the open backlog is decisions mistaken for bugs, and
+  that mistake has twice produced a "fix" that had to be reverted.*
+
+  Options: exclude `DISTRACTED` from the drift branch as well; make the branch explicitly
+  ordered (policy may only lower a state); or document the drift rule as "re-classify
+  ambiguous productivity" and accept that it can raise a weakly-distracted row.
+
+  **Pinned meanwhile.** `tests/test_classifier_properties.cpp` carries a characterization test
+  that asserts the *current* behaviour, so it cannot change silently — and so that settling
+  this item produces a failing test pointing right at it.
 
 - **7.8 — `set_focus_mode` permanently rewrites the user's default.** `S` `decision`
 
@@ -578,7 +552,43 @@ internals, and the benchmark harness.
   `private_mode` / `none`). **This single change makes every silent failure mode in this
   file visible** — 7.4, 7.9, and 8.1 all surface through it.
 
-- **7.11 — MOSTLY DONE 2026-07-29.** `M` — five of the six fixture shapes now exist in
+- **7.11 — DONE 2026-07-31.** `M` — the sixth shape, the **large** fixture, landed today:
+  60 sessions × 200 predictions = **12,000 rows**, seeded across 20 days in one transaction
+  (12,000 autocommitted inserts would be 12,000 fsyncs; the whole fixture runs in 0.3s). It
+  buys three things the small fixtures structurally could not.
+
+  **1. 7.1's own regression test, which was never written.** 7.1's write-up specified it —
+  *"seed >10,000 predictions across several days, assert the weekly `sample_count` exceeds
+  10,000, watch it go red"* — and 7.1 was marked DONE without it. The fix is real, but
+  **nothing pinned it**, so a reintroduced cap would have left every existing test passing.
+  Before today no test in this repo seeded more than a handful of rows, which is exactly what
+  made the original bug invisible to the suite.
+
+  **2. Index usage under real statistics.** The existing plan assertions run against an
+  *empty* database, and that cannot fail for the reason we care about: with no stats SQLite
+  plans structurally, so it has no basis on which to prefer a scan. The new case runs
+  `ANALYZE` (new `Storage::analyze_for_test()`) over 12,000 rows, which is the adversarial
+  case for 7.13's indexes — the planner now *can* decide a scan is cheaper, and doesn't.
+  Verified by deleting `idx_predictions_ts` and watching the `TEMP B-TREE` assertion fail.
+
+  **3. Batched-vs-per-session parity at a scale that exercises the window function.** 7.12
+  proved parity on a few rows, which does not touch `ROW_NUMBER()`'s partitioning, the
+  per-session cap, or the tie-breaking 7.16 forced into the `ORDER BY`. The comparison now
+  runs field by field across 60 sessions.
+
+  One thing worth recording from writing it: the first run reported **0 rows for every
+  assertion**, because `Storage::Transaction` rolls back unless `commit()` is called. *A seed
+  that silently seeds nothing is indistinguishable from a query that correctly returns
+  nothing* — which is the same failure shape as everything else in this tier.
+
+  **Still not done: the timing measurement.** This fixture is 4.4's entry point, but nothing
+  here asserts a duration; wall-clock bounds on a shared CI runner buy flakes, not signal.
+  7.12 remains structural-not-benchmarked until 4.4 lands a real harness.
+
+  The original partial entry follows.
+
+- **7.11 (earlier state) — five of six shapes, 2026-07-29.** `M` — five of the six fixture
+  shapes now exist in
   `tests/test_storage.cpp`, built in-process rather than committed as binary `.db` files (a
   checked-in database cannot be reviewed, and stops representing "what an old build wrote"
   the moment someone regenerates it from a current one).
@@ -590,10 +600,7 @@ internals, and the benchmark harness.
   taking its sessions with it; **foreign-authored**, carrying unknown tables and columns;
   and a full close/reopen round trip across all five activity tables.
 
-  **Still missing: a *large* fixture.** That one is the entry point for 7.12's index-usage
-  question — "does the plan still use an index at 100k rows" cannot be asked of a database
-  with four rows in it — and it is the natural first case for 4.4's perf gate. Left open
-  deliberately rather than marked done.
+  **The missing *large* fixture is now DONE 2026-07-31** — see the entry above.
 
   The original finding was:
 
@@ -621,8 +628,11 @@ internals, and the benchmark harness.
   numbers.
 
   **Not covered: whether this is fast enough.** The rewrite removes O(N) round trips, but
-  nothing measures it — that needs 7.11's missing *large* fixture and 4.4's perf gate. Treat
-  the win as structural, not benchmarked.
+  nothing measures it. 7.11's large fixture landed 2026-07-31 and now pins *correctness* at
+  12,000 rows — batched output matches the per-session path field by field across 60 sessions
+  — but it deliberately asserts no timing, because wall-clock bounds on a shared CI runner buy
+  flakes rather than signal. Still needs 4.4's perf gate. Treat the win as structural, not
+  benchmarked.
 
   The original finding was:
 
@@ -661,7 +671,46 @@ internals, and the benchmark harness.
 
 ### Hygiene
 
-- **7.14 — Test-only methods on the production `AppState` class.** `S`
+- **7.14 — DONE 2026-07-31.** `S` **None of the four is public API any more**, verified by
+  compiling a non-friend caller and watching all three surviving ones fail with *"is a private
+  member of `snapback::AppState`"*.
+
+  - **`start_pomodoro_for_test` is deleted outright.** 11.4's injected clock made it
+    redundant: its test now sets a `ManualClock` and calls the real `start_pomodoro()`, which
+    is strictly better than what it replaced — it exercises the production path instead of a
+    parallel one that could drift from it.
+  - **The other three are private**, reachable only through `AppStateTestAccess`
+    (`tests/app_state_test_access.hpp`), which `AppState` befriends and nothing else can use.
+    49 call sites converted mechanically.
+
+  **What is honestly *not* fixed.** The item says these are "public production API compiled
+  into the shipping binary." The public half is fixed; **the compiled-in half is not.** Those
+  three cannot be deleted the way the pomodoro one was, because their production caller is the
+  engine *tick thread* rather than a method — driving them through public API would mean
+  starting the engine and waiting out real durations, which is exactly the sleep-based testing
+  11.4 exists to avoid. Closing that gap needs a synchronous `tick_once` seam, which is a
+  design question and not an access-control one. Recorded rather than glossed, because "no
+  longer public" and "gone" are different claims and only one of them is true.
+
+  `start_engine_for_test(InputHook*)` is deliberately left alone and is **not** an instance of
+  this problem: injecting a fake hook is ordinary dependency injection, not a workaround for
+  an unreachable clock.
+
+  > **The benchmarks were a caller too, and only CI knew.** The first version of this change
+  > converted the call sites in `tests/` and never grepped `benchmarks/` — but
+  > `bench_snapback.cpp` and `bench_hotpaths.cpp` drive the same event seam, and
+  > `Benchmark smoke / linux` went red on PR #40 with *"is private within this context"*.
+  > It is invisible locally because benchmarks build only behind
+  > `-DSNAPBACK_BUILD_BENCHMARKS=ON`, which no default configure sets, so a full local
+  > `ctest` run stays green while the tree does not compile.
+  >
+  > **A grep scoped to `tests/` is not a grep for "who calls this."** Both benchmark targets
+  > now take `tests/` on their include path and go through the same `AppStateTestAccess`
+  > friend — non-shipping harness code either way, and the alternative was putting a test hook
+  > back on the production class's public API. Verified afterwards by configuring with
+  > benchmarks ON and running `snapback_benchmarks` the way the CI job does.
+
+  The original finding was:
 
   `process_event_for_test`, `update_idle_for_test`, `start_pomodoro_for_test`, and
   `update_pomodoro_for_test` (`state.hpp`) are public production API compiled into the
@@ -670,7 +719,44 @@ internals, and the benchmark harness.
   idle/pomodoro/throttle interactions at real time scales without sleeping. Exactly the
   "find a testable seam" move that made 5.1's fix possible.
 
-- **7.15 — Classifier weights are ~20 undocumented magic numbers.** `M`
+- **7.15 — DONE 2026-07-31.** `M` Every literal is now named in
+  `src/engine/classifier_tuning.hpp` and grouped by **role rather than by location**, because
+  role is what 1.2 and 2.3 actually need:
+
+  - `policy` — what counts as distracted. Survives 2.3 (a model predicts a class; it does not
+    decide that thrashing means distracted) and is **1.2's answer space**.
+  - `scale` — normalisers turning a raw count or duration into 0..1. Claims about human
+    behaviour: "four app switches in 30s is as thrashy as it gets."
+  - `weight` — the linear-blend coefficients. **This is the group 2.3 replaces**; nothing
+    else in the file is learnable.
+  - `shape` — how the four class scores are carved out of one another. Structural, not dials.
+
+  **The convex combinations are now `static_assert`ed.** `thrash`, `drift`, and `deep_work`
+  each sum to 1, which is what keeps their scores in 0..1 without leaning on the clamp.
+  Changing one weight without the others rescales the score instead of reweighting it, and
+  that is now a compile error rather than a silent drift in every stored prediction.
+
+  **On provenance: there is none, and that is the real finding.** The item asked to record
+  "where each value came from." Git says every value arrived in the port commit `1cffcb9
+  refactor: C++` with no derivation and no rationale, and history goes no further back for
+  this file. So the header says that plainly rather than inventing a story. These are
+  hand-tuned numbers never validated against labelled data; **naming them does not make them
+  right, it makes them arguable**, which is the point.
+
+  Two things the naming exposed that were invisible as bare literals. The **distracted
+  accumulator is deliberately not a convex combination** — it sums to 0.80 with a negative
+  term, so behaviour alone cannot reach a distraction of 1.0; entertainment context and goal
+  misalignment carry the rest. Nobody recorded whether that ceiling was intended. And the
+  **goal bias is applied twice at different strengths** (0.25 on drift, 0.35 on distraction)
+  with nothing saying why distraction should be more goal-sensitive.
+
+  **Verified as a pure extraction.** The feature-parity golden pins the *feature vector*, not
+  classifier output, so it could not have caught a moved number here. Predictions were hashed
+  over a 2,700-point grid of feature/mode combinations before and after: identical
+  (`15294597689842095536`). 296/296 tests green.
+
+  The original finding was:
+
   **Land before 1.2 is implemented, ideally before 2.3.**
 
   `classifier.cpp` carries dozens of unnamed constants: `0.45/0.25/0.30` in `thrash_score`,
@@ -839,7 +925,32 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   then decides whether SQLCipher (4.5) is a requirement or a nice-to-have, and is the honest
   input to 7.6.
 
-- **8.6 — No dependency pinning story for FetchContent.** `S`
+- **8.6 — DONE 2026-07-31.** `S` All three git dependencies are pinned to commit SHAs with
+  the human-readable version in a trailing comment; SQLite already had a `URL_HASH`.
+  [`docs/dependencies.md`](dependencies.md) is the update process, and
+  `scripts/check_dependency_pins.py` fails CI on any `GIT_TAG` that is not a 40-character
+  hash or any `URL` without a `URL_HASH` — verified by putting `v2.4.11` back and watching it
+  go red. Policies that live only in a doc are the ones that rot.
+
+  **The trap worth knowing about: `webview` uses an *annotated* tag.** `git ls-remote
+  refs/tags/0.12.0` answers `782c12cc`, which is the **tag object**, not a commit — CMake
+  cannot check that out. The commit is the peeled ref, `refs/tags/0.12.0^{}`. `nlohmann/json`
+  and `doctest` use lightweight tags where the distinction does not arise, so the obvious
+  command gives the right answer for two of the three pins and the wrong one for the third.
+  That asymmetry is written down in `docs/dependencies.md` because it is exactly the kind of
+  thing that gets rediscovered by a failing build a year from now.
+
+  **`GIT_SHALLOW TRUE` survives the change** — GitHub serves `git fetch --depth 1 <sha>`, so
+  the pins cost nothing in clone time. That was measured, not assumed. And the pins were
+  verified by configuring a *fresh* build tree: `FetchContent` will not re-fetch into an
+  existing `build/_deps`, so a configure against the usual tree would have proved nothing.
+
+  **Deliberately still open:** nothing watches these projects for advisories. Pinning buys
+  reproducibility, not currency, and arguably makes staleness *more* likely now that no tag
+  quietly pulls in patch releases. That trade is recorded in `docs/dependencies.md` and
+  belongs with 8.5's threat model rather than here.
+
+  The original finding was:
 
   C++ deps come via CMake `FetchContent` (`webview/webview`, `nlohmann/json`, `doctest`).
   Dependabot covers Actions and frontend npm but **not** these — nothing watches them for
@@ -939,7 +1050,8 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   Notification delivery was explicitly *not* part of this item. See ADR-0002's correction
   note for why that ordering is the whole reason the overlay was chosen.
 
-- **macOS launch smoke in CI — DONE 2026-07-28.** `S` — fourth ADR-0002 blocker.
+- **macOS launch smoke in CI — IMPLEMENTED LOCALLY 2026-07-28; HOSTED CONFIRMATION OPEN.**
+  `S` — fourth ADR-0002 blocker.
   `scripts/gui_smoke_macos.sh`, wired as the `macos-gui-smoke` job. `desktop-app-build`
   proved the macOS binary *links*; nothing proved it *starts*, and both ways it can fail to
   start are invisible at link time (a webview that cannot create its window, and a missing
@@ -948,8 +1060,8 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   The script reuses `main.cpp`'s existing `SNAPBACK_GUI_SESSION_SMOKE` hook, so it is a real
   round trip — a session started and stopped through `AppState` and SQLite from the UI
   thread — and then requires the run loop to exit on its own, which is the same path the
-  tray's Quit item drives. **See the caveat under the blocker table: this has passed on
-  Kassa's Mac but has never run on a GitHub runner.**
+  tray's Quit item drives. It has passed on Kassa's Mac but has never run successfully on a
+  GitHub runner; close this item only after a hosted `macos-gui-smoke` run passes.
 
 - **3.2 — Linux tray + overlay.** `M`
   `libappindicator` tray + an overlay window (X11/Wayland caveats noted). Since 3.1 landed,
@@ -1078,6 +1190,11 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   add a threshold to the benchmark harness so a regression fails CI. **7.12 is its natural
   first benchmark.** *See [benchmarking.md](benchmarking.md).*
 
+  > **Partly advanced 2026-08-01.** The hot-path harness now measures both `health()` and a
+  > complete live-read set under adversarial engine contention, with same-host baselines in
+  > `benchmarking.md`. The item remains open because CI still checks only that benchmarks run;
+  > it does not compare results to a threshold.
+
 - **4.5 — Optional encryption at rest.** `M`
   Optional SQLCipher for the local DB. *(The schema-versioning half of this item was split
   out and promoted to 7.3.)* **Whether this is required at all is decided by 8.5** — don't
@@ -1195,7 +1312,7 @@ structure alone — a real review would likely find more.
   Every test above calls the handler layer directly, so a break *between* `bind()` and the
   browser — the injected shim, promise resolution, a webview API change — passes CI. A
   command whose payload shape drifted in a handler *without* a bridge test is the same
-  story, and both are the failure CLAUDE.md calls "silently breaks the UI."
+  story, and both violate the IPC synchronization contract.
 
   > *Corrected 2026-07-29:* this entry said `windows-desktop-integration` "is currently
   > skipped (6.3)". It is not — 6.3 removed its `needs:` on 2026-07-22 and it now runs
@@ -1263,13 +1380,68 @@ structure alone — a real review would likely find more.
 
 ## Tier 11 — Test infrastructure
 
-- **11.1 — One crash hides every test behind it.** `S`
+- **11.1 — DONE 2026-07-31.** `S` `doctest_discover_tests` now registers each case as its own
+  CTest entry: **296 entries instead of 1**, so a crash costs one result instead of the run.
+  CI's per-test `--timeout` also starts meaning what it says — it used to cover all 295 cases
+  at once, making one hung test indistinguishable from a slow suite. Cost measured on this
+  Mac: 2.4s as a single binary, 7.2s as 296 processes. That is the price of not being blind
+  after a crash, and it buys per-case isolation of global state for free.
+
+  **It immediately found a production bug, which is the part worth keeping.** Splitting the
+  suite turned a dismissed flake into a reproducible single failure: *AppState health reports
+  a capture hook that stopped unexpectedly* failed about **1 run in 40**. The flaky assertion
+  was the honest one. `CaptureThread::record_failure()` set `failed_` and left `running_`
+  true until the thread body ended a mutex acquisition and a string assignment later, and
+  `AppState::health()` loads the two flags separately — so the diagnostics panel could report
+  **"capture failed" and "running: true" in the same report**. Same contradiction shape as
+  7.7. Fixed by clearing `running_` before setting `failed_`; 0 failures in 200 runs after.
+
+  Note what had been hiding it. `CaptureThread reports a hook that returns as failed` waits
+  for `running()` to go false *before* asserting, so it sidesteps the window rather than
+  pinning it. The new `CaptureThread never reports failed and running at the same time` spins
+  instead of sleeping so it samples inside the window, and reports 3 contradictions in 200
+  attempts with the stores put back the wrong way round — a deterministic catch where the
+  old one was a 2.5% coin flip.
+
+  **The general lesson: one CTest entry per binary does not just lose results after a crash,
+  it launders per-case flakiness into "the suite is flaky."** One bad case in a 295-case
+  process is noise you re-run; one bad case out of 296 entries is a bug report with a name.
+
+  The original finding was:
+
   6.1 made this concrete: a single SIGSEGV aborted the run and **138 test cases were
   reported as *skipped*.** The whole suite is one CTest entry (`snapback_tests`), so any
   crash blinds us to everything after it. Register test cases as separate CTest entries, or
   shard the binary, so a crash costs one result instead of the run.
 
-- **11.2 — Property-based tests for the numeric core.** `M`
+- **11.2 — DONE 2026-07-31.** `M` `tests/test_classifier_properties.cpp` asserts eight
+  properties over 5,000 generated feature vectors × 3 focus modes — **186,380 assertions**
+  covering score ranges, label validity, determinism, thrash monotonicity, and the ONNX
+  normalisation seam.
+
+  **It earned its keep on the first run: see 7.18.** The property "guardrails only ever move
+  the state toward distraction" failed on 246 assertions, and the cause is a real asymmetry —
+  the drift branch exempts `DEEP_FOCUS` but not `DISTRACTED`, so a weakly-distracted row gets
+  *upgraded*. That is the thing this item promised ("would have caught 5.2 and 5.3
+  mechanically") and it delivered on a defect nobody had filed.
+
+  Two choices in how it is written, both of which are the point rather than incidental:
+
+  - **The seed is fixed** (`0x5EEDC0FFEE1234`). A property test that draws fresh randomness
+    each run turns a real defect into an intermittent one and teaches everyone to re-run it —
+    exactly the failure mode 11.1 spent this week untangling out of the capture layer. Same
+    corpus every run, every host; widening it is a deliberate edit.
+  - **The generator is adversarial on purpose.** One draw in eight is negative, enormous, or
+    exactly zero. Feature extraction is supposed to keep these sane, but the classifier is a
+    separate module and its guarantees must not rest on its caller behaving — a snapshot
+    replayed from an older build can hand it anything.
+
+  **The failing property was pinned, not deleted.** Weakening a test until it passes is how a
+  finding gets lost. The guaranteed half (the DISTRACTED-forcing conditions) is asserted as a
+  property; the divergence is a characterization test that fails the moment 7.18 is settled.
+
+  The original finding was:
+
   `features.cpp` and `classifier.cpp` are pure functions over a feature vector — the ideal
   target for property testing, and currently covered only by example-based cases. Properties
   worth asserting: `focus_score` always in `[0,100]`; `distraction_risk` always in `[0,1]`;
@@ -1277,13 +1449,58 @@ structure alone — a real review would likely find more.
   probabilities sum to 1; and monotonicity where the model claims it (more thrash never
   *decreases* distraction risk). Would have caught 5.2 and 5.3 mechanically.
 
-- **11.3 — Golden-file test for the feature vector.** `S`
+- **11.3 — ALREADY DONE; entry was stale, corrected 2026-07-31.** `S` No code was written for
+  this. `fixtures/feature_parity/golden.json` and
+  `TEST_CASE("feature vectors match the checked-in golden fixture")` already exist and do
+  exactly what the item asks: replay each scenario, then diff all 31 features **by name at
+  their index** against the checked-in file, plus a count assertion. Comparing name-at-index
+  is what makes it catch a *reordering* and not merely a value change. It is JSON rather than
+  the CSV the item imagined, which changes nothing.
+
+  Verified live rather than assumed, because a golden test that never actually compares is the
+  obvious way for this to be quietly worthless: perturbing one value in `golden.json` fails the
+  test, and the clean fixture passes 172 assertions.
+
+  **This is the fourth time an item here has described a gap the code had already closed** —
+  see 0.3, 7.2, and the note on trusting this file. The instruction at the top is load-bearing:
+  *when an item claims something is missing, check whether it is actually missing before
+  rebuilding it.* Checking cost two minutes; rebuilding it would have cost an afternoon and
+  produced a second, competing golden fixture.
+
+  The original finding was:
+
   The feature-vector order is declared a contract with the model and the CSV exporter
-  (CLAUDE.md), enforced only by the dual-language parity job. A checked-in golden CSV for a
+  and CSV exporter, enforced only by the dual-language parity job. A checked-in golden CSV for a
   fixed input, diffed on every run, makes a reordering fail loudly and locally rather than in
   a cross-language job people may not read.
 
-- **11.4 — A deterministic clock, injected.** `M`
+- **11.4 — PARTLY DONE 2026-07-31.** `M` `src/util/clock.hpp` defines a two-method `Clock`
+  (monotonic `steady_ms()` + wall `wall_time()`) with a `SystemClock` for production, and
+  `AppState` takes an optional `Clock*` alongside its existing optional `Logger*` — same
+  injection idiom, so every existing call site compiles unchanged. `now_rfc3339()` and
+  `steady_now_ms()` stopped being static and now read through the seam, which is the point:
+  reading the time is something an *instance* does, not something any code can do from
+  anywhere. `tests/manual_clock.hpp` holds the fake, deliberately under `tests/` — shipping a
+  test clock in `src/` would be a poor answer to 7.14.
+
+  **Two clocks, not one, and that is load-bearing.** Wall time can jump backwards across a DST
+  change or an NTP correction; a duration derived from it goes negative and an idle timer
+  concludes the user has been away for -1 hour. Only `steady_ms()` is used for elapsed time,
+  and the seam makes that case *testable* rather than merely asserted in a comment.
+
+  **What is NOT done: Storage still reads its own clock.** The first draft of the test
+  asserted a session's `started_at` carried the injected time and failed with today's real
+  date — **sessions are stamped by `Storage`, not by `AppState`.** Storage has six
+  `utc_now_rfc3339()` call sites plus two SQL `CURRENT_TIMESTAMP` uses, and injecting there
+  means changing how `Storage` is constructed (`open`, `open_memory`, and its move
+  semantics), which is a separate change rather than a bigger version of this one. The item
+  stays open for that half; the claim made here is scoped to `AppState` and no wider.
+
+  **This unblocks 7.14**, which is the reason to have done it: all four `_for_test` methods
+  are `AppState` methods that exist only to pass `now_ms` in by hand.
+
+  The original finding was:
+
   Time is read directly in at least three places (`state.cpp:69`, `:82`,
   `storage.cpp`'s `CURRENT_TIMESTAMP`). This forces sleep-based tests, blocks testing
   idle/pomodoro/throttle interactions at real durations, and is the direct cause of the
@@ -1307,6 +1524,29 @@ structure alone — a real review would likely find more.
   pointing at `build/snapback_tests`, because the old "no backend off Windows" case called
   `set_autostart_enabled(true)` expecting a no-op. It was caught by the test failing for a
   different reason and removed by hand.
+
+  > **And it happened again the next day, on Linux — fixed 2026-07-31.** The 2026-07-30 fix
+  > patched the macOS arm and left the structure intact, so when 3.0's second half gave Linux
+  > a systemd backend, Linux kept falling into the `#else` "no backend yet" arm. CI run
+  > `30607879815` failed on all four Linux jobs, and the failing assertions say what happened:
+  > `CHECK_FALSE(set_autostart_enabled(true))` failed *and* so did the `CHECK_FALSE(
+  > autostart_enabled())` after it — **the test installed a real systemd user unit onto the
+  > GitHub runner and left it enabled.**
+  >
+  > **The lesson is about the guard, not the assertion.** A `#else` arm is a claim about
+  > "every platform that has no backend *yet*", and it silently shrinks each time one lands —
+  > while the single line inside it that mutates the machine keeps running. Patching the arm
+  > that broke leaves the next platform to rediscover it, which is precisely what happened
+  > twice in two days.
+  >
+  > The no-op contract is now **driven by the runtime answer**: it early-returns when
+  > `autostart_supported()` is true, so `set_autostart_enabled(true)` can only execute where
+  > it is defined to do nothing. Adding a fourth backend cannot reintroduce this, with or
+  > without anyone remembering this file. Verified locally by forcing the stub backend to
+  > compile on macOS: the case runs 3 assertions with the stub and 0 with a real backend.
+  >
+  > This does not close 11.7 — Windows still round-trips the real registry — but it removes
+  > the mechanism by which *every* platform inherited the hazard.
 
   **Measured flake rate: 2 of the first 6 observed Windows job runs (~33%), alternating
   between the two jobs on identical code.**
@@ -1336,7 +1576,7 @@ structure alone — a real review would likely find more.
 
   **Inject is the better shape** — it removes the shared mutable resource instead of
   tolerating it. *Note: this is Windows-only code, so either fix is CI-verified only from a
-  macOS host (see [CLAUDE.md](../CLAUDE.md)) — write it carefully, because the feedback loop
+  macOS host (see [running.md](running.md)) — write it carefully, because the feedback loop
   is a full CI run.*
 
 ---
@@ -1375,9 +1615,11 @@ later moved.
 
   The original finding was:
 
-  `system_architecture.md`, `testing_strategy.md`, `benchmarking.md`, `windows_demo.md`, and
+  the former architecture summary, `testing_strategy.md`, `benchmarking.md`,
+  `windows_demo.md`, and
   `PACKAGING.md` have not been verified since they were written. Given the hit rate on
-  `CLAUDE.md` (six false claims), `ARCHITECTURE.md` (seven), and this file (three), assume
+  the former root guidance (six false claims), `ARCHITECTURE.md` (seven), and this file
+  (three), assume
   they contain errors until checked. `docs-smoke` in CI only checks that docs exist.
 
 - **12.3 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive).
@@ -1440,7 +1682,39 @@ is unscoped. Splitting it now so 2.3 doesn't become a month-long branch.
   forever") point opposite directions, and the constant currently arbitrates. Make it a
   setting, and decide the default deliberately. Ties to **7.6** and **8.5**.
 
-- **11.6 — Lock ordering is documented but not enforced.** `S`
+- **11.6 — DONE 2026-07-31.** `S` `src/util/ranked_mutex.hpp` gives each lock its position in
+  the order (`LockRank::State` → `ActivityBoundary` → `Storage`), and `AppState`'s three
+  mutexes are now `RankedMutex`. An inverted or equal-rank acquisition reports itself on the
+  first single-threaded run through the bad path — no race, no scheduler luck. Every call site
+  is `std::lock_guard lock(...)` with a deduced argument, so none of them changed.
+
+  Three things are worth carrying out of it.
+
+  **The check is compiled into release builds, not just debug.** Tracking is a fixed
+  eight-slot thread-local array, so acquisition costs no allocation and a handful of
+  instructions. Only the *response* varies: abort under `!NDEBUG` so a developer gets the
+  stack, log-and-continue in release, because crashing a user's app over a deadlock that has
+  not happened is worse than the warning. The main CI test job builds `Release`, so a
+  debug-only check would have run in exactly one job.
+
+  **The first draft's own bookkeeping was the bug.** It stored one "innermost rank" that each
+  mutex restored on unlock — correct only if locks are released LIFO. `std::unique_lock` lets
+  you release an outer lock while an inner one is held, and when a test did, the thread-local
+  was left permanently wrong and *every later lock on that thread* reported a violation that
+  never happened. Two of the eleven tests failed for that reason and neither had a real
+  inversion in it. **A diagnostic that goes wrong after the first mistake is worse than none**
+  — it turns one bug into a wall of false reports. The fix is the held-rank array, which is
+  correct under any release order and reports a non-LIFO release once, as its own finding.
+
+  **The AppState regression test only covers the methods it calls.** An inversion was planted
+  in `upsert_app_rule` to check the guard bites and the test stayed green, because the draft
+  called eight methods and that was not one of them. The test now names every `AppState`
+  method that touches `storage_mutex_` or `activity_boundary_mutex_`, and with the plant back
+  in it fails. Same shape as 7.1 and 5.3: **the suite passed because it never took the
+  branch.**
+
+  The original finding was:
+
   `state.hpp:161` states the invariant: *always acquire `mutex_` before `storage_mutex_`,
   never the reverse.* Nothing enforces it — no wrapper type, no runtime assertion, no test.
   It holds today because a careful author held it, and the codebase now has three mixed-lock
@@ -1470,7 +1744,7 @@ itself a backlog item below.
       `capture_events_dropped` reflects reality. *Blocked on 7.4.*
 - [ ] Confirm every `invoke(...)` string in `frontend/src/api.ts` resolves in
       `commands.hpp`. `test_ipc_contract` covers the C++ side; confirm it covers the TS side
-      too. CLAUDE.md calls this contract sacred and a mismatch fails silently at runtime.
+      too. This contract is easy to drift and a mismatch fails silently at runtime.
 - [ ] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
       the full pipeline. Covers 8.1 and 8.2 in one test.
 
@@ -1562,7 +1836,7 @@ Completed work. Kept for history; further detail lives in the git log.
 
 - **12.2 — Audit the remaining docs against the code** — ten false claims corrected, all
   stale in the same direction: they described the design *before* the 2026-07-22 passes.
-  `system_architecture.md` (five: the single-mutex design in §5.2/§5.5/§6/§7.1, the inline
+  the former architecture summary (five: the single-mutex design, the inline
   `std::array` ring, the ~5 MB `AppState` whose fix had already shipped, and the parity
   check listed as future work when it runs on every push);
   `testing_strategy.md` (four: six CI jobs listed of twelve, macOS/Linux capture called

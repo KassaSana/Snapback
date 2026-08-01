@@ -85,13 +85,22 @@ void delete_activity_exports(const std::filesystem::path& app_data_dir) {
 
 }  // namespace
 
-AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger)
-    : storage_(std::move(storage)), app_data_dir_(std::move(app_data_dir)), logger_(logger) {
+AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger,
+                   Clock* clock)
+    : storage_(std::move(storage)),
+      app_data_dir_(std::move(app_data_dir)),
+      logger_(logger),
+      clock_(clock) {
     if (!app_data_dir_.empty()) {
         settings_ = load_app_settings(app_data_dir_);
     }
+    // Hydrate persisted live values once at startup so the public live getters can treat
+    // the published snapshot as authoritative, including when an optional is empty.
+    active_session_ = storage_.active_session();
+    latest_prediction_ = storage_.latest_prediction();
     focus_mode_ = settings_.default_focus_mode;
     context_tracker_.set_goal_categories(settings_.goal_categories);
+    publish_live_read_unlocked();
 }
 
 AppState::~AppState() noexcept {
@@ -99,8 +108,8 @@ AppState::~AppState() noexcept {
     stop_engine();
 }
 
-std::string AppState::now_rfc3339() {
-    const std::time_t now = std::time(nullptr);
+std::string AppState::now_rfc3339() const {
+    const std::time_t now = clock().wall_time();
     std::tm tm{};
 #if defined(_WIN32)
     gmtime_s(&tm, &now);
@@ -112,10 +121,33 @@ std::string AppState::now_rfc3339() {
     return out.str();
 }
 
-std::int64_t AppState::steady_now_ms() {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(
-               std::chrono::steady_clock::now().time_since_epoch())
-        .count();
+std::int64_t AppState::steady_now_ms() const {
+    return clock().steady_ms();
+}
+
+std::shared_ptr<const AppState::LiveReadSnapshot> AppState::live_read_snapshot() const noexcept {
+    return std::atomic_load_explicit(&live_read_snapshot_, std::memory_order_acquire);
+}
+
+void AppState::publish_live_read_unlocked() {
+    if (!live_read_dirty_) return;
+
+    auto snapshot = std::make_shared<LiveReadSnapshot>();
+    snapshot->active_session = active_session_;
+    snapshot->latest_prediction = latest_prediction_;
+    snapshot->latest_snapback = latest_snapback_;
+    snapshot->last_prediction_at_ms = last_prediction_at_ms_;
+    snapshot->private_mode = settings_.private_mode;
+    snapshot->idle = idle_;
+    snapshot->classifier.backend = classifier_.backend();
+    snapshot->classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
+    snapshot->classifier.model_path = OnnxModel::instance().model_path();
+    snapshot->classifier.model_id = OnnxModel::instance().model_id();
+
+    std::shared_ptr<const LiveReadSnapshot> published = std::move(snapshot);
+    std::atomic_store_explicit(&live_read_snapshot_, std::move(published),
+                               std::memory_order_release);
+    live_read_dirty_ = false;
 }
 
 bool AppState::is_input_event(EventType type) {
@@ -131,18 +163,21 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     if (const auto poll_edge = idle_detector_.poll(now_ms); poll_edge != IdleTransition::None) {
         edge = poll_edge;
     }
+    const bool was_idle = idle_;
     idle_ = idle_detector_.state() == IdleState::Idle;
+    if (idle_ != was_idle) live_read_dirty_ = true;
     return edge;
 }
 
 bool AppState::is_idle() const {
-    std::lock_guard lock(mutex_);
-    return idle_;
+    return live_read_snapshot()->idle;
 }
 
 IdleTransition AppState::update_idle_for_test(std::int64_t now_ms, bool had_input) {
     std::lock_guard lock(mutex_);
-    return update_idle_unlocked(now_ms, had_input);
+    const auto transition = update_idle_unlocked(now_ms, had_input);
+    publish_live_read_unlocked();
+    return transition;
 }
 
 PomodoroStatus AppState::start_pomodoro_unlocked(std::int64_t now_ms) {
@@ -154,11 +189,6 @@ PomodoroStatus AppState::start_pomodoro_unlocked(std::int64_t now_ms) {
 PomodoroStatus AppState::start_pomodoro() {
     std::lock_guard lock(mutex_);
     return start_pomodoro_unlocked(steady_now_ms());
-}
-
-PomodoroStatus AppState::start_pomodoro_for_test(std::int64_t now_ms) {
-    std::lock_guard lock(mutex_);
-    return start_pomodoro_unlocked(now_ms);
 }
 
 PomodoroStatus AppState::stop_pomodoro() {
@@ -194,9 +224,6 @@ void AppState::start_engine_impl(InputHook* hook) {
         std::lock_guard state_lock(mutex_);
         std::lock_guard store_lock(storage_mutex_);
         reload_app_rules_unlocked();  // seed the cache before the tick thread reads it
-        // Resume a session left ACTIVE by a prior run, so the tick's compute path never
-        // needs to touch storage_ to discover it (keeps the hot path storage-free).
-        if (!active_session_) active_session_ = storage_.active_session();
     }
     try {
         capture_.start(hook);
@@ -253,15 +280,14 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     active_session_ = storage_.create_session(goal, mode);
     last_prediction_secs_ = -1.0;
     reload_app_rules_unlocked();  // pick up any rules edited while idle
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
     return *active_session_;
 }
 
 void AppState::stop_session() {
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
-    if (!active_session_) {
-        active_session_ = storage_.active_session();
-    }
     pomodoro_.reset();
     if (active_session_) {
         storage_.end_session(active_session_->session_id);
@@ -270,6 +296,8 @@ void AppState::stop_session() {
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
     }
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
 }
 
 SessionRecord AppState::stop_session(const std::string& session_id) {
@@ -282,7 +310,9 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
+        live_read_dirty_ = true;
     }
+    publish_live_read_unlocked();
     return record;
 }
 
@@ -300,6 +330,8 @@ bool AppState::delete_session(const std::string& session_id) {
     std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
 
+    const bool deleting_cached_prediction =
+        latest_prediction_ && latest_prediction_->session_id == session_id;
     const bool deleted = storage_.delete_session(session_id);
     if (!deleted) return false;
 
@@ -315,19 +347,27 @@ bool AppState::delete_session(const std::string& session_id) {
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
-        latest_prediction_.reset();
         latest_snapback_.reset();
-        last_prediction_at_ms_.reset();
         last_prediction_secs_ = -1.0;
         prediction_dirty_ = false;
         hyperfocus_latched_ = false;
         hyperfocus_minutes_.reset();
+        live_read_dirty_ = true;
     }
+    if (deleting_cached_prediction) {
+        // The snapshot is authoritative, so replace a deleted cached prediction with the
+        // newest retained row. Its monotonic-clock age is unknowable after this DB refresh.
+        latest_prediction_ = storage_.latest_prediction();
+        last_prediction_at_ms_.reset();
+        prediction_dirty_ = false;
+        live_read_dirty_ = true;
+    }
+    publish_live_read_unlocked();
     return true;
 }
 
 HealthStatus AppState::health() const {
-    std::lock_guard lock(mutex_);
+    const auto live = live_read_snapshot();
     HealthStatus h;
     const bool capture_failed = capture_.failed();
     h.status = capture_failed
@@ -338,23 +378,23 @@ HealthStatus AppState::health() const {
     h.capture_failure_reason = capture_.failure_reason();
     h.capture_events_dropped = capture_.events_dropped();
     const auto event_age_ms = capture_.last_event_age_ms();
-    h.capture_stalled = h.capture_running && active_session_.has_value() && !idle_ &&
+    h.capture_stalled = h.capture_running && live->active_session.has_value() && !live->idle &&
                         event_age_ms.has_value() &&
                         *event_age_ms >= kCaptureStallThresholdMs;
-    if (last_prediction_at_ms_) {
+    if (live->last_prediction_at_ms) {
         h.last_prediction_age_secs = static_cast<double>(std::max<std::int64_t>(
-            0, steady_now_ms() - *last_prediction_at_ms_)) / 1000.0;
+            0, steady_now_ms() - *live->last_prediction_at_ms)) / 1000.0;
     }
-    h.prediction_suppression_reason = settings_.private_mode
+    h.prediction_suppression_reason = live->private_mode
                                           ? "private_mode"
-                                          : idle_          ? "idle"
-                                          : !active_session_ ? "no_session"
-                                                             : "none";
+                                          : live->idle ? "idle"
+                                          : !live->active_session ? "no_session"
+                                                                  : "none";
     h.permissions =
         check_capture_permissions(capture_.running(), capture_.input_observed());
-    h.classifier.backend = classifier_.backend();
-    h.classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
-    h.classifier.model_path = OnnxModel::instance().model_path();
+    h.classifier.backend = live->classifier.backend;
+    h.classifier.onnx_runtime_enabled = live->classifier.onnx_runtime_enabled;
+    h.classifier.model_path = live->classifier.model_path;
     return h;
 }
 
@@ -363,34 +403,23 @@ DiagnosticsSnapshot AppState::diagnostics() const {
 }
 
 std::optional<PredictionRecord> AppState::latest_prediction() const {
-    // Common case: the cached value under mutex_ (never blocks on disk). Only the cold
-    // startup path falls back to storage, taking storage_mutex_ after releasing mutex_.
-    {
-        std::lock_guard lock(mutex_);
-        if (latest_prediction_) return latest_prediction_;
-    }
-    std::lock_guard lock(storage_mutex_);
-    return const_cast<Storage&>(storage_).latest_prediction();
+    return live_read_snapshot()->latest_prediction;
 }
 
 std::optional<SessionRecord> AppState::active_session() const {
-    {
-        std::lock_guard lock(mutex_);
-        if (active_session_) return active_session_;
-    }
-    std::lock_guard lock(storage_mutex_);
-    return const_cast<Storage&>(storage_).active_session();
+    return live_read_snapshot()->active_session;
 }
 
 std::optional<SnapbackPayload> AppState::latest_snapback() const {
-    std::lock_guard lock(mutex_);
-    return latest_snapback_;
+    return live_read_snapshot()->latest_snapback;
 }
 
 std::optional<SnapbackPayload> AppState::take_snapback() {
     std::lock_guard lock(mutex_);
     auto out = std::move(latest_snapback_);
     latest_snapback_.reset();
+    if (out) live_read_dirty_ = true;
+    publish_live_read_unlocked();
     return out;
 }
 
@@ -400,6 +429,8 @@ void AppState::dismiss_snapback() {
     // doesn't keep the recovery state latched.
     latest_snapback_.reset();
     context_tracker_.dismiss_recovery(last_event_secs_);
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
 }
 
 SessionRecap AppState::session_recap(const std::string& session_id) {
@@ -450,6 +481,8 @@ void AppState::delete_all_activity_data() {
     features_.reset_for_session(std::nullopt);
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
 }
 
 ExportTrainingResult AppState::export_training_data(
@@ -531,6 +564,8 @@ PrivacySettings AppState::privacy_settings() const {
 void AppState::set_private_mode(bool enabled) {
     std::lock_guard lock(mutex_);
     settings_.private_mode = enabled;
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
     if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
 }
 
@@ -730,13 +765,7 @@ std::vector<ContextSnapshotDto> AppState::context_timeline(std::optional<std::st
 }
 
 ClassifierStatus AppState::classifier_status() const {
-    std::lock_guard lock(mutex_);
-    ClassifierStatus status;
-    status.backend = classifier_.backend();
-    status.onnx_runtime_enabled = classifier_.backend() == "onnx";
-    status.model_path = OnnxModel::instance().model_path();
-    status.model_id = OnnxModel::instance().model_id();
-    return status;
+    return live_read_snapshot()->classifier;
 }
 
 ClassifierStatus AppState::reload_classifier_model() {
@@ -748,16 +777,14 @@ ClassifierStatus AppState::reload_classifier_model() {
         OnnxModel::instance().unload();
     }
 
-    ClassifierStatus status;
-    status.backend = classifier_.backend();
-    status.onnx_runtime_enabled = classifier_.backend() == "onnx";
-    status.model_path = OnnxModel::instance().model_path();
-    status.model_id = OnnxModel::instance().model_id();
-    return status;
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
+    return live_read_snapshot()->classifier;
 }
 
 PermissionStatus AppState::refresh_permissions() {
-    std::lock_guard lock(mutex_);
+    // CaptureThread owns synchronization for these fields. Joining the engine mutation lock
+    // here made a read-only permission poll wait behind feature/classifier work for no gain.
     return check_capture_permissions(capture_.running(), capture_.input_observed());
 }
 
@@ -801,10 +828,9 @@ bool AppState::is_private_event_unlocked(const CaptureEvent& event) const {
 
 void AppState::submit_label(FocusLabel label, const std::string& source,
                             std::optional<std::string> notes) {
-    // Mixed: reads in-memory active_session_ (falling back to storage) then writes storage.
+    // Mixed: reads the startup-hydrated active session cache then writes storage.
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
-    if (!active_session_) active_session_ = storage_.active_session();
     if (!active_session_) throw std::runtime_error("no active session");
     storage_.insert_label(active_session_->session_id, label, source, std::move(notes));
 }
@@ -822,6 +848,7 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
         std::lock_guard lock(mutex_);
         activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         job = compute_event(event);
+        publish_live_read_unlocked();
     }
     if (job) {
         std::lock_guard activity_lock(activity_boundary_mutex_);
@@ -867,11 +894,13 @@ void AppState::engine_tick() {
         if (latest_snapback_) {
             snap_to_emit = std::move(latest_snapback_);
             latest_snapback_.reset();
+            live_read_dirty_ = true;
         }
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
             hyperfocus_minutes_.reset();
         }
+        publish_live_read_unlocked();
     }
 
     {
@@ -934,12 +963,13 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
             // Defer the RFC3339 formatting until the tracker actually checkpoints (rare),
             // so the ~99% of key/mouse events don't pay for a timestamp they won't use.
             job.context_snapshot = context_tracker_.maybe_checkpoint_snapshot(
-                app_rules_, event.timestamp_secs, [] { return now_rfc3339(); });
+                app_rules_, event.timestamp_secs, [this] { return now_rfc3339(); });
         }
         // The tracker latches a snapback payload on the return-from-distraction edge;
         // drain it into the field the tick loop emits.
         if (auto snapback = context_tracker_.take_pending_snapback()) {
             latest_snapback_ = *snapback;
+            live_read_dirty_ = true;
         }
     }
 
@@ -1001,6 +1031,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     latest_prediction_ = record;
     last_prediction_at_ms_ = steady_now_ms();
     prediction_dirty_ = true;  // engine_tick emits this after unlocking
+    live_read_dirty_ = true;
 
     if (have_session) {
         job.prediction = std::move(record);

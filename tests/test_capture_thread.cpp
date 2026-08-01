@@ -1,7 +1,7 @@
 // First tests for the capture layer. Before this file, nothing under tests/ referenced
-// InputHook, CaptureThread, or query_active_window — the subsystem CLAUDE.md calls out as
-// "where bugs will hide" had zero coverage, which is exactly how three macOS capture bugs
-// shipped unnoticed.
+// InputHook, CaptureThread, or query_active_window. That left the platform-facing capture
+// subsystem with zero coverage, which is exactly how three macOS capture bugs shipped
+// unnoticed.
 //
 // The OS hooks themselves can't run headlessly, but the part that owns memory safety can:
 // CaptureThread's producer/consumer seam over the SPSC ring. A ScriptedHook stands in for
@@ -202,6 +202,47 @@ TEST_CASE("CaptureThread reports a hook that returns as failed") {
     REQUIRE(wait_for_emit(replacement));
     CHECK(capture.running());
     capture.stop();
+}
+
+TEST_CASE("CaptureThread never reports failed and running at the same time") {
+    // ROADMAP 11.1 found this, and the finding is really about how it was found.
+    //
+    // AppState::health() loads failed() and running() in two separate atomic reads and
+    // publishes them as `status` and `captureRunning`. record_failure() used to set failed_
+    // first and leave running_ true until the thread body ended, so between those two stores
+    // — a mutex acquisition and a string assignment apart — health() could report "capture
+    // failed" and "running: true" in the same report. Two fields that contradict each other,
+    // same shape as 7.7.
+    //
+    // The test above sidesteps the window by waiting for running() to go false before it
+    // asserts anything. The AppState-level test did *not*, and it failed about 1 run in 40 —
+    // a flake that had been dismissed as noise for as long as the whole suite was one CTest
+    // entry, because one bad case in a 295-case process reads as "the suite is flaky."
+    // Registering cases individually is what turned it into a reproducible single failure.
+    //
+    // This samples the window deliberately: spin, don't sleep, so the observation lands
+    // inside the microseconds between the two stores. With the stores in the wrong order
+    // this fails; with them in the right order it is 0 for 200.
+    constexpr int kAttempts = 200;
+    int contradictions = 0;
+
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        ReturningHook hook;
+        CaptureThread capture;
+        capture.start(&hook);
+
+        bool failed = false;
+        for (int spin = 0; spin < 2'000'000 && !failed; ++spin) {
+            failed = capture.failed();
+        }
+        REQUIRE(failed);
+
+        // The invariant: if the class says it failed, it must already say it is not running.
+        if (capture.running()) ++contradictions;
+        capture.stop();
+    }
+
+    CHECK(contradictions == 0);
 }
 
 TEST_CASE("CaptureThread counts drops once the ring is full") {

@@ -1,5 +1,6 @@
 #include "doctest_wrapper.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -10,11 +11,32 @@
 
 namespace {
 
+// Reads the script with its line endings normalised to LF.
+//
+// The file is opened in binary deliberately — text mode would translate CRLF on Windows and
+// leave it alone elsewhere, so the test would depend on the host's idea of a line rather than
+// on the script. But that makes the raw bytes line-ending sensitive, and the repo has no
+// `.gitattributes`, so a Windows checkout gets CRLF (the runner images default
+// `core.autocrlf` to true) while every other host gets LF.
+//
+// That is what broke CI run 30607879815 on both Windows jobs: the one assertion below that
+// spans two lines searched for "...{\n    Wait-ForFrontend\n}" against a buffer containing
+// "\r\n", and failed. Every other assertion in this file is single-line, which is exactly why
+// precisely one of them failed and the failure read as mysterious rather than as an encoding
+// problem.
+//
+// Normalising here rather than adding a `.gitattributes` rule is deliberate: this test
+// asserts what the script *does*, a property that has nothing to do with line endings, and
+// PowerShell scripts on Windows are conventionally CRLF. Pinning the checkout to LF would fix
+// the test by constraining the artifact, which is the wrong way round.
 std::string read_windows_demo_script() {
     const auto path =
         std::filesystem::path(SNAPBACK_SOURCE_DIR) / "scripts/windows_demo.ps1";
     std::ifstream input(path, std::ios::binary);
-    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    std::string contents{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+    contents.erase(std::remove(contents.begin(), contents.end(), '\r'), contents.end());
+    return contents;
 }
 
 }  // namespace

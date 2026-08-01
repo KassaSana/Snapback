@@ -19,6 +19,8 @@
 
 #include "app/settings.hpp"
 #include "app/state.hpp"
+#include "app_state_test_access.hpp"
+#include "manual_clock.hpp"
 #include "util/logger.hpp"
 
 using namespace snapback;
@@ -183,39 +185,51 @@ TEST_CASE("AppState idle wiring goes AFK after the threshold and wakes on input"
     const std::int64_t t = kDefaultIdleThresholdMs;
 
     // First step seeds the clock; input keeps us active.
-    CHECK(state->update_idle_for_test(0, /*had_input=*/true) == IdleTransition::None);
+    CHECK(AppStateTestAccess::update_idle(*state, 0, /*had_input=*/true) == IdleTransition::None);
     CHECK_FALSE(state->is_idle());
 
     // No input across the threshold -> AFK, exactly one WentIdle edge.
-    CHECK(state->update_idle_for_test(t - 1, false) == IdleTransition::None);
-    CHECK(state->update_idle_for_test(t, false) == IdleTransition::WentIdle);
+    CHECK(AppStateTestAccess::update_idle(*state, t - 1, false) == IdleTransition::None);
+    CHECK(AppStateTestAccess::update_idle(*state, t, false) == IdleTransition::WentIdle);
     CHECK(state->is_idle());
-    CHECK(state->update_idle_for_test(t + 500, false) == IdleTransition::None);  // no repeat
+    CHECK(AppStateTestAccess::update_idle(*state, t + 500, false) == IdleTransition::None);  // no repeat
 
     // Input wakes us.
-    CHECK(state->update_idle_for_test(t + 600, true) == IdleTransition::WokeUp);
+    CHECK(AppStateTestAccess::update_idle(*state, t + 600, true) == IdleTransition::WokeUp);
     CHECK_FALSE(state->is_idle());
 }
 
 TEST_CASE("AppState binds Pomodoro to an active session and exposes transition edges") {
-    auto state = make_state();
-    CHECK_THROWS_WITH(state->start_pomodoro_for_test(0), "no active session");
+    // ROADMAP 7.14: this used to call `start_pomodoro_for_test(100)`, a public method on the
+    // shipping class whose only reason to exist was passing `now_ms` in by hand. 11.4's
+    // injected clock made it redundant — `start_pomodoro()` reads the clock, so setting the
+    // clock and calling the *real* API is now strictly better: it exercises the production
+    // path rather than a parallel one that could drift from it.
+    ManualClock clock;
+    clock.set_steady_ms(100);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
 
-    const auto session = state->start_session("Finish Pomodoro wiring", FocusMode::Normal);
-    const auto started = state->start_pomodoro_for_test(100);
+    CHECK_THROWS_WITH(state.start_pomodoro(), "no active session");
+
+    const auto session = state.start_session("Finish Pomodoro wiring", FocusMode::Normal);
+    const auto started = state.start_pomodoro();
     CHECK(started.running);
     CHECK(started.phase == PomodoroPhase::Work);
     CHECK(started.remaining_ms == 25 * 60 * 1000);
 
-    CHECK_FALSE(state->update_pomodoro_for_test(100 + 25 * 60 * 1000 - 1).has_value());
-    const auto transition = state->update_pomodoro_for_test(100 + 25 * 60 * 1000);
+    // The 25-minute phase boundary, reached instantly. A sleep-based test could never assert
+    // this at all, which is why it was previously only reachable through a `_for_test` method.
+    CHECK_FALSE(AppStateTestAccess::update_pomodoro(state, 100 + 25 * 60 * 1000 - 1).has_value());
+    const auto transition = AppStateTestAccess::update_pomodoro(state, 100 + 25 * 60 * 1000);
     REQUIRE(transition.has_value());
     CHECK(transition->phase == PomodoroPhase::ShortBreak);
     CHECK(transition->completed_work_intervals == 1);
-    CHECK_FALSE(state->update_pomodoro_for_test(100 + 25 * 60 * 1000).has_value());
+    CHECK_FALSE(AppStateTestAccess::update_pomodoro(state, 100 + 25 * 60 * 1000).has_value());
 
-    state->stop_session(session.session_id);
-    const auto stopped = state->pomodoro_status();
+    state.stop_session(session.session_id);
+    const auto stopped = state.pomodoro_status();
     CHECK_FALSE(stopped.running);
     CHECK(stopped.phase == PomodoroPhase::Work);
     CHECK(stopped.completed_work_intervals == 0);
@@ -226,7 +240,7 @@ TEST_CASE("AppState focus_summary aggregates persisted predictions") {
     auto session = state->start_session("Write tests", FocusMode::Deep);
     // Drive a few events far enough apart to clear the 1s prediction throttle.
     for (int i = 0; i < 4; ++i) {
-        state->process_event_for_test(ev(EventType::KeyPress, 1.0 + i * 2.0));
+        AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0 + i * 2.0));
     }
     const auto summary = state->focus_summary(100);
     CHECK(summary.sample_count >= 1);
@@ -238,15 +252,15 @@ TEST_CASE("AppState focus_summary aggregates persisted predictions") {
 TEST_CASE("AppState freezes prediction generation while idle") {
     auto state = make_state();
     // A normal event produces a prediction.
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
     CHECK(state->latest_prediction().has_value());
 
     // Force AFK, then the next event must NOT overwrite/produce a prediction.
-    state->update_idle_for_test(0, true);
-    state->update_idle_for_test(kDefaultIdleThresholdMs, false);
+    AppStateTestAccess::update_idle(*state, 0, true);
+    AppStateTestAccess::update_idle(*state, kDefaultIdleThresholdMs, false);
     REQUIRE(state->is_idle());
     const auto before = state->latest_prediction()->timestamp;
-    state->process_event_for_test(ev(EventType::KeyPress, 100.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 100.0));
     CHECK(state->latest_prediction()->timestamp == before);  // unchanged: no new prediction
 }
 
@@ -273,8 +287,8 @@ TEST_CASE("AppState starts and stops sessions through storage") {
 TEST_CASE("AppState saves an automatic label when stopping the active session") {
     auto state = make_state();
     const auto session = state->start_session("Label shutdown session", FocusMode::Normal);
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0));
-    state->process_event_for_test(ev(EventType::KeyPress, 3.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 3.0));
 
     state->stop_session();
 
@@ -294,9 +308,9 @@ TEST_CASE("AppState writes a real elapsed time into exported features") {
 
     // Events are spaced far enough apart to clear the ~1/sec prediction throttle, so each
     // one produces a persisted feature row.
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 1000.0, "Cursor"));
-    state->process_event_for_test(ev(EventType::KeyPress, 1002.0, "Cursor"));
-    state->process_event_for_test(ev(EventType::KeyPress, 1045.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 1000.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1002.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1045.0, "Cursor"));
     state->stop_session(session.session_id);
 
     TempDir temp;
@@ -331,9 +345,9 @@ TEST_CASE("AppState processes synthetic events into predictions and persisted ro
     auto state = make_state();
     auto session = state->start_session("Implement classifier", FocusMode::Normal);
 
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 100.0));
-    state->process_event_for_test(ev(EventType::KeyPress, 101.2));
-    state->process_event_for_test(ev(EventType::KeyPress, 102.5));
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 100.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 101.2));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 102.5));
 
     auto latest = state->latest_prediction();
     REQUIRE(latest.has_value());
@@ -352,7 +366,7 @@ TEST_CASE("AppState processes synthetic events into predictions and persisted ro
 TEST_CASE("AppState labels and export training data") {
     auto state = make_state();
     auto session = state->start_session("Export from app state", FocusMode::Recovery);
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 200.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 200.0));
     state->submit_label(FocusLabel::Productive, "manual", "steady");
 
     TempDir temp;
@@ -370,7 +384,7 @@ TEST_CASE("AppState labels and export training data") {
 
     TempDir temp_other;
     auto other_session = state->start_session("Other session", FocusMode::Normal);
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 300.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 300.0));
     exported = state->export_training_data(temp_other.path, session.session_id);
     CHECK(exported.feature_count >= 1);
     CHECK(exported.label_count == 1);
@@ -412,7 +426,7 @@ TEST_CASE("AppState persists privacy settings and suppresses private events") {
     CHECK(state->privacy_settings().excluded_apps == std::vector<std::string>{"Banking", "1Password"});
 
     state->start_session("Ship privacy", FocusMode::Normal);
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0, "Cursor"));
     CHECK(state->prediction_history(10).empty());
 
     auto storage2 = Storage::open_memory();
@@ -430,7 +444,7 @@ TEST_CASE("AppState deletes collected activity and resets the live session") {
     auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
     const auto session = state->start_session("Delete this", FocusMode::Normal);
     state->start_pomodoro();
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0, "Cursor"));
     state->upsert_app_rule("Cursor", AppRuleKind::Allow, std::nullopt);
     REQUIRE(state->active_session().has_value());
     REQUIRE(state->latest_prediction().has_value());
@@ -492,6 +506,38 @@ TEST_CASE("AppState::delete_session clears live state when the active session is
     CHECK_FALSE(state->pomodoro_status().running);
 }
 
+TEST_CASE("AppState::delete_session evicts a deleted inactive latest prediction") {
+    auto state = make_state();
+    const auto doomed = state->start_session("Predicted then deleted", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+    state->stop_session(doomed.session_id);
+    const auto keeper = state->start_session("Still active", FocusMode::Normal);
+    REQUIRE(state->latest_prediction().has_value());
+    REQUIRE(state->latest_prediction()->session_id == doomed.session_id);
+
+    REQUIRE(state->delete_session(doomed.session_id));
+
+    REQUIRE(state->active_session().has_value());
+    CHECK(state->active_session()->session_id == keeper.session_id);
+    CHECK(state->latest_prediction() == std::nullopt);
+}
+
+TEST_CASE("AppState::delete_session retains the latest prediction from another session") {
+    auto state = make_state();
+    const auto keeper = state->start_session("Keep prediction", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+    state->stop_session(keeper.session_id);
+    const auto doomed = state->start_session("Delete active session", FocusMode::Normal);
+    REQUIRE(state->latest_prediction().has_value());
+    REQUIRE(state->latest_prediction()->session_id == keeper.session_id);
+
+    REQUIRE(state->delete_session(doomed.session_id));
+
+    CHECK(state->active_session() == std::nullopt);
+    REQUIRE(state->latest_prediction().has_value());
+    CHECK(state->latest_prediction()->session_id == keeper.session_id);
+}
+
 TEST_CASE("AppState::delete_session reports a missing session instead of throwing") {
     auto state = make_state();
     CHECK_FALSE(state->delete_session("never-existed"));
@@ -516,10 +562,10 @@ TEST_CASE("AppState excludes matching apps without affecting other apps") {
     state->set_privacy_exclusions({"1Password"});
     state->start_session("Test exclusion", FocusMode::Normal);
 
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "1Password"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0, "1Password"));
     CHECK(state->prediction_history(10).empty());
 
-    state->process_event_for_test(ev(EventType::KeyPress, 2.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 2.0, "Cursor"));
     CHECK(state->prediction_history(10).size() == 1);
 }
 
@@ -528,10 +574,10 @@ TEST_CASE("AppState privacy exclusions do not overmatch inside app names") {
     state->set_privacy_exclusions({"Chrome"});
     state->start_session("Bounded exclusion", FocusMode::Normal);
 
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Google Chrome"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0, "Google Chrome"));
     CHECK(state->prediction_history(10).empty());
 
-    state->process_event_for_test(ev(EventType::KeyPress, 2.0, "chromedriver"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 2.0, "chromedriver"));
     CHECK(state->prediction_history(10).size() == 1);
 }
 
@@ -562,9 +608,9 @@ TEST_CASE("AppState analytics includes predictions older than the former row cap
 TEST_CASE("AppState analytics aggregates predictions, hourly buckets, and app context") {
     auto state = make_state();
     state->start_session("Analyze focus", FocusMode::Normal);
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 1.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 1.0, "Cursor",
                                      "state.cpp - Snapback"));
-    state->process_event_for_test(ev(EventType::KeyPress, 2.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 2.0, "Cursor",
                                      "state.cpp - Snapback"));
 
     const auto summary = state->analytics();
@@ -583,7 +629,7 @@ TEST_CASE("AppState creates and exports day or week summary reports") {
     REQUIRE(storage);
     auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
     state->start_session("Daily summary", FocusMode::Normal);
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0, "Cursor"));
 
     const auto report = state->summary_report("day");
     CHECK(report.window == "day");
@@ -636,20 +682,20 @@ TEST_CASE("AppState fires a snapback payload on return from a long distraction")
     state->start_session("implement the classifier", FocusMode::Normal);
 
     // 1. Focused + on-task in the IDE: establishes the "last good context". No snapback.
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 100.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 100.0, "Cursor",
                                      "classifier.cpp - Snapback"));
     CHECK(state->latest_snapback() == std::nullopt);
 
     // 2. Switch to a clearly off-task window (distracting title) -> Distracted. The
     //    ContextTracker keys off on-task gating, not classifier thrash, so a distracting
     //    title is the deterministic lever.
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 101.0, "Google Chrome",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 101.0, "Google Chrome",
                                      "YouTube - Recommended"));
     CHECK(state->latest_snapback() == std::nullopt);
 
     // 3. Return to the IDE after > min_distraction (30s) -> the return edge fires the
     //    snapback for the remembered context.
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 140.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 140.0, "Cursor",
                                      "classifier.cpp - Snapback"));
 
     auto payload = state->take_snapback();
@@ -666,11 +712,11 @@ TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker
     state->start_session("implement the classifier", FocusMode::Normal);
 
     // First distraction/return cycle: establish context, drift, come back -> Recovering.
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 100.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 100.0, "Cursor",
                                      "classifier.cpp - Snapback"));
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 101.0, "Google Chrome",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 101.0, "Google Chrome",
                                      "YouTube - Recommended"));
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 140.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 140.0, "Cursor",
                                      "classifier.cpp - Snapback"));
     REQUIRE(state->latest_snapback().has_value());
 
@@ -682,9 +728,9 @@ TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker
     CHECK(state->latest_snapback() == std::nullopt);
 
     // Second distraction/return cycle, well past the first: should fire again.
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 200.0, "Google Chrome",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 200.0, "Google Chrome",
                                      "YouTube - Recommended"));
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 240.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 240.0, "Cursor",
                                      "classifier.cpp - Snapback"));
 
     auto second = state->take_snapback();
@@ -714,9 +760,9 @@ TEST_CASE("AppState context timeline records window changes for the active sessi
     auto state = make_state();
     state->start_session("write the docs", FocusMode::Normal);
 
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 10.0, "Cursor",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 10.0, "Cursor",
                                      "auth.ts - Snapback"));
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 11.0, "Google Chrome",
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 11.0, "Google Chrome",
                                      "YouTube"));
 
     auto timeline = state->context_timeline(std::nullopt, 10);
@@ -746,7 +792,7 @@ TEST_CASE("AppState serves concurrent reads during a writer without deadlock or 
         double ts = 0.0;
         for (int i = 0; i < kEvents; ++i) {
             ts += 2.0;  // >1s apart -> every event runs a full classify + persist
-            state->process_event_for_test(
+            AppStateTestAccess::process_event(*state, 
                 ev(EventType::KeyPress, ts, "Cursor", "state.cpp - Snapback"));
         }
         writer_done.store(true);
@@ -772,6 +818,124 @@ TEST_CASE("AppState serves concurrent reads during a writer without deadlock or 
     REQUIRE(latest.has_value());
     CHECK(latest->session_id == session.session_id);
     CHECK(state->session_recap(session.session_id).session_id == session.session_id);
+}
+
+TEST_CASE("AppState live reads do not wait for engine mutation") {
+    // The engine computes under its state lock. Live UI reads must use the published read
+    // snapshot instead of joining that critical section, or an event burst (and especially
+    // ONNX inference) turns directly into UI tail latency.
+    auto state = make_state();
+    const auto session = state->start_session("non-blocking live reads", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+
+    std::atomic<bool> state_lock_held{false};
+    std::atomic<bool> release_state_lock{false};
+    std::thread holder([&] {
+        AppStateTestAccess::while_holding_state_lock(*state, [&] {
+            state_lock_held.store(true, std::memory_order_release);
+            while (!release_state_lock.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        });
+    });
+
+    while (!state_lock_held.load(std::memory_order_acquire)) std::this_thread::yield();
+
+    std::atomic<bool> reads_finished{false};
+    std::atomic<bool> reads_returned_expected_values{false};
+    std::thread reader([&] {
+        const auto health = state->health();
+        const auto latest = state->latest_prediction();
+        const auto active = state->active_session();
+        const auto snapback = state->latest_snapback();
+        const auto classifier = state->classifier_status();
+        const auto permissions = state->refresh_permissions();
+        (void)permissions;
+        const bool idle = state->is_idle();
+        reads_returned_expected_values.store(
+            health.prediction_suppression_reason == "none" && latest.has_value() &&
+                latest->session_id == session.session_id && active.has_value() &&
+                active->session_id == session.session_id && !snapback.has_value() &&
+                classifier.backend == "heuristic" && !idle,
+            std::memory_order_release);
+        reads_finished.store(true, std::memory_order_release);
+    });
+
+    // Give the reader a generous scheduling window while the mutation lock stays held. A
+    // correct live-read seam finishes; the old getters block until that lock is released.
+    for (int attempt = 0; attempt < 200 &&
+                          !reads_finished.load(std::memory_order_acquire);
+         ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const bool finished_while_state_locked = reads_finished.load(std::memory_order_acquire);
+
+    release_state_lock.store(true, std::memory_order_release);
+    holder.join();
+    reader.join();
+
+    CHECK(finished_while_state_locked);
+    CHECK(reads_returned_expected_values.load(std::memory_order_acquire));
+}
+
+TEST_CASE("AppState empty live reads do not fall through to storage") {
+    auto state = make_state();
+
+    std::atomic<bool> locks_held{false};
+    std::atomic<bool> release_locks{false};
+    std::thread holder([&] {
+        AppStateTestAccess::while_holding_state_and_storage_locks(*state, [&] {
+            locks_held.store(true, std::memory_order_release);
+            while (!release_locks.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        });
+    });
+    while (!locks_held.load(std::memory_order_acquire)) std::this_thread::yield();
+
+    std::atomic<bool> reads_finished{false};
+    std::atomic<bool> reads_were_empty{false};
+    std::thread reader([&] {
+        reads_were_empty.store(!state->active_session().has_value() &&
+                                   !state->latest_prediction().has_value(),
+                               std::memory_order_release);
+        reads_finished.store(true, std::memory_order_release);
+    });
+
+    for (int attempt = 0; attempt < 200 &&
+                          !reads_finished.load(std::memory_order_acquire);
+         ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const bool finished_while_locks_held = reads_finished.load(std::memory_order_acquire);
+
+    release_locks.store(true, std::memory_order_release);
+    holder.join();
+    reader.join();
+
+    CHECK(finished_while_locks_held);
+    CHECK(reads_were_empty.load(std::memory_order_acquire));
+}
+
+TEST_CASE("AppState hydrates persisted live values before publishing its first snapshot") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("resume cached state", FocusMode::Deep);
+    PredictionRecord prediction;
+    prediction.session_id = session.session_id;
+    prediction.focus_score = 81.0;
+    prediction.distraction_risk = 0.1;
+    prediction.focus_state = "PRODUCTIVE";
+    prediction.goal_alignment = 0.9;
+    prediction.timestamp = "2026-08-01T12:00:00Z";
+    storage->insert_prediction(prediction);
+
+    AppState state(std::move(*storage));
+
+    REQUIRE(state.active_session().has_value());
+    CHECK(state.active_session()->session_id == session.session_id);
+    REQUIRE(state.latest_prediction().has_value());
+    CHECK(state.latest_prediction()->focus_score == doctest::Approx(81.0));
 }
 
 TEST_CASE("AppState health reflects offline engine before capture starts") {
@@ -859,21 +1023,21 @@ TEST_CASE("AppState health explains prediction freshness and suppression") {
     CHECK_FALSE(health.last_prediction_age_secs.has_value());
     CHECK(health.prediction_suppression_reason == "none");
 
-    state->process_event_for_test(ev(EventType::KeyPress, 1.0));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
     health = state->health();
     REQUIRE(health.last_prediction_age_secs.has_value());
     CHECK(*health.last_prediction_age_secs >= 0.0);
     CHECK(health.prediction_suppression_reason == "none");
 
-    state->update_idle_for_test(0, true);
-    state->update_idle_for_test(kDefaultIdleThresholdMs, false);
+    AppStateTestAccess::update_idle(*state, 0, true);
+    AppStateTestAccess::update_idle(*state, kDefaultIdleThresholdMs, false);
     CHECK(state->health().prediction_suppression_reason == "idle");
 
     state->set_private_mode(true);
     CHECK(state->health().prediction_suppression_reason == "private_mode");
     state->set_private_mode(false);
 
-    state->update_idle_for_test(kDefaultIdleThresholdMs + 1, true);
+    AppStateTestAccess::update_idle(*state, kDefaultIdleThresholdMs + 1, true);
     state->stop_session(session.session_id);
     CHECK(state->health().prediction_suppression_reason == "no_session");
 }
@@ -1001,8 +1165,8 @@ TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
 TEST_CASE("AppState exports a legible archive of what was recorded") {
     auto state = make_state();
     const auto session = state->start_session("write the export", FocusMode::Normal);
-    state->process_event_for_test(ev(EventType::WindowFocusChange, 1000.0, "Cursor"));
-    state->process_event_for_test(ev(EventType::KeyPress, 1002.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 1000.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1002.0, "Cursor"));
     state->stop_session(session.session_id);
 
     TempDir temp;

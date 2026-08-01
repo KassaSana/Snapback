@@ -189,6 +189,14 @@ public:
     // on tied rows. See ROADMAP 7.16, which is about fixing the representation itself.
     void backdate_session_for_test(const std::string& session_id, const std::string& started_at);
 
+    // Test seam: run ANALYZE, so the query planner has real row statistics instead of its
+    // structural defaults. Snapback never runs this in production, and that is exactly why a
+    // test wants it: without stats the planner cannot decide a full scan is cheaper than an
+    // index, so an empty-database plan assertion cannot fail for the reason we care about.
+    // With stats over a large table it can, which makes it the adversarial case for the
+    // indexes 7.13 added. See ROADMAP 7.11.
+    void analyze_for_test();
+
 private:
     explicit Storage(sqlite3* db) : db_(db) {}
     void migrate();

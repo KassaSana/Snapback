@@ -22,13 +22,21 @@ include(FetchContent)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # --- Always fetched: header-only deps used by the core lib and the tests. ---
+#
+# ROADMAP 8.6: every GIT_TAG here is a commit SHA, never a tag name. A git tag is a mutable
+# pointer — upstream can move it, and a fetched dependency is source we compile into the
+# shipping binary without review. Dependabot watches our Actions and our npm tree; it does
+# not watch these, so nothing else would notice. `scripts/check_dependency_pins.py` fails CI
+# if a pin here is anything but a 40-character hash, and `docs/dependencies.md` records how
+# to bump one. The human-readable version stays in the comment beside each pin, because a
+# bare hash tells a reader nothing.
 FetchContent_Declare(nlohmann_json
   GIT_REPOSITORY https://github.com/nlohmann/json
-  GIT_TAG        v3.11.3
+  GIT_TAG        9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03  # v3.11.3
   GIT_SHALLOW    TRUE)
 FetchContent_Declare(doctest
   GIT_REPOSITORY https://github.com/doctest/doctest
-  GIT_TAG        v2.4.11
+  GIT_TAG        ae7a13539fb71f270b87eb2e874fbac80bc8dda2  # v2.4.11
   GIT_SHALLOW    TRUE)
 set(DOCTEST_NO_INSTALL ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(nlohmann_json doctest)
@@ -177,7 +185,27 @@ target_compile_definitions(snapback_tests PRIVATE
   SNAPBACK_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/fixtures"
   SNAPBACK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 stage_onnxruntime(snapback_tests)
-add_test(NAME snapback_tests COMMAND snapback_tests)
+
+# ROADMAP 11.1: register every doctest case as its own CTest test rather than the whole
+# binary as one.
+#
+# The reason is 6.1. A single SIGSEGV took the process down and CTest could only report the
+# one entry it knew about as failed — the 138 cases that never got to run were reported as
+# *skipped*, which reads like "nothing to see here" rather than "we have no idea whether
+# these pass." A crash cost us the answer to every question after it, and the missing
+# coverage was invisible in exactly the situation where it mattered most.
+#
+# doctest_discover_tests asks the built binary for its case list and emits one add_test per
+# case, so a crash now costs one result. It also makes CI's per-test `--timeout` mean what it
+# says: previously the timeout covered all 295 cases at once, so one hung test was
+# indistinguishable from a slow suite.
+#
+# The cost is one process launch per case instead of one for the run. Measured on this Mac:
+# 2.4s as a single binary, and the per-case run is the price of not being blind after a
+# crash. Cases are also better isolated than before — global state cannot leak between them.
+list(APPEND CMAKE_MODULE_PATH "${doctest_SOURCE_DIR}/scripts/cmake")
+include(doctest)
+doctest_discover_tests(snapback_tests)
 
 add_executable(snapback_feature_parity_export tools/feature_parity_export.cpp)
 target_link_libraries(snapback_feature_parity_export PRIVATE snapback_core)
@@ -190,21 +218,30 @@ target_compile_definitions(snapback_tests PRIVATE
 
 if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_benchmarks benchmarks/bench_snapback.cpp)
-  target_include_directories(snapback_benchmarks PRIVATE benchmarks)
+  # ROADMAP 7.14: the benchmarks drive the same private event seam the tests do, through the
+  # same AppStateTestAccess friend. `tests/` is on the include path for that one header —
+  # benchmarks are non-shipping harness code, same category as tests, and the alternative is
+  # putting a test hook back on the production class's public API.
+  target_include_directories(snapback_benchmarks PRIVATE benchmarks tests)
   # snapback_app already PUBLIC-links snapback_core + snapback_capture transitively.
   target_link_libraries(snapback_benchmarks PRIVATE snapback_app)
 
   # Targeted hot-path micro-benchmarks (producer/consumer/lock/SQLite).
   add_executable(snapback_hotpath_benchmarks benchmarks/bench_hotpaths.cpp)
-  target_include_directories(snapback_hotpath_benchmarks PRIVATE benchmarks)
+  target_include_directories(snapback_hotpath_benchmarks PRIVATE benchmarks tests)
   target_link_libraries(snapback_hotpath_benchmarks PRIVATE snapback_app)
 endif()
 
 # --- the desktop app (later phases) ---
 if(SNAPBACK_BUILD_APP)
+  # ROADMAP 8.6. Note this is the *commit* the 0.12.0 tag points at, not the tag object:
+  # webview uses an annotated tag, so `git ls-remote refs/tags/0.12.0` answers 782c12cc,
+  # which is the tag object and is not a commit CMake can check out. The peeled ref
+  # (`refs/tags/0.12.0^{}`) is the commit below. json and doctest use lightweight tags, where
+  # the distinction does not arise — which is exactly why it is easy to get wrong here.
   FetchContent_Declare(webview
     GIT_REPOSITORY https://github.com/webview/webview
-    GIT_TAG        0.12.0)
+    GIT_TAG        3ab4b5d722438fc8a13e6ca830c5e2372d19a01d)  # 0.12.0
   FetchContent_MakeAvailable(webview)
 
   add_executable(snapback

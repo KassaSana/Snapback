@@ -40,6 +40,12 @@ engine thread is the only consumer and owns feature extraction/classification.
 App state protects storage and mutable configuration with mutexes. Native events
 are copied and dispatched to the UI thread before JavaScript is evaluated.
 
+The engine computes mutable live state under its state mutex, then publishes one immutable
+snapshot. Hot UI reads (`health`, current session/prediction/snapback, idle and classifier
+status) consume that snapshot instead of joining the compute critical section. Publication
+is dirty-driven, so an empty 100 ms tick performs no allocation. Storage-backed reads keep
+the separate storage seam below.
+
 The UI thread and the engine thread take the *same* storage mutex, so a slow read
 answering the UI blocks the tick's persist phase — and a bounded ring turns a long
 enough block into dropped events. That is why the history and analytics read paths

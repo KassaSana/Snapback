@@ -69,8 +69,8 @@ npm test
 npm run typecheck
 ```
 
-See [docs/running.md](docs/running.md), [docs/testing_strategy.md](docs/testing_strategy.md),
-and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for platform and design details.
+See the [documentation index](docs/README.md) for architecture, platform, testing,
+benchmarking, packaging, and roadmap references.
 
 For the full end-to-end Windows walkthrough, see
 [docs/windows_demo.md](docs/windows_demo.md).
