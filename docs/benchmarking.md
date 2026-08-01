@@ -158,6 +158,30 @@ you will read a platform difference as a regression.
 only for the in-memory compute and writes to SQLite under a separate lock, so reads no longer
 wait on disk.
 
+**Immutable live-read snapshot** (2026-08-01, same macOS Release build before/after):
+
+| Build stage | mean | p50 | p99 | max |
+|---|---|---|---|---|
+| Live reads join engine `mutex_` | 209.39 µs | 0.75 µs | **5,289.71 µs** | **101,846.58 µs** |
+| Live reads consume published snapshot | **0.72 µs** | **0.71 µs** | **0.79 µs** | **77.50 µs** |
+
+→ the contended p99 fell by roughly **6,700×** without changing the uncontended path. The
+writer is intentionally adversarial: it drives a full prediction on every event through the
+private synchronous test seam. This measures isolation from engine mutation, not a typical
+human-paced workload. The regression tests hold the engine state mutex (and, separately,
+the storage mutex for empty optionals) and prove live reads still finish with the expected
+published values.
+
+The benchmark now also times one complete UI read set (`health`, prediction, session,
+snapback, classifier, permissions and idle). Two immediate Release runs produced a
+contended p99 of **2.96–4.00 µs** and an uncontended p99 of **1.50–1.54 µs**. Reproduce both
+the focused and complete-read measurements with:
+
+```bash
+cmake --build build --config Release --target snapback_hotpath_benchmarks
+./build/snapback_hotpath_benchmarks
+```
+
 **Producer `RingBuffer::push()`** — the OS-hook hot path:
 
 | Variant | mean | p99 | notes |

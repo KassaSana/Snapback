@@ -128,16 +128,39 @@ void bench_consumer_drain() {
     print_stats("consumer drain+classify", processed, stats);
 }
 
-// --- 3. Lock contention: UI reads vs a writer holding mutex_ -------------------------
-Stats measure_reader(AppState& state, std::atomic<bool>& stop, std::size_t max_samples) {
+// --- 3. Live-read contention: UI reads vs engine mutation ----------------------------
+Stats measure_health_reader(AppState& state, std::atomic<bool>& stop,
+                            std::size_t max_samples) {
     std::vector<double> samples;
     samples.reserve(max_samples);
     Timer total;
     while (!stop.load(std::memory_order_relaxed) && samples.size() < max_samples) {
         Timer t;
-        const auto health = state.health();  // acquires mutex_
+        const auto health = state.health();  // reads the immutable live snapshot
         samples.push_back(t.elapsed_us());
         g_int_sink += health.capture_events_dropped;
+    }
+    return summarize(std::move(samples), total.elapsed_ms());
+}
+
+Stats measure_live_read_set(AppState& state, std::atomic<bool>& stop,
+                            std::size_t max_samples) {
+    std::vector<double> samples;
+    samples.reserve(max_samples);
+    Timer total;
+    while (!stop.load(std::memory_order_relaxed) && samples.size() < max_samples) {
+        Timer t;
+        const auto health = state.health();
+        const auto prediction = state.latest_prediction();
+        const auto session = state.active_session();
+        const auto snapback = state.latest_snapback();
+        const auto classifier = state.classifier_status();
+        const auto permissions = state.refresh_permissions();
+        const bool idle = state.is_idle();
+        samples.push_back(t.elapsed_us());
+        g_int_sink += health.capture_events_dropped + prediction.has_value() +
+                      session.has_value() + snapback.has_value() +
+                      classifier.onnx_runtime_enabled + permissions.capture_available + idle;
     }
     return summarize(std::move(samples), total.elapsed_ms());
 }
@@ -150,12 +173,14 @@ void bench_lock_contention() {
         auto state = std::make_unique<AppState>(*Storage::open_memory());
         state->start_session("lock baseline", FocusMode::Normal);
         std::atomic<bool> stop{false};
-        auto stats = measure_reader(*state, stop, 50000);
-        print_stats("lock read (uncontended)", 50000, stats);
+        print_stats("health read (uncontended)", 50000,
+                    measure_health_reader(*state, stop, 50000));
+        print_stats("live read set (uncontended)", 50000,
+                    measure_live_read_set(*state, stop, 50000));
     }
 
-    // Contended: a writer thread hammers process_event_for_test (feature+classify+SQLite
-    // insert, all under mutex_) while the reader times health() calls.
+    // Contended: a writer thread hammers process_event_for_test (feature+classify under the
+    // state lock, persistence afterwards) while the reader times snapshot-backed health().
     {
         auto state = std::make_unique<AppState>(*Storage::open_memory());
         state->start_session("lock contended", FocusMode::Normal);
@@ -172,10 +197,12 @@ void bench_lock_contention() {
             }
         });
 
-        auto stats = measure_reader(*state, stop, kReadSamples);
+        const auto health_stats = measure_health_reader(*state, stop, kReadSamples);
+        const auto live_set_stats = measure_live_read_set(*state, stop, kReadSamples);
         stop.store(true, std::memory_order_relaxed);
         writer.join();
-        print_stats("lock read (contended)", kReadSamples, stats);
+        print_stats("health read (contended)", kReadSamples, health_stats);
+        print_stats("live read set (contended)", kReadSamples, live_set_stats);
     }
 }
 
