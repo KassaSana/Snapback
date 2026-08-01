@@ -47,9 +47,10 @@ neither:
 
 - **`benchmarks.yml`** — *manual only* (`workflow_dispatch`), takes a `minutes` input,
   uploads a `benchmark-results` artifact. This is the one that produces numbers.
-- **`benchmark-smoke`** in `ci.yml` — runs on every push, and only proves the benchmark
-  targets still build and run. **It is not a performance regression gate**; nothing
-  compares its output to the baseline below.
+- **`benchmark-smoke`** in `ci.yml` — runs on every push and proves only that
+  `snapback_benchmarks` builds and runs. It does not run `snapback_hotpath_benchmarks`, and
+  **it is not a performance regression gate**; nothing compares output to the baselines
+  below.
 
 ## What It Measures
 
@@ -126,10 +127,9 @@ reads must stay responsive under the *worst* case, not just on average.
 
 ## Measured results (12th Gen Intel i5-12500H, Release/MSVC)
 
-These are the deltas from the performance pass. **This file is where they live** — an
-earlier version pointed at `docs/system_architecture.md` §7 for them, but §7 is
-"Critique & Architectural Debt" and carries the *limits*, not the measurements. They are
-the reference baseline; re-run and compare after changes to the files listed above.
+These are the reference deltas from the performance passes. Re-run and compare after changes
+to the files listed above; keep measurements here rather than in architecture or roadmap
+documents.
 
 ⚠️ **These numbers are from a Windows machine (i5-12500H, Release/MSVC).** The development
 host is macOS, so a local run is not comparable to this table — compare like-for-like or

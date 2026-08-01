@@ -333,8 +333,8 @@ TEST_CASE("refusing a newer database leaves it untouched") {
 //
 // Every other test in this file starts from a database this build just created, which means
 // they all agree with themselves by construction. These start from a file some *other*
-// process left behind — the only shape that matters in the field, since CLAUDE.md pins the
-// filename to focoflow.db specifically so earlier installs' data is picked up.
+// process left behind — the only shape that matters in the field, because the stable
+// focoflow.db filename means earlier installs' data is picked up.
 //
 // The fixtures are built in-process rather than committed as binary .db files on purpose: a
 // checked-in database cannot be code-reviewed, and it silently stops representing "what an

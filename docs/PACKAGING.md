@@ -76,4 +76,6 @@ Alternatives if needed later:
 
 ## macOS / Linux packaging
 
-Deferred. Windows is the primary demo machine. macOS would need `.app` bundle + notarization; Linux would need AppImage or distro packages.
+macOS `.app`/DMG packaging and notarization are the remaining external v1 release blocker
+([Roadmap 3.3](ROADMAP.md)); they require an Apple Developer account, bundle identifier, and
+signing/notarization credentials. Linux AppImage or distro packaging remains a post-v1 item.

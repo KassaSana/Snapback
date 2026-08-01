@@ -5,7 +5,7 @@ Tier 12 of the roadmap exists because docs here repeatedly asserted paths that w
 never created, or that moved. Auditing that by hand is what let it rot; this makes it
 mechanical.
 
-What it checks, for every `*.md` under `docs/` plus `CLAUDE.md` and `README.md`:
+What it checks, for every `*.md` under `docs/` plus the tracked root/readme files:
 
   * inline-code paths -- `src/app/state.cpp`, `scripts/test_local.ps1`, `frontend/dist`
   * the same with a `:123` line suffix, which we use a lot
@@ -55,6 +55,7 @@ GENERATED = {
 }
 
 EXPECTED_ABSENT = {
+    "CLAUDE.md": "local-only agent guidance; intentionally ignored and absent from clones",
     "third_party/onnxruntime": "optional vendored ONNX Runtime; CI vendors it, absent locally",
     "third_party/onnxruntime/": "same",
     "third_party/onnxruntime/lib": "same -- the lib subdir docs tell you to populate",
@@ -121,7 +122,7 @@ def main() -> int:
     docs += [os.path.join("docs", "adr", f)
              for f in sorted(os.listdir(os.path.join(REPO, "docs", "adr")))
              if f.endswith(".md")]
-    docs += ["CLAUDE.md", "README.md", os.path.join("scripts", "README.md")]
+    docs += ["README.md", os.path.join("scripts", "README.md")]
 
     failures: list[tuple[str, str]] = []
     checked = 0

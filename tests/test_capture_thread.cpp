@@ -1,7 +1,7 @@
 // First tests for the capture layer. Before this file, nothing under tests/ referenced
-// InputHook, CaptureThread, or query_active_window — the subsystem CLAUDE.md calls out as
-// "where bugs will hide" had zero coverage, which is exactly how three macOS capture bugs
-// shipped unnoticed.
+// InputHook, CaptureThread, or query_active_window. That left the platform-facing capture
+// subsystem with zero coverage, which is exactly how three macOS capture bugs shipped
+// unnoticed.
 //
 // The OS hooks themselves can't run headlessly, but the part that owns memory safety can:
 // CaptureThread's producer/consumer seam over the SPSC ring. A ScriptedHook stands in for

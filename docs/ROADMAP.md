@@ -1,62 +1,25 @@
 # ROADMAP.md — the single source of truth for what to build next
 
-**This file is the live backlog.** Every open task lives here — feature work, wiring gaps,
-CI breakage, security hardening, chores. If it's not in this file, it's not planned; if it's
-done, it either moves to the [Done archive](#done-archive) at the bottom or stays in place
-marked **DONE** with the original finding preserved beneath it — the second form is used
-when the finding still teaches something. [CLAUDE.md](../CLAUDE.md) names this file as the
-source of truth for open work and carries no backlog of its own; when any other doc
+**This file is the live backlog.** Every open task lives here. Completed work moves to the
+[Done archive](#done-archive) or remains marked **DONE** only when its explanation still
+teaches a useful constraint. This is the source of truth; when another status document
 disagrees with this one, this one wins.
-
-> *Corrected 2026-07-25:* this paragraph used to describe "`CLAUDE.md`'s status table." There
-> is no such table — `CLAUDE.md` has five sections and none of them track status. The claim
-> was a leftover from a structure that no longer exists, and it is a good illustration of why
-> Tier 12 exists: `scripts/check_doc_paths.py` cannot catch it, because nothing about it is a
-> path. It was found by reading the file that tells you how to trust this file.
 
 **There is no second backlog.** `docs/TODO.md` used to carry open items and drifted out of
 sync — it tracked `2.4b` as a task while this file correctly tracked the same work as the
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-07-29** — that pass closed **7.3** (schema versioning
-and an ordered migration list), most of **7.11** (five pre-existing-database fixtures),
-**7.12** (SQL aggregation), and the delete-a-single-session half of **7.6**. ADR-0002 is now
-**four of six release blockers cleared**, and none of the remaining two is implementation
-work. Measured, not assumed: **241 C++ test cases / 1303 assertions** and **72 frontend
-tests** green, typecheck clean. *Not* seen by CI — see the caveat under the blocker table.
+**Last synced against the code: 2026-08-01.** The July 31 hardening pass added ranked lock
+ordering, immutable dependency pins, per-case CTest registration, classifier properties,
+the large storage fixture, injected clocks, and private test seams. The August 1 performance
+pass moved hot live reads to an immutable snapshot and added contention/lifecycle coverage.
+Locally, **318 C++ cases** and **86 frontend component tests** pass, frontend unit scripts and
+typecheck are clean, and the exact branch remains unverified by remote CI until it is pushed.
 
-Reviewing that pass found a real defect in its own 7.12 work: three queries each re-derived
-"the most recent N sessions", and second-resolution timestamps made ties likely enough that
-they could disagree and silently zero a session's aggregates. Fixed by giving every
-session-selection query a total order. **The lesson is that a batched rewrite needs a test
-that the batch still belongs to the right row**, not just that the numbers are right in the
-happy case.
-
-The 2026-07-28 pass closed **3.1** (macOS tray + native `NSPanel` overlay) and the **macOS
-launch smoke**. Both were verified by running the app on Kassa's Mac; neither has been seen
-by CI yet, for the reason recorded under the blocker table.
-
-*Three rows of the sequence table below were stale on 2026-07-29* — 9.7, 9.8, and 10.7 were
-all finished on 2026-07-26 but still listed as open, one of them described as "the only
-standing `CLAUDE.md` violation". Corrected in place. This file drifts in **both** directions:
-Tier 12 found it pessimistic about the code, and this found it pessimistic about itself.
-
-Earlier context: three passes landed on
-2026-07-20 — five product features (privacy, analytics, summary reports, goal categories,
-diagnostics); Tier 0's four wiring gaps; an engine/storage audit that opened **Tier 5**; and
-a staff review of CI, security, and the app/storage/capture paths that opened **Tiers 6, 7,
-and 8**. **Windows CI went green again 2026-07-22** (6.1 fixed); the first real run of the
-Linux desktop guard then failed on X11 macro pollution — fixed, see 6.3's note.
-
-**The 2026-07-25 sync** covers the `fix-macos-app-launch` branch, which is the largest
-single change since the port: the macOS app now launches and captures for real (**0.3**,
-the #1 v1 blocker), and the dashboard was split into three surfaces (**10.2**). Measured,
-not assumed: **181 C++ test cases / 943 assertions** and **56 frontend tests** green,
-typecheck clean, and CI run `30168981559` green on all three OSes for every job except
-`docs-smoke`. Two things that sync turned up are recorded where they belong: 0.3's live run
-found that macOS capture was **half-blind** (see 0.3), and Tier 8's "what is already right"
-list had gone **stale in the unsafe direction** (see the note there).
+The formal v1 blocker list is **three of six verified complete**. Packaging and Decision
+session A remain open, and the implemented macOS launch smoke still needs one successful
+hosted CI run. None is an unidentified coding gap.
 
 **A note on trusting this file.** Past audits found items here that were simply wrong: 0.3
 described work that was already written (and broken), 2.4 sits in the Done archive on the
@@ -84,62 +47,41 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 
 | # | Item | Why now |
 |---|------|---------|
-| 1 | ~~**6.1** Windows stack overflow~~ | **Done 2026-07-22** — CI-confirmed, archived |
-| 2 | ~~**6.4** `actions/checkout` bump~~ | **Done 2026-07-22** — CI-confirmed, archived |
-| 3 | **6.2** red-master rule | The last Tier 6 item, and a `decision` — needs Kassa. **6.3 is done and CI-confirmed** (run `30168981559`), so Tier 6 is no longer a CI outage |
-| 4 | ~~**9.1** define what v1 means~~ | **Done 2026-07-25** — [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) is `Accepted`. Windows + macOS, six blockers, and macOS v1 ships a native `NSPanel` overlay |
-| 5 | ~~**Tier 12** doc truth (12.1–12.5)~~ | **Done 2026-07-23** — [`docs/adr/`](adr/README.md) gives decisions a home, the module map matches the tree, ten stale claims are corrected, the scripts run on macOS, and [`running.md`](running.md) is the per-OS guide. CI now fails if a doc names a missing file. Surfaced **8.7** and **12.6** |
-| 6 | ~~**8.1** engine-thread exception boundary~~ | **Done 2026-07-22** — exceptions are logged and contained |
-| 7 | ~~**7.4 + 7.10** capture + prediction health~~ | **Done 2026-07-22** — diagnostics now expose capture and prediction truth |
-| 8 | ~~**0.3** live-Mac verification~~ | **Done 2026-07-25** — the tap runs on real hardware and the run found macOS capture was **half-blind**. First ADR-0002 release blocker cleared |
-| 9 | ~~**3.1** macOS tray + native overlay~~ | **Done 2026-07-28** — real `NSStatusItem` and `NSPanel`, verified by running the app. Second ADR-0002 blocker cleared |
-| 10 | ~~macOS launch smoke in CI~~ | **Done 2026-07-28** — `macos-gui-smoke` launches the app, not just links it. Third ADR-0002 blocker cleared |
-| 11 | ~~**7.3 + 7.11 + 7.12** migrations, DB fixtures, N+1~~ | **Done 2026-07-29** — schema versioning with a downgrade guard, five pre-existing-database fixtures, and SQL aggregation. **Fourth ADR-0002 blocker cleared.** A *large* fixture and a perf measurement are the deliberate leftovers |
-| 12 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | One question, four items unblocked — highest leverage on the list |
-| 13 | **Decision session B**: 4.11 (incl. the no-separator case) | The behaviour-divergence call |
-| 14 | **7.16** timestamp representation | Now the only thing gating 5.5, 7.1, and 7.2. 7.3 landed the migration list, so applying the decision is a migration rather than a rewrite |
-| 15 | ~~**8.4** frontend-URL gate~~ (**8.3 CSP done**) | **Done 2026-07-22** — release builds ignore environment redirects and fail closed without a bundle |
-| 16 | **8.5** threat model | Gates whether 4.5's encryption is a requirement; shapes 7.6 and 9.5 |
-| 17 | ~~**9.2** version, **9.7** empty states, **9.8** single-instance~~ | **9.2 done 2026-07-22; 9.7 and 9.8 done 2026-07-26** — this row sat stale for three days claiming two finished items were open |
-| 18 | ~~**7.6**~~, **7.8** | **7.6 done 2026-07-30** — delete-session UI, open data folder, and a legible Markdown export. 7.8 is a `decision` and all that is left in this row |
-| 19 | **10.1** E2E harness | The IPC seam is the one place nothing tests; grows more valuable as surfaces multiply |
-| 20 | **4.4** perf gate, then measure 7.12 | 7.13 done 2026-07-22 and 7.12 done 2026-07-29 — but neither was *measured*, and 7.11's missing large fixture is the entry point |
-| 21 | **2.3** model retraining | The biggest product win left; unblocked since 5.1 |
-| 22 | ~~**10.7** test the four new surface components~~ | **Done 2026-07-26** — likewise stale; there is no standing `CLAUDE.md` test violation today |
+| 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
+| 2 | macOS launch-smoke CI verification | Push/open a PR and require one successful hosted `macos-gui-smoke` run before closing the blocker |
+| 3 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | The only remaining product decision on the v1 blocker list |
+| 4 | **6.2** red-master rule | Finish the process decision already isolated on its branch |
+| 5 | **Decision session B**: 4.11 | Settle title-parser behavior before changing a long-standing contract |
+| 6 | **7.16** timestamp representation | Unblocks retention and time-window correctness work |
+| 7 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
+| 8 | **10.1** real webview E2E | Covers the remaining native-to-browser integration seam |
+| 9 | **4.4** performance gate | Benchmarks and baselines exist; CI thresholds still do not |
+| 10 | **2.3 / Tier 13** model retraining | Biggest remaining product-depth project after release decisions |
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," the rest of Tier 9 (9.3–9.9)
 outranks most of the numbered sequence above. 9.1 was that argument's headline item and is
 now done, which is what makes the blocker table below meaningful.
 
-**Next up is 3.3 — and it is paperwork before it is code.** 3.1 landed 2026-07-28 and 7.3
-on 2026-07-29, so **every v1 blocker that was implementation work is now done**. What
-remains is an Apple Developer account (long lead time, gates nothing else) and one decision
-session. If the goal is to ship, the account application is the thing to start today,
-because it is the only blocker whose clock runs independently of anyone working.
+**Next up is 3.3 — paperwork before code.** Every v1 blocker that was already-scoped
+implementation work is done. The Apple Developer account has independent lead time, so its
+application should start while the launch smoke awaits hosted CI and Decision session A is
+being settled.
 
-**ADR-0002 release-blocker status after 2026-07-28:**
+**ADR-0002 release-blocker status as of 2026-08-01:**
 
 | # | Blocker | State |
 |---|---------|-------|
 | 1 | **0.3** live-Mac capture | ✅ Done 2026-07-25 |
 | 2 | **3.1** macOS tray + native `NSPanel` overlay | ✅ Done 2026-07-28 — verified by running the app |
 | 3 | **3.3** macOS packaging + notarization | ⬜ **Next.** Longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest — and it is what unblocks macOS notifications |
-| 4 | macOS launch smoke in CI | ✅ Done 2026-07-28 — `macos-gui-smoke` runs `scripts/gui_smoke_macos.sh` |
+| 4 | macOS launch smoke in CI | 🟨 Implemented and locally verified 2026-07-28; awaiting a successful hosted `macos-gui-smoke` run |
 | 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
 | 6 | **7.3** schema migrations | ✅ Done 2026-07-29 — `user_version`, an ordered migration list, and a downgrade guard |
 
-Note the shape of what remains: **four of six are done**, one is paperwork with a long lead
-time, and one is a question. No implementation work is left on this list — v1 now waits on
-an Apple Developer account and one decision session.
-
-> **Unverified in CI as of 2026-07-28.** 3.1 and the launch smoke were both verified on
-> Kassa's Mac, and the smoke was confirmed to fail as well as pass. But CI runs only on
-> `master` and PRs, so `macos-gui-smoke` has never executed on a GitHub runner. The open
-> question is whether a hosted `macos-latest` runner gives `WKWebView` a usable window
-> session; if it does not, that job fails on its first real run and needs either a different
-> host or a narrower assertion. Open a PR to find out — do not assume this blocker is closed
-> until a run says so.
+Note the shape of what remains: **three of six are verified done**, one is implemented but
+awaits hosted CI, one is paperwork with a long lead time, and one is a question. No
+already-scoped implementation gap is left on this list.
 
 ---
 
@@ -369,9 +311,9 @@ internals, and the benchmark harness.
 
   The original finding was:
 
-  **No schema migrations, on a database earlier installs already wrote.** `CLAUDE.md`
-  mandates the filename stay `focoflow.db` **specifically for install compatibility**, so we
-  promise to open databases we did not create. On an existing DB `CREATE TABLE IF NOT EXISTS`
+  **No schema migrations, on a database earlier installs already wrote.** The compatibility
+  contract keeps the filename `focoflow.db`, so we promise to open databases we did not
+  create. On an existing DB `CREATE TABLE IF NOT EXISTS`
   is a no-op — it reconciles nothing — and any column the C++ schema has that the user's file
   lacks produces a runtime `no such column` on first insert, for upgrading users only.
 
@@ -1108,7 +1050,8 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   Notification delivery was explicitly *not* part of this item. See ADR-0002's correction
   note for why that ordering is the whole reason the overlay was chosen.
 
-- **macOS launch smoke in CI — DONE 2026-07-28.** `S` — fourth ADR-0002 blocker.
+- **macOS launch smoke in CI — IMPLEMENTED LOCALLY 2026-07-28; HOSTED CONFIRMATION OPEN.**
+  `S` — fourth ADR-0002 blocker.
   `scripts/gui_smoke_macos.sh`, wired as the `macos-gui-smoke` job. `desktop-app-build`
   proved the macOS binary *links*; nothing proved it *starts*, and both ways it can fail to
   start are invisible at link time (a webview that cannot create its window, and a missing
@@ -1117,8 +1060,8 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   The script reuses `main.cpp`'s existing `SNAPBACK_GUI_SESSION_SMOKE` hook, so it is a real
   round trip — a session started and stopped through `AppState` and SQLite from the UI
   thread — and then requires the run loop to exit on its own, which is the same path the
-  tray's Quit item drives. **See the caveat under the blocker table: this has passed on
-  Kassa's Mac but has never run on a GitHub runner.**
+  tray's Quit item drives. It has passed on Kassa's Mac but has never run successfully on a
+  GitHub runner; close this item only after a hosted `macos-gui-smoke` run passes.
 
 - **3.2 — Linux tray + overlay.** `M`
   `libappindicator` tray + an overlay window (X11/Wayland caveats noted). Since 3.1 landed,
@@ -1247,6 +1190,11 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   add a threshold to the benchmark harness so a regression fails CI. **7.12 is its natural
   first benchmark.** *See [benchmarking.md](benchmarking.md).*
 
+  > **Partly advanced 2026-08-01.** The hot-path harness now measures both `health()` and a
+  > complete live-read set under adversarial engine contention, with same-host baselines in
+  > `benchmarking.md`. The item remains open because CI still checks only that benchmarks run;
+  > it does not compare results to a threshold.
+
 - **4.5 — Optional encryption at rest.** `M`
   Optional SQLCipher for the local DB. *(The schema-versioning half of this item was split
   out and promoted to 7.3.)* **Whether this is required at all is decided by 8.5** — don't
@@ -1364,7 +1312,7 @@ structure alone — a real review would likely find more.
   Every test above calls the handler layer directly, so a break *between* `bind()` and the
   browser — the injected shim, promise resolution, a webview API change — passes CI. A
   command whose payload shape drifted in a handler *without* a bridge test is the same
-  story, and both are the failure CLAUDE.md calls "silently breaks the UI."
+  story, and both violate the IPC synchronization contract.
 
   > *Corrected 2026-07-29:* this entry said `windows-desktop-integration` "is currently
   > skipped (6.3)". It is not — 6.3 removed its `needs:` on 2026-07-22 and it now runs
@@ -1522,7 +1470,7 @@ structure alone — a real review would likely find more.
   The original finding was:
 
   The feature-vector order is declared a contract with the model and the CSV exporter
-  (CLAUDE.md), enforced only by the dual-language parity job. A checked-in golden CSV for a
+  and CSV exporter, enforced only by the dual-language parity job. A checked-in golden CSV for a
   fixed input, diffed on every run, makes a reordering fail loudly and locally rather than in
   a cross-language job people may not read.
 
@@ -1628,7 +1576,7 @@ structure alone — a real review would likely find more.
 
   **Inject is the better shape** — it removes the shared mutable resource instead of
   tolerating it. *Note: this is Windows-only code, so either fix is CI-verified only from a
-  macOS host (see [CLAUDE.md](../CLAUDE.md)) — write it carefully, because the feedback loop
+  macOS host (see [running.md](running.md)) — write it carefully, because the feedback loop
   is a full CI run.*
 
 ---
@@ -1667,9 +1615,11 @@ later moved.
 
   The original finding was:
 
-  `system_architecture.md`, `testing_strategy.md`, `benchmarking.md`, `windows_demo.md`, and
+  the former architecture summary, `testing_strategy.md`, `benchmarking.md`,
+  `windows_demo.md`, and
   `PACKAGING.md` have not been verified since they were written. Given the hit rate on
-  `CLAUDE.md` (six false claims), `ARCHITECTURE.md` (seven), and this file (three), assume
+  the former root guidance (six false claims), `ARCHITECTURE.md` (seven), and this file
+  (three), assume
   they contain errors until checked. `docs-smoke` in CI only checks that docs exist.
 
 - **12.3 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive).
@@ -1794,7 +1744,7 @@ itself a backlog item below.
       `capture_events_dropped` reflects reality. *Blocked on 7.4.*
 - [ ] Confirm every `invoke(...)` string in `frontend/src/api.ts` resolves in
       `commands.hpp`. `test_ipc_contract` covers the C++ side; confirm it covers the TS side
-      too. CLAUDE.md calls this contract sacred and a mismatch fails silently at runtime.
+      too. This contract is easy to drift and a mismatch fails silently at runtime.
 - [ ] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
       the full pipeline. Covers 8.1 and 8.2 in one test.
 
@@ -1886,7 +1836,7 @@ Completed work. Kept for history; further detail lives in the git log.
 
 - **12.2 — Audit the remaining docs against the code** — ten false claims corrected, all
   stale in the same direction: they described the design *before* the 2026-07-22 passes.
-  `system_architecture.md` (five: the single-mutex design in §5.2/§5.5/§6/§7.1, the inline
+  the former architecture summary (five: the single-mutex design, the inline
   `std::array` ring, the ~5 MB `AppState` whose fix had already shipped, and the parity
   check listed as future work when it runs on every push);
   `testing_strategy.md` (four: six CI jobs listed of twelve, macOS/Linux capture called

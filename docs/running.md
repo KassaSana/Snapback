@@ -1,21 +1,13 @@
 # Running Snapback on your machine
 
-**What this page is for.** Roadmap 12.4: there was no single page saying *here is how you
-build, test, and launch this, on the OS you are actually sitting at* — including which
-targets cannot be built on which host, and why. Several sessions were spent rediscovering
-that. Everything below was run on the machine it claims to run on, or is marked as
-CI-only.
+This is the per-platform source for building, testing, launching, permissions, and common
+failures. Claims that have not been exercised locally are marked CI-only.
 
 **Short version, macOS/Linux:**
 
 ```sh
 ./scripts/test_local.sh            # build + test everything that works headless
 ```
-
-**Verified on this machine 2026-07-23** (Apple Silicon, Apple Clang): the headless suite
-configures/builds/passes, the benchmark replay runs, and `SNAPBACK_BUILD_APP=ON` produces a
-linked `snapback` binary. Windows and Linux rows below are from CI, not from a local run —
-they are marked where it matters.
 
 ---
 
@@ -181,8 +173,8 @@ are running is refused rather than opened, and the log says so.
 ./scripts/run_benchmarks.sh --hotpaths      # producer/consumer/lock/SQLite micro-benchmarks
 ```
 
-⚠️ The baseline table in [benchmarking.md](benchmarking.md) was measured on **Windows**
-(i5-12500H, MSVC). Numbers from another host are not comparable to it.
+The baseline sections in [benchmarking.md](benchmarking.md) name their host and toolchain.
+Compare only like-for-like runs; Windows and macOS measurements are not interchangeable.
 
 ## 8. When something fails
 

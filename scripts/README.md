@@ -1,8 +1,7 @@
 # scripts/
 
-**Which of these run on your machine.** Added 2026-07-23 for Roadmap 12.5, because the
-development host is macOS and seven of the eight files here were PowerShell — so the
-documented way to run the test suite did not run on the machine it was documented for.
+Use the platform column before running a script; the PowerShell packaging/demo tools depend
+on Windows tooling, while the shell wrappers cover macOS and Linux.
 
 | Script | Runs on | What it does |
 |--------|---------|--------------|

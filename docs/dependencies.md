@@ -63,7 +63,7 @@ any way.
    cmake -S . -B build-deps-check -DCMAKE_BUILD_TYPE=Debug
    cmake --build build-deps-check -j8 --target snapback_tests
    ./build-deps-check/snapback_tests
-   rm -rf build-deps-check      # see CLAUDE.md — throwaway trees get deleted the same day
+   rm -rf build-deps-check      # remove throwaway trees you create
    ```
 
    A configure against the existing `build/` proves nothing about the new pin, because
