@@ -13,3 +13,6 @@ third_party/sqlite/
 third_party/onnxruntime/
 .cache/
 compile_commands.json
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
