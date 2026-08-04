@@ -156,18 +156,20 @@ TEST_CASE("delete all activity data preserves user configuration") {
     CHECK(exported.label_count == 0);
 }
 
-TEST_CASE("storage persists prediction model identity") {
+TEST_CASE("storage persists prediction model identity and verdict provenance") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("Model identity", FocusMode::Normal);
 
     auto original = prediction(session.session_id, 75.0, 0.2, "PRODUCTIVE");
     original.model_id = "onnx:snapback-features-v1-31:abc123";
+    original.state_source = "block";
     storage->insert_prediction(original);
 
     const auto latest = storage->latest_prediction();
     REQUIRE(latest.has_value());
     CHECK(latest->model_id == original.model_id);
+    CHECK(latest->state_source == original.state_source);
 }
 
 TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
@@ -195,6 +197,18 @@ TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
     const auto latest = storage->latest_prediction();
     REQUIRE(latest.has_value());
     CHECK(latest->model_id == "heuristic:snapback-features-v1-31");
+    // Verdict provenance did not exist when this row was written and cannot be invented
+    // after the fact (ADR-0004): the legacy row reads back NULL, not "model".
+    CHECK_FALSE(latest->state_source.has_value());
+
+    // A row written by this build carries its provenance through the migrated file.
+    auto stamped = prediction("legacy", 60.0, 0.3, "DISTRACTED");
+    stamped.timestamp = "2026-07-11T20:00:00Z";
+    stamped.state_source = "risk";
+    storage->insert_prediction(stamped);
+    const auto newest = storage->latest_prediction();
+    REQUIRE(newest.has_value());
+    CHECK(newest->state_source == std::optional<std::string>("risk"));
 }
 
 // --- Schema versioning (Roadmap 7.3) -----------------------------------------------------
@@ -754,7 +768,7 @@ TEST_CASE("delete_session preserves app rules") {
     CHECK(storage->list_app_rules().size() == 1);
 }
 
-TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash spikes") {
+TEST_CASE("storage recap computes averages, deep-focus percentage, and distraction spikes") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
 
@@ -762,14 +776,18 @@ TEST_CASE("storage recap computes averages, deep-focus percentage, and thrash sp
     storage->insert_prediction(prediction(session.session_id, 90.0, 0.10, "DEEP_FOCUS"));
     storage->insert_prediction(prediction(session.session_id, 70.0, 0.20, "PRODUCTIVE"));
     storage->insert_prediction(prediction(session.session_id, 30.0, 0.80, "DISTRACTED"));
+    // The row ADR-0004's predicate exists for: a Recovery-mode session, risk in the 0.7-0.85
+    // band, so the verdict is not DISTRACTED — under the old `AND focus_state` conjunct this
+    // strong distraction was invisible to the count.
+    storage->insert_prediction(prediction(session.session_id, 55.0, 0.75, "PRODUCTIVE"));
 
     const auto recap = storage->recap(session.session_id);
     CHECK(recap.session_id == session.session_id);
     CHECK(recap.goal == "Measure focus");
-    CHECK(recap.avg_focus_score == doctest::Approx((90.0 + 70.0 + 30.0) / 3.0));
-    CHECK(recap.avg_distraction_risk == doctest::Approx((0.10 + 0.20 + 0.80) / 3.0));
-    CHECK(recap.deep_focus_pct == doctest::Approx(100.0 / 3.0));
-    CHECK(recap.thrash_spikes == 1);
+    CHECK(recap.avg_focus_score == doctest::Approx((90.0 + 70.0 + 30.0 + 55.0) / 4.0));
+    CHECK(recap.avg_distraction_risk == doctest::Approx((0.10 + 0.20 + 0.80 + 0.75) / 4.0));
+    CHECK(recap.deep_focus_pct == doctest::Approx(100.0 / 4.0));
+    CHECK(recap.thrash_spikes == 2);
 }
 
 TEST_CASE("Storage::infer_session_label maps recap thresholds") {

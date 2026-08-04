@@ -102,6 +102,7 @@ TEST_CASE("PredictionRecord serializes with camelCase keys and round-trips") {
     p.drift_score = 0.2;
     p.goal_alignment = 0.8;
     p.timestamp = "2026-07-11T00:00:00Z";
+    p.state_source = "block";
 
     json j = p;
     CHECK(j.contains("sessionId"));
@@ -109,6 +110,7 @@ TEST_CASE("PredictionRecord serializes with camelCase keys and round-trips") {
     CHECK(j.contains("distractionRisk"));
     CHECK(j.contains("focusState"));
     CHECK(j.contains("goalAlignment"));
+    CHECK(j.contains("stateSource"));
     CHECK_FALSE(j.contains("session_id"));  // must NOT be snake_case
 
     auto back = j.get<PredictionRecord>();
@@ -116,6 +118,7 @@ TEST_CASE("PredictionRecord serializes with camelCase keys and round-trips") {
     CHECK(back.focus_score == doctest::Approx(72.0));
     CHECK(back.focus_state == "DEEP_FOCUS");
     CHECK(back.goal_alignment == doctest::Approx(0.8));
+    CHECK(back.state_source == std::optional<std::string>("block"));
 }
 
 TEST_CASE("PredictionRecord defaults goalAlignment to 0.5 when absent") {
@@ -123,6 +126,9 @@ TEST_CASE("PredictionRecord defaults goalAlignment to 0.5 when absent") {
                              "focusState":"PRODUCTIVE","timestamp":"t"})");
     auto p = j.get<PredictionRecord>();
     CHECK(p.goal_alignment == doctest::Approx(0.5));
+    // Pre-ADR-0004 payloads carry no verdict provenance; absent stays absent, it is not
+    // defaulted to "model".
+    CHECK_FALSE(p.state_source.has_value());
 }
 
 TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") {

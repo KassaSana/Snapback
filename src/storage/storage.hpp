@@ -35,7 +35,7 @@ inline constexpr std::size_t kVacuumMinDeletedRows = 500;
 //   2. **Never edit a released migration.** Append a new one. Editing one changes what an
 //      already-upgraded database was built from, which is precisely the drift versioning
 //      exists to prevent.
-inline constexpr int kSchemaVersion = 2;
+inline constexpr int kSchemaVersion = 3;
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;

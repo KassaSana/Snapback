@@ -204,6 +204,7 @@ PredictionRecord read_prediction(sqlite3_stmt* stmt) {
     p.goal_alignment = sqlite3_column_double(stmt, 6);
     p.timestamp = column_text(stmt, 7);
     p.model_id = column_text(stmt, 8);
+    p.state_source = column_opt_text(stmt, 9);
     return p;
 }
 
@@ -586,6 +587,19 @@ void migrate_baseline_schema(sqlite3* db) {
 // the column would never appear.
 void migrate_prediction_model_id(sqlite3* db) { ensure_prediction_model_id_column(db); }
 
+// ADR-0004: records which guardrail decided focus_state ('risk'/'thrash'/'block'/'drift'),
+// or 'model' when the classifier's own argmax stood. Nullable with no default, deliberately:
+// pre-decision rows had their focus_state overwritten in place and the model's argmax was
+// never stored, so nothing can backfill why a verdict disagrees with its scores. NULL means
+// "written before verdicts carried provenance" and stays NULL forever.
+void migrate_prediction_state_source(sqlite3* db) {
+    Stmt columns(db, "PRAGMA table_info(predictions)");
+    while (columns.step_row()) {
+        if (column_text(columns.get(), 1) == "state_source") return;
+    }
+    exec(db, "ALTER TABLE predictions ADD COLUMN state_source TEXT");
+}
+
 struct Migration {
     int version;
     const char* name;
@@ -595,6 +609,7 @@ struct Migration {
 constexpr Migration kMigrations[] = {
     {1, "baseline schema", migrate_baseline_schema},
     {2, "predictions.model_id", migrate_prediction_model_id},
+    {3, "predictions.state_source", migrate_prediction_state_source},
 };
 
 static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
@@ -818,7 +833,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
 
     // Query 2: every prediction aggregate recap() computes, grouped in one pass. The
     // expressions are copied verbatim from recap() — including the deliberate absolute 0.7
-    // thrash bar, which is a product decision documented there and in ROADMAP 5.4, not a
+    // distraction bar, which is a product decision documented there and in ADR-0004, not a
     // threshold to unify here.
     {
         Stmt stmt(db_,
@@ -829,8 +844,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
                   "COALESCE(AVG(p.distraction_risk), 0), "
                   "COALESCE(100.0 * SUM(CASE WHEN p.focus_state = 'DEEP_FOCUS' THEN 1 ELSE 0 END) / "
                   "NULLIF(COUNT(*), 0), 0), "
-                  "SUM(CASE WHEN p.distraction_risk >= 0.7 AND p.focus_state = 'DISTRACTED' "
-                  "         THEN 1 ELSE 0 END) "
+                  "SUM(CASE WHEN p.distraction_risk >= 0.7 THEN 1 ELSE 0 END) "
                   "FROM predictions p JOIN recent r ON p.session_id = r.session_id "
                   "GROUP BY p.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
@@ -1012,13 +1026,13 @@ SessionRecap Storage::recap(const std::string& session_id) {
         // (risk_threshold() = 0.55/0.70/0.85). Keeping it absolute stops Deep mode's higher
         // sensitivity from inflating session-quality metrics that feed auto-labels.
         //
-        // It is not free of mode effects — focus_state itself is mode-derived, so Recovery
-        // rows between 0.7 and 0.85 are never DISTRACTED and never counted. Whether that
-        // matters is a product question; see ROADMAP 5.4. Don't "fix" this to
-        // risk_threshold(mode) without deciding what thrash_spikes is supposed to measure.
+        // ADR-0004 made it a pure opinion-channel count: distraction_risk alone, no
+        // focus_state conjunct. The state is the policy verdict and carries the mode with
+        // it — the old `AND focus_state = 'DISTRACTED'` meant Recovery rows between 0.7
+        // and 0.85 were never counted, which defeated the point of an absolute bar.
         Stmt stmt(db_,
                   "SELECT COUNT(*) FROM predictions WHERE session_id = ?1 "
-                  "AND distraction_risk >= 0.7 AND focus_state = 'DISTRACTED'");
+                  "AND distraction_risk >= 0.7");
         stmt.bind(1, session_id);
         if (stmt.step_row()) out.thrash_spikes = static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 0));
     }
@@ -1052,8 +1066,8 @@ void Storage::insert_prediction(const PredictionRecord& p) {
     Stmt stmt(db_, cached_stmt(
                        "INSERT INTO predictions "
                        "(session_id, focus_score, distraction_risk, focus_state, thrash_score, "
-                       "drift_score, goal_alignment, timestamp, model_id) "
-                       "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"));
+                       "drift_score, goal_alignment, timestamp, model_id, state_source) "
+                       "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"));
     stmt.bind(1, p.session_id);
     stmt.bind(2, p.focus_score);
     stmt.bind(3, p.distraction_risk);
@@ -1063,13 +1077,18 @@ void Storage::insert_prediction(const PredictionRecord& p) {
     stmt.bind(7, p.goal_alignment);
     stmt.bind(8, p.timestamp);
     stmt.bind(9, p.model_id);
+    if (p.state_source) {
+        stmt.bind(10, *p.state_source);
+    } else {
+        stmt.bind_null(10);
+    }
     stmt.step_done();
 }
 
 std::optional<PredictionRecord> Storage::latest_prediction() {
     Stmt stmt(db_,
               "SELECT session_id, focus_score, distraction_risk, focus_state, thrash_score, "
-              "drift_score, goal_alignment, timestamp, model_id "
+              "drift_score, goal_alignment, timestamp, model_id, state_source "
               "FROM predictions ORDER BY timestamp DESC LIMIT 1");
     if (!stmt.step_row()) return std::nullopt;
     return read_prediction(stmt.get());
@@ -1078,7 +1097,7 @@ std::optional<PredictionRecord> Storage::latest_prediction() {
 std::vector<PredictionRecord> Storage::recent_predictions(std::size_t limit) {
     Stmt stmt(db_,
               "SELECT session_id, focus_score, distraction_risk, focus_state, thrash_score, "
-              "drift_score, goal_alignment, timestamp, model_id "
+              "drift_score, goal_alignment, timestamp, model_id, state_source "
               "FROM predictions ORDER BY timestamp DESC LIMIT ?1");
     stmt.bind(1, static_cast<std::int64_t>(limit));
     std::vector<PredictionRecord> rows;
@@ -1090,11 +1109,13 @@ std::vector<PredictionRecord> Storage::predictions_since(
     const std::optional<std::string>& cutoff) {
     const char* sql = cutoff
                           ? "SELECT session_id, focus_score, distraction_risk, focus_state, "
-                            "thrash_score, drift_score, goal_alignment, timestamp, model_id "
+                            "thrash_score, drift_score, goal_alignment, timestamp, model_id, "
+                            "state_source "
                             "FROM predictions WHERE timestamp >= ?1 "
                             "ORDER BY timestamp DESC"
                           : "SELECT session_id, focus_score, distraction_risk, focus_state, "
-                            "thrash_score, drift_score, goal_alignment, timestamp, model_id "
+                            "thrash_score, drift_score, goal_alignment, timestamp, model_id, "
+                            "state_source "
                             "FROM predictions ORDER BY timestamp DESC";
     Stmt stmt(db_, sql);
     if (cutoff) stmt.bind(1, *cutoff);

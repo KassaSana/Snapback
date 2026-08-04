@@ -160,6 +160,10 @@ struct PredictionRecord {
     double goal_alignment{0.5};
     std::string timestamp;
     std::string model_id{"heuristic:snapback-features-v1-31"};
+    // Which rule decided focus_state (ADR-0004): 'model', 'risk', 'thrash', 'block', or
+    // 'drift'. nullopt on rows written before verdicts carried provenance; nothing can
+    // backfill those, so nullopt means "unknown", not "model".
+    std::optional<std::string> state_source;
 };
 
 // SessionRecord. Note focus_mode is a plain string here (not the enum).

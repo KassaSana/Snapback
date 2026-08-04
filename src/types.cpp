@@ -103,6 +103,7 @@ void to_json(json& j, const PredictionRecord& v) {
              {"goalAlignment", v.goal_alignment},
              {"timestamp", v.timestamp},
              {"modelId", v.model_id}};
+    put_opt(j, "stateSource", v.state_source);
 }
 void from_json(const json& j, PredictionRecord& v) {
     v.session_id = get_or<std::string>(j, "sessionId", "");
@@ -114,6 +115,7 @@ void from_json(const json& j, PredictionRecord& v) {
     v.goal_alignment = get_or<double>(j, "goalAlignment", 0.5);
     v.timestamp = get_or<std::string>(j, "timestamp", "");
     v.model_id = get_or<std::string>(j, "modelId", "heuristic:snapback-features-v1-31");
+    v.state_source = opt_str(j, "stateSource");
 }
 
 // ---- SessionRecord ---------------------------------------------------------

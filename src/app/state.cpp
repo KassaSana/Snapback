@@ -1028,6 +1028,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     record.goal_alignment = scores.goal_alignment;
     record.timestamp = now_rfc3339();
     record.model_id = classifier_.model_id();
+    record.state_source = scores.state_source;
     latest_prediction_ = record;
     last_prediction_at_ms_ = steady_now_ms();
     prediction_dirty_ = true;  // engine_tick emits this after unlocking
