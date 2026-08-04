@@ -18,9 +18,9 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 
 ## Rules
 
-- **One decision per file.** Decision session A covers four roadmap items (5.3, 5.4, 1.2,
-  7.7) because they share one *question* — that is still one ADR if one answer settles all
-  four, and four ADRs if it doesn't.
+- **One decision per file.** Decision session A covered five roadmap items (5.3, 5.4, 1.2,
+  7.7, 7.18) because they share one *question* — one answer settled all five, so it is one
+  ADR. It would have been five if it hadn't.
 - **ADRs are append-only.** Never edit a decision to say something new. Write a new ADR and
   set the old one's status to `Superseded by ADR-NNNN`. The wrong turn is the useful part.
 - **Status vocabulary:** `Proposed` (written, not agreed), `Accepted` (in force),
@@ -36,15 +36,15 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted | 12.3 |
 | [0002](0002-v1-supports-windows-and-macos.md) | v1 supports Windows and macOS | Accepted | 9.1 |
 | [0003](0003-three-surface-dashboard.md) | Split the dashboard into Now, Review, and Settings | Accepted | 10.2 |
+| [0004](0004-verdict-and-opinion.md) | The state is the policy verdict, the scores are the model's opinion | Accepted | 7.7, 7.18, 5.3, 5.4, 1.2 |
 
 ## Awaiting an ADR
 
-The open `decision` items in `ROADMAP.md`, as of 2026-07-25. Grouped by the session that
+The open `decision` items in `ROADMAP.md`, as of 2026-08-03. Grouped by the session that
 should settle them — the roadmap's "Start here" table sets the order.
 
 | Session | Roadmap items | The question |
 |---------|---------------|--------------|
-| A | 5.3, 5.4, 1.2, 7.7 | What do our scores mean, and on what scale? **Now the only decision left on the v1 blocker list** |
 | — | 7.16 | How does this app represent time? Scopes 7.3 and 7.11 |
 | — | 8.5 | Threat model — gates whether 4.5 encryption is required |
 | — | 5.6 | What should `longest_active_stretch_5min` report for a new session? |
