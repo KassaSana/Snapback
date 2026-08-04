@@ -210,7 +210,7 @@ int main() {
     Overlay::instance().set_dismiss_callback(
         [state = state.get()] { state->dismiss_snapback(); });
 
-    webview::webview w(/*debug=*/true, nullptr);
+    webview::webview w(/*debug=*/kWebviewDebugEnabled, nullptr);
     // This guard is declared after the webview, so exception unwinding stops
     // capture and event dispatch before the webview itself is destroyed.
     EngineLifetime engine_lifetime(*state);

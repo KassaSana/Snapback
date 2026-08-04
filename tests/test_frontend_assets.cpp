@@ -55,6 +55,28 @@ TEST_CASE("resolve_frontend_url can reject overrides for release builds") {
     CHECK(resolved.find("frontend/index.html") != std::string::npos);
 }
 
+TEST_CASE("the webview debug surface is enabled only for Debug builds") {
+    // ROADMAP 8.8. `main.cpp` passed debug=true unconditionally, which shipped developer
+    // tools attached to a page holding the full native command bridge. Asserting the rule
+    // rather than reading main.cpp is the point of the item: both answers are checked here,
+    // including the release one this test binary is probably not compiled as.
+    CHECK(webview_debug_for_build(/*release_build=*/false));
+    CHECK_FALSE(webview_debug_for_build(/*release_build=*/true));
+}
+
+TEST_CASE("this build wires the debug surface to its own build kind") {
+    // The other half: the rule above is only worth anything if the shipping constant is
+    // actually derived from it. NDEBUG is the same switch the frontend URL override uses.
+#if defined(NDEBUG)
+    CHECK(kReleaseBuild);
+    CHECK_FALSE(kWebviewDebugEnabled);
+#else
+    CHECK_FALSE(kReleaseBuild);
+    CHECK(kWebviewDebugEnabled);
+#endif
+    CHECK(kWebviewDebugEnabled == webview_debug_for_build(kReleaseBuild));
+}
+
 TEST_CASE("resolve_frontend_url loads bundled frontend when present") {
     TempDir temp;
     const auto index = temp.path / "frontend" / "index.html";
