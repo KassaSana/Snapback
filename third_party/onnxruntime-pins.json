@@ -1,0 +1,14 @@
+{
+  "version": "1.20.1",
+  "release_url": "https://github.com/microsoft/onnxruntime/releases/download/v1.20.1",
+  "archives": {
+    "win-x64": {
+      "file": "onnxruntime-win-x64-1.20.1.zip",
+      "sha256": "78d447051e48bd2e1e778bba378bec4ece11191c9e538cf7b2c4a4565e8f5581"
+    },
+    "linux-x64": {
+      "file": "onnxruntime-linux-x64-1.20.1.tgz",
+      "sha256": "67db4dc1561f1e3fd42e619575c82c601ef89849afc7ea85a003abbac1a1a105"
+    }
+  }
+}

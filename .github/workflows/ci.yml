@@ -155,21 +155,27 @@ jobs:
     name: ONNX backend / windows
     runs-on: windows-latest
     timeout-minutes: 25
-    env:
-      ORT_VERSION: "1.20.1"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Roadmap 8.9. The version, URL, and expected digest all come from the manifest so a
+      # bump cannot update one and forget another; scripts/check_onnx_pins.py enforces that.
       - name: Vendor ONNX Runtime
         shell: pwsh
         timeout-minutes: 5
         run: |
-          $zip = "onnxruntime-win-x64-$env:ORT_VERSION.zip"
-          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/$zip"
-          Invoke-WebRequest -Uri $url -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath third_party -Force
-          Move-Item "third_party/onnxruntime-win-x64-$env:ORT_VERSION" third_party/onnxruntime
+          $pins = Get-Content third_party/onnxruntime-pins.json -Raw | ConvertFrom-Json
+          $entry = $pins.archives.'win-x64'
+          Invoke-WebRequest -Uri "$($pins.release_url)/$($entry.file)" -OutFile $entry.file
+          # Verify before extracting. This archive is executable code that CMake links into
+          # the test binary, and extraction is what writes attacker-controlled paths to disk.
+          $actual = (Get-FileHash -Path $entry.file -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $entry.sha256) {
+            throw "SHA-256 mismatch for $($entry.file): expected $($entry.sha256), got $actual"
+          }
+          Expand-Archive -Path $entry.file -DestinationPath third_party -Force
+          Move-Item "third_party/onnxruntime-win-x64-$($pins.version)" third_party/onnxruntime
           if (-not (Test-Path third_party/onnxruntime/lib/onnxruntime.dll)) { throw "onnxruntime.dll missing" }
 
       - name: Configure (ONNX on)
@@ -185,24 +191,28 @@ jobs:
     name: ONNX backend / linux
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    env:
-      ORT_VERSION: "1.20.1"
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Roadmap 8.9. Same manifest as the Windows job -- see the comment there.
       - name: Vendor ONNX Runtime
         timeout-minutes: 5
         run: |
-          archive="onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          curl --fail --location --retry 3 \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${archive}" \
-            --output "${archive}"
-          # third_party/ is not checked in; tar needs it to exist, unlike the Windows
-          # job's Expand-Archive, which creates its destination.
-          mkdir -p third_party
+          # python3 rather than jq: the docs-smoke job already depends on python3, so this
+          # adds no new tool to the runner image.
+          pins=third_party/onnxruntime-pins.json
+          read_pin() { python3 -c "import json,sys; print(json.load(open('${pins}'))$1)"; }
+          version=$(read_pin "['version']")
+          archive=$(read_pin "['archives']['linux-x64']['file']")
+          expected=$(read_pin "['archives']['linux-x64']['sha256']")
+          release_url=$(read_pin "['release_url']")
+          curl --fail --location --retry 3 "${release_url}/${archive}" --output "${archive}"
+          # Verify before extracting. This archive is executable code that CMake links into
+          # the test binary, and extraction is what writes attacker-controlled paths to disk.
+          echo "${expected}  ${archive}" | sha256sum --check --strict -
           tar -xzf "${archive}" --directory third_party
-          mv "third_party/onnxruntime-linux-x64-${ORT_VERSION}" third_party/onnxruntime
+          mv "third_party/onnxruntime-linux-x64-${version}" third_party/onnxruntime
           test -f third_party/onnxruntime/lib/libonnxruntime.so
 
       - name: Configure (ONNX on)
@@ -425,3 +435,9 @@ jobs:
       # watching it. Cheap to check, and only a guard stops the policy from rotting.
       - name: Every fetched dependency must be pinned to an immutable revision
         run: python3 scripts/check_dependency_pins.py --verbose
+
+      # Roadmap 8.9. The guard above reads CMakeLists.txt and so never saw the ONNX
+      # archives the two ONNX jobs download straight from a release URL. A release asset
+      # can be re-uploaded under the same name, so the digest is the only real pin.
+      - name: Every vendored ONNX archive must be verified before extraction
+        run: python3 scripts/check_onnx_pins.py --verbose

@@ -54,7 +54,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 |---|------|---------|
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
 | ~~2~~ | ~~**8.8** release webview debug mode~~ | **Done 2026-08-04** — verified in both Debug and Release builds |
-| 3 | **8.9** verify ONNX downloads | Close the executable-dependency integrity hole in two CI jobs |
+| ~~3~~ | ~~**8.9** verify ONNX downloads~~ | **Done 2026-08-04** — both jobs verify a pinned SHA-256 before extracting |
 | 4 | **7.20**, then **7.19** | Make session replacement and settings persistence crash-safe before asking users to trust their data |
 | ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
 | 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
@@ -1012,16 +1012,34 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   URL override. The page owns a privileged native command surface, so production developer
   tools are a materially different risk than ordinary browser debugging.
 
-- **8.9 — ONNX Runtime CI downloads are versioned but not integrity-checked.** `S`
+- **8.9 — DONE 2026-08-04.** `S` Both ONNX jobs now read the version, URL, filename, and
+  expected SHA-256 out of [`third_party/onnxruntime-pins.json`](../third_party/onnxruntime-pins.json)
+  and verify the digest **before** extracting. The digests were captured by downloading both
+  1.20.1 archives and hashing them, not copied from anywhere.
+
+  **The manifest is what makes the guard non-trivial.** Recording digests inline in the
+  workflow would have satisfied the letter of this item and still allowed the failure it
+  exists to prevent: a version bump that edits the URL and leaves the old hash. Because the
+  filename lives beside the digest and `scripts/check_onnx_pins.py` requires it to contain
+  the manifest's version, that edit cannot pass — the two must move together.
+
+  The guard was then written against its own failure modes rather than trusted: eight
+  mutations were each confirmed to fail it (version bumped without re-hashing, one platform's
+  digest pasted over the other's, a placeholder digest, verification moved after extraction,
+  verification deleted, version or digest hardcoded back into the workflow, and the vendor
+  step renamed). That last case is the one that matters most — a parser that silently stops
+  finding steps reports success forever, which is the failure mode 8.6's guard also had to
+  defend against.
+
+  Verification runs before extraction, not after. Extraction is what writes archive-controlled
+  paths to disk, so a check afterwards would already have lost.
+
+  The original finding was:
 
   The Windows and Linux ONNX jobs download executable runtime archives from release URLs and
   extract them without verifying a digest. Item 8.6's guard covers CMake downloads, not these
   workflow downloads, so its broad claim that fetched dependencies are immutable was
   incomplete.
-
-  Record the SHA-256 for each platform archive, verify it before extraction, and extend the
-  dependency-pin guard (or add a focused workflow guard) so a future version bump cannot omit
-  the hashes. Keep the human-readable ONNX version beside the digests.
 
 ---
 

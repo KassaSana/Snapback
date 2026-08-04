@@ -71,6 +71,42 @@ any way.
 
 5. **Run the guard**: `python3 scripts/check_dependency_pins.py --verbose`.
 
+## ONNX Runtime is pinned separately
+
+ROADMAP 8.9. The ONNX Runtime does not arrive through `FetchContent`, so the guard above
+never saw it. The two ONNX CI jobs download a **prebuilt** runtime archive from a GitHub
+release and extract it into `third_party/`, where CMake links it into the test binary.
+
+A release URL is not a pin, for the same reason a git tag is not: GitHub release assets can
+be deleted and re-uploaded under the same name. The digest is the pin; the version beside it
+is for humans.
+
+[`third_party/onnxruntime-pins.json`](../third_party/onnxruntime-pins.json) is the single
+source of truth. Both jobs read the version, URL, filename, and expected SHA-256 out of it
+and restate none of them, and `scripts/check_onnx_pins.py` enforces that arrangement.
+
+### Bumping ONNX Runtime
+
+1. **Download both archives** for the new version and hash them:
+
+   ```sh
+   v=1.21.0
+   for a in onnxruntime-win-x64-$v.zip onnxruntime-linux-x64-$v.tgz; do
+     curl --fail --location -O "https://github.com/microsoft/onnxruntime/releases/download/v$v/$a"
+     sha256sum "$a"
+   done
+   ```
+
+2. **Update `version`, `release_url`, and both `file`/`sha256` pairs together.** The guard
+   requires each filename to contain the manifest's version, so a bump that changes the
+   version and forgets to re-hash fails rather than verifying a stale digest.
+
+3. **Run the guard**: `python3 scripts/check_onnx_pins.py --verbose`.
+
+The guard also fails if a job extracts before verifying, hardcodes a version or digest that
+the manifest already holds, or renames the vendor step out from under the parser. That last
+one matters: a guard that silently stops finding anything reports success forever.
+
 ## What is deliberately not covered
 
 - **No advisory monitoring.** Nothing watches these four projects for CVEs today; pinning
