@@ -62,6 +62,12 @@ EXPECTED_ABSENT = {
     "third_party/sqlite/": "optional vendored SQLite override; docs say it is not checked in",
     "docs/TODO.md": "deleted 2026-07-20; ROADMAP.md names it to say so",
     "docs/DECISIONS.md": "a rejected option in ADR-0001, never created",
+    # ADR-0002 and ADR-0003 both cite this header as the live example of "the scores are
+    # undecided". ADRs are append-only, so those references cannot be edited away — the
+    # entry is required, not a convenience.
+    "src/engine/confidence.hpp": "deleted 2026-08-03 by ADR-0004; ADR-0002/0003 and "
+                                 "ROADMAP 5.3 name it to say it is gone",
+    "tests/test_confidence.cpp": "deleted with it; ROADMAP 5.3 names it to say so",
 }
 
 
