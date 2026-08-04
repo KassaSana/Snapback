@@ -1627,16 +1627,29 @@ structure alone — a real review would likely find more.
   pre-existing** — reproduced at `697e77b`, and `src/capture/` and `tests/test_capture_thread.cpp`
   are byte-identical to it. Recorded, not fixed: neither is a defect on a platform we ship.
 
-  1. **`CaptureThread never reports failed and running at the same time` is flaky in optimized
-     builds — 33 failures in 60 Release runs.** The failing assertion is `REQUIRE(failed)`
+  1. **`CaptureThread never reports failed and running at the same time` fails almost always
+     here — Debug 26/30 runs, Release 30/30.** The failing assertion is `REQUIRE(failed)`
      (`tests/test_capture_thread.cpp:238`), **not** the `contradictions == 0` invariant the
      test exists to protect, so 11.1's ordering fix is intact and this is a defect in the
-     test's own wait. It spins a bounded 2,000,000 relaxed loads waiting for the hook thread
-     to record failure; optimized, that window can close before Windows ever schedules the
-     thread. Debug passes because each iteration is slower, which is a bad reason for a test
-     to pass. The fix is to wait on a condition with a real deadline rather than an iteration
-     count — note the comment's "spin, don't sleep" rationale applies to *sampling the
-     contradiction window*, not to establishing the precondition, so the two can be separated.
+     test's own precondition wait. It spins a bounded 2,000,000 relaxed loads waiting for the
+     hook thread to record failure, and on this machine that window can close before Windows
+     schedules the thread.
+
+     **The amplification is the part worth understanding.** The case runs **200 attempts** and
+     one missed attempt fails the whole case, so a per-attempt miss rate of only ~1–2% —
+     back-solved from the rates above — becomes an ~87–100% case failure. That is why a
+     timing margin nobody would call marginal reads as a hard failure, and why the same code
+     can be green in CI: the per-attempt miss just has to be a bit rarer there.
+
+     *Two hypotheses were tested and rejected.* It is **not** Debug-vs-Release (both fail),
+     and it is **not** background load — the rates above were re-measured with Docker Desktop
+     stopped and were identical. An early Debug run that passed was luck, consistent with the
+     observed ~4-in-30 pass rate; do not read a single green run as evidence here.
+
+     The fix is to wait on a condition with a real deadline rather than an iteration count.
+     Note the comment's "spin, don't sleep" rationale applies to *sampling the contradiction
+     window*, not to establishing the precondition, so the two can be separated without
+     weakening what the test checks.
   2. **`rollback_model swaps the deployed model and quality metadata` throws
      `filesystem error: cannot copy file: File exists`.** `swap_file`
      (`src/app/training_deploy.cpp:463`) passes `copy_options::overwrite_existing` on every
