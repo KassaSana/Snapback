@@ -18,6 +18,11 @@ struct PredictionScores {
     double drift_score{};
     double goal_alignment{0.5};
     std::string focus_state;
+    // Which rule decided focus_state (ADR-0004): "model" when the classifier's own argmax
+    // stands, else the guardrail that constrained it — "risk", "thrash", "block", "drift".
+    // The scores above are the model's opinion and are never edited by policy, so this is
+    // the only record of *why* a verdict disagrees with them.
+    std::string state_source{"model"};
 };
 
 class Classifier {

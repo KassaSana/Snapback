@@ -44,6 +44,27 @@
       "expect": {
         "focus_state": "DISTRACTED"
       }
+    },
+    {
+      "name": "title_churn_pseudo_productive",
+      "base_time": 1700004000.0,
+      "focus_mode": "normal",
+      "events": [
+        { "offset_secs": 0.0, "type": "window_focus_change", "app": "Cursor", "title": "a.cpp - Snapback" },
+        { "offset_secs": 1.0, "type": "key_press", "app": "Cursor", "title": "a.cpp - Snapback" },
+        { "offset_secs": 1.1, "type": "key_press", "app": "Cursor", "title": "a.cpp - Snapback" },
+        { "offset_secs": 2.0, "type": "window_title_change", "app": "Cursor", "title": "b.cpp - Snapback" },
+        { "offset_secs": 3.6, "type": "key_press", "app": "Cursor", "title": "b.cpp - Snapback" },
+        { "offset_secs": 4.0, "type": "window_title_change", "app": "Cursor", "title": "c.cpp - Snapback" },
+        { "offset_secs": 5.7, "type": "key_press", "app": "Cursor", "title": "c.cpp - Snapback" },
+        { "offset_secs": 6.0, "type": "window_title_change", "app": "Cursor", "title": "d.cpp - Snapback" },
+        { "offset_secs": 7.9, "type": "key_press", "app": "Cursor", "title": "d.cpp - Snapback" }
+      ],
+      "expect": {
+        "focus_state": "PSEUDO_PRODUCTIVE",
+        "drift_score_min": 0.55,
+        "distraction_risk_max": 0.55
+      }
     }
   ]
 }

@@ -215,12 +215,27 @@ PredictionScores apply_focus_guardrails(PredictionScores scores,
                                         double drift,
                                         bool personal_block,
                                         FocusMode mode) {
-    if (scores.distraction_risk >= risk_threshold(mode) ||
-        thrash >= tuning::policy::kThrashDistracted ||
-        personal_block) {
+    // Policy may only demote a state toward distraction, never promote one (ADR-0004).
+    // The scores stay untouched — they are the model's opinion, and focus_score feeds back
+    // into focus_momentum, so editing them here would leak policy into the model's own
+    // inputs. Each branch records which rule decided the verdict; the first that fires
+    // wins the attribution, in the same order the old combined condition checked them.
+    if (scores.distraction_risk >= risk_threshold(mode)) {
         scores.focus_state = "DISTRACTED";
-    } else if (drift >= tuning::policy::kDriftPseudo && scores.focus_state != "DEEP_FOCUS") {
+        scores.state_source = "risk";
+    } else if (thrash >= tuning::policy::kThrashDistracted) {
+        scores.focus_state = "DISTRACTED";
+        scores.state_source = "thrash";
+    } else if (personal_block) {
+        scores.focus_state = "DISTRACTED";
+        scores.state_source = "block";
+    } else if (drift >= tuning::policy::kDriftPseudo && scores.focus_state == "PRODUCTIVE") {
+        // Only PRODUCTIVE demotes: the drift rule exists to tell real productivity from
+        // pseudo-productivity. It has no authority over DEEP_FOCUS (deliberate exemption —
+        // deep evidence outweighs churn) and must not soften DISTRACTED, which the old
+        // `!= "DEEP_FOCUS"` condition did (ROADMAP 7.18).
         scores.focus_state = "PSEUDO_PRODUCTIVE";
+        scores.state_source = "drift";
     }
     return scores;
 }

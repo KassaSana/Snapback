@@ -148,6 +148,10 @@ void run_classifier_file(const std::filesystem::path& path) {
             CHECK_MESSAGE(scores.thrash_score >= expect.at("thrash_score_min").get<double>(),
                           name << ".thrash_score");
         }
+        if (expect.contains("drift_score_min")) {
+            CHECK_MESSAGE(scores.drift_score >= expect.at("drift_score_min").get<double>(),
+                          name << ".drift_score");
+        }
         if (expect.contains("distraction_risk_max")) {
             CHECK_MESSAGE(scores.distraction_risk <= expect.at("distraction_risk_max").get<double>(),
                           name << ".distraction_risk");

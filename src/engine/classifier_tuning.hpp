@@ -54,7 +54,8 @@ namespace policy {
 // states unreachable in 0.3 — the threshold was never the problem, its inputs were.
 constexpr double kThrashDistracted = 0.75;
 
-// Drift at or above this downgrades to PSEUDO_PRODUCTIVE, unless the state is DEEP_FOCUS.
+// Drift at or above this demotes PRODUCTIVE to PSEUDO_PRODUCTIVE. Only PRODUCTIVE: policy
+// is demote-only (ADR-0004), so the rule has no authority over DEEP_FOCUS or DISTRACTED.
 constexpr double kDriftPseudo = 0.55;
 
 }  // namespace policy
@@ -166,8 +167,9 @@ constexpr double kGoalBiasOnDrift = 0.25;
 constexpr double kGoalBiasOnDistracted = 0.35;
 
 // How much thrash adds to distraction_risk on top of the model's DISTRACTED probability.
-// This is the one place a context signal edits a *score* rather than a state, which is part
-// of what 7.7 is about.
+// This is the one place a context signal edits a *score* rather than a state. ADR-0004 kept
+// it on the opinion side of the line: thrash is behavioral evidence feeding the estimate,
+// not a policy rule overriding it.
 constexpr double kThrashRiskBump = 0.15;
 
 // Pseudo-productive is drift that distraction has not already claimed.
@@ -188,9 +190,11 @@ constexpr double kDeepShareOfRemaining = 0.65;
 inline constexpr std::array<const char*, 4> kStateLabels = {"DISTRACTED", "PSEUDO_PRODUCTIVE",
                                                             "PRODUCTIVE", "DEEP_FOCUS"};
 
-// focus_score is the probability-weighted average of these per-class levels, which is why a
+// focus_score is the probability-weighted average of these per-class levels, so a
 // confidently-DEEP_FOCUS row can carry a high score while guardrails have overridden the
-// state to DISTRACTED. That contradiction is 7.7, and it is a consequence of this mapping.
+// state to DISTRACTED. That is deliberate, not a contradiction (ADR-0004, née 7.7): the
+// score is the model's opinion, the state is the policy verdict, and `state_source` records
+// which rule made them disagree.
 inline constexpr std::array<double, 4> kFocusLevels = {25.0, 50.0, 75.0, 100.0};
 
 }  // namespace snapback::tuning

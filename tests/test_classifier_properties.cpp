@@ -273,38 +273,79 @@ TEST_CASE("guardrails force DISTRACTED whenever any of their conditions fires") 
     }
 }
 
-TEST_CASE("the drift rule currently upgrades DISTRACTED to PSEUDO_PRODUCTIVE") {
-    // CHARACTERIZATION TEST — this pins behaviour that is probably wrong. See ROADMAP 7.18,
-    // which this test found.
-    //
-    // The property originally written here was the obvious one: guardrails are policy layered
-    // on the model, and policy should only ever move a state *toward* distraction. Policy that
-    // upgrades would let a rule make a distracted user look better, which is the opposite of
-    // what a guardrail is for. It failed on 246 of 188,502 assertions.
-    //
-    // The cause is that the drift branch excludes only DEEP_FOCUS:
-    //
-    //     } else if (drift >= kDriftPseudo && scores.focus_state != "DEEP_FOCUS") {
-    //         scores.focus_state = "PSEUDO_PRODUCTIVE";
-    //
-    // so a row the model called DISTRACTED — but whose risk sits under the mode threshold —
-    // gets softened to PSEUDO_PRODUCTIVE, which scores 50 instead of 25.
-    //
-    // It is pinned rather than fixed because changing it changes the meaning of every stored
-    // prediction and is a product call, not an obvious defect: see the head of this file's
-    // ROADMAP tier on decisions mistaken for bugs. When 7.18 is settled this test fails, which
-    // is the intended way to find it.
+TEST_CASE("guardrails never raise the state — policy is demote-only") {
+    // ADR-0004, which settled ROADMAP 7.18. The characterization test that sat here pinned
+    // the opposite behaviour: the drift branch excluded only DEEP_FOCUS, so a row the model
+    // called DISTRACTED — with risk under the mode threshold — was softened to
+    // PSEUDO_PRODUCTIVE. The property below is the one that originally failed on 246 of
+    // 188,502 assertions and is now the contract: guardrails are policy layered on the
+    // model, and policy may only move a state toward distraction, never away from it.
+    const auto rank = [](const std::string& state) {
+        if (state == "DISTRACTED") return 0;
+        if (state == "PSEUDO_PRODUCTIVE") return 1;
+        if (state == "PRODUCTIVE") return 2;
+        return 3;  // DEEP_FOCUS
+    };
+
+    FeatureGenerator generator(kSeed);
+    for (int i = 0; i < 2000; ++i) {
+        std::array<double, 4> probabilities{};
+        for (auto& value : probabilities) value = generator.uniform();
+        const auto before = scores_from_probabilities(probabilities, 0.0, 0.0, 0.5);
+
+        const double thrash = generator.uniform();
+        const double drift = generator.uniform();
+        const bool blocked = generator.uniform() < 0.5;
+
+        for (const auto mode : kModes) {
+            const auto after = apply_focus_guardrails(before, thrash, drift, blocked, mode);
+            CHECK_MESSAGE(rank(after.focus_state) <= rank(before.focus_state),
+                          "iteration " << i << ": guardrails raised " << before.focus_state
+                                       << " to " << after.focus_state << " (thrash=" << thrash
+                                       << " drift=" << drift << " blocked=" << blocked << ")");
+        }
+    }
+
+    // The exact counterexample 11.2's property run found: model-DISTRACTED under the mode
+    // threshold with high drift used to come out PSEUDO_PRODUCTIVE. It must stay DISTRACTED,
+    // and the verdict is the model's own, so state_source stays "model".
     auto before = scores_from_probabilities({0.30, 0.25, 0.25, 0.20}, 0.0, 0.0, 0.5);
     REQUIRE(before.focus_state == "DISTRACTED");
     REQUIRE(before.distraction_risk < risk_threshold(FocusMode::Normal));
-
     const auto after = apply_focus_guardrails(before, 0.10, 0.60, false, FocusMode::Normal);
-    CHECK(after.focus_state == "PSEUDO_PRODUCTIVE");
+    CHECK(after.focus_state == "DISTRACTED");
+    CHECK(after.state_source == "model");
 
-    // DEEP_FOCUS is explicitly protected from the same rule, which is what makes the omission
-    // of DISTRACTED look like an oversight rather than a considered asymmetry.
+    // The drift rule's one remaining job: PRODUCTIVE demotes to PSEUDO_PRODUCTIVE, and the
+    // row records that policy, not the model, decided the verdict.
+    auto productive = scores_from_probabilities({0.10, 0.15, 0.55, 0.20}, 0.0, 0.0, 0.5);
+    REQUIRE(productive.focus_state == "PRODUCTIVE");
+    const auto demoted = apply_focus_guardrails(productive, 0.10, 0.60, false, FocusMode::Normal);
+    CHECK(demoted.focus_state == "PSEUDO_PRODUCTIVE");
+    CHECK(demoted.state_source == "drift");
+
+    // DEEP_FOCUS keeps its deliberate exemption: deep evidence outweighs churn.
     auto deep = scores_from_probabilities({0.10, 0.15, 0.25, 0.50}, 0.0, 0.0, 0.5);
     REQUIRE(deep.focus_state == "DEEP_FOCUS");
     CHECK(apply_focus_guardrails(deep, 0.10, 0.60, false, FocusMode::Normal).focus_state ==
           "DEEP_FOCUS");
+}
+
+TEST_CASE("state_source names the guardrail that decided the verdict") {
+    // ADR-0004: the scores are the model's opinion and policy never edits them, so
+    // state_source is the only record of why a verdict disagrees with its scores. Attribution
+    // follows the branch order: risk, then thrash, then block, then drift.
+    auto calm = scores_from_probabilities({0.10, 0.15, 0.55, 0.20}, 0.0, 0.0, 0.5);
+    REQUIRE(calm.focus_state == "PRODUCTIVE");
+    REQUIRE(calm.state_source == "model");
+
+    const auto risky = scores_from_probabilities({0.90, 0.04, 0.03, 0.03}, 0.0, 0.0, 0.5);
+    CHECK(apply_focus_guardrails(risky, 0.0, 0.0, false, FocusMode::Normal).state_source ==
+          "risk");
+    CHECK(apply_focus_guardrails(calm, 0.80, 0.0, false, FocusMode::Normal).state_source ==
+          "thrash");
+    CHECK(apply_focus_guardrails(calm, 0.0, 0.0, true, FocusMode::Normal).state_source ==
+          "block");
+    CHECK(apply_focus_guardrails(calm, 0.0, 0.0, false, FocusMode::Normal).state_source ==
+          "model");
 }
