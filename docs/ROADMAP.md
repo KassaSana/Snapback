@@ -53,7 +53,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | # | Item | Why now |
 |---|------|---------|
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
-| 2 | **8.8** release webview debug mode | Small, high-impact release security fix: production currently enables the debugging surface |
+| ~~2~~ | ~~**8.8** release webview debug mode~~ | **Done 2026-08-04** — verified in both Debug and Release builds |
 | 3 | **8.9** verify ONNX downloads | Close the executable-dependency integrity hole in two CI jobs |
 | 4 | **7.20**, then **7.19** | Make session replacement and settings persistence crash-safe before asking users to trust their data |
 | ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
@@ -990,16 +990,27 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   advisories and nothing verifies what got fetched. Pin to commit SHAs rather than tags (tags
   are mutable) and note the update process.
 
-- **8.8 — Release builds enable the webview debugging surface.** `S`
+- **8.8 — DONE 2026-08-04.** `S` `main.cpp` now passes `kWebviewDebugEnabled` instead of a
+  literal `true`, and the rule lives in `src/app/frontend_assets.hpp` beside
+  `resolve_frontend_url` — the same file already owns the other half of this boundary, so
+  the two Debug-only concessions are now readable together instead of one being a flag at
+  the top of `main.cpp` and the other an `#if` three hundred lines below it.
+
+  **Verified in both configurations, which is the part the item asked for.** A test binary
+  compiles in exactly one build kind, so the decision is split: `webview_debug_for_build()`
+  is the rule as a pure function (both answers asserted from either build), and
+  `kWebviewDebugEnabled` is this build's answer, with a third assertion tying the constant
+  back to the rule. Then the suite was actually run twice — Debug (surface on) and Release
+  (surface off) — rather than trusting the `#if`. Asserting only the constant would have
+  left the release half unchecked in every local Debug run, and the release half is the
+  entire point.
+
+  The original finding was:
 
   `main.cpp` constructs `webview::webview` with `debug=true` unconditionally. That is useful
   for local development, but it belongs behind the same Debug-build boundary as the frontend
   URL override. The page owns a privileged native command surface, so production developer
   tools are a materially different risk than ordinary browser debugging.
-
-  Pass `true` only in Debug builds and `false` in Release/RelWithDebInfo. Put the build-mode
-  decision in a small pure helper and regression-test both compile-time configurations rather
-  than relying on inspection of `main.cpp`.
 
 - **8.9 — ONNX Runtime CI downloads are versioned but not integrity-checked.** `S`
 
@@ -1608,6 +1619,31 @@ structure alone — a real review would likely find more.
 
 - **11.5 — Fixture corpus for storage.** `M`
   Tracked as 7.11; listed here so the testing story is complete in one place.
+
+- **11.8 — Two tests fail on a toolchain CI does not cover (GCC/MinGW).** `S`
+  Found 2026-08-04 while verifying ADR-0004's C++ changes. This machine had no compiler, so a
+  portable GCC 14.2 (MinGW-w64 UCRT) was used; CI only ever builds MSVC on Windows and
+  libstdc++ on Linux, so this combination had never been exercised. **Both failures are
+  pre-existing** — reproduced at `697e77b`, and `src/capture/` and `tests/test_capture_thread.cpp`
+  are byte-identical to it. Recorded, not fixed: neither is a defect on a platform we ship.
+
+  1. **`CaptureThread never reports failed and running at the same time` is flaky in optimized
+     builds — 33 failures in 60 Release runs.** The failing assertion is `REQUIRE(failed)`
+     (`tests/test_capture_thread.cpp:238`), **not** the `contradictions == 0` invariant the
+     test exists to protect, so 11.1's ordering fix is intact and this is a defect in the
+     test's own wait. It spins a bounded 2,000,000 relaxed loads waiting for the hook thread
+     to record failure; optimized, that window can close before Windows ever schedules the
+     thread. Debug passes because each iteration is slower, which is a bad reason for a test
+     to pass. The fix is to wait on a condition with a real deadline rather than an iteration
+     count — note the comment's "spin, don't sleep" rationale applies to *sampling the
+     contradiction window*, not to establishing the precondition, so the two can be separated.
+  2. **`rollback_model swaps the deployed model and quality metadata` throws
+     `filesystem error: cannot copy file: File exists`.** `swap_file`
+     (`src/app/training_deploy.cpp:463`) passes `copy_options::overwrite_existing` on every
+     copy, which libstdc++ does not honour on MinGW.
+
+  Neither blocks release. **They become blocking the moment anyone adds a MinGW job**, which
+  is the only reason this is written down.
 
 - **11.7 — The autostart test asserts against the real machine's registry.** `S`
   `tests/test_autostart.cpp:26` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
