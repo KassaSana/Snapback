@@ -18,10 +18,12 @@ Locally, **318 C++ cases** and **86 frontend component tests** pass, frontend un
 typecheck are clean. PR #40 then ran the exact merged work through all **15 hosted CI jobs**;
 all passed, including `macos-gui-smoke`.
 
-The formal v1 blocker list is **four of six verified complete**. Packaging and Decision
-session A are the two remaining blockers. The broader audit below did find release-hardening
-work outside ADR-0002; those items must be closed before publishing even though they do not
-change the blocker count.
+The formal v1 blocker list is **five of six verified complete**. Decision session A was
+settled on 2026-08-03 by [ADR-0004](adr/0004-verdict-and-opinion.md), leaving **macOS
+packaging (3.3) as the only remaining blocker** — and it is paperwork with external lead
+time, not a design question. The broader audit below did find release-hardening work outside
+ADR-0002; those items must be closed before publishing even though they do not change the
+blocker count.
 
 **A note on trusting this file.** Past audits found items here that were simply wrong: 0.3
 described work that was already written (and broken), 2.4 sits in the Done archive on the
@@ -54,7 +56,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 2 | **8.8** release webview debug mode | Small, high-impact release security fix: production currently enables the debugging surface |
 | 3 | **8.9** verify ONNX downloads | Close the executable-dependency integrity hole in two CI jobs |
 | 4 | **7.20**, then **7.19** | Make session replacement and settings persistence crash-safe before asking users to trust their data |
-| 5 | **Decision session A**: 5.3, 5.4, 1.2, 7.7 | The only remaining product decision on the v1 blocker list |
+| ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
 | 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
 | 7 | **9.11** release-tag trust chain | A `v*` tag must not bypass the full CI and version checks |
 | 8 | **Decision session B**: 4.11 | Settle title-parser behavior before changing a long-standing contract |
@@ -71,8 +73,8 @@ which is what makes the blocker table below meaningful.
 
 **Next up is 3.3's external paperwork, in parallel with 8.8 in code.** The Apple Developer
 account has independent lead time, so its application should start while the small release
-security and data-integrity findings are fixed. Decision session A remains the other formal
-blocker.
+security and data-integrity findings are fixed. It is now the **only** formal blocker left —
+Decision session A closed on 2026-08-03.
 
 **ADR-0002 release-blocker status as of 2026-08-01:**
 
@@ -82,12 +84,12 @@ blocker.
 | 2 | **3.1** macOS tray + native `NSPanel` overlay | ✅ Done 2026-07-28 — verified by running the app |
 | 3 | **3.3** macOS packaging + notarization | ⬜ **Next.** Longest lead time, needs an Apple Developer account. **Start the account application now**, since it gates nothing else but takes the longest — and it is what unblocks macOS notifications |
 | 4 | macOS launch smoke in CI | ✅ Done 2026-08-01 — PR #40's hosted `macos-gui-smoke` passed with the other 14 CI jobs |
-| 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7) | ⬜ Untouched — **the only decision left on this list** |
+| 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7, 7.18) | ✅ Done 2026-08-03 — [ADR-0004](adr/0004-verdict-and-opinion.md) |
 | 6 | **7.3** schema migrations | ✅ Done 2026-07-29 — `user_version`, an ordered migration list, and a downgrade guard |
 
-Note the shape of what remains: **four of six are verified done**, one is paperwork with a
-long lead time, and one is a question. No already-scoped implementation gap is left on this
-formal blocker list; the release-hardening findings in 8.8, 8.9, 9.11, and 9.12 are separate.
+Note the shape of what remains: **five of six are verified done and the sixth is paperwork.**
+No design question and no already-scoped implementation gap is left on this formal blocker
+list; the release-hardening findings in 8.8, 8.9, 9.11, and 9.12 are separate.
 
 ---
 
@@ -425,55 +427,49 @@ internals, and the benchmark harness.
 
 ### Decisions — do not code these yet
 
-- **7.7 — `focus_score` and `focus_state` can flatly contradict each other in the same row.**
-  `S` `decision` — **settle together with 5.3, 5.4, and 1.2.**
+- **7.7 — DONE 2026-08-03.** Settled by
+  [ADR-0004](adr/0004-verdict-and-opinion.md) as part of Decision session A. The
+  contradiction is now a *sentence*, not a defect: the scores are the **model's opinion**
+  and policy never edits them; `focus_state` is the **policy verdict**, the one value the
+  app acts on. A row reading `focus_state = 'DISTRACTED', focus_score = 95` says "the model
+  thought you were deep in; policy says the app is blocked."
 
-  `apply_focus_guardrails()` (`classifier.cpp:186`) overrides `focus_state` to
-  `"DISTRACTED"` on risk-over-threshold, `thrash >= 0.75`, or a `personal_block` rule. It
-  does **not** touch `focus_score` or `distraction_risk`. Meanwhile `focus_score` is a
-  probability-weighted average over all four classes (`classifier.cpp:71`).
+  **Clamping the score was the trap.** `focus_score` feeds back into the feature vector as
+  `focus_momentum` (`state.cpp`), so clamping it in the guardrails would have dragged the
+  model's own inputs toward whatever policy decided — a feedback loop nobody designed — and
+  destroyed the model-vs-policy disagreement signal 2.3 needs. The seam that looked like the
+  obvious fix was the one that had to stay untouched.
 
-  So a row where the model is confidently `DEEP_FOCUS` but the app matches a Block rule is
-  written as `focus_state = 'DISTRACTED', focus_score = 95`. Both columns are then consumed
-  independently and mixed freely — `recap()` averages score *and* counts DISTRACTED rows;
-  `summary_report()` computes `longest_focus_streak` from state and `avg_focus_score` from
-  score. A blocked-app session reports a high average focus score and a distracted-heavy
-  state breakdown simultaneously, and the UI shows both without comment.
+  What changed instead: `predictions.state_source` (migration 3) records which rule decided
+  the verdict, so the UI can finally *explain* an override. That was the gap with teeth —
+  `explainPrediction` could previously render "**Distracted** because no app switching ·
+  settled in one window" for a Block-rule row, evidence flatly contradicting the verdict.
+  The hero's colour now comes from the verdict rather than `riskLevel(distraction_risk)`,
+  which is the same contradiction inside a single element.
 
-  Options: clamp `focus_score` in the guardrails; drop score from surfaces showing state; or
-  document them as "model opinion" vs "policy verdict" and label them so in the UI.
-
-- **7.18 — The drift guardrail *upgrades* DISTRACTED to PSEUDO_PRODUCTIVE.** `S` `decision`
-  — **settle with 7.7; they are the same seam.** Found 2026-07-31 by 11.2's property tests.
-
-  `apply_focus_guardrails()` excludes only `DEEP_FOCUS` from the drift branch:
+- **7.18 — DONE 2026-08-03.** Settled by
+  [ADR-0004](adr/0004-verdict-and-opinion.md): **policy is demote-only.** A guardrail may
+  move a state toward distraction, never away from it. The drift branch now fires only on
+  `PRODUCTIVE`:
 
   ```cpp
-  } else if (drift >= kDriftPseudo && scores.focus_state != "DEEP_FOCUS") {
-      scores.focus_state = "PSEUDO_PRODUCTIVE";
+  } else if (drift >= tuning::policy::kDriftPseudo && scores.focus_state == "PRODUCTIVE") {
   ```
 
-  So a row the model called **DISTRACTED**, whose `distraction_risk` sits under the mode's
-  threshold, gets **softened** when drift is high. Minimal repro: probabilities
-  `{0.30, 0.25, 0.25, 0.20}` (argmax DISTRACTED, risk 0.30, Normal threshold 0.70) with
-  `drift = 0.60` comes out `PSEUDO_PRODUCTIVE` — which scores **50 instead of 25**.
+  Rule 1 was already demote-only in effect, so the `!= "DEEP_FOCUS"` condition was the sole
+  violation — an oversight, not a considered asymmetry. The `DEEP_FOCUS` exemption survives
+  on its own merits: deep evidence outweighs title churn.
 
-  **Why this is a decision and not a patch.** Guardrails exist to catch distraction, so a
-  guardrail that makes a distracted user look better reads as an oversight — and the explicit
-  protection of `DEEP_FOCUS` on the same line suggests the author was thinking about which
-  states to exempt and missed one. But changing it changes the meaning of **every stored
-  prediction**, moves the classifier parity fixture, and lands in the same territory as 7.7:
-  what is the model's opinion allowed to say versus what is policy allowed to overrule. This
-  file's own warning applies — *a third of the open backlog is decisions mistaken for bugs, and
-  that mistake has twice produced a "fix" that had to be reverted.*
+  **The feared cost did not materialise, and the reason is worth keeping.** This item warned
+  that changing the rule "moves the classifier parity fixture." It did not: `golden.json`
+  pins the *feature vector*, not classifier output, and none of the three scenarios in
+  `classifier_scenarios.json` exercised the drift branch at all. The branch that produced a
+  `decision` tag partly on fixture-churn grounds turned out to be **unfixtured** — checking
+  cost one read and removed the largest stated cost. A fourth scenario now covers it.
 
-  Options: exclude `DISTRACTED` from the drift branch as well; make the branch explicitly
-  ordered (policy may only lower a state); or document the drift rule as "re-classify
-  ambiguous productivity" and accept that it can raise a weakly-distracted row.
-
-  **Pinned meanwhile.** `tests/test_classifier_properties.cpp` carries a characterization test
-  that asserts the *current* behaviour, so it cannot change silently — and so that settling
-  this item produces a failing test pointing right at it.
+  The characterization test in `tests/test_classifier_properties.cpp` did exactly what it was
+  built for: it failed on this change and is now the assertion *guardrails never raise the
+  state*, the property that originally failed on 246 of 188,502 assertions.
 
 - **7.8 — `set_focus_mode` permanently rewrites the user's default.** `S` `decision`
 
@@ -659,7 +655,8 @@ internals, and the benchmark harness.
   `ROW_NUMBER()` window function instead of being quietly dropped. Its tests pin both the cap
   and that it keeps the *oldest* rows, matching `list_context_snapshots`' `ORDER BY timestamp
   ASC`. The prediction aggregates are copied verbatim from `recap()`, **including the
-  deliberate absolute 0.7 thrash bar that 5.4 warns against unifying**, and the parity test
+  deliberate absolute 0.7 bar 5.4 warned against unifying** (ADR-0004 has since dropped the
+  `AND focus_state` conjunct from both copies — still together), and the parity test
   compares batched output against `recap()` field by field rather than against hand-written
   numbers.
 
@@ -1019,16 +1016,20 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 1 — Ship a polished Windows-first v1
 
-- **1.2 — Settings UI: distraction sensitivity tuning.** `M` `decision`
-  **Settle together with 5.3, 5.4, and 7.7 — they are one question.** Also wants 7.15 done
-  first, so the tunables are legible.
+- **1.2 — CLOSED 2026-08-03, no code.** [ADR-0004](adr/0004-verdict-and-opinion.md):
+  **the focus mode *is* the sensitivity control.** Deep / Normal / Recovery are three
+  settings of `risk_threshold()` (0.55 / 0.70 / 0.85), chosen per session, with the
+  onboarding wizard setting the default. A second control would be a fourth way to move one
+  number.
 
-  App-rule management (`RulesCard`) and default focus mode are **done** — see Done archive.
-  What's left is a real gap: there is no user-facing "sensitivity" concept in the backend at
-  all. `risk_threshold(mode)` in `classifier.cpp` is a hardcoded function of `FocusMode`
-  (deep/normal/recovery already *are* the sensitivity levers). Exposing a further per-user
-  tunable requires deciding what it means — a scalar multiplier on `risk_threshold`? A
-  per-mode override in `AppSettings`? Don't build a UI until that's decided.
+  The observation that closed it: 7.15 found these values have **no provenance** — hand-tuned
+  in the port commit, never validated against labelled data. Layering a user multiplier on
+  top of three unjustified constants compounds the guess instead of resolving it. If evidence
+  ever demands finer control, the extension point is a per-mode threshold override in
+  `AppSettings` — an offset to *policy*, never a transform on the model's opinion.
+
+  App-rule management (`RulesCard`) and default focus mode were already done — see Done
+  archive. This item was the last `decision` on the v1 blocker list.
 
 ---
 
@@ -1148,37 +1149,34 @@ finding is a hypothesis; verify it before writing code.**
 
 Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
 
-- **5.3 — `confidence.hpp` is dead code with inverted units.** `S` `decision`
-  **Settle together with 5.4, 1.2, and 7.7.**
+- **5.3 — DONE 2026-08-03. Deleted.** [ADR-0004](adr/0004-verdict-and-opinion.md) chose
+  delete over wire-in, and the deciding fact was not the inverted units — it was that
+  **the job `should_nag` existed to do is already done elsewhere.** `ContextTracker` requires
+  30s of continuous off-task before a snapback fires (`tracker.hpp`), which is the debounce
+  confidence gating promised; and there is no risk-driven nag anywhere in the app for the
+  gate to sit in front of. Wiring it in would have meant inventing a feature to justify
+  dead code.
 
-  Nothing outside its own test calls `should_nag` or `distraction_confidence`. Worse, the
-  header documents risk as `[0,100]` and sets `nag_threshold = 60.0`, but the classifier emits
-  `[0,1]` (`classifier.cpp:70`) — so `should_nag(0.9)` returns **false**. The tests pass only
-  because they feed 0–100 values the system never produces. **Decide: wire it in on a `[0,1]`
-  scale, or delete it and drop the 2.4 "confidence gating" claim** — currently in the Done
-  archive on the strength of code that never runs.
+  `src/engine/confidence.hpp` and `tests/test_confidence.cpp` are gone. The Done archive's
+  **2.4 "confidence calibration (gating)" claim is retracted** — see its entry.
 
-- **5.4 — What should `thrash_spikes` measure?** `S` `decision`
-  **Settle together with 5.3, 1.2, and 7.7.**
+- **5.4 — DONE 2026-08-03.** [ADR-0004](adr/0004-verdict-and-opinion.md) made
+  `thrash_spikes` a **pure opinion-channel count: `distraction_risk >= 0.7`**, dropping the
+  `AND focus_state = 'DISTRACTED'` conjunct. Both call sites changed together (`recap()` and
+  its batched copy in `recent_session_summaries`), so the field-by-field parity tests hold
+  automatically.
 
-  `recap()` counts `distraction_risk >= 0.7 AND focus_state = 'DISTRACTED'`. The audit called
-  the constant a bug (the mode's threshold is 0.55/0.70/0.85); **it isn't, or at least not
-  obviously.** Two things checked before attempting a change:
+  **The earlier defence of the 0.7 was right and was also the argument for the change.** The
+  bar is absolute so Deep mode's higher sensitivity cannot inflate session metrics that feed
+  auto-labels — but AND'ing it with `focus_state`, which is mode-derived, smuggled the mode
+  straight back in: Recovery rows between 0.7 and 0.85 were never `DISTRACTED` and so were
+  never counted. The conjunct defeated the property the constant existed to protect. The
+  recap test now seeds exactly that row.
 
-  1. The same 0.7 has been hardcoded since the first version — long-standing, deliberate.
-  2. There's a coherent reading where 0.7 is an *absolute* "strong distraction" bar,
-     deliberately mode-independent so Deep mode's higher sensitivity doesn't inflate
-     session-quality metrics that feed auto-labels.
-
-  Switching to `risk_threshold(mode)` was tried and reverted: it breaks the recap test and
-  *increases* mode-dependence for Deep.
-
-  The residual oddity is different: `apply_focus_guardrails` also marks rows `DISTRACTED` via
-  `thrash >= 0.75` or a `personal_block` rule with no risk floor. So a blocked-app row at risk
-  0.3 is `DISTRACTED` but never a "spike," while Recovery rows between 0.7 and 0.85 are never
-  `DISTRACTED` and so never counted. **7.7 is the same seam from the other side.** Decide what
-  the metric means — absolute intensity, mode-relative alerting, or plain
-  `COUNT(*) WHERE focus_state = 'DISTRACTED'` — then make the query say it.
+  Consequence recorded honestly: spike counts rise slightly for Recovery sessions, so
+  `infer_session_label` shifts a few of them toward Distracted/Pseudo. That is a correction
+  in the training corpus, not drift. The Review tile now reads **"Distraction spikes"**; the
+  wire name stays `thrash_spikes`.
 
 - **5.5 — Retention silently no-ops on unparseable timestamps.** `S`
   **Roll into the 7.16 timestamp decision — same root cause.**
@@ -1532,7 +1530,14 @@ structure alone — a real review would likely find more.
 
   **The failing property was pinned, not deleted.** Weakening a test until it passes is how a
   finding gets lost. The guaranteed half (the DISTRACTED-forcing conditions) is asserted as a
-  property; the divergence is a characterization test that fails the moment 7.18 is settled.
+  property; the divergence became a characterization test set to fail the moment 7.18 was
+  settled.
+
+  > **It worked exactly as designed, 2026-08-03.** ADR-0004 made policy demote-only, the
+  > characterization test went red on the change, and it is now the assertion *guardrails
+  > never raise the state* — the original property, restored. **This is the payoff for
+  > pinning rather than weakening:** the finding survived three days as executable code
+  > instead of a comment, and the fix could not land without confronting it.
 
   The original finding was:
 
@@ -1755,8 +1760,14 @@ below still determine whether and how the retraining loop should operate.
 - **13.6 — Define what happens when the model and the heuristic disagree.** `S` `decision`
   5.1 established that the classifier blends model probabilities with rule/thrash/drift
   signals. Nobody has specified what *should* win, or how to tell when the model has drifted
-  far enough from the heuristic to be distrusted. Relates directly to **7.7** (score vs
-  state) and **5.3** (confidence gating) — arguably the same decision session.
+  far enough from the heuristic to be distrusted.
+
+  **ADR-0004 narrowed this, and it is now a smaller question than it was.** Model-vs-*policy*
+  is settled: the scores are the model's opinion, `focus_state` is the verdict, and policy
+  may only demote. What remains is model-vs-*heuristic* — two producers of the same opinion
+  channel — which is a calibration question, not an authority one. `state_source` is the
+  instrument for it: it records which rule bound each verdict, so "how often does policy
+  overrule the model, and on what" is now a query rather than a study.
 
   Once behavior is settled, localize ownership too: `Classifier` reaches into the process-wide
   `OnnxModel::instance()`, while `AppState` separately loads it and reads its identity, and
@@ -1917,7 +1928,8 @@ itself a backlog item below.
       including non-`.cpp` extensions. For each Done-archive item, confirm the code has a
       **caller**. This has found real ghosts twice (0.3, 2.4); assume it will again.
 - [ ] **Dead-code sweep.** Every `.hpp` in `src/` should have a caller outside its own test.
-      `confidence.hpp` is the known offender (5.3); check for siblings.
+      `confidence.hpp` was the known offender and is now deleted (5.3, ADR-0004); check for
+      siblings.
 - [ ] **Unit sanity sweep.** Grep thresholds and confirm each matches its producer's scale.
       5.3 shipped `[0,100]` logic against a `[0,1]` producer and the tests passed because they
       fed values the system never emits.
@@ -2185,8 +2197,13 @@ Completed work. Kept for history; further detail lives in the git log.
   7.1, 7.2.*
 - **2.2 — Daily / weekly summary report** — windowed aggregates, distraction and streak
   metrics, JSON export, IPC, frontend controls. *Same caps — 7.1.*
-- **2.4 — Confidence calibration (gating)** — ⚠️ **this claim is disputed; see 5.3.** The code
-  has no callers and its threshold can't fire against the classifier's output.
+- **2.4 — Confidence calibration (gating)** — ❌ **RETRACTED 2026-08-03.** This was never
+  delivered: the code had no callers and its `[0,100]` threshold could not fire against a
+  `[0,1]` producer. `confidence.hpp` was deleted by
+  [ADR-0004](adr/0004-verdict-and-opinion.md) rather than wired in, because the debounce it
+  promised already exists in `ContextTracker`. **The entry stays here, struck, because a
+  silently-deleted false claim teaches nothing** — this is the ghost item the Done-archive
+  sweep was invented to catch (see 5.3).
 - **2.5 — Goal-alignment coverage** — editable persisted goal categories and keywords wired
   through classifier, tracker, IPC, frontend.
 - **2.6 — Pomodoro** — timer state machine in AppState + engine tick, `pomodoro` events, IPC,
