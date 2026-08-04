@@ -125,22 +125,37 @@ Open questions for Kassa are in the memo (end of Phase 1 message), not duplicate
       2.4 retraction, 11.2 payoff note, 13.6 narrowed
 - [x] existing data: leave-and-date (no rewriting migration exists that would not fabricate)
 
-### Verification status — read this before pushing
+### Verification status
 
-**Verified by running:** frontend `typecheck` clean; `test:unit` all 9 scripts pass;
-`focusStateHero` 13/13. Component-suite totals are **44 failed / 43 passed** with these
-changes and **44 failed / 42 passed** on a stashed clean tree — same 44 pre-existing
-failures (`window.localStorage` undefined under Node 26 in this environment), one net new
-passing test. Measured both ways, not assumed.
+**Frontend.** `typecheck` clean; `test:unit` all 9 scripts pass; `focusStateHero` 13/13.
+Component-suite totals are **44 failed / 43 passed** with these changes and **44 failed /
+42 passed** on a stashed clean tree — the same 44 pre-existing failures
+(`window.localStorage` undefined under Node 26 here), one net new passing test. Measured
+both ways, not assumed.
 
-**NOT verified — no C++ toolchain on this machine.** No cl/g++/cmake; Docker Desktop cannot
-start because WSL is not installed. So the C++ changes are **unbuilt and untested here**:
-migration 3, the guardrail rewrite, both SQL predicates, and the four touched test files.
-Run `ctest` before pushing.
+**C++ — built and run 2026-08-04.** `313/314 ctest cases pass.` The machine had no
+toolchain (no cl/g++/cmake, and Docker cannot start because WSL is not installed), so a
+**portable** CMake + GCC 14.2 (WinLibs UCRT) was unpacked into the session scratchpad —
+nothing installed system-wide, nothing to uninstall. Build was clean: 34 test TUs plus the
+core library, **zero errors and zero warnings**, with `--timeout 120 --no-tests=error`
+matching CI's invocation.
 
-Hand-checked instead (reasoning, not execution): the new fixture's drift ≈ 0.77 (title churn
-0.45 + keystroke chaos ≈ 0.24 + unsettled 0.083, work context ×1.0) against a 0.55 bar, and
-model argmax lands PSEUDO_PRODUCTIVE at p ≈ 0.71 with risk ≈ 0.15 — wide margins on every
-assertion, but arithmetic is not a test run. Note `context_switches_30s` counts only
-`WindowFocusChange`, so this scenario reaches PSEUDO via the *model*, not the demote branch;
-the demote path is covered by the unit test.
+Two incidental confirmations from the run. The case count is **314 = the roadmap's 318
+minus the four deleted `confidence` cases**, so the deletion propagated through CMake's
+`tests/*.cpp` glob with no build-file edit. And `test_confidence.cpp` is absent from the
+compile list.
+
+**The one failure is pre-existing and unrelated:** *rollback_model swaps the deployed model
+and quality metadata* throws `filesystem error: cannot copy file: File exists`. It was
+reproduced at the pre-decision commit `697e77b` in a separate worktree, where it fails
+identically — so it is not a regression from this work. Mechanism: `swap_file`
+(`src/app/training_deploy.cpp:463`) passes `copy_options::overwrite_existing` on every copy,
+which libstdc++ on MinGW does not honour on Windows. CI never sees it because its Windows
+job uses MSVC and its Linux jobs use a different libstdc++ path. **Not fixed here** — out of
+scope for this decision, and not a defect on any supported platform. Worth knowing only if
+MinGW is ever added to CI.
+
+The new fixture's hand arithmetic held up against the real run: drift ≈ 0.77 against the
+0.55 bar, risk ≈ 0.15. Note `context_switches_30s` counts only `WindowFocusChange`, so that
+scenario reaches PSEUDO_PRODUCTIVE via the *model's* argmax rather than the demote branch;
+the demote path is covered by the unit test in `test_classifier_properties.cpp`.
