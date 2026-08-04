@@ -19,6 +19,7 @@ const prediction = (overrides: Partial<PredictionRecord> = {}): PredictionRecord
     goalAlignment: 0.5,
     timestamp: "2026-07-25T04:55:24Z",
     modelId: "heuristic:snapback-features-v1-31",
+    stateSource: "model",
     ...overrides,
   }) as PredictionRecord;
 
@@ -33,9 +34,9 @@ function renderHero(overrides: Overrides = {}) {
     onCorrectVerdict: vi.fn(),
     onDismissSnapback: vi.fn(),
     prediction: prediction(),
-    riskClass: "low",
     sessionActive: true,
     snapbackNote: null,
+    verdictClass: "low",
     ...overrides,
   };
   render(<FocusStateHero {...props} />);
@@ -52,7 +53,7 @@ describe("FocusStateHero", () => {
     renderHero();
 
     // 71.24 -> "71", 0.2138 -> "21%". A decimal would claim precision the model has not
-    // earned while the score's scale is an open decision (Roadmap 5.3/5.4/1.2/7.7).
+    // earned: the score is its opinion on hand-tuned weights (ADR-0004), not a measurement.
     const secondary = screen.getByText(/focus/).textContent ?? "";
     expect(secondary).toContain("focus 71");
     expect(secondary).toContain("risk 21%");
@@ -81,10 +82,28 @@ describe("FocusStateHero", () => {
     expect(screen.getByText(/window matches/)).toBeInTheDocument();
   });
 
+  it("leads with the policy rule when one decided the verdict, not the calm behaviour", () => {
+    // ADR-0004: a Block-rule row can be behaviourally quiet — risk 0.2, no switching. The
+    // rule is the evidence, and "Distracted because no app switching" was a contradiction.
+    renderHero({
+      prediction: prediction({
+        focusState: "DISTRACTED",
+        stateSource: "block",
+        thrashScore: 0.05,
+        driftScore: 0.02,
+      }),
+      verdictClass: "high",
+    });
+
+    expect(screen.getByText("a blocked app is open")).toBeInTheDocument();
+    expect(screen.queryByText("no app switching")).not.toBeInTheDocument();
+    expect(screen.queryByText("settled in one window")).not.toBeInTheDocument();
+  });
+
   it("names switching and churn when those are what drove the verdict", () => {
     renderHero({
       prediction: prediction({ focusState: "DISTRACTED", thrashScore: 0.8, driftScore: 0.7 }),
-      riskClass: "high",
+      verdictClass: "high",
     });
 
     expect(screen.getByText("switching apps often")).toBeInTheDocument();
@@ -146,8 +165,8 @@ describe("FocusStateHero", () => {
   it("keeps the snapback callout prominent and dismissable", () => {
     const props = renderHero({
       prediction: prediction({ focusState: "DISTRACTED" }),
-      riskClass: "high",
       snapbackNote: "You drifted from: fix the overlay",
+      verdictClass: "high",
     });
 
     expect(screen.getByText(/You drifted from/)).toBeInTheDocument();

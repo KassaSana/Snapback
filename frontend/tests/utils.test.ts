@@ -14,6 +14,7 @@ import {
   nextBackoffDelay,
   riskLabel,
   riskLevel,
+  verdictLevel,
 } from "../src/utils";
 
 assert.equal(clamp(1.5, 0, 1), 1);
@@ -60,6 +61,15 @@ assert.equal(riskLevel(0.7), "high");
 assert.equal(riskLevel(0.4), "medium");
 assert.equal(riskLevel(NaN), "unknown");
 assert.equal(riskLevel(null), "unknown");
+
+// verdictLevel colours by the policy verdict (ADR-0004), one class per channel: the hero's
+// word and dot must agree with each other even when the verdict disagrees with the risk.
+assert.equal(verdictLevel("DISTRACTED"), "high");
+assert.equal(verdictLevel("PSEUDO_PRODUCTIVE"), "medium");
+assert.equal(verdictLevel("PRODUCTIVE"), "low");
+assert.equal(verdictLevel("DEEP_FOCUS"), "low");
+assert.equal(verdictLevel("SOMETHING_ELSE"), "unknown");
+assert.equal(verdictLevel(null), "unknown");
 
 assert.equal(riskLabel(0.8), "High risk");
 assert.equal(riskLabel(0.5), "Medium risk");
@@ -143,5 +153,25 @@ assert.equal(
 
 const busy = explainPrediction({ ...quietProductive, thrashScore: 0.8, driftScore: 0.7 } as any);
 assert.deepEqual(busy.reasons, ["switching apps often", "tab and title churn"]);
+
+// A policy override is the headline evidence, and the calm low-signal phrases are
+// suppressed with it — "Distracted because no app switching" was a contradiction (ADR-0004).
+const blocked = explainPrediction({
+  ...quietProductive,
+  focusState: "DISTRACTED",
+  stateSource: "block",
+} as any);
+assert.deepEqual(blocked.reasons, ["a blocked app is open"]);
+
+const overRisk = explainPrediction({
+  ...quietProductive,
+  focusState: "DISTRACTED",
+  stateSource: "risk",
+} as any);
+assert.deepEqual(overRisk.reasons, ["distraction risk over the mode's bar"]);
+
+// Rows from before verdicts carried provenance (stateSource null) read exactly as before.
+const legacy = explainPrediction({ ...quietProductive, stateSource: null } as any);
+assert.deepEqual(legacy.reasons, ["no app switching", "settled in one window"]);
 
 assert.deepEqual(explainPrediction(null), { reasons: [], caveat: null });

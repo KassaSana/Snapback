@@ -18,8 +18,8 @@ export const formatScore = (value: number | null | undefined) => {
 };
 
 // Whole-number variants for the Now surface (ADR-0003). A decimal place claims precision
-// the score does not have: what `focus_score` even means is still an open decision
-// (Roadmap 5.3, 5.4, 1.2, 7.7). `formatScore`/`formatPercent` keep their decimals for the
+// the score does not have: `focus_score` is the model's opinion on hand-tuned weights
+// (ADR-0004), not a measurement. `formatScore`/`formatPercent` keep their decimals for the
 // Review surface, where comparing two sessions makes the extra digit meaningful.
 export const formatScoreCoarse = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
@@ -72,6 +72,24 @@ export const focusStateLabel = (state: string | null | undefined) => {
   }
 };
 
+// The hero's colour class. Derived from the verdict, not from riskLevel(): the state is the
+// policy verdict and the risk is the model's opinion (ADR-0004), and the two may disagree —
+// a Block-rule row at risk 0.3 is Distracted, and colouring that word by its risk painted
+// it calm. One element, one channel.
+export const verdictLevel = (state: string | null | undefined): RiskLevel => {
+  switch (state) {
+    case "DISTRACTED":
+      return "high";
+    case "PSEUDO_PRODUCTIVE":
+      return "medium";
+    case "PRODUCTIVE":
+    case "DEEP_FOCUS":
+      return "low";
+    default:
+      return "unknown";
+  }
+};
+
 export const formatPomodoroRemaining = (remainingMs: number) => {
   const totalSeconds = Math.max(0, Math.round(remainingMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -109,11 +127,23 @@ export const explainPrediction = (
 
   const reasons: string[] = [];
 
+  // When a policy rule decided the verdict (ADR-0004), lead with that rule — it is the one
+  // piece of evidence the scores cannot show. A Block-rule row can be behaviourally calm,
+  // and "Distracted because no app switching" was actively misleading, so the calm
+  // low-signal phrases are suppressed while a policy override is the headline.
+  const policyReason =
+    record.stateSource === "block"
+      ? "a blocked app is open"
+      : record.stateSource === "risk"
+        ? "distraction risk over the mode's bar"
+        : null;
+  if (policyReason) reasons.push(policyReason);
+
   if (record.thrashScore >= 0.6) reasons.push("switching apps often");
-  else if (record.thrashScore <= 0.2) reasons.push("no app switching");
+  else if (record.thrashScore <= 0.2 && !policyReason) reasons.push("no app switching");
 
   if (record.driftScore >= 0.55) reasons.push("tab and title churn");
-  else if (record.driftScore <= 0.2) reasons.push("settled in one window");
+  else if (record.driftScore <= 0.2 && !policyReason) reasons.push("settled in one window");
 
   // 0.5 is the "no goal set / nothing matched" default, so only speak when it moved.
   const goalKnown = Math.abs(record.goalAlignment - 0.5) > 0.08;

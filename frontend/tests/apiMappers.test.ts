@@ -89,12 +89,18 @@ const prediction = mapPrediction({
   drift_score: 0.2,
   goal_alignment: 0.8,
   timestamp: "2026-07-07T12:00:00Z",
+  state_source: "drift",
 });
 
 assert.equal(prediction.sessionId, "sess-1");
 assert.equal(prediction.focusScore, 72.5);
 assert.equal(prediction.distractionRisk, 0.42);
 assert.equal(prediction.focusState, "PRODUCTIVE");
+assert.equal(prediction.stateSource, "drift");
+
+// Rows written before verdicts carried provenance (ADR-0004) map to null — unknown is not
+// the same claim as "model".
+assert.equal(mapPrediction({ session_id: "old" }).stateSource, null);
 
 const session = mapSession({
   sessionId: "sess-2",

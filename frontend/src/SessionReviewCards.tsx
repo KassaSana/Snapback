@@ -73,7 +73,7 @@ export const SessionReviewCards = memo(function SessionReviewCards({
               <p className="meta-value">{recap.snapbackCount}</p>
             </div>
             <div>
-              <p className="meta-label">Thrash spikes</p>
+              <p className="meta-label">Distraction spikes</p>
               <p className="meta-value">{recap.thrashSpikes}</p>
             </div>
           </div>

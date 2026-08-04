@@ -11,9 +11,10 @@ import { VerdictFeedback } from "./VerdictFeedback";
 
 // The Now surface's primary element (ADR-0003).
 //
-// Leads with the focus *state* rather than the score: the score's scale is an open
-// decision (Roadmap 5.3, 5.4, 1.2, 7.7), and a layout built around a hero number would be
-// rebuilt when that lands. A state word survives a rescaling.
+// Leads with the focus *state* rather than the score, and ADR-0004 made that the
+// permanent contract rather than sequencing caution: the state is the policy verdict —
+// the thing the app acts on — and the score is the model's opinion, demoted to the
+// evidence line. The two may disagree on purpose.
 //
 // The verdict is shown with its evidence, not on its own. An unexplained label is
 // unfalsifiable — you cannot tell a good guess from a lucky one — and the classifier is
@@ -29,9 +30,12 @@ type Props = {
   onCorrectVerdict: (label: FocusLabel) => void;
   onDismissSnapback: () => void;
   prediction: PredictionRecord | null;
-  riskClass: string;
   sessionActive: boolean;
   snapbackNote: string | null;
+  // Colour class for the state word and dot. Derived from the verdict (ADR-0004) — the
+  // word and its colour must come from the same channel, or a Block-rule row at low risk
+  // renders "Distracted" painted calm.
+  verdictClass: string;
 };
 
 export function FocusStateHero({
@@ -42,9 +46,9 @@ export function FocusStateHero({
   onCorrectVerdict,
   onDismissSnapback,
   prediction,
-  riskClass,
   sessionActive,
   snapbackNote,
+  verdictClass,
 }: Props) {
   const waiting = !prediction;
   const { reasons, caveat } = explainPrediction(prediction, goal);
@@ -55,8 +59,8 @@ export function FocusStateHero({
         Focus state
       </h2>
 
-      <p className={`hero-state hero-state-${riskClass}`}>
-        <span className={`hero-dot hero-dot-${riskClass}`} aria-hidden="true" />
+      <p className={`hero-state hero-state-${verdictClass}`}>
+        <span className={`hero-dot hero-dot-${verdictClass}`} aria-hidden="true" />
         {waiting ? "Waiting for signal" : focusStateLabel(prediction?.focusState ?? null)}
       </p>
 

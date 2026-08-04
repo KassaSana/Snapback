@@ -238,6 +238,7 @@ export function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
     goalAlignment: Number(raw.goal_alignment ?? raw.goalAlignment ?? 0.5),
     timestamp: String(raw.timestamp ?? ""),
     modelId: String(raw.model_id ?? raw.modelId ?? "heuristic:snapback-features-v1-31"),
+    stateSource: (raw.state_source ?? raw.stateSource ?? null) as string | null,
   };
 }
 

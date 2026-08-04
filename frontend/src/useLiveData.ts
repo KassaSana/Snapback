@@ -4,7 +4,7 @@ import {
   api,
   buildSignals,
   riskLabel,
-  riskLevel,
+  verdictLevel,
   type ContextSnapshot,
   type PredictionRecord,
 } from "./api";
@@ -126,7 +126,9 @@ export const useLiveData = () => {
   const signals = useMemo(() => buildSignals(prediction), [prediction]);
   const riskValue = prediction?.distractionRisk ?? null;
   const riskBadgeLabel = prediction ? riskLabel(riskValue) : "No data";
-  const riskClass = riskLevel(riskValue);
+  // The hero colours by the verdict, not the risk — the two channels can disagree
+  // (ADR-0004) and the risk badge already speaks for the opinion side.
+  const verdictClass = verdictLevel(prediction?.focusState ?? null);
 
   return {
     contextTimeline,
@@ -144,8 +146,8 @@ export const useLiveData = () => {
     refreshTimelineFromEvent,
     resetTimelineRefreshGate,
     riskBadgeLabel,
-    riskClass,
     signals,
     snapbackNote,
+    verdictClass,
   };
 };

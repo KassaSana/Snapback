@@ -322,7 +322,7 @@ export default function App() {
           }}
           onDismissSnapback={live.handleDismissSnapback}
           prediction={live.prediction}
-          riskClass={live.riskClass}
+          verdictClass={live.verdictClass}
           sessionActive={sessionRecord?.status === "ACTIVE"}
           snapbackNote={live.snapbackNote}
         />

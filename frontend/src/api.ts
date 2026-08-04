@@ -40,6 +40,10 @@ export type PredictionRecord = {
   goalAlignment: number;
   timestamp: string;
   modelId: string;
+  // Which rule decided focusState (ADR-0004): "model" when the classifier's argmax stood,
+  // else "risk" | "thrash" | "block" | "drift". null on rows from before verdicts carried
+  // provenance — unknown, not "model".
+  stateSource: string | null;
 };
 
 export type SessionRecord = {
@@ -571,6 +575,7 @@ export {
   nextBackoffDelay,
   riskLabel,
   riskLevel,
+  verdictLevel,
 } from "./utils";
 
 export type { VerdictExplanation } from "./utils";
