@@ -100,6 +100,84 @@ TEST_CASE("storage session lifecycle keeps only one active session") {
     CHECK(storage->active_session() == std::nullopt);
 }
 
+TEST_CASE("storage keeps the previous session active when the replacement insert fails") {
+    // Roadmap 7.20. create_session closes the running session and inserts its replacement.
+    // Before those two statements shared a transaction, a failing insert left the user with
+    // no active session at all -- the outcome neither the caller nor the user ever asks for.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+
+    const auto first = storage->create_session("First goal", FocusMode::Normal);
+
+    // Deterministic failure seam. session_id is a random UUID, so no constraint fixture can
+    // predict a collision; a BEFORE INSERT trigger is the one thing that fails the second
+    // statement on demand. Installed from a separate connection so the code under test stays
+    // exactly what ships -- no production test hook exists for this, and none should.
+    {
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(db,
+                             "CREATE TRIGGER block_session_insert BEFORE INSERT ON sessions "
+                             "BEGIN SELECT RAISE(ABORT, 'insert blocked'); END;",
+                             nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_close(db) == SQLITE_OK);
+    }
+
+    CHECK_THROWS_AS(storage->create_session("Second goal", FocusMode::Deep),
+                    std::runtime_error);
+
+    // The rollback must restore the original session, not merely avoid inserting.
+    const auto active = storage->active_session();
+    REQUIRE(active.has_value());
+    CHECK(active->session_id == first.session_id);
+    CHECK(active->goal == "First goal");
+    CHECK(active->status == "ACTIVE");
+    CHECK(active->ended_at == std::nullopt);
+
+    // And nothing half-written survived: no COMPLETED first session, no orphan replacement.
+    CHECK(storage->recent_sessions(10).size() == 1);
+}
+
+TEST_CASE("a failed session replacement rolls back itself, not the caller's transaction") {
+    // create_session uses a SAVEPOINT rather than a Transaction because callers already
+    // wrap it -- LargeFixture::seed creates sixty sessions inside one outer transaction, and
+    // a nested BEGIN there throws "cannot start a transaction within a transaction". This
+    // pins both halves of that: the inner failure undoes only its own work, and the caller's
+    // transaction survives it intact.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+
+    const auto first = storage->create_session("First goal", FocusMode::Normal);
+
+    // Install the trigger before opening the outer transaction: BEGIN IMMEDIATE takes the
+    // write lock, and a second connection cannot alter the schema while it is held.
+    {
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(db,
+                             "CREATE TRIGGER block_session_insert BEFORE INSERT ON sessions "
+                             "BEGIN SELECT RAISE(ABORT, 'insert blocked'); END;",
+                             nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_close(db) == SQLITE_OK);
+    }
+
+    {
+        Storage::Transaction outer(*storage);
+        CHECK_THROWS_AS(storage->create_session("Second goal", FocusMode::Deep),
+                        std::runtime_error);
+        // The outer transaction is still open and committable. If create_session had used a
+        // Transaction, this line would never be reached -- the constructor would have thrown.
+        CHECK_NOTHROW(outer.commit());
+    }
+
+    const auto active = storage->active_session();
+    REQUIRE(active.has_value());
+    CHECK(active->session_id == first.session_id);
+    CHECK(active->status == "ACTIVE");
+}
+
 TEST_CASE("storage gates prediction and feature writes to active sessions") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());

@@ -435,6 +435,30 @@ void Storage::Transaction::commit() {
     done_ = true;
 }
 
+Storage::Savepoint::Savepoint(Storage& storage, const char* name)
+    : db_(storage.db_), name_(name) {
+    exec(db_, ("SAVEPOINT " + std::string(name_) + ";").c_str());
+}
+
+Storage::Savepoint::~Savepoint() {
+    if (done_) return;
+    // Best-effort rollback; a destructor must never throw, so use the raw API directly.
+    //
+    // ROLLBACK TO undoes the work but leaves the savepoint on the stack — it is not a pop.
+    // The RELEASE is what pops it, and omitting it would leave a savepoint holding the
+    // enclosing transaction open for the rest of the process.
+    char* error = nullptr;
+    const std::string sql =
+        "ROLLBACK TO " + std::string(name_) + "; RELEASE " + std::string(name_) + ";";
+    sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &error);
+    if (error) sqlite3_free(error);
+}
+
+void Storage::Savepoint::release() {
+    exec(db_, ("RELEASE " + std::string(name_) + ";").c_str());
+    done_ = true;
+}
+
 namespace {
 
 // --- Schema migrations -------------------------------------------------------------------
@@ -711,6 +735,20 @@ std::optional<SessionRecord> Storage::get_session(const std::string& session_id)
 }
 
 SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
+    // Roadmap 7.20. Closing the previous session and inserting the replacement are one
+    // atomic step. Split across two statements, a failing insert left the user with *no*
+    // active session: their old one already completed and the requested one absent. That is
+    // strictly worse than either outcome the caller expects, and it is unrecoverable —
+    // nothing afterwards knows the close was meant to be conditional on the insert.
+    //
+    // The rule this preserves is unchanged: starting a session still replaces an existing
+    // one. Only the failure path differs, and only by leaving the old session running.
+    //
+    // Savepoint rather than Transaction because callers already wrap this: the large
+    // storage fixture seeds sessions inside one outer transaction, and a nested BEGIN there
+    // would throw. See Savepoint's comment in storage.hpp.
+    Savepoint savepoint(*this, "create_session");
+
     const std::string ended_at = utc_now_rfc3339();
     {
         Stmt close_active(db_,
@@ -735,6 +773,7 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
     insert.bind(3, r.focus_mode);
     insert.bind(4, *r.started_at);
     insert.step_done();
+    savepoint.release();
     return r;
 }
 

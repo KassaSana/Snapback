@@ -81,6 +81,32 @@ public:
         bool done_ = false;
     };
 
+    // RAII savepoint: Transaction, but nestable.
+    //
+    // SQLite has no nested BEGIN, so a method that needs its own atomicity *and* may be
+    // called from inside a caller's Transaction cannot use Transaction — it would throw
+    // "cannot start a transaction within a transaction". create_session is exactly that
+    // case, as the large storage fixture proves by seeding dozens of sessions inside one
+    // outer transaction.
+    //
+    // SAVEPOINT opens a transaction when none is active and nests when one is, so the same
+    // code is correct either way. Releasing the outermost savepoint commits.
+    class Savepoint {
+    public:
+        // `name` is a SQL identifier and is interpolated, so it must be a literal from our
+        // own source — never user input. Every call site passes a string literal.
+        Savepoint(Storage& storage, const char* name);
+        ~Savepoint();
+        void release();
+        Savepoint(const Savepoint&) = delete;
+        Savepoint& operator=(const Savepoint&) = delete;
+
+    private:
+        sqlite3* db_;
+        const char* name_;
+        bool done_ = false;
+    };
+
     // Sessions
     std::optional<SessionRecord> get_session(const std::string& session_id);
     SessionRecord create_session(const std::string& goal, FocusMode mode);

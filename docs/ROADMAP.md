@@ -55,7 +55,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
 | ~~2~~ | ~~**8.8** release webview debug mode~~ | **Done 2026-08-04** — verified in both Debug and Release builds |
 | ~~3~~ | ~~**8.9** verify ONNX downloads~~ | **Done 2026-08-04** — both jobs verify a pinned SHA-256 before extracting |
-| 4 | **7.20**, then **7.19** | Make session replacement and settings persistence crash-safe before asking users to trust their data |
+| 4 | ~~**7.20**~~, then **7.19** | 7.20 **done 2026-08-04**; settings persistence still needs to be crash-safe before asking users to trust their data |
 | ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
 | 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
 | 7 | **9.11** release-tag trust chain | A `v*` tag must not bypass the full CI and version checks |
@@ -415,15 +415,33 @@ internals, and the benchmark harness.
   recover a last-known-good backup, and log malformed input. Tests must cover malformed JSON,
   a failed final write/replace, and recovery without changing the existing settings schema.
 
-- **7.20 — Replacing the active session is not atomic.** `S`
+- **7.20 — DONE 2026-08-04.** `S` `create_session()` now closes the old session and inserts
+  the replacement in one atomic step. The failure seam is a `BEFORE INSERT` trigger installed
+  from a second connection: `session_id` is a random UUID, so no constraint fixture can
+  predict a collision, and a trigger fails the insert on demand without putting a test hook
+  in production code.
+
+  **It is a `SAVEPOINT`, not a `Transaction`, and that was not the first answer.** Wrapping
+  the two statements in `Transaction` — exactly what this item asked for — passed the new
+  test and broke three others with *"cannot start a transaction within a transaction"*.
+  `LargeFixture::seed` creates sixty sessions inside one outer transaction, and SQLite has no
+  nested `BEGIN`. `SAVEPOINT` opens a transaction when none is active and nests when one is,
+  so the same code is correct from both call shapes. A second test now pins that: an inner
+  failure rolls back only its own work and leaves the caller's transaction committable.
+
+  Two details worth keeping. `ROLLBACK TO` is not a pop — the savepoint stays on the stack
+  until `RELEASE`, so the destructor must issue both or it holds the enclosing transaction
+  open forever. And the negative case was verified by *removing* the fix and watching the
+  test fail on `active_session()` returning nothing, which is the actual user-visible bug.
+
+  Suite: **318 cases, 317 pass**; the one failure is the pre-existing MinGW-only
+  `rollback_model` case tracked in 11.8, identical before and after this change.
+
+  The original finding was:
 
   `Storage::create_session()` first marks every active session completed and only then inserts
   the replacement, without a transaction spanning both statements. If the insert fails, the
   old session is already closed and the requested new one does not exist.
-
-  Perform close-and-create in one transaction. Add a deterministic failure seam or constraint
-  fixture that makes the insert fail, then assert the previous session remains active after
-  rollback. Preserve the current rule that starting a session replaces an existing one.
 
 ### Decisions — do not code these yet
 
