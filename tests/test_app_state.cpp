@@ -240,6 +240,91 @@ TEST_CASE("going idle pauses the session and coming back resumes it") {
     CHECK(recap.active_secs.has_value());
 }
 
+namespace {
+
+// Drives sustained activity for `minutes`, ticking once a minute the way the engine does.
+// Returns every event name the emit hook saw.
+std::vector<std::string> work_without_session(AppState& state, ManualClock& clock, int minutes) {
+    std::vector<std::string> seen;
+    state.set_emit_hook([&seen](const std::string& name, const std::string&, std::uint64_t) {
+        seen.push_back(name);
+    });
+    for (int minute = 0; minute < minutes; ++minute) {
+        clock.advance_minutes(1);
+        AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+        AppStateTestAccess::engine_tick(state);
+    }
+    state.set_emit_hook(nullptr);
+    return seen;
+}
+
+bool contains(const std::vector<std::string>& names, const std::string& wanted) {
+    return std::find(names.begin(), names.end(), wanted) != names.end();
+}
+
+}  // namespace
+
+TEST_CASE("sustained work with no session raises one nudge") {
+    // Roadmap 2.7 / ADR-0005. Without a session AppState records nothing at all, so someone
+    // who forgets to press Start gets no data and no warning. This asks, once, rather than
+    // auto-starting -- an auto-started session has no declared goal, and goal_alignment is a
+    // real model input that Tier 13 trains on.
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto seen = work_without_session(state, clock, 20);
+    CHECK(contains(seen, "untracked_work"));
+    // Latched: one nudge per stretch, not one per tick for the five minutes past the
+    // threshold. Nagging every second is how a useful prompt becomes one people disable.
+    CHECK(std::count(seen.begin(), seen.end(), std::string("untracked_work")) == 1);
+}
+
+TEST_CASE("a running session never raises the untracked nudge") {
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    state.start_session("tracked", FocusMode::Normal);
+    CHECK_FALSE(contains(work_without_session(state, clock, 30), "untracked_work"));
+}
+
+TEST_CASE("brief activity below the threshold raises no nudge") {
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    CHECK_FALSE(contains(work_without_session(state, clock, 5), "untracked_work"));
+}
+
+TEST_CASE("going idle restarts the untracked stretch instead of firing again") {
+    // Walking away ends the stretch. Coming back begins a new one, so the nudge does not
+    // re-fire the moment someone returns to a machine they already declined to track.
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    REQUIRE(contains(work_without_session(state, clock, 20), "untracked_work"));
+
+    // Go idle, which clears the latch and the stretch.
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/false);
+    AppStateTestAccess::engine_tick(state);
+
+    // A short burst after returning is a new, short stretch: no nudge yet.
+    CHECK_FALSE(contains(work_without_session(state, clock, 5), "untracked_work"));
+    // Keep going and it earns one again.
+    CHECK(contains(work_without_session(state, clock, 15), "untracked_work"));
+}
+
 TEST_CASE("replacing a session closes the replaced session's span") {
     // Roadmap 7.23 + 7.20. Starting a session while one runs replaces it, and the replaced
     // session is completed. Its span must close with it -- an open span on a completed

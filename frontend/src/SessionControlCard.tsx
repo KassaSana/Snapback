@@ -13,6 +13,13 @@ type SessionControlCardProps = {
   sessionRecord: SessionRecord | null;
   sessionStatusLabel: string;
   setSessionGoal: (value: string) => void;
+  /**
+   * Set when the user has been working steadily with no session running (Roadmap 2.7 /
+   * ADR-0005). Shown here rather than as a toast because this is where the answer lives:
+   * the Start button is one click away.
+   */
+  untrackedNote: string | null;
+  dismissUntrackedNote: () => void;
 };
 
 export const SessionControlCard = memo(function SessionControlCard({
@@ -25,6 +32,8 @@ export const SessionControlCard = memo(function SessionControlCard({
   sessionRecord,
   sessionStatusLabel,
   setSessionGoal,
+  untrackedNote,
+  dismissUntrackedNote,
 }: SessionControlCardProps) {
   return (
     <section className="card session-card">
@@ -32,6 +41,19 @@ export const SessionControlCard = memo(function SessionControlCard({
         <h2>Session Control</h2>
         <span className="session-status">{sessionStatusLabel}</span>
       </div>
+      {untrackedNote && (
+        <div className="notice notice-untracked" role="status">
+          <p>{untrackedNote}</p>
+          <button
+            type="button"
+            className="link-button"
+            onClick={dismissUntrackedNote}
+            aria-label="Dismiss the untracked work notice"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <label className="field">
         <span>Focus goal</span>
         <input

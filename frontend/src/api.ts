@@ -558,6 +558,13 @@ export const api = {
     }),
   onHyperfocus: (handler: (payload: { message: string }) => void) =>
     listen<{ message: string }>("hyperfocus", (event) => handler(event.payload)),
+  /**
+   * Sustained work with no session running (Roadmap 2.7 / ADR-0005). Nothing is recorded
+   * without a session, so this is the only signal a user gets that their work is going
+   * unmeasured. It asks; it never starts a session on their behalf.
+   */
+  onUntrackedWork: (handler: (payload: { message: string }) => void) =>
+    listen<{ message: string }>("untracked_work", (event) => handler(event.payload)),
   onLabelHotkey: (handler: (payload: LabelHotkeyPayload) => void) =>
     listen<Record<string, unknown>>("label-hotkey", (event) => {
       const raw = event.payload;

@@ -247,6 +247,7 @@ export default function App() {
     handlePrediction: live.handlePrediction,
     handleSnapback: live.handleSnapback,
     handleHyperfocus: live.handleHyperfocus,
+    handleUntrackedWork: live.handleUntrackedWork,
     handlePomodoroEvent,
     refreshTimelineFromEvent: live.refreshTimelineFromEvent,
     setLabelStatus: feedback.setLabelStatus,
@@ -337,6 +338,8 @@ export default function App() {
           sessionRecord={sessionRecord}
           sessionStatusLabel={sessionStatusLabel}
           setSessionGoal={setSessionGoal}
+          untrackedNote={live.untrackedNote}
+          dismissUntrackedNote={live.clearUntrackedNote}
         />
 
         <PomodoroCard

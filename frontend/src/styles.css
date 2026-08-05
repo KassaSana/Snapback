@@ -512,6 +512,41 @@ h1 {
   color: var(--muted);
 }
 
+/* Roadmap 2.7. The "you are working untracked" notice on the session card. Deliberately
+   quiet: it is a prompt, not an error, and the app is telling the user about something it
+   chose not to do for them. */
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.notice-untracked {
+  background: rgba(240, 107, 76, 0.1);
+  border: 1px solid rgba(240, 107, 76, 0.28);
+}
+
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 /* Secondary line under a meta value — currently the elapsed time a session was open, shown
    beneath the attended time that now leads it (Roadmap 7.23). */
 .meta-sub {

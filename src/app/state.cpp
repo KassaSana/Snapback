@@ -191,8 +191,24 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
             pending_span_opens_ ? 0 : idle_detector_.idle_for_ms(now_ms) / 1000;
     }
 
+    // Roadmap 2.7 / ADR-0005. Watch for sustained work with no session running.
+    const bool now_idle = idle_detector_.state() == IdleState::Idle;
+    if (active_session_ || now_idle) {
+        // A session is recording, or the stretch ended. Either way there is nothing to nudge
+        // about, and the clock restarts from the next burst of activity.
+        untracked_since_ms_.reset();
+        untracked_latched_ = false;
+    } else {
+        if (!untracked_since_ms_) untracked_since_ms_ = now_ms;
+        const auto minutes = (now_ms - *untracked_since_ms_) / (60 * 1000);
+        if (!untracked_latched_ && minutes >= kUntrackedNudgeMinutes) {
+            untracked_latched_ = true;
+            untracked_minutes_ = static_cast<std::uint64_t>(minutes);
+        }
+    }
+
     const bool was_idle = idle_;
-    idle_ = idle_detector_.state() == IdleState::Idle;
+    idle_ = now_idle;
     if (idle_ != was_idle) live_read_dirty_ = true;
     return edge;
 }
@@ -916,6 +932,7 @@ void AppState::engine_tick() {
     std::optional<SnapbackPayload> snap_to_emit;
     std::optional<PomodoroStatus> pomodoro_to_emit;
     std::optional<std::uint64_t> hyper_to_emit;
+    std::optional<std::uint64_t> untracked_to_emit;
     std::vector<PersistJob> jobs;
     IdleTransition idle_edge = IdleTransition::None;
     // Roadmap 7.23. The span write cannot happen in phase 1: that phase holds mutex_ and is
@@ -957,6 +974,10 @@ void AppState::engine_tick() {
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
             hyperfocus_minutes_.reset();
+        }
+        if (untracked_minutes_) {
+            untracked_to_emit = untracked_minutes_;
+            untracked_minutes_.reset();
         }
         publish_live_read_unlocked();
     }
@@ -1002,6 +1023,13 @@ void AppState::engine_tick() {
         hook("hyperfocus", nlohmann::json{{"message", note.body},
                                           {"minutes", *hyper_to_emit}}
                                .dump(),
+             tick_activity_epoch);
+    }
+    if (untracked_to_emit) {
+        const auto note = build_untracked_work_notification(*untracked_to_emit);
+        hook("untracked_work", nlohmann::json{{"message", note.body},
+                                              {"minutes", *untracked_to_emit}}
+                                   .dump(),
              tick_activity_epoch);
     }
 }

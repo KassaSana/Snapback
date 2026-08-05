@@ -220,6 +220,18 @@ private:
     // update_idle_unlocked and written by engine_tick under storage_mutex_. Split so the
     // decision sits beside the idle logic that knows why, while the disk write stays out of
     // the lock every UI read takes.
+    // Roadmap 2.7 / ADR-0005. Nothing is recorded without a session, so someone who forgets
+    // to press Start gets no data at all and is never told. This notices sustained work with
+    // no session and asks once per stretch.
+    //
+    // Latched like the hyperfocus nudge, and cleared both when a session starts and when the
+    // user goes idle — going idle ends the stretch, so coming back begins a new one rather
+    // than immediately re-firing.
+    static constexpr std::int64_t kUntrackedNudgeMinutes = 15;
+    std::optional<std::int64_t> untracked_since_ms_;
+    bool untracked_latched_ = false;
+    std::optional<std::uint64_t> untracked_minutes_;  // pending emit, drained by the tick
+
     std::optional<std::string> pending_span_session_;
     std::int64_t pending_span_secs_ago_ = 0;  // how far to back-date a pause
     bool pending_span_opens_ = false;  // true = the user came back, false = they went away

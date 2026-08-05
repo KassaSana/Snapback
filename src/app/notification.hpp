@@ -38,6 +38,21 @@ inline NotificationPayload build_distraction_notification(std::string_view app_n
 }
 
 // Fired when a session runs past the mode's hyperfocus window without a break.
+// Roadmap 2.7 / ADR-0005. Fired when someone has been working steadily with no session open.
+//
+// It asks rather than acts. Auto-starting a session would have to invent a goal, and
+// `goal_alignment` is a real model input that 2.5 scores and Tier 13 trains on — an invented
+// one poisons the corpus. It would also change what gets recorded without being asked, which
+// the onboarding promise does not cover. So the app says "you look like you're working" and
+// leaves the decision where it belongs.
+inline NotificationPayload build_untracked_work_notification(std::uint64_t active_minutes) {
+    NotificationPayload n;
+    n.title = "Not tracking this";
+    n.body = "You've been working for " + std::to_string(active_minutes) +
+             " minutes with no session running. Start one to record it.";
+    return n;
+}
+
 inline NotificationPayload build_hyperfocus_notification(std::uint64_t continuous_minutes) {
     NotificationPayload n;
     n.title = "Time for a break";
