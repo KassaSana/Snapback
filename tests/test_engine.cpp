@@ -122,6 +122,51 @@ TEST_CASE("feature extractor computes rolling keyboard mouse and context feature
     CHECK(features.is_ide() == doctest::Approx(1.0));
 }
 
+// No comma in the name: doctest treats commas as separators in --test-case filters, so a
+// case named "a, b" cannot be selected on its own.
+TEST_CASE("calendar features come from the wall clock rather than the uptime clock") {
+    // Roadmap 7.24. Production-shaped input: `timestamp_secs` is an uptime clock (10 seconds
+    // since boot / process start) while the real time is 2023-11-14T22:13:20Z. Before this,
+    // hour_of_day and day_of_week were derived from the uptime value, so two of the 31 model
+    // inputs answered "how long has this machine been up?" instead of "when is the user
+    // working?" — a 10-second uptime reported hour 0 on a Thursday in 1970.
+    //
+    // The fixtures could never catch it: scenarios.json feeds an epoch-shaped base_time
+    // through timestamp_secs, so the two clocks agree there by construction. That is exactly
+    // the shape of the old seconds_since_session_start bug this file already warns about.
+    constexpr double kMonotonic = 10.0;         // 10s of uptime
+    constexpr double kWall = 1700000000.0;      // 2023-11-14T22:13:20Z, a Tuesday
+
+    FeatureExtractor extractor;
+    extractor.reset_for_session(kMonotonic);
+
+    auto ev = event(EventType::KeyPress, kMonotonic, "Cursor", "main.cpp");
+    ev.wall_clock_secs = kWall;
+    const auto features = extractor.update(ev);
+
+    CHECK(features.hour_of_day() == doctest::Approx(22.0));
+    CHECK(features.day_of_week() == doctest::Approx(1.0));  // Monday = 0, so Tuesday = 1
+
+    // And the monotonic domain is untouched: durations still come from timestamp_secs.
+    CHECK(features.seconds_since_session_start() == doctest::Approx(0.0));
+}
+
+TEST_CASE("an event with no wall clock falls back to the monotonic value") {
+    // The fallback is what keeps the feature-parity contract exact: golden.json supplies
+    // epoch-shaped timestamps through timestamp_secs and no wall clock, so the extractor must
+    // behave exactly as it did before 7.24 for those inputs. Removing this fallback would
+    // silently rewrite every golden hour_of_day to whatever "now" is when the suite runs.
+    constexpr double kEpochShaped = 1700000000.0;
+
+    FeatureExtractor extractor;
+    extractor.reset_for_session(kEpochShaped);
+    const auto features =
+        extractor.update(event(EventType::KeyPress, kEpochShaped, "Cursor", "main.cpp"));
+
+    CHECK(features.hour_of_day() == doctest::Approx(22.0));
+    CHECK(features.day_of_week() == doctest::Approx(1.0));
+}
+
 TEST_CASE("begin_session seeds the session origin from the first event") {
     // The production path: AppState can't supply a start timestamp (wall-clock vs the
     // monotonic event clock), so the origin comes from the first event instead. Before

@@ -73,6 +73,7 @@ LabelSource label_source_parse(const std::optional<std::string>& value) {
 void to_json(json& j, const CaptureEvent& v) {
     j = json{{"event_type", v.event_type},
              {"timestamp_secs", v.timestamp_secs},
+             {"wall_clock_secs", v.wall_clock_secs},
              {"app_name", v.app_name},
              {"window_title", v.window_title},
              {"mouse_x", v.mouse_x},
@@ -83,6 +84,9 @@ void to_json(json& j, const CaptureEvent& v) {
 void from_json(const json& j, CaptureEvent& v) {
     v.event_type = j.at("event_type").get<EventType>();
     v.timestamp_secs = j.at("timestamp_secs").get<double>();
+    // Tolerant: replayed fixtures and older payloads carry no wall clock, and 0 means
+    // "fall back to timestamp_secs" rather than "1970".
+    v.wall_clock_secs = get_or<double>(j, "wall_clock_secs", 0.0);
     v.app_name = get_or<std::string>(j, "app_name", "");
     v.window_title = get_or<std::string>(j, "window_title", "");
     v.mouse_x = get_or<std::int32_t>(j, "mouse_x", 0);

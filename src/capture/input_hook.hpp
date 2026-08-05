@@ -6,11 +6,28 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 
 #include "types.hpp"
 
 namespace snapback {
+
+// Wall-clock seconds since the Unix epoch, for CaptureEvent::wall_clock_secs.
+//
+// Roadmap 7.24. Every backend stamps `timestamp_secs` from an uptime clock, which is right
+// for durations and ordering and catastrophic for calendar features: read as epoch time, an
+// uptime of ten hours says "10:00 on 1 Jan 1970". Each backend stamps this alongside it so
+// hour_of_day and day_of_week describe when the user actually worked.
+//
+// Defined once here rather than per backend so the three cannot drift — the uptime helpers
+// they each define locally are already three subtly different things (GetTickCount64 is
+// since boot; the steady_clock ones are since first call).
+inline double wall_clock_secs_now() {
+    return std::chrono::duration<double>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
 
 // Called from the OS hook thread for every keyboard/mouse event. Keep it fast and
 // allocation-free: on Windows this runs inside the low-level hook and blocks the

@@ -50,8 +50,18 @@ std::chrono::system_clock::time_point unix_time(double seconds) {
             std::chrono::duration<double>(seconds))};
 }
 
-void fill_time_fields(FeatureVector& out, double now_secs) {
-    const std::time_t tt = std::chrono::system_clock::to_time_t(unix_time(now_secs));
+// Roadmap 7.24. `calendar_secs` must be WALL-CLOCK epoch seconds, never the monotonic
+// `timestamp_secs`. Every production backend stamps events from an uptime clock
+// (GetTickCount64 on Windows, steady_clock elsewhere), and feeding that to a calendar
+// function derived hour_of_day and day_of_week from how long the machine had been up —
+// making two of the 31 model inputs depend on the last reboot rather than on when the user
+// worked. The fixtures never caught it because they feed epoch-shaped values directly.
+//
+// UTC is kept deliberately. It is what the deployed model was trained against and what
+// golden.json pins; switching to local time changes the meaning of an input and needs a
+// retrain and a model version bump, not a quiet edit here. See 7.16.
+void fill_time_fields(FeatureVector& out, double calendar_secs) {
+    const std::time_t tt = std::chrono::system_clock::to_time_t(unix_time(calendar_secs));
     std::tm tm{};
 #if defined(_WIN32)
     gmtime_s(&tm, &tt);
@@ -70,6 +80,9 @@ void FeatureExtractor::ingest(const CaptureEvent& ev) {
     // need a prediction occasionally (the engine throttles to ~1/sec) ingest every event
     // but extract on demand, so the O(window) scan runs ~1/sec instead of per event.
     const double now = ev.timestamp_secs;
+    // Remember the most recent wall clock seen. Calendar features describe when the user was
+    // working, so they follow the newest event rather than when extract() happened to run.
+    if (ev.wall_clock_secs > 0.0) last_wall_clock_secs_ = ev.wall_clock_secs;
     // Seed the session origin from the first event of the session (see begin_session).
     // The first event is the earliest moment the event clock and the session agree on.
     if (awaiting_session_start_) {
@@ -144,7 +157,10 @@ FeatureVector FeatureExtractor::update(const CaptureEvent& ev,
 FeatureVector FeatureExtractor::extract(double now, const std::vector<AppRuleRecord>& rules) const {
     FeatureVector out;
     out.timestamp = now;
-    fill_time_fields(out, now);
+    // Wall clock for the calendar fields, monotonic `now` for everything else. Falling back
+    // to `now` when no event has supplied a wall clock keeps the feature-parity fixtures
+    // exact: they pass epoch-shaped values through timestamp_secs and set no wall clock.
+    fill_time_fields(out, last_wall_clock_secs_ > 0.0 ? last_wall_clock_secs_ : now);
 
     if (events_5min_.empty()) return out;
 

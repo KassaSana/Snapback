@@ -130,7 +130,15 @@ struct CaptureContext {
 // CaptureEvent — internal capture-to-engine record. snake_case wire.
 struct CaptureEvent {
     EventType event_type{EventType::KeyPress};
+    // MONOTONIC seconds, from an uptime clock (GetTickCount64 / steady_clock). Owns
+    // durations, ordering, debounce, and the rolling windows. It is NOT epoch time and must
+    // never be handed to a calendar function — Roadmap 7.24 exists because it was.
     double timestamp_secs{};
+    // WALL-CLOCK seconds since the Unix epoch, for calendar features (hour_of_day,
+    // day_of_week). Zero means "not supplied", in which case the extractor falls back to
+    // timestamp_secs — which is what the feature-parity fixtures rely on, since they feed
+    // epoch-shaped values through timestamp_secs directly.
+    double wall_clock_secs{};
     std::string app_name;
     std::string window_title;
     std::int32_t mouse_x{};

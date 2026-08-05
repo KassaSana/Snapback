@@ -59,6 +59,7 @@ void refresh_context(bool emit_change) {
         event.event_type =
             app_changed ? EventType::WindowFocusChange : EventType::WindowTitleChange;
         event.timestamp_secs = now_secs();
+        event.wall_clock_secs = wall_clock_secs_now();
         event.captured_context = g_cached_context;
         g_on_event(std::move(event));
     }
@@ -72,6 +73,7 @@ LRESULT CALLBACK keyboard_proc(int code, WPARAM wparam, LPARAM lparam) {
         }
         CaptureEvent ev;
         ev.timestamp_secs = now_secs();
+        ev.wall_clock_secs = wall_clock_secs_now();
         ev.event_type = (wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN)
                             ? EventType::KeyPress
                             : EventType::KeyRelease;
@@ -90,6 +92,7 @@ LRESULT CALLBACK mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
         const auto* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
         CaptureEvent ev;
         ev.timestamp_secs = now_secs();
+        ev.wall_clock_secs = wall_clock_secs_now();
         ev.event_type = (wparam == WM_MOUSEMOVE) ? EventType::MouseMove
                                                  : EventType::MouseClick;
         if (info) {

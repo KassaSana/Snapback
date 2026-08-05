@@ -714,7 +714,38 @@ internals, and the benchmark harness.
   it against the cost first: this adds a synchronous disk flush to every settings write, and
   8.5's threat model should say whether that trade is worth making.
 
-- **7.24 — Split monotonic event time from calendar time.** `M` **release correctness**
+- **7.24 — DONE 2026-08-05.** `M` **release correctness** `CaptureEvent` now carries
+  `wall_clock_secs` beside the monotonic `timestamp_secs`, all three backends stamp it from
+  one shared `wall_clock_secs_now()` in `input_hook.hpp`, and `fill_time_fields` derives the
+  calendar features from it. Monotonic time keeps durations, ordering, debounce, and the
+  rolling windows; wall time owns only `hour_of_day` and `day_of_week`.
+
+  **The bug was measured, not assumed.** Reverting the one-line fix and re-running the new
+  case produces `hour_of_day = 0` and `day_of_week = 3` for an event 10 seconds after boot —
+  midnight on a Thursday, because 1 Jan 1970 was a Thursday. That is what production was
+  feeding the model.
+
+  **The fallback is what preserves the trainer contract.** With no wall clock supplied the
+  extractor still uses `timestamp_secs`, so `scenarios.json` — which feeds an epoch-shaped
+  `base_time` through `timestamp_secs` and sets no wall clock — produces byte-identical golden
+  features. Both halves are pinned by tests: one asserts the split, the other asserts the
+  fallback, because removing it would silently rewrite every golden `hour_of_day` to whatever
+  the clock said when the suite ran.
+
+  **UTC kept deliberately.** It is what the deployed model was trained against and what
+  `golden.json` pins. Local-versus-UTC is a change in the *meaning* of a model input and needs
+  a retrain and a version bump, not a quiet edit — left to **7.16** and Tier 13 as the item
+  asked.
+
+  One incidental find: doctest treats commas in `--test-case` filters as separators, so a case
+  named "a, b" silently matches nothing and reports success. A mutation check appeared to pass
+  because of it. Test names here avoid commas.
+
+  Suite: **350 cases, 350 pass**, including feature parity unchanged.
+
+  The original finding was:
+
+- **7.24 (original finding) — Split monotonic event time from calendar time.** `M`
   Opened 2026-08-05. All three production capture backends timestamp events with an uptime
   clock: `GetTickCount64()` on Windows and `steady_clock`/process-relative seconds on macOS
   and Linux. `FeatureExtractor::fill_time_fields()`, however, passes that number to

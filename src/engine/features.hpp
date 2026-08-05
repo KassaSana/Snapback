@@ -132,6 +132,10 @@ private:
     double window_seconds_ = 30.0;
     double long_window_seconds_ = 300.0;
     double break_threshold_seconds_ = 300.0;
+    // Roadmap 7.24. Wall-clock epoch seconds from the newest event, used only for the
+    // calendar features. Zero means no event has supplied one, and the extractor falls back
+    // to the monotonic clock — which is how the epoch-shaped parity fixtures keep working.
+    double last_wall_clock_secs_ = 0.0;
     std::unordered_map<std::string, std::uint32_t> app_ids_;
     std::deque<WindowedEvent> events_30s_;
     std::deque<WindowedEvent> events_5min_;

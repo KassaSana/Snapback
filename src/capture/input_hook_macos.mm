@@ -135,6 +135,7 @@ private:
             CaptureEvent ev;
             ev.event_type = map_event(type);
             ev.timestamp_secs = now_secs();
+            ev.wall_clock_secs = wall_clock_secs_now();
             // Read the cache, never query here. This used to call query_active_window()
             // per event, which on macOS shells out to `osascript` (active_window.cpp) —
             // forking a process per keystroke and per mouse-move, inside the tap callback.
@@ -193,6 +194,7 @@ private:
             ev.event_type =
                 app_changed ? EventType::WindowFocusChange : EventType::WindowTitleChange;
             ev.timestamp_secs = now;
+            ev.wall_clock_secs = wall_clock_secs_now();
             ev.captured_context = cached_context_;
             callback_(std::move(ev));
         }
@@ -218,6 +220,8 @@ private:
                     ev.event_type = active->app_name != last_app ? EventType::WindowFocusChange
                                                                  : EventType::WindowTitleChange;
                     ev.timestamp_secs = now_secs();
+                    ev.wall_clock_secs = wall_clock_secs_now();
+            ev.wall_clock_secs = wall_clock_secs_now();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
                     callback_(std::move(ev));

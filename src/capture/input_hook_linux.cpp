@@ -59,6 +59,7 @@ public:
                     if (ev.type != EV_KEY && ev.type != EV_REL && ev.type != EV_ABS) continue;
                     CaptureEvent out;
                     out.timestamp_secs = now_secs();
+                    out.wall_clock_secs = wall_clock_secs_now();
                     if (ev.type == EV_KEY && ev.value == 1) {
                         out.event_type = EventType::KeyPress;
                     } else if (ev.type == EV_REL || ev.type == EV_ABS) {
