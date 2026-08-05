@@ -605,7 +605,9 @@ internals, and the benchmark harness.
 
 ### Product gaps
 
-- **7.6 — There is no way for a user to delete their own data.** `M`
+- **7.6 — DONE 2026-07-30.** `M` Every slice landed; the header lagged the body until
+  2026-08-04, which is the failure mode this file's own preamble warns about — an item that
+  reads as open while the work sits finished underneath it. The history is kept below.
 
   **PARTIAL 2026-07-26, extended 2026-07-29:** Settings provides a two-step, permanent
   “delete all activity data” action. The native command removes sessions, predictions,
@@ -1750,8 +1752,9 @@ structure alone — a real review would likely find more.
   `_for_test` methods in 7.14. One injected clock seam fixes all of it. **Pairs naturally
   with 7.16** — settle what time *is* here, then settle where it comes from.
 
-- **11.5 — Fixture corpus for storage.** `M`
-  Tracked as 7.11; listed here so the testing story is complete in one place.
+- **11.5 — DONE 2026-07-31.** `M` Tracked as 7.11 and closed there when the sixth (large)
+  fixture landed; listed here so the testing story is complete in one place. Marked done
+  2026-08-04 — as a pure cross-reference it kept reading as open work after its target closed.
 
 - **11.8 — DONE 2026-08-04.** `S` Both failures are fixed and the full suite is **328/328 on
   GCC/MinGW for the first time**. Details below; the original finding follows after them.
