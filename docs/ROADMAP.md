@@ -117,6 +117,26 @@ weaken the consent story, so it is not a straightforward win. **7.22 is the chea
 safety win left**: it is one file copy, paid once per schema bump, and it is the difference
 between "your data is gone" and "your data is at this path."
 
+**Two more on 2026-08-05, from reading the product rather than the plumbing:**
+
+| Item | `S`/`M` | The hole |
+|---|---|---|
+| **2.8** snapback has no "take me back" | `M` | It reconstructs exactly where you were, then offers only Dismiss |
+| **7.23** wall-clock session duration | `M` `decision` | A forgotten session reports the night as focus time; nothing auto-stops |
+
+**2.7, 2.8 and 7.23 are one story told three ways.** The session is opened by hand, never
+closed by anything, and the one moment the app *does* understand the user's context perfectly
+— the return from a distraction — it declines to act on. Whoever picks these up should read
+all three before starting any of them; fixing them independently will produce three
+inconsistent answers to "when is a session real?"
+
+**A rejected idea, recorded so it is not re-proposed.** "Hyperfocus nudges must be firing
+falsely on overnight sessions" looked obviously true and is **false**: `update_break_state`
+resets the break clock on any idle event past the threshold, so the nudge path is already
+idle-aware. Only the duration is not. Checking it took one grep and would otherwise have
+become a fix for a bug that does not exist — the third time this file has recorded that
+pattern.
+
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," its remaining release-readiness
 items outrank most product-depth work. 9.1 was that argument's headline item and is now done,
@@ -558,6 +578,36 @@ internals, and the benchmark harness.
   `Storage::create_session()` first marks every active session completed and only then inserts
   the replacement, without a transaction spanning both statements. If the insert fails, the
   old session is already closed and the requested new one does not exist.
+
+- **7.23 — A session left running overnight reports the whole night as focus time.** `M` `decision`
+  Opened 2026-08-05. `duration_secs` is computed in SQL as
+  `julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - julianday(started_at)` — **wall clock,
+  with no idle subtracted** — and nothing anywhere stops or pauses a session. `grep` for
+  `auto_stop`, `pause_session`, or `resume_session` returns nothing.
+
+  So a user who forgets to press Stop gets a 14-hour session in Insights and history, of which
+  eight hours were sleep. That number is the headline of the Review surface, it feeds recaps
+  and session summaries, and 2.3 will train on it as context. **The product's central claim is
+  measuring focus, and its most prominent number is currently "time elapsed since you clicked
+  a button."**
+
+  Note what is *not* broken, because it is instructive: hyperfocus nudges are safe.
+  `evaluate_hyperfocus` reads `minutes_since_last_break()`, and `update_break_state` resets the
+  break clock on any idle event past the break threshold, so an idle night registers as a break
+  rather than as eight hours of unbroken focus. The break clock is idle-aware; the duration is
+  not. Only one of the two was ever taught about idle.
+
+  **`decision`, because the two fixes are not equivalent and one is not reversible.**
+  *Auto-stop after prolonged idle* changes what gets recorded and needs a threshold nobody has
+  chosen — and a session auto-stopped at the wrong moment splits one work block into two, which
+  damages the corpus in a different direction. *Reporting active duration instead of wall clock*
+  changes the meaning of a number already stored in every historical row, so every past session
+  is silently restated. Doing both without deciding the order produces sessions whose duration
+  is neither.
+
+  Recommend deciding alongside **9.10** (retention) and **7.16** (time representation), since
+  all three are about what a stored timestamp is allowed to mean. Ties to **1.5**, which
+  already detects idle, and **7.5**.
 
 - **7.22 — A schema migration that succeeds and is wrong is unrecoverable.** `S`
   Opened 2026-08-05. `Storage::migrate()` runs the whole upgrade in one transaction, so a
@@ -1269,6 +1319,31 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   Recommend the nudge unless 8.5 says otherwise: it is the only one that does not change what
   the app records without being asked. Ties to **1.5** (idle detection already knows when the
   user is active), **7.5**, and **13.5**.
+
+- **2.8 — The snapback knows exactly where you were and cannot take you there.** `M`
+  Opened 2026-08-05. `SnapbackPayload` carries `app_name`, `window_title`, `file_hint`, and a
+  rendered `summary` — "You were editing auth.ts in Cursor". The only command bound to it is
+  `dismiss_snapback`. The user reads where they left off and then navigates back by hand.
+
+  **This is the namesake feature stopping one step short of its own promise.** Everything
+  needed to finish the job is already captured and already on screen; the product recognises
+  the return from distraction, reconstructs the context, renders it, and then asks the user to
+  do the part it could do for them. The gap is an action, not information.
+
+  Add a "Take me back" action beside Dismiss that raises the recorded window.
+  [`src/app/reveal_path.hpp`](../src/app/reveal_path.hpp) is the worked example of the shape
+  this needs: `NSWorkspace` on macOS, `ShellExecuteW` on Windows, an argv array on POSIX,
+  never a shell. Window activation is the harder cousin of path revealing —
+  `SetForegroundWindow` has focus-stealing restrictions on Windows and macOS needs the target
+  app's activation policy to cooperate — so treat "could not raise it" as an ordinary outcome
+  with an honest message, the same way `open_data_folder` returns the path whether or not the
+  open worked.
+
+  Two things to decide while building rather than after. `file_hint` is produced by
+  `title_parser`, whose fabrication bug is **4.11** — acting on a fabricated filename is worse
+  than displaying one, so this should land after that decision. And raising a window is a
+  visible interruption, which is exactly what a focus tool must be careful with: it should be
+  the user's click, never automatic.
 
 - **2.3 — Model retraining loop.** `L` — **unblocked since 5.1; biggest product win left.**
   Wire the `ml/` trainer to consume the exported CSV + the user's own labels → produce a
