@@ -163,6 +163,25 @@ already shown to the user, the second repairs a privacy action already promised 
 and the third removes repeat launch work after measuring it. The remaining seven are parallel
 product/desktop candidates. They do not displace the release-sized correction queue above.
 
+**A strict third pass opened eight more and then stopped.** Each survived a direct overlap
+check against the first twenty-eight additions and against the implementation that landed
+while this audit was running.
+
+| Area | Items | What the strict pass found |
+|---|---|---|
+| Product action | **2.18–2.19** | Rules are global substrings typed from memory, and attended-time reporting has no optional plan to compare against |
+| Local security | **8.13–8.14** | App-owned files inherit ambient permissions, while privileged webview commands survive top-level navigation |
+| Data ownership | **9.16** | “Export my data” silently caps history and can report no truncation after omitting windows |
+| UX/data truth | **10.13–10.14** | Three incompatible row/session counts are called streaks, and every document export/import lacks a native picker |
+| Model availability | **13.8** | Optional model-cleanup debris can prevent the core heuristic app from opening at all |
+
+The correction order inside this group is **8.13 → 8.14 → 9.16 → 10.13**. **2.18–2.19** are
+product candidates, **10.14** is desktop polish shared by several workflows, and **13.8**
+either lands or disappears when **13.7** settles the trainer boundary. Generic scheduled
+backups, cohort comparison, localization, and a separate notification-action item were
+deliberately not opened: their useful scope is already owned, conditional on a later product
+decision, or belongs as acceptance inside an existing item.
+
 **Do not read the first pass as eighteen equal priorities.** The release-sized correction
 queue is **7.24 → 8.10 → 7.23/7.25 → 7.12 → 13.7 → 10.8**. The rest are deliberately
 assignable in parallel after their stated dependencies, with the Tier 2 additions serving as
@@ -652,8 +671,16 @@ internals, and the benchmark harness.
     out as 0. `close_session_span_now(id, secs_ago)` takes an offset so every timestamp on a
     session comes from one clock.
 
+  **Running/Paused landed 2026-08-05.** The engine's `idle` event was emitted from the day
+  idle detection shipped and consumed by nothing, so an active session that had actually
+  stopped counting still displayed as "active". The frontend now subscribes to it and the
+  Session Control card reads **running** / **paused** / **no session** / **completed**. The
+  rule is a pure function in `frontend/src/sessionStatus.ts` with its own test in the `tsx` runner —
+  the component suite cannot run on this machine at all (**11.11**), so anything reachable
+  only through a rendered component is untested locally.
+
   **Still open:** hydrate pause state after a crash (a dangling open span on reopen); close on
-  shutdown; make every active-session surface say **Running** or **Paused**; make the
+  shutdown; make the
   inherited five-minute threshold configurable; and verify whether scroll/mouse movement
   counts as presence before treating it as a trustworthy default. Tests for process reopen
   with an open span still need the injected clock that Storage does not yet have.
@@ -1833,6 +1860,43 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   arrived. Training export emits effective labels only, while the personal export may retain
   the audit trail. Tests must cover repeated clicks, auto→survey supersession, two corrections,
   undo, session deletion, and export. Coordinate lifecycle writes with **7.25**.
+
+- **2.18 — Teach Snapback from the context the user is already looking at.** `M`
+  Opened 2026-08-05. Personal Rules currently asks the user to navigate to Settings and type a
+  substring from memory. That substring matches both app name and title, and every rule is
+  global. Meanwhile verdict feedback and the Review timeline already hold the exact app,
+  title, file, project, and session goal that caused a wrong reading.
+
+  Add **Usually on task** / **Usually distracting** actions beside a live correction,
+  distraction episode, and context row. Before saving, require an explicit scope — exact app,
+  title pattern, or app plus stable goal-category id from **7.28** — and preview how many stored
+  examples would match. Existing rules remain global; this adds a narrower tool rather than
+  silently changing their meaning. One-click means one place to start, not an unreviewed rule.
+
+  Save applies to the next classification tick and offers Undo that restores the exact prior
+  rule set. Pin conflict precedence when a global and goal-scoped allow/block both match, and
+  prove the same Slack/Chrome context can resolve differently for Coding and Communication.
+  State clearly that this tunes classification; it neither blocks applications nor redacts
+  capture (that is **8.11**). Depends on stable context identity in **7.27**, stable category
+  identity in **7.28**, and title-parser policy in **4.11** for title-derived suggestions.
+
+- **2.19 — Add optional attended-time plans and targets.** `M`
+  Opened 2026-08-05. Sessions have a free-text goal and Review has retrospective totals, but
+  nothing records the user's intention for today or this week. A focus score is unsuitable as
+  a target — it is a model opinion — while **7.23** now provides the honest quantity a user can
+  plan: minutes actually present in declared sessions.
+
+  Add opt-in daily and weekly attended-minute targets, off by default. Show unobtrusive live
+  progress on Now and planned-versus-actual in Review; do not add guilt copy, forced streaks,
+  or notifications unless separately enabled through **2.16**. The first slice is total
+  attended time only. Category allocations and calendar scheduling can wait for evidence that
+  the simpler plan is useful.
+
+  Count durable active spans, never session-open duration, prediction rows, or classifier
+  score. Define local-day/week boundaries after **7.16** and test idle/paused sessions,
+  cross-midnight spans, DST, target edits, disabled targets, and legacy sessions with no span
+  measurement. Review comparison composes with **10.11** rather than creating another hidden
+  date range.
 
 - **2.3 — Model retraining loop.** `L` — **blocked on 13.7.**
   The intended loop is exported CSV + the user's labels → a fresh `model.onnx`, opening the

@@ -37,6 +37,7 @@ type UseAppEffectsArgs = {
   handleSnapback: (payload: SnapbackPayload) => void;
   handleHyperfocus: (payload: { message: string }) => void;
   handleUntrackedWork: (payload: { message: string }) => void;
+  handleIdle: (payload: { idle: boolean }) => void;
   handlePomodoroEvent: (status: PomodoroStatus) => void;
   refreshTimelineFromEvent: (sid?: string | null) => void;
 
@@ -65,6 +66,7 @@ export const useAppEffects = ({
   handleSnapback,
   handleHyperfocus,
   handleUntrackedWork,
+  handleIdle,
   handlePomodoroEvent,
   refreshTimelineFromEvent,
   setLabelStatus,
@@ -191,6 +193,11 @@ export const useAppEffects = ({
       }),
     );
     unsubs.push(
+      api.onIdle((payload) => {
+        handleIdle(payload);
+      }),
+    );
+    unsubs.push(
       api.onPomodoro((status) => {
         handlePomodoroEvent(status);
       }),
@@ -211,6 +218,7 @@ export const useAppEffects = ({
     applyPersistenceFailure,
     handleHyperfocus,
     handleUntrackedWork,
+    handleIdle,
     handlePomodoroEvent,
     handlePrediction,
     handleSnapback,

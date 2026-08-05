@@ -20,6 +20,7 @@ import { PrivacyCard } from "./PrivacyCard";
 import { PermissionWizard } from "./PermissionWizard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
+import { sessionStatusLabel } from "./sessionStatus";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
@@ -114,7 +115,6 @@ export default function App() {
     sessionGoal,
     sessionId,
     sessionRecord,
-    sessionStatusLabel,
     setSessionGoal,
     surveyPending,
   } = useSession({
@@ -125,6 +125,15 @@ export default function App() {
     setLabelStatusWarning: feedback.setLabelStatusWarning,
     captureReadiness,
   });
+
+  // Roadmap 7.23 / ADR-0005. A session is now running *or paused*, and the difference is
+  // real: a paused session accrues no attended time. Derived here rather than in useSession
+  // because the idle signal lives in useLiveData, and showing "active" for a session that
+  // stopped counting twenty minutes ago is the confusion this whole item exists to remove.
+  const liveSessionStatusLabel = useMemo(
+    () => sessionStatusLabel(sessionRecord, live.userIdle),
+    [live.userIdle, sessionRecord],
+  );
 
   const {
     canTrainFromExport,
@@ -248,6 +257,7 @@ export default function App() {
     handleSnapback: live.handleSnapback,
     handleHyperfocus: live.handleHyperfocus,
     handleUntrackedWork: live.handleUntrackedWork,
+    handleIdle: live.handleIdle,
     handlePomodoroEvent,
     refreshTimelineFromEvent: live.refreshTimelineFromEvent,
     setLabelStatus: feedback.setLabelStatus,
@@ -336,7 +346,7 @@ export default function App() {
           sessionGoal={sessionGoal}
           sessionId={sessionId}
           sessionRecord={sessionRecord}
-          sessionStatusLabel={sessionStatusLabel}
+          sessionStatusLabel={liveSessionStatusLabel}
           setSessionGoal={setSessionGoal}
           untrackedNote={live.untrackedNote}
           dismissUntrackedNote={live.clearUntrackedNote}

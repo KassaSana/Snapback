@@ -19,6 +19,7 @@ export const useLiveData = () => {
   const [predictionHistory, setPredictionHistory] = useState<PredictionRecord[]>([]);
   const [hyperfocusNote, setHyperfocusNote] = useState<string | null>(null);
   const [untrackedNote, setUntrackedNote] = useState<string | null>(null);
+  const [userIdle, setUserIdle] = useState(false);
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
   const lastTimelineRefreshAtRef = useRef<number | null>(null);
@@ -119,6 +120,10 @@ export const useLiveData = () => {
     setUntrackedNote(payload.message);
   }, []);
 
+  const handleIdle = useCallback((payload: { idle: boolean }) => {
+    setUserIdle(payload.idle);
+  }, []);
+
   // Starting a session is the answer to the nudge, so it clears immediately rather than
   // waiting for the next tick to notice a session now exists.
   const clearUntrackedNote = useCallback(() => setUntrackedNote(null), []);
@@ -149,6 +154,8 @@ export const useLiveData = () => {
     handleSnapback,
     hyperfocusNote,
     untrackedNote,
+    userIdle,
+    handleIdle,
     handleUntrackedWork,
     clearUntrackedNote,
     prediction,

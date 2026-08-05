@@ -565,6 +565,13 @@ export const api = {
    */
   onUntrackedWork: (handler: (payload: { message: string }) => void) =>
     listen<{ message: string }>("untracked_work", (event) => handler(event.payload)),
+  /**
+   * Whether the user has gone away or come back (Roadmap 7.23 / ADR-0005). The engine has
+   * emitted this since idle detection landed; nothing consumed it, so an active session that
+   * was actually paused still displayed as running.
+   */
+  onIdle: (handler: (payload: { idle: boolean }) => void) =>
+    listen<{ idle: boolean }>("idle", (event) => handler(event.payload)),
   onLabelHotkey: (handler: (payload: LabelHotkeyPayload) => void) =>
     listen<Record<string, unknown>>("label-hotkey", (event) => {
       const raw = event.payload;
