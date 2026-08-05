@@ -1737,7 +1737,44 @@ structure alone — a real review would likely find more.
 - **11.5 — Fixture corpus for storage.** `M`
   Tracked as 7.11; listed here so the testing story is complete in one place.
 
-- **11.8 — Two tests fail on a toolchain CI does not cover (GCC/MinGW).** `S`
+- **11.8 — DONE 2026-08-04.** `S` Both failures are fixed and the full suite is **328/328 on
+  GCC/MinGW for the first time**. Details below; the original finding follows after them.
+
+  **Failure 2 was a production bug, not a test bug, and it was not confined to
+  `training_deploy.cpp`.** `copy_options::overwrite_existing` is ignored by libstdc++ on
+  MinGW, so every "replace this file" call site was broken there.
+  [`src/util/fs_replace.hpp`](../src/util/fs_replace.hpp) now provides `copy_over()`
+  (remove-then-copy, portable), and `swap_file`, `swap_optional_file`, and
+  `save_app_settings` all use it.
+
+  **The settings backup had the same bug, written the same day, and its test could not see
+  it.** `save_app_settings` passed `overwrite_existing` through the `std::error_code`
+  overload, so on MinGW it did not throw — it silently did nothing and left a **stale**
+  `settings.json.bak` while reporting success. The 7.19 test saved twice and passed, because
+  two saves never reach the overwrite: the first has no `settings.json` to back up and the
+  second has no `.bak` to replace. Only a *third* save exercises it. That case is now a test.
+  The lesson is about the shape of the gap, not the flag: a test that never reaches the state
+  where the operation has to *replace* something proves only that it can *create* something.
+
+  **Failure 1's flake is fixed and measured.** The precondition wait is now bounded by a
+  5-second deadline instead of 2,000,000 iterations. Over 30 Debug runs it is **30/30**,
+  against the 26/30-failing baseline recorded below. It is still a spin, not a sleep — the
+  measurement has to land between `record_failure()`'s two stores — and the clock is read once
+  per 1024 iterations so reading it cannot widen the window being sampled.
+
+  **But the invariant half of that test does not detect its own bug on this machine, and
+  that is pre-existing.** Reintroducing the 11.1 ordering bug (storing `failed_` before
+  clearing `running_`) leaves the case passing — `contradictions` stays 0. That is *not* a
+  regression from the deadline change: the **original** iteration-count version was
+  re-checked against the same inverted stores and also passed, 10/10. The contradiction
+  window is simply not observable on this hardware/toolchain, so the test's own comment —
+  "With the stores in the wrong order this fails" — is **unverified here** and rests on the
+  MSVC/CI behaviour it was written against. Anyone adding a MinGW job should not read this
+  case as protecting the 11.1 invariant on that toolchain.
+
+  The original finding was:
+
+- **11.8 (original finding) — Two tests fail on a toolchain CI does not cover (GCC/MinGW).** `S`
   Found 2026-08-04 while verifying ADR-0004's C++ changes. This machine had no compiler, so a
   portable GCC 14.2 (MinGW-w64 UCRT) was used; CI only ever builds MSVC on Windows and
   libstdc++ on Linux, so this combination had never been exercised. **Both failures are

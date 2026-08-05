@@ -17,6 +17,7 @@
 #endif
 
 #include "engine/onnx_model.hpp"
+#include "util/fs_replace.hpp"
 
 namespace snapback::training_deploy {
 
@@ -461,14 +462,15 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
 }
 
 void swap_file(const std::filesystem::path& first, const std::filesystem::path& second) {
+    // copy_over, not copy_file + overwrite_existing: libstdc++ on MinGW ignores the flag and
+    // throws "File exists" instead. All three copies here replace an existing destination
+    // (the second and third by definition; the first whenever a previous rollback left its
+    // temp behind), so every one of them hit it. See util/fs_replace.hpp (ROADMAP 11.8).
     const auto temporary = first.string() + ".rollback-temp";
     const std::filesystem::path temp_path(temporary);
-    std::filesystem::copy_file(first, temp_path,
-                               std::filesystem::copy_options::overwrite_existing);
-    std::filesystem::copy_file(second, first,
-                               std::filesystem::copy_options::overwrite_existing);
-    std::filesystem::copy_file(temp_path, second,
-                               std::filesystem::copy_options::overwrite_existing);
+    copy_over(first, temp_path);
+    copy_over(second, first);
+    copy_over(temp_path, second);
     std::filesystem::remove(temp_path);
 }
 
@@ -479,8 +481,7 @@ void swap_optional_file(const std::filesystem::path& first,
     if (first_exists && second_exists) {
         swap_file(first, second);
     } else if (second_exists) {
-        std::filesystem::copy_file(second, first,
-                                   std::filesystem::copy_options::overwrite_existing);
+        copy_over(second, first);
         std::filesystem::remove(second);
     } else if (first_exists) {
         std::filesystem::remove(first);

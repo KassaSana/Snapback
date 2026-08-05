@@ -9,6 +9,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "util/fs_replace.hpp"
+
 namespace snapback {
 namespace {
 
@@ -107,8 +109,10 @@ void save_app_settings(const std::filesystem::path& app_data_dir,
     //    to what the user had; the new settings are simply not applied yet.
     std::error_code ec;
     if (std::filesystem::exists(path, ec) && !ec) {
-        std::filesystem::copy_file(path, backup,
-                                   std::filesystem::copy_options::overwrite_existing, ec);
+        // copy_over, not copy_file+overwrite_existing: the flag is ignored by libstdc++ on
+        // MinGW, and because this call reports through `ec` the failure would be silent —
+        // a stale backup that looks fine. See util/fs_replace.hpp (ROADMAP 11.8).
+        copy_over(path, backup, ec);
         // A failed backup is not worth losing the save over — the rename below is still
         // atomic, so the user's new settings land either way. Only the recovery copy is lost.
         ec.clear();

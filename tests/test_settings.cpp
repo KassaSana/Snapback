@@ -89,6 +89,19 @@ TEST_CASE("saving keeps the previous settings as a backup") {
     REQUIRE(std::filesystem::exists(temp.path / kSettingsBackupFileName));
     CHECK(read_file(temp.path / kSettingsBackupFileName) == first_contents);
     CHECK(load_app_settings(temp.path).private_mode == false);
+
+    // A third save must *overwrite* the existing backup, not leave the stale one. This is
+    // the case the first two saves cannot reach: on save one there is no settings.json to
+    // back up, and on save two there is no settings.json.bak to overwrite. Only here does
+    // the copy actually have to replace something -- which is exactly where libstdc++ on
+    // MinGW ignores copy_options::overwrite_existing (ROADMAP 11.8).
+    const auto second_contents = read_file(temp.path / kSettingsFileName);
+    AppSettings third;
+    third.default_focus_mode = FocusMode::Deep;
+    save_app_settings(temp.path, third);
+
+    CHECK(read_file(temp.path / kSettingsBackupFileName) == second_contents);
+    CHECK(read_file(temp.path / kSettingsBackupFileName) != first_contents);
 }
 
 TEST_CASE("malformed settings recover from the backup and say so") {

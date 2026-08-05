@@ -223,7 +223,23 @@ TEST_CASE("CaptureThread never reports failed and running at the same time") {
     // This samples the window deliberately: spin, don't sleep, so the observation lands
     // inside the microseconds between the two stores. With the stores in the wrong order
     // this fails; with them in the right order it is 0 for 200.
+    // ROADMAP 11.8. The precondition wait below is bounded by a *deadline*, not an iteration
+    // count. It used to spin a fixed 2,000,000 relaxed loads, which is a proxy for time that
+    // varies with the machine and the toolchain: on GCC/MinGW that window closed before
+    // Windows scheduled the hook thread on ~1-2% of attempts, and because one missed attempt
+    // fails the whole case, a ~1% per-attempt miss became an ~87-100% case failure.
+    //
+    // It is still a spin and not a sleep, and that distinction is the whole test. The
+    // measurement below has to land in the microseconds between record_failure()'s two
+    // stores, so this loop must return the instant failed() flips. Only the *bound* changed
+    // — "spin, don't sleep" was always about sampling the window, never about how long to
+    // wait for the precondition.
+    //
+    // The clock is read once per kClockCheckInterval iterations so that reading it cannot
+    // dominate the loop and widen the very window being sampled.
     constexpr int kAttempts = 200;
+    constexpr auto kFailureDeadline = std::chrono::seconds(5);
+    constexpr int kClockCheckInterval = 1024;
     int contradictions = 0;
 
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
@@ -231,10 +247,17 @@ TEST_CASE("CaptureThread never reports failed and running at the same time") {
         CaptureThread capture;
         capture.start(&hook);
 
+        const auto deadline = std::chrono::steady_clock::now() + kFailureDeadline;
         bool failed = false;
-        for (int spin = 0; spin < 2'000'000 && !failed; ++spin) {
+        for (int spin = 0; !failed; ++spin) {
             failed = capture.failed();
+            if (!failed && spin % kClockCheckInterval == 0 &&
+                std::chrono::steady_clock::now() >= deadline) {
+                break;
+            }
         }
+        INFO("attempt ", attempt, ": the hook thread never recorded failure within the "
+             "deadline, so the contradiction window below was never reached");
         REQUIRE(failed);
 
         // The invariant: if the class says it failed, it must already say it is not running.
