@@ -102,6 +102,21 @@ because none of them displaces anything in it. They are listed here so they are 
 have *prevented* a defect that actually shipped to `master`, and 11.9 and 11.10 both get
 easier once it exists.
 
+**Three more were opened on 2026-08-05**, from reading the architecture rather than from
+fixing anything. These are not hygiene — each is a hole in something the app already promises:
+
+| Item | `S`/`M` | The hole |
+|---|---|---|
+| **2.7** manual sessions | `M` `decision` | With no session open, **nothing at all is recorded** — the whole product is gated on remembering to press Start |
+| **9.14** no import path | `M` | Four exports, zero imports; local-only means nothing else holds a copy, so a new laptop loses everything |
+| **7.22** no pre-migration backup | `S` | A migration that *fails* rolls back; one that succeeds and is **wrong** is permanent, and migrations are never edited |
+
+**2.7 is the largest product gap in this file** and is deliberately marked `decision` — the
+obvious fix (auto-start sessions) would put untagged goals into the training corpus and
+weaken the consent story, so it is not a straightforward win. **7.22 is the cheapest real
+safety win left**: it is one file copy, paid once per schema bump, and it is the difference
+between "your data is gone" and "your data is at this path."
+
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," its remaining release-readiness
 items outrank most product-depth work. 9.1 was that argument's headline item and is now done,
@@ -543,6 +558,26 @@ internals, and the benchmark harness.
   `Storage::create_session()` first marks every active session completed and only then inserts
   the replacement, without a transaction spanning both statements. If the insert fails, the
   old session is already closed and the requested new one does not exist.
+
+- **7.22 — A schema migration that succeeds and is wrong is unrecoverable.** `S`
+  Opened 2026-08-05. `Storage::migrate()` runs the whole upgrade in one transaction, so a
+  migration that *fails* rolls back cleanly to the version it started at — that half is
+  already right, and 7.3 got it right deliberately.
+
+  The unhandled case is a migration that **succeeds and is wrong**: a bad `UPDATE`, a dropped
+  column, a botched backfill. The transaction commits, so there is nothing to roll back, and
+  `kSchemaVersion`'s own rule that **a released migration is never edited** means the damage
+  is permanent and ships to everyone who upgrades. The user's only recovery is an
+  `export_my_data` they had to think to run beforehand.
+
+  Copy the database to `focoflow.db.pre-v<N>.bak` immediately before the first schema-changing
+  migration runs, and only then. This costs nothing on a normal launch, because `migrate()`
+  already early-returns when `from == kSchemaVersion` — it is paid once per schema bump, not
+  per start. Keep exactly one such backup, log where it went, and surface the path in
+  diagnostics so a support answer can be "your data is still there, at this path."
+
+  Ties to **9.4** — walking the upgrade path deliberately is what would demonstrate this
+  working, and neither is much use without the other.
 
 - **7.21 — A just-saved settings.json can still be lost to power failure.** `S`
   Opened 2026-08-04 as 7.19's stated residual, recorded here so it is a task rather than a
@@ -1204,6 +1239,37 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 2 — Product & ML depth
 
+- **2.7 — Nothing is recorded unless the user remembers to press Start.** `M` `decision`
+  Opened 2026-08-05. `start_session` is called from exactly two places: the IPC command and
+  the GUI smoke hook. With no active session, `AppState` throws `no active session` and
+  **nothing is written at all** — no predictions, no features, no context snapshots. Capture
+  runs and its events are discarded.
+
+  So the app's entire value is gated on a manual action taken at the moment a user is least
+  likely to think about tooling: the moment they start working. A user who forgets has not
+  degraded data, they have *no* data, and nothing tells them so.
+
+  **This is a decision, not a feature request, because the obvious fix breaks two things.**
+
+  1. *Sessions carry a goal, and the goal is load-bearing.* `goal_alignment` is one of the 31
+     features, and 2.5's goal categories score against it. An auto-started session has no
+     declared goal, so every alignment number computed for it is meaningless — and those rows
+     feed 2.3's training corpus. Auto-start without a goal quietly poisons the very data
+     Tier 13 depends on.
+  2. *It weakens the privacy promise the onboarding wizard makes.* Recording window titles
+     because the user was typing is a materially different consent story from recording
+     because they asked. 1.6 and 8.5 both bear on this.
+
+  Three options, cheapest first. **A nudge** — "you have been active 25 minutes with no
+  session; start one?" — keeps intent explicit and only fixes the forgetting, which is the
+  actual complaint. **Auto-start with an untagged goal**, with those rows excluded from
+  goal-alignment and from training export. **Auto-start with an inferred goal** from the
+  context tracker, which is the most useful and the most presumptuous.
+
+  Recommend the nudge unless 8.5 says otherwise: it is the only one that does not change what
+  the app records without being asked. Ties to **1.5** (idle detection already knows when the
+  user is active), **7.5**, and **13.5**.
+
 - **2.3 — Model retraining loop.** `L` — **unblocked since 5.1; biggest product win left.**
   Wire the `ml/` trainer to consume the exported CSV + the user's own labels → produce a
   fresh `model.onnx`. Opens the door to on-device personalization.
@@ -1643,6 +1709,32 @@ small; the tier is large because nobody has walked that path yet.
 
   Whatever is chosen, cutting a release needs the version bumped first, then a tag on a
   `master` commit CI has proven green.
+
+- **9.14 — There are four ways to get data out and none to get it back in.** `M`
+  Opened 2026-08-05. `export_my_data`, `export_summary_report`, `export_support_bundle`, and
+  `export_training_data` all exist. There is **no import, restore, or migrate-to-a-new-machine
+  path of any kind.**
+
+  For a cloud-synced app that is a non-feature. For this one it is the gap in the central
+  promise: 7.6 and the onboarding wizard say the data is local and yours, and 1.6 says it
+  never leaves the machine — which also means **nothing else is holding a copy**. A new
+  laptop, a reinstall, or a restored disk image loses the history outright, and history is the
+  entire product (trends, streaks, the Tier 13 training corpus).
+
+  Two things make the naive workaround worse than it looks. Copying `focoflow.db` by hand
+  works only until the schema versions differ, and 7.3's downgrade guard then **refuses the
+  file** — correctly, but with no path forward. And 9.8's process-lifetime lock means a copy
+  taken while the app is running can be a torn read of a WAL database.
+
+  Scope it as **replace, not merge**: back up the current database, verify the incoming file
+  opens and migrates, then swap it in. Merging two histories is a different and much larger
+  problem — UUID session ids will not collide, but retention windows, duplicate detection, and
+  conflicting settings all need answers — so state explicitly that it is out of scope rather
+  than leaving it implied.
+
+  Use `VACUUM INTO` for the export side: it produces a consistent single-file snapshot of a
+  live WAL database, which hand-copying does not. Ties to **7.22** (the same backup
+  machinery), **9.4**, and **9.5**.
 
 ---
 
