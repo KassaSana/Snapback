@@ -34,6 +34,10 @@ The React frontend is plain TypeScript and React. It uses the project-owned
 The desktop app is gated behind `SNAPBACK_BUILD_APP=ON`; the headless core builds
 and tests without it.
 
+What has changed, and what is not in a release yet, is in [CHANGELOG.md](CHANGELOG.md).
+**Nothing has shipped as a published release**; the existing `v0.2.0` tag points at a commit
+that is no longer on any branch. See the note at the end of the changelog before cutting one.
+
 ## Layout
 
 ```

@@ -1413,10 +1413,26 @@ small; the tier is large because nobody has walked that path yet.
   from, which makes 4.3 (crash reporting) far less useful when it lands. Single-source it in
   CMake, thread it through to the frontend and diagnostics.
 
-- **9.3 — No CHANGELOG.** `S`
-  There is no `CHANGELOG.md` anywhere. The release workflow is tag-driven, so releases
-  currently ship with no human-readable statement of what changed. Start one now while the
-  history is still recoverable from git and this file's Done archive.
+- **9.3 — DONE 2026-08-04.** `S` [`CHANGELOG.md`](../CHANGELOG.md) exists, in Keep a Changelog
+  form, built from this file's Done archive and the `feat:` history while both were still
+  legible. README links it. It carries a **Known gaps** section as well as the usual ones,
+  because "what this does not do yet" is the part a reader of a v1 release actually needs.
+
+  **Writing it surfaced something worse than a missing file.** The `v0.2.0` tag points at
+  `ba4050f`, which is **not reachable from `master` or any other branch** — same root commit,
+  so history was rewritten underneath the tag and left it orphaned. Meanwhile `master` is
+  **361 commits ahead** and `CMakeLists.txt` still declares `0.2.0`.
+
+  Two consequences, both recorded in the changelog rather than silently fixed:
+
+  1. There is **no published baseline**. Whatever that tag produced does not correspond to any
+     commit that still exists, so nothing can be diffed against it.
+  2. 9.11's new `verify-tag` job **would reject that tag**, correctly, on the reachability
+     check. That is the gate doing its job on the first real case it met.
+
+  Cutting a release therefore needs a version bump first, then a tag on a green `master`
+  commit. Moving or deleting the existing tag is Kassa's call — it rewrites published
+  history — so nothing here touches it.
 
 - **9.4 — Walk the upgrade path once, deliberately.** `M`
   Nobody has ever installed version A and then upgraded to version B. Unknowns worth
