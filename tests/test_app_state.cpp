@@ -199,6 +199,84 @@ TEST_CASE("AppState idle wiring goes AFK after the threshold and wakes on input"
     CHECK_FALSE(state->is_idle());
 }
 
+TEST_CASE("going idle pauses the session and coming back resumes it") {
+    // Roadmap 7.23 / ADR-0005. This is the action idle_detector.hpp documented from the start
+    // ("5 minutes of no input pauses the session") and never performed -- the edges only ever
+    // emitted a UI event.
+    //
+    // Asserts the *wiring*, not the arithmetic: Storage stamps its own timestamps from the
+    // system clock and has no injected one, so a ManualClock here cannot move a duration.
+    // The span arithmetic is proven in test_storage.cpp with explicit timestamps.
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("attend me", FocusMode::Normal);
+    // Starting a session is by definition attending it.
+    CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+
+    // Walk away. The edge fires once the threshold is crossed; the tick writes the pause.
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    CHECK(AppStateTestAccess::update_idle(state, clock.steady_ms(), false) ==
+          IdleTransition::WentIdle);
+    AppStateTestAccess::engine_tick(state);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    // Come back: a new span opens.
+    CHECK(AppStateTestAccess::update_idle(state, clock.steady_ms(), true) ==
+          IdleTransition::WokeUp);
+    AppStateTestAccess::engine_tick(state);
+    CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    state.stop_session();
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    // And the whole thing produced a measurement rather than nothing.
+    const auto recap = state.session_recap(session.session_id);
+    CHECK(recap.active_secs.has_value());
+}
+
+TEST_CASE("idle edges for a session that is not running touch nothing") {
+    // The engine ticks whether or not a session is open. An idle edge with none running must
+    // not create a span against a stale id -- there is nothing being attended.
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("ended already", FocusMode::Normal);
+    state.stop_session();
+
+    AppStateTestAccess::update_idle(state, clock.steady_ms(), true);
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::update_idle(state, clock.steady_ms(), false);
+    AppStateTestAccess::engine_tick(state);
+
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+}
+
+TEST_CASE("a session with no idle edges still records attended time") {
+    // The straightforward path must not depend on an idle transition ever happening: the
+    // first span opens with the session and closes when it stops.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("uninterrupted", FocusMode::Normal);
+    CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
+    state.stop_session();
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    const auto recap = state.session_recap(session.session_id);
+    CHECK(recap.active_secs.has_value());
+}
+
 TEST_CASE("AppState binds Pomodoro to an active session and exposes transition edges") {
     // ROADMAP 7.14: this used to call `start_pomodoro_for_test(100)`, a public method on the
     // shipping class whose only reason to exist was passing `now_ms` in by hand. 11.4's

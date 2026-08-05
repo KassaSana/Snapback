@@ -506,6 +506,14 @@ h1 {
   color: var(--muted);
 }
 
+/* Secondary line under a meta value — currently the elapsed time a session was open, shown
+   beneath the attended time that now leads it (Roadmap 7.23). */
+.meta-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .meta-value {
   margin: 6px 0 0;
   font-weight: 600;

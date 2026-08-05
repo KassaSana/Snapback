@@ -127,6 +127,17 @@ public:
     // missed pause cannot leave two overlapping spans double-counting the same minutes.
     void begin_session_span(const std::string& session_id, const std::string& started_at);
 
+    // The same, stamped from Storage's own clock.
+    //
+    // Callers must use these rather than passing their own "now". Storage stamps
+    // `sessions.started_at` and `ended_at` itself, and AppState carries a separately
+    // injectable clock (11.4) — so an AppState-supplied timestamp and a Storage-supplied one
+    // can come from different clocks entirely, which makes a span's arithmetic against its
+    // own session meaningless. `secs_ago` expresses a back-dated pause as an offset so it
+    // stays on this clock.
+    void begin_session_span_now(const std::string& session_id);
+    bool close_session_span_now(const std::string& session_id, std::int64_t secs_ago = 0);
+
     // Closes the session's open span at `ended_at`. Returns false when none was open, which
     // is an ordinary outcome (already paused, or a session that predates this table) rather
     // than an error. A span is never closed earlier than it started.

@@ -143,6 +143,9 @@ void to_json(json& j, const SessionRecap& v) {
     j = json{{"sessionId", v.session_id},
              {"goal", v.goal},
              {"durationSecs", v.duration_secs},
+             // null rather than 0 when unmeasured, so the UI can tell "we did not track this
+             // session" from "the user was present for none of it".
+             {"activeSecs", v.active_secs ? json(*v.active_secs) : json(nullptr)},
              {"avgFocusScore", v.avg_focus_score},
              {"avgDistractionRisk", v.avg_distraction_risk},
              {"snapbackCount", v.snapback_count},
@@ -153,6 +156,13 @@ void from_json(const json& j, SessionRecap& v) {
     v.session_id = get_or<std::string>(j, "sessionId", "");
     v.goal = get_or<std::string>(j, "goal", "");
     v.duration_secs = get_or<std::uint64_t>(j, "durationSecs", 0);
+    // get_or maps missing *and* null to the default, which is exactly right here: both mean
+    // "not measured", and nullopt is how that is spelled.
+    if (const auto it = j.find("activeSecs"); it != j.end() && !it->is_null()) {
+        v.active_secs = it->get<std::uint64_t>();
+    } else {
+        v.active_secs.reset();
+    }
     v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
     v.avg_distraction_risk = get_or<double>(j, "avgDistractionRisk", 0.0);
     v.snapback_count = get_or<std::uint32_t>(j, "snapbackCount", 0);

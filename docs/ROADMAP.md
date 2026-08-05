@@ -10,13 +10,16 @@ sync — it tracked `2.4b` as a task while this file correctly tracked the same 
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
-**Last synced against the code: 2026-08-01.** The July 31 hardening pass added ranked lock
+**Last audited against the code: 2026-08-05.** The July 31 hardening pass added ranked lock
 ordering, immutable dependency pins, per-case CTest registration, classifier properties,
 the large storage fixture, injected clocks, and private test seams. The August 1 performance
 pass moved hot live reads to an immutable snapshot and added contention/lifecycle coverage.
-Locally, **318 C++ cases** and **86 frontend component tests** pass, frontend unit scripts and
-typecheck are clean. PR #40 then ran the exact merged work through all **15 hosted CI jobs**;
-all passed, including `macos-gui-smoke`.
+The August 5 pass was read-only and did not rerun the suites; it audited production capture,
+session lifecycle, reporting, training, and the full frontend composition. The most recent
+recorded local baselines are **336/336 C++ cases** after 7.22 and **86 frontend component
+tests**, with clean frontend unit scripts and typecheck. PR #40 earlier ran the merged
+hardening baseline through all **15 hosted CI jobs**; all passed, including
+`macos-gui-smoke`.
 
 The formal v1 blocker list is **five of six verified complete**. Decision session A was
 settled on 2026-08-03 by [ADR-0004](adr/0004-verdict-and-opinion.md), leaving **macOS
@@ -71,18 +74,19 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | # | Item | Why now |
 |---|------|---------|
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
-| ~~2~~ | ~~**8.8** release webview debug mode~~ | **Done 2026-08-04** — verified in both Debug and Release builds |
-| ~~3~~ | ~~**8.9** verify ONNX downloads~~ | **Done 2026-08-04** — both jobs verify a pinned SHA-256 before extracting |
-| ~~4~~ | ~~**7.20**, then **7.19**~~ | **Both done 2026-08-04** — session replacement and settings persistence are now crash-safe |
-| ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
-| 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
-| ~~7~~ | ~~**9.11** release-tag trust chain~~ | **Done 2026-08-04** — `verify-tag` gates version, reachability, and CI conclusion |
-| 8 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
-| 9 | **7.16** timestamp representation | Unblocks retention and time-window correctness work |
-| 10 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
-| 11 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
-| 12 | **4.4 / 14.1** performance gate + storage query lane | Measure first; split the SQLite reader only if contention is reproduced |
-| 13 | **2.3 / Tier 13** model retraining | Biggest remaining product-depth project after release decisions |
+| 2 | **7.24** split monotonic and calendar time | Production supplies uptime seconds to calendar features; fix the model inputs while the Apple paperwork runs |
+| 3 | **8.10** make release builds network-silent | The shipped page contacts Google Fonts while the UI promises that nothing leaves the device |
+| 4 | **7.23 / 7.25** finish attended-time + atomic lifecycle | The span storage slice landed; engine wiring, UI state, labels, failure, and restart behavior need one owner |
+| 5 | **7.12** finish the SQL aggregation | The item is reopened: analytics still materializes every prediction and performs a recap N+1 loop |
+| 6 | **13.7** settle the trainer's product boundary | Settings advertises a workflow that requires an `ml/` tree absent from this checkout and from an installed app |
+| 7 | **10.8** make Review charts truthful | Small, user-visible correction: fixed 0–100 scale, real missing-data states, and honest app-count labels |
+| 8 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
+| 9 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
+| 10 | **7.16** timestamp representation | Unblocks retention, Review ranges, and time-window correctness work |
+| 11 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
+| 12 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
+| 13 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
+| 14 | **2.3 / Tier 13** model retraining | Resume only after 13.7 establishes a real shippable trainer boundary |
 
 **Eight items were opened on 2026-08-04** and are deliberately *not* in the table above,
 because none of them displaces anything in it. They are listed here so they are findable:
@@ -107,28 +111,44 @@ fixing anything. These are not hygiene — each is a hole in something the app a
 
 | Item | `S`/`M` | The hole |
 |---|---|---|
-| **2.7** manual sessions | `M` `decision` | With no session open, **nothing at all is recorded** — the whole product is gated on remembering to press Start |
+| **2.7** missed-session nudge | `M` **decided** | ADR-0005 keeps declaration manual and answers forgetting with one latched prompt per active stretch |
 | **9.14** no import path | `M` | Four exports, zero imports; local-only means nothing else holds a copy, so a new laptop loses everything |
-| **7.22** no pre-migration backup | `S` | A migration that *fails* rolls back; one that succeeds and is **wrong** is permanent, and migrations are never edited |
+| ~~**7.22** no pre-migration backup~~ | `S` | **Done 2026-08-05** — `VACUUM INTO` now creates a consistent pre-migration recovery file |
 
-**2.7 is the largest product gap in this file** and is deliberately marked `decision` — the
-obvious fix (auto-start sessions) would put untagged goals into the training corpus and
-weaken the consent story, so it is not a straightforward win. **7.22 is the cheapest real
-safety win left**: it is one file copy, paid once per schema bump, and it is the difference
-between "your data is gone" and "your data is at this path."
+**ADR-0005 has now settled 2.7:** declaration stays manual, presence is measured, and forgetting
+gets a nudge rather than an auto-started untagged session. **7.22 was the cheapest real safety
+win and is now closed**: the backup is paid once per schema bump and gives a bad but
+successfully-committed migration a recovery path.
 
 **Two more on 2026-08-05, from reading the product rather than the plumbing:**
 
 | Item | `S`/`M` | The hole |
 |---|---|---|
 | **2.8** snapback has no "take me back" | `M` | It reconstructs exactly where you were, then offers only Dismiss |
-| **7.23** wall-clock session duration | `M` `decision` | A forgotten session reports the night as focus time; nothing auto-stops |
+| **7.23** attended session time | `M` **decided / in progress** | ADR-0005 chose idle-driven spans; the schema/storage slice has landed, wiring and UI remain |
 
-**2.7, 2.8 and 7.23 are one story told three ways.** The session is opened by hand, never
-closed by anything, and the one moment the app *does* understand the user's context perfectly
-— the return from a distraction — it declines to act on. Whoever picks these up should read
-all three before starting any of them; fixing them independently will produce three
-inconsistent answers to "when is a session real?"
+**ADR-0005 answers the shared 2.7/7.23 question:** a session is declared by the user and real
+only while attended. The nudge preserves declaration; idle transitions open/close durable
+active-time spans; elapsed time keeps its old meaning. **2.8 remains independent** and acts
+only on the user's click. The `session_spans` migration/storage API has landed; engine wiring,
+reporting, and running/paused UI are still open until 7.23 closes.
+
+**The 2026-08-05 cross-cutting audit opened eighteen assignable items and corrected stale
+claims.** It reviewed production paths rather than counting files: each item below
+has a concrete user failure, acceptance boundary, and dependency in its owning tier.
+
+| Area | Items | What the pass found |
+|---|---|---|
+| Correctness | **7.24–7.27**, reopened **7.12** | Clock domains are mixed, session/settings commands are not failure-atomic, capture semantics differ by OS, and analytics still has unbounded/N+1 work |
+| Release/privacy truth | **8.10**, **13.7** | A runtime font request contradicts local-only, while consumer Settings exposes a trainer absent from both this tree and an installed app |
+| Architecture/performance | **14.5–14.6**, expanded **14.4** | The engine polls forever, slow commands block the UI thread, and hidden surfaces fetch data at startup |
+| Product depth | **2.9–2.14** | History is not explorable, recording state is hard to see, repeat work is slow, onboarding stops before first value, Pomodoro is skeletal, and sessions cannot hold a reflection |
+| Frontend/visual quality | **10.8–10.11** | Review charts mislead, Settings leads with internals, CSS tokens are incomplete/light-only, and Review cards describe different periods |
+
+**Do not read that as eighteen equal priorities.** The release-sized correction queue is
+**7.24 → 8.10 → 7.23/7.25 → 7.12 → 13.7 → 10.8**. The rest are deliberately assignable in
+parallel after their stated dependencies, with 2.9–2.14 serving as product candidates rather
+than excuses to delay shipping.
 
 **A rejected idea, recorded so it is not re-proposed.** "Hyperfocus nudges must be firing
 falsely on overnight sessions" looked obviously true and is **false**: `update_break_state`
@@ -137,20 +157,24 @@ idle-aware. Only the duration is not. Checking it took one grep and would otherw
 become a fix for a bug that does not exist — the third time this file has recorded that
 pattern.
 
-Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
-shippable product** — if the goal is "someone else uses this," its remaining release-readiness
-items outrank most product-depth work. 9.1 was that argument's headline item and is now done,
-which is what makes the blocker table below meaningful.
+Beyond the correction queue above, most feature work is opportunistic. **Tier 9 is what turns
+this from a correct program into a shippable product** — if the goal is "someone else uses
+this," its remaining release-readiness items outrank most product-depth work. 9.1 was that
+argument's headline item and is now done, which is what makes the blocker table below
+meaningful.
 
 **Next up is 3.3's external paperwork.** The Apple Developer account has independent lead
 time, so its application should start now; it is the **only** formal blocker left, and the
 small release security and data-integrity findings that used to run in parallel with it
 (8.8, 8.9, 7.19, 7.20, 9.11) are all closed as of 2026-08-04.
 
-Of the release-hardening work outside the blocker list, what remains is **9.12** (choose a
-license — a `decision`, and the repository still has no `LICENSE` at all) and the external
-half of **0.4b** (buy the signing certificate; the packaging defect itself is fixed). The
-only non-decision items left in the sequence above are 3.3 and the ones below row 8.
+The formal count is unchanged, but the August 5 audit added three **ship-before-publish**
+findings outside ADR-0002: **7.24** (wrong production model inputs), **7.23/7.25** (attended
+time and incomplete session failure semantics), and **8.10** (an undisclosed runtime network
+request). **13.7**
+must also stop the normal Settings UI from promising an impossible training path. The other
+release work is **9.12** (choose a licence; there is still no `LICENSE`) and the external half
+of **0.4b** (buy the signing certificate; the packaging defect itself is fixed).
 
 **ADR-0002 release-blocker status as of 2026-08-01:**
 
@@ -163,9 +187,10 @@ only non-decision items left in the sequence above are 3.3 and the ones below ro
 | 5 | **Decision session A** (5.3, 5.4, 1.2, 7.7, 7.18) | ✅ Done 2026-08-03 — [ADR-0004](adr/0004-verdict-and-opinion.md) |
 | 6 | **7.3** schema migrations | ✅ Done 2026-07-29 — `user_version`, an ordered migration list, and a downgrade guard |
 
-Note the shape of what remains: **five of six are verified done and the sixth is paperwork.**
-No design question and no already-scoped implementation gap is left on this formal blocker
-list; the release-hardening findings in 8.8, 8.9, 9.11, and 9.12 are separate.
+Note the shape of the accepted ADR: **five of six are verified done and the sixth is
+paperwork.** No design question remains *inside that formal list*. The code audit findings
+above are separate release gates discovered later; recording them here does not rewrite an
+accepted ADR or pretend the newly observed defects were part of its original six.
 
 ---
 
@@ -579,35 +604,29 @@ internals, and the benchmark harness.
   the replacement, without a transaction spanning both statements. If the insert fails, the
   old session is already closed and the requested new one does not exist.
 
-- **7.23 — A session left running overnight reports the whole night as focus time.** `M` `decision`
-  Opened 2026-08-05. `duration_secs` is computed in SQL as
-  `julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - julianday(started_at)` — **wall clock,
-  with no idle subtracted** — and nothing anywhere stops or pauses a session. `grep` for
-  `auto_stop`, `pause_session`, or `resume_session` returns nothing.
+- **7.23 — Report attended time by pausing sessions across idle spans.** `M`
+  **DECIDED by [ADR-0005](adr/0005-a-session-is-declared-and-attended.md); PARTIAL
+  2026-08-05.** Elapsed `duration_secs` keeps its historical wall-clock meaning. The new
+  headline is active duration: the sum of durable spans during which a manually declared
+  session was attended. Idle pauses; activity resumes; auto-stop is optional cleanup rather
+  than the correctness mechanism.
 
-  So a user who forgets to press Stop gets a 14-hour session in Insights and history, of which
-  eight hours were sleep. That number is the headline of the Review surface, it feeds recaps
-  and session summaries, and 2.3 will train on it as context. **The product's central claim is
-  measuring focus, and its most prominent number is currently "time elapsed since you clicked
-  a button."**
+  **Landed:** schema migration 4, `session_spans`, its session index, and storage operations to
+  open, close, query, and detect spans. Pre-existing sessions deliberately return "not
+  measured" rather than receiving fabricated active time.
 
-  Note what is *not* broken, because it is instructive: hyperfocus nudges are safe.
-  `evaluate_hyperfocus` reads `minutes_since_last_break()`, and `update_break_state` resets the
-  break clock on any idle event past the break threshold, so an idle night registers as a break
-  rather than as eight hours of unbroken focus. The break clock is idle-aware; the duration is
-  not. Only one of the two was ever taught about idle.
+  **Still open:** wire `IdleTransition::WentIdle`/`WokeUp` to close/open spans; create the first
+  span at session start; close it on stop/replacement/shutdown; hydrate pause state after a
+  crash; carry nullable active duration through recap/history/IPC; and make every active
+  session surface say **Running** or **Paused**. Review should headline active time and show
+  elapsed secondarily, with an honest fallback label on legacy sessions. Make the inherited
+  five-minute threshold configurable and verify whether scroll/mouse movement counts as
+  presence before treating it as a trustworthy default.
 
-  **`decision`, because the two fixes are not equivalent and one is not reversible.**
-  *Auto-stop after prolonged idle* changes what gets recorded and needs a threshold nobody has
-  chosen — and a session auto-stopped at the wrong moment splits one work block into two, which
-  damages the corpus in a different direction. *Reporting active duration instead of wall clock*
-  changes the meaning of a number already stored in every historical row, so every past session
-  is silently restated. Doing both without deciding the order produces sessions whose duration
-  is neither.
-
-  Recommend deciding alongside **9.10** (retention) and **7.16** (time representation), since
-  all three are about what a stored timestamp is allowed to mean. Ties to **1.5**, which
-  already detects idle, and **7.5**.
+  Tests need an injected clock across start → idle → wake → stop, process reopen with an open
+  span, repeated edges, clock rollback, replacement, and a legacy session with no spans. The
+  sum must never double-count overlaps or include an idle interval. Coordinate the lifecycle
+  boundary with **7.25** rather than adding a second owner for stop/replacement.
 
 - **7.22 — DONE 2026-08-05.** `S` `Storage::migrate()` now copies the database to
   `focoflow.db.pre-v<N>.bak` immediately before applying any migration, named for the version
@@ -677,6 +696,86 @@ internals, and the benchmark harness.
   entry is a separate write, so syncing only the file still permits losing the rename. Weigh
   it against the cost first: this adds a synchronous disk flush to every settings write, and
   8.5's threat model should say whether that trade is worth making.
+
+- **7.24 — Split monotonic event time from calendar time.** `M` **release correctness**
+  Opened 2026-08-05. All three production capture backends timestamp events with an uptime
+  clock: `GetTickCount64()` on Windows and `steady_clock`/process-relative seconds on macOS
+  and Linux. `FeatureExtractor::fill_time_fields()`, however, passes that number to
+  `system_clock::to_time_t()` and derives `hour_of_day` and `day_of_week` as if it were Unix
+  epoch time.
+
+  That makes two model inputs depend on when the machine or app last started, not when the
+  user worked. The fixture misses it because `fixtures/feature_parity/golden.json` supplies
+  real epoch-shaped timestamps directly. This is the same dangerous shape as the old
+  `seconds_since_session_start` bug: extractor tests are green because they do not use the
+  production clock contract.
+
+  Carry separate monotonic and wall-clock values, or inject a clock that can supply both.
+  Monotonic time owns durations, ordering, debounce, and rolling windows; wall time owns
+  calendar features and persisted presentation timestamps. A production-shaped regression
+  must use something like `monotonic = 10s` plus a known wall time and assert both domains.
+  Decide local-versus-UTC calendar semantics explicitly and version/re-evaluate the deployed
+  model contract before silently changing its inputs. Coordinate with **7.16** and Tier 13,
+  but do not let the broader storage-time ADR delay this production-input correction.
+
+- **7.25 — Make session start, replace, stop, and restart one failure-atomic lifecycle.** `L`
+  Opened 2026-08-05. **7.20 fixed the SQLite half only.** `Storage::create_session()` now
+  closes the prior row and inserts its replacement atomically, but `AppState::start_session()`
+  changes focus mode and resets extractor/tracker/Pomodoro state before that storage call can
+  fail. A failed insert can therefore leave the old database session active with new in-memory
+  state.
+
+  The other paths also disagree. Replacement completes the old session without the automatic
+  label that an explicit stop writes. Storage stop is idempotent, while `AppState` can append
+  another auto-label on a repeated Stop. On restart, the active row is hydrated but its saved
+  focus mode is not restored, and extractor session elapsed time starts again at zero. These
+  are four symptoms of session lifecycle being spread across storage, live state, feature
+  state, and labels without one owner.
+
+  Build one lifecycle operation with a committed storage result as the boundary: no live
+  mutation before persistence succeeds; failure preserves the exact prior session; replace
+  and stop produce exactly one label, enforced idempotently; and restart restores the active
+  row's saved focus mode plus ADR-0005's running/paused span state. Cover failed start,
+  replacement, double-stop, and process reopen. Implement with **7.23** and read **7.16**
+  because active-duration and resume semantics are part of the same aggregate.
+
+- **7.26 — Make settings commands atomic across disk and live behavior.** `M`
+  Opened 2026-08-05. Focus mode, private mode, and exclusions mutate `settings_` (and in some
+  cases publish live state) before `save_app_settings()` runs. If the save throws because the
+  directory is read-only or the disk is full, IPC reports failure but the process keeps the
+  new behavior.
+
+  The privacy case gives this teeth: a failed request to turn private mode *off* can resume
+  processing even though the UI reports that the change failed. **7.19** guarantees a valid
+  JSON file and **7.21** discusses durability; neither gives the user action a strong failure
+  guarantee.
+
+  Validate and persist a candidate first, then commit and publish it as one serialized
+  operation. On failure, retain the exact previous runtime state. Add injected-write-failure
+  and concurrent-setter cases for private mode, exclusions, goal categories, and focus
+  defaults; assert both the returned error and the live snapshot.
+
+- **7.27 — Define and test one capture-event contract across platforms.** `M` for Windows +
+  macOS; `L` including Linux
+  Opened 2026-08-05. The extractor assumes `CaptureEvent` has portable meaning, but each
+  backend currently invents a different one. Windows treats every non-move mouse message as a
+  click, including button-up and wheel traffic. macOS writes mouse speed as zero. Linux maps
+  every `EV_KEY` press, including mouse buttons, to `KeyPress`, leaves kinematics empty, and
+  can query foreground context through `sh`/`xdotool`/`ps` inside the input loop.
+
+  The result is model drift by operating system: macOS has effectively dead mouse features,
+  Windows over-counts clicks, and Linux can mix mouse buttons into typing while spawning work
+  proportional to input volume. **0.3** proved live macOS delivery and **11.3** starts after a
+  normalized event already exists; neither tests this boundary.
+
+  Introduce pure per-platform translation fixtures against one documented event contract:
+  one click per button-down, explicit wheel semantics, consistent speed units, and identical
+  key/button classification. No raw callback or device-read loop may launch a child process;
+  foreground context must be an injectable, cadence-bounded provider. Add live platform
+  distribution smokes (expected nonzero fields). Over a fixed-duration 10,000-event burst,
+  context-probe count must stay within the provider's cadence bound (plus initialization) and
+  remain effectively the same as a zero-event control of equal duration; event count itself
+  cannot increase probe count.
 
 ### Decisions — do not code these yet
 
@@ -899,10 +998,24 @@ internals, and the benchmark harness.
 
 ### Performance
 
-- **7.12 — DONE 2026-07-29.** `M` — all three call sites now aggregate in SQL.
-  `Storage::recent_session_summaries()` replaces `recent_sessions()` + a `recap()` per
-  session (five statements each) with three queries; `Storage::context_app_counts()`
-  replaces the snapshot loops with one.
+- **7.12 — PARTIAL, REOPENED 2026-08-05.** `M` The 2026-07-29 rewrite improved two query
+  families, but its headline claim that "all three call sites now aggregate in SQL" is false.
+  `AppState::analytics()` still materializes every retained prediction through
+  `predictions_since()`, then loops over `recent_sessions(200)` and calls `recap()` for each
+  completed row — an N+1 path whose per-session query cost grows whenever recap gains another
+  aggregate, all under the UI-facing storage lock.
+  `summary_report()` also materializes every prediction in its day/week window.
+
+  Finish the job before benchmarking **14.1**: SQL should return final counts, averages,
+  hourly buckets, and streaks in constant query count, with no full `PredictionRecord` vector
+  and no per-session `recap()` calls. Preserve local-hour behavior while **7.16** is unsettled.
+  The 12,000-row fixture must prove field-for-field parity; add a 90-day same-host benchmark
+  that records p50/p99, peak memory, query count, and concurrent-writer delay. Use relative
+  improvement and bounded materialization as the gate, not a flaky absolute CI duration.
+
+  **What did land on 2026-07-29:** `Storage::recent_session_summaries()` replaced the
+  `recent_sessions()` + `recap()` loop in history and summary paths with three queries, and
+  `Storage::context_app_counts()` replaced the snapshot loops with one.
 
   The part worth reviewing is what was **preserved**: the per-session snapshot cap. It exists
   only because the old code passed a limit to a paginated API, but it changes the answer — it
@@ -915,8 +1028,9 @@ internals, and the benchmark harness.
   compares batched output against `recap()` field by field rather than against hand-written
   numbers.
 
-  **Not covered: whether this is fast enough.** The rewrite removes O(N) round trips, but
-  nothing measures it. 7.11's large fixture landed 2026-07-31 and now pins *correctness* at
+  **Not covered: whether even the completed part is fast enough.** The batched history and
+  summary paths remove O(N) round trips, but nothing measures them. 7.11's large fixture
+  landed 2026-07-31 and now pins *correctness* at
   12,000 rows — batched output matches the per-session path field by field across 60 sessions
   — but it deliberately asserts no timing, because wall-clock bounds on a shared CI runner buy
   flakes rather than signal. Still needs 4.4's perf gate. Treat the win as structural, not
@@ -1296,6 +1410,22 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   workflow downloads, so its broad claim that fetched dependencies are immutable was
   incomplete.
 
+- **8.10 — Make the shipped application network-silent by default.** `S` **release privacy**
+  Opened 2026-08-05. `frontend/index.html` makes one Google Fonts stylesheet request covering
+  two font families, and the CSP explicitly permits `fonts.googleapis.com` and
+  `fonts.gstatic.com`. `frontend/public/snapback.html` contains its own separate request. At
+  the same time the
+  Privacy card says **"Nothing leaves this device"**, and `inline-bundle.mjs` says the shipped
+  page makes zero subresource requests. Both promises are currently false on an online first
+  launch; offline launch silently gets different typography.
+
+  Use a system stack or bundle licensed font files locally, including their licence under
+  **9.12**. Remove the remote CSP origins and the stale secondary HTML dependency. Add a
+  release-build guard that rejects any `http:`/`https:` script, style, font, image, preconnect,
+  or other automatic subresource in the final HTML. Verify the packaged page with networking
+  disabled and with an outbound-request probe. Explicit user actions such as a future update
+  check are a separate, disclosed policy; normal rendering must perform none.
+
 ---
 
 ## Tier 1 — Ship a polished Windows-first v1
@@ -1319,36 +1449,23 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 2 — Product & ML depth
 
-- **2.7 — Nothing is recorded unless the user remembers to press Start.** `M` `decision`
-  Opened 2026-08-05. `start_session` is called from exactly two places: the IPC command and
-  the GUI smoke hook. With no active session, `AppState` throws `no active session` and
-  **nothing is written at all** — no predictions, no features, no context snapshots. Capture
-  runs and its events are discarded.
+- **2.7 — Remind an active user who forgot to start a session.** `M` **DECIDED 2026-08-05**
+  [ADR-0005](adr/0005-a-session-is-declared-and-attended.md) settles the consent question:
+  sessions remain manually declared and Snapback never auto-starts recording. With no active
+  session, capture events still pass through in-memory feature extraction/classification, but
+  no prediction, feature snapshot, or context row is persisted. The product closes the missing
+  history gap with a latched nudge rather than an inferred/untagged session.
 
-  So the app's entire value is gated on a manual action taken at the moment a user is least
-  likely to think about tooling: the moment they start working. A user who forgets has not
-  degraded data, they have *no* data, and nothing tells them so.
+  Implement "you have been active N minutes with no session; start one?" using the existing
+  idle/activity signal. It fires once per continuous active stretch, resets after idle or an
+  explicit dismissal interval, and opens the deliberate goal/mode start flow rather than
+  creating a session itself. Private mode and excluded apps cannot advance the nudge timer.
+  Add injected-clock tests for activity, idle reset, dismissal, session start/stop, and app
+  restart. Coordinate the prompt with **2.11** so it reuses the same validated start action.
 
-  **This is a decision, not a feature request, because the obvious fix breaks two things.**
-
-  1. *Sessions carry a goal, and the goal is load-bearing.* `goal_alignment` is one of the 31
-     features, and 2.5's goal categories score against it. An auto-started session has no
-     declared goal, so every alignment number computed for it is meaningless — and those rows
-     feed 2.3's training corpus. Auto-start without a goal quietly poisons the very data
-     Tier 13 depends on.
-  2. *It weakens the privacy promise the onboarding wizard makes.* Recording window titles
-     because the user was typing is a materially different consent story from recording
-     because they asked. 1.6 and 8.5 both bear on this.
-
-  Three options, cheapest first. **A nudge** — "you have been active 25 minutes with no
-  session; start one?" — keeps intent explicit and only fixes the forgetting, which is the
-  actual complaint. **Auto-start with an untagged goal**, with those rows excluded from
-  goal-alignment and from training export. **Auto-start with an inferred goal** from the
-  context tracker, which is the most useful and the most presumptuous.
-
-  Recommend the nudge unless 8.5 says otherwise: it is the only one that does not change what
-  the app records without being asked. Ties to **1.5** (idle detection already knows when the
-  user is active), **7.5**, and **13.5**.
+  The rejected auto-start options remain important context: a session has a declared goal,
+  `goal_alignment` feeds the model, and window-title capture is consent-sensitive. Guessing a
+  goal or writing untagged rows would weaken both the training corpus and the privacy promise.
 
 - **2.8 — The snapback knows exactly where you were and cannot take you there.** `M`
   Opened 2026-08-05. `SnapbackPayload` carries `app_name`, `window_title`, `file_hint`, and a
@@ -1375,9 +1492,92 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   visible interruption, which is exactly what a focus tool must be careful with: it should be
   the user's click, never automatic.
 
-- **2.3 — Model retraining loop.** `L` — **unblocked since 5.1; biggest product win left.**
-  Wire the `ml/` trainer to consume the exported CSV + the user's own labels → produce a
-  fresh `model.onnx`. Opens the door to on-device personalization.
+- **2.9 — Turn session history into a real session explorer.** `M/L`
+  Opened 2026-08-05. Past sessions currently appear chiefly inside the destructive "Delete a
+  session" area, history is capped at 20, and the context timeline is tied to the current
+  session. The app records the detail needed to explain a workday, but Review cannot answer
+  the basic question "what happened in that session last Tuesday?"
+
+  Add ordinary selectable history, separate from deletion. A detail view should combine the
+  goal/mode/times, recap, focus curve, snapbacks, captured context, and labels for any chosen
+  session; support goal/app/date search, mode/verdict filters, and cursor-based pagination.
+  Deletion stays a secondary confirmed action, and "repeat this goal" should hand off to the
+  deliberate start flow rather than begin recording on selection. Do not load the entire
+  database into the browser. This needs per-session query commands and should follow **7.16**
+  and align with **14.3**'s command contract.
+
+- **2.10 — Make recording/privacy state visible and pausable from anywhere.** `M`
+  Opened 2026-08-05. The header says capture is running or idle without incorporating private
+  mode, the private toggle is buried in Settings, and the tray offers only Show and Quit. For
+  software that observes window titles, "am I recording right now?" should never require
+  navigation.
+
+  Define one status model shown in the header and tray: **Recording**, **Paused for idle**,
+  **Paused privately**, **No session**, and **Blocked/error**. Provide one-click privacy pause/
+  resume plus 15/30/60-minute pauses with a visible remaining time. A timed pause must warn
+  before processing resumes and survive window close/reopen without silently changing meaning.
+  The tray and dashboard must drive the same command and cannot disagree. Build after **7.26**
+  and consume **7.23**'s running/paused state rather than inventing a frontend-only version.
+
+- **2.11 — Make the session cockpit fast, state-aware, and safe.** `M`
+  Opened 2026-08-05. Start and Stop are always enabled, a blank goal silently does nothing,
+  duplicate clicks can issue duplicate requests, and the prominent running-session metadata
+  is a raw UUID rather than elapsed work time. Every new UI session also starts with an empty
+  goal even though recent history already knows what the user repeats.
+
+  Idle state should offer inline goal validation, Enter-to-start, recent unique goals,
+  **Repeat last**, and reorderable pinned presets containing goal + focus mode (optionally a
+  Pomodoro preset). Active state should show goal, mode, **Running/Paused** from 7.23, live
+  elapsed/active time, one Stop action, and an explicitly guarded "start a different session"
+  path. Disable actions while
+  pending, make duplicate clicks idempotent, and move the UUID into copyable technical
+  details. Presets never auto-start, so this reduces friction while preserving ADR-0005's
+  explicit-declaration boundary. Backend timestamps, not a browser-only counter, remain the
+  source of truth.
+
+- **2.12 — Extend onboarding through the first useful result.** `M`
+  Opened 2026-08-05. `PermissionWizard` disappears once capture is available. It explains OS
+  permission and default mode, but never teaches the product loop: choose a goal, start, read
+  a verdict, correct it, stop, and inspect the recap. A successful permission grant is not
+  the same as reaching value.
+
+  Add an optional, state-driven continuation that walks through one short real session and
+  its Review result. Each step advances from actual app state rather than a Next button;
+  failures route to the relevant recovery UI. It must be skippable, resumable from Help, and
+  safe to repeat without generating fake records or labels. Instrument only local completion
+  state — no analytics service is implied by this item. This extends completed **1.1** rather
+  than replacing the OS-permission wizard.
+
+- **2.13 — Finish the Pomodoro workflow rather than stopping at start/stop.** `M`
+  Opened 2026-08-05. The existing state machine hardcodes 25/5/15-minute phases, while IPC and
+  `PomodoroCard` expose only start and stop. There is no pause/resume, skip, restart, long-break
+  cadence setting, or durable indication when the main window is hidden.
+
+  Persist work/break lengths and long-break interval; add pause/resume, skip, and restart;
+  explicitly decide optional automatic phase starts; and deliver in-app/native phase alerts.
+  Remaining time must be visible from the tray while the dashboard is hidden. Persist the
+  active phase and its wall-clock deadline: relaunch resumes a future deadline, while an
+  already-passed deadline restores at zero and waits for acknowledgement rather than silently
+  advancing through phases while the app was absent. State-machine tests must cover restart,
+  that relaunch policy, session replacement, and simultaneous session stop.
+  macOS native alerts remain downstream of **3.3**, but the portable behavior need not wait.
+
+- **2.14 — Add an optional end-of-session reflection.** `M`
+  Opened 2026-08-05. The current check-in records only a coarse focus label and the recap is
+  metrics-only. That helps model training, but it does not preserve what the user accomplished
+  or the next step that makes tomorrow's restart easier.
+
+  Add optional "What got done?" and "Next step" fields, with Skip remaining one click. Store
+  them separately from ML label notes; exclude them from training unless a later decision says
+  otherwise. Reflections are editable from the session detail in **2.9** and appear in the
+  readable personal export. This requires an append-only schema migration; use **7.22**'s
+  pre-migration backup and add a real prior-version upgrade case for the new field.
+
+- **2.3 — Model retraining loop.** `L` — **blocked on 13.7.**
+  The intended loop is exported CSV + the user's labels → a fresh `model.onnx`, opening the
+  door to on-device personalization. The earlier entry assumed an `ml/` trainer was present;
+  the 2026-08-05 audit found that directory absent while the UI still requires it. **13.7 must
+  first decide whether this is a packaged user feature or developer tooling.**
 
   **Do not start this as one item — it is at least seven.** The operational half (versioning,
   evaluation gates, rollback, drift, and whether enough labelled data even exists) is broken
@@ -1843,11 +2043,11 @@ small; the tier is large because nobody has walked that path yet.
 
 ---
 
-## Tier 10 — Frontend & UX (largely un-reviewed)
+## Tier 10 — Frontend & UX
 
-**Flagged honestly: the frontend was inventoried, not reviewed.** 40 source files, 22 test
-files, all component/unit tests with mocked IPC. The items below are the ones visible from
-structure alone — a real review would likely find more.
+The frontend was inventoried in July and reviewed end-to-end on 2026-08-05: composition,
+loading behavior, chart semantics, session controls, Settings hierarchy, privacy copy, and
+the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser boundary.
 
 - **10.1 — Nothing tests the real binary against the real UI.** `L`
   There is **no E2E framework** — no Playwright, no Cypress, nothing in
@@ -1926,6 +2126,62 @@ structure alone — a real review would likely find more.
   were "the tests never exercised the production branch" (`seconds_since_session_start`, 7.1,
   5.3), a coverage report is the cheapest tool for finding the next one. `gcov`/`llvm-cov` on
   the Linux CI job.
+
+- **10.8 — Make Review charts and labels tell the truth.** `S`
+  Opened 2026-08-05. `AnalyticsCard` divides each hourly focus score by the largest value in
+  the current dataset. If the user's best hour scores 20/100, that bar is drawn at full
+  height. A missing hour is rendered exactly like a measured zero. The same card labels
+  `context_app_counts()` rows as app "switches", although the query counts periodic context
+  snapshots as well as actual changes.
+
+  Use a fixed 0–100 axis with visible references; render no-data gaps distinctly from zero;
+  and include the bucket's sample count/distraction rate in accessible detail. Either relabel
+  the app metric as sampled context or define and query a real switch/dwell metric — do not
+  rename the SQL count by wish. Geometry/ARIA tests must cover a low-only dataset, a genuine
+  zero, missing hours, and periodic snapshots. This is data correctness, not a substitute for
+  the broader accessibility audit in **10.3**.
+
+- **10.9 — Add second-level hierarchy inside Settings.** `S/M`
+  Opened 2026-08-05. Settings currently opens with model training, followed by goal
+  categories, diagnostics, raw signals, rules, ordinary settings, privacy, and permissions
+  in one card stream. The global header permanently exposes classifier backend, model file,
+  and quality state. The product reads like an engineering console before it reads like a
+  focus tool.
+
+  Preserve ADR-0003's three top-level surfaces, then group Settings into **General**,
+  **Focus**, **Privacy & permissions**, and **Advanced/developer**. Training, raw signals, and
+  logs are collapsed by default; one compact health badge opens technical details, while a
+  real actionable failure may reveal the relevant section automatically. At the default
+  1100×760 window, common settings must be reachable without scrolling through developer
+  controls. Add navigation/focus tests and keep deep links for support instructions.
+
+- **10.10 — Build a complete visual-token and appearance system.** `M`
+  Opened 2026-08-05. `styles.css` declares `color-scheme: light`, duplicates semantic colors
+  as literals, and references undefined custom properties including `--border`, `--card`, and
+  `--text`. The browser silently drops those declarations, so some borders/text depend on
+  fallback context rather than an intentional design system.
+
+  Define semantic tokens for canvas, surface, border, text, controls, charts, and each focus/
+  error state. Add persisted **System / Light / Dark** appearance with System as the default;
+  every state retains text or icon meaning beyond color. Add a guard for undefined custom
+  property references, light/dark visual snapshots for the three surfaces and overlay, and
+  automated contrast checks. Coordinate with **10.3**, including disabling card-rise and
+  other nonessential animation under `prefers-reduced-motion` rather than replaying it on
+  every surface switch.
+
+- **10.11 — Give the whole Review surface one shared time range.** `M/L`
+  Opened 2026-08-05. Trends describes all retained predictions, Summary chooses 24 hours or
+  seven days, Recent Focus is framed as a sample count, and Insights uses its own recent-row
+  limit. Placing those cards together implies comparison even though they describe different
+  populations.
+
+  Add a Review-level **Today / 7d / 30d / All / custom** range owned by the Review workflow.
+  Every card must query and display that exact interval; no card may apply a hidden row cap.
+  Loading, empty, error, and stale-result behavior belong to the range as one unit. Add
+  workflow tests proving one change invalidates every Review dataset once and an older slow
+  response cannot overwrite the newer range. Land after **7.16** defines calendar boundaries
+  and **7.12** makes those queries bounded; implement through **14.4**, not another set of
+  cross-card callbacks in `App.tsx`.
 
 ---
 
@@ -2143,6 +2399,26 @@ structure alone — a real review would likely find more.
 
   Neither blocks release. **They become blocking the moment anyone adds a MinGW job**, which
   is the only reason this is written down.
+
+- **11.11 — The frontend component suite cannot run on the dev machine's Node.** `S`
+  Found 2026-08-05 while wiring 7.23 through the UI. `npm run test` fails **44 of 87** cases
+  with `TypeError: Cannot read properties of undefined (reading 'clear')` on
+  `window.localStorage` — jsdom is not providing a DOM at all. `vite.config.ts` correctly sets
+  `environment: "jsdom"`, and the lockfile and installed trees agree (vitest 4.1.10, jsdom
+  29.1.1), so nothing is out of sync.
+
+  **The difference is Node.** This machine runs **v26.5.1**; CI pins **22**
+  (`actions/setup-node` in both workflows). Confirmed pre-existing and unrelated to 7.23 by
+  stashing every frontend change and re-running: identical 9/19 files, 44/87 cases.
+
+  The consequence is not "some tests are red" — it is that **the component suite cannot be run
+  before pushing**, so 10.5's coverage floor and every component regression are enforced only
+  in CI. `npm run typecheck` still works, which is what 7.23's frontend change was verified
+  with.
+
+  Pin the toolchain rather than chasing the symptom: add `engines` and an `.nvmrc` naming the
+  Node CI uses, so a mismatch is stated instead of discovered as a wall of DOM errors. Then
+  decide separately whether to move both to a newer Node.
 
 - **11.9 — The capture contradiction invariant is unverified outside MSVC.** `S`
   Opened 2026-08-04 by 11.8's fix. `CaptureThread never reports failed and running at the same
@@ -2364,14 +2640,15 @@ later moved.
 
 ## Tier 13 — Model lifecycle (breaking down 2.3)
 
-**2.3 was one `L` item that hid at least six.** The deployment identity, quality gate, and
-rollback are complete as 13.1–13.4 in the Done archive. The two unresolved product decisions
-below still determine whether and how the retraining loop should operate.
+**2.3 was one `L` item that hid at least seven.** The deployment identity, quality gate, and
+rollback are complete as 13.1–13.4 in the Done archive. The three unresolved product decisions
+below still determine whether, where, and how the retraining loop should operate.
 
 - **13.5 — Is there enough labelled data to train on at all?** `S` `decision`
-  Unexamined. Labels come from explicit user submissions plus auto-labels at session end —
-  and per **7.5** the auto-label path is skipped for any session not stopped through the UI,
-  so the corpus is both small and biased. Before building the loop, measure: how many labels
+  Unexamined. Labels come from explicit user submissions plus auto-labels at session end.
+  **7.5** unified explicit and shutdown stop, but **7.25** found the broader lifecycle still
+  has holes: replacement can omit an auto-label and repeated Stop can add another. Before
+  building the loop, first make label production idempotent, then measure: how many labels
   does a typical week produce, and what's the class balance? If the answer is "40 labels,
   90% PRODUCTIVE," personalization is premature and 2.3 should be rescoped to *collecting*
   data well rather than training on it.
@@ -2393,6 +2670,28 @@ below still determine whether and how the retraining loop should operate.
   tests need cleanup guards for leaked singleton state. Put model lifecycle behind an owned
   classifier adapter without changing the chosen policy. Do not make that seam change first;
   it would disguise a behavior decision as architecture cleanup.
+
+- **13.7 — Decide the trainer's real product boundary.** `S` `decision` → then `L`
+  Opened 2026-08-05. The current consumer UI asks for a Snapback repository path and reports
+  readiness only when that directory contains `ml/pipeline_cli.py`; its help text tells the
+  user to install `ml/requirements-train.txt`. **This checkout contains no `ml/` directory at
+  all**, and a packaged application would not normally include a source checkout. The first
+  card in Settings therefore advertises a path that neither this tree nor an installed build
+  can satisfy.
+
+  Choose one honest product:
+
+  1. **Packaged on-device training** — restore/replace the pipeline, package its runtime and
+     licences, invoke it without a repo path, publish progress/cancellation through **14.6**,
+     and test the installed artifact rather than a developer checkout.
+  2. **Developer-only model tooling** — keep export/deploy internals behind an explicit dev
+     build or Advanced flag, remove the impossible consumer instructions, and make **2.3** a
+     repository tooling project rather than an end-user feature.
+
+  Record the choice before more lifecycle work. Acceptance is a packaged smoke in option 1,
+  or zero training controls/instructions in a normal release in option 2. The current third
+  state — a prominent workflow whose required files do not exist — is not an acceptable
+  fallback.
 
 ---
 
@@ -2454,7 +2753,7 @@ below still determine whether and how the retraining loop should operate.
 
 ---
 
-## Tier 14 — Architecture leverage (2026-08-01 deep-module scan)
+## Tier 14 — Architecture leverage (2026-08-01 and 2026-08-05 deep-module scans)
 
 These are not “large file” complaints. Each item identifies a shallow seam where callers
 must understand implementation details. Only work with a concrete acceptance boundary is
@@ -2513,6 +2812,48 @@ kept here; already-deep modules and completed performance work were rejected dur
   which one public action proves every required invalidation without `App` manually calling
   each refresh function. Schedule this after release blockers; it is locality leverage, not a
   prerequisite to ship.
+
+  **Performance acceptance added 2026-08-05.** The default surface is Now, but mount currently
+  fetches health, latest prediction, rules, training status, insights, focus summary,
+  analytics, and active session immediately; `useAnalytics` also performs its own duplicate
+  mount fetch. An active session polls context history even while Review is hidden. The new
+  workflows must make hydration surface-aware: initial Now renders with zero Review/Settings
+  data calls, first surface entry fetches each dataset once, re-entry uses cached data until a
+  real invalidation, and no timeline query runs while Review is hidden. Deduplicate in-flight
+  requests and prevent an older response from overwriting newer state. Prefer a native
+  "context snapshot persisted" invalidation to refreshing history on ordinary prediction
+  events. Pin command counts in workflow tests.
+
+- **14.5 — Replace the fixed 10 Hz engine poll with deadline-aware, bounded work.** `M`
+  `performance`
+  Opened 2026-08-05. The engine calls `engine_tick()` and sleeps 100 ms forever, including
+  when there is no session and no event. Inside a cycle it drains until the capture queue is
+  empty while holding the state lock; under sustained input, idle/Pomodoro work, persistence,
+  emissions, stop, and session actions wait behind an unbounded drain.
+
+  Build this with or after **14.2**'s deterministic cycle. Wake on capture arrival, stop/
+  lifecycle requests, and the next idle/Pomodoro deadline. Give each cycle a fixed event or
+  time budget, preserve event order across batches, and publish queue depth/high-water mark
+  plus maximum drain time in diagnostics. A quiet minute should execute only deadline-required
+  cycles rather than roughly 600; a continuous-producer test must prove stop and timer events
+  cannot starve. Record same-host idle CPU/wakeups and event-to-prediction p95 before/after,
+  with instrumentation overhead below 1%. ADR-0005 keeps sessions explicit, so also measure
+  and eliminate unnecessary no-session classifier work without breaking **2.7**'s nudge path.
+
+- **14.6 — Move long-running commands behind owned, cancellable jobs.** `L`
+  Opened 2026-08-05. Webview bindings run on the UI thread. Training waits in `std::system()`
+  for the Python process, and full training/personal exports execute directly inside bound
+  handlers. A large export or real training run can freeze the native dispatch path while the
+  frontend displays a progress state that cannot actually animate or cancel the work.
+
+  Mark slow commands in **14.3**'s registry and return a job id within 50 ms. Progress,
+  completion, structured failure, and cancellation arrive as events; only one training job
+  runs at once, while independent exports have an explicit concurrency policy. A deliberately
+  slow fake job must leave the UI heartbeat responsive. Cancellation and app shutdown must
+  terminate/reap child processes, join workers, and guarantee no callback outlives `AppState`.
+  Fast commands remain synchronous. Replace shell execution with an owned process API as part
+  of this work, aligning with **4.2**, and do not promise cancellation until the child can
+  actually be stopped.
 
 ---
 
@@ -2802,7 +3143,7 @@ Completed work. Kept for history; further detail lives in the git log.
   the cert remains (0.4b).
 - **1.1 — First-run onboarding / permissions wizard** — explained local-only capture,
   requested permissions, plus a "Default focus mode" picker. *See 7.8 — that picker's answer
-  is currently overwritten by `set_focus_mode`.*
+  is currently overwritten by `set_focus_mode`; 2.12 extends setup through first value.*
 - **1.3 — Start-on-login / autostart** — Windows HKCU Run-key registration, IPC, settings
   toggle, round-trip tests. launchd/systemd are 3.0.
 - **1.4 — Native notifications** — Win32 toast + payload builders, wired into the real
@@ -2810,12 +3151,14 @@ Completed work. Kept for history; further detail lives in the git log.
 - **1.5 — Idle / AFK detection** — detector state machine wired into the engine tick;
   predictions freeze while AFK.
 - **1.6 — Privacy controls** — local-only statement, global private mode, per-app exclusions,
-  persistence, suppression tests, frontend controls. *Matching is substring-based — 7.9.*
+  persistence, suppression tests, frontend controls. *Matching was fixed in 7.9; live/disk
+  atomicity and always-visible pause controls remain in 7.26/2.10.*
 - **2.1 — Analytics / trends dashboard** — hourly aggregates, top context apps,
-  productive-session streaks, IPC, frontend views. *Windowing is capped and UTC-bucketed —
-  7.1, 7.2.*
+  productive-session streaks, IPC, frontend views. *The old row cap and UTC-bucketing defects
+  closed in 7.1/7.2; remaining query, chart, and shared-range work is 7.12/10.8/10.11.*
 - **2.2 — Daily / weekly summary report** — windowed aggregates, distraction and streak
-  metrics, JSON export, IPC, frontend controls. *Same caps — 7.1.*
+  metrics, JSON export, IPC, frontend controls. *Remaining aggregation/range work is
+  7.12/10.11.*
 - **2.4 — Confidence calibration (gating)** — ❌ **RETRACTED 2026-08-03.** This was never
   delivered: the code had no callers and its `[0,100]` threshold could not fire against a
   `[0,1]` producer. `confidence.hpp` was deleted by
@@ -2826,7 +3169,8 @@ Completed work. Kept for history; further detail lives in the git log.
 - **2.5 — Goal-alignment coverage** — editable persisted goal categories and keywords wired
   through classifier, tracker, IPC, frontend.
 - **2.6 — Pomodoro** — timer state machine in AppState + engine tick, `pomodoro` events, IPC,
-  `PomodoroCard` + `usePomodoro` hook. Backend and UI.
+  `PomodoroCard` + `usePomodoro` hook. Backend and UI. *Customization, pause/skip/restart,
+  hidden-window status, and durable phase UX remain in 2.13.*
 - **4.1 — Structured logging** — leveled logger + rotating file sink, adopted in `storage.cpp`
   and `state.cpp`, real file sink with stderr fallback in `main.cpp`.
 - **4.6 — Dependabot** — `.github/dependabot.yml` for Actions + npm. *Doesn't cover C++ deps —

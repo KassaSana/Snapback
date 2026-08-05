@@ -110,17 +110,26 @@ AppState::~AppState() noexcept {
     stop_engine();
 }
 
-std::string AppState::now_rfc3339() const {
-    const std::time_t now = clock().wall_time();
+std::string AppState::rfc3339_at(std::time_t when) const {
     std::tm tm{};
 #if defined(_WIN32)
-    gmtime_s(&tm, &now);
+    gmtime_s(&tm, &when);
 #else
-    gmtime_r(&now, &tm);
+    gmtime_r(&when, &tm);
 #endif
     std::ostringstream out;
     out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     return out.str();
+}
+
+std::string AppState::now_rfc3339() const { return rfc3339_at(clock().wall_time()); }
+
+std::string AppState::rfc3339_secs_ago(std::int64_t secs) const {
+    // Roadmap 7.23. A pause must be stamped when the user *stopped*, not when we noticed —
+    // the idle threshold means we notice five minutes late, and stamping "now" would credit
+    // those five minutes as attended on every single pause.
+    if (secs <= 0) return now_rfc3339();
+    return rfc3339_at(clock().wall_time() - static_cast<std::time_t>(secs));
 }
 
 std::int64_t AppState::steady_now_ms() const {
@@ -165,6 +174,23 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     if (const auto poll_edge = idle_detector_.poll(now_ms); poll_edge != IdleTransition::None) {
         edge = poll_edge;
     }
+    // Roadmap 7.23 / ADR-0005. This is the action idle_detector.hpp has always documented
+    // ("5 minutes of no input pauses the session", "callers act on the edges, not the level")
+    // and never performed — until now the edges only emitted a UI event.
+    //
+    // Recorded here rather than acted on here: this runs under mutex_, which is deliberately
+    // in-memory only, so engine_tick performs the write in its storage phase.
+    if (active_session_ && edge != IdleTransition::None) {
+        pending_span_session_ = active_session_->session_id;
+        pending_span_opens_ = edge == IdleTransition::WokeUp;
+        // An offset, not a timestamp: Storage stamps with its own clock, so handing it one of
+        // ours would compare two clocks against each other. Back-dating matters because we
+        // only notice a whole idle threshold late — stamping the pause at detection time
+        // would credit those five minutes as attended on every single pause.
+        pending_span_secs_ago_ =
+            pending_span_opens_ ? 0 : idle_detector_.idle_for_ms(now_ms) / 1000;
+    }
+
     const bool was_idle = idle_;
     idle_ = idle_detector_.state() == IdleState::Idle;
     if (idle_ != was_idle) live_read_dirty_ = true;
@@ -280,6 +306,9 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
     active_session_ = storage_.create_session(goal, mode);
+    // Roadmap 7.23. Starting a session is by definition the user attending it, so the first
+    // span opens with it — stamped by Storage's clock, the same one that stamped started_at.
+    storage_.begin_session_span_now(active_session_->session_id);
     last_prediction_secs_ = -1.0;
     reload_app_rules_unlocked();  // pick up any rules edited while idle
     live_read_dirty_ = true;
@@ -292,6 +321,9 @@ void AppState::stop_session() {
     std::lock_guard store_lock(storage_mutex_);
     pomodoro_.reset();
     if (active_session_) {
+        // Close the span before ending the session: once ended_at is set, "the span that is
+        // still open" is no longer a meaningful thing to be holding.
+        storage_.close_session_span_now(active_session_->session_id);
         storage_.end_session(active_session_->session_id);
         save_auto_session_label_unlocked(active_session_->session_id);
         active_session_.reset();
@@ -305,6 +337,9 @@ void AppState::stop_session() {
 SessionRecord AppState::stop_session(const std::string& session_id) {
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
+    // Closes nothing when the session was already stopped, or when it predates spans —
+    // both ordinary outcomes, so the result is not checked.
+    storage_.close_session_span_now(session_id);
     SessionRecord record = storage_.stop_session(session_id);
     save_auto_session_label_unlocked(session_id);
     if (active_session_ && active_session_->session_id == session_id) {
@@ -874,6 +909,12 @@ void AppState::engine_tick() {
     std::optional<std::uint64_t> hyper_to_emit;
     std::vector<PersistJob> jobs;
     IdleTransition idle_edge = IdleTransition::None;
+    // Roadmap 7.23. The span write cannot happen in phase 1: that phase holds mutex_ and is
+    // deliberately in-memory only, so a disk write there would block every UI read. Phase 1
+    // decides *what* to record; phase 2 records it under storage_mutex_.
+    std::optional<std::string> span_session_id;
+    std::int64_t span_secs_ago = 0;
+    bool span_opens = false;
     std::uint64_t tick_activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
@@ -887,6 +928,12 @@ void AppState::engine_tick() {
         // means no events arrive at all, so we must measure wall time, not the last event.
         const auto now_ms = steady_now_ms();
         idle_edge = update_idle_unlocked(now_ms, had_input);
+        // The span decision was made inside update_idle_unlocked, beside the idle logic that
+        // knows why. Take it here and write it in phase 2 — phase 1 holds mutex_ and must not
+        // touch the disk.
+        span_session_id = std::exchange(pending_span_session_, std::nullopt);
+        span_secs_ago = pending_span_secs_ago_;
+        span_opens = pending_span_opens_;
         if (pomodoro_.poll(now_ms)) pomodoro_to_emit = pomodoro_.status(now_ms);
         hook = emit_hook_;
         if (prediction_dirty_) {
@@ -910,10 +957,17 @@ void AppState::engine_tick() {
         // event. If this tick won, deletion waits until persistence has completed.
         std::lock_guard activity_lock(activity_boundary_mutex_);
         if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
-        if (!jobs.empty()) {
+        if (!jobs.empty() || span_session_id) {
             std::lock_guard lock(storage_mutex_);
             Storage::Transaction txn(storage_);  // one commit for the whole drain
             for (const auto& job : jobs) persist(job);
+            if (span_session_id) {
+                if (span_opens) {
+                    storage_.begin_session_span_now(*span_session_id);
+                } else {
+                    storage_.close_session_span_now(*span_session_id, span_secs_ago);
+                }
+            }
             txn.commit();
         }
     }

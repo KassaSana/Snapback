@@ -216,6 +216,14 @@ private:
     // Requires mutex_. Does NO storage I/O — returns what to persist (nullopt if nothing).
     std::optional<PersistJob> compute_event(const CaptureEvent& event);
 
+    // Roadmap 7.23. The session-span change an idle edge implies, decided under mutex_ by
+    // update_idle_unlocked and written by engine_tick under storage_mutex_. Split so the
+    // decision sits beside the idle logic that knows why, while the disk write stays out of
+    // the lock every UI read takes.
+    std::optional<std::string> pending_span_session_;
+    std::int64_t pending_span_secs_ago_ = 0;  // how far to back-date a pause
+    bool pending_span_opens_ = false;  // true = the user came back, false = they went away
+
     // Hyperfocus guardrail state. `hyperfocus_latched_` prevents a second nudge inside the
     // same unbroken stretch; `hyperfocus_minutes_` is the pending emit drained by the tick.
     bool hyperfocus_latched_ = false;
@@ -232,7 +240,11 @@ private:
     // every duration it measures. Non-static as a consequence, which is the point — reading
     // the time is now something an *instance* does, not something anyone can do from
     // anywhere.
+    std::string rfc3339_at(std::time_t when) const;
     std::string now_rfc3339() const;
+    // Wall-clock timestamp `secs` in the past. Used to stamp a pause at the moment the user
+    // actually stopped rather than when the idle threshold noticed (Roadmap 7.23).
+    std::string rfc3339_secs_ago(std::int64_t secs) const;
     std::int64_t steady_now_ms() const;  // monotonic clock for idle timing
     static bool is_input_event(EventType type);  // key/mouse = real user activity
     // Advance the idle state machine one step. Requires mutex_. Returns the transition

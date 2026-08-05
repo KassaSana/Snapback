@@ -253,11 +253,21 @@ export function mapSession(raw: Record<string, unknown>): SessionRecord {
   };
 }
 
+function activeSecsOf(raw: Record<string, unknown>): number | null {
+  const value = raw.active_secs ?? raw.activeSecs;
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function mapSessionRecap(raw: Record<string, unknown>): SessionRecap {
   return {
     sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
     goal: String(raw.goal ?? ""),
     durationSecs: Number(raw.duration_secs ?? raw.durationSecs ?? 0),
+    // Not `?? 0`: null and absent both mean "not measured", and collapsing them to 0 would
+    // report every pre-7.23 session as fully unattended.
+    activeSecs: activeSecsOf(raw),
     avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
     avgDistractionRisk: Number(raw.avg_distraction_risk ?? raw.avgDistractionRisk ?? 0),
     snapbackCount: Number(raw.snapback_count ?? raw.snapbackCount ?? 0),

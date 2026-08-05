@@ -57,8 +57,20 @@ export const SessionReviewCards = memo(function SessionReviewCards({
           </div>
           <div className="meta">
             <div>
-              <p className="meta-label">Duration</p>
-              <p className="meta-value">{Math.round(recap.durationSecs / 60)} min</p>
+              {/*
+                Attended time leads when we have it (Roadmap 7.23 / ADR-0005): "you were here
+                for 40 of the 95 minutes this session was open" is the honest headline, and
+                elapsed alone used to report a session left running overnight as a night of
+                focus. Sessions recorded before attended time existed have activeSecs === null
+                and fall back to elapsed rather than claiming zero.
+              */}
+              <p className="meta-label">{recap.activeSecs === null ? "Duration" : "Attended"}</p>
+              <p className="meta-value">
+                {Math.round((recap.activeSecs ?? recap.durationSecs) / 60)} min
+              </p>
+              {recap.activeSecs !== null && recap.activeSecs < recap.durationSecs && (
+                <p className="meta-sub">of {Math.round(recap.durationSecs / 60)} min open</p>
+              )}
             </div>
             <div>
               <p className="meta-label">Avg focus</p>

@@ -180,7 +180,12 @@ struct SessionRecord {
 struct SessionRecap {
     std::string session_id;
     std::string goal;
+    // Wall clock from start to end, including time the user was away.
     std::uint64_t duration_secs{};
+    // Time the user was actually present, summed from session_spans (Roadmap 7.23 /
+    // ADR-0005). Empty for sessions that predate span recording — meaning "never measured",
+    // not "zero", so a reader falls back to duration_secs instead of showing a fabricated 0.
+    std::optional<std::uint64_t> active_secs;
     double avg_focus_score{};
     double avg_distraction_risk{};
     std::uint32_t snapback_count{};

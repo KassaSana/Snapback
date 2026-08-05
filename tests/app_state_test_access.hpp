@@ -47,6 +47,26 @@ struct AppStateTestAccess {
     static std::optional<PomodoroStatus> update_pomodoro(AppState& state, std::int64_t now_ms) {
         return state.update_pomodoro_for_test(now_ms);
     }
+
+    // One synchronous turn of the real engine tick — the same function the engine thread
+    // runs, not a reimplementation. Roadmap 7.23 needed it because session pause/resume is
+    // driven by the tick's idle edges, so testing it through `update_idle_for_test` alone
+    // would exercise the detector and skip everything that acts on it. Points the same way
+    // as 14.2.
+    static void engine_tick(AppState& state) { state.engine_tick(); }
+
+    // Whether the session currently has an attended span open (Roadmap 7.23). Reaches
+    // through to the owned Storage because AppState deliberately exposes no such getter —
+    // "is a span open" is internal bookkeeping, not something a UI should ask.
+    //
+    // The wiring is what AppState-level tests can honestly check: Storage stamps its own
+    // timestamps from the system clock and has no injected one, so a ManualClock here cannot
+    // move a duration. The span arithmetic is proven in test_storage.cpp, where timestamps
+    // are passed in explicitly.
+    static bool has_open_span(AppState& state, const std::string& session_id) {
+        std::lock_guard lock(state.storage_mutex_);
+        return state.storage_.has_open_span(session_id);
+    }
 };
 
 }  // namespace snapback

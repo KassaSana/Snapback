@@ -26,6 +26,9 @@ const summary = (
     sessionId: id,
     goal: "g",
     durationSecs: 0,
+    // null = attended time was never measured, which is what every session predating
+    // Roadmap 7.23 looks like. These fixtures exercise focus metrics, not durations.
+    activeSecs: null,
     avgFocusScore: focus,
     avgDistractionRisk: 0,
     snapbackCount: snap,

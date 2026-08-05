@@ -124,7 +124,16 @@ export type SupportBundleExportResult = {
 export type SessionRecap = {
   sessionId: string;
   goal: string;
+  /** Wall clock from start to end, including time the user was away. */
   durationSecs: number;
+  /**
+   * Time the user was actually present (Roadmap 7.23 / ADR-0005).
+   *
+   * `null` means "never measured" — sessions recorded before attended time existed — and is
+   * deliberately not 0, so the UI can fall back to `durationSecs` instead of telling someone
+   * they were present for none of a session that predates the feature.
+   */
+  activeSecs: number | null;
   avgFocusScore: number;
   avgDistractionRisk: number;
   snapbackCount: number;

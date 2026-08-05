@@ -883,6 +883,20 @@ void Storage::begin_session_span(const std::string& session_id, const std::strin
     savepoint.release();
 }
 
+void Storage::begin_session_span_now(const std::string& session_id) {
+    begin_session_span(session_id, utc_now_rfc3339());
+}
+
+bool Storage::close_session_span_now(const std::string& session_id, std::int64_t secs_ago) {
+    // Computed in SQL off the same clock the rest of this file stamps with, rather than in
+    // C++ off a caller's clock. datetime() yields "YYYY-MM-DD HH:MM:SS", so it is reformatted
+    // to the RFC3339 shape every other timestamp column uses.
+    Stmt now(db_, "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', datetime('now', ?1))");
+    now.bind(1, "-" + std::to_string(std::max<std::int64_t>(0, secs_ago)) + " seconds");
+    if (!now.step_row()) return false;
+    return close_session_span(session_id, column_text(now.get(), 0));
+}
+
 bool Storage::close_session_span(const std::string& session_id, const std::string& ended_at) {
     // MAX(started_at, ?1): a clock that jumped backwards (DST, NTP) must not produce a span
     // that ends before it began, because SUM over such a span would subtract time.
@@ -1062,6 +1076,32 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
         }
     }
 
+    // Query 4: attended time (Roadmap 7.23). Grouped like the others rather than calling
+    // active_secs() per session — this whole function exists because that shape cost 1 + 5N
+    // round trips under the storage mutex, and adding an N back would undo 7.12.
+    //
+    // A session with no spans does not appear here, so its recap keeps `active_secs` empty:
+    // "never measured", which is exactly right for sessions predating the table.
+    {
+        const auto now = utc_now_rfc3339();
+        Stmt stmt(db_,
+                  "WITH recent AS (SELECT session_id FROM sessions "
+                  "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
+                  "SELECT s.session_id, CAST(COALESCE(SUM(ROUND(MAX(0, "
+                  "  (julianday(COALESCE(s.ended_at, MAX(s.started_at, ?2))) "
+                  "   - julianday(s.started_at)) * 86400))), 0) AS INTEGER) "
+                  "FROM session_spans s JOIN recent r ON s.session_id = r.session_id "
+                  "GROUP BY s.session_id");
+        stmt.bind(1, static_cast<std::int64_t>(limit));
+        stmt.bind(2, now);
+        while (stmt.step_row()) {
+            const auto it = index_of.find(column_text(stmt.get(), 0));
+            if (it == index_of.end()) continue;
+            out[it->second].recap.active_secs =
+                static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 1));
+        }
+    }
+
     return out;
 }
 
@@ -1186,6 +1226,8 @@ SessionRecap Storage::recap(const std::string& session_id) {
         stmt.bind(1, session_id);
         if (stmt.step_row()) out.duration_secs = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 0));
     }
+
+    out.active_secs = active_secs(session_id, utc_now_rfc3339());
 
     {
         Stmt stmt(db_,
