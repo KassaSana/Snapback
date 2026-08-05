@@ -240,6 +240,24 @@ TEST_CASE("going idle pauses the session and coming back resumes it") {
     CHECK(recap.active_secs.has_value());
 }
 
+TEST_CASE("replacing a session closes the replaced session's span") {
+    // Roadmap 7.23 + 7.20. Starting a session while one runs replaces it, and the replaced
+    // session is completed. Its span must close with it -- an open span on a completed
+    // session counts to "now" indefinitely, so a session replaced last week would keep
+    // accruing attended time and eventually claim more of it than it was ever open for.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto first = state.start_session("first", FocusMode::Normal);
+    CHECK(AppStateTestAccess::has_open_span(state, first.session_id));
+
+    const auto second = state.start_session("second", FocusMode::Deep);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, first.session_id));
+    CHECK(AppStateTestAccess::has_open_span(state, second.session_id));
+}
+
 TEST_CASE("idle edges for a session that is not running touch nothing") {
     // The engine ticks whether or not a session is open. An idle edge with none running must
     // not create a span against a stale id -- there is nothing being attended.

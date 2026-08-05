@@ -615,13 +615,30 @@ internals, and the benchmark harness.
   open, close, query, and detect spans. Pre-existing sessions deliberately return "not
   measured" rather than receiving fabricated active time.
 
-  **Still open:** wire `IdleTransition::WentIdle`/`WokeUp` to close/open spans; create the first
-  span at session start; close it on stop/replacement/shutdown; hydrate pause state after a
-  crash; carry nullable active duration through recap/history/IPC; and make every active
-  session surface say **Running** or **Paused**. Review should headline active time and show
-  elapsed secondarily, with an honest fallback label on legacy sessions. Make the inherited
-  five-minute threshold configurable and verify whether scroll/mouse movement counts as
-  presence before treating it as a trustworthy default.
+  **Landed 2026-08-05 (engine + read path):** `WentIdle`/`WokeUp` now close/open spans, the
+  first span opens at session start, and it closes on stop, on `stop_session(id)`, and on
+  **replacement**. Nullable active duration flows through `recap()`, the batched
+  `recent_session_summaries()` (as a grouped query — a per-session call would have undone
+  7.12's `1 + 5N` fix), the JSON wire as `activeSecs`, and the frontend type/mapper. Review
+  headlines attended time with elapsed beneath it and falls back to "Duration" on legacy
+  sessions.
+
+  Two findings from doing it:
+
+  - **Replacement leaked an open span.** `create_session` completes the running session (7.20)
+    but nothing closed its span, so a replaced session counted attended time to "now" forever
+    and would eventually claim more of it than it was ever open for. Found by checking this
+    item's own "still open" list against the code rather than assuming the wiring was complete.
+  - **Two clocks were being compared.** The first attempt passed an `AppState`-clock timestamp
+    into Storage, which stamps from the system clock and has no injected one. Durations came
+    out as 0. `close_session_span_now(id, secs_ago)` takes an offset so every timestamp on a
+    session comes from one clock.
+
+  **Still open:** hydrate pause state after a crash (a dangling open span on reopen); close on
+  shutdown; make every active-session surface say **Running** or **Paused**; make the
+  inherited five-minute threshold configurable; and verify whether scroll/mouse movement
+  counts as presence before treating it as a trustworthy default. Tests for process reopen
+  with an open span still need the injected clock that Storage does not yet have.
 
   Tests need an injected clock across start → idle → wake → stop, process reopen with an open
   span, repeated edges, clock rollback, replacement, and a legacy session with no spans. The

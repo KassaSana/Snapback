@@ -305,9 +305,18 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
+
+    // Roadmap 7.23. Starting a session *replaces* a running one — Storage::create_session
+    // completes it (7.20). Its span has to be closed with it: an open span on a completed
+    // session keeps counting to "now" forever, so a session replaced weeks ago would report
+    // more attended time than it was ever open for.
+    const std::optional<std::string> replaced =
+        active_session_ ? std::optional<std::string>(active_session_->session_id) : std::nullopt;
+    if (replaced) storage_.close_session_span_now(*replaced);
+
     active_session_ = storage_.create_session(goal, mode);
-    // Roadmap 7.23. Starting a session is by definition the user attending it, so the first
-    // span opens with it — stamped by Storage's clock, the same one that stamped started_at.
+    // Starting a session is by definition the user attending it, so the first span opens with
+    // it — stamped by Storage's clock, the same one that stamped started_at.
     storage_.begin_session_span_now(active_session_->session_id);
     last_prediction_secs_ = -1.0;
     reload_app_rules_unlocked();  // pick up any rules edited while idle
