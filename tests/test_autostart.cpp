@@ -13,38 +13,21 @@ TEST_CASE("autostart_command_line quotes the path so spaces parse correctly") {
 
 #if defined(_WIN32)
 
-TEST_CASE("autostart reports a Windows backend") {
-    CHECK(autostart_supported());
-}
-
-// Real round-trip against HKCU\...\Run — per-user, no elevation, safe to touch from a
-// test (this is the same key any consumer app would write). Always restore the prior
-// state so the test binary doesn't leave itself registered to autostart.
+// Roadmap 11.7 — CLOSED. There used to be a real round trip here against
+// HKCU\Software\Microsoft\Windows\CurrentVersion\Run, with the write left unasserted because
+// hardened environments refuse it (~33% of early Windows CI runs did). Suppressing the
+// assertion treated the symptom; the hazard was touching the shared key at all, since a crash
+// between the write and the restore leaves the *test binary* registered to launch at login.
 //
-// The write is *not* asserted, deliberately (Roadmap 11.7). Writing the Run key is a
-// textbook persistence technique, so a hardened environment may refuse it — and 2 of the
-// first 6 observed Windows CI job runs did, alternating between the two Windows jobs on
-// identical code. "The OS declined to let anything register for autostart" is not a defect
-// in our code, so it must not read as one. Everything after the write is still asserted, so
-// a genuine regression in the round-trip still fails loudly wherever the write is permitted.
-// The real fix is to stop touching the shared key from tests at all — see 11.7.
-TEST_CASE("autostart_enabled round-trips through the real Windows registry") {
-    const bool had_prior_state = autostart_enabled();
-
-    if (!set_autostart_enabled(true)) {
-        MESSAGE("skipped: this environment refused the HKCU Run-key write (Roadmap 11.7)");
-        return;
-    }
-    CHECK(autostart_enabled());
-
-    REQUIRE(set_autostart_enabled(false));
-    CHECK_FALSE(autostart_enabled());
-
-    // Disabling an already-disabled entry is idempotent, not a failure.
-    REQUIRE(set_autostart_enabled(false));
-    CHECK_FALSE(autostart_enabled());
-
-    if (had_prior_state) set_autostart_enabled(true);
+// The round trip now lives in test_autostart_run_key.cpp against a scratch key, which is the
+// same shape test_autostart_launchd.cpp and test_autostart_systemd.cpp already used. What is
+// left here is a read, which is total by contract and mutates nothing — matching the macOS and
+// Linux cases below exactly.
+TEST_CASE("autostart reports a Run-key backend on Windows") {
+    CHECK(autostart_supported());
+    // Reads the registry and answers either way without throwing; which answer depends on
+    // whether the developer running the suite has Snapback set to start at login.
+    (void)autostart_enabled();
 }
 
 #elif defined(__APPLE__)

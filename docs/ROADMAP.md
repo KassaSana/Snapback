@@ -1812,7 +1812,38 @@ structure alone — a real review would likely find more.
   Neither blocks release. **They become blocking the moment anyone adds a MinGW job**, which
   is the only reason this is written down.
 
-- **11.7 — The autostart test asserts against the real machine's registry.** `S`
+- **11.7 — DONE 2026-08-04.** `S` The Windows half is closed, so nothing in the suite touches
+  a real login mechanism on any platform any more.
+
+  The registry mechanism moved to [`src/app/autostart_run_key.cpp`](../src/app/autostart_run_key.cpp)
+  with the **key path as an argument** — the same seam the launchd and systemd backends
+  already had, which this item named as the fix to copy. `autostart.cpp`'s Windows branch now
+  only chooses *which* key, exactly like the macOS and Linux branches choose a directory.
+  `tests/test_autostart_run_key.cpp` round-trips against
+  `HKCU\Software\SnapbackTests\test-<pid>-<n>` and deletes it, and the real-Run-key case in
+  `test_autostart.cpp` is gone, replaced by a read.
+
+  **Suppressing the assertion had been treating the symptom.** The old case stopped asserting
+  the write because hardened environments refuse it (~33% of early Windows CI runs). But the
+  hazard was never the assertion — it was touching the shared key at all, since a crash
+  between the write and the restore leaves the *test binary* registered to launch at login.
+  Against a scratch key the write is asserted again, because now a refusal really would be
+  our bug.
+
+  **A first attempt still left residue, which is the same class of mistake one level down.**
+  `RegCreateKeyEx` creates intermediate keys, so deleting only the leaf left an empty
+  `HKCU\Software\Snapback` behind — verified by inspecting the real registry after a run,
+  not by reading the code. The fixture now removes the parent too, and the scratch root is
+  `SnapbackTests` rather than `Snapback` so a test never creates or deletes a key production
+  might one day own. `RegDeleteKey` refuses a key that still has subkeys, so concurrent cases
+  cannot destroy each other's.
+
+  Verified by checking `HKCU` before and after a run from a clean state: the Run key is
+  untouched and neither scratch key survives. Suite: **332 cases, 332 pass** on GCC/MinGW.
+
+  The original finding was:
+
+- **11.7 (original finding) — The autostart test asserts against the real machine's registry.** `S`
   `tests/test_autostart.cpp:26` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
   that the write succeeds, so a passing suite depends on ambient machine state rather than on
   our code.
