@@ -22,6 +22,11 @@ namespace snapback {
 inline constexpr int kDefaultRetentionDays = 90;
 inline constexpr std::size_t kVacuumMinDeletedRows = 500;
 
+// Roadmap 7.22. The copy taken immediately before a schema migration alters the database,
+// named for the version it was taken *from* so a user with two upgrades behind them can tell
+// which is which. Formatted as `focoflow.db.pre-v<N>.bak`.
+std::string pre_migration_backup_name(int from_version);
+
 // The schema version this build writes and understands, stored in `PRAGMA user_version`.
 //
 // Bump this and append to the migration list in storage.cpp whenever the schema changes.
@@ -225,7 +230,13 @@ public:
 
 private:
     explicit Storage(sqlite3* db) : db_(db) {}
-    void migrate();
+
+    // Applies pending migrations, backing the database up first (Roadmap 7.22).
+    //
+    // `db_path` is passed rather than stored because Storage's move operations carry only
+    // `db_` and `stmt_cache_`; a new member would have to be added to both, and forgetting
+    // one fails silently. An empty path means there is no file to back up (`open_memory`).
+    void migrate(const std::filesystem::path& db_path, Logger* logger);
     // Prepare-once / reset-on-reuse cache for hot statements (per-tick inserts). Returns a
     // statement owned by stmt_cache_; wrap it in the borrowed Stmt ctor to bind + step.
     sqlite3_stmt* cached_stmt(const char* sql);

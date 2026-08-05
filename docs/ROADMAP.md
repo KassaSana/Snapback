@@ -609,7 +609,37 @@ internals, and the benchmark harness.
   all three are about what a stored timestamp is allowed to mean. Ties to **1.5**, which
   already detects idle, and **7.5**.
 
-- **7.22 — A schema migration that succeeds and is wrong is unrecoverable.** `S`
+- **7.22 — DONE 2026-08-05.** `S` `Storage::migrate()` now copies the database to
+  `focoflow.db.pre-v<N>.bak` immediately before applying any migration, named for the version
+  it came *from* so two upgrades leave distinguishable files. Four cases cover it.
+
+  **`VACUUM INTO`, not a file copy.** The database is open in WAL mode, so the bytes in
+  `.db` are not the whole story — recent commits live in `-wal`, and copying the main file
+  alone can produce a torn snapshot. `VACUUM INTO` asks SQLite for a consistent single-file
+  copy, which is the guarantee a restore actually needs. It also cannot run inside a
+  transaction, which is why the backup happens before `migrate()` opens one. The destination
+  is a **bound parameter**: a data directory can contain a quote, and hand-quoting a path into
+  SQL works until it doesn't.
+
+  **A failed backup is logged, not fatal.** Refusing to start because a backup failed would
+  turn a full disk into "the app will not open" — worse than the risk it guards, given the
+  migration is transactional either way.
+
+  **No backup for a brand-new database.** Version 0 means both "new file" and "pre-versioning
+  install" and cannot be told apart afterwards, so the presence of a user table decides it.
+  Backing up an empty file on every first run is noise, and noise is what makes a real backup
+  message easy to miss.
+
+  **The failure test was vacuous on the first attempt.** It put an empty directory where the
+  backup belongs — but `back_up_before_migration` calls `std::filesystem::remove` first (so a
+  stale backup cannot pass as a fresh one), and **`remove()` deletes empty directories**. The
+  seam was cleared, the backup succeeded, and the test asserted nothing while passing. Now the
+  directory is non-empty, and the case asserts the path is *still a directory* afterwards so
+  the failure is proven rather than assumed.
+
+  Suite: **336 cases, 336 pass.** The original finding follows.
+
+- **7.22 (original finding) — A schema migration that succeeds and is wrong is unrecoverable.** `S`
   Opened 2026-08-05. `Storage::migrate()` runs the whole upgrade in one transaction, so a
   migration that *fails* rolls back cleanly to the version it started at — that half is
   already right, and 7.3 got it right deliberately.

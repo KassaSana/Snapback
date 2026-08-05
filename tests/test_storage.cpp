@@ -250,6 +250,104 @@ TEST_CASE("storage persists prediction model identity and verdict provenance") {
     CHECK(latest->state_source == original.state_source);
 }
 
+TEST_CASE("migrating an existing database backs it up first") {
+    // Roadmap 7.22. The transaction in migrate() already covers a migration that *fails*.
+    // This covers the case it cannot: one that succeeds and is wrong. The backup is the only
+    // recovery path, so it must exist, carry the pre-migration data, and be openable.
+    TempDir temp;
+    const auto db_file = temp.path / "focoflow.db";
+    {
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open(db_file.string().c_str(), &db) == SQLITE_OK);
+        const char* legacy =
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, goal TEXT NOT NULL, "
+            "status TEXT NOT NULL, focus_mode TEXT NOT NULL, started_at TEXT NOT NULL, "
+            "ended_at TEXT);"
+            "INSERT INTO sessions VALUES ('keepme', 'irreplaceable work', 'COMPLETED', "
+            "'normal', '2026-07-11T19:00:00Z', '2026-07-11T20:00:00Z');"
+            "PRAGMA user_version = 0;";
+        REQUIRE(sqlite3_exec(db, legacy, nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_close(db) == SQLITE_OK);
+    }
+
+    { auto storage = Storage::open(temp.path); REQUIRE(storage.has_value()); }
+
+    // Named for the version it came *from*, so two upgrades leave distinguishable files.
+    const auto backup = temp.path / pre_migration_backup_name(0);
+    REQUIRE(std::filesystem::exists(backup));
+
+    // It must be a real database holding the pre-migration row, not an empty or torn file.
+    sqlite3* restored = nullptr;
+    REQUIRE(sqlite3_open(backup.string().c_str(), &restored) == SQLITE_OK);
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(restored, "SELECT goal FROM sessions WHERE session_id='keepme'",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    CHECK(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) ==
+          "irreplaceable work");
+    sqlite3_finalize(stmt);
+    sqlite3_close(restored);
+}
+
+TEST_CASE("a brand-new database is not backed up") {
+    // Version 0 means both "new file" and "pre-versioning install" and cannot be told apart
+    // after the fact, so the presence of a user table is what distinguishes them. Backing up
+    // an empty file on every first run would be noise, and noise is what makes a real backup
+    // message easy to miss.
+    TempDir temp;
+    { auto storage = Storage::open(temp.path); REQUIRE(storage.has_value()); }
+
+    CHECK_FALSE(std::filesystem::exists(temp.path / pre_migration_backup_name(0)));
+    CHECK_FALSE(std::filesystem::exists(temp.path / pre_migration_backup_name(kSchemaVersion)));
+}
+
+TEST_CASE("reopening an up-to-date database writes no new backup") {
+    // migrate() early-returns when the version already matches, so the backup must not be
+    // paid on every launch -- only when a migration is actually about to run.
+    TempDir temp;
+    { auto storage = Storage::open(temp.path); REQUIRE(storage.has_value()); }
+    { auto storage = Storage::open(temp.path); REQUIRE(storage.has_value()); }
+
+    for (const auto& entry : std::filesystem::directory_iterator(temp.path)) {
+        CHECK(entry.path().filename().string().find(".bak") == std::string::npos);
+    }
+}
+
+TEST_CASE("a failed backup does not stop the database from opening") {
+    // Deliberate: refusing to start because a backup failed turns a disk-space problem into
+    // "the app will not open", which is worse than the risk it guards against -- the
+    // migration is still transactional either way.
+    //
+    // The failure seam is a **non-empty** directory where the backup file belongs. An empty
+    // one is not enough: back_up_before_migration calls std::filesystem::remove first (so a
+    // stale backup cannot masquerade as a fresh one), and remove() deletes empty directories
+    // -- which silently cleared the seam and let the backup succeed, making the first version
+    // of this test assert nothing.
+    TempDir temp;
+    const auto db_file = temp.path / "focoflow.db";
+    {
+        sqlite3* db = nullptr;
+        REQUIRE(sqlite3_open(db_file.string().c_str(), &db) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(db,
+                             "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, "
+                             "goal TEXT NOT NULL, status TEXT NOT NULL, focus_mode TEXT NOT NULL, "
+                             "started_at TEXT NOT NULL, ended_at TEXT);"
+                             "PRAGMA user_version = 0;",
+                             nullptr, nullptr, nullptr) == SQLITE_OK);
+        REQUIRE(sqlite3_close(db) == SQLITE_OK);
+    }
+    const auto blocked = temp.path / pre_migration_backup_name(0);
+    std::filesystem::create_directories(blocked);
+    { std::ofstream occupied(blocked / "occupied.txt"); occupied << "blocks remove()"; }
+
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    // The backup really did fail: the path is still the directory, not a database file.
+    REQUIRE(std::filesystem::is_directory(blocked));
+    // And the migration still happened despite it.
+    CHECK_NOTHROW(storage->create_session("after a failed backup", FocusMode::Normal));
+}
+
 TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
     TempDir temp;
     sqlite3* db = nullptr;

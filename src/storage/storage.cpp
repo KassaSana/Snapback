@@ -350,7 +350,7 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         exec(storage.db_, "PRAGMA cache_size = -8000;");
         exec(storage.db_, "PRAGMA temp_store = MEMORY;");
         exec(storage.db_, "PRAGMA mmap_size = 268435456;");
-        storage.migrate();
+        storage.migrate(db_path, &log);
         try {
             const auto cutoff = retention_cutoff_rfc3339(kDefaultRetentionDays);
             const PruneSummary summary = storage.prune_runtime_data(
@@ -411,7 +411,8 @@ std::optional<Storage> Storage::open_memory() {
         exec(storage.db_, "PRAGMA synchronous = NORMAL;");
         exec(storage.db_, "PRAGMA cache_size = -8000;");
         exec(storage.db_, "PRAGMA temp_store = MEMORY;");
-        storage.migrate();
+        // Empty path: an in-memory database has no file to back up, and nothing to lose.
+        storage.migrate({}, nullptr);
         return storage;
     } catch (...) {
         return std::nullopt;
@@ -642,7 +643,52 @@ static_assert(kMigrations[std::size(kMigrations) - 1].version == kSchemaVersion,
 
 }  // namespace
 
-void Storage::migrate() {
+std::string pre_migration_backup_name(int from_version) {
+    return "focoflow.db.pre-v" + std::to_string(from_version) + ".bak";
+}
+
+namespace {
+
+// True if this database has any user objects at all. Version 0 is ambiguous — it means both
+// "brand-new file" and "install from before versioning existed" (see kSchemaVersion) — and
+// backing up an empty file on every first run would be pure noise. The presence of a table
+// is the one signal that distinguishes them after the fact.
+bool has_user_data(sqlite3* db) {
+    Stmt stmt(db, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
+                  "AND name NOT LIKE 'sqlite_%'");
+    return stmt.step_row() && sqlite3_column_int64(stmt.get(), 0) > 0;
+}
+
+// Roadmap 7.22. VACUUM INTO rather than copying the file: the database is open in WAL mode,
+// so bytes on disk are not the whole story — recent commits may live in -wal and a plain copy
+// of the .db alone can be a torn read. VACUUM INTO asks SQLite for a consistent single-file
+// snapshot, which is exactly the guarantee a restore needs. It also cannot run inside a
+// transaction, which is why this happens before migrate() opens one.
+void back_up_before_migration(sqlite3* db, const std::filesystem::path& db_path, int from,
+                              Logger* logger) {
+    const auto backup = db_path.parent_path() / pre_migration_backup_name(from);
+
+    std::error_code ec;
+    // VACUUM INTO refuses to overwrite. Removing first also means a previous, older backup
+    // does not masquerade as a fresh one if the new write fails.
+    std::filesystem::remove(backup, ec);
+
+    // Bound parameter, not string interpolation: a data directory can legitimately contain a
+    // quote (a Windows user named O'Brien is enough), and hand-quoting a path into SQL is the
+    // kind of thing that works until it silently does not.
+    Stmt stmt(db, "VACUUM INTO ?1");
+    stmt.bind(1, backup.string());
+    stmt.step_done();
+
+    if (logger) {
+        logger->info("storage: backed up to " + backup.string() + " before migrating from v" +
+                     std::to_string(from));
+    }
+}
+
+}  // namespace
+
+void Storage::migrate(const std::filesystem::path& db_path, Logger* logger) {
     const int from = read_user_version(db_);
 
     // A database stamped newer than this build understands was written by a later version
@@ -658,6 +704,26 @@ void Storage::migrate() {
     }
 
     if (from == kSchemaVersion) return;  // already current; skip the DDL entirely
+
+    // Roadmap 7.22. Back up before touching anything. The transaction below already handles a
+    // migration that *fails* — it rolls back to `from`. What it cannot help with is a
+    // migration that succeeds and is wrong: a bad UPDATE or a botched backfill commits, and
+    // kSchemaVersion's own rule that a released migration is never edited makes that
+    // permanent for everyone who upgrades. This copy is the only recovery path.
+    //
+    // Deliberately not fatal. Refusing to start because a backup failed would turn a
+    // disk-space problem into "the app will not open", which is worse than the risk it
+    // guards; the migration is still transactional either way. Log loudly and continue.
+    if (!db_path.empty() && has_user_data(db_)) {
+        try {
+            back_up_before_migration(db_, db_path, from, logger);
+        } catch (const std::exception& err) {
+            if (logger) {
+                logger->warn(std::string("storage: pre-migration backup failed, continuing: ") +
+                             err.what());
+            }
+        }
+    }
 
     // One transaction for the whole upgrade. SQLite makes DDL transactional, so a failure
     // half-way through rolls back to the version we started at rather than leaving a
