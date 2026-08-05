@@ -62,11 +62,36 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 `
 
 When `-SignCertificate` is set, the script signs:
 
-- `snapback.exe`
-- the IExpress installer exe when produced
+- `snapback.exe` — **immediately after the build, before CPack runs**
+- the IExpress installer exe when produced — after IExpress, which is the first moment it exists
 
 The ZIP package itself is not Authenticode-signed; Windows trust is established by signing
 the executable content and installer executable.
+
+### Order matters (ROADMAP 0.4b)
+
+Signing used to run at the *end* of the script. That looked equivalent and was not: CPack had
+already copied the unsigned `snapback.exe` into the ZIP, and IExpress had embedded that ZIP in
+the installer. Only the loose build-tree binary and the outer installer got signatures, so
+**every uploaded artifact still contained an unsigned executable** while the build log
+cheerfully reported "Signed …".
+
+The fix is ordering, and the guard against it regressing is verification of the *artifact*
+rather than the build tree. After packaging, the script extracts the ZIP it is about to
+upload and requires the `snapback.exe` inside it to be:
+
+1. `Get-AuthenticodeSignature` status `Valid`, and
+2. signed by the **same thumbprint** that was passed in.
+
+The second check is not redundant. A status check alone passes for anything validly signed by
+anyone — a stray Microsoft-signed binary picked up by the glob would satisfy it. Both failure
+modes were exercised against the real script: an unsigned binary in the ZIP is rejected as
+`NotSigned`, and a validly-signed binary from a different certificate is rejected on the
+thumbprint.
+
+**Still unproven:** the success path has never run, because it needs a real certificate. Until
+a signed build has been produced and verified, README describes Windows signing as wired but
+incomplete.
 
 ### GitHub Release workflow
 

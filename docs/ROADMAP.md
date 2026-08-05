@@ -71,10 +71,15 @@ shippable product** — if the goal is "someone else uses this," its remaining r
 items outrank most product-depth work. 9.1 was that argument's headline item and is now done,
 which is what makes the blocker table below meaningful.
 
-**Next up is 3.3's external paperwork, in parallel with 8.8 in code.** The Apple Developer
-account has independent lead time, so its application should start while the small release
-security and data-integrity findings are fixed. It is now the **only** formal blocker left —
-Decision session A closed on 2026-08-03.
+**Next up is 3.3's external paperwork.** The Apple Developer account has independent lead
+time, so its application should start now; it is the **only** formal blocker left, and the
+small release security and data-integrity findings that used to run in parallel with it
+(8.8, 8.9, 7.19, 7.20, 9.11) are all closed as of 2026-08-04.
+
+Of the release-hardening work outside the blocker list, what remains is **9.12** (choose a
+license — a `decision`, and the repository still has no `LICENSE` at all) and the external
+half of **0.4b** (buy the signing certificate; the packaging defect itself is fixed). The
+only non-decision items left in the sequence above are 3.3 and the ones below row 8.
 
 **ADR-0002 release-blocker status as of 2026-08-01:**
 
@@ -219,18 +224,33 @@ ended three days earlier.
 
 
 - **0.4b — Provision the signing certificate.** `S` (external dependency)
-  The `-SignCertificate` path is wired into `.github/workflows/release.yml` behind the
-  `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` secret; releases stay unsigned until an EV cert is
-  purchased and the secret set. **The current wiring is not sufficient:**
+  **Still open, but only on the external half.** The code defect described below was fixed on
+  2026-08-04: `package_windows.ps1` now signs `snapback.exe` immediately after the build and
+  before CPack, signs the IExpress installer after it exists, and then **verifies the artifact
+  it is about to upload** — it extracts the ZIP and requires the `snapback.exe` inside to be
+  validly signed *by the passed-in thumbprint*. [PACKAGING.md](PACKAGING.md) documents the
+  order and the verification path.
+
+  **Checking the thumbprint, not just the status, is the part that matters.** A
+  `Get-AuthenticodeSignature` status check alone passes for anything validly signed by
+  anyone; a stray Microsoft-signed binary satisfies it. That is not hypothetical — the first
+  version of this verification was written status-only and its own negative test passed
+  against `where.exe`, which is Microsoft-signed. Both failure modes are now exercised
+  against the real script text: an unsigned binary in the ZIP is rejected as `NotSigned`, and
+  a validly-signed binary from a different certificate is rejected on the thumbprint.
+
+  **What remains is the certificate itself.** The success path has never executed, because no
+  EV certificate exists to run it with. Until a signed build has been produced and verified
+  end to end, README must keep describing Windows signing as wired but incomplete — it
+  currently does. Buy the cert, set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT`, cut one release,
+  and confirm the verification step passes; only then is this done.
+
+  The original finding was:
+
   `package_windows.ps1` creates the CPack ZIP and embeds that ZIP in the IExpress installer
   *before* it signs the build-tree `snapback.exe`. The uploaded ZIP and installer payload
   therefore still contain the unsigned executable even when the secret exists; only the
   loose build-tree binary and the outer installer receive signatures.
-
-  Move signing before CPack/IExpress, then extract both uploaded artifacts and verify the
-  packaged `snapback.exe` with `Get-AuthenticodeSignature`. Document certificate acquisition
-  and the verification path in [PACKAGING.md](PACKAGING.md) when doing this. Until that is
-  proven, README must describe Windows signing as wired but incomplete, not done.
 
 ---
 
