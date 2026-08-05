@@ -303,6 +303,24 @@ TEST_CASE("brief activity below the threshold raises no nudge") {
     CHECK_FALSE(contains(work_without_session(state, clock, 5), "untracked_work"));
 }
 
+TEST_CASE("private mode never raises the untracked nudge") {
+    // The user has said "do not record". Asking them to start recording is the wrong
+    // direction, and the timer resets rather than pausing, so leaving private mode does not
+    // immediately fire a nudge earned while it was on.
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    state.set_private_mode(true);
+    CHECK_FALSE(contains(work_without_session(state, clock, 30), "untracked_work"));
+
+    state.set_private_mode(false);
+    // The half-hour above earned nothing; a fresh short stretch is still short.
+    CHECK_FALSE(contains(work_without_session(state, clock, 5), "untracked_work"));
+}
+
 TEST_CASE("going idle restarts the untracked stretch instead of firing again") {
     // Walking away ends the stretch. Coming back begins a new one, so the nudge does not
     // re-fire the moment someone returns to a machine they already declined to track.

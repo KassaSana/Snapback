@@ -1627,7 +1627,29 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 2 — Product & ML depth
 
-- **2.7 — Remind an active user who forgot to start a session.** `M` **DECIDED 2026-08-05**
+- **2.7 — PARTIAL 2026-08-05.** `M` The nudge is implemented and wired end to end. After **15
+  minutes** of sustained activity with no session, the engine emits `untracked_work` once and
+  the Session Control card shows a dismissible notice — placed there, not as a toast, because
+  the Start button is on the same card.
+
+  **Latched, and reset by idle and by private mode.** One nudge per stretch, not one per tick.
+  Going idle ends the stretch, so returning to a machine the user already declined to track
+  starts a fresh count. **Private mode does not advance the timer and resets it**, because
+  prompting someone to start recording while they have said "do not record" is the wrong
+  direction — and leaving private mode must not fire a nudge earned while it was on. Six cases
+  cover it, including the three that must stay silent (session running, stretch too short,
+  private mode).
+
+  **Still open from this item's own list:** excluded apps do not yet gate the timer (private
+  mode does); there is no dismissal *interval*, only a cleared notice; the notice does not
+  itself open the goal/mode start flow (it relies on the adjacent Start button, so coordinate
+  with **2.11** before adding a second entry point); and there are no app-restart tests. The
+  threshold is a named constant rather than a setting — that belongs with 7.23's inherited
+  five-minute idle threshold, which raises the same question.
+
+  The original finding was:
+
+- **2.7 (original finding) — Remind an active user who forgot to start a session.** `M`
   [ADR-0005](adr/0005-a-session-is-declared-and-attended.md) settles the consent question:
   sessions remain manually declared and Snapback never auto-starts recording. With no active
   session, capture events still pass through in-memory feature extraction/classification, but

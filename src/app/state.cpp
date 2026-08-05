@@ -193,7 +193,11 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
 
     // Roadmap 2.7 / ADR-0005. Watch for sustained work with no session running.
     const bool now_idle = idle_detector_.state() == IdleState::Idle;
-    if (active_session_ || now_idle) {
+    // Private mode means "do not record". Prompting someone to start recording while they
+    // have said that is the wrong direction entirely, so the timer does not advance — and it
+    // resets, so turning private mode off does not immediately fire a nudge earned while it
+    // was on.
+    if (active_session_ || now_idle || settings_.private_mode) {
         // A session is recording, or the stretch ended. Either way there is nothing to nudge
         // about, and the clock restarts from the next burst of activity.
         untracked_since_ms_.reset();
