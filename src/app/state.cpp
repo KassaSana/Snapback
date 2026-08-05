@@ -92,7 +92,9 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
       logger_(logger),
       clock_(clock) {
     if (!app_data_dir_.empty()) {
-        settings_ = load_app_settings(app_data_dir_);
+        // Pass the logger: 7.19's whole point is that a settings file which failed to parse
+        // used to become defaults with nothing written anywhere.
+        settings_ = load_app_settings(app_data_dir_, &log());
     }
     // Hydrate persisted live values once at startup so the public live getters can treat
     // the published snapshot as authoritative, including when an optional is empty.

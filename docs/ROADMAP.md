@@ -55,7 +55,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
 | ~~2~~ | ~~**8.8** release webview debug mode~~ | **Done 2026-08-04** — verified in both Debug and Release builds |
 | ~~3~~ | ~~**8.9** verify ONNX downloads~~ | **Done 2026-08-04** — both jobs verify a pinned SHA-256 before extracting |
-| 4 | ~~**7.20**~~, then **7.19** | 7.20 **done 2026-08-04**; settings persistence still needs to be crash-safe before asking users to trust their data |
+| ~~4~~ | ~~**7.20**, then **7.19**~~ | **Both done 2026-08-04** — session replacement and settings persistence are now crash-safe |
 | ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
 | 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
 | 7 | **9.11** release-tag trust chain | A `v*` tag must not bypass the full CI and version checks |
@@ -403,17 +403,42 @@ internals, and the benchmark harness.
   (7.4), this needs at minimum a UI warning when a rule matches an implausible share of
   observed apps.
 
-- **7.19 — Settings persistence can silently erase configuration.** `S`
+- **7.19 — DONE 2026-08-04.** `S` `save_app_settings()` now stages into `settings.json.tmp`,
+  flushes, **checks the stream before the rename**, copies the current file to
+  `settings.json.bak`, and renames the temp over the destination. `load_app_settings()` takes
+  an optional `Logger*`, falls back to the backup, and reports what happened. The schema is
+  unchanged; `tests/test_settings.cpp` is new (10 cases) — there were no settings tests at all.
+
+  **The stream check is the actual fix, not the rename.** The old code checked only that the
+  file *opened*; a disk that filled up mid-write produced a truncated `settings.json` and
+  returned success. `flush()` forces that failure to surface where it can be thrown rather
+  than in the destructor, where it would be discarded.
+
+  **A missing file is not an error, and neither is an unknown key.** Only a file that exists
+  and cannot be used is reported. `get_or` treats missing/null as "use the default" on
+  purpose so a settings file survives schema drift both ways, and a test pins that: warning
+  on every unrecognised key would make each upgrade log something the user cannot act on.
+  A *present* key of the wrong type does throw, and that is reported.
+
+  Writing this found a wrong assumption worth recording: the first draft asserted that
+  `{"private_mode": ...}` was malformed. It is not — the keys are camelCase, so that is an
+  unknown key and correctly defaults in silence. The test was wrong, not the code.
+
+  **Residual limitation, deliberate.** The rename is atomic, so `settings.json` is never
+  observed empty. It is not `fsync`ed, so a power loss can still lose a just-completed save
+  from the OS cache — the file will be the *old* valid contents, never a torn one. Closing
+  that needs `_commit`/`fsync` behind a platform seam; it is a different (and much rarer)
+  failure than the one this item describes. Revisit with 8.5 if durability is in scope.
+
+  Suite: **328 cases, 327 pass**; the one failure is the pre-existing MinGW-only case in 11.8.
+
+  The original finding was:
 
   `load_app_settings()` catches every parse/type error and returns defaults without logging.
   `save_app_settings()` opens the only `settings.json` with `trunc`, writes directly to it,
   and never flushes or checks the stream afterward. A crash, disk-full condition, or partial
   write can therefore leave an empty/corrupt file that the next launch silently converts to
   defaults.
-
-  Write and flush a sibling temporary file, atomically replace the destination, retain or
-  recover a last-known-good backup, and log malformed input. Tests must cover malformed JSON,
-  a failed final write/replace, and recovery without changing the existing settings schema.
 
 - **7.20 — DONE 2026-08-04.** `S` `create_session()` now closes the old session and inserts
   the replacement in one atomic step. The failure seam is a `BEFORE INSERT` trigger installed
