@@ -77,12 +77,30 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
 | 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
 | ~~7~~ | ~~**9.11** release-tag trust chain~~ | **Done 2026-08-04** — `verify-tag` gates version, reachability, and CI conclusion |
-| 8 | **Decision session B**: 4.11 | Settle title-parser behavior before changing a long-standing contract |
+| 8 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
 | 9 | **7.16** timestamp representation | Unblocks retention and time-window correctness work |
 | 10 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
 | 11 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
 | 12 | **4.4 / 14.1** performance gate + storage query lane | Measure first; split the SQLite reader only if contention is reproduced |
 | 13 | **2.3 / Tier 13** model retraining | Biggest remaining product-depth project after release decisions |
+
+**Eight items were opened on 2026-08-04** and are deliberately *not* in the table above,
+because none of them displaces anything in it. They are listed here so they are findable:
+
+| Item | `S`/`M` | One line |
+|---|---|---|
+| **6.6** GCC-on-Windows CI job | `S` | The uncovered toolchain where 11.8's production bug lived |
+| **9.13** orphaned `v0.2.0` tag | `S` `decision` | No release baseline exists; 9.11's gate would reject the tag |
+| **12.7** ADR-0002's dead link | `S` | An ADR cites a file absent from every clone, with a guard exemption hiding it |
+| **4.13** nothing watches the ONNX pin | `S` | 8.9 made it trustworthy, not current |
+| **11.9** capture invariant unverified | `S` | The test does not catch its own bug on GCC; MSVC never measured |
+| **11.10** stale test registry key | `S` | A crashed test process skips its cleanup |
+| **7.21** settings durability | `S` | 7.19 made the write atomic, not `fsync`ed |
+| **4.12** formatter + static analysis | `M` | Neither exists for either language |
+
+**6.6 is the one worth doing early.** The others are hygiene; 6.6 is the only one that would
+have *prevented* a defect that actually shipped to `master`, and 11.9 and 11.10 both get
+easier once it exists.
 
 Everything else is opportunistic. **Tier 9 is what turns this from a correct program into a
 shippable product** — if the goal is "someone else uses this," its remaining release-readiness
@@ -189,6 +207,26 @@ ended three days earlier.
   > All 24 test TUs now include `tests/doctest_wrapper.hpp`, which wraps
   > `<doctest/doctest.h>` in a `#pragma warning(disable : 5285)` push/pop under `_MSC_VER`.
   > One include site, third-party noise only — our own C5285s would still fire.
+
+- **6.6 — No job builds this project with GCC on Windows, and that gap has already cost us.** `S`
+  Opened 2026-08-04. CI compiles Windows with **MSVC only**, and Linux/macOS with `clang++`.
+  The one combination nobody builds — **libstdc++'s MinGW filesystem implementation** — is
+  where 11.8's production bug lived: `copy_options::overwrite_existing` is silently ignored
+  there, which broke model rollback outright and left `save_app_settings` writing a **stale**
+  backup while reporting success.
+
+  That bug reached `master` and was found only because a portable GCC happened to be the only
+  compiler on the dev machine. Nothing about that was systematic, and the same class of defect
+  can land again tomorrow.
+
+  Add a `windows-gcc` job (MinGW-w64 UCRT, `-G "MinGW Makefiles"`, headless target only — the
+  desktop app's Win32 GUI link is a separate question). Expect to fix fallout before it goes
+  green rather than after.
+
+  **Read 11.8 first.** It records a second failure on this toolchain that is *not* a product
+  defect — the `CaptureThread` contradiction case — and notes that the invariant half of that
+  test does not detect its own bug there. Turning this job on without reading that will look
+  like a regression when it is a known, documented property.
 
 ---
 
@@ -505,6 +543,25 @@ internals, and the benchmark harness.
   `Storage::create_session()` first marks every active session completed and only then inserts
   the replacement, without a transaction spanning both statements. If the insert fails, the
   old session is already closed and the requested new one does not exist.
+
+- **7.21 — A just-saved settings.json can still be lost to power failure.** `S`
+  Opened 2026-08-04 as 7.19's stated residual, recorded here so it is a task rather than a
+  footnote inside a closed item.
+
+  7.19 made the write **atomic** — `settings.json` is replaced by renaming a fully-written
+  temp file, so it is never observed empty or half-written. It did not make it **durable**:
+  neither the temp file nor the containing directory is `fsync`ed, so an OS-level crash or
+  power loss can discard a save the application already reported as succeeded.
+
+  **The failure is bounded and much rarer than the one 7.19 fixed**, which is why it was
+  deliberately left: the file reverts to its previous *valid* contents, never to a torn one.
+  A user loses one settings change, not their configuration.
+
+  Closing it needs `_commit` on Windows and `fsync` on POSIX behind a small platform seam,
+  applied to the temp file before the rename and to the directory after it — the directory
+  entry is a separate write, so syncing only the file still permits losing the rename. Weigh
+  it against the cost first: this adds a synchronous disk flush to every settings write, and
+  8.5's threat model should say whether that trade is worth making.
 
 ### Decisions — do not code these yet
 
@@ -1368,6 +1425,44 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   out and promoted to 7.3.)* **Whether this is required at all is decided by 8.5** — don't
   build it before the threat model exists.
 
+- **4.12 — There is no formatter and no static analysis, for either language.** `M`
+  Opened 2026-08-04. The repository contains no `.clang-format`, no `.clang-tidy`, no
+  `.editorconfig`, and no linter gate for the frontend. Style is currently maintained by
+  attention alone across ~40 C++ translation units and a React app.
+
+  **Do the formatter first and expect one enormous diff.** That is the whole cost, and it is
+  paid once: every subsequent diff stops carrying whitespace noise, which is what makes small
+  behavioural changes reviewable at a glance. Pick the settings to match what the code already
+  looks like (100-column, 4-space, attached braces) so the reformat is close to a no-op.
+
+  `clang-tidy` is the more valuable half and the more disruptive one, so scope it
+  deliberately: start with `bugprone-*` and `performance-*` on `src/` only, warnings not
+  errors, and promote to a gate once the backlog is empty. Turning on everything at once
+  produces thousands of findings and teaches everyone to ignore the tool.
+
+  **Not release-blocking**, and worth weighing against 6.6 — a compiler that actually catches
+  real portability defects has already proven more valuable here than a style checker would
+  have.
+
+- **4.13 — Nothing watches the ONNX Runtime pin.** `S`
+  Opened 2026-08-04, from 8.9's work. Dependabot covers `github-actions` and the frontend
+  `npm` tree. It does not cover CMake `FetchContent` (4.6 already records that) and it does
+  not cover the ONNX Runtime archives pinned in
+  [`third_party/onnxruntime-pins.json`](../third_party/onnxruntime-pins.json).
+
+  8.9 made that pin **trustworthy** — a re-uploaded release asset now fails the digest check
+  before extraction. It did not make it **current**. Nothing reports a new upstream release or
+  an advisory against 1.20.1, and pinning actively increases staleness by removing the tag
+  that used to drift forward.
+
+  A scheduled workflow that queries the ONNX Runtime releases API and opens an issue when the
+  pinned version is behind would close the gap; it must not open a PR that edits the digests,
+  because a bot computing the hash it is meant to be verifying defeats the point. The human
+  step is downloading both archives and hashing them, which
+  [dependencies.md](dependencies.md) documents.
+
+  Same argument applies to the three `FetchContent` pins. Consider covering all four at once.
+
 ---
 
 ## Tier 9 — Ship a v1 (release readiness)
@@ -1527,6 +1622,27 @@ small; the tier is large because nobody has walked that path yet.
   Kassa must choose the project license. Then add the real license file, audit the licenses
   of bundled/runtime dependencies, generate the required third-party notices, include both
   in every package, and test their presence in extracted release artifacts.
+
+- **9.13 — The `v0.2.0` tag is orphaned, so there is no release baseline.** `S` `decision`
+  Found 2026-08-04 while writing [`CHANGELOG.md`](../CHANGELOG.md). The tag points at
+  `ba4050f`, which shares this repository's root commit but is **reachable from no branch** —
+  history was rewritten underneath it. Meanwhile `master` is **361 commits ahead** and
+  `CMakeLists.txt` still declares `0.2.0`.
+
+  Three things follow. Nothing can be diffed against "the last release", because the commit
+  that produced it no longer exists on any line of history. The version has not moved in 361
+  commits, so tagging today would reuse a number. And 9.11's `verify-tag` job **would reject
+  that tag** on the reachability check — correctly; that is the gate meeting its first real
+  case.
+
+  **`decision` because the options differ in what they cost, and only Kassa can pick.** Delete
+  the tag and start at a fresh version; retag it onto a current `master` commit (this rewrites
+  what a published tag means, so anyone who fetched it sees it move); or leave it and treat
+  the first real release as the baseline, documenting the gap. The changelog currently states
+  the third, as the honest default rather than as a decision made.
+
+  Whatever is chosen, cutting a release needs the version bumped first, then a tag on a
+  `master` commit CI has proven green.
 
 ---
 
@@ -1831,6 +1947,42 @@ structure alone — a real review would likely find more.
   Neither blocks release. **They become blocking the moment anyone adds a MinGW job**, which
   is the only reason this is written down.
 
+- **11.9 — The capture contradiction invariant is unverified outside MSVC.** `S`
+  Opened 2026-08-04 by 11.8's fix. `CaptureThread never reports failed and running at the same
+  time` exists to catch 11.1's store-ordering bug, and its comment claims "with the stores in
+  the wrong order this fails."
+
+  On GCC/MinGW that claim is false. Reintroducing the bug — storing `failed_` before clearing
+  `running_` — leaves the case **passing**. This is not a consequence of 11.8's deadline
+  change: the original iteration-count version was re-run against the same inverted stores and
+  also passed, 10/10. The contradiction window simply is not observable on that toolchain.
+
+  So the test's protective value rests entirely on MSVC/CI behaviour that has never been
+  measured either — only assumed, because the bug was originally *found* there. **A test whose
+  sensitivity is unknown on the platform it runs on is not yet evidence of anything.**
+
+  Do the experiment: invert the stores on a branch, run that case in Windows CI, and record
+  the failure rate. If it does not reliably fail there either, the test needs a real
+  observation strategy (sample `running()` from a second thread the moment `failed()` flips,
+  rather than from the same loop) or it should stop claiming to guard the invariant.
+
+  Ties to **6.6** — a GCC job makes this the difference between "known-inert here" and a
+  silently useless test running on every push.
+
+- **11.10 — A crashed test process leaves a registry key behind.** `S`
+  Opened 2026-08-04 alongside 11.7. `tests/test_autostart_run_key.cpp` creates
+  `HKCU\Software\SnapbackTests\test-<pid>-<n>` and deletes it in the fixture destructor. A
+  crash, an abort, or a `REQUIRE` that terminates the process skips that destructor, so the
+  key survives — and 11.1 runs each case as its own process, so a crash is a per-case event.
+
+  Much smaller than what 11.7 fixed: the residue is inert, under a name production never
+  touches, and it cannot register anything to launch at login. But it is the same *shape* of
+  defect, and 11.7's own history is two rounds of exactly that shape.
+
+  Sweep stale `test-*` subkeys at fixture construction — the pid in the name makes "left by a
+  process that no longer exists" decidable — or delete the `SnapbackTests` root once at
+  process start. Prefer the sweep: deleting the root races concurrent cases.
+
 - **11.7 — DONE 2026-08-04.** `S` The Windows half is closed, so nothing in the suite touches
   a real login mechanism on any platform any more.
 
@@ -1993,6 +2145,23 @@ later moved.
   Filed here because the doc audit is what surfaced it. It needs hand-written per-OS hotkey
   registration, which is presumably why it was skipped. ADR-0002's six-item blocker list does
   not include it, so this is post-v1 unless that accepted scope is explicitly revised.
+
+- **12.7 — ADR-0002 links to a file that exists in no clone.** `S`
+  Opened 2026-08-04. [`docs/adr/0002-v1-supports-windows-and-macos.md`](adr/0002-v1-supports-windows-and-macos.md)
+  links to `../../CLAUDE.md` as evidence for where development happens. That file is
+  gitignored and absent from every clone, so the link is broken for everyone but Kassa —
+  and `scripts/check_doc_paths.py` carries an explicit `EXPECTED_ABSENT` exemption that keeps
+  the guard quiet about it.
+
+  **The exemption is doing real damage here, not just hiding a dead link.** Tier 12 exists
+  because docs asserted things no reader could check; an ADR citing a file nobody can open is
+  that exact failure, inside the document type meant to be the durable record. ADRs are
+  append-only, so the fix is not to edit the claim — it is to make the citation resolve:
+  restate the fact inline (development happens on Darwin) so the ADR stands alone, then drop
+  the exemption so the guard stops normalising an unresolvable path.
+
+  Same treatment for the two other `CLAUDE.md` references, in ADR-0001 and the `.gitignore`
+  comment. Then `check_doc_paths.py` should fail on any *new* reference to it.
 
 ---
 
