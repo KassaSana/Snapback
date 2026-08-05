@@ -7,9 +7,35 @@
 - **Bundled frontend** copied beside `snapback.exe` for demo/release
 - **CI:** headless tests on 3 OSes, ASan/UBSan, TSan, feature-parity fixtures, ONNX smoke, production-smoke workflow
 - **Release:** a tag-driven workflow (`.github/workflows/release.yml`) builds + tests the
-  Windows package and publishes it to GitHub Releases on a `v*` tag
+  Windows package and publishes it to GitHub Releases on a `v*` tag, behind the tag gate below
 - **Signing hook:** release builds sign EXE artifacts when
   `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` is configured
+
+## Cutting a release
+
+ROADMAP 9.11. A `v*` tag is its own way into `release.yml`, and `ci.yml` does not run for
+tag pushes — it runs on pushes and PRs to `main`/`master`. Without a gate, a tag could
+publish a commit that never saw the macOS/Linux/sanitizer/ONNX matrix, or was never on
+master at all. **Branch protection does not cover this: a tag is not a branch.**
+
+So the order matters:
+
+1. **Merge to `master`** and let `ci.yml` finish **green** on the merge commit.
+2. **Bump `project(... VERSION x.y.z)` in `CMakeLists.txt`** if you have not already, and
+   commit it — the tag must name that exact version.
+3. **Tag that commit** and push: `git tag v0.2.0 && git push origin v0.2.0`.
+
+The `verify-tag` job refuses to build unless all three hold:
+
+| Check | Fails when |
+|---|---|
+| `scripts/check_release_tag.py` | the tag is not `vX.Y.Z`, or does not equal `PROJECT_VERSION` |
+| `git merge-base --is-ancestor` | the tagged commit is not reachable from `origin/master` |
+| `gh api .../ci.yml/runs?head_sha=…` | that commit has no completed, successful `ci.yml` run |
+
+The third check reads CI's conclusion rather than re-running the matrix, because a copy of
+the matrix here would drift from the real one. It fails closed: an API error or an
+unexpected response is treated as unproven, not as a pass.
 
 ## Authenticode signing
 

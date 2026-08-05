@@ -7,6 +7,10 @@ name: Release
 # Trigger it by pushing a version tag:
 #   git tag v0.2.0 && git push origin v0.2.0
 #
+# A tag alone is not enough (9.11). The commit must already be on master with a green
+# ci.yml run, and the tag must name CMake's PROJECT_VERSION exactly. So the order is:
+# merge to master -> wait for CI to go green -> tag that commit.
+#
 # Manual runs (workflow_dispatch) build + upload the artifact but skip the Release
 # step, so you can smoke a candidate without publishing.
 #
@@ -25,12 +29,76 @@ concurrency:
 
 permissions:
   contents: write # needed to create the GitHub Release
+  actions: read # needed to read the tagged commit's CI conclusion (9.11)
 
 defaults:
   run:
     shell: pwsh
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Roadmap 9.11. A pushed tag is an independent way into this workflow: ci.yml runs on
+  # pushes and PRs to main/master, so a `v*` tag can point at *any* commit — one that never
+  # passed the macOS/Linux/sanitizer/ONNX matrix, or that was never on master at all.
+  # Branch protection does not help; it protects branches, and a tag is not a branch.
+  #
+  # This job is the gate. It always runs so that workflow_dispatch (which never publishes)
+  # is not blocked by a skipped dependency; the checks themselves apply to tag pushes only.
+  # ---------------------------------------------------------------------------
+  verify-tag:
+    name: Verify release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Full history: reachability cannot be proved from a shallow clone.
+          fetch-depth: 0
+
+      - name: Tag must name the version CMake builds
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: python3 scripts/check_release_tag.py "${GITHUB_REF_NAME}"
+
+      - name: Tagged commit must be reachable from master
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          git fetch --no-tags --quiet origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/master; then
+            echo "::error::${GITHUB_SHA} is not an ancestor of origin/master. A release must" \
+                 "ship code that went through master's protected path, not an arbitrary commit."
+            exit 1
+          fi
+          echo "${GITHUB_SHA} is reachable from origin/master"
+
+      - name: Tagged commit must have a green CI run
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The full 15-job matrix lives in ci.yml and does not run for tag pushes. Rather
+          # than duplicate it here (which would drift), require that this exact commit
+          # already has a completed, successful ci.yml run.
+          successes=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=completed" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          # Anything that is not a count means the query itself failed or changed shape.
+          # Treat that as "unproven" rather than "fine" -- this gate must fail closed.
+          if ! [[ "${successes}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not read a CI conclusion for ${GITHUB_SHA} (got '${successes}')."
+            exit 1
+          fi
+          if [ "${successes}" -lt 1 ]; then
+            echo "::error::No successful ci.yml run found for ${GITHUB_SHA}. Push the commit" \
+                 "to master, let CI finish green, then tag that commit."
+            exit 1
+          fi
+          echo "found ${successes} successful ci.yml run(s) for ${GITHUB_SHA}"
+
   # ---------------------------------------------------------------------------
   # Build the Windows package. package_windows.ps1 runs the frontend suite, the
   # C++ tests (ctest), builds the Release app, and produces the ZIP + IExpress
@@ -40,6 +108,7 @@ jobs:
   # ---------------------------------------------------------------------------
   windows-package:
     name: Windows package
+    needs: verify-tag # nothing is built for a tag that has not passed the gate above
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -82,7 +151,7 @@ jobs:
   # ---------------------------------------------------------------------------
   github-release:
     name: Publish GitHub Release
-    needs: windows-package
+    needs: [verify-tag, windows-package]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10

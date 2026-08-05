@@ -58,7 +58,7 @@ Ordered by dependency, not severity. This replaces every previous "suggested seq
 | ~~4~~ | ~~**7.20**, then **7.19**~~ | **Both done 2026-08-04** — session replacement and settings persistence are now crash-safe |
 | ~~5~~ | ~~**Decision session A**: 5.3, 5.4, 1.2, 7.7~~ | **Done 2026-08-03** — [ADR-0004](adr/0004-verdict-and-opinion.md); 7.18 settled with them |
 | 6 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
-| 7 | **9.11** release-tag trust chain | A `v*` tag must not bypass the full CI and version checks |
+| ~~7~~ | ~~**9.11** release-tag trust chain~~ | **Done 2026-08-04** — `verify-tag` gates version, reachability, and CI conclusion |
 | 8 | **Decision session B**: 4.11 | Settle title-parser behavior before changing a long-standing contract |
 | 9 | **7.16** timestamp representation | Unblocks retention and time-window correctness work |
 | 10 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
@@ -1431,18 +1431,36 @@ small; the tier is large because nobody has walked that path yet.
   file state exactly what is included, what is excluded, and that logs may expose local
   paths or error details; native and UI regressions pin the privacy boundary.
 
-- **9.11 — A release tag can bypass the full CI and version contract.** `S`
+- **9.11 — DONE 2026-08-04.** `S` `release.yml` gained a `verify-tag` job that
+  `windows-package` and `github-release` both depend on. It enforces all three rules: the tag
+  must be `vX.Y.Z` **and equal to** CMake's `PROJECT_VERSION`
+  ([`scripts/check_release_tag.py`](../scripts/check_release_tag.py)); the tagged commit must
+  be an ancestor of `origin/master`; and that commit must already have a completed, successful
+  `ci.yml` run. [PACKAGING.md](PACKAGING.md) documents the resulting order.
+
+  **It reads CI's conclusion instead of re-running the matrix.** Copying the 15 jobs into a
+  reusable workflow would have satisfied the item and then drifted from the real one — and a
+  release gate that tests something *other* than what CI tests is worse than no gate, because
+  it looks like proof. Querying the run for that exact SHA cannot drift.
+
+  **The gate fails closed.** A `gh api` error or an unexpected response shape is treated as
+  unproven rather than as a pass; five stubbed responses (green, none, two, API error, junk)
+  were run against the real step text to confirm each outcome. The tag-version guard was
+  likewise checked against six tag shapes plus a `CMakeLists.txt` whose `project()` call no
+  longer declares a version — that last one must fail loudly, not pass forever.
+
+  **Not verified live:** the GitHub API query shape was exercised only against stubs, because
+  the local `gh` is unauthenticated. It uses the documented `workflows/{file}/runs` endpoint,
+  but the first real tag push is what proves it. Push a throwaway tag on a branch before
+  relying on this for a real release.
+
+  The original finding was:
 
   `release.yml` publishes any pushed `v*` tag. The full 15-job CI workflow runs only for
   pushes/PRs targeting `main` or `master`, while release runs a narrower Windows package
   path and never proves that the tag names CMake's `PROJECT_VERSION`. A tag can therefore
   publish an arbitrary commit that never passed the macOS/Linux/sanitizer/ONNX matrix or a
   version whose artifact metadata disagrees with its tag.
-
-  Before publishing, require the tagged commit to be reachable from protected `master`, fail
-  unless the tag is exactly `v${PROJECT_VERSION}`, and require the release candidate's full
-  CI conclusion (or run the equivalent checks in a reusable workflow). This complements 6.2;
-  branch protection alone does not protect an arbitrary tag.
 
 - **9.12 — Choose a project license and package dependency notices.** `S` `decision`
 
