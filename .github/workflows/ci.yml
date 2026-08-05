@@ -453,3 +453,9 @@ jobs:
       # tags and 9.11's CI-conclusion gate. Catch it before it lands.
       - name: Every commit must be attributed to Kassa
         run: python3 scripts/check_commit_attribution.py --verbose
+
+      # Roadmap 8.10. The Privacy card promises "Nothing leaves this device" and the bundler
+      # claims zero subresource requests. Both were false because the page fetched webfonts —
+      # and invisibly so, since an offline launch just rendered fallback type and looked fine.
+      - name: The shipped page must not fetch anything
+        run: python3 scripts/check_no_remote_subresources.py --verbose

@@ -9,8 +9,14 @@
   --surface-alt: #fce8d9;
   --shadow: 0 18px 40px rgba(21, 22, 26, 0.12);
   --radius: 18px;
-  --font-sans: "Space Grotesk", "Sora", sans-serif;
-  --font-serif: "Source Serif 4", "Georgia", serif;
+  /* Roadmap 8.10. System stacks, not webfonts. The named families are still listed first, so
+     anyone who happens to have them installed keeps the intended look, but nothing is ever
+     fetched: the app must render identically online and offline, and "Nothing leaves this
+     device" has to be true on first launch as well as afterwards. */
+  --font-sans: "Space Grotesk", "Sora", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+    "Times New Roman", serif;
 }
 
 *,

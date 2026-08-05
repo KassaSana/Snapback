@@ -145,10 +145,28 @@ has a concrete user failure, acceptance boundary, and dependency in its owning t
 | Product depth | **2.9–2.14** | History is not explorable, recording state is hard to see, repeat work is slow, onboarding stops before first value, Pomodoro is skeletal, and sessions cannot hold a reflection |
 | Frontend/visual quality | **10.8–10.11** | Review charts mislead, Settings leads with internals, CSS tokens are incomplete/light-only, and Review cards describe different periods |
 
-**Do not read that as eighteen equal priorities.** The release-sized correction queue is
-**7.24 → 8.10 → 7.23/7.25 → 7.12 → 13.7 → 10.8**. The rest are deliberately assignable in
-parallel after their stated dependencies, with 2.9–2.14 serving as product candidates rather
-than excuses to delay shipping.
+**A second 2026-08-05 pass opened ten additional assignable items without reusing those
+eighteen.** This pass followed concrete user journeys through the live implementation: a
+snapback firing, correcting a verdict, hiding and reopening the desktop app, locking the
+machine, deleting private history, and starting against a mature database.
+
+| Area | Items | What the second pass found |
+|---|---|---|
+| Product truth & control | **2.15–2.17** | Snapback episodes are never persisted, interventions have no delivery policy, and append-only labels cannot express an authoritative correction |
+| Correctness & lifecycle | **7.28–7.29**, **9.15** | Editable goal-category names secretly change semantics, OS lock/sleep is treated as ordinary idle, and the single-instance tray app has no activation/close contract |
+| Privacy completeness | **8.11–8.12** | App-only exclusions cannot redact one sensitive browser context, and “delete all” leaves personal exports plus full migration backups behind |
+| Desktop quality | **10.12** | Windows overlay placement ignores the tested multi-monitor geometry and fixed pixels ignore per-monitor DPI |
+| Startup performance | **14.7** | Retention and a full `VACUUM` can block first paint before the webview even exists |
+
+The ordering signal inside this batch is **2.15 → 8.12 → 14.7**: the first repairs a metric
+already shown to the user, the second repairs a privacy action already promised to the user,
+and the third removes repeat launch work after measuring it. The remaining seven are parallel
+product/desktop candidates. They do not displace the release-sized correction queue above.
+
+**Do not read the first pass as eighteen equal priorities.** The release-sized correction
+queue is **7.24 → 8.10 → 7.23/7.25 → 7.12 → 13.7 → 10.8**. The rest are deliberately
+assignable in parallel after their stated dependencies, with the Tier 2 additions serving as
+product candidates rather than excuses to delay shipping.
 
 **A rejected idea, recorded so it is not re-proposed.** "Hyperfocus nudges must be firing
 falsely on overnight sessions" looked obviously true and is **false**: `update_break_state`
@@ -825,6 +843,45 @@ internals, and the benchmark harness.
   remain effectively the same as a zero-event control of equal duration; event count itself
   cannot increase probe count.
 
+- **7.28 — Separate goal-category identity from editable display text.** `M/L`
+  Opened 2026-08-05. `GoalCategoriesCard` can edit only the rows it receives: there is no Add,
+  Remove, Disable, or explicit Reset. Saving an empty list is also not stable — the getter and
+  scorer silently resurrect the built-in defaults. More seriously, context compatibility
+  infers semantics from category-name substrings such as `research`, `read`, `commun`, and
+  `meeting`. Renaming a visible “Research” category to “Study” can change classification even
+  when every keyword stays the same.
+
+  Give built-in semantic categories stable ids/kinds independent of their display names, and
+  make custom-category behavior explicit rather than guessing it from text. The UI must support
+  add, remove, disable all, and **Restore defaults**, with a live preview explaining how a sample
+  goal/context will score. Empty/disabled must remain empty/disabled after restart; defaults
+  return only through the explicit reset action.
+
+  Migrate recognized existing names without changing their behavior and surface ambiguous
+  custom names for review. A rename-only test must leave scores byte-for-byte unchanged; add
+  C++/JSON/frontend round trips for create/remove/disable/reset and include the new stable fields
+  in feature-parity/model-contract review. Settings publication follows **7.26** so disk and live
+  classification cannot disagree.
+
+- **7.29 — Treat screen lock, suspend, wake, and unlock as first-class lifecycle events.** `M/L`
+  Opened 2026-08-05. The only lifecycle signal today is ordinary input inactivity, so a locked
+  or sleeping machine remains “attended” until the five-minute idle threshold expires. There
+  are no Windows session/power or macOS workspace sleep/wake adapters. Capture permissions,
+  hooks, Pomodoro deadlines, and notification delivery are therefore all left to whatever the
+  next 100 ms tick happens to observe after resume.
+
+  Normalize native events into **Locked**, **Suspending**, **Resumed**, and **Unlocked**. Lock or
+  suspend immediately closes **7.23**'s attended span, suppresses context/prediction processing
+  and every intervention, and checkpoints the minimum safe state. Wake revalidates/re-arms the
+  capture backend but remains paused until genuine post-unlock input; it must not manufacture
+  an attended interval or replay a burst of expired notices.
+
+  Injected lifecycle tests must cover duplicate and out-of-order events, sleep spanning a day/
+  DST boundary, lock during persistence, shutdown while suspended, and each Pomodoro policy in
+  **2.13**. The platform adapters stay thin over one testable state machine. Build on **7.23**,
+  **7.24**, and preferably **14.2**; Linux may begin with a truthful unsupported/stub state if
+  its desktop-session contract is deferred beyond v1.
+
 ### Decisions — do not code these yet
 
 - **7.7 — DONE 2026-08-03.** Settled by
@@ -1458,7 +1515,39 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   workflow downloads, so its broad claim that fetched dependencies are immutable was
   incomplete.
 
-- **8.10 — Make the shipped application network-silent by default.** `S` **release privacy**
+- **8.10 — DONE 2026-08-05.** `S` **release privacy** The Google Fonts stylesheet link and both
+  remote CSP origins are gone from `frontend/index.html`, typography moved to system stacks in
+  `styles.css`, and the dead `frontend/public/snapback.html` was deleted.
+  [`scripts/check_no_remote_subresources.py`](../scripts/check_no_remote_subresources.py) now
+  fails CI on any remote subresource, and it checks `dist/` too when a build is present, so
+  the guard sees the artifact that actually ships.
+
+  **System stacks rather than bundled font files**, which the item allowed and which also
+  avoids adding font licences to 9.12's inventory. The named families are still listed first,
+  so anyone who has them installed keeps the intended look.
+
+  **`snapback.html` was a webview overlay from before 3.1.** Nothing referenced it — the
+  overlays are native Win32/`NSPanel` windows — but it sat in `public/`, so Vite copied it into
+  every build, shipping a second page that fetched fonts. Verified dead before deleting; it is
+  in git history.
+
+  **The guard was wrong twice before it was right**, both times in the direction that matters:
+
+  - It **passed a CSP that re-permitted `fonts.googleapis.com`**. A policy is full of
+    single-quoted keywords like `'self'`, so a `[^"']+` capture stopped at the first one and
+    matched two words of the policy. Fixed with a captured-and-back-referenced quote character.
+  - It **failed the real built page** over `rel="preload"` — which turned out to be a DOM
+    selector string inside the inlined React bundle, not a link tag. Script and style bodies
+    are now stripped before the markup checks (opening tags survive, so `<script src="https…">`
+    is still caught), and only `preconnect`/`dns-prefetch` are flagged by `rel` alone.
+
+  Seven cases are exercised against the real script: remote stylesheet, preconnect,
+  re-permitted CSP origin, protocol-relative URL, remote script `src`, JS that merely mentions
+  preload (must pass), and the clean page.
+
+  The original finding was:
+
+- **8.10 (original finding) — Make the shipped application network-silent by default.** `S`
   Opened 2026-08-05. `frontend/index.html` makes one Google Fonts stylesheet request covering
   two font families, and the CSP explicitly permits `fonts.googleapis.com` and
   `fonts.gstatic.com`. `frontend/public/snapback.html` contains its own separate request. At
@@ -1473,6 +1562,47 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   or other automatic subresource in the final HTML. Verify the packaged page with networking
   disabled and with an outbound-request probe. Explicit user actions such as a future update
   check are a separate, disclosed policy; normal rendering must perform none.
+
+- **8.11 — Add scoped capture rules before sensitive window titles reach the pipeline.** `M/L`
+  Opened 2026-08-05. Privacy currently offers one global switch and a list of app-name
+  exclusions. `is_private_event_unlocked()` checks only `event.app_name`; a user who wants to
+  hide one banking, health, password-manager, or client browser context must therefore exclude
+  the entire browser. Otherwise the raw title can flow through features, snapback summaries,
+  context storage, exports, and notification copy.
+
+  Add ordered rules scoped to an app plus an optional title/context matcher, with explicit
+  actions **Capture full context**, **Capture app only**, and **Exclude**. Match at the capture
+  boundary and pass only the sanitized event downstream; a redacted title must never survive
+  in a queued event waiting to be persisted later. Use bounded literal/glob matching rather
+  than an unbounded regex engine. Domain matching is allowed only on platforms where **7.27**
+  establishes a real domain field — do not infer a URL from a tab title.
+
+  Migrate today's `excluded_apps` entries to app-scoped Exclude rules. The editor must preview
+  scope and precedence without writing new raw examples to disk. A secret-string fixture must
+  prove that a sensitive tab is dropped or app-only while an ordinary tab in the same browser
+  still records, and that the secret appears nowhere in the database, emitted events, logs,
+  notifications, or every export. Build after **7.26** makes the setting atomic and align the
+  storage boundary with the threat model in **8.5**.
+
+- **8.12 — Make “Delete all activity” cover every app-owned copy of that activity.** `M`
+  Opened 2026-08-05. `delete_activity_exports()` removes only `exports/training` and
+  `exports/summaries`. It misses the readable `exports/personal/snapback_my_data.md`, and every
+  successful schema migration can leave a complete `focoflow.db.pre-v<N>.bak`. The command
+  can therefore report success while window titles and full session history remain under the
+  app's own data directory.
+
+  Define one tested artifact/privacy matrix covering the live DB and WAL, personal/training/
+  summary exports, migration backups, support bundles, logs, settings, and model artifacts.
+  “Delete activity” must remove every artifact classified as activity-bearing while preserving
+  explicitly non-activity configuration. Make the SQLite free-page/WAL policy an output of
+  **8.5**, not an undocumented assumption.
+
+  Return a structured result listing what was deleted and what remains; success means the
+  matrix is clean. Attempt every target even if one stale export is locked, so failure to
+  remove a replica cannot also skip deletion from the source DB. Tests must create a personal
+  export and a pre-migration backup, inject one filesystem failure and one SQLite failure, and
+  prove the UI never says “permanently deleted” for a partial result. This is the in-app
+  privacy boundary; **9.5** separately owns uninstall behavior.
 
 ---
 
@@ -1620,6 +1750,67 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   otherwise. Reflections are editable from the session detail in **2.9** and appear in the
   readable personal export. This requires an append-only schema migration; use **7.22**'s
   pre-migration backup and add a real prior-version upgrade case for the new field.
+
+- **2.15 — Persist distraction episodes, then make them explorable.** `M`
+  Opened 2026-08-05. This begins as a correctness repair. `ContextTracker` produces a rich
+  `SnapbackPayload`, `AppState` emits it, and `Storage::recap()` reports a count from the
+  `snapback_events` table — but there is no production `INSERT INTO snapback_events` anywhere.
+  `PersistJob` saves only context, prediction, and feature rows. Consequently the recap's
+  Snapback count is effectively always zero outside manually seeded test databases.
+
+  First persist exactly one episode on the same activity-epoch/transaction boundary as the
+  event that emits it. Extend the schema beyond summary/timestamp with the minimum useful
+  facts: episode start and return time, duration, and privacy-safe context references. A
+  duplicate tick, dismissal, restart, or delivery retry must not create another row. The
+  production-path regression must drive capture → tracker → persistence → recap; inserting a
+  row directly in a storage test would preserve the current blind spot.
+
+  Then compose those rows into **2.9** and **10.11**: show what interrupted a selected session,
+  total time lost, common episode contexts, and the route back, with honest no-data states.
+  Deleting a session and the readable personal export must include the same episodes. No row
+  or raw context may be produced while private/excluded, and one deterministic fixture must
+  prove that the recap count and episode rollup describe exactly the same population. Land
+  calendar grouping after **7.16**.
+
+- **2.16 — Let the user control when and how Snapback interrupts.** `M`
+  Opened 2026-08-05. A snapback currently triggers both the native overlay and a native
+  notification unconditionally; hyperfocus has its own unconditional toast, while Settings
+  has no delivery fields and the tray offers only Show and Quit. The same snapback summary can
+  also put a filename or project hint into OS notification history.
+
+  Add per-event delivery preferences for snapback, hyperfocus, and Pomodoro; channel choices
+  for in-app/overlay/native delivery; quiet hours; a tray **Snooze alerts for 30 minutes**
+  action; and **Detailed / Generic** lock-screen preview copy. Recording continues during an
+  alert snooze and the status model in **2.10** must say so — silencing an intervention is not
+  privacy mode. Default routing should produce one visible intervention per logical event,
+  with “both” available only as an explicit preference.
+
+  Quiet ranges must work across midnight and local clock changes. Snooze must survive a hidden
+  window/reopen, and a generic preview may contain no app, title, file, project, or goal text.
+  Most importantly, suppressing a snapback must still acknowledge/re-arm `ContextTracker`;
+  otherwise it stays Recovering and the user's first quiet-hour event silently disables every
+  later snapback. Use injected clocks and delivery fakes. Depends on **7.16**, **7.26**, and
+  the shared recording state in **2.10**.
+
+- **2.17 — Give feedback an authoritative, editable label ledger.** `M/L`
+  Opened 2026-08-05. Auto labels, the end-session check-in, and live verdict corrections all
+  call append-only `insert_label()`. There is no list/update/supersede command, live feedback
+  is attached only to a session rather than an exact prediction, and training export writes
+  every row. A user-facing “Override” can therefore add a conflicting label without defining
+  which one is truth.
+
+  Define label scope and precedence: prediction-scoped corrections versus session-scoped auto
+  and survey labels. Keep an append-only audit trail with stable ids and `supersedes` links,
+  but expose one effective-label view; the survey supersedes the automatic session label and
+  retrying the same submission is idempotent. Existing conflicts need a deterministic migration
+  rule rather than “last row happened to win.” This fulfills the label-idempotence prerequisite
+  identified by **13.5** without pre-deciding whether there is enough data to train.
+
+  In **2.9** show label, scope, source, time, and provenance with Amend/Undo actions. Live
+  feedback must target the prediction the user actually saw, even if a newer prediction has
+  arrived. Training export emits effective labels only, while the personal export may retain
+  the audit trail. Tests must cover repeated clicks, auto→survey supersession, two corrections,
+  undo, session deletion, and export. Coordinate lifecycle writes with **7.25**.
 
 - **2.3 — Model retraining loop.** `L` — **blocked on 13.7.**
   The intended loop is exported CSV + the user's labels → a fresh `model.onnx`, opening the
@@ -2089,6 +2280,28 @@ small; the tier is large because nobody has walked that path yet.
   live WAL database, which hand-copying does not. Ties to **7.22** (the same backup
   machinery), **9.4**, and **9.5**.
 
+- **9.15 — Define one coherent desktop instance and window lifecycle.** `M/L`
+  Opened 2026-08-05. **9.8** correctly prevents two processes from opening the same database,
+  but a second GUI launch only prints “already running” to an invisible stderr stream and
+  exits. The owner process also has no close-window handler: when `w.run()` returns the engine
+  stops, despite a tray whose only actions are Show and Quit. Double-click can look broken,
+  while clicking X can accidentally stop an active always-on app.
+
+  Add a per-user, per-data-directory activation channel owned by the instance lock. A second
+  process asks the owner to restore/focus its window, waits for an acknowledgement, and exits
+  without opening SQLite, starting capture, or installing another tray. Define close behavior
+  explicitly: follow each platform's native convention, offer **Hide/keep running** versus
+  **Quit** where needed, and show a one-time explanation the first time a close leaves Snapback
+  in the tray.
+
+  Launching while hidden/minimized must surface the existing window within one second and
+  restore its previous size, position, and surface. Never hide the only window if tray
+  installation failed. Explicit Quit closes the attended span and engine exactly once through
+  **7.23/7.25**; stale endpoints after crashes recover without allowing a second database owner.
+  Two-process Windows/macOS tests must cover activation, owner-exit races, wrong-user requests,
+  repeated close/show, and exactly one engine, capture hook, DB owner, and tray icon. Integrate
+  the visible recording state from **2.10**.
+
 ---
 
 ## Tier 10 — Frontend & UX
@@ -2230,6 +2443,22 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   response cannot overwrite the newer range. Land after **7.16** defines calendar boundaries
   and **7.12** makes those queries bounded; implement through **14.4**, not another set of
   cross-card callbacks in `App.tsx`.
+
+- **10.12 — Make the Windows snapback overlay monitor- and DPI-aware.** `S/M`
+  Opened 2026-08-05. The shared placement helper and its test already support a display whose
+  origin is not `(0,0)`, but Windows production always asks `SPI_GETWORKAREA` for the primary
+  work area. It then lays out a fixed 420×250-pixel window. On a multi-monitor or mixed-DPI
+  desk, a nudge caused on one screen can appear on another, clip, or render physically tiny.
+
+  Target the monitor containing the foreground window, with the cursor monitor as an explicit
+  fallback. Query that monitor's work area, scale dimensions/padding/type by its effective DPI,
+  and handle `WM_DPICHANGED` while the overlay is visible. Preserve the non-activating focus
+  behavior: better placement must not steal the user's keyboard target.
+
+  Tests and a Windows desktop smoke must cover negative coordinates, monitors above/left of the
+  primary display, taskbars on every edge, unplugging the target monitor, and 100/125/150/200%
+  scale without clipped copy or controls. Coordinate colors/typography with **10.10**, focus and
+  zoom behavior with **10.3**, and the future action layout with **2.8**.
 
 ---
 
@@ -2902,6 +3131,30 @@ kept here; already-deep modules and completed performance work were rejected dur
   Fast commands remain synchronous. Replace shell execution with an owned process API as part
   of this work, aligning with **4.2**, and do not promise cancellation until the child can
   actually be stopped.
+
+- **14.7 — Move retention and space reclamation out of the launch critical path.** `M`
+  `performance`
+  Opened 2026-08-05. `main.cpp` blocks on `Storage::open()` before the webview is constructed.
+  That open synchronously migrates, prunes every retained runtime table, and runs a full
+  blocking `VACUUM` after only 500 deleted rows. At roughly one prediction/feature row per
+  second, an ordinary day's expiry clears that threshold; a mature database can periodically
+  rewrite itself while a user double-clicks and sees no window.
+
+  Measure first with month- and 90-day fixtures. Keep lock acquisition, schema validation, and
+  required migrations on the correctness-critical startup path, but schedule ordinary pruning
+  and page reclamation after first paint. Make timestamp predicates indexable after **7.16**,
+  add the missing useful global timestamp access path for high-volume feature rows, delete in
+  bounded chunks, and choose incremental/freelist-ratio or byte-based reclamation from measured
+  file growth rather than row count alone. A session start must be able to yield/cancel
+  maintenance before it harms capture persistence.
+
+  Acceptance: no full `VACUUM` runs before the first window; the same-host mature-fixture p95
+  for launch-to-visible improves by at least 80% over the captured baseline; expiry leaves no
+  out-of-policy rows; engine write latency stays inside its existing benchmark bound; and a
+  crash between chunks resumes safely without a second deletion interpretation. Publish last
+  maintenance time/result and pending reclaim bytes in diagnostics. Reuse **14.5**'s deadline
+  scheduler or **14.6**'s owned jobs rather than starting another unmanaged thread, and align
+  the policy with user-configurable retention in **9.10**.
 
 ---
 

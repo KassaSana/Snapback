@@ -3,15 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Roadmap 8.10. No remote origins: the Privacy card promises "Nothing leaves this device"
+      and inline-bundle.mjs claims the shipped page makes zero subresource requests. Both were
+      false on an online first launch, because this page fetched a Google Fonts stylesheet
+      (which then fetches font files from a second origin). Offline launches silently got
+      different typography, so the bug was invisible to anyone developing on a plane.
+
+      Typography now uses a system stack (see --font-sans / --font-serif in styles.css), which
+      also avoids bundling font files that would need their licences inventoried under 9.12.
+      scripts/check_no_remote_subresources.py fails the build if any remote origin returns.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
     />
     <title>Snapback Dashboard</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Source+Serif+4:wght@500&display=swap"
-      rel="stylesheet"
-    />
   </head>
   <body>
     <div id="root"></div>

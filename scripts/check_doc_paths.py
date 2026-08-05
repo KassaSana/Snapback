@@ -61,6 +61,9 @@ EXPECTED_ABSENT = {
     "third_party/onnxruntime/lib": "same -- the lib subdir docs tell you to populate",
     "third_party/sqlite/": "optional vendored SQLite override; docs say it is not checked in",
     "docs/TODO.md": "deleted 2026-07-20; ROADMAP.md names it to say so",
+    "frontend/public/snapback.html": "deleted 2026-08-05 by ROADMAP 8.10 — a pre-3.1 webview "
+                                     "overlay nothing loaded, which shipped in every build "
+                                     "and fetched webfonts; the item names it to say so",
     "docs/DECISIONS.md": "a rejected option in ADR-0001, never created",
     # ADR-0002 and ADR-0003 both cite this header as the live example of "the scores are
     # undecided". ADRs are append-only, so those references cannot be edited away — the
