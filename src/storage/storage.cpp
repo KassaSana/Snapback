@@ -631,10 +631,35 @@ struct Migration {
     void (*apply)(sqlite3* db);
 };
 
+// Roadmap 7.23 / ADR-0005. Active time is stored as spans rather than accumulated into a
+// column on `sessions`: a running counter is mutable in-memory state that a crash loses,
+// which is the same shape as the bug 7.20 fixed. Spans are durable, and they make active
+// duration a query rather than something the app has to remember to keep correct.
+//
+// Deliberately **not backfilled**. A session that predates this table has no idle history,
+// so inventing one full-width span would silently restate every historical duration as if it
+// had been measured. Sessions with no spans report no active duration at all, and callers
+// fall back to elapsed — an honest discontinuity instead of a fabricated number.
+void migrate_session_spans(sqlite3* db) {
+    exec(db,
+         R"sql(
+            CREATE TABLE IF NOT EXISTS session_spans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_spans_session
+                ON session_spans(session_id);
+         )sql");
+}
+
 constexpr Migration kMigrations[] = {
     {1, "baseline schema", migrate_baseline_schema},
     {2, "predictions.model_id", migrate_prediction_model_id},
     {3, "predictions.state_source", migrate_prediction_state_source},
+    {4, "session_spans", migrate_session_spans},
 };
 
 static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
@@ -843,6 +868,58 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
     return r;
 }
 
+void Storage::begin_session_span(const std::string& session_id, const std::string& started_at) {
+    // Close-then-open in one transaction. If a pause was missed (a crash, a dropped idle
+    // edge), reopening without closing would leave two overlapping spans and double-count
+    // the overlap forever — and no later code could tell which of the two was wrong.
+    Savepoint savepoint(*this, "begin_session_span");
+    close_session_span(session_id, started_at);
+
+    Stmt insert(db_,
+                "INSERT INTO session_spans (session_id, started_at) VALUES (?1, ?2)");
+    insert.bind(1, session_id);
+    insert.bind(2, started_at);
+    insert.step_done();
+    savepoint.release();
+}
+
+bool Storage::close_session_span(const std::string& session_id, const std::string& ended_at) {
+    // MAX(started_at, ?1): a clock that jumped backwards (DST, NTP) must not produce a span
+    // that ends before it began, because SUM over such a span would subtract time.
+    Stmt update(db_,
+                "UPDATE session_spans SET ended_at = MAX(started_at, ?1) "
+                "WHERE session_id = ?2 AND ended_at IS NULL");
+    update.bind(1, ended_at);
+    update.bind(2, session_id);
+    update.step_done();
+    return sqlite3_changes(db_) > 0;
+}
+
+std::optional<std::uint64_t> Storage::active_secs(const std::string& session_id,
+                                                  const std::string& now) {
+    // ROUND per span, not a truncating CAST over the sum. julianday returns a double, so a
+    // 30-minute span computes as 1799.9999... and CAST truncates it to 1799; two of them lost
+    // a second and turned an exact hour into 3599. Each span is a measurement in whole
+    // seconds, so each is rounded before being summed.
+    Stmt stmt(db_,
+              "SELECT COUNT(*), CAST(COALESCE(SUM(ROUND(MAX(0, "
+              "  (julianday(COALESCE(ended_at, MAX(started_at, ?2))) - julianday(started_at))"
+              "  * 86400))), 0) AS INTEGER) "
+              "FROM session_spans WHERE session_id = ?1");
+    stmt.bind(1, session_id);
+    stmt.bind(2, now);
+    if (!stmt.step_row()) return std::nullopt;
+    if (sqlite3_column_int64(stmt.get(), 0) == 0) return std::nullopt;  // never measured
+    return static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 1));
+}
+
+bool Storage::has_open_span(const std::string& session_id) {
+    Stmt stmt(db_,
+              "SELECT 1 FROM session_spans WHERE session_id = ?1 AND ended_at IS NULL LIMIT 1");
+    stmt.bind(1, session_id);
+    return stmt.step_row();
+}
+
 void Storage::end_session(const std::string& session_id) {
     const std::string ended_at = utc_now_rfc3339();
     Stmt update(db_,
@@ -919,8 +996,11 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
     {
         Stmt stmt(db_,
                   "SELECT session_id, goal, status, focus_mode, started_at, ended_at, "
-                  "CAST(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
-                  "julianday(started_at)) * 86400) AS INTEGER) "
+                  // ROUND before CAST: see active_secs. A truncating CAST reported an exact
+                  // hour as 3599, and leaving it here while active time rounds would let a
+                  // fully-attended session claim more attended seconds than elapsed ones.
+                  "CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
+                  "julianday(started_at)) * 86400)) AS INTEGER) "
                   "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1");
         stmt.bind(1, static_cast<std::int64_t>(limit));
         while (stmt.step_row()) {
@@ -1040,6 +1120,7 @@ void Storage::delete_all_activity_data() {
     // captured activity.
     exec(db_,
          R"sql(
+            DELETE FROM session_spans;
             DELETE FROM feature_snapshots;
             DELETE FROM context_snapshots;
             DELETE FROM snapback_events;
@@ -1064,7 +1145,8 @@ bool Storage::delete_session(const std::string& session_id) {
     // delete_all_activity_data: historical databases were not all created with
     // ON DELETE CASCADE, so relying on it would leave orphans on exactly the old files
     // Roadmap 7.11's fixtures exist to represent.
-    for (const char* sql : {"DELETE FROM feature_snapshots WHERE session_id = ?1",
+    for (const char* sql : {"DELETE FROM session_spans WHERE session_id = ?1",
+                            "DELETE FROM feature_snapshots WHERE session_id = ?1",
                             "DELETE FROM context_snapshots WHERE session_id = ?1",
                             "DELETE FROM snapback_events WHERE session_id = ?1",
                             "DELETE FROM labels WHERE session_id = ?1",
@@ -1097,8 +1179,9 @@ SessionRecap Storage::recap(const std::string& session_id) {
 
     {
         Stmt stmt(db_,
-                  "SELECT CAST(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
-                  "julianday(started_at)) * 86400) AS INTEGER) "
+                  // ROUND before CAST — same reason as the batched query above.
+                  "SELECT CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
+                  "julianday(started_at)) * 86400)) AS INTEGER) "
                   "FROM sessions WHERE session_id = ?1");
         stmt.bind(1, session_id);
         if (stmt.step_row()) out.duration_secs = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 0));

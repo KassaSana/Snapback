@@ -250,6 +250,120 @@ TEST_CASE("storage persists prediction model identity and verdict provenance") {
     CHECK(latest->state_source == original.state_source);
 }
 
+TEST_CASE("session spans accumulate only attended time") {
+    // Roadmap 7.23 / ADR-0005. Two 10-minute spans an hour apart: elapsed is ~2h, attended
+    // is 20 minutes. The gap is never counted rather than counted and later subtracted.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("attended", FocusMode::Normal);
+
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
+    storage->begin_session_span(session.session_id, "2026-08-05T10:00:00Z");
+    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T10:10:00Z"));
+
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T11:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 20 * 60);
+    CHECK_FALSE(storage->has_open_span(session.session_id));
+}
+
+TEST_CASE("an open span counts up to now") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("in progress", FocusMode::Normal);
+
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    CHECK(storage->has_open_span(session.session_id));
+
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T09:30:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 30 * 60);
+}
+
+TEST_CASE("a session with no spans reports no active time, not zero") {
+    // The distinction matters: nullopt means "never measured" so a caller falls back to
+    // elapsed. Returning 0 would tell every session that predates this table that the user
+    // was present for none of it -- a fabricated number dressed as a measurement.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("unmeasured", FocusMode::Normal);
+
+    CHECK_FALSE(storage->active_secs(session.session_id, "2026-08-05T09:00:00Z").has_value());
+    CHECK_FALSE(storage->has_open_span(session.session_id));
+}
+
+TEST_CASE("reopening a span closes the previous one instead of overlapping it") {
+    // A missed pause -- a crash, a dropped idle edge -- must not leave two open spans
+    // double-counting the same minutes, because nothing later could tell which was wrong.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("overlap", FocusMode::Normal);
+
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    storage->begin_session_span(session.session_id, "2026-08-05T09:30:00Z");  // no close between
+
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    REQUIRE(active.has_value());
+    // 09:00-09:30 closed by the reopen, plus 09:30-10:00 still open. Sixty minutes, not
+    // ninety -- which is what overlapping spans would have produced.
+    CHECK(*active == 60 * 60);
+}
+
+TEST_CASE("closing a span twice is not an error and does not extend it") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("idempotent", FocusMode::Normal);
+
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    CHECK(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
+    // Already paused: nothing open, so nothing to close. An ordinary outcome.
+    CHECK_FALSE(storage->close_session_span(session.session_id, "2026-08-05T09:20:00Z"));
+
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 10 * 60);
+}
+
+TEST_CASE("a backwards clock cannot make a span subtract time") {
+    // DST and NTP corrections move wall clock backwards. A span ending before it began would
+    // contribute a negative to the SUM and silently reduce the total.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("time travel", FocusMode::Normal);
+
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T08:00:00Z"));
+
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 0);
+}
+
+TEST_CASE("deleting a session deletes its spans") {
+    // delete_session enumerates child tables explicitly rather than trusting ON DELETE
+    // CASCADE, because historical databases were not all created with it. A new child table
+    // that is not added to that list leaves orphans.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("doomed", FocusMode::Normal);
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z");
+
+    REQUIRE(storage->delete_session(session.session_id));
+    CHECK_FALSE(storage->active_secs(session.session_id, "2026-08-05T10:00:00Z").has_value());
+}
+
+TEST_CASE("deleting all activity deletes spans too") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("wiped", FocusMode::Normal);
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+
+    storage->delete_all_activity_data();
+    CHECK_FALSE(storage->active_secs(session.session_id, "2026-08-05T10:00:00Z").has_value());
+}
+
 TEST_CASE("migrating an existing database backs it up first") {
     // Roadmap 7.22. The transaction in migrate() already covers a migration that *fails*.
     // This covers the case it cannot: one that succeeds and is wrong. The backup is the only

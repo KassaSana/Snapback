@@ -40,7 +40,7 @@ std::string pre_migration_backup_name(int from_version);
 //   2. **Never edit a released migration.** Append a new one. Editing one changes what an
 //      already-upgraded database was built from, which is precisely the drift versioning
 //      exists to prevent.
-inline constexpr int kSchemaVersion = 3;
+inline constexpr int kSchemaVersion = 4;
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
@@ -116,6 +116,30 @@ public:
     std::optional<SessionRecord> get_session(const std::string& session_id);
     SessionRecord create_session(const std::string& goal, FocusMode mode);
     void end_session(const std::string& session_id);
+
+    // --- Attended time (Roadmap 7.23 / ADR-0005) ---------------------------------------
+    //
+    // A session's *elapsed* time is wall clock. Its *active* time is the sum of spans during
+    // which the user was actually present, which is what these maintain. Idle opens no span,
+    // so time spent away is never counted rather than counted and later subtracted.
+
+    // Opens a span at `started_at`. Closes any span still open for the session first, so a
+    // missed pause cannot leave two overlapping spans double-counting the same minutes.
+    void begin_session_span(const std::string& session_id, const std::string& started_at);
+
+    // Closes the session's open span at `ended_at`. Returns false when none was open, which
+    // is an ordinary outcome (already paused, or a session that predates this table) rather
+    // than an error. A span is never closed earlier than it started.
+    bool close_session_span(const std::string& session_id, const std::string& ended_at);
+
+    // Sum of closed spans, plus the open one measured to `now`. Returns nullopt when the
+    // session has no spans at all — meaning "never measured", not "zero" — so callers can
+    // fall back to elapsed instead of reporting a fabricated 0.
+    std::optional<std::uint64_t> active_secs(const std::string& session_id,
+                                             const std::string& now);
+
+    // True if the session has a span open, i.e. the user is currently attending it.
+    bool has_open_span(const std::string& session_id);
     // Completes the session and returns the row. Idempotent if already COMPLETED.
     SessionRecord stop_session(const std::string& session_id);
     std::optional<SessionRecord> active_session();
