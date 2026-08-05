@@ -419,6 +419,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # checkout defaults to a shallow clone of one commit. The attribution guard below
+          # walks the whole history, and against a shallow clone it would cheerfully report
+          # "checked 1 commits" forever -- passing without looking at anything.
+          fetch-depth: 0
 
       - name: Ensure Windows demo runbook is linked
         run: |
@@ -441,3 +446,10 @@ jobs:
       # can be re-uploaded under the same name, so the digest is the only real pin.
       - name: Every vendored ONNX archive must be verified before extraction
         run: python3 scripts/check_onnx_pins.py --verbose
+
+      # Every commit here is Kassa's own work. Several tools append attribution trailers by
+      # default, silently, at commit time. Such a commit is permanent in a way an ordinary
+      # mistake is not: rewriting it changes every SHA after it, which would break release
+      # tags and 9.11's CI-conclusion gate. Catch it before it lands.
+      - name: Every commit must be attributed to Kassa
+        run: python3 scripts/check_commit_attribution.py --verbose

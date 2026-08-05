@@ -44,6 +44,24 @@ Work each item on the standard loop: code → test → senior-to-junior explanat
 (terse one-liner, Kassa's identity, zero AI attribution). Local work may be committed with
 Kassa's configured identity; only Kassa pushes.
 
+**Attribution is enforced, not trusted.** Every commit in this repository is Kassa's own
+work: no `Co-Authored-By:` trailer, no "Generated with …" footer, no vendor address, ever —
+in commit messages and PR bodies alike. `scripts/check_commit_attribution.py` checks the full
+history of every ref on each CI run and allows exactly three author identities
+(`kassasana03@`, `kassaplayz@`, and the `users.noreply.github.com` one), plus `dependabot[bot]`
+for lockfile bumps.
+
+This is a guard rather than a note because several tools append attribution automatically, at
+commit time, when nobody is reading — and such a commit is permanent in a way an ordinary
+mistake is not. Rewriting it changes every SHA after it, which would invalidate release tags
+and the CI-conclusion check 9.11's release gate depends on. It must be caught before it lands.
+
+The guard deliberately does **not** flag prose that merely names a tool: an existing commit
+explains a filename decision by referring to `CLAUDE.md`, and naming a thing is not claiming
+it wrote the code. It matches trailers, footers, and author/committer addresses only. It also
+refuses to run against a shallow clone rather than report success for the one commit it can
+see, which is why `docs-smoke` checks out with `fetch-depth: 0`.
+
 ---
 
 ## Start here — the current sequence
