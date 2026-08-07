@@ -962,6 +962,113 @@ TEST_CASE("AppState persists privacy settings and suppresses private events") {
           std::vector<std::string>{"Banking", "1Password"});
 }
 
+namespace {
+
+// Roadmap 7.26. A real injected write failure, not a simulated one: `save_app_settings`
+// stages through `settings.json.tmp`, and an ofstream cannot open a path that is a directory.
+// The failure therefore happens at step 1, before anything the user depends on is touched --
+// which is exactly the case where the old setters had already changed live behaviour.
+struct BlockSettingsWrite {
+    std::filesystem::path blocker;
+    explicit BlockSettingsWrite(const std::filesystem::path& app_data_dir)
+        : blocker(app_data_dir / kSettingsTempFileName) {
+        std::filesystem::create_directories(blocker);
+    }
+    ~BlockSettingsWrite() {
+        std::error_code ignored;
+        std::filesystem::remove_all(blocker, ignored);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a settings write that fails changes neither disk nor live behaviour") {
+    // Roadmap 7.26. Every setter used to mutate settings_ -- and in some cases live state --
+    // *before* the save that can throw. IPC then reported failure while the process kept the
+    // new behaviour, so the error message and the running app disagreed.
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+
+    // Establish a known-good baseline that really is on disk.
+    state.set_private_mode(true);
+    state.set_focus_mode(FocusMode::Deep);
+    state.set_privacy_exclusions({"Banking"});
+    state.set_goal_categories({GoalCategory{"Research", {"paper"}}});
+    state.set_idle_threshold_secs(120);
+    REQUIRE(load_app_settings(temp.path).private_mode);
+
+    {
+        BlockSettingsWrite blocked(temp.path);
+
+        // The privacy case is the one with teeth: turning private mode *off* must not resume
+        // recording when the app could not record that it had been turned off.
+        CHECK_THROWS(state.set_private_mode(false));
+        CHECK(state.privacy_settings().private_mode);
+        CHECK(state.settings().private_mode);
+
+        CHECK_THROWS(state.set_focus_mode(FocusMode::Recovery));
+        CHECK(state.settings().default_focus_mode == FocusMode::Deep);
+        // The *live* mode, not just the stored one: focus mode sets the classifier's
+        // threshold, so a failed save leaving it changed would silently rescore the session.
+        CHECK(AppStateTestAccess::focus_mode(state) == FocusMode::Deep);
+
+        CHECK_THROWS(state.set_privacy_exclusions({"Something else"}));
+        CHECK(state.privacy_settings().excluded_apps == std::vector<std::string>{"Banking"});
+
+        CHECK_THROWS(state.set_goal_categories({GoalCategory{"Gaming", {"steam"}}}));
+        REQUIRE(state.goal_categories().size() == 1);
+        CHECK(state.goal_categories().front().name == "Research");
+
+        CHECK_THROWS(state.set_idle_threshold_secs(600));
+        CHECK(state.settings().idle_threshold_secs == 120);
+    }
+
+    // And nothing leaked onto disk either: the file still holds the baseline.
+    const auto persisted = load_app_settings(temp.path);
+    CHECK(persisted.private_mode);
+    CHECK(persisted.default_focus_mode == FocusMode::Deep);
+    CHECK(persisted.excluded_apps == std::vector<std::string>{"Banking"});
+    CHECK(persisted.idle_threshold_secs == 120);
+
+    // Once the obstruction is gone the same call works, so the guarantee is "unchanged", not
+    // "permanently broken".
+    state.set_private_mode(false);
+    CHECK_FALSE(state.privacy_settings().private_mode);
+    CHECK_FALSE(load_app_settings(temp.path).private_mode);
+}
+
+TEST_CASE("concurrent settings writers leave disk and memory agreeing") {
+    // Roadmap 7.26 asks for the change to be "one serialized operation". Two threads racing on
+    // different fields must not interleave into a settings.json that matches neither the
+    // in-memory state nor either writer's intent.
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+
+    constexpr int kRounds = 60;
+    std::thread privacy([&] {
+        for (int i = 0; i < kRounds; ++i) state.set_private_mode(i % 2 == 0);
+    });
+    std::thread modes([&] {
+        for (int i = 0; i < kRounds; ++i) {
+            state.set_focus_mode(i % 2 == 0 ? FocusMode::Deep : FocusMode::Recovery);
+        }
+    });
+    privacy.join();
+    modes.join();
+
+    // Whatever order they landed in, the file is a complete document that says exactly what
+    // the process believes -- not a torn write, and not a stale field from the losing thread.
+    const auto in_memory = state.settings();
+    const auto on_disk = load_app_settings(temp.path);
+    CHECK(on_disk.private_mode == in_memory.private_mode);
+    CHECK(on_disk.default_focus_mode == in_memory.default_focus_mode);
+    CHECK(AppStateTestAccess::focus_mode(state) == in_memory.default_focus_mode);
+}
+
 TEST_CASE("AppState deletes collected activity and resets the live session") {
     TempDir temp;
     auto storage = Storage::open_memory();

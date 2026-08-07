@@ -934,7 +934,35 @@ internals, and the benchmark harness.
   replacement, double-stop, and process reopen. Implement with **7.23** and read **7.16**
   because active-duration and resume semantics are part of the same aggregate.
 
-- **7.26 — Make settings commands atomic across disk and live behavior.** `M`
+- **7.26 — DONE 2026-08-06.** `M` All five setters go through one
+  `commit_settings_unlocked(candidate, publish)`: write the candidate to disk, then commit it
+  in memory, then publish it to live state. The write takes a **copy**, so a throw leaves
+  `settings_` and every live field exactly as they were.
+
+  **The privacy case is what gives this teeth, and the test drives it directly.** A failed
+  request to turn private mode *off* used to resume recording while IPC reported that the
+  change had failed — the user's belief about whether they were being recorded and the app's
+  behaviour disagreed, in the direction that matters. Same shape for focus mode, which sets the
+  classifier's threshold: a failed save left the live mode changed and silently rescored the
+  session against a mode that was never written.
+
+  **The injected failure is real.** `save_app_settings` stages through `settings.json.tmp`, and
+  an `ofstream` cannot open a path that is a directory — so the write fails at step 1, before
+  anything the user depends on is touched, which is precisely the case the old ordering got
+  wrong. Verified by mutation: restoring the mutate-then-save order turns six assertions red
+  across all five settings, including the private-mode one.
+
+  Five fields covered (private mode, exclusions, goal categories, focus default, and 7.23's
+  idle threshold), each asserting the returned error *and* the live snapshot *and* the file.
+  A concurrent-writer case races two threads on different fields and proves disk and memory
+  still agree afterwards — they serialize on `mutex_`, and the file is a complete document
+  matching what the process believes rather than a torn write or a stale losing field.
+
+  **7.21's durability question is untouched and still open**: this makes the write atomic
+  against *failure*, not durable against power loss, which remains 7.21's call to weigh against
+  **8.5**. Two new cases; suite **392 pass**. The original finding follows.
+
+- **7.26 (original finding) — Make settings commands atomic across disk and live behavior.** `M`
   Opened 2026-08-05. Focus mode, private mode, and exclusions mutate `settings_` (and in some
   cases publish live state) before `save_app_settings()` runs. If the save throws because the
   directory is read-only or the disk is full, IPC reports failure but the process keeps the

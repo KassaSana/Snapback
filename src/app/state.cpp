@@ -823,13 +823,33 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
     return result;
 }
 
+void AppState::commit_settings_unlocked(AppSettings candidate,
+                                        const std::function<void()>& publish) {
+    // Roadmap 7.26. **Persist the candidate, then commit and publish it.** Requires mutex_.
+    //
+    // Every setter used to mutate `settings_` — and in some cases live behaviour — *before*
+    // `save_app_settings` ran. If that write threw because the directory was read-only or the
+    // disk was full, IPC reported failure and the process kept the new behaviour anyway.
+    //
+    // The privacy case is what gives this teeth: a failed request to turn private mode **off**
+    // resumed recording while the UI said the change had failed. The user's belief about
+    // whether they were being recorded and the app's behaviour disagreed, in the direction
+    // that matters.
+    //
+    // The write goes first and takes a *copy*, so a throw here leaves both `settings_` and
+    // every live field exactly as they were. Nothing below it can fail: assignment of an
+    // already-constructed value, and a publish step whose only job is to copy committed
+    // settings into live state.
+    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, candidate);
+    settings_ = std::move(candidate);
+    if (publish) publish();
+}
+
 void AppState::set_focus_mode(FocusMode mode) {
     std::lock_guard lock(mutex_);
-    focus_mode_ = mode;
-    settings_.default_focus_mode = mode;
-    if (!app_data_dir_.empty()) {
-        save_app_settings(app_data_dir_, settings_);
-    }
+    AppSettings candidate = settings_;
+    candidate.default_focus_mode = mode;
+    commit_settings_unlocked(std::move(candidate), [this, mode] { focus_mode_ = mode; });
 }
 
 AppSettings AppState::settings() const {
@@ -851,25 +871,36 @@ void AppState::set_idle_threshold_secs(std::int64_t seconds) {
                                  std::to_string(kMaxIdleThresholdSecs) + " seconds");
     }
     std::lock_guard lock(mutex_);
-    settings_.idle_threshold_secs = seconds;
-    // Applied to the running detector, not just stored: a threshold that takes effect on the
-    // next launch is not a setting, it is a note to self.
-    idle_detector_.set_threshold_ms(seconds * 1000);
-    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
+    AppSettings candidate = settings_;
+    candidate.idle_threshold_secs = seconds;
+    commit_settings_unlocked(std::move(candidate), [this, seconds] {
+        // Applied to the running detector, not just stored: a threshold that takes effect on
+        // the next launch is not a setting, it is a note to self. After the commit, so a
+        // failed save cannot leave the detector running on a value that was never written.
+        idle_detector_.set_threshold_ms(seconds * 1000);
+    });
 }
 
 void AppState::set_private_mode(bool enabled) {
     std::lock_guard lock(mutex_);
-    settings_.private_mode = enabled;
-    live_read_dirty_ = true;
-    publish_live_read_unlocked();
-    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
+    AppSettings candidate = settings_;
+    candidate.private_mode = enabled;
+    commit_settings_unlocked(std::move(candidate), [this] {
+        live_read_dirty_ = true;
+        publish_live_read_unlocked();
+    });
 }
 
 void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
+    // Normalized outside the lock: it is pure string work on the caller's argument, and the
+    // candidate has to be complete before anything is committed.
+    auto normalized = normalize_privacy_exclusions(std::move(exclusions));
     std::lock_guard lock(mutex_);
-    settings_.excluded_apps = normalize_privacy_exclusions(std::move(exclusions));
-    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
+    AppSettings candidate = settings_;
+    candidate.excluded_apps = std::move(normalized);
+    // No live mirror: is_private_event_unlocked reads settings_ directly, so committing the
+    // candidate *is* publishing it.
+    commit_settings_unlocked(std::move(candidate), nullptr);
 }
 
 AnalyticsSummary AppState::analytics() const {
@@ -984,9 +1015,13 @@ void AppState::set_goal_categories(std::vector<GoalCategory> categories) {
         if (!keywords.empty()) normalized.push_back(GoalCategory{std::move(category.name), std::move(keywords)});
     }
     std::lock_guard lock(mutex_);
-    settings_.goal_categories = std::move(normalized);
-    context_tracker_.set_goal_categories(settings_.goal_categories);
-    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
+    AppSettings candidate = settings_;
+    candidate.goal_categories = std::move(normalized);
+    commit_settings_unlocked(std::move(candidate), [this] {
+        // The tracker classifies against these names, so a failed save must not leave the
+        // live classifier scoring by categories that are not on disk.
+        context_tracker_.set_goal_categories(settings_.goal_categories);
+    });
 }
 
 std::vector<AppRuleRecord> AppState::app_rules() {

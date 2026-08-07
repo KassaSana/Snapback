@@ -268,6 +268,16 @@ private:
     std::optional<std::uint64_t> hyperfocus_minutes_;
     // Writes a job to storage. Requires storage_mutex_ (call inside a Transaction).
     void persist(const PersistJob& job);
+    // Roadmap 7.26. The one path every settings mutation takes: write the candidate to disk,
+    // then commit it in memory, then publish it to live state. Requires mutex_.
+    //
+    // A throw from the write leaves `settings_` and every live field untouched, which is the
+    // guarantee the setters could not previously make — they mutated first and saved second,
+    // so a failed save reported an error while the process kept the new behaviour.
+    //
+    // `publish` runs only after the commit and must not throw: its only job is to copy
+    // already-committed settings into the live fields that mirror them.
+    void commit_settings_unlocked(AppSettings candidate, const std::function<void()>& publish);
     void save_auto_session_label_unlocked(const std::string& session_id);
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
     static std::vector<std::string> normalize_privacy_exclusions(
