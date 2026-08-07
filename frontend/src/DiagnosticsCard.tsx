@@ -1,10 +1,26 @@
-import { memo } from "react";
+import { memo, useCallback, useState } from "react";
 
+import { api } from "./api";
 import { useDiagnostics } from "./useDiagnostics";
 
 export const DiagnosticsCard = memo(function DiagnosticsCard() {
   const { diagnostics, exportBundle, refresh, status } = useDiagnostics();
   const { health, recentLogs } = diagnostics;
+  const [cleanupStatus, setCleanupStatus] = useState<string | null>(null);
+
+  const retryModelCleanup = useCallback(async () => {
+    try {
+      const result = await api.retryModelDeploymentCleanup();
+      setCleanupStatus(
+        result.state === "ok"
+          ? "Model deployment cleanup succeeded."
+          : `Cleanup still degraded: ${result.message ?? "retry later"}`,
+      );
+      await refresh();
+    } catch {
+      setCleanupStatus("Could not retry model deployment cleanup.");
+    }
+  }, [refresh]);
 
   return (
     <section className="card diagnostics-card">
@@ -29,12 +45,19 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
         Capture: {health.captureRunning ? "running" : "stopped"}. Classifier: {health.classifier.backend}.
       </p>
       {health.modelDeployment.state === "degraded" ? (
-        <p className="diagnostics-error">
-          Model deployment cleanup is degraded: {health.modelDeployment.message}
-          {health.modelDeployment.preservedPaths.length > 0
-            ? ` Preserved: ${health.modelDeployment.preservedPaths.join(", ")}.`
-            : ""}
-        </p>
+        <div className="diagnostics-error-block">
+          <p className="diagnostics-error">
+            Model deployment cleanup is degraded: {health.modelDeployment.message}
+            {health.modelDeployment.preservedPaths.length > 0
+              ? ` Preserved: ${health.modelDeployment.preservedPaths.join(", ")}.`
+              : ""}
+          </p>
+          {health.modelDeployment.retryCleanupAvailable ? (
+            <button className="secondary-button" onClick={() => void retryModelCleanup()}>
+              Retry cleanup
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {health.captureFailureReason || health.overlayFailureReason || health.persistenceFailureReason ? (
         <p className="diagnostics-error">
@@ -52,6 +75,7 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
           Export support bundle
         </button>
       </div>
+      {cleanupStatus ? <p className="helper-text">{cleanupStatus}</p> : null}
       {status ? <p className="helper-text">{status}</p> : null}
     </section>
   );

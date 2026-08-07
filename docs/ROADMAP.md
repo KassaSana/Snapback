@@ -90,19 +90,19 @@ Struck rows are done; the numbers renumber as they close, so "next" is always ro
 | # | Item | Why now |
 |---|------|---------|
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
+| — | ~~**13.7** settle the trainer's product boundary~~ | **Done 2026-08-07** — [ADR-0006](adr/0006-trainer-is-developer-tooling.md): developer-only tooling; consumer Settings keeps focus labels only |
 | — | ~~**7.24** split monotonic and calendar time~~ | **Done 2026-08-05** |
 | — | ~~**8.10** make release builds network-silent~~ | **Done 2026-08-05** |
 | — | ~~**7.23 / 7.25** attended-time + atomic lifecycle~~ | **Done 2026-08-06** — crash hydration, shutdown close, configurable threshold; persist-before-mutate, one label, restored focus mode |
 | — | ~~**7.12** finish the SQL aggregation~~ | **Done 2026-08-06** — four aggregates, no materialized predictions, no recap loop, query count pinned |
-| 2 | **13.7** settle the trainer's product boundary | Settings advertises a workflow that requires an `ml/` tree absent from this checkout and from an installed app. **A `decision` — deliberately not taken by the August 6 pass, which had no standing to take it** |
 | — | ~~**10.8** make Review charts truthful~~ | **Done 2026-08-06** — fixed 0–100 axis, distinct no-data state, sampled-context labels |
-| 3 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
-| 4 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
-| 5 | **7.16** timestamp representation | Unblocks retention, Review ranges, and time-window correctness work |
-| 6 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
-| 7 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
-| 8 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
-| 9 | **2.3 / Tier 13** model retraining | Resume only after 13.7 establishes a real shippable trainer boundary |
+| 2 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
+| 3 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
+| 4 | **7.16** timestamp representation | Unblocks retention, Review ranges, and time-window correctness work |
+| 5 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
+| 6 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
+| 7 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
+| 8 | **2.3 / Tier 13** model retraining | Resume only after a packaged trainer lands (ADR-0006); until then this is repository tooling |
 
 **Eight items were opened on 2026-08-04** and are deliberately *not* in the table above,
 because none of them displaces anything in it. They are listed here so they are findable:
@@ -3603,7 +3603,16 @@ below still determine whether, where, and how the retraining loop should operate
   classifier adapter without changing the chosen policy. Do not make that seam change first;
   it would disguise a behavior decision as architecture cleanup.
 
-- **13.7 — Decide the trainer's real product boundary.** `S` `decision` → then `L`
+- **13.7 — DONE 2026-08-07.** [ADR-0006](adr/0006-trainer-is-developer-tooling.md):
+  **training tooling is developer-only.** Consumer Settings keeps Focus Feedback labels and
+  does not mention `ml/`, repo paths, or train-from-export. Debug builds (or Release with
+  `SNAPBACK_DEV_TRAINING`) still expose the existing Model tooling card. Native train/repo
+  commands refuse when the gate is off. **2.3** remains repository tooling until a packaged
+  trainer ships and a new ADR revisits option A.
+
+  The original finding was:
+
+- **13.7 (original finding) — Decide the trainer's real product boundary.** `S` `decision` → then `L`
   Opened 2026-08-05. The current consumer UI asks for a Snapback repository path and reports
   readiness only when that directory contains `ml/pipeline_cli.py`; its help text tells the
   user to install `ml/requirements-train.txt`. **This checkout contains no `ml/` directory at
@@ -3625,7 +3634,15 @@ below still determine whether, where, and how the retraining loop should operate
   state — a prominent workflow whose required files do not exist — is not an acceptable
   fallback.
 
-- **13.8 — Optional model recovery may degrade, never brick the core app.** `S/M`
+- **13.8 — PARTIAL 2026-08-07.** `S/M` Startup no longer exits on model-recovery failure
+  (`recover_model_deployment_for_startup`); health reports `degraded` with preserved paths and
+  Diagnostics offers **Retry cleanup**. Remaining from this item: Reveal-files affordance for
+  the preserved names, and the adversarial real-webview harness cases named in the original
+  acceptance (coordinate with **10.1**).
+
+  The original finding was:
+
+- **13.8 (original finding) — Optional model recovery may degrade, never brick the core app.** `S/M`
   Opened 2026-08-05. Startup runs `recover_model_deployment()` before storage or the webview
   and exits the entire process on any exception. Recovery deliberately throws for a malformed
   marker or staging/cleanup debris it cannot remove — including a committed deployment whose

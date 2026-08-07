@@ -142,10 +142,15 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     h.permissions.setup_steps = {"grant access"};
     h.classifier.backend = "heuristic";
     h.classifier.onnx_runtime_enabled = false;
+    h.developer_tools_enabled = true;
+    h.model_deployment.state = "ok";
 
     json j = h;
     CHECK(j.contains("captureRunning"));
     CHECK(j.contains("captureEventsDropped"));
+    CHECK(j.contains("developerToolsEnabled"));
+    CHECK(j["developerToolsEnabled"] == true);
+    CHECK(j.contains("modelDeployment"));
     CHECK(j["lastPredictionAgeSecs"] == doctest::Approx(1.5));
     CHECK(j["predictionSuppressionReason"] == "none");
     CHECK(j["permissions"].contains("captureAvailable"));
@@ -163,6 +168,8 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     CHECK(back.permissions.capture_available);
     CHECK(back.permissions.setup_steps.size() == 1);
     CHECK(back.classifier.backend == "heuristic");
+    CHECK(back.developer_tools_enabled);
+    CHECK(back.model_deployment.state == "ok");
 }
 
 TEST_CASE("SessionRecord optional timestamps round-trip as null when absent") {

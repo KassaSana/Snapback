@@ -41,6 +41,7 @@ const healthyCaptureRunning = (): Record<string, unknown> => ({
   capture_running: true,
   capture_failed: false,
   capture_events_dropped: 0,
+  developer_tools_enabled: true,
   permissions: {
     capture_available: true,
     capture_probe_confirmed: true,
@@ -49,6 +50,7 @@ const healthyCaptureRunning = (): Record<string, unknown> => ({
     setup_steps: [],
   },
   classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  model_deployment: { state: "ok", preserved_paths: [], retry_cleanup_available: false },
 });
 
 const readyToTrain = (): Record<string, unknown> => ({
@@ -82,6 +84,18 @@ describe("Training / deploy card", () => {
       await screen.findByText(/Use these controls to label it while a session is active/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Global hotkeys/i)).not.toBeInTheDocument();
+  });
+
+  it("hides model tooling when developer tools are off", async () => {
+    boundary.state.health = { ...healthyCaptureRunning(), developer_tools_enabled: false };
+    renderApp("settings");
+
+    expect(
+      await screen.findByText(/Use these controls to label it while a session is active/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Train from export" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Model tooling/i)).not.toBeInTheDocument();
+    expect(boundary.invoke).not.toHaveBeenCalledWith("get_training_deploy_status");
   });
 
   it("disables 'Train from export' until export + repo + python are ready", async () => {
@@ -127,7 +141,9 @@ describe("Training / deploy card", () => {
 
     const reloadButton = await screen.findByRole("button", { name: "Reload model" });
     expect(reloadButton).toBeDisabled();
-    expect(screen.getByText("Candidate did not pass the quality gate")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Candidate did not pass the quality gate")).toBeInTheDocument();
+    });
   });
 
   it("surfaces a failure message and does not reload when training fails", async () => {

@@ -243,7 +243,8 @@ void to_json(json& j, const HealthStatus& v) {
              {"predictionSuppressionReason", v.prediction_suppression_reason},
              {"permissions", v.permissions},
              {"classifier", v.classifier},
-             {"modelDeployment", v.model_deployment}};
+             {"modelDeployment", v.model_deployment},
+             {"developerToolsEnabled", v.developer_tools_enabled}};
     if (v.last_prediction_age_secs) {
         j["lastPredictionAgeSecs"] = *v.last_prediction_age_secs;
     } else {
@@ -271,6 +272,7 @@ void from_json(const json& j, HealthStatus& v) {
     v.permissions = get_or<PermissionStatus>(j, "permissions", {});
     v.classifier = get_or<ClassifierStatus>(j, "classifier", {});
     v.model_deployment = get_or<ModelDeploymentHealth>(j, "modelDeployment", {});
+    v.developer_tools_enabled = get_or<bool>(j, "developerToolsEnabled", false);
 }
 
 // ---- SnapbackPayload -------------------------------------------------------

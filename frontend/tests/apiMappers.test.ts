@@ -54,6 +54,8 @@ assert.equal(healthSnake.permissions.captureProbeConfirmed, false);
 assert.equal(healthSnake.permissions.setupSteps[0], "Step one");
 assert.equal(healthSnake.classifier.backend, "onnx");
 assert.equal(healthSnake.classifier.modelPath, "/data/model.onnx");
+assert.equal(healthSnake.developerToolsEnabled, false);
+assert.equal(healthSnake.modelDeployment.state, "ok");
 
 const healthCamel = mapHealth({
   status: "degraded",
@@ -62,6 +64,14 @@ const healthCamel = mapHealth({
   captureFailureReason: "rdev",
   overlayFailureReason: null,
   persistenceFailureReason: null,
+  developerToolsEnabled: true,
+  modelDeployment: {
+    state: "degraded",
+    message: "cleanup blocked",
+    preservedPaths: ["model.onnx"],
+    retryCleanupAvailable: true,
+    rollbackAvailable: true,
+  },
   permissions: {
     captureAvailable: false,
     captureProbeConfirmed: false,
@@ -78,6 +88,9 @@ const healthCamel = mapHealth({
 
 assert.equal(healthCamel.captureFailed, true);
 assert.equal(healthCamel.captureFailureReason, "rdev");
+assert.equal(healthCamel.developerToolsEnabled, true);
+assert.equal(healthCamel.modelDeployment.state, "degraded");
+assert.equal(healthCamel.modelDeployment.retryCleanupAvailable, true);
 assert.equal(healthCamel.classifier.onnxRuntimeEnabled, false);
 
 const prediction = mapPrediction({

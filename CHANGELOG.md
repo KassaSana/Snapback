@@ -59,6 +59,11 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Changed
 
+- **Training tooling is developer-only (ADR-0006 / 13.7).** Consumer Settings keeps Focus
+  Feedback labels and no longer advertises repo-path / `ml/` train-from-export. Debug builds,
+  or Release with `SNAPBACK_DEV_TRAINING`, still expose Model tooling; native train/repo
+  commands refuse when the gate is off.
+
 - Analytics windows are bucketed by the user's local hour rather than UTC.
 - Recent-focus, insights, trends and summary reports all read from the same aggregates.
 - Hot live reads are served from an immutable snapshot, so opening a history view no longer
@@ -87,6 +92,10 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
+- **Privileged webview commands require a trusted document (8.14).** A per-launch capability
+  token is handed only to the packaged UI; external links open in the system browser.
+- **Model deployment recovery no longer bricks startup (13.8).** Cleanup debris degrades
+  health and offers Retry cleanup instead of exiting before the window opens.
 - **Session replacement is atomic.** Starting a session while one is running could previously
   close the old session and then fail to create the new one, leaving no active session at all.
 - **A failed start no longer half-happens.** Focus mode and the feature extractor were reset

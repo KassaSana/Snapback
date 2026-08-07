@@ -29,6 +29,7 @@ export const useHealth = () => {
   const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
   const [classifierModelId, setClassifierModelId] = useState<string | null>(null);
+  const [developerToolsEnabled, setDeveloperToolsEnabled] = useState(false);
 
   const applyClassifierStatus = useCallback((status: ClassifierStatus) => {
     setClassifierBackend(status.backend);
@@ -57,6 +58,7 @@ export const useHealth = () => {
     setPermissionMessage(health.permissions.message);
     setPermissionSteps(health.permissions.setupSteps);
     applyClassifierStatus(health.classifier);
+    setDeveloperToolsEnabled(health.developerToolsEnabled);
   }, [applyClassifierStatus]);
 
   const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
@@ -135,6 +137,7 @@ export const useHealth = () => {
     classifierModelId,
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
+    developerToolsEnabled,
     handleRefreshPermissions,
     handleRequestPermissions,
     healthStatus,

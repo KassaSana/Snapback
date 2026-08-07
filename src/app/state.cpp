@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include "capture/permissions.hpp"
+#include "app/frontend_assets.hpp"
 #include "app/version.hpp"
 #include "app/notification.hpp"
 #include "app/training_deploy.hpp"
@@ -653,6 +654,7 @@ HealthStatus AppState::health() const {
     h.classifier.onnx_runtime_enabled = live->classifier.onnx_runtime_enabled;
     h.classifier.model_path = live->classifier.model_path;
     h.model_deployment = model_deployment_health_;
+    h.developer_tools_enabled = developer_tools_enabled();
     return h;
 }
 

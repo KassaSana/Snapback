@@ -35,6 +35,7 @@ const emptyDiagnostics: DiagnosticsSnapshot = {
       retryCleanupAvailable: false,
       rollbackAvailable: false,
     },
+    developerToolsEnabled: false,
   },
   recentLogs: [],
   supportBundlePrivacyNotice: "",

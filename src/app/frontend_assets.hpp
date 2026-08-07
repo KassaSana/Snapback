@@ -31,4 +31,13 @@ inline constexpr bool kReleaseBuild = false;
 
 inline constexpr bool kWebviewDebugEnabled = webview_debug_for_build(kReleaseBuild);
 
+// ADR-0006 / roadmap 13.7. In-app train/deploy is repository tooling, not a consumer Settings
+// feature. Release builds keep it off unless SNAPBACK_DEV_TRAINING is set; Debug builds keep
+// the existing developer loop visible.
+constexpr bool developer_tools_for_build(bool release_build, bool env_override) {
+    return !release_build || env_override;
+}
+
+bool developer_tools_enabled();
+
 }  // namespace snapback

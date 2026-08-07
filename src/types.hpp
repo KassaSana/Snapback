@@ -251,6 +251,8 @@ struct HealthStatus {
     PermissionStatus permissions;
     ClassifierStatus classifier;
     ModelDeploymentHealth model_deployment;
+    // ADR-0006 / roadmap 13.7. True in Debug, or Release with SNAPBACK_DEV_TRAINING set.
+    bool developer_tools_enabled{};
 };
 
 // SnapbackEpisode — one recorded distraction: the user left focused work and came back.

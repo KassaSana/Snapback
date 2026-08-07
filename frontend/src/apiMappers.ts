@@ -226,6 +226,9 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
         (raw.modelDeployment as Record<string, unknown>) ??
         {},
     ),
+    developerToolsEnabled: Boolean(
+      raw.developer_tools_enabled ?? raw.developerToolsEnabled ?? false,
+    ),
   };
 }
 

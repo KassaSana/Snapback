@@ -11,6 +11,7 @@ import {
 } from "./trainingHints";
 
 type UseTrainingDeployArgs = {
+  enabled: boolean;
   sessionId: string | null;
   setLabelStatus: (value: string | null) => void;
   setLabelStatusWarning: (value: boolean) => void;
@@ -28,6 +29,7 @@ const buildModelReloadStatus = (status: ClassifierStatus) => {
 };
 
 export const useTrainingDeploy = ({
+  enabled,
   sessionId,
   setLabelStatus,
   setLabelStatusWarning,
@@ -45,6 +47,11 @@ export const useTrainingDeploy = ({
   const [modelReloadStatus, setModelReloadStatus] = useState<string | null>(null);
 
   const refreshDeployStatus = useCallback(async () => {
+    // ADR-0006: consumer installs must not probe training status (or see repo-path errors).
+    if (!enabled) {
+      setDeployStatus(null);
+      return;
+    }
     try {
       const status = await api.getTrainingDeployStatus();
       setDeployStatus(status);
@@ -54,7 +61,7 @@ export const useTrainingDeploy = ({
     } catch {
       setDeployStatus(null);
     }
-  }, [repoPathInput]);
+  }, [enabled, repoPathInput]);
 
   const handleExportTrainingData = useCallback(async () => {
     setCopyStatus(null);

@@ -77,6 +77,14 @@ TEST_CASE("this build wires the debug surface to its own build kind") {
     CHECK(kWebviewDebugEnabled == webview_debug_for_build(kReleaseBuild));
 }
 
+TEST_CASE("developer tools follow the release/debug gate unless env overrides") {
+    // ADR-0006 / roadmap 13.7. Release must not advertise training; Debug keeps the loop.
+    CHECK(developer_tools_for_build(/*release_build=*/false, /*env_override=*/false));
+    CHECK(developer_tools_for_build(/*release_build=*/false, /*env_override=*/true));
+    CHECK_FALSE(developer_tools_for_build(/*release_build=*/true, /*env_override=*/false));
+    CHECK(developer_tools_for_build(/*release_build=*/true, /*env_override=*/true));
+}
+
 TEST_CASE("resolve_frontend_url loads bundled frontend when present") {
     TempDir temp;
     const auto index = temp.path / "frontend" / "index.html";

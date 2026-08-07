@@ -1,6 +1,6 @@
 import { memo } from "react";
 
-import type { FocusLabel, TrainingDeployStatus } from "./api";
+import type { TrainingDeployStatus } from "./api";
 import {
   buildTrainingReadinessBlockers,
   formatLabelBreakdown,
@@ -18,13 +18,10 @@ type TrainingDeployCardProps = {
   deployStatus: TrainingDeployStatus | null;
   handleCopyTrainingCommand: () => void | Promise<void>;
   handleExportTrainingData: () => void | Promise<void>;
-  handleLabel: (label: FocusLabel) => void | Promise<void>;
   handleReloadClassifierModel: () => void | Promise<void>;
   handleRollbackClassifierModel: () => void | Promise<void>;
   handleSaveRepoPath: () => void | Promise<void>;
   handleTrainFromExport: () => void | Promise<void>;
-  labelStatus: string | null;
-  labelStatusWarning: boolean;
   modelReloadStatus: string | null;
   repoPathInput: string;
   setRepoPathInput: (value: string) => void;
@@ -35,6 +32,8 @@ type TrainingDeployCardProps = {
   trainingInProgress: boolean;
 };
 
+// ADR-0006 / roadmap 13.7. Shown only when developer tools are enabled (Debug or
+// SNAPBACK_DEV_TRAINING). A normal Release Settings surface must not render this card.
 export const TrainingDeployCard = memo(function TrainingDeployCard({
   canTrainFromExport,
   classifierBackend,
@@ -46,13 +45,10 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
   deployStatus,
   handleCopyTrainingCommand,
   handleExportTrainingData,
-  handleLabel,
   handleReloadClassifierModel,
   handleRollbackClassifierModel,
   handleSaveRepoPath,
   handleTrainFromExport,
-  labelStatus,
-  labelStatusWarning,
   modelReloadStatus,
   repoPathInput,
   setRepoPathInput,
@@ -70,41 +66,24 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
   return (
     <section className="card feedback-card">
       <div className="card-header">
-        <h2>Focus Feedback</h2>
-        <span className="pill">train the model</span>
+        <h2>Model tooling</h2>
+        <span className="pill">developer</span>
       </div>
       <p className="helper-text">
-        Was that moment actually focused? Use these controls to label it while a session is
-        active.
+        Repository training loop for a Snapback checkout that contains{" "}
+        <code>ml/pipeline_cli.py</code>. Not part of a normal installed app.
       </p>
-      <div className="button-row feedback-row">
-        <button className="secondary-button" onClick={() => void handleLabel("DEEP_FOCUS")}>
-          Deep
-        </button>
-        <button className="secondary-button" onClick={() => void handleLabel("PRODUCTIVE")}>
-          Focused
-        </button>
-        <button
-          className="secondary-button"
-          onClick={() => void handleLabel("PSEUDO_PRODUCTIVE")}
-        >
-          Drift
-        </button>
-        <button className="secondary-button" onClick={() => void handleLabel("DISTRACTED")}>
-          Distracted
-        </button>
+      <div className="button-row">
         <button className="secondary-button" onClick={() => void handleExportTrainingData()}>
           Export training data
         </button>
       </div>
-      {labelStatus ? (
-        <p className={`helper-text${labelStatusWarning ? " alert" : ""}`}>{labelStatus}</p>
-      ) : null}
       {deployStatus ? (
         <div className="training-deploy-block">
           <p className="deploy-title">Training readiness</p>
           <p className="helper-text">
-            Exported rows: {deployStatus.featureCount} features and {deployStatus.labelCount} labels.
+            Exported rows: {deployStatus.featureCount} features and {deployStatus.labelCount}{" "}
+            labels.
           </p>
           <p className="helper-text">
             Label balance: {formatLabelBreakdown(deployStatus.labelBreakdown)}
@@ -165,7 +144,7 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
                   ? "Reload model to switch off heuristic"
                   : deployStatus?.modelOnnxExists
                     ? "Candidate did not pass the quality gate"
-                  : "Reload after training"}
+                    : "Reload after training"}
             </span>
           </li>
         </ol>

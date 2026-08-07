@@ -117,6 +117,7 @@ export type HealthStatus = {
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
   modelDeployment: ModelDeploymentHealth;
+  developerToolsEnabled: boolean;
 };
 
 export type DiagnosticsSnapshot = {

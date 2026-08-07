@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cctype>
+#include <cstdlib>
+#include <memory>
 #include <sstream>
 
 namespace snapback {
@@ -34,6 +36,19 @@ std::string percent_encode_path(std::string value) {
     return out;
 }
 
+bool env_flag_set(const char* name) {
+#if defined(_WIN32)
+    char* value = nullptr;
+    std::size_t len = 0;
+    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr) return false;
+    std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
+    return owned.get()[0] != '\0';
+#else
+    if (const char* value = std::getenv(name)) return value[0] != '\0';
+    return false;
+#endif
+}
+
 }  // namespace
 
 std::string file_url_from_path(const std::filesystem::path& path) {
@@ -64,6 +79,12 @@ std::string resolve_frontend_url(const std::filesystem::path& exe_dir,
     }
 
     return allow_localhost_fallback ? "http://localhost:5173" : "about:blank";
+}
+
+bool developer_tools_enabled() {
+    // ADR-0006: Release stays silent unless SNAPBACK_DEV_TRAINING opts back into the repo
+    // tooling path. Debug keeps the existing developer loop without requiring the env var.
+    return developer_tools_for_build(kReleaseBuild, env_flag_set("SNAPBACK_DEV_TRAINING"));
 }
 
 }  // namespace snapback

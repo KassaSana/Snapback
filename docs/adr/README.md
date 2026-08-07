@@ -38,6 +38,7 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | [0003](0003-three-surface-dashboard.md) | Split the dashboard into Now, Review, and Settings | Accepted | 10.2 |
 | [0004](0004-verdict-and-opinion.md) | The state is the policy verdict, the scores are the model's opinion | Accepted | 7.7, 7.18, 5.3, 5.4, 1.2 |
 | [0005](0005-a-session-is-declared-and-attended.md) | A session is declared by the user and attended by the user | Accepted | 2.7, 7.23, 2.8 |
+| [0006](0006-trainer-is-developer-tooling.md) | Training tooling is developer-only | Accepted | 13.7 |
 
 ## Awaiting an ADR
 

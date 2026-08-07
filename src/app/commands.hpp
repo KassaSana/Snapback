@@ -15,6 +15,7 @@
 
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
+#include "app/frontend_assets.hpp"
 #include "app/open_url.hpp"
 #include "app/reveal_path.hpp"
 #include "app/state.hpp"
@@ -286,15 +287,27 @@ inline void register_commands(webview::webview& w, AppState& state,
 
     // --- Training pipeline ---
     bind_cmd("get_training_deploy_status", [data_dir](const json&) {
+        if (!developer_tools_enabled()) {
+            throw std::runtime_error(
+                "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
+        }
         return training_deploy::training_deploy_status(data_dir);
     });
     bind_cmd("set_training_repo_path", [data_dir](const json& a) {
+        if (!developer_tools_enabled()) {
+            throw std::runtime_error(
+                "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
+        }
         auto repo_path = detail::validate_required_text(
             "Repo path", a.at("repoPath").get<std::string>(), detail::kMaxRepoPathLen);
         training_deploy::write_training_repo_path(data_dir, repo_path);
         return json(nullptr);
     });
     bind_cmd("train_from_export", [data_dir](const json&) {
+        if (!developer_tools_enabled()) {
+            throw std::runtime_error(
+                "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
+        }
         return training_deploy::train_from_export(data_dir);
     });
     bind_cmd("rollback_classifier_model", [&state, data_dir](const json&) {

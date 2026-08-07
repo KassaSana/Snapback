@@ -22,6 +22,7 @@ import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { sessionStatusLabel } from "./sessionStatus";
 import { SessionReviewCards } from "./SessionReviewCards";
+import { FocusFeedbackCard } from "./FocusFeedbackCard";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
@@ -76,6 +77,7 @@ export default function App() {
     classifierModelId,
     classifierModelPath,
     classifierOnnxRuntimeEnabled,
+    developerToolsEnabled,
     handleRefreshPermissions,
     handleRequestPermissions,
     healthStatus,
@@ -159,6 +161,7 @@ export default function App() {
     trainFromExportHint,
     trainingInProgress,
   } = useTrainingDeploy({
+    enabled: developerToolsEnabled,
     sessionId,
     setLabelStatus: feedback.setLabelStatus,
     setLabelStatusWarning: feedback.setLabelStatusWarning,
@@ -398,33 +401,38 @@ export default function App() {
 
         {surface === "settings" && (
           <>
-        <TrainingDeployCard
-          canTrainFromExport={canTrainFromExport}
-          classifierBackend={classifierBackend}
-          classifierModelId={classifierModelId}
-          classifierModelPath={classifierModelPath}
-          copyStatus={copyStatus}
-          deployMessage={deployMessage}
-          deployMessageWarning={deployMessageWarning}
-          deployStatus={deployStatus}
-          handleCopyTrainingCommand={handleCopyTrainingCommand}
-          handleExportTrainingData={handleExportTrainingData}
+        <FocusFeedbackCard
           handleLabel={handleLabel}
-          handleReloadClassifierModel={handleReloadClassifierModel}
-          handleRollbackClassifierModel={handleRollbackClassifierModel}
-          handleSaveRepoPath={handleSaveRepoPath}
-          handleTrainFromExport={handleTrainFromExport}
           labelStatus={feedback.labelStatus}
           labelStatusWarning={feedback.labelStatusWarning}
-          modelReloadStatus={modelReloadStatus}
-          repoPathInput={repoPathInput}
-          setRepoPathInput={setRepoPathInput}
-          setShowAdvancedCommand={setShowAdvancedCommand}
-          showAdvancedCommand={showAdvancedCommand}
-          trainFromExportHint={trainFromExportHint}
-          trainingCommand={trainingCommand}
-          trainingInProgress={trainingInProgress}
         />
+
+        {developerToolsEnabled ? (
+          <TrainingDeployCard
+            canTrainFromExport={canTrainFromExport}
+            classifierBackend={classifierBackend}
+            classifierModelId={classifierModelId}
+            classifierModelPath={classifierModelPath}
+            copyStatus={copyStatus}
+            deployMessage={deployMessage}
+            deployMessageWarning={deployMessageWarning}
+            deployStatus={deployStatus}
+            handleCopyTrainingCommand={handleCopyTrainingCommand}
+            handleExportTrainingData={handleExportTrainingData}
+            handleReloadClassifierModel={handleReloadClassifierModel}
+            handleRollbackClassifierModel={handleRollbackClassifierModel}
+            handleSaveRepoPath={handleSaveRepoPath}
+            handleTrainFromExport={handleTrainFromExport}
+            modelReloadStatus={modelReloadStatus}
+            repoPathInput={repoPathInput}
+            setRepoPathInput={setRepoPathInput}
+            setShowAdvancedCommand={setShowAdvancedCommand}
+            showAdvancedCommand={showAdvancedCommand}
+            trainFromExportHint={trainFromExportHint}
+            trainingCommand={trainingCommand}
+            trainingInProgress={trainingInProgress}
+          />
+        ) : null}
 
         <GoalCategoriesCard />
 
