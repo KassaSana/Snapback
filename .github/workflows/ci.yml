@@ -2,6 +2,7 @@ name: CI
 
 # Guards the native application. Coverage:
 #   - portable core (core + capture + app-lib + tests) on Windows / macOS / Linux
+#   - the same core on Windows with MinGW-w64 GCC, the toolchain 11.8's bug lived in
 #   - AddressSanitizer + UBSan on the manual-memory paths (ring buffer, locks, RAII)
 #   - the ONNX inference backend (vendored runtime + fixture model)
 #   - the benchmark harness (short smoke run)
@@ -84,6 +85,75 @@ jobs:
 
       - name: Run CTest
         run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
+
+  # ---------------------------------------------------------------------------
+  # The portable core again, on Windows with MinGW-w64 GCC. Roadmap 6.6.
+  #
+  # cpp-headless above compiles Windows with MSVC and the other two OSes with
+  # clang++, which leaves exactly one combination nobody builds: **libstdc++'s
+  # MinGW filesystem implementation**. That is where 11.8's production bug lived
+  # — `copy_options::overwrite_existing` is silently ignored there, which broke
+  # model rollback outright and left `save_app_settings` writing a stale backup
+  # while reporting success. It reached `master`, and it was found only because a
+  # portable GCC happened to be the only compiler on the dev machine. Nothing
+  # about that was systematic; this is.
+  #
+  # Headless only. The desktop app's Win32 GUI link under MinGW is a separate
+  # question and not the one this job exists to answer.
+  #
+  # No `needs:` — same Roadmap 6.3 reasoning as the desktop jobs: a toolchain
+  # guard that stops running when the rest of CI is red does not guard the case
+  # it exists for.
+  #
+  # Expect a *pass* here to mean less than it does elsewhere in one specific way:
+  # 11.9 records that the `CaptureThread` contradiction case does not detect its
+  # own bug on this toolchain. That is a documented property of the test, not a
+  # regression in this job.
+  # ---------------------------------------------------------------------------
+  windows-gcc:
+    name: C++ headless tests / windows-gcc
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        # Overrides the workflow-level bash: the toolchain, its cmake, and its
+        # mingw32-make all live inside the UCRT64 environment, and reaching them
+        # from the runner's own bash would build against a different libstdc++
+        # than the one under test.
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # UCRT rather than MSVCRT: it is what current MinGW-w64 defaults to and what
+      # the dev machine that found 11.8 was running, so this reproduces that
+      # environment rather than an older one. `git` is installed explicitly because
+      # CMake's FetchContent needs it and the MSYS2 shell does not inherit the
+      # runner's PATH.
+      - name: Setup MSYS2 (MinGW-w64 UCRT)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-make
+
+      - name: Report the toolchain under test
+        run: g++ --version
+
+      - name: Configure core (MinGW Makefiles)
+        run: >
+          cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+          -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
+
+      - name: Build C++ tests
+        run: cmake --build build --target snapback_tests
+
+      - name: Run CTest
+        run: ctest --test-dir build --output-on-failure --timeout 120 --no-tests=error
 
   # ---------------------------------------------------------------------------
   # AddressSanitizer + UBSan (Linux/clang). Highest-value guard for the SPSC ring

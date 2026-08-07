@@ -15,11 +15,17 @@ ordering, immutable dependency pins, per-case CTest registration, classifier pro
 the large storage fixture, injected clocks, and private test seams. The August 1 performance
 pass moved hot live reads to an immutable snapshot and added contention/lifecycle coverage.
 The August 5 pass was read-only and did not rerun the suites; it audited production capture,
-session lifecycle, reporting, training, and the full frontend composition. The most recent
-recorded local baselines are **336/336 C++ cases** after 7.22 and **86 frontend component
-tests**, with clean frontend unit scripts and typecheck. PR #40 earlier ran the merged
-hardening baseline through all **15 hosted CI jobs**; all passed, including
+session lifecycle, reporting, training, and the full frontend composition. PR #40 earlier ran
+the merged hardening baseline through all **15 hosted CI jobs**; all passed, including
 `macos-gui-smoke`.
+
+**The August 6 pass closed 7.23, 7.25, 7.12, 10.8, and 6.6** — the correction queue below,
+minus the decision it deliberately did not take. The local baseline is now **376/376 C++
+cases** (up from 336 after 7.22) and clean frontend unit scripts plus typecheck; the component
+suite still cannot run on this machine (**11.11**), so every frontend change in that pass went
+into a `tsx`-testable pure module rather than into a component. CI is now **16 hosted jobs**
+with 6.6's `windows-gcc`, whose configuration was reproduced locally at 376/376 before being
+turned on.
 
 The formal v1 blocker list is **five of six verified complete**. Decision session A was
 settled on 2026-08-03 by [ADR-0004](adr/0004-verdict-and-opinion.md), leaving **macOS
@@ -70,30 +76,31 @@ see, which is why `docs-smoke` checks out with `fetch-depth: 0`.
 ## Start here — the current sequence
 
 Ordered by dependency, not severity. This replaces every previous "suggested sequence."
+Struck rows are done; the numbers renumber as they close, so "next" is always row 1.
 
 | # | Item | Why now |
 |---|------|---------|
 | 1 | **3.3** macOS packaging + notarization | Formal v1 blocker with external lead time; start the Apple Developer account work first |
-| 2 | **7.24** split monotonic and calendar time | Production supplies uptime seconds to calendar features; fix the model inputs while the Apple paperwork runs |
-| 3 | **8.10** make release builds network-silent | The shipped page contacts Google Fonts while the UI promises that nothing leaves the device |
-| 4 | **7.23 / 7.25** finish attended-time + atomic lifecycle | The span storage slice landed; engine wiring, UI state, labels, failure, and restart behavior need one owner |
-| 5 | **7.12** finish the SQL aggregation | The item is reopened: analytics still materializes every prediction and performs a recap N+1 loop |
-| 6 | **13.7** settle the trainer's product boundary | Settings advertises a workflow that requires an `ml/` tree absent from this checkout and from an installed app |
-| 7 | **10.8** make Review charts truthful | Small, user-visible correction: fixed 0–100 scale, real missing-data states, and honest app-count labels |
-| 8 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
-| 9 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
-| 10 | **7.16** timestamp representation | Unblocks retention, Review ranges, and time-window correctness work |
-| 11 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
-| 12 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
-| 13 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
-| 14 | **2.3 / Tier 13** model retraining | Resume only after 13.7 establishes a real shippable trainer boundary |
+| — | ~~**7.24** split monotonic and calendar time~~ | **Done 2026-08-05** |
+| — | ~~**8.10** make release builds network-silent~~ | **Done 2026-08-05** |
+| — | ~~**7.23 / 7.25** attended-time + atomic lifecycle~~ | **Done 2026-08-06** — crash hydration, shutdown close, configurable threshold; persist-before-mutate, one label, restored focus mode |
+| — | ~~**7.12** finish the SQL aggregation~~ | **Done 2026-08-06** — four aggregates, no materialized predictions, no recap loop, query count pinned |
+| 2 | **13.7** settle the trainer's product boundary | Settings advertises a workflow that requires an `ml/` tree absent from this checkout and from an installed app. **A `decision` — deliberately not taken by the August 6 pass, which had no standing to take it** |
+| — | ~~**10.8** make Review charts truthful~~ | **Done 2026-08-06** — fixed 0–100 axis, distinct no-data state, sampled-context labels |
+| 3 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
+| 4 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
+| 5 | **7.16** timestamp representation | Unblocks retention, Review ranges, and time-window correctness work |
+| 6 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
+| 7 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
+| 8 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
+| 9 | **2.3 / Tier 13** model retraining | Resume only after 13.7 establishes a real shippable trainer boundary |
 
 **Eight items were opened on 2026-08-04** and are deliberately *not* in the table above,
 because none of them displaces anything in it. They are listed here so they are findable:
 
 | Item | `S`/`M` | One line |
 |---|---|---|
-| **6.6** GCC-on-Windows CI job | `S` | The uncovered toolchain where 11.8's production bug lived |
+| ~~**6.6** GCC-on-Windows CI job~~ | `S` | **Done 2026-08-06** — `windows-gcc`, verified locally at 376/376 on MinGW-w64 UCRT |
 | **9.13** orphaned `v0.2.0` tag | `S` `decision` | No release baseline exists; 9.11's gate would reject the tag |
 | **12.7** ADR-0002's dead link | `S` | An ADR cites a file absent from every clone, with a guard exemption hiding it |
 | **4.13** nothing watches the ONNX pin | `S` | 8.9 made it trustworthy, not current |
@@ -102,9 +109,9 @@ because none of them displaces anything in it. They are listed here so they are 
 | **7.21** settings durability | `S` | 7.19 made the write atomic, not `fsync`ed |
 | **4.12** formatter + static analysis | `M` | Neither exists for either language |
 
-**6.6 is the one worth doing early.** The others are hygiene; 6.6 is the only one that would
-have *prevented* a defect that actually shipped to `master`, and 11.9 and 11.10 both get
-easier once it exists.
+**6.6 was the one worth doing early, and it is now done.** The others are hygiene; 6.6 was the
+only one that would have *prevented* a defect that actually shipped to `master`, and 11.9 and
+11.10 both get easier now that it exists.
 
 **Three more were opened on 2026-08-05**, from reading the architecture rather than from
 fixing anything. These are not hygiene — each is a hole in something the app already promises:
@@ -305,7 +312,31 @@ ended three days earlier.
   > `<doctest/doctest.h>` in a `#pragma warning(disable : 5285)` push/pop under `_MSC_VER`.
   > One include site, third-party noise only — our own C5285s would still fire.
 
-- **6.6 — No job builds this project with GCC on Windows, and that gap has already cost us.** `S`
+- **6.6 — DONE 2026-08-06, pending its first hosted run.** `S` `ci.yml` now carries a
+  `windows-gcc` job: MSYS2 UCRT64, `-G "MinGW Makefiles"`, `SNAPBACK_BUILD_APP=OFF`,
+  `SNAPBACK_ONNX=OFF`, Release, build `snapback_tests` and run CTest. No `needs:`, for 6.3's
+  reason — a toolchain guard that stops running when CI is red does not guard the case it
+  exists for.
+
+  **The fallout the item warned to expect did not arrive**, and that is a verified claim rather
+  than a hope: this configuration was run locally first, on **MinGW-W64 x86_64-ucrt GCC
+  14.2.0** — the same environment class that found 11.8 — with a clean Release configure and
+  `ctest`. **376/376 passed.** Nothing needed fixing before turning the job on, which makes
+  sense: 11.8's fix landed on this toolchain in the first place. The job's value is forward,
+  not retrospective.
+
+  **A pass here means slightly less than a pass elsewhere, and the job says so in a comment.**
+  11.9 records that the `CaptureThread` contradiction case does not detect its own bug on GCC.
+  That is a documented property of the test, not a regression, and someone reading a green
+  `windows-gcc` should know it before concluding the invariant is covered.
+
+  Only remaining unknown is the hosted runner setup — `msys2/setup-msys2` installing the
+  toolchain, and FetchContent reaching git from inside the MSYS2 shell (which is why `git` is
+  in the install list rather than assumed from the runner's PATH). The build itself is proven.
+  This takes CI to **16 hosted jobs**. The original finding follows.
+
+- **6.6 (original finding) — No job builds this project with GCC on Windows, and that gap has
+  already cost us.** `S`
   Opened 2026-08-04. CI compiles Windows with **MSVC only**, and Linux/macOS with `clang++`.
   The one combination nobody builds — **libstdc++'s MinGW filesystem implementation** — is
   where 11.8's production bug lived: `copy_options::overwrite_existing` is silently ignored
