@@ -2655,7 +2655,41 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   5.3), a coverage report is the cheapest tool for finding the next one. `gcov`/`llvm-cov` on
   the Linux CI job.
 
-- **10.8 — Make Review charts and labels tell the truth.** `S`
+- **10.8 — DONE 2026-08-06.** `S` The hourly chart is on a fixed 0–100 axis with references at
+  0, 50, and 100, and the app list no longer calls context snapshots "switches".
+
+  **Max-relative scaling was the headline defect and it inverted the chart's message.** Every
+  bar was drawn as a fraction of the largest value in the current dataset, so a user whose best
+  hour scored 20/100 saw that hour at full height — the picture said "this is your peak" while
+  the number beside it said "this is poor", from the same measurement. Bars are now
+  `score / 100 × plotHeight`, clamped, so an out-of-range value cannot overflow the plot and
+  misreport every other bar by comparison.
+
+  **A missing hour and a measured zero are now different pictures.** They used to render
+  identically, which made "we have no idea" and "you were completely distracted" the same
+  drawing. A measured zero keeps a visible 2px sliver; an hour with no samples gets a muted
+  tick *below* the axis, outside the plot area, so it cannot be read as a value. An hour
+  reported with `sampleCount == 0` counts as no data — the count is what says whether anything
+  was observed, not the score.
+
+  **Each bar's title now carries what its height cannot**: the score out of 100, how many
+  samples it rests on, and what fraction of them were distracted.
+
+  **The app metric was relabelled, not redefined.** `context_app_counts` counts context
+  snapshot rows, which the engine writes periodically as well as on a real window change — so
+  "switches" credited anyone sitting still in one window with *more* app-hopping the longer
+  they stayed put. It now reads "N samples" with a caption saying what that means. A real
+  switch/dwell metric stays a separate question; the item was explicit that the SQL count must
+  not be renamed by wish.
+
+  Geometry and wording are pure functions in `frontend/src/analyticsChart.ts` with a `tsx`
+  test, following `sessionStatus.ts` — the component suite cannot run on this machine
+  (**11.11**), so chart arithmetic reachable only through a rendered component would have had
+  no local test at all. The cases cover a low-only dataset, a genuine zero, missing hours,
+  out-of-range clamping, and the sampled-context label. This is data correctness and does not
+  substitute for **10.3**'s accessibility audit. The original finding follows.
+
+- **10.8 (original finding) — Make Review charts and labels tell the truth.** `S`
   Opened 2026-08-05. `AnalyticsCard` divides each hourly focus score by the largest value in
   the current dataset. If the user's best hour scores 20/100, that bar is drawn at full
   height. A missing hour is rendered exactly like a measured zero. The same card labels

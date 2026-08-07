@@ -1155,6 +1155,19 @@ h1 {
   stroke-dasharray: 2 3;
 }
 
+/* Roadmap 10.8. An hour with no samples, drawn below the axis so it cannot be read as a
+   measured value. Muted rather than accent-coloured, and outside the plot area, because the
+   two failures this fixes are "no data looked like zero" and "zero looked like nothing". */
+.chart-bar-empty {
+  fill: var(--muted);
+  opacity: 0.3;
+}
+
+.chart-axis-label {
+  fill: var(--muted);
+  font-size: 8px;
+}
+
 .insights-caption {
   margin: 6px 0 0;
   font-size: 0.72rem;
