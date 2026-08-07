@@ -86,9 +86,11 @@ void FeatureExtractor::ingest(const CaptureEvent& ev) {
     // Seed the session origin from the first event of the session (see begin_session).
     // The first event is the earliest moment the event clock and the session agree on.
     if (awaiting_session_start_) {
-        session_start_secs_ = now;
-        last_break_secs_ = now;  // The break clock starts at session start.
+        // Back-dated for a resumed session (Roadmap 7.25), zero for a fresh one.
+        session_start_secs_ = now - pending_session_backdate_secs_;
+        last_break_secs_ = now;  // The break clock starts now, even on a resume.
         awaiting_session_start_ = false;
+        pending_session_backdate_secs_ = 0.0;
     }
     if (!current_app_start_secs_ && !ev.app_name.empty()) {
         current_app_name_ = ev.app_name;
@@ -131,10 +133,20 @@ void FeatureExtractor::begin_session() {
     awaiting_session_start_ = true;
 }
 
+void FeatureExtractor::resume_session(double elapsed_secs) {
+    reset_for_session(std::nullopt);
+    awaiting_session_start_ = true;
+    // Negative would place the origin in the future and make the feature count down. A clock
+    // that moved backwards between runs is the realistic source, and "zero elapsed" is the
+    // safe reading of it.
+    pending_session_backdate_secs_ = std::max(0.0, elapsed_secs);
+}
+
 void FeatureExtractor::reset_for_session(std::optional<double> session_start_secs) {
     session_start_secs_ = session_start_secs;
     // An explicit origin (or an explicit "no session") overrides any pending lazy seed.
     awaiting_session_start_ = false;
+    pending_session_backdate_secs_ = 0.0;
     events_30s_.clear();
     events_5min_.clear();
     app_ids_.clear();

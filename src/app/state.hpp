@@ -245,6 +245,9 @@ private:
     // Closes a span a previous process left open, at the session's last recorded activity.
     // Requires mutex_ + storage_mutex_ (the constructor runs before either can be contended).
     void hydrate_session_attendance_unlocked();
+    // Restores the live state that belongs to a hydrated active session: its saved focus mode
+    // and the feature extractor's session origin (Roadmap 7.25). Same locking note as above.
+    void hydrate_active_session_unlocked();
     // Closes the open span on the way out, so a clean exit does not look like a crash to the
     // next launch. Takes both locks itself; safe to call when nothing is open.
     void close_open_span_on_shutdown() noexcept;

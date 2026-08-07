@@ -584,6 +584,143 @@ TEST_CASE("mouse movement alone counts as presence") {
     CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
 }
 
+TEST_CASE("a failed start leaves the previous session exactly as it was") {
+    // Roadmap 7.25. start_session used to change focus mode and reset the extractor, tracker,
+    // and Pomodoro *before* the storage write that can throw. A failed insert therefore left
+    // the old database session running underneath brand-new in-memory state: the app believed
+    // it was recording a session that did not exist.
+    //
+    // The failure here is real rather than injected. A second connection holds a write
+    // transaction, and SQLite is opened with no busy timeout, so the insert gets SQLITE_BUSY
+    // immediately -- which is also the honest production scenario (another Snapback process,
+    // or a backup tool, holding the file).
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+
+    const auto first = state.start_session("keep me", FocusMode::Deep);
+    REQUIRE(state.settings().default_focus_mode == FocusMode::Normal);
+
+    {
+        auto blocker = Storage::open(temp.path);
+        REQUIRE(blocker.has_value());
+        Storage::Transaction lock_holder(*blocker);  // BEGIN IMMEDIATE: writers are blocked
+        CHECK_THROWS(state.start_session("should fail", FocusMode::Recovery));
+    }
+
+    // The old session is still the active one, still ACTIVE in storage, and still attended.
+    const auto active = state.active_session();
+    REQUIRE(active.has_value());
+    CHECK(active->session_id == first.session_id);
+    CHECK(active->status == "ACTIVE");
+    CHECK(AppStateTestAccess::has_open_span(state, first.session_id));
+    // And nothing wrote an end to it, so it is not sitting completed-but-current.
+    const auto stored = state.get_session(first.session_id);
+    REQUIRE(stored.has_value());
+    CHECK(stored->status == "ACTIVE");
+    CHECK_FALSE(stored->ended_at.has_value());
+}
+
+TEST_CASE("replacing a session writes the same automatic label a stop would") {
+    // Roadmap 7.25. Replacement completed the old row silently, so the only thing deciding
+    // whether a finished session got a verdict was whether the user pressed Stop or just
+    // started the next thing -- a distinction they never made deliberately.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto first = state.start_session("replaced", FocusMode::Normal);
+    state.start_session("replacement", FocusMode::Normal);
+
+    TempDir temp;
+    const auto exported = state.export_training_data(temp.path, first.session_id);
+    CHECK(exported.label_count == 1);
+    CHECK(read_file(temp.path / "labels.csv").find(",auto,") != std::string::npos);
+}
+
+TEST_CASE("stopping twice does not append a second automatic label") {
+    // Roadmap 7.25. Storage::stop_session is idempotent, but the label write was not, so a
+    // double-click on Stop produced two `auto` rows for one session -- different whenever a
+    // prediction landed between them, with nothing to say which was meant. The labels table is
+    // append-only by design, so a duplicate cannot be cleaned up afterwards.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("stop me twice", FocusMode::Normal);
+    state.stop_session(session.session_id);
+    state.stop_session(session.session_id);
+    state.stop_session(session.session_id);
+
+    TempDir temp;
+    CHECK(state.export_training_data(temp.path, session.session_id).label_count == 1);
+}
+
+TEST_CASE("restarting restores the active session's saved focus mode") {
+    // Roadmap 7.25. Focus mode sets the risk threshold and the hyperfocus window, so a Deep
+    // session that came back as Normal was being classified against a different question than
+    // the one it was started to ask -- and nothing on screen said so.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path);
+        session_id = state.start_session("deep work", FocusMode::Deep).session_id;
+    }
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path);
+        const auto active = state.active_session();
+        REQUIRE(active.has_value());
+        CHECK(active->session_id == session_id);
+        // The settings default is Normal, which is what this used to come back as.
+        REQUIRE(state.settings().default_focus_mode == FocusMode::Normal);
+        CHECK(active->focus_mode == "deep");
+        // The live mode, not just the stored string. `settings().default_focus_mode` is what
+        // the *next* session starts with; this is what the classifier is using right now, and
+        // the gap between the two was the bug.
+        CHECK(AppStateTestAccess::focus_mode(state) == FocusMode::Deep);
+    }
+}
+
+TEST_CASE("a resumed session's elapsed feature continues instead of restarting at zero") {
+    // Roadmap 7.25. `seconds_since_session_start` restarted from zero on reopen while the
+    // recap beside it kept reporting the real elapsed time: one session, two contradictory
+    // numbers, and the contradictory one is a model input.
+    FeatureExtractor features;
+    features.resume_session(3600.0);  // an hour in already
+
+    CaptureEvent first;
+    first.event_type = EventType::KeyPress;
+    first.timestamp_secs = 10.0;  // a fresh process: the monotonic clock starts near zero
+    features.ingest(first);
+
+    const auto vector = features.extract(20.0);
+    // 3600 already elapsed + 10 seconds of this process, not 10.
+    CHECK(vector.seconds_since_session_start() == doctest::Approx(3610.0));
+    // The break clock is NOT back-dated. Had it been, this would read 60 minutes -- and
+    // Normal mode's hyperfocus nudge would be most of the way to firing for a break the
+    // process was not running to observe.
+    CHECK(vector.minutes_since_last_break() == doctest::Approx(0.0));
+}
+
+TEST_CASE("a backwards clock between runs resumes at zero rather than counting down") {
+    FeatureExtractor features;
+    features.resume_session(-500.0);
+
+    CaptureEvent first;
+    first.event_type = EventType::KeyPress;
+    first.timestamp_secs = 10.0;
+    features.ingest(first);
+
+    CHECK(features.extract(10.0).seconds_since_session_start() == doctest::Approx(0.0));
+}
+
 TEST_CASE("AppState binds Pomodoro to an active session and exposes transition edges") {
     // ROADMAP 7.14: this used to call `start_pomodoro_for_test(100)`, a public method on the
     // shipping class whose only reason to exist was passing `now_ms` in by hand. 11.4's
@@ -772,7 +909,10 @@ TEST_CASE("AppState labels and export training data") {
     AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 300.0));
     exported = state->export_training_data(temp_other.path, session.session_id);
     CHECK(exported.feature_count >= 1);
-    CHECK(exported.label_count == 1);
+    // Two now, not one: the manual label above plus the automatic one that Roadmap 7.25 made
+    // replacement write. Before that, whether a finished session got a verdict depended on
+    // whether it ended by Stop or by being replaced, which is not a distinction the user made.
+    CHECK(exported.label_count == 2);
     const auto scoped_features = read_file(temp_other.path / "features.csv");
     CHECK(scoped_features.find("Export from app state") != std::string::npos);
     CHECK(scoped_features.find("Other session") == std::string::npos);

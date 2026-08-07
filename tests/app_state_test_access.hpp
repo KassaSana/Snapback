@@ -67,6 +67,15 @@ struct AppStateTestAccess {
         std::lock_guard lock(state.storage_mutex_);
         return state.storage_.has_open_span(session_id);
     }
+
+    // The *live* focus mode driving the classifier right now (Roadmap 7.25). Not the same
+    // thing as `settings().default_focus_mode`, which is only what the next session starts
+    // with — the difference is precisely the bug: a restarted Deep session used to come back
+    // being classified under Normal's threshold with nothing on screen saying so.
+    static FocusMode focus_mode(AppState& state) {
+        std::lock_guard lock(state.mutex_);
+        return state.focus_mode_;
+    }
 };
 
 }  // namespace snapback

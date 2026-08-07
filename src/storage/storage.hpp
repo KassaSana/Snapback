@@ -166,6 +166,12 @@ public:
 
     // True if the session has a span open, i.e. the user is currently attending it.
     bool has_open_span(const std::string& session_id);
+
+    // Wall-clock seconds from the session's `started_at` to now, or nullopt if there is no
+    // such session. Roadmap 7.25 uses it to resume the feature extractor's session origin
+    // after a restart; computed in SQL so it is measured against the same clock that stamped
+    // `started_at`, and never negative if that clock moved backwards.
+    std::optional<std::int64_t> session_elapsed_secs(const std::string& session_id);
     // Completes the session and returns the row. Idempotent if already COMPLETED.
     SessionRecord stop_session(const std::string& session_id);
     std::optional<SessionRecord> active_session();

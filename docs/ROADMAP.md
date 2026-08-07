@@ -844,7 +844,45 @@ internals, and the benchmark harness.
   model contract before silently changing its inputs. Coordinate with **7.16** and Tier 13,
   but do not let the broader storage-time ADR delay this production-input correction.
 
-- **7.25 — Make session start, replace, stop, and restart one failure-atomic lifecycle.** `L`
+- **7.25 — DONE 2026-08-06.** `L` All four symptoms closed, with the storage boundary as the
+  commit point.
+
+  **Start persists first and mutates second.** The savepoint covers closing the replaced
+  session's span *and* `create_session`, so a rolled-back replacement leaves the old session
+  both running and still attended. Every in-memory change — focus mode, extractor, tracker,
+  Pomodoro, attendance — happens after `release()`, where nothing can throw.
+
+  **The failure in the test is real, not injected.** A second connection holds a
+  `BEGIN IMMEDIATE`, and SQLite is opened with no busy timeout, so the write gets `SQLITE_BUSY`
+  immediately. That needed no test-only seam in the shipping class (7.14's objection) and it is
+  the honest production scenario: another process or a backup tool holding the file.
+
+  **Replacement writes the same automatic label a stop does.** Previously the only thing
+  deciding whether a finished session got a verdict was whether the user pressed Stop or just
+  started the next thing — not a distinction they made deliberately. It stays outside the
+  savepoint and best-effort for the same reason the stop path is: a label that could not be
+  written must not cost you the session it describes.
+
+  **One label, enforced in Storage.** `save_auto_session_label` returns the existing `auto`
+  label instead of appending a second. `stop_session` was already idempotent, so a double-click
+  wrote two inferred verdicts that differed whenever a prediction landed between them — and
+  the labels table is append-only by design, so nothing could clean that up afterwards. The
+  *existing* label wins, not the newer inference: it is the one the user was shown.
+
+  **Restart restores the state that belongs to the session, not just the row.** The saved focus
+  mode comes back (it sets the risk threshold and the hyperfocus window, so a Deep session was
+  silently continuing under Normal's rules), and `FeatureExtractor::resume_session` back-dates
+  the session origin by `Storage::session_elapsed_secs` so
+  `seconds_since_session_start` continues instead of restarting at zero while the recap beside
+  it reported hours. The break clock is deliberately **not** back-dated — nothing is known
+  about what happened while the process was gone, and back-dating it would push the hyperfocus
+  nudge most of the way to firing the instant the app reopened. Running/paused span state on
+  restart is **7.23**'s hydration, already landed.
+
+  Six new cases; suite **372 pass**. The original finding follows.
+
+- **7.25 (original finding) — Make session start, replace, stop, and restart one failure-atomic
+  lifecycle.** `L`
   Opened 2026-08-05. **7.20 fixed the SQLite half only.** `Storage::create_session()` now
   closes the prior row and inserts its replacement atomically, but `AppState::start_session()`
   changes focus mode and resets extractor/tracker/Pomodoro state before that storage call can

@@ -120,6 +120,22 @@ public:
     // there is no conversion between the two. Passing nullopt (which is what it used to do)
     // silently pinned seconds_since_session_start to 0.0 for every row ever written.
     void begin_session();
+
+    // Roadmap 7.25. Resume a session that has already been running for `elapsed_secs` — the
+    // restart case, where the row is still ACTIVE but this process has never seen an event
+    // from it.
+    //
+    // Same lazy seed as begin_session(), back-dated: the origin becomes the first event's
+    // timestamp minus the elapsed time the session already has. Without it, a session
+    // recovered after a crash reported `seconds_since_session_start` counting up from zero
+    // while the recap next to it said four hours — the same feature disagreeing with the same
+    // session in two places.
+    //
+    // The break clock is deliberately *not* back-dated. Nothing is known about what happened
+    // while the process was gone, and a back-dated `minutes_since_last_break` would fire the
+    // hyperfocus nudge the instant the app reopened.
+    void resume_session(double elapsed_secs);
+
     FeatureVector update(const CaptureEvent& ev, const std::vector<AppRuleRecord>& rules = {});
     FeatureVector extract(double now_secs, const std::vector<AppRuleRecord>& rules) const;
 
@@ -141,6 +157,9 @@ private:
     std::deque<WindowedEvent> events_5min_;
     std::optional<double> session_start_secs_;
     bool awaiting_session_start_ = false;  // seed session_start_secs_ from the next event
+    // How far behind the first event the seeded origin should sit (Roadmap 7.25). Zero for a
+    // freshly started session; the already-elapsed seconds for a resumed one.
+    double pending_session_backdate_secs_ = 0.0;
     std::optional<double> last_break_secs_;
     std::string current_app_name_;
     std::string current_window_title_;

@@ -109,8 +109,25 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     focus_mode_ = settings_.default_focus_mode;
     idle_detector_.set_threshold_ms(settings_.idle_threshold_secs * 1000);
     context_tracker_.set_goal_categories(settings_.goal_categories);
+    hydrate_active_session_unlocked();
     hydrate_session_attendance_unlocked();
     publish_live_read_unlocked();
+}
+
+void AppState::hydrate_active_session_unlocked() {
+    // Roadmap 7.25. A restart used to hydrate the active row and stop there: the session came
+    // back, but the *live state belonging to it* did not. Two consequences the user could see.
+    //
+    // The saved focus mode was replaced by the default. Focus mode sets the risk threshold and
+    // the hyperfocus window, so a Deep session silently continued under Normal's rules — the
+    // classifier answering a different question than the one the session was started to ask.
+    //
+    // And `seconds_since_session_start` restarted at zero while the recap beside it kept
+    // reporting hours: one session, two contradictory numbers, one of them a model input.
+    if (!active_session_) return;
+    focus_mode_ = focus_mode_from_string(active_session_->focus_mode);
+    const auto elapsed = storage_.session_elapsed_secs(active_session_->session_id);
+    features_.resume_session(static_cast<double>(elapsed.value_or(0)));
 }
 
 void AppState::hydrate_session_attendance_unlocked() {
@@ -379,24 +396,48 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // Mixed (in-memory + storage): take both locks in the fixed order mutex_ -> storage_mutex_.
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
+
+    // Roadmap 7.25. **Persist first, mutate second.** This function used to change focus mode
+    // and reset the extractor, tracker, and Pomodoro *before* the storage write that can
+    // throw, so a failed insert left the old database session running underneath brand-new
+    // in-memory state — the app believing it was recording a session that does not exist.
+    // Everything above the release() below is undone as a unit on failure; everything after it
+    // is in-memory and cannot fail.
+    //
+    // Roadmap 7.23 / 7.20. Starting a session *replaces* a running one, and
+    // `Storage::create_session` completes it atomically. Its span has to close with it: an
+    // open span on a completed session keeps counting to "now" forever, so a session replaced
+    // weeks ago would report more attended time than it was ever open for. That close belongs
+    // inside the same savepoint — a rolled-back replacement must leave the old session both
+    // running *and* still attended.
+    const std::optional<std::string> replaced =
+        active_session_ ? std::optional<std::string>(active_session_->session_id) : std::nullopt;
+
+    SessionRecord created;
+    {
+        Storage::Savepoint savepoint(storage_, "app_start_session");
+        if (replaced) storage_.close_session_span_now(*replaced);
+        created = storage_.create_session(goal, mode);
+        // Starting a session is by definition the user attending it, so the first span opens
+        // with it — stamped by Storage's clock, the same one that stamped started_at.
+        storage_.begin_session_span_now(created.session_id);
+        savepoint.release();
+    }
+
+    // Committed; the session exists. Roadmap 7.25: a replaced session gets the same automatic
+    // label an explicitly stopped one does. Replacement used to complete the old row silently,
+    // so the only difference between "I pressed Stop" and "I started something else" was
+    // whether your finished session got a verdict. It stays outside the savepoint and stays
+    // best-effort for the reason the stop path does: a label that could not be written must
+    // not cost you the session it describes.
+    if (replaced) save_auto_session_label_unlocked(*replaced);
+
+    active_session_ = created;
     focus_mode_ = mode;
     features_.begin_session();
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
-
-    // Roadmap 7.23. Starting a session *replaces* a running one — Storage::create_session
-    // completes it (7.20). Its span has to be closed with it: an open span on a completed
-    // session keeps counting to "now" forever, so a session replaced weeks ago would report
-    // more attended time than it was ever open for.
-    const std::optional<std::string> replaced =
-        active_session_ ? std::optional<std::string>(active_session_->session_id) : std::nullopt;
-    if (replaced) storage_.close_session_span_now(*replaced);
-
-    active_session_ = storage_.create_session(goal, mode);
-    // Starting a session is by definition the user attending it, so the first span opens with
-    // it — stamped by Storage's clock, the same one that stamped started_at.
-    storage_.begin_session_span_now(active_session_->session_id);
     session_attended_ = true;
     // Pressing Start *is* input. Without this the detector can still be Idle from before the
     // session existed, and the next tick would read "should not be attended" and immediately
@@ -412,14 +453,21 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
 void AppState::stop_session() {
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
-    pomodoro_.reset();
     if (active_session_) {
-        // Close the span before ending the session: once ended_at is set, "the span that is
-        // still open" is no longer a meaningful thing to be holding.
-        storage_.close_session_span_now(active_session_->session_id);
+        const std::string session_id = active_session_->session_id;
+        {
+            // Roadmap 7.25. Close the span before ending the session — once ended_at is set,
+            // "the span that is still open" stops being a meaningful thing to hold — and do
+            // both or neither, so a failure cannot leave a completed session still accruing
+            // attended time.
+            Storage::Savepoint savepoint(storage_, "app_stop_session");
+            storage_.close_session_span_now(session_id);
+            storage_.end_session(session_id);
+            savepoint.release();
+        }
+        save_auto_session_label_unlocked(session_id);
         session_attended_ = false;
-        storage_.end_session(active_session_->session_id);
-        save_auto_session_label_unlocked(active_session_->session_id);
+        pomodoro_.reset();
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
@@ -431,10 +479,17 @@ void AppState::stop_session() {
 SessionRecord AppState::stop_session(const std::string& session_id) {
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
-    // Closes nothing when the session was already stopped, or when it predates spans —
-    // both ordinary outcomes, so the result is not checked.
-    storage_.close_session_span_now(session_id);
-    SessionRecord record = storage_.stop_session(session_id);
+    SessionRecord record;
+    {
+        Storage::Savepoint savepoint(storage_, "app_stop_session_by_id");
+        // Closes nothing when the session was already stopped, or when it predates spans —
+        // both ordinary outcomes, so the result is not checked.
+        storage_.close_session_span_now(session_id);
+        record = storage_.stop_session(session_id);
+        savepoint.release();
+    }
+    // Idempotent at the storage layer (7.25): a second Stop on an already-completed session
+    // returns the label already written rather than appending a second, contradictory one.
     save_auto_session_label_unlocked(session_id);
     if (active_session_ && active_session_->session_id == session_id) {
         pomodoro_.reset();
