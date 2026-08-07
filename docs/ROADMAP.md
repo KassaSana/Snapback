@@ -1201,7 +1201,47 @@ internals, and the benchmark harness.
 
 ### Performance
 
-- **7.12 — PARTIAL, REOPENED 2026-08-05.** `M` The 2026-07-29 rewrite improved two query
+- **7.12 — DONE 2026-08-06.** `M` The reopened half is closed: neither `analytics()` nor
+  `summary_report()` materializes a `PredictionRecord` any more, and no path calls `recap()`
+  in a loop.
+
+  Four new aggregates, each returning final numbers: `prediction_stats` (count, average,
+  distracted count, and the longest non-distracted run), `hourly_focus_buckets`,
+  `productive_session_streak`, and `session_window_totals`. `analytics()` went from *every
+  retained prediction plus a 200-session `recap()` loop* to four queries;
+  `summary_report()` from every prediction in its window plus 500 fully-built recaps to three.
+
+  **The streak is a gaps-and-islands query, not a loop.** The difference between "position in
+  the whole ordering" and "position among rows of the same distracted-ness" is constant inside
+  a run and changes at every boundary, so grouping by it groups by run. The ORDER BY carries
+  `id DESC` alongside `timestamp DESC` because predictions written inside the same second are
+  otherwise ordered arbitrarily — a run's *length* is the same read either way, but its
+  *grouping* is not.
+
+  **Local hour survived the move**, as 7.16's unsettled state requires. SQLite's `localtime`
+  modifier calls the same C library conversion `local_hour_from_rfc3339` does, so the two agree
+  including across DST — and the parity test proves it rather than assuming it.
+
+  **The gate is query count, not wall clock.** A per-session loop returns exactly the same
+  numbers as one aggregate, just N times more slowly, which is how the N+1 path survived being
+  called fixed the first time — no correctness test could see it. `count_statements_for_test`
+  wraps `sqlite3_trace_v2`, so SQLite counts its own statements; the counter lives in that
+  function's frame rather than in a member, since `Storage`'s move operations carry only `db_`
+  and `stmt_cache_` and a member added to one and not the other fails silently. The new
+  aggregates are pinned at 2/1/1/1 statements against 12,000 rows; the loop they replaced
+  measures at more than 5 × 60.
+
+  **Parity is against the C++ fold, not against hand-written numbers.** The reference
+  implementation in the test *is* the code that used to run in `AppState`, so a disagreement
+  means the move changed an answer the user was already being shown. Both mutations were
+  checked: dropping `localtime` and dropping the window function's `PARTITION BY` each turn
+  the suite red, so the test is not vacuous.
+
+  Still not benchmarked — **4.4**'s perf gate and **14.1**'s storage-lane measurement are
+  unchanged by this. The win here is structural and now bounded, which is what the item asked
+  for. Six new cases; suite **376 pass**. The reopened finding follows.
+
+- **7.12 (reopened finding) — PARTIAL, REOPENED 2026-08-05.** `M` The 2026-07-29 rewrite improved two query
   families, but its headline claim that "all three call sites now aggregate in SQL" is false.
   `AppState::analytics()` still materializes every retained prediction through
   `predictions_since()`, then loops over `recent_sessions(200)` and calls `recap()` for each

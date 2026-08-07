@@ -1,6 +1,7 @@
 #include "doctest_wrapper.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -12,6 +13,7 @@
 
 #include "storage/storage.hpp"
 #include "util/logger.hpp"
+#include "util/time.hpp"
 
 using namespace snapback;
 
@@ -1671,4 +1673,204 @@ TEST_CASE("batched aggregation over a large database matches the per-session pat
     for (const auto& [app, count] : counts) total += count;
     CHECK(total == LargeFixture::kSessions * 3);
     CHECK(counts.at("Cursor") > 0);
+}
+
+namespace {
+
+// The C++ fold that Roadmap 7.12 moved into SQL, kept here as the reference implementation the
+// new queries are compared against. Not a rewrite of the SQL in another language: this is the
+// code that used to run in `AppState::analytics` and `AppState::summary_report`, so a
+// disagreement means the move changed an answer the user was already being shown.
+struct ReferenceStats {
+    std::size_t sample_count{};
+    double avg_focus_score{};
+    std::size_t distracted_count{};
+    std::size_t longest_focus_streak{};
+    std::vector<AnalyticsHour> hourly;
+};
+
+ReferenceStats fold_in_cpp(const std::vector<PredictionRecord>& predictions) {
+    ReferenceStats out;
+    struct Bucket {
+        std::size_t count{};
+        double focus_sum{};
+        std::size_t distracted{};
+    };
+    std::array<Bucket, 24> buckets{};
+    std::size_t current_streak = 0;
+    for (const auto& prediction : predictions) {
+        ++out.sample_count;
+        out.avg_focus_score += prediction.focus_score;
+        if (prediction.focus_state == "DISTRACTED") {
+            ++out.distracted_count;
+            current_streak = 0;
+        } else {
+            ++current_streak;
+            out.longest_focus_streak = std::max(out.longest_focus_streak, current_streak);
+        }
+        const int hour = local_hour_from_rfc3339(prediction.timestamp);
+        if (hour < 0 || hour >= 24) continue;
+        auto& bucket = buckets[static_cast<std::size_t>(hour)];
+        ++bucket.count;
+        bucket.focus_sum += prediction.focus_score;
+        if (prediction.focus_state == "DISTRACTED") ++bucket.distracted;
+    }
+    if (out.sample_count > 0) out.avg_focus_score /= static_cast<double>(out.sample_count);
+    for (int hour = 0; hour < 24; ++hour) {
+        const auto& bucket = buckets[static_cast<std::size_t>(hour)];
+        if (bucket.count == 0) continue;
+        out.hourly.push_back(AnalyticsHour{
+            hour, bucket.count, bucket.focus_sum / static_cast<double>(bucket.count),
+            static_cast<double>(bucket.distracted) / static_cast<double>(bucket.count)});
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("SQL prediction aggregates match the C++ fold they replaced, at 12,000 rows") {
+    // Roadmap 7.12. The point of the fixture is that these numbers cannot be checked by
+    // inspection: 12,000 rows across 60 sessions and 20 days is where a wrong GROUP BY, a
+    // silently truncated CAST, or a local-hour conversion that disagrees with the C library
+    // shows up as a plausible number rather than an obvious one.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+
+    for (const std::optional<std::string> cutoff :
+         {std::optional<std::string>{}, std::optional<std::string>{"2026-07-20T00:00:00Z"}}) {
+        CAPTURE(cutoff.value_or("(none)"));
+        const auto expected = fold_in_cpp(storage->predictions_since(cutoff));
+        const auto actual = storage->prediction_stats(cutoff);
+
+        CHECK(actual.sample_count == expected.sample_count);
+        CHECK(actual.sample_count > 0);
+        CHECK(actual.avg_focus_score == doctest::Approx(expected.avg_focus_score));
+        CHECK(actual.distracted_count == expected.distracted_count);
+        CHECK(actual.longest_focus_streak == expected.longest_focus_streak);
+        CHECK(actual.longest_focus_streak > 0);
+
+        // The local-hour conversion is the part most likely to differ between SQLite's
+        // `localtime` modifier and the C library call the C++ path used, so it is compared
+        // bucket by bucket rather than by count.
+        const auto hourly = storage->hourly_focus_buckets(cutoff);
+        REQUIRE(hourly.size() == expected.hourly.size());
+        for (std::size_t i = 0; i < hourly.size(); ++i) {
+            CAPTURE(i);
+            CHECK(hourly[i].hour == expected.hourly[i].hour);
+            CHECK(hourly[i].sample_count == expected.hourly[i].sample_count);
+            CHECK(hourly[i].avg_focus_score ==
+                  doctest::Approx(expected.hourly[i].avg_focus_score));
+            CHECK(hourly[i].distracted_fraction ==
+                  doctest::Approx(expected.hourly[i].distracted_fraction));
+        }
+        CHECK(hourly.size() > 1);  // a single bucket would make the comparison vacuous
+    }
+}
+
+TEST_CASE("the SQL productive-session streak matches the recap loop it replaced") {
+    // Roadmap 7.12. The loop counted leading *completed* sessions whose recap average was at
+    // or above the bar, skipping running ones and stopping at the first one below.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+
+    const auto reference = [&](std::size_t limit, double bar) {
+        std::size_t streak = 0;
+        for (const auto& session : storage->recent_sessions(limit)) {
+            if (session.status != "COMPLETED") continue;
+            if (storage->recap(session.session_id).avg_focus_score >= bar) {
+                ++streak;
+            } else {
+                break;
+            }
+        }
+        return streak;
+    };
+
+    // Three bars: one every session clears, one nothing clears, and the production bar. A
+    // single bar could be matched by a query that ignores the scores entirely.
+    for (const double bar : {0.0, 70.0, 1000.0}) {
+        CAPTURE(bar);
+        CHECK(storage->productive_session_streak(200, bar) == reference(200, bar));
+    }
+    CHECK(storage->productive_session_streak(200, 0.0) == LargeFixture::kSessions);
+    CHECK(storage->productive_session_streak(200, 1000.0) == 0);
+
+    // A running session in front of the streak is skipped, not treated as a break in it.
+    storage->create_session("still going", FocusMode::Normal);
+    CHECK(storage->productive_session_streak(200, 0.0) == LargeFixture::kSessions);
+}
+
+TEST_CASE("SQL session-window totals match the summary loop they replaced") {
+    // Roadmap 7.12. The cap applies to recency before the window filter, which is what makes
+    // this worth pinning: applying them the other way round is an easy and invisible change.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+
+    const std::string cutoff = "2026-07-20T00:00:00Z";
+    const auto reference = [&](std::size_t limit) {
+        Storage::SessionWindowTotals totals;
+        for (const auto& summary : storage->recent_session_summaries(limit)) {
+            const auto& session = summary.record;
+            if (!session.started_at || *session.started_at < cutoff) continue;
+            ++totals.session_count;
+            if (session.status == "COMPLETED") {
+                ++totals.completed_session_count;
+                totals.focus_seconds += summary.recap.duration_secs;
+            }
+        }
+        return totals;
+    };
+
+    for (const std::size_t limit : {std::size_t{500}, std::size_t{10}}) {
+        CAPTURE(limit);
+        const auto expected = reference(limit);
+        const auto actual = storage->session_window_totals(limit, cutoff);
+        CHECK(actual.session_count == expected.session_count);
+        CHECK(actual.completed_session_count == expected.completed_session_count);
+        CHECK(actual.focus_seconds == expected.focus_seconds);
+    }
+    // Not vacuous: the window really does exclude most of the fixture.
+    CHECK(storage->session_window_totals(500, cutoff).session_count > 0);
+    CHECK(storage->session_window_totals(500, cutoff).session_count < LargeFixture::kSessions);
+}
+
+TEST_CASE("the analytics aggregates run in a bounded number of queries") {
+    // Roadmap 7.12's actual acceptance boundary. Correctness parity above says the answers
+    // match; this says the work to get them no longer grows with the database. The counter is
+    // SQLite's own, so it counts every statement the queries prepare, including the ones a
+    // future edit might add back inside a loop.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+
+    // Two statements for stats (totals + streak), one each for the buckets, the session
+    // streak, and the window totals. The bound is deliberately loose -- the claim is
+    // "constant", and 60 sessions x 200 predictions must not move it.
+    CHECK(storage->count_statements_for_test([&] { (void)storage->prediction_stats(); }) == 2);
+    CHECK(storage->count_statements_for_test([&] { (void)storage->hourly_focus_buckets(); }) == 1);
+    CHECK(storage->count_statements_for_test(
+              [&] { (void)storage->productive_session_streak(200, 70.0); }) == 1);
+    CHECK(storage->count_statements_for_test([&] {
+              (void)storage->session_window_totals(500, "2026-07-20T00:00:00Z");
+          }) == 1);
+
+    // What it replaced, for contrast: five statements per completed session. Without this the
+    // bounds above would look like arbitrary small numbers rather than the point of the item.
+    const auto per_session = storage->count_statements_for_test([&] {
+        for (const auto& session : storage->recent_sessions(200)) {
+            if (session.status == "COMPLETED") (void)storage->recap(session.session_id);
+        }
+    });
+    CHECK(per_session > 5 * LargeFixture::kSessions);
 }

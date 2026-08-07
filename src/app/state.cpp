@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <ctime>
 #include <fstream>
@@ -20,7 +19,6 @@
 #include "engine/app_context.hpp"
 #include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
-#include "util/time.hpp"
 
 namespace snapback {
 namespace {
@@ -786,33 +784,14 @@ void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
 AnalyticsSummary AppState::analytics() const {
     std::lock_guard lock(storage_mutex_);
     AnalyticsSummary summary;
-    struct Bucket {
-        std::size_t count{};
-        double focus_sum{};
-        std::size_t distracted{};
-    };
-    std::array<Bucket, 24> buckets{};
-    const auto predictions = const_cast<Storage&>(storage_).predictions_since();
-    for (const auto& prediction : predictions) {
-        ++summary.sample_count;
-        summary.avg_focus_score += prediction.focus_score;
-        const int hour = local_hour_from_rfc3339(prediction.timestamp);
-        if (hour < 0 || hour >= 24) continue;
-        auto& bucket = buckets[static_cast<std::size_t>(hour)];
-        ++bucket.count;
-        bucket.focus_sum += prediction.focus_score;
-        if (prediction.focus_state == "DISTRACTED") ++bucket.distracted;
-    }
-    if (summary.sample_count > 0) {
-        summary.avg_focus_score /= static_cast<double>(summary.sample_count);
-    }
-    for (int hour = 0; hour < 24; ++hour) {
-        const auto& bucket = buckets[static_cast<std::size_t>(hour)];
-        if (bucket.count == 0) continue;
-        summary.hourly.push_back(AnalyticsHour{
-            hour, bucket.count, bucket.focus_sum / static_cast<double>(bucket.count),
-            static_cast<double>(bucket.distracted) / static_cast<double>(bucket.count)});
-    }
+    // Roadmap 7.12. This used to read **every retained prediction** into a vector and fold it
+    // here — under the storage lock the engine tick needs to persist, so opening the analytics
+    // tab on a mature database could stall capture writes and, with a bounded ring buffer,
+    // drop events. Both numbers now come back final, from one query each.
+    const auto stats = const_cast<Storage&>(storage_).prediction_stats();
+    summary.sample_count = stats.sample_count;
+    summary.avg_focus_score = stats.avg_focus_score;
+    summary.hourly = const_cast<Storage&>(storage_).hourly_focus_buckets();
 
     // Was recent_sessions(200) x list_context_snapshots(..., 200) — up to 40,000 fully
     // materialized rows read under the storage lock to compute a group-by. Same caps, same
@@ -828,15 +807,11 @@ AnalyticsSummary AppState::analytics() const {
     if (apps.size() > 5) apps.resize(5);
     summary.top_apps = std::move(apps);
 
-    for (const auto& session : const_cast<Storage&>(storage_).recent_sessions(200)) {
-        if (session.status != "COMPLETED") continue;
-        if (const auto recap = const_cast<Storage&>(storage_).recap(session.session_id);
-            recap.avg_focus_score >= 70.0) {
-            ++summary.productive_session_streak;
-        } else {
-            break;
-        }
-    }
+    // Roadmap 7.12. Was a recent_sessions(200) loop calling recap() — five queries — per
+    // completed session, to read one field from each. Same cap, same 70.0 bar, same
+    // skip-the-running-ones rule, one query.
+    summary.productive_session_streak =
+        const_cast<Storage&>(storage_).productive_session_streak(200, 70.0);
     return summary;
 }
 
@@ -850,39 +825,26 @@ SummaryReport AppState::summary_report(const std::string& window) const {
     report.window = window;
     report.generated_at = now_rfc3339();
 
-    std::size_t distracted = 0;
-    std::size_t current_streak = 0;
-    for (const auto& prediction : const_cast<Storage&>(storage_).predictions_since(cutoff)) {
-        ++report.sample_count;
-        report.avg_focus_score += prediction.focus_score;
-        if (prediction.focus_state == "DISTRACTED") {
-            ++distracted;
-            current_streak = 0;
-        } else {
-            ++current_streak;
-            report.longest_focus_streak =
-                std::max(report.longest_focus_streak, current_streak);
-        }
-    }
+    // Roadmap 7.12. Every prediction in the window used to be materialized here to compute
+    // four numbers; the longest non-distracted run is now a gaps-and-islands query rather than
+    // a C++ loop over the rows.
+    const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff);
+    report.sample_count = stats.sample_count;
+    report.avg_focus_score = stats.avg_focus_score;
+    report.longest_focus_streak = stats.longest_focus_streak;
     if (report.sample_count > 0) {
-        report.avg_focus_score /= static_cast<double>(report.sample_count);
         report.distracted_fraction =
-            static_cast<double>(distracted) / static_cast<double>(report.sample_count);
+            static_cast<double>(stats.distracted_count) / static_cast<double>(report.sample_count);
     }
 
-    // One pass over sessions that already carry their recap, instead of a recap() (five
-    // queries) per completed session. The cutoff filter stays here rather than moving into
-    // SQL so the 500-session cap keeps applying to the *most recent* sessions first, which
-    // is what the original loop did.
-    for (const auto& summary : const_cast<Storage&>(storage_).recent_session_summaries(500)) {
-        const auto& session = summary.record;
-        if (!session.started_at || *session.started_at < cutoff) continue;
-        ++report.session_count;
-        if (session.status == "COMPLETED") {
-            ++report.completed_session_count;
-            report.focus_seconds += summary.recap.duration_secs;
-        }
-    }
+    // Roadmap 7.12. Was `recent_session_summaries(500)` — three queries, but 500 fully built
+    // recaps — to read a count and one duration field. The cap still applies to recency
+    // *before* the window filter, which is what the loop it replaces did and what keeps the
+    // answer stable on a database with more than 500 sessions inside the window.
+    const auto totals = const_cast<Storage&>(storage_).session_window_totals(500, cutoff);
+    report.session_count = totals.session_count;
+    report.completed_session_count = totals.completed_session_count;
+    report.focus_seconds = totals.focus_seconds;
     // Same 500/200 caps as the loop above used, aggregated in SQL rather than by reading up
     // to 100,000 snapshot rows into memory.
     const auto context_counts =

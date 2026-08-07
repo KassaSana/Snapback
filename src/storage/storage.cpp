@@ -1159,6 +1159,167 @@ void Storage::analyze_for_test() {
     stmt.step_done();
 }
 
+std::size_t Storage::count_statements_for_test(const std::function<void()>& body) {
+    std::size_t count = 0;
+    sqlite3_trace_v2(
+        db_, SQLITE_TRACE_STMT,
+        [](unsigned, void* context, void*, void*) -> int {
+            ++*static_cast<std::size_t*>(context);
+            return 0;
+        },
+        &count);
+    // The trace has to come off even if `body` throws: it points at a counter on this frame,
+    // and leaving it installed would leave SQLite writing through a dangling pointer.
+    struct Untrace {
+        sqlite3* db;
+        ~Untrace() { sqlite3_trace_v2(db, 0, nullptr, nullptr); }
+    } untrace{db_};
+    body();
+    return count;
+}
+
+Storage::PredictionStats Storage::prediction_stats(const std::optional<std::string>& cutoff) {
+    PredictionStats out;
+    {
+        Stmt stmt(db_,
+                  "SELECT COUNT(*), COALESCE(AVG(focus_score), 0), "
+                  "COALESCE(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END), 0) "
+                  "FROM predictions WHERE (?1 IS NULL OR timestamp >= ?1)");
+        if (cutoff) {
+            stmt.bind(1, *cutoff);
+        } else {
+            stmt.bind_null(1);
+        }
+        if (stmt.step_row()) {
+            out.sample_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
+            out.avg_focus_score = sqlite3_column_double(stmt.get(), 1);
+            out.distracted_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 2));
+        }
+    }
+
+    // Gaps-and-islands. The difference between "position in the whole ordering" and "position
+    // within rows of the same distracted-ness" is constant inside a run and changes at every
+    // boundary, so grouping by it groups by run. The alternative — reading every row back into
+    // C++ to count consecutive ones — is exactly what this item exists to remove.
+    //
+    // `timestamp DESC, id DESC` rather than plain `timestamp DESC`: predictions written inside
+    // the same second are otherwise ordered arbitrarily, and a run's *grouping* depends on
+    // that order even though its length does not. Descending id matches the direction SQLite
+    // already scans idx_predictions_ts in for `predictions_since`.
+    {
+        Stmt stmt(db_,
+                  "WITH ordered AS ("
+                  "  SELECT (focus_state = 'DISTRACTED') AS distracted,"
+                  "         ROW_NUMBER() OVER (ORDER BY timestamp DESC, id DESC) -"
+                  "         ROW_NUMBER() OVER (PARTITION BY (focus_state = 'DISTRACTED')"
+                  "                            ORDER BY timestamp DESC, id DESC) AS run_id"
+                  "  FROM predictions WHERE (?1 IS NULL OR timestamp >= ?1)"
+                  ") "
+                  "SELECT COALESCE(MAX(len), 0) FROM ("
+                  "  SELECT COUNT(*) AS len FROM ordered WHERE distracted = 0 GROUP BY run_id)");
+        if (cutoff) {
+            stmt.bind(1, *cutoff);
+        } else {
+            stmt.bind_null(1);
+        }
+        if (stmt.step_row()) {
+            out.longest_focus_streak =
+                static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
+        }
+    }
+    return out;
+}
+
+std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
+    const std::optional<std::string>& cutoff) {
+    // `datetime(timestamp, 'localtime')` reads the stored UTC and converts to this machine's
+    // local time through the same C library `localtime` that local_hour_from_rfc3339 calls, so
+    // the two agree including across a DST boundary. A timestamp SQLite cannot parse yields
+    // NULL and is dropped, which is what the C++ loop's `hour < 0 || hour >= 24` did.
+    Stmt stmt(db_,
+              "SELECT CAST(strftime('%H', datetime(timestamp, 'localtime')) AS INTEGER) AS hour,"
+              "       COUNT(*), AVG(focus_score),"
+              "       CAST(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END) AS REAL)"
+              "         / COUNT(*) "
+              "FROM predictions "
+              "WHERE (?1 IS NULL OR timestamp >= ?1) "
+              "  AND strftime('%H', datetime(timestamp, 'localtime')) IS NOT NULL "
+              "GROUP BY hour ORDER BY hour ASC");
+    if (cutoff) {
+        stmt.bind(1, *cutoff);
+    } else {
+        stmt.bind_null(1);
+    }
+    std::vector<AnalyticsHour> hourly;
+    while (stmt.step_row()) {
+        AnalyticsHour bucket;
+        bucket.hour = sqlite3_column_int(stmt.get(), 0);
+        bucket.sample_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1));
+        bucket.avg_focus_score = sqlite3_column_double(stmt.get(), 2);
+        bucket.distracted_fraction = sqlite3_column_double(stmt.get(), 3);
+        hourly.push_back(std::move(bucket));
+    }
+    return hourly;
+}
+
+std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg_focus) {
+    // `recent` reproduces recent_sessions(limit)'s ordering and cap; `completed` renumbers
+    // only the completed ones, so a session still running is skipped rather than ending the
+    // streak — the `continue` in the loop this replaces. AVG over no predictions is NULL, and
+    // COALESCE(...,0) makes such a session score zero and break the streak, matching recap()'s
+    // `COALESCE(AVG(focus_score), 0)`.
+    //
+    // The answer is the position of the first session below the bar, minus one; with none
+    // below it, every completed session in the window counts.
+    Stmt stmt(db_,
+              "WITH recent AS ("
+              "  SELECT session_id, status, started_at FROM sessions"
+              "  ORDER BY started_at DESC, session_id DESC LIMIT ?1"
+              "), completed AS ("
+              "  SELECT session_id,"
+              "         ROW_NUMBER() OVER (ORDER BY started_at DESC, session_id DESC) AS rank"
+              "  FROM recent WHERE status = 'COMPLETED'"
+              "), scored AS ("
+              "  SELECT c.rank, COALESCE(AVG(p.focus_score), 0) AS avg_focus"
+              "  FROM completed c LEFT JOIN predictions p ON p.session_id = c.session_id"
+              "  GROUP BY c.rank"
+              ") "
+              "SELECT COALESCE((SELECT MIN(rank) FROM scored WHERE avg_focus < ?2) - 1,"
+              "                (SELECT COUNT(*) FROM scored))");
+    stmt.bind(1, static_cast<std::int64_t>(limit));
+    stmt.bind(2, min_avg_focus);
+    if (!stmt.step_row()) return 0;
+    return static_cast<std::size_t>(std::max<std::int64_t>(0, sqlite3_column_int64(stmt.get(), 0)));
+}
+
+Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
+                                                            const std::string& started_after) {
+    // ROUND before CAST, the same way recap() computes duration_secs — a truncating CAST on
+    // julianday's double turns an exact hour into 3599 seconds.
+    Stmt stmt(db_,
+              "WITH recent AS ("
+              "  SELECT status, started_at, ended_at FROM sessions"
+              "  ORDER BY started_at DESC, session_id DESC LIMIT ?1"
+              ") "
+              "SELECT COUNT(*),"
+              "       COALESCE(SUM(status = 'COMPLETED'), 0),"
+              "       COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN"
+              "         CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP))"
+              "              - julianday(started_at)) * 86400)) AS INTEGER)"
+              "         ELSE 0 END), 0) "
+              "FROM recent WHERE started_at IS NOT NULL AND started_at >= ?2");
+    stmt.bind(1, static_cast<std::int64_t>(limit));
+    stmt.bind(2, started_after);
+    SessionWindowTotals out;
+    if (stmt.step_row()) {
+        out.session_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
+        out.completed_session_count =
+            static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1));
+        out.focus_seconds = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 2));
+    }
+    return out;
+}
+
 std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
     std::size_t session_limit, std::size_t per_session_limit,
     const std::optional<std::string>& started_after) {

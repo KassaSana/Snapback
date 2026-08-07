@@ -5,6 +5,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -187,6 +188,63 @@ public:
     // per-session path, which a test pins by comparing the two.
     std::vector<SessionSummary> recent_session_summaries(std::size_t limit);
 
+    // --- Aggregates for the analytics and summary surfaces (Roadmap 7.12) ----------------
+    //
+    // These exist because `analytics()` and `summary_report()` used to read **every retained
+    // prediction** into a `std::vector<PredictionRecord>` and fold it in C++ — under
+    // `storage_mutex_`, on the thread answering the UI, while the engine tick needs the same
+    // lock to persist. With a bounded ring buffer, a stalled persist phase means dropped
+    // capture events, so an analytics tab open on a mature database costs the user data.
+    //
+    // Each returns final numbers in one query. The definitions below are copied from the C++
+    // loops they replace rather than re-derived, and a test pins them field for field against
+    // the 12,000-row fixture.
+
+    struct PredictionStats {
+        std::size_t sample_count{};
+        double avg_focus_score{};
+        std::size_t distracted_count{};
+        // Longest run of consecutive non-DISTRACTED predictions. A run is order-dependent, so
+        // this uses the same `timestamp DESC` order `predictions_since` returns — the length
+        // of the longest run is the same read forwards or backwards, but the grouping is not.
+        std::size_t longest_focus_streak{};
+    };
+
+    // Stats over every retained prediction, or only those at/after `cutoff`.
+    PredictionStats prediction_stats(const std::optional<std::string>& cutoff = std::nullopt);
+
+    // Per-local-hour focus buckets, ascending by hour, omitting hours with no samples.
+    //
+    // The hour is **local**, matching `local_hour_from_rfc3339`, via SQLite's `localtime`
+    // modifier — the same C library conversion, so DST is handled identically. Rows whose
+    // timestamp will not convert are skipped, which is what the C++ loop's `hour < 0` did.
+    // Roadmap 7.16 may change how a timestamp is represented; until it does, local hour is
+    // what the UI has always shown and this preserves it.
+    std::vector<AnalyticsHour> hourly_focus_buckets(
+        const std::optional<std::string>& cutoff = std::nullopt);
+
+    // How many of the most recently *completed* sessions, counting back from the newest, have
+    // an average focus score at or above `min_avg_focus`. Stops at the first one that does
+    // not, which is what makes it a streak rather than a count. Only the newest `limit`
+    // sessions are considered; sessions still running are skipped rather than breaking it.
+    //
+    // Replaces a `recent_sessions(limit)` loop that called `recap()` — five queries — per
+    // completed session, to read one field from each.
+    std::size_t productive_session_streak(std::size_t limit, double min_avg_focus);
+
+    struct SessionWindowTotals {
+        std::size_t session_count{};
+        std::size_t completed_session_count{};
+        std::uint64_t focus_seconds{};  // summed elapsed of the completed ones
+    };
+
+    // Totals for sessions started at/after `started_after`, within the newest `limit`
+    // sessions. The cap applies to recency *before* the window filter, exactly as the loop it
+    // replaces did — the two orders give different answers on a database with more than
+    // `limit` sessions newer than the window.
+    SessionWindowTotals session_window_totals(std::size_t limit,
+                                              const std::string& started_after);
+
     // Counts context snapshots per app across the most recent `session_limit` sessions,
     // taking at most `per_session_limit` snapshots from each (the oldest ones, matching
     // list_context_snapshots' ORDER BY timestamp ASC LIMIT). When `started_after` is set,
@@ -283,6 +341,19 @@ public:
     // With stats over a large table it can, which makes it the adversarial case for the
     // indexes 7.13 added. See ROADMAP 7.11.
     void analyze_for_test();
+
+    // Test seam: how many statements SQLite *starts executing* while `body` runs, counted by
+    // SQLite itself through `sqlite3_trace_v2` rather than by bookkeeping we could forget to
+    // update. Roadmap 7.12's acceptance is "constant query count", and that is a claim no
+    // correctness test can make — a per-session loop returns the same numbers as one
+    // aggregate, just N times more slowly, which is precisely how the N+1 path survived being
+    // called fixed. A wall-clock bound would buy flakes on a shared runner; this counts the
+    // thing that actually grows.
+    //
+    // The counter lives in this function's frame and is handed to SQLite as the trace context,
+    // so there is no new member — Storage's move operations carry only `db_` and `stmt_cache_`,
+    // and a member added to one and not the other fails silently.
+    std::size_t count_statements_for_test(const std::function<void()>& body);
 
 private:
     explicit Storage(sqlite3* db) : db_(db) {}
