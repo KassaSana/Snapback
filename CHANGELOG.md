@@ -46,6 +46,12 @@ on `v0.2.0` at the bottom before cutting one.
 - **Storage schema versioning**: `user_version`, an ordered migration list, and a downgrade
   guard that refuses a database written by a newer build.
 - **90-day retention** pruned on startup, with a `VACUUM` after a large prune to reclaim disk.
+- **Attended session time.** A session's headline duration is now the time you were actually
+  present, summed from durable spans that pause when you go idle and resume when you come
+  back. Elapsed wall-clock time is still shown beneath it, and sessions recorded before this
+  existed report "not measured" rather than a fabricated zero.
+- **A configurable away threshold.** How long without keyboard or mouse input counts as away
+  is a setting (30 seconds to 1 hour, five minutes by default) rather than a constant.
 
 ### Changed
 
@@ -54,6 +60,15 @@ on `v0.2.0` at the bottom before cutting one.
 - Hot live reads are served from an immutable snapshot, so opening a history view no longer
   contends with capture writes.
 - Session recap aggregation moved into SQL — three queries instead of `1 + 5N` round trips.
+- Analytics and summary reports are aggregated entirely in SQL. Opening them no longer reads
+  every stored prediction into memory while holding the lock the capture pipeline needs to
+  write, so a long history no longer costs you dropped events.
+- The hourly focus chart is drawn on a fixed 0–100 scale. It previously scaled every bar to
+  the best hour in the data, so a poor day looked like a perfect one.
+- Hours with no data are drawn distinctly from hours measured at zero, and each bar reports
+  its sample count and distraction rate.
+- The top-apps list says "samples" rather than "switches", which is what the underlying
+  number has always counted.
 - Release builds no longer expose the webview developer tools or honour
   `SNAPBACK_FRONTEND_URL`; both are Debug-only.
 
@@ -61,6 +76,17 @@ on `v0.2.0` at the bottom before cutting one.
 
 - **Session replacement is atomic.** Starting a session while one is running could previously
   close the old session and then fail to create the new one, leaving no active session at all.
+- **A failed start no longer half-happens.** Focus mode and the feature extractor were reset
+  before the database write that could fail, so a failed start left the app recording against
+  a session that did not exist.
+- **Replacing a session records a verdict for it**, the same automatic label an explicit stop
+  writes. Previously that depended on whether you pressed Stop or just started the next thing.
+- **Stopping twice no longer writes two contradictory automatic labels.**
+- **Reopening restores the session you were in**: its saved focus mode (so a Deep session is
+  not silently continued under Normal's rules) and its elapsed time, which used to restart from
+  zero while the recap beside it reported hours.
+- **A crash no longer counts the time the app was closed as time you were present.** A session
+  span left open by a dead process is closed at the last activity that session recorded.
 - **Settings are written crash-safely** via a temp file and an atomic rename, with a
   last-known-good backup and a log line when a settings file cannot be parsed. Previously a
   partial write left an empty file that silently became defaults.
@@ -74,6 +100,12 @@ on `v0.2.0` at the bottom before cutting one.
 - Automatic session labels are saved on shutdown, including the no-argument stop path.
 - File replacement is portable across toolchains (`copy_options::overwrite_existing` is
   ignored by libstdc++ on MinGW, which silently left stale backups and broke model rollback).
+
+### Internal
+
+- CI builds and tests the portable core with MinGW-w64 GCC on Windows, the one toolchain
+  combination that was previously never built — and the one a shipped file-replacement bug
+  lived in.
 
 ### Security
 
