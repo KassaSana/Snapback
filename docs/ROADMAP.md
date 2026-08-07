@@ -2686,7 +2686,48 @@ small; the tier is large because nobody has walked that path yet.
   repeated close/show, and exactly one engine, capture hook, DB owner, and tray icon. Integrate
   the visible recording state from **2.10**.
 
-- **9.16 — Make “Export my data” complete, streaming, and honest about omissions.** `M`
+- **9.16 — DONE 2026-08-06.** `M` The ownership export is complete, streamed, and states what
+  it holds. It keeps the "my data" name because it now deserves it — the **Recent preview**
+  fallback the item offered was not needed.
+
+  **The document lied in two independent ways.** It said it contained "every session" while
+  the command stopped at 200 sessions and 500 windows within each, with no command able to
+  retrieve the rest. And the `truncated` flag was set from the *session* cap alone, so a file
+  that dropped the 501st window of an **included** session was reported to the UI as complete.
+
+  **Raising the caps would not have been a fix**, and the item says so: an unbounded
+  `list_context_snapshots` materializes the whole history under `storage_mutex_`, which is the
+  stall-becomes-dropped-events path 7.12 exists to remove. Rows are now paged — each page read
+  under the lock, written, and released before the next — so peak memory is one page rather
+  than one history. `page_size` replaces the old caps and is deliberately a *memory* knob, not
+  an *answer* knob: the previous arguments changed what the file contained, which is how an
+  export that omitted history passed its own tests.
+
+  **Keyset cursors, not OFFSET.** OFFSET re-scans from the start on every page and silently
+  skips or repeats rows when the table changes underneath it — the export would corrupt itself
+  simply because the engine kept recording during it. Sessions page on
+  `(started_at DESC, session_id DESC)`; context rows on `(timestamp ASC, id ASC)`, with `id` in
+  the key because 7.16's whole-second timestamps are not unique and a page boundary inside a
+  tied group would drop or repeat rows.
+
+  **`truncated` is now derived, not stored** — from per-record-type omission counts — so the
+  original defect is unrepresentable rather than merely fixed. A footer manifest states
+  sessions, windows, and interruptions, plus an FNV-1a checksum of the body, so a cut-short
+  file is distinguishable from a valid empty one. The checksum is documented as an integrity
+  check and explicitly **not** a signature.
+
+  The regression seeds **205 sessions and 505 windows** — past both old caps — exports with
+  `page_size=7`, and asserts every id appears **exactly once**: a mishandled page boundary
+  repeats rows rather than losing them, and a `contains` check would pass either way.
+
+  Deferred as the item directs: progress, cancellation, and atomic temp→final publication to
+  **14.6**; the native destination picker to **10.14**; a lossless database snapshot to
+  **9.14**. Peak-memory measurement is structural here rather than instrumented — one page is
+  bounded by construction — and belongs with **4.4**'s gate. Three new C++ cases and a frontend
+  module; suite **394 pass**. The original finding follows.
+
+- **9.16 (original finding) — Make “Export my data” complete, streaming, and honest about
+  omissions.** `M`
   Opened 2026-08-05. The readable export says it contains “every session,” but the command
   hard-caps the result at 200 sessions and 500 context rows per session with no cursor or
   continuation. Worse, its IPC `truncated` flag reflects only omitted sessions; a file that

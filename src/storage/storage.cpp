@@ -1763,6 +1763,61 @@ void Storage::save_context_snapshot(const std::string& session_id,
     stmt.step_done();
 }
 
+std::vector<SessionRecord> Storage::sessions_after(const std::optional<SessionCursor>& after,
+                                                   std::size_t limit) {
+    // The row-value comparison `(a, b) < (?, ?)` is the keyset predicate written the way
+    // SQLite can serve from idx_sessions_status_started / the primary key, and it expresses
+    // "strictly after in this ordering" without the three-way OR expansion by hand.
+    const char* sql =
+        after ? "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
+                "FROM sessions WHERE (started_at, session_id) < (?2, ?3) "
+                "ORDER BY started_at DESC, session_id DESC LIMIT ?1"
+              : "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
+                "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1";
+    Stmt stmt(db_, sql);
+    stmt.bind(1, static_cast<std::int64_t>(limit));
+    if (after) {
+        stmt.bind(2, after->started_at);
+        stmt.bind(3, after->session_id);
+    }
+    std::vector<SessionRecord> rows;
+    while (stmt.step_row()) rows.push_back(read_session(stmt.get()));
+    return rows;
+}
+
+Storage::ContextPage Storage::context_snapshots_after(const std::string& session_id,
+                                                      const std::optional<ContextCursor>& after,
+                                                      std::size_t limit) {
+    const char* sql =
+        after ? "SELECT app_name, window_title, file_hint, project_hint, summary, timestamp, id "
+                "FROM context_snapshots WHERE session_id = ?1 AND (timestamp, id) > (?3, ?4) "
+                "ORDER BY timestamp ASC, id ASC LIMIT ?2"
+              : "SELECT app_name, window_title, file_hint, project_hint, summary, timestamp, id "
+                "FROM context_snapshots WHERE session_id = ?1 "
+                "ORDER BY timestamp ASC, id ASC LIMIT ?2";
+    Stmt stmt(db_, sql);
+    stmt.bind(1, session_id);
+    stmt.bind(2, static_cast<std::int64_t>(limit));
+    if (after) {
+        stmt.bind(3, after->timestamp);
+        stmt.bind(4, after->id);
+    }
+    ContextPage page;
+    while (stmt.step_row()) {
+        page.rows.push_back(read_context_snapshot(stmt.get()));
+        page.next.timestamp = column_text(stmt.get(), 5);
+        page.next.id = sqlite3_column_int64(stmt.get(), 6);
+    }
+    return page;
+}
+
+std::size_t Storage::count_context_snapshots(const std::string& session_id) {
+    Stmt stmt(db_, "SELECT COUNT(*) FROM context_snapshots WHERE session_id = ?1");
+    stmt.bind(1, session_id);
+    if (!stmt.step_row()) return 0;
+    return static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
+}
+
 std::vector<ContextSnapshotDto> Storage::list_context_snapshots(const std::string& session_id,
                                                                 std::size_t limit) {
     Stmt stmt(db_,

@@ -247,10 +247,18 @@ inline void register_commands(webview::webview& w, AppState& state,
     // — one is for a training script, this one is for the person being recorded.
     bind_cmd(w, "export_my_data", [&state, data_dir](const json&) {
         const auto result = state.export_personal_data(data_dir / "exports" / "personal");
+        // Roadmap 9.16. Per-record-type omission counts and the body checksum travel with the
+        // path. `truncated` is derived from the counts rather than being its own field, so the
+        // old failure -- reporting a complete export after dropping windows from an included
+        // session -- cannot be expressed on the wire either.
         return json{{"outputPath", result.output_path},
                     {"sessionCount", result.session_count},
                     {"windowCount", result.window_count},
-                    {"truncated", result.truncated}};
+                    {"episodeCount", result.episode_count},
+                    {"omittedSessions", result.omitted_sessions},
+                    {"omittedWindows", result.omitted_windows},
+                    {"checksum", result.checksum},
+                    {"truncated", result.truncated()}};
     });
 
     // --- Training pipeline ---

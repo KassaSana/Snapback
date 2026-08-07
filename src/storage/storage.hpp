@@ -318,6 +318,48 @@ public:
     std::vector<ContextSnapshotDto> list_context_snapshots(const std::string& session_id,
                                                            std::size_t limit);
 
+    // --- Keyset paging for the ownership export (Roadmap 9.16) ---------------------------
+    //
+    // "Export my data" claimed to contain every session and silently stopped at 200 of them,
+    // and at 500 windows within each. Removing the caps by raising them is not a fix: an
+    // unbounded `list_context_snapshots` would materialize the whole history in memory under
+    // `storage_mutex_`, which is the stall-becomes-dropped-events path 7.12 exists to avoid.
+    //
+    // These page instead. A **keyset** cursor rather than OFFSET, because OFFSET re-scans from
+    // the start on every page (quadratic over a long history) and, worse, silently skips or
+    // repeats rows when the table changes underneath it. Ordering on a total key means a page
+    // boundary is a value, not a position, so a row inserted during the export cannot shift
+    // one that was already written.
+
+    // Sessions newest-first, strictly after `after` in `(started_at DESC, session_id DESC)`
+    // order. Pass nullopt for the first page. The pair is the previous page's last row.
+    struct SessionCursor {
+        std::string started_at;
+        std::string session_id;
+    };
+    std::vector<SessionRecord> sessions_after(const std::optional<SessionCursor>& after,
+                                              std::size_t limit);
+
+    // Context snapshots for one session, oldest-first, strictly after `after` in
+    // `(timestamp ASC, id ASC)` order. `id` is in the key because timestamps have
+    // whole-second resolution (7.16) and are not unique — ordering on time alone is not a
+    // total order, and a page boundary inside a tied group would drop or repeat rows.
+    struct ContextCursor {
+        std::string timestamp;
+        std::int64_t id{};
+    };
+    struct ContextPage {
+        std::vector<ContextSnapshotDto> rows;
+        ContextCursor next;  // the last row's key; meaningless when `rows` is empty
+    };
+    ContextPage context_snapshots_after(const std::string& session_id,
+                                        const std::optional<ContextCursor>& after,
+                                        std::size_t limit);
+
+    // Total context rows for a session, so the export can state what it holds without
+    // counting as it goes and without a second full pass.
+    std::size_t count_context_snapshots(const std::string& session_id);
+
     // Export features.csv + labels.csv for the training pipeline.
     ExportTrainingResult export_training_csv(
         const std::filesystem::path& out_dir,

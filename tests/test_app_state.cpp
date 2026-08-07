@@ -152,6 +152,19 @@ std::vector<std::string> split_csv_line(const std::string& line) {
     return cells;
 }
 
+// Counts non-overlapping occurrences. "Appears exactly once" is the assertion 9.16 needs: a
+// keyset cursor that mishandles a page boundary repeats rows rather than losing them, and a
+// plain `find` check passes either way.
+std::size_t count_occurrences(const std::string& haystack, const std::string& needle) {
+    if (needle.empty()) return 0;
+    std::size_t count = 0;
+    for (std::size_t at = haystack.find(needle); at != std::string::npos;
+         at = haystack.find(needle, at + needle.size())) {
+        ++count;
+    }
+    return count;
+}
+
 bool contains_log(const DiagnosticsSnapshot& diagnostics, const std::string& text) {
     return std::any_of(diagnostics.recent_logs.begin(), diagnostics.recent_logs.end(),
                        [&](const std::string& line) { return line.find(text) != std::string::npos; });
@@ -2043,7 +2056,7 @@ TEST_CASE("AppState exports a legible archive of what was recorded") {
     const auto exported = state->export_personal_data(temp.path);
 
     CHECK(exported.session_count == 1);
-    CHECK_FALSE(exported.truncated);
+    CHECK_FALSE(exported.truncated());
     CHECK(std::filesystem::exists(exported.output_path));
 
     const auto markdown = read_file(exported.output_path);
@@ -2054,23 +2067,116 @@ TEST_CASE("AppState exports a legible archive of what was recorded") {
     CHECK(markdown.find("window titles") != std::string::npos);
 }
 
-TEST_CASE("AppState admits when the archive left older sessions out") {
-    auto state = make_state();
-    for (int i = 0; i < 3; ++i) {
-        const auto session =
-            state->start_session("session " + std::to_string(i), FocusMode::Normal);
-        state->stop_session(session.session_id);
+TEST_CASE("the ownership export contains every session and window, past the old caps") {
+    // Roadmap 9.16. The document claimed to hold "every session" while the command stopped at
+    // 200 sessions and 500 windows per session, with no way to retrieve the rest. This seeds
+    // past both limits and requires every row to appear exactly once.
+    //
+    // Storage is used directly to seed: driving 500 window rows through the capture path would
+    // take longer than the rest of the suite combined, and what is under test is the export,
+    // not the tracker.
+    TempDir temp_db;
+    auto storage = Storage::open(temp_db.path);
+    REQUIRE(storage.has_value());
+
+    constexpr std::size_t kSessions = 205;  // above the old 200
+    constexpr std::size_t kWindows = 505;   // above the old 500, on one session
+    std::vector<std::string> session_ids;
+    {
+        Storage::Transaction txn(*storage);
+        for (std::size_t i = 0; i < kSessions; ++i) {
+            const auto record =
+                storage->create_session("goal " + std::to_string(i), FocusMode::Normal);
+            char started[32];
+            std::snprintf(started, sizeof(started), "2026-07-%02dT%02d:00:00Z",
+                          1 + static_cast<int>(i % 28), static_cast<int>(i % 24));
+            storage->backdate_session_for_test(record.session_id, started);
+            session_ids.push_back(record.session_id);
+        }
+        for (std::size_t w = 0; w < kWindows; ++w) {
+            ContextSnapshotDto snapshot;
+            snapshot.app_name = "Cursor";
+            snapshot.window_title = "window " + std::to_string(w);
+            char stamp[32];
+            std::snprintf(stamp, sizeof(stamp), "2026-07-01T%02d:%02d:%02dZ",
+                          static_cast<int>(w / 3600), static_cast<int>((w / 60) % 60),
+                          static_cast<int>(w % 60));
+            snapshot.timestamp = stamp;
+            storage->save_context_snapshot(session_ids.front(), snapshot);
+        }
+        txn.commit();
     }
 
-    TempDir temp;
-    // Caps are parameters precisely so this case is reachable without writing thousands of
-    // rows: two of three sessions exported means the "there is more" line must appear.
-    const auto exported = state->export_personal_data(temp.path, /*session_limit=*/2);
+    AppState state(std::move(*storage), temp_db.path);
+    TempDir out;
+    // A deliberately tiny page: the paging must be exercised, and page size must not be able
+    // to change the answer. The old arguments changed the *answer*, which is how an export
+    // that omitted history passed its own tests.
+    const auto exported = state.export_personal_data(out.path, /*page_size=*/7);
 
-    CHECK(exported.session_count == 2);
-    CHECK(exported.truncated);
-    CHECK(read_file(exported.output_path).find("older sessions exist beyond this export's limit") !=
-          std::string::npos);
+    CHECK(exported.session_count == kSessions);
+    CHECK(exported.window_count == kWindows);
+    CHECK_FALSE(exported.truncated());
+    CHECK(exported.omitted_sessions == 0);
+    CHECK(exported.omitted_windows == 0);
+
+    const auto markdown = read_file(exported.output_path);
+    // Exactly once each, not merely present: a keyset cursor that mishandles its boundary
+    // repeats rows rather than losing them, and a "contains" check would pass either way.
+    for (const auto& id : session_ids) {
+        CAPTURE(id);
+        CHECK(count_occurrences(markdown, id) == 1);
+    }
+    CHECK(count_occurrences(markdown, "| window 0 |") == 1);
+    CHECK(count_occurrences(markdown, "| window 504 |") == 1);
+    // The row that used to be dropped, and the session that used to be dropped.
+    CHECK(markdown.find("window 500") != std::string::npos);
+    CHECK(markdown.find("goal 204") != std::string::npos);
+}
+
+TEST_CASE("the export states what it holds and can be told from a truncated file") {
+    // Roadmap 9.16's manifest. "Include exact exported/omitted counts per record type plus a
+    // small manifest/checksum so a partial or interrupted file is distinguishable from a valid
+    // empty one."
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    const auto session = state.start_session("manifest", FocusMode::Normal);
+    AppStateTestAccess::process_event(state, ev(EventType::WindowFocusChange, 1000.0, "Cursor"));
+    state.stop_session(session.session_id);
+
+    TempDir out;
+    const auto exported = state.export_personal_data(out.path);
+    const auto markdown = read_file(exported.output_path);
+
+    CHECK(markdown.find("## What this export holds") != std::string::npos);
+    CHECK(markdown.find("- Sessions: 1") != std::string::npos);
+    CHECK(markdown.find("- Nothing was left out.") != std::string::npos);
+    CHECK(markdown.find("*End of export.*") != std::string::npos);
+    // The checksum is in the file and in the result, so a copy can be checked against what
+    // the app said it wrote.
+    CHECK_FALSE(exported.checksum.empty());
+    CHECK(markdown.find(exported.checksum) != std::string::npos);
+
+    // The distinction the item asks for: an empty history is a complete document with an end
+    // marker, where a cut-short file has neither.
+    const auto cut_short = markdown.substr(0, markdown.size() / 2);
+    CHECK(cut_short.find("*End of export.*") == std::string::npos);
+}
+
+TEST_CASE("an omitted record type cannot be reported as a complete export") {
+    // The original defect made structurally impossible rather than merely fixed: `truncated`
+    // was a stored bool set from the session cap alone, so an archive that dropped the 501st
+    // window of an *included* session reported itself complete. It is now derived from both
+    // counts, so there is no way to omit windows and still claim completeness.
+    PersonalArchiveExport report;
+    CHECK_FALSE(report.truncated());
+    report.omitted_windows = 1;
+    CHECK(report.truncated());
+    report.omitted_windows = 0;
+    report.omitted_sessions = 1;
+    CHECK(report.truncated());
 }
 
 TEST_CASE("AppState exports a document, not an empty file, with no history") {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type PrivacySettings } from "./api";
+import { myDataExportMessage } from "./myDataExport";
 import {
   activityDeletionIsWarning,
   activityDeletionMessage,
@@ -107,10 +108,10 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
     setExportStatus(null);
     try {
       const result = await api.exportMyData();
-      const sessions = `${result.sessionCount} session${result.sessionCount === 1 ? "" : "s"}`;
-      const windows = `${result.windowCount} captured window${result.windowCount === 1 ? "" : "s"}`;
-      const limited = result.truncated ? " Older sessions were left out." : "";
-      setExportStatus(`Wrote ${sessions} and ${windows} to ${result.outputPath}.${limited}`);
+      // Roadmap 9.16. The export is complete now, so the message says so rather than staying
+      // silent about it -- "we wrote a file" and "we wrote all of it" are different claims,
+      // and this one is the reason the feature exists.
+      setExportStatus(myDataExportMessage(result));
     } catch {
       setError("Could not export your data.");
     } finally {

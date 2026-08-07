@@ -251,7 +251,18 @@ export type MyDataExportResult = {
   outputPath: string;
   sessionCount: number;
   windowCount: number;
+  /** Roadmap 2.15. Distraction episodes recorded during the exported sessions. */
+  episodeCount: number;
+  /**
+   * Roadmap 9.16. Per-record-type omissions. Both are zero now that the export is complete;
+   * they exist so a reintroduced cap has to say which record type it dropped.
+   */
+  omittedSessions: number;
+  omittedWindows: number;
+  /** Derived from the two counts above, never stored on its own. */
   truncated: boolean;
+  /** Body checksum, also written into the file, so a cut-short copy is detectable. */
+  checksum: string;
 };
 
 // Roadmap 7.6. `opened` and `supported` are separate answers: an unsupported platform never
@@ -450,7 +461,11 @@ export const api = {
       outputPath: typeof raw.outputPath === "string" ? raw.outputPath : "",
       sessionCount: Number(raw.sessionCount ?? 0),
       windowCount: Number(raw.windowCount ?? 0),
+      episodeCount: Number(raw.episodeCount ?? 0),
+      omittedSessions: Number(raw.omittedSessions ?? 0),
+      omittedWindows: Number(raw.omittedWindows ?? 0),
       truncated: Boolean(raw.truncated),
+      checksum: typeof raw.checksum === "string" ? raw.checksum : "",
     } satisfies MyDataExportResult;
   },
   // `path` is populated even when `opened` is false, so a platform without a file-manager

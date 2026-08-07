@@ -767,56 +767,128 @@ ExportTrainingResult AppState::export_training_data(
 }
 
 PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path& out_dir,
-                                                     std::size_t session_limit,
-                                                     std::size_t windows_per_session) {
+                                                     std::size_t page_size) {
+    // Roadmap 9.16. **The archive is streamed, not built.**
+    //
+    // This used to hard-cap at 200 sessions and 500 windows per session while the document
+    // itself said it contained "every session". Worse, the `truncated` flag it reported came
+    // from the session cap alone, so a file that dropped the 501st window of an included
+    // session was reported to the UI as complete. The user was told they were holding
+    // everything, twice, by two different mechanisms.
+    //
+    // Raising the caps is not the fix: a complete export of a long history is unbounded, and
+    // materializing it under `storage_mutex_` is the stall-becomes-dropped-events path 7.12
+    // exists to avoid. So rows are read a page at a time, each page under the lock, and each
+    // page is written and released before the next is fetched. Peak memory is one page, not
+    // one history.
+    //
+    // Pages are **keyset** cursors rather than OFFSET. OFFSET re-scans from the start on every
+    // page and, worse, silently skips or repeats rows when the table changes underneath it —
+    // the export would corrupt itself simply because the engine kept recording during it.
+    //
+    // Progress reporting, cancellation, and atomic temp -> final publication are deliberately
+    // **not** here: they belong to 14.6, and a half-built version of them would be harder to
+    // replace than none.
+    if (page_size == 0) page_size = 1;
+
     PersonalArchive archive;
     archive.generated_at = now_rfc3339();
     archive.app_version = SNAPBACK_VERSION;
-
-    {
-        std::lock_guard lock(storage_mutex_);
-        // One extra of each so truncation is *observed* rather than assumed. Asking for
-        // limit+1 and finding it means "there is more"; asking for limit and finding limit
-        // cannot tell a database with exactly `limit` rows from one with a million.
-        auto summaries = storage_.recent_session_summaries(session_limit + 1);
-        archive.sessions_truncated = summaries.size() > session_limit;
-        if (archive.sessions_truncated) summaries.resize(session_limit);
-
-        archive.sessions.reserve(summaries.size());
-        for (auto& summary : summaries) {
-            PersonalArchiveSession session;
-            auto context =
-                storage_.list_context_snapshots(summary.record.session_id, windows_per_session + 1);
-            session.context_truncated = context.size() > windows_per_session;
-            if (session.context_truncated) context.resize(windows_per_session);
-
-            // Roadmap 2.15. The recap already reports how many interruptions this session
-            // had; without the rows behind it the number is unverifiable by the person it
-            // describes, which is the opposite of what a data export is for.
-            session.episodes =
-                storage_.list_snapback_episodes(summary.record.session_id, windows_per_session);
-
-            session.record = std::move(summary.record);
-            session.recap = std::move(summary.recap);
-            session.context = std::move(context);
-            archive.sessions.push_back(std::move(session));
-        }
-    }
-    // Rendering and file IO happen outside the storage lock: the engine tick takes the same
-    // mutex to persist predictions, and writing a multi-megabyte archive under it would stall
-    // capture writes into a bounded ring buffer — the stall-becomes-dropped-events path that
-    // recent_session_summaries exists to avoid.
-
-    PersonalArchiveExport result;
-    result.session_count = archive.sessions.size();
-    for (const auto& session : archive.sessions) result.window_count += session.context.size();
-    result.truncated = archive.sessions_truncated;
 
     std::filesystem::create_directories(out_dir);
     const auto path = out_dir / "snapback_my_data.md";
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) throw std::runtime_error("failed to write the data export");
-    out << render_personal_archive(archive);
+
+    // The checksum accumulates over the body as it is written, so the whole document never
+    // has to exist in memory at once just to be hashed.
+    std::string body;
+    const auto emit = [&](const std::string& chunk) {
+        body += chunk;
+        out << chunk;
+    };
+
+    PersonalArchiveExport result;
+    emit(render_archive_header(archive));
+
+    std::optional<Storage::SessionCursor> session_cursor;
+    std::size_t index = 0;
+    for (;;) {
+        std::vector<SessionSummary> page;
+        {
+            std::lock_guard lock(storage_mutex_);
+            const auto records = storage_.sessions_after(session_cursor, page_size);
+            if (records.empty()) break;
+            session_cursor = Storage::SessionCursor{records.back().started_at.value_or(""),
+                                                    records.back().session_id};
+            page.reserve(records.size());
+            for (const auto& record : records) {
+                SessionSummary summary;
+                summary.record = record;
+                summary.recap = storage_.recap(record.session_id);
+                page.push_back(std::move(summary));
+            }
+        }
+
+        for (auto& summary : page) {
+            const auto session_id = summary.record.session_id;
+            PersonalArchiveSession session;
+            session.record = std::move(summary.record);
+            session.recap = std::move(summary.recap);
+
+            std::vector<SnapbackEpisode> episodes;
+            std::size_t window_total = 0;
+            {
+                std::lock_guard lock(storage_mutex_);
+                // Roadmap 2.15's episodes. Bounded per session by their nature — an
+                // interruption is a rare event, not a per-second sample — so they are read in
+                // one go rather than paged.
+                episodes = storage_.list_snapback_episodes(session_id, 10000);
+                window_total = storage_.count_context_snapshots(session_id);
+            }
+            session.episodes = episodes;
+
+            emit(render_archive_session_header(session, ++index));
+            emit(render_archive_episodes(session.episodes));
+            result.episode_count += session.episodes.size();
+            ++result.session_count;
+
+            if (window_total == 0) {
+                emit("No windows were captured during this session.\n\n");
+                continue;
+            }
+
+            emit(render_archive_window_table_header());
+            std::optional<Storage::ContextCursor> context_cursor;
+            for (;;) {
+                Storage::ContextPage window_page;
+                {
+                    std::lock_guard lock(storage_mutex_);
+                    window_page =
+                        storage_.context_snapshots_after(session_id, context_cursor, page_size);
+                }
+                if (window_page.rows.empty()) break;
+                for (const auto& snapshot : window_page.rows) {
+                    emit(render_archive_window_row(snapshot));
+                    ++result.window_count;
+                }
+                context_cursor = window_page.next;
+            }
+            emit("\n");
+        }
+    }
+
+    if (result.session_count == 0) {
+        emit("No sessions have been recorded yet, so there is nothing here about you.\n");
+    }
+
+    // Nothing is capped, so nothing is omitted. The fields are still computed rather than
+    // assumed zero, because `truncated()` is derived from them and a reintroduced cap must
+    // show up in the footer instead of being silently absorbed.
+    result.checksum = archive_checksum(body);
+    out << render_archive_footer(result);
+    if (!out) throw std::runtime_error("failed to write the data export");
+    out.close();
     if (!out) throw std::runtime_error("failed to write the data export");
 
     result.output_path = path.string();

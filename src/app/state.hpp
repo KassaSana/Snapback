@@ -110,12 +110,15 @@ public:
         const std::optional<std::string>& session_id = std::nullopt);
 
     // Roadmap 7.6: the human-readable counterpart to export_training_data — what Snapback
-    // recorded *about you*, as Markdown, rather than a feature matrix for a model. Caps are
-    // arguments rather than constants so a test can drive truncation with three rows instead
-    // of thousands, and so the honest "there is more than this" line has a test at all.
+    // recorded *about you*, as Markdown, rather than a feature matrix for a model.
+    //
+    // Roadmap 9.16: **complete**. The caps this used to take (200 sessions, 500 windows each)
+    // are gone; what remains is `page_size`, which is how many rows are held in memory at once
+    // rather than how many are written. A small value in a test therefore exercises the paging
+    // without changing the output — the previous arguments changed the *answer*, which is how
+    // an export that omitted history could pass its own tests.
     PersonalArchiveExport export_personal_data(const std::filesystem::path& out_dir,
-                                               std::size_t session_limit = 200,
-                                               std::size_t windows_per_session = 500);
+                                               std::size_t page_size = 200);
     void set_focus_mode(FocusMode mode);
     AppSettings settings() const;
     PrivacySettings privacy_settings() const;
