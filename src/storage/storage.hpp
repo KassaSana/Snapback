@@ -204,10 +204,12 @@ public:
         std::size_t sample_count{};
         double avg_focus_score{};
         std::size_t distracted_count{};
-        // Longest run of consecutive non-DISTRACTED predictions. A run is order-dependent, so
-        // this uses the same `timestamp DESC` order `predictions_since` returns — the length
-        // of the longest run is the same read forwards or backwards, but the grouping is not.
-        std::size_t longest_focus_streak{};
+        // Roadmap 10.13. The **duration** of the longest unbroken focused stretch, in seconds.
+        // Replaced a count of consecutive non-DISTRACTED rows shown as "Best streak": rows are
+        // not time, and predictions arrive on input rather than on a clock, so two people
+        // doing identical work got different values from typing cadence alone. A run breaks on
+        // a distracted verdict or on a gap longer than `kFocusRunGapSecs`.
+        std::uint64_t longest_focus_secs{};
     };
 
     // Stats over every retained prediction, or only those at/after `cutoff`.

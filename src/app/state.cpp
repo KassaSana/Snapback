@@ -694,7 +694,13 @@ std::vector<PredictionRecord> AppState::prediction_history(std::size_t limit) {
 
 FocusSummary AppState::focus_summary(std::size_t limit) {
     std::lock_guard lock(storage_mutex_);
-    return summarize_predictions(storage_.recent_predictions(limit));
+    auto rows = storage_.recent_predictions(limit);
+    // Roadmap 10.13. `recent_predictions` returns newest-first, which was fine while the
+    // summary only counted rows. The focus *duration* is measured between neighbours, so the
+    // order is now load-bearing: reversed, every interval comes out negative and the longest
+    // run reports zero.
+    std::reverse(rows.begin(), rows.end());
+    return summarize_predictions(rows);
 }
 
 std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
@@ -1025,7 +1031,7 @@ SummaryReport AppState::summary_report(const std::string& window) const {
     const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff);
     report.sample_count = stats.sample_count;
     report.avg_focus_score = stats.avg_focus_score;
-    report.longest_focus_streak = stats.longest_focus_streak;
+    report.longest_focus_secs = stats.longest_focus_secs;
     if (report.sample_count > 0) {
         report.distracted_fraction =
             static_cast<double>(stats.distracted_count) / static_cast<double>(report.sample_count);

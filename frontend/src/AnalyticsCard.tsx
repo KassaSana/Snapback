@@ -8,6 +8,10 @@ import {
   hourBars,
   referenceLines,
 } from "./analyticsChart";
+import {
+  PRODUCTIVE_SESSIONS_LABEL,
+  productiveSessionsHelperText,
+} from "./focusStreak";
 
 type AnalyticsCardProps = { analytics: AnalyticsSummary };
 
@@ -30,7 +34,7 @@ export const AnalyticsCard = memo(function AnalyticsCard({ analytics }: Analytic
           <div className="insight-tiles">
             <div className="insight-tile"><p className="insight-tile-value">{Math.round(analytics.avgFocusScore)}</p><p className="insight-tile-label">Avg focus</p></div>
             <div className="insight-tile"><p className="insight-tile-value">{analytics.sampleCount}</p><p className="insight-tile-label">Samples</p></div>
-            <div className="insight-tile"><p className="insight-tile-value">{analytics.productiveSessionStreak}</p><p className="insight-tile-label">Focus streak</p></div>
+            <div className="insight-tile"><p className="insight-tile-value">{analytics.productiveSessionStreak}</p><p className="insight-tile-label">{PRODUCTIVE_SESSIONS_LABEL}</p></div>
           </div>
           <svg
             className="insights-chart"
@@ -90,6 +94,12 @@ export const AnalyticsCard = memo(function AnalyticsCard({ analytics }: Analytic
           </ul>
           <p className="insights-caption">
             Context samples are periodic observations of the focused window, not app switches.
+          </p>
+          {/* Roadmap 10.13. The tile above counts sessions, and its label now says so. It
+              previously read "Focus streak" — the same words as a prediction-row count on a
+              different card, over a completely different quantity. */}
+          <p className="insights-caption">
+            {productiveSessionsHelperText(analytics.productiveSessionStreak)}
           </p>
         </>
       )}

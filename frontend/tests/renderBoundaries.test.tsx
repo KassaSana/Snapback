@@ -34,7 +34,7 @@ describe("prediction render boundaries", () => {
       peakFocusScore: 0,
       distractedSamples: 0,
       distractedFraction: 0,
-      longestFocusStreak: 0,
+      longestFocusSecs: 0,
     } as FocusSummary;
     const autostartStatus = {
       get supported() {

@@ -2939,7 +2939,45 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   scale without clipped copy or controls. Coordinate colors/typography with **10.10**, focus and
   zoom behavior with **10.3**, and the future action layout with **2.8**.
 
-- **10.13 — Give every “streak” a truthful unit, or remove it.** `S/M`
+- **10.13 — DONE 2026-08-06.** `S/M` The two prediction-row tiles became a real
+  continuous-focus **duration**, and the session metric says "sessions" in its own label.
+
+  **The row counts were not a labelling problem, they were a measurement problem.** Predictions
+  arrive when input produces a reading, not once per second, so two people doing identical work
+  got different "streaks" purely from typing cadence — a case the tests now pin directly: the
+  same 60 seconds sampled twice and six times reports 60 both ways, where the row counts differ
+  threefold.
+
+  **A stretch breaks on a distraction, on a gap past `kFocusRunGapSecs` (120 s), and at a
+  session boundary.** That bound *is* the interpolation policy, stated rather than implied: an
+  interval counts at face value up to it and counts as nothing beyond it. Nothing is inferred
+  about a gap, because predictions stop entirely while the user is idle or private — a gap is a
+  pause in the *user*, not in the data. A backwards clock and an unparseable timestamp both end
+  a run rather than being folded in at an invented distance. Attended spans are not joined:
+  they would be redundant, since the AFK freeze means no prediction is ever written outside
+  one, and the gap rule handles legacy sessions with no spans identically.
+
+  **The parity test earned its keep twice.** Comparing the SQL against the production C++
+  implementation over the 12,000-row fixture caught (1) runs walking across concurrent sessions
+  with identical timestamps, which is why both sides now break on session change, and (2) the
+  SQL crediting the gap *out of* a distracted sample to the focused run that followed — which
+  reported every stretch as exactly **twice** its real length. A plausible number, wrong by a
+  factor of two, and invisible to any test that only checked it was non-zero.
+
+  **Renamed through the DTO, not over it**, as the item requires: `longest_focus_streak` →
+  `longest_focus_secs` in `FocusSummary`, `SummaryReport`, `Storage::PredictionStats`, the JSON
+  wire, the frontend types and mappers. `AnalyticsSummary::productive_session_streak` keeps its
+  name — it genuinely counts sessions — and its label is now "Sessions in a row" with a caption
+  saying "this counts sessions, not time".
+
+  One ordering hazard worth recording: `recent_predictions` returns newest-first, which was
+  harmless while the summary counted rows. Measuring between neighbours made the order
+  load-bearing, and reversed it reports zero. `focus_summary` now reverses explicitly and the
+  header says the input must be chronological.
+
+  Nine new C++ cases and a frontend module; suite **400 pass**. The original finding follows.
+
+- **10.13 (original finding) — Give every “streak” a truthful unit, or remove it.** `S/M`
   Opened 2026-08-05. Three incompatible quantities use nearly the same label. Recent Focus's
   “Focus streak” and Summary's “Best streak” are consecutive non-Distracted **prediction row
   counts**; Analytics's “Focus streak” is consecutive completed **sessions** whose average is

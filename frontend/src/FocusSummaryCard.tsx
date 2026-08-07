@@ -2,13 +2,18 @@ import { memo } from "react";
 
 import type { FocusSummary } from "./api";
 import { Tile } from "./InsightsCard";
+import {
+  FOCUS_STRETCH_LABEL,
+  focusStretchHelperText,
+  formatFocusStretch,
+} from "./focusStreak";
 
 type FocusSummaryCardProps = {
   focusSummary: FocusSummary;
 };
 
 export const FocusSummaryCard = memo(function FocusSummaryCard({ focusSummary }: FocusSummaryCardProps) {
-  const { sampleCount, avgFocusScore, peakFocusScore, distractedFraction, longestFocusStreak } =
+  const { sampleCount, avgFocusScore, peakFocusScore, distractedFraction, longestFocusSecs } =
     focusSummary;
 
   return (
@@ -29,8 +34,13 @@ export const FocusSummaryCard = memo(function FocusSummaryCard({ focusSummary }:
           <Tile value={String(Math.round(avgFocusScore))} label="Avg focus" />
           <Tile value={String(Math.round(peakFocusScore))} label="Peak focus" />
           <Tile value={`${Math.round(distractedFraction * 100)}%`} label="Distracted" />
-          <Tile value={String(longestFocusStreak)} label="Focus streak" />
+          {/* Roadmap 10.13. A duration under a duration label. This tile used to show a
+              count of prediction rows called "Focus streak". */}
+          <Tile value={formatFocusStretch(longestFocusSecs)} label={FOCUS_STRETCH_LABEL} />
         </div>
+      )}
+      {sampleCount === 0 ? null : (
+        <p className="helper-text">{focusStretchHelperText(longestFocusSecs)}</p>
       )}
     </section>
   );

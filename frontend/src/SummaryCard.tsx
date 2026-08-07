@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { FOCUS_STRETCH_LABEL, formatFocusStretch } from "./focusStreak";
 
 import { useSummaryReport } from "./useSummaryReport";
 
@@ -30,7 +31,7 @@ export const SummaryCard = memo(function SummaryCard() {
             <div className="insight-tile"><p className="insight-tile-value">{formatDuration(report.focusSeconds)}</p><p className="insight-tile-label">Focus time</p></div>
             <div className="insight-tile"><p className="insight-tile-value">{report.sessionCount}</p><p className="insight-tile-label">Sessions</p></div>
             <div className="insight-tile"><p className="insight-tile-value">{Math.round(report.avgFocusScore)}</p><p className="insight-tile-label">Avg focus</p></div>
-            <div className="insight-tile"><p className="insight-tile-value">{report.longestFocusStreak}</p><p className="insight-tile-label">Best streak</p></div>
+            <div className="insight-tile"><p className="insight-tile-value">{formatFocusStretch(report.longestFocusSecs)}</p><p className="insight-tile-label">{FOCUS_STRETCH_LABEL}</p></div>
           </div>
           <p className="helper-text">
             {report.topContextApp ? `Most common context: ${report.topContextApp}.` : "No context leader yet."}

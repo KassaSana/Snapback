@@ -8,7 +8,7 @@ const EMPTY_FOCUS_SUMMARY: FocusSummary = {
   peakFocusScore: 0,
   distractedSamples: 0,
   distractedFraction: 0,
-  longestFocusStreak: 0,
+  longestFocusSecs: 0,
 };
 
 export const useFocusSummary = () => {

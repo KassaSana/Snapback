@@ -1,5 +1,7 @@
 #include "storage/storage.hpp"
 
+#include "util/time.hpp"
+
 #include <sqlite3.h>
 
 #include <array>
@@ -1239,34 +1241,68 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::stri
         }
     }
 
-    // Gaps-and-islands. The difference between "position in the whole ordering" and "position
-    // within rows of the same distracted-ness" is constant inside a run and changes at every
-    // boundary, so grouping by it groups by run. The alternative — reading every row back into
-    // C++ to count consecutive ones — is exactly what this item exists to remove.
+    // Roadmap 10.13 + 7.12. The longest unbroken focused stretch, as a **duration**, computed
+    // in SQL rather than by reading every row back into C++.
     //
-    // `timestamp DESC, id DESC` rather than plain `timestamp DESC`: predictions written inside
-    // the same second are otherwise ordered arbitrarily, and a run's *grouping* depends on
-    // that order even though its length does not. Descending id matches the direction SQLite
-    // already scans idx_predictions_ts in for `predictions_since`.
+    // Gaps-and-islands, with the island boundary carrying more than one condition. A row
+    // starts a new run when it is distracted, when it is the first row, or when the gap to the
+    // previous row exceeds the bound — that last one is what makes this a measure of the user
+    // rather than of the data, because predictions stop entirely while they are idle or
+    // private. A running sum over the break flags numbers the runs; the run's duration is the
+    // sum of the gaps *inside* it, so the boundary row contributes nothing and a run of one
+    // sample is correctly zero.
+    //
+    // `prev_distracted` is why the parity test earned its keep. Without it the first focused
+    // row after a distracted one keeps its gap, and that interval — the time spent *being
+    // distracted* — is credited to the focused run that follows. On the 12,000-row fixture
+    // that reported every stretch as exactly twice its real length: a plausible number, wrong
+    // by a factor of two, and invisible to any test that only checked it was non-zero.
+    //
+    // Ordered ascending here, unlike the counting query this replaced: intervals between
+    // neighbours have a sign, so the direction is load-bearing rather than incidental. `id`
+    // stays in the key because timestamps have whole-second resolution and are not unique.
+    //
+    // **Partitioned by session**, which the parity test against the C++ implementation is what
+    // caught: without it, rows from two sessions recorded in the same second interleave, every
+    // gap between them reads as zero, and the run walks the same stretch of time twice. Two
+    // sessions seconds apart are still two pieces of work, and a run that spans them reports a
+    // stretch of focus the user never had.
     {
         Stmt stmt(db_,
                   "WITH ordered AS ("
-                  "  SELECT (focus_state = 'DISTRACTED') AS distracted,"
-                  "         ROW_NUMBER() OVER (ORDER BY timestamp DESC, id DESC) -"
-                  "         ROW_NUMBER() OVER (PARTITION BY (focus_state = 'DISTRACTED')"
-                  "                            ORDER BY timestamp DESC, id DESC) AS run_id"
+                  "  SELECT session_id, ROW_NUMBER() OVER w AS rn,"
+                  "         (focus_state = 'DISTRACTED') AS distracted,"
+                  "         LAG(focus_state = 'DISTRACTED') OVER w AS prev_distracted,"
+                  "         CAST(ROUND((julianday(timestamp) -"
+                  "              julianday(LAG(timestamp) OVER w)) * 86400) AS INTEGER) AS gap"
                   "  FROM predictions WHERE (?1 IS NULL OR timestamp >= ?1)"
+                  "  WINDOW w AS (PARTITION BY session_id ORDER BY timestamp ASC, id ASC)"
+                  "), marked AS ("
+                  "  SELECT session_id, rn, distracted, gap,"
+                  "         CASE WHEN distracted = 1 OR prev_distracted IS NULL"
+                  "                   OR prev_distracted = 1"
+                  "                   OR gap IS NULL OR gap < 0 OR gap > ?2"
+                  "              THEN 1 ELSE 0 END AS is_break"
+                  "  FROM ordered"
+                  "), grouped AS ("
+                  "  SELECT session_id, distracted, gap, is_break,"
+                  "         SUM(is_break) OVER (PARTITION BY session_id ORDER BY rn"
+                  "                             ROWS UNBOUNDED PRECEDING) AS run_id"
+                  "  FROM marked"
                   ") "
-                  "SELECT COALESCE(MAX(len), 0) FROM ("
-                  "  SELECT COUNT(*) AS len FROM ordered WHERE distracted = 0 GROUP BY run_id)");
+                  "SELECT COALESCE(MAX(total), 0) FROM ("
+                  "  SELECT SUM(CASE WHEN is_break = 1 THEN 0 ELSE gap END) AS total"
+                  "  FROM grouped WHERE distracted = 0 GROUP BY session_id, run_id)");
         if (cutoff) {
             stmt.bind(1, *cutoff);
         } else {
             stmt.bind_null(1);
         }
+        stmt.bind(2, static_cast<std::int64_t>(kFocusRunGapSecs));
         if (stmt.step_row()) {
-            out.longest_focus_streak =
-                static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
+            out.longest_focus_secs =
+                static_cast<std::uint64_t>(std::max<std::int64_t>(
+                    0, sqlite3_column_int64(stmt.get(), 0)));
         }
     }
     return out;

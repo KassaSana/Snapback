@@ -114,7 +114,7 @@ export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
     sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
     avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
     distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
-    longestFocusStreak: Number(raw.longest_focus_streak ?? raw.longestFocusStreak ?? 0),
+    longestFocusSecs: Number(raw.longest_focus_secs ?? raw.longestFocusSecs ?? 0),
     topContextApp: String(raw.top_context_app ?? raw.topContextApp ?? ""),
   };
 }
@@ -287,7 +287,7 @@ export function mapFocusSummary(raw: Record<string, unknown>): FocusSummary {
     peakFocusScore: Number(raw.peak_focus_score ?? raw.peakFocusScore ?? 0),
     distractedSamples: Number(raw.distracted_samples ?? raw.distractedSamples ?? 0),
     distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
-    longestFocusStreak: Number(raw.longest_focus_streak ?? raw.longestFocusStreak ?? 0),
+    longestFocusSecs: Number(raw.longest_focus_secs ?? raw.longestFocusSecs ?? 0),
   };
 }
 

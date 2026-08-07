@@ -150,7 +150,7 @@ const report = mapSummaryReport({
   focus_seconds: 3600,
   avg_focus_score: 81,
   distracted_fraction: 0.2,
-  longest_focus_streak: 8,
+  longest_focus_secs: 8,
   top_context_app: "Cursor",
 });
 assert.equal(report.window, "week");
@@ -420,12 +420,12 @@ const focusSummarySnake = mapFocusSummary({
   peak_focus_score: 97.0,
   distracted_samples: 18,
   distracted_fraction: 0.15,
-  longest_focus_streak: 42,
+  longest_focus_secs: 42,
 });
 assert.equal(focusSummarySnake.sampleCount, 120);
 assert.equal(focusSummarySnake.peakFocusScore, 97.0);
 assert.equal(focusSummarySnake.distractedFraction, 0.15);
-assert.equal(focusSummarySnake.longestFocusStreak, 42);
+assert.equal(focusSummarySnake.longestFocusSecs, 42);
 
 const focusSummaryCamel = mapFocusSummary({
   sampleCount: 80,
@@ -433,7 +433,7 @@ const focusSummaryCamel = mapFocusSummary({
   peakFocusScore: 90.0,
   distractedSamples: 30,
   distractedFraction: 0.375,
-  longestFocusStreak: 10,
+  longestFocusSecs: 10,
 });
 assert.equal(focusSummaryCamel.sampleCount, 80);
 assert.equal(focusSummaryCamel.distractedSamples, 30);

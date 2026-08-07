@@ -401,7 +401,10 @@ struct SummaryReport {
     std::size_t sample_count{};
     double avg_focus_score{};
     double distracted_fraction{};
-    std::size_t longest_focus_streak{};
+    // Roadmap 10.13. Seconds, not a row count. It was previously the number of consecutive
+    // non-DISTRACTED prediction rows, displayed as "Best streak" — a time-shaped label over a
+    // quantity that is not time.
+    std::uint64_t longest_focus_secs{};
     std::string top_context_app;
 };
 

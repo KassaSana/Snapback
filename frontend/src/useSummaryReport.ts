@@ -11,7 +11,7 @@ const EMPTY_REPORT: SummaryReport = {
   sampleCount: 0,
   avgFocusScore: 0,
   distractedFraction: 0,
-  longestFocusStreak: 0,
+  longestFocusSecs: 0,
   topContextApp: "",
 };
 

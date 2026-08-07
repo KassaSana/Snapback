@@ -11,6 +11,7 @@
 
 #include <sqlite3.h>
 
+#include "engine/focus_summary.hpp"
 #include "storage/storage.hpp"
 #include "util/logger.hpp"
 #include "util/time.hpp"
@@ -1773,7 +1774,7 @@ struct ReferenceStats {
     std::size_t sample_count{};
     double avg_focus_score{};
     std::size_t distracted_count{};
-    std::size_t longest_focus_streak{};
+    std::uint64_t longest_focus_secs{};
     std::vector<AnalyticsHour> hourly;
 };
 
@@ -1785,16 +1786,28 @@ ReferenceStats fold_in_cpp(const std::vector<PredictionRecord>& predictions) {
         std::size_t distracted{};
     };
     std::array<Bucket, 24> buckets{};
-    std::size_t current_streak = 0;
+    // Roadmap 10.13. The focused stretch is a duration now, and its reference implementation is
+    // the production one -- `summarize_predictions` -- rather than a second copy of the gap
+    // rule, which would only prove the test agrees with itself.
+    //
+    // Grouped by session first, because a run belongs to one session and this fixture seeds
+    // three concurrent sessions per day with identical timestamps. Feeding that interleaving
+    // to a flat fold would measure the ordering artefact rather than the rule.
+    {
+        std::unordered_map<std::string, std::vector<PredictionRecord>> by_session;
+        for (auto it = predictions.rbegin(); it != predictions.rend(); ++it) {
+            by_session[it->session_id].push_back(*it);
+        }
+        for (const auto& [session_id, rows] : by_session) {
+            out.longest_focus_secs =
+                std::max(out.longest_focus_secs, summarize_predictions(rows).longest_focus_secs);
+        }
+    }
     for (const auto& prediction : predictions) {
         ++out.sample_count;
         out.avg_focus_score += prediction.focus_score;
         if (prediction.focus_state == "DISTRACTED") {
             ++out.distracted_count;
-            current_streak = 0;
-        } else {
-            ++current_streak;
-            out.longest_focus_streak = std::max(out.longest_focus_streak, current_streak);
         }
         const int hour = local_hour_from_rfc3339(prediction.timestamp);
         if (hour < 0 || hour >= 24) continue;
@@ -1837,8 +1850,8 @@ TEST_CASE("SQL prediction aggregates match the C++ fold they replaced, at 12,000
         CHECK(actual.sample_count > 0);
         CHECK(actual.avg_focus_score == doctest::Approx(expected.avg_focus_score));
         CHECK(actual.distracted_count == expected.distracted_count);
-        CHECK(actual.longest_focus_streak == expected.longest_focus_streak);
-        CHECK(actual.longest_focus_streak > 0);
+        CHECK(actual.longest_focus_secs == expected.longest_focus_secs);
+        CHECK(actual.longest_focus_secs > 0);
 
         // The local-hour conversion is the part most likely to differ between SQLite's
         // `localtime` modifier and the C library call the C++ path used, so it is compared

@@ -447,7 +447,7 @@ void to_json(json& j, const SummaryReport& v) {
              {"sampleCount", v.sample_count},
              {"avgFocusScore", v.avg_focus_score},
              {"distractedFraction", v.distracted_fraction},
-             {"longestFocusStreak", v.longest_focus_streak},
+             {"longestFocusSecs", v.longest_focus_secs},
              {"topContextApp", v.top_context_app}};
 }
 void from_json(const json& j, SummaryReport& v) {
@@ -459,7 +459,7 @@ void from_json(const json& j, SummaryReport& v) {
     v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
     v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
     v.distracted_fraction = get_or<double>(j, "distractedFraction", 0.0);
-    v.longest_focus_streak = get_or<std::size_t>(j, "longestFocusStreak", 0);
+    v.longest_focus_secs = get_or<std::uint64_t>(j, "longestFocusSecs", 0);
     v.top_context_app = get_or<std::string>(j, "topContextApp", "");
 }
 

@@ -153,7 +153,12 @@ export type FocusSummary = {
   peakFocusScore: number;
   distractedSamples: number;
   distractedFraction: number;
-  longestFocusStreak: number;
+  /**
+   * Roadmap 10.13. Seconds of the longest unbroken focused stretch. It replaced a count of
+   * consecutive non-DISTRACTED prediction rows shown under the time-like label "Focus streak";
+   * rows are not time, and predictions arrive on input rather than on a clock.
+   */
+  longestFocusSecs: number;
 };
 
 export type PomodoroPhase = "work" | "shortBreak" | "longBreak";
@@ -305,7 +310,8 @@ export type SummaryReport = {
   sampleCount: number;
   avgFocusScore: number;
   distractedFraction: number;
-  longestFocusStreak: number;
+  /** Roadmap 10.13. Seconds, not a row count. See FocusSummary.longestFocusSecs. */
+  longestFocusSecs: number;
   topContextApp: string;
 };
 

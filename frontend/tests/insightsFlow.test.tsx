@@ -252,7 +252,7 @@ describe("Focus summary card", () => {
       peak_focus_score: 95,
       distracted_samples: 6,
       distracted_fraction: 0.15,
-      longest_focus_streak: 18,
+      longest_focus_secs: 18,
     };
     renderApp("review");
 
