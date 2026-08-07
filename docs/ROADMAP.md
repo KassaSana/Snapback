@@ -19,13 +19,22 @@ session lifecycle, reporting, training, and the full frontend composition. PR #4
 the merged hardening baseline through all **15 hosted CI jobs**; all passed, including
 `macos-gui-smoke`.
 
-**The August 6 pass closed 7.23, 7.25, 7.12, 10.8, and 6.6** — the correction queue below,
-minus the decision it deliberately did not take. The local baseline is now **376/376 C++
-cases** (up from 336 after 7.22) and clean frontend unit scripts plus typecheck; the component
-suite still cannot run on this machine (**11.11**), so every frontend change in that pass went
+**The August 6 pass closed ten items in two batches.** First the release correction queue —
+**7.23, 7.25, 7.12, 10.8, 6.6** — minus the decision it deliberately did not take. Then five
+more from the audit batches: **2.15, 8.12, 7.26, 9.16, 10.13**. The local baseline is now
+**400/400 C++ cases** (up from 336 after 7.22) and clean frontend unit scripts plus typecheck;
+the component suite still cannot run on this machine (**11.11**), so every frontend change went
 into a `tsx`-testable pure module rather than into a component. CI is now **16 hosted jobs**
-with 6.6's `windows-gcc`, whose configuration was reproduced locally at 376/376 before being
-turned on.
+with 6.6's `windows-gcc`, whose configuration was reproduced locally before being turned on.
+
+**Three defects in that pass were found by a test rather than by reading**, which is worth
+recording because each was a plausible-looking wrong number rather than a crash. 10.13's SQL
+credited the time spent *being distracted* to the focused run that followed, reporting every
+stretch as exactly twice its length. The same parity check caught focused runs walking across
+concurrent sessions. And 8.12's first classification moved support bundles into the delete set;
+an existing case asserted otherwise, and on inspection the existing decision was the coherent
+one. The pattern this file already records — check the claim before rebuilding around it —
+applies to one's own new code too.
 
 The formal v1 blocker list is **five of six verified complete**. Decision session A was
 settled on 2026-08-03 by [ADR-0004](adr/0004-verdict-and-opinion.md), leaving **macOS
@@ -146,7 +155,7 @@ has a concrete user failure, acceptance boundary, and dependency in its owning t
 
 | Area | Items | What the pass found |
 |---|---|---|
-| Correctness | **7.24–7.27**, reopened **7.12** | Clock domains are mixed, session/settings commands are not failure-atomic, capture semantics differ by OS, and analytics still has unbounded/N+1 work |
+| Correctness | ~~**7.24–7.26**~~, **7.27**, ~~reopened **7.12**~~ | ~~Clock domains are mixed~~, ~~session/settings commands are not failure-atomic~~, capture semantics differ by OS, ~~and analytics still has unbounded/N+1 work~~ — only **7.27** remains |
 | Release/privacy truth | **8.10**, **13.7** | A runtime font request contradicts local-only, while consumer Settings exposes a trainer absent from both this tree and an installed app |
 | Architecture/performance | **14.5–14.6**, expanded **14.4** | The engine polls forever, slow commands block the UI thread, and hidden surfaces fetch data at startup |
 | Product depth | **2.9–2.14** | History is not explorable, recording state is hard to see, repeat work is slow, onboarding stops before first value, Pomodoro is skeletal, and sessions cannot hold a reflection |
@@ -159,16 +168,18 @@ machine, deleting private history, and starting against a mature database.
 
 | Area | Items | What the second pass found |
 |---|---|---|
-| Product truth & control | **2.15–2.17** | Snapback episodes are never persisted, interventions have no delivery policy, and append-only labels cannot express an authoritative correction |
+| Product truth & control | ~~**2.15**~~, **2.16–2.17** | ~~Snapback episodes are never persisted~~ (**done 2026-08-06**), interventions have no delivery policy, and append-only labels cannot express an authoritative correction |
 | Correctness & lifecycle | **7.28–7.29**, **9.15** | Editable goal-category names secretly change semantics, OS lock/sleep is treated as ordinary idle, and the single-instance tray app has no activation/close contract |
-| Privacy completeness | **8.11–8.12** | App-only exclusions cannot redact one sensitive browser context, and “delete all” leaves personal exports plus full migration backups behind |
+| Privacy completeness | **8.11**, ~~**8.12**~~ | App-only exclusions cannot redact one sensitive browser context; ~~“delete all” leaves personal exports plus full migration backups behind~~ (**done 2026-08-06**) |
 | Desktop quality | **10.12** | Windows overlay placement ignores the tested multi-monitor geometry and fixed pixels ignore per-monitor DPI |
 | Startup performance | **14.7** | Retention and a full `VACUUM` can block first paint before the webview even exists |
 
-The ordering signal inside this batch is **2.15 → 8.12 → 14.7**: the first repairs a metric
+The ordering signal inside this batch was **2.15 → 8.12 → 14.7**: the first repairs a metric
 already shown to the user, the second repairs a privacy action already promised to the user,
-and the third removes repeat launch work after measuring it. The remaining seven are parallel
-product/desktop candidates. They do not displace the release-sized correction queue above.
+and the third removes repeat launch work after measuring it. **2.15's persistence half and 8.12
+are done (2026-08-06); 14.7 remains**, and it is the one of the three that cannot start yet —
+its acceptance names 14.5's deadline scheduler or 14.6's owned jobs, and neither exists. The
+remaining items in this batch are parallel product/desktop candidates.
 
 **A strict third pass opened eight more and then stopped.** Each survived a direct overlap
 check against the first twenty-eight additions and against the implementation that landed
@@ -178,11 +189,12 @@ while this audit was running.
 |---|---|---|
 | Product action | **2.18–2.19** | Rules are global substrings typed from memory, and attended-time reporting has no optional plan to compare against |
 | Local security | **8.13–8.14** | App-owned files inherit ambient permissions, while privileged webview commands survive top-level navigation |
-| Data ownership | **9.16** | “Export my data” silently caps history and can report no truncation after omitting windows |
-| UX/data truth | **10.13–10.14** | Three incompatible row/session counts are called streaks, and every document export/import lacks a native picker |
+| Data ownership | ~~**9.16**~~ | ~~“Export my data” silently caps history and can report no truncation after omitting windows~~ — **done 2026-08-06** |
+| UX/data truth | ~~**10.13**~~, **10.14** | ~~Three incompatible row/session counts are called streaks~~ (**done 2026-08-06**); every document export/import still lacks a native picker |
 | Model availability | **13.8** | Optional model-cleanup debris can prevent the core heuristic app from opening at all |
 
-The correction order inside this group is **8.13 → 8.14 → 9.16 → 10.13**. **2.18–2.19** are
+The correction order inside this group was **8.13 → 8.14 → 9.16 → 10.13**; **9.16 and 10.13 are
+done (2026-08-06)**, leaving 8.13 and 8.14 at the front of it. **2.18–2.19** are
 product candidates, **10.14** is desktop polish shared by several workflows, and **13.8**
 either lands or disappears when **13.7** settles the trainer boundary. Generic scheduled
 backups, cohort comparison, localization, and a separate notification-action item were

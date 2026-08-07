@@ -52,6 +52,10 @@ on `v0.2.0` at the bottom before cutting one.
   existed report "not measured" rather than a fabricated zero.
 - **A configurable away threshold.** How long without keyboard or mouse input counts as away
   is a setting (30 seconds to 1 hour, five minutes by default) rather than a constant.
+- **Interruptions are recorded.** When you drift away from focused work and come back, the
+  episode is stored with when it started, how long you were away, and the way back — so the
+  Snapback count in a session recap is a real number, and your data export lists the
+  interruptions behind it.
 
 ### Changed
 
@@ -69,6 +73,15 @@ on `v0.2.0` at the bottom before cutting one.
   its sample count and distraction rate.
 - The top-apps list says "samples" rather than "switches", which is what the underlying
   number has always counted.
+- "Focus streak" is now a **duration** — the longest unbroken stretch of focused work — instead
+  of a count of prediction rows shown under a time-like label. Two people doing identical work
+  previously got different numbers depending on how much they typed.
+- The trends tile that counts productive sessions is now labelled "Sessions in a row", so it
+  cannot be mistaken for the duration above.
+- **"Export my data" contains everything.** It previously stopped at 200 sessions and 500
+  windows per session while the file itself said it held every session, and it could report a
+  complete export after dropping windows. The file now ends with a manifest stating exactly
+  what it holds, plus a checksum so a cut-short copy is detectable.
 - Release builds no longer expose the webview developer tools or honour
   `SNAPBACK_FRONTEND_URL`; both are Debug-only.
 
@@ -87,6 +100,13 @@ on `v0.2.0` at the bottom before cutting one.
   zero while the recap beside it reported hours.
 - **A crash no longer counts the time the app was closed as time you were present.** A session
   span left open by a dead process is closed at the last activity that session recorded.
+- **A settings change that cannot be saved no longer takes effect anyway.** Turning private
+  mode off could previously resume recording while the app reported that the change had
+  failed. Settings are written to disk before anything changes in the running app.
+- **"Delete all activity" removes every copy.** It missed the readable personal export and the
+  database backups taken before each schema upgrade, and one file it could not remove used to
+  stop it clearing the database at all. It now attempts every target, and reports what was
+  deleted, what could not be, and what was deliberately kept.
 - **Settings are written crash-safely** via a temp file and an atomic rename, with a
   last-known-good backup and a log line when a settings file cannot be parsed. Previously a
   partial write left an empty file that silently became defaults.
