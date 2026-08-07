@@ -1631,6 +1631,48 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   prove the UI never says “permanently deleted” for a partial result. This is the in-app
   privacy boundary; **9.5** separately owns uninstall behavior.
 
+- **8.13 — Enforce an owner-only boundary around app-owned local data.** `S/M`
+  **release privacy**
+  Opened 2026-08-05. On POSIX, `~/.snapback` and its DB/settings/log/export children are created
+  with ordinary `create_directories`/ofstream/SQLite defaults, so a common umask of `022` may
+  leave the directory `0755` and files `0644`. When no home directory is available, both
+  Windows and POSIX fall back to the same predictable `<temp>/snapback` path. The lock file is
+  the only artifact that explicitly requests `0600`.
+
+  Centralize creation of the data root and every sensitive app-owned artifact. POSIX requires
+  directory `0700` and file `0600` even under a permissive umask; use race-safe creation rather
+  than creating broadly and tightening later. Never fall back to a cross-user predictable temp
+  directory: create a verified private per-user directory or fail closed with a visible reason.
+  On Windows, validate that the selected root's inherited DACL grants no unintended local
+  principals rather than assuming `LOCALAPPDATA` is always configured normally.
+
+  Audit and repair safe existing installs, but report entries whose owner/ACL cannot be changed
+  instead of claiming protection. Tests must cover a fresh tree under umask `022`, a permissive
+  upgrade tree, symlink/reparse-point substitution, missing HOME/LOCALAPPDATA, and default
+  exports/backups/log rotation. A user-selected external export may inherit the chosen
+  destination; the app-owned default stays private. **8.5** still decides encryption and the
+  full adversary model, while **8.12** owns deletion rather than access control.
+
+- **8.14 — Confine privileged webview commands to the trusted packaged UI.** `M/L`
+  Opened 2026-08-05. **8.4** locks down the initial release URL and **8.3** constrains scripts
+  loaded by the bundled page. Neither handles a later top-level navigation. `kIpcShim` is
+  installed with `webview.init()`, whose own comment says it runs before scripts on **every**
+  navigation, and every native command is bound globally. A remote page reached by a redirect
+  or future Help link can therefore inherit deletion, export, settings, and training commands.
+
+  Define one trusted main-frame origin for release assets and enforce it at navigation and
+  command invocation boundaries. Block remote top-level navigation inside the privileged
+  webview; explicit external links open in the system browser with no native bridge. A Debug
+  loopback exception is allowed only behind the existing build-time debug gate. Do not rely on
+  CSP as an origin check — CSP governs resources inside the trusted document, not which
+  document owns the native bindings.
+
+  Use **10.1**'s real-webview harness for an adversarial test: navigate/redirect to a malicious
+  page and prove it cannot invoke a sentinel mutation, then prove the packaged page still can.
+  Cover subframes, redirects, `file:` path aliases, navigation races, and user-initiated
+  external links. Align the external opener with **2.8**'s no-shell platform adapters and the
+  security policy with **8.5**.
+
 ---
 
 ## Tier 1 — Ship a polished Windows-first v1
@@ -1840,6 +1882,14 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   otherwise it stays Recovering and the user's first quiet-hour event silently disables every
   later snapback. Use injected clocks and delivery fakes. Depends on **7.16**, **7.26**, and
   the shared recording state in **2.10**.
+
+  **Action routing belongs in this delivery layer rather than a second notification item.** A
+  click on the missed-session nudge opens the session composer without auto-starting; a
+  snapback routes to the user-initiated Return/Dismiss actions in **2.8**; Pomodoro/hyperfocus
+  opens its current phase or break workflow. Carry stable event/session identity, activate the
+  owner window through **9.15**, and make stale or duplicate clicks harmless. Generic-preview
+  mode changes copy, not destination authority. macOS action delivery remains downstream of
+  **3.3**, while the portable intent/idempotence contract can be tested now.
 
 - **2.17 — Give feedback an authoritative, editable label ledger.** `M/L`
   Opened 2026-08-05. Auto labels, the end-session check-in, and live verdict corrections all
@@ -2388,6 +2438,26 @@ small; the tier is large because nobody has walked that path yet.
   repeated close/show, and exactly one engine, capture hook, DB owner, and tray icon. Integrate
   the visible recording state from **2.10**.
 
+- **9.16 — Make “Export my data” complete, streaming, and honest about omissions.** `M`
+  Opened 2026-08-05. The readable export says it contains “every session,” but the command
+  hard-caps the result at 200 sessions and 500 context rows per session with no cursor or
+  continuation. Worse, its IPC `truncated` flag reflects only omitted sessions; a file that
+  drops the 501st window from one included session can be reported to the UI as untruncated.
+  No available command can retrieve the omitted history.
+
+  Make the default ownership export complete. Stream or cursor through a consistent read
+  snapshot in deterministic order with bounded memory; do not “fix” the cap by materializing
+  an unlimited archive under `storage_mutex_`. If a fast capped product remains useful, rename
+  it **Recent preview** and provide explicit continuation — it cannot keep the “my data” name.
+  Include exact exported/omitted counts per record type plus a small manifest/checksum so a
+  partial or interrupted file is distinguishable from a valid empty one.
+
+  A fixture above both current limits must prove every session and context row appears exactly
+  once, with peak memory below 64 MiB and a stable result while new rows are written. Progress,
+  cancellation, and atomic temp→final publication belong to **14.6**; native destination choice
+  belongs to **10.14**. This is a human-readable portable archive. **9.14** separately owns a
+  database snapshot suitable for lossless restore.
+
 ---
 
 ## Tier 10 — Frontend & UX
@@ -2545,6 +2615,45 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   primary display, taskbars on every edge, unplugging the target monitor, and 100/125/150/200%
   scale without clipped copy or controls. Coordinate colors/typography with **10.10**, focus and
   zoom behavior with **10.3**, and the future action layout with **2.8**.
+
+- **10.13 — Give every “streak” a truthful unit, or remove it.** `S/M`
+  Opened 2026-08-05. Three incompatible quantities use nearly the same label. Recent Focus's
+  “Focus streak” and Summary's “Best streak” are consecutive non-Distracted **prediction row
+  counts**; Analytics's “Focus streak” is consecutive completed **sessions** whose average is
+  at least 70. Predictions arrive when input produces a reading, not once per second, so none
+  of those row counts is elapsed focus time and two users with identical work can get different
+  values from different input cadence.
+
+  Rename the completed-session metric with its unit and definition, for example “Productive
+  sessions in a row.” Either remove the two prediction-row tiles or replace them with a true
+  continuous-focus duration. Duration must use timestamps intersected with **7.23** attended
+  spans, break at idle/private periods and missing-cadence gaps, and state any bounded
+  interpolation policy. Never display a row count with time-like “streak” copy.
+
+  Fixtures must hold wall time constant while varying event cadence, insert an idle gap, cross
+  a session boundary, and include legacy sessions without attended spans. Accessible labels,
+  exports, and API fields need the same unit — this cannot be a frontend rename over a falsely
+  named DTO. **10.8** owns chart scaling and other misleading labels; it did not cover these
+  streak definitions.
+
+- **10.14 — Use native Open/Save workflows for user-owned documents.** `M`
+  Opened 2026-08-05. Support, summary, and personal exports silently choose folders inside the
+  app-data directory and then print a path. There is no file-dialog seam. That is tolerable for
+  internal training artifacts, but poor desktop behavior for a document the user intends to
+  keep, send, or restore on another machine; **9.14** will otherwise have no safe way to select
+  an incoming snapshot either.
+
+  Add owned native **Save As** dialogs for personal, summary, and support exports, plus native
+  **Open** for the restore package in **9.14**. Cancellation is an ordinary result, not an error.
+  Use platform overwrite confirmation, type filters and correct extension handling, then write
+  to a sibling temporary file and publish atomically. After success offer Reveal and Copy path.
+  The default private app-owned folder remains available for unattended/internal workflows.
+
+  Keep dialog and filesystem authority in native code; do not expose an unrestricted path API
+  to the webview, especially across **8.14**'s trust boundary. Adapter tests must cover cancel,
+  overwrite refusal, Unicode and long paths, read-only destinations, extension normalization,
+  and a window disappearing while the dialog is open; one Windows and macOS desktop smoke must
+  exercise the real owner window. Coordinate long exports with **9.16/14.6**.
 
 ---
 
@@ -3055,6 +3164,26 @@ below still determine whether, where, and how the retraining loop should operate
   or zero training controls/instructions in a normal release in option 2. The current third
   state — a prominent workflow whose required files do not exist — is not an acceptable
   fallback.
+
+- **13.8 — Optional model recovery may degrade, never brick the core app.** `S/M`
+  Opened 2026-08-05. Startup runs `recover_model_deployment()` before storage or the webview
+  and exits the entire process on any exception. Recovery deliberately throws for a malformed
+  marker or staging/cleanup debris it cannot remove — including a committed deployment whose
+  valid live model is already in place. ONNX load and inference already fall back safely to
+  the heuristic, so cleanup metadata is paradoxically more availability-critical than the
+  optional model itself.
+
+  If **13.7** removes consumer deployment, remove this startup path from normal builds and close
+  the item that way. Otherwise preserve or quarantine questionable artifacts, start the core
+  capture/history app on the heuristic, and expose a durable degraded-model health state with
+  **Retry cleanup**, Reveal files, and a rollback action when one is provably safe. Never delete
+  the only candidate/previous model merely to make startup green.
+
+  Drive corrupt-marker, unremovable-staging, committed-but-locked-cleanup, invalid-model, and
+  clean-retry cases through the actual startup orchestrator. Each must prove storage, session
+  capture, Review, and heuristic predictions remain available; diagnostics must name the
+  preserved paths without leaking their contents. This complements **13.4** rollback and
+  **9.6** runtime failure UX; neither currently covers a pre-window optional-subsystem failure.
 
 ---
 
