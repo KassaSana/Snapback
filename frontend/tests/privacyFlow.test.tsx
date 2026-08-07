@@ -59,7 +59,13 @@ beforeEach(() => {
     outputPath: "/data/exports/personal/snapback_my_data.md",
     sessionCount: 3,
     windowCount: 40,
+    // Roadmap 9.16. Per-record-type omissions and a body checksum ride with the counts, and
+    // `truncated` is derived from the omissions rather than being an independent flag.
+    episodeCount: 0,
+    omittedSessions: 0,
+    omittedWindows: 0,
     truncated: false,
+    checksum: "0000000000000000",
   };
   boundary.state.exportThrows = false;
 });
@@ -168,11 +174,15 @@ describe("legible data export", () => {
     await clickExport();
 
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("export_my_data"));
+    // Roadmap 9.16 added interruptions to the counts and made the completeness claim
+    // explicit. "We wrote a file" and "we wrote all of it" are different statements, and the
+    // second is the reason the feature exists.
     expect(
       await screen.findByText(
-        "Wrote 3 sessions and 40 captured windows to /data/exports/personal/snapback_my_data.md.",
+        /Wrote 3 sessions, 40 captured windows, 0 interruptions to \/data\/exports\/personal\/snapback_my_data\.md\./,
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText(/complete history/)).toBeInTheDocument();
   });
 
   // An export of an empty history is a success, and it has to read as one — otherwise a
@@ -182,27 +192,44 @@ describe("legible data export", () => {
       outputPath: "/data/snapback_my_data.md",
       sessionCount: 0,
       windowCount: 0,
+      episodeCount: 0,
+      omittedSessions: 0,
+      omittedWindows: 0,
       truncated: false,
+      checksum: "0000000000000000",
     };
     await clickExport();
 
     expect(
-      await screen.findByText("Wrote 0 sessions and 0 captured windows to /data/snapback_my_data.md."),
+      await screen.findByText(/Wrote 0 sessions, 0 captured windows, 0 interruptions/),
     ).toBeInTheDocument();
+    expect(screen.getByText(/nothing was left out/)).toBeInTheDocument();
   });
 
-  it("passes the truncation warning through instead of implying completeness", async () => {
+  // Roadmap 9.16. The export no longer caps history, so this covers the *reporting* contract
+  // rather than a limit the product still has: whichever record type had to be left out is
+  // named, and the completeness claim disappears. The old version of this case asserted
+  // "Older sessions were left out", a message that came from the session cap alone — which is
+  // exactly how an archive that dropped windows could report itself complete.
+  it("names the omitted record type instead of implying completeness", async () => {
     boundary.state.myDataExport = {
       outputPath: "/data/snapback_my_data.md",
       sessionCount: 1,
       windowCount: 1,
+      episodeCount: 1,
+      omittedSessions: 0,
+      omittedWindows: 5,
       truncated: true,
+      checksum: "0000000000000000",
     };
     await clickExport();
 
-    expect(await screen.findByText(/Older sessions were left out\./)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/5 captured windows could not be included\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/complete history/)).not.toBeInTheDocument();
     // Singular, so a one-session export does not read as machine output.
-    expect(screen.getByText(/Wrote 1 session and 1 captured window /)).toBeInTheDocument();
+    expect(screen.getByText(/Wrote 1 session, 1 captured window, 1 interruption /)).toBeInTheDocument();
   });
 
   it("surfaces a failed export", async () => {

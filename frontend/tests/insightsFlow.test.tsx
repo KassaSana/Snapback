@@ -265,7 +265,10 @@ describe("Focus summary card", () => {
     expect(tiles.getByText("72")).toBeInTheDocument();
     expect(tiles.getByText("95")).toBeInTheDocument();
     expect(tiles.getByText("15%")).toBeInTheDocument();
-    expect(tiles.getByText("18")).toBeInTheDocument();
+    // Roadmap 10.13. A duration, not a bare row count: 18 seconds reads as "18s". The tile
+    // used to show the number of consecutive non-distracted prediction rows under a
+    // time-like label.
+    expect(tiles.getByText("18s")).toBeInTheDocument();
   });
 
   it("shows an empty state when there are no predictions yet", async () => {

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the native boundary so the real api.ts + useSession run end to end.
@@ -99,9 +99,17 @@ describe("Session start/stop flow", () => {
         focusMode: "normal",
       }),
     );
-    // UI reflects the active session.
+    // UI reflects the running session. Roadmap 7.23 replaced "active" with running/paused:
+    // a session that stopped counting attended time twenty minutes ago must not read the same
+    // as one that is recording, which is the whole point of the distinction.
+    //
+    // Scoped to the Session Control card, because the health pill also says "running" and an
+    // unscoped query would pass on the wrong element — reporting capture health as if it were
+    // session state.
     expect(await screen.findByText("sess-42")).toBeInTheDocument();
-    expect(await screen.findByText("active")).toBeInTheDocument();
+    const sessionCard = (await screen.findByRole("heading", { name: "Session Control" }))
+      .closest("section") as HTMLElement;
+    expect(within(sessionCard).getByText("running")).toBeInTheDocument();
   });
 
   it("uses the persisted default focus mode for a new session", async () => {
@@ -160,7 +168,7 @@ describe("Session start/stop flow", () => {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("active");
+    await screen.findByText("running");
 
     fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
 

@@ -3245,7 +3245,52 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   Neither blocks release. **They become blocking the moment anyone adds a MinGW job**, which
   is the only reason this is written down.
 
-- **11.11 — The frontend component suite cannot run on the dev machine's Node.** `S`
+- **11.11 — DONE 2026-08-07.** `S` The suite runs here now: **87 of 87**, and `npm run test:ci`
+  — the exact script CI runs — passes locally for the first time.
+
+  **The diagnosis in the original finding was wrong, and usefully so.** It blamed jsdom
+  ("jsdom is not providing a DOM at all") and proposed pinning Node to state the mismatch. One
+  probe test showed jsdom was fine — `window` exists, the document URL is a real origin — and
+  printed the actual cause:
+
+  > `ExperimentalWarning: localStorage is not available because --localstorage-file was not
+  > provided.`
+
+  **Node 26 ships its own experimental global `localStorage`**, gated behind a flag nobody
+  passes. It is on `globalThis` before the jsdom environment installs its window properties,
+  so jsdom's implementation never wins. Node 22 — which CI pins — has no such global, which is
+  exactly why the same tree was green there and 47 of 87 failed here. This is the file's own
+  rule about checking a claim before building on it, applied to a diagnosis rather than to a
+  feature.
+
+  `frontend/tests/memoryStorage.ts` installs a spec-shaped in-memory `Storage` **only** when the
+  environment did not end up with a working one, and says so in the log when it does. On CI's
+  Node 22 nothing runs and jsdom's real implementation is untouched. It has its own `tsx` test,
+  because the component suite cannot be what verifies the thing the component suite depends on.
+  `.nvmrc` and `engines` state the intended toolchain, and all four jobs now read
+  `node-version-file` rather than repeating `22` in four places.
+
+  **Turning it on immediately found seven regressions from this session's own work** — none of
+  which CI had seen either, since nothing has been pushed. Three were 7.23's running/paused
+  rename still asserted as "active"; three were 9.16's export wording; one was 10.13's duration
+  tile. All were the intended new behaviour with a stale assertion, and one of them was
+  genuinely sharpened in the fixing: the session-status query now scopes to the Session Control
+  card, because the health pill also reads "running" and an unscoped match would have passed on
+  the wrong element.
+
+  **The coverage gate needed a decision, not a nudge.** The new pure-logic modules are tested
+  by the `tsx` runner, which does not feed V8's aggregate, so they counted as near-uncovered
+  and dragged branches to 65.66% against a 66% floor. Lowering the floor would hide
+  regressions; excluding them restores what the number claims to measure (77.43/66.90/74.09/78.20).
+  So they are excluded **with a guard**: `scripts/check_coverage_exclusions.py` fails unless
+  every excluded module has a matching dedicated test file that `npm run test:unit` actually runs.
+  Verified by making it fail. Without that, the exclusion list would be one edit away from
+  silencing the gate, and the failure would look like an improving coverage number.
+
+  The original finding follows.
+
+- **11.11 (original finding) — The frontend component suite cannot run on the dev machine's
+  Node.** `S`
   Found 2026-08-05 while wiring 7.23 through the UI. `npm run test` fails **44 of 87** cases
   with `TypeError: Cannot read properties of undefined (reading 'clear')` on
   `window.localStorage` — jsdom is not providing a DOM at all. `vite.config.ts` correctly sets

@@ -3,12 +3,15 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/inline-bundle.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test:unit": "tsx tests/utils.test.ts && tsx tests/apiMappers.test.ts && tsx tests/trainingHints.test.ts && tsx tests/appRulePreview.test.ts && tsx tests/healthHints.test.ts && tsx tests/timelineRefresh.test.ts && tsx tests/permissionWizardState.test.ts && tsx tests/healthPoll.test.ts && tsx tests/insightsMetrics.test.ts && tsx tests/sessionStatus.test.ts && tsx tests/idleThreshold.test.ts && tsx tests/analyticsChart.test.ts && tsx tests/activityDeletion.test.ts && tsx tests/myDataExport.test.ts && tsx tests/focusStreak.test.ts",
+    "test:unit": "tsx tests/utils.test.ts && tsx tests/apiMappers.test.ts && tsx tests/trainingHints.test.ts && tsx tests/appRulePreview.test.ts && tsx tests/healthHints.test.ts && tsx tests/timelineRefresh.test.ts && tsx tests/permissionWizardState.test.ts && tsx tests/healthPoll.test.ts && tsx tests/insightsMetrics.test.ts && tsx tests/sessionStatus.test.ts && tsx tests/idleThreshold.test.ts && tsx tests/analyticsChart.test.ts && tsx tests/activityDeletion.test.ts && tsx tests/myDataExport.test.ts && tsx tests/focusStreak.test.ts && tsx tests/memoryStorage.test.ts",
     "test:components": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:ci": "npm run test:unit && npm run test:coverage",

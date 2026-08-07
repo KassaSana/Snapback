@@ -120,7 +120,7 @@ describe("Pomodoro card", () => {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("active");
+    await screen.findByText("running");  // Roadmap 7.23: running/paused, not "active"
 
     const card = pomodoroCard();
     fireEvent.click(within(card).getByRole("button", { name: "Start Pomodoro" }));
