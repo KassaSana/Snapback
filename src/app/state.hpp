@@ -93,7 +93,13 @@ public:
     // Aggregate the most recent `limit` predictions into recap stats (avg/peak/streak).
     FocusSummary focus_summary(std::size_t limit = 200);
     std::vector<SessionSummary> session_history(std::size_t limit);
-    void delete_all_activity_data();
+    // Erases every app-owned copy of the user's activity and reports what happened to each.
+    //
+    // Roadmap 8.12. Returns a result rather than void because the operation can legitimately
+    // half-succeed — a stale export held open by another program does not stop the database
+    // being cleared — and "permanently deleted" must never be said over a partial one. Every
+    // target is attempted regardless of what happened to the ones before it.
+    ActivityDeletionResult delete_all_activity_data();
 
     // Removes one session and everything recorded during it. Returns false when no such
     // session exists. If it is the session currently being filled, the live engine state is

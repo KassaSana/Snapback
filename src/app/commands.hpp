@@ -146,9 +146,11 @@ inline void register_commands(webview::webview& w, AppState& state,
         state.set_privacy_exclusions(std::move(exclusions));
         return json(state.privacy_settings());
     });
+    // Roadmap 8.12. Returns what was deleted, what could not be, and what was deliberately
+    // kept. It used to return null, which left the UI able to say only "deleted" or "failed"
+    // for an operation that can half-succeed.
     bind_cmd(w, "delete_all_activity_data", [&state](const json&) {
-        state.delete_all_activity_data();
-        return json(nullptr);
+        return json(state.delete_all_activity_data());
     });
     // Roadmap 7.6: "delete everything" was the only eraser available, which makes removing
     // one bad session cost the user their whole history. Reports whether a row was actually

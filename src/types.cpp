@@ -381,6 +381,21 @@ void to_json(json& j, const PrivacySettings& v) {
              {"excludedApps", v.excluded_apps},
              {"localOnly", v.local_only}};
 }
+
+void to_json(json& j, const ActivityDeletionResult& v) {
+    // `complete` is derived rather than stored, but it crosses the wire anyway: it is the one
+    // field the UI branches on, and recomputing "failed is empty" on the frontend is how the
+    // two sides drift apart.
+    j = json{{"deleted", v.deleted},
+             {"failed", v.failed},
+             {"retained", v.retained},
+             {"complete", v.complete()}};
+}
+void from_json(const json& j, ActivityDeletionResult& v) {
+    v.deleted = get_or<std::vector<std::string>>(j, "deleted", {});
+    v.failed = get_or<std::vector<std::string>>(j, "failed", {});
+    v.retained = get_or<std::vector<std::string>>(j, "retained", {});
+}
 void from_json(const json& j, PrivacySettings& v) {
     v.private_mode = get_or<bool>(j, "privateMode", false);
     v.excluded_apps = get_or<std::vector<std::string>>(j, "excludedApps", {});

@@ -18,6 +18,10 @@ type PrivacyCardProps = {
   setExclusionInput: (value: string) => void;
   settings: PrivacySettings | null;
   deletionStatus: string | null;
+  /** Roadmap 8.12. True when the erasure was partial, so it is not styled as success. */
+  deletionWarning?: boolean;
+  /** What "delete activity" deliberately kept, always shown alongside the outcome. */
+  deletionRetained?: string | null;
 };
 
 export const PrivacyCard = memo(function PrivacyCard({
@@ -36,6 +40,8 @@ export const PrivacyCard = memo(function PrivacyCard({
   setExclusionInput,
   settings,
   deletionStatus,
+  deletionWarning = false,
+  deletionRetained = null,
 }: PrivacyCardProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -172,7 +178,10 @@ export const PrivacyCard = memo(function PrivacyCard({
           </button>
         )}
       </div>
-      {deletionStatus ? <p className="helper-text success">{deletionStatus}</p> : null}
+      {deletionStatus ? (
+        <p className={`helper-text ${deletionWarning ? "alert" : "success"}`}>{deletionStatus}</p>
+      ) : null}
+      {deletionRetained ? <p className="helper-text">{deletionRetained}</p> : null}
       {error ? <p className="helper-text alert">{error}</p> : null}
     </section>
   );

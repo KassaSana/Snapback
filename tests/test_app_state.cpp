@@ -1000,6 +1000,117 @@ TEST_CASE("AppState deletes collected activity and resets the live session") {
     CHECK(std::filesystem::exists(deployed_model));
 }
 
+namespace {
+
+bool mentions(const std::vector<std::string>& lines, const std::string& needle) {
+    return std::any_of(lines.begin(), lines.end(), [&](const std::string& line) {
+        return line.find(needle) != std::string::npos;
+    });
+}
+
+}  // namespace
+
+TEST_CASE("deleting all activity removes the readable export and the migration backups") {
+    // Roadmap 8.12. Two copies of the user's history were missed for the life of the feature.
+    //
+    // `exports/personal` is the worst of them: it is the *most legible* copy that exists --
+    // window titles verbatim, in Markdown -- and "delete all activity" reported success while
+    // leaving it sitting in the data directory. `focoflow.db.pre-v<N>.bak` is a complete
+    // database copy that 7.22 writes before every schema upgrade and never removes.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+    state.start_session("delete me", FocusMode::Normal);
+
+    const auto personal = temp.path / "exports" / "personal" / "snapback_my_data.md";
+    const auto training = temp.path / "exports" / "training" / "features.csv";
+    const auto backup_v3 = temp.path / pre_migration_backup_name(3);
+    const auto backup_v4 = temp.path / pre_migration_backup_name(4);
+    for (const auto& file : {personal, training, backup_v3, backup_v4}) {
+        std::filesystem::create_directories(file.parent_path());
+        std::ofstream(file) << "a copy of what the user did";
+    }
+
+    const auto result = state.delete_all_activity_data();
+
+    CHECK(result.complete());
+    CHECK(result.failed.empty());
+    CHECK_FALSE(std::filesystem::exists(personal));
+    CHECK_FALSE(std::filesystem::exists(training));
+    // Both backups, not just the one matching the current schema version: a database two
+    // upgrades old leaves two, and a build that has since bumped the version would not know
+    // to look for the older one.
+    CHECK_FALSE(std::filesystem::exists(backup_v3));
+    CHECK_FALSE(std::filesystem::exists(backup_v4));
+}
+
+TEST_CASE("the deletion result names what was kept, not just what went") {
+    // "Return a structured result listing what was deleted and what remains." The retained
+    // list exists so the classification is something the user can read, rather than an
+    // assumption they would have to inspect the source to discover.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+
+    const auto result = state.delete_all_activity_data();
+    CHECK(mentions(result.deleted, "sessions"));
+    CHECK(mentions(result.retained, "settings"));
+    CHECK(mentions(result.retained, "log"));
+    CHECK(mentions(result.retained, "model"));
+}
+
+TEST_CASE("a replica that cannot be removed does not save the source from deletion") {
+    // Roadmap 8.12's sharpest requirement. The old order deleted exports first and *threw* on
+    // the first failure, so one stale file held open by another program meant the database was
+    // never cleared at all: the user asked to erase their history, saw an error, and kept
+    // everything.
+    //
+    // The failure is injected rather than simulated -- a non-empty directory standing where a
+    // backup file belongs, which `std::filesystem::remove` refuses -- because 7.22 recorded
+    // that its own failure test was vacuous the first time for exactly this reason.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+    const auto session = state.start_session("still goes", FocusMode::Normal);
+    state.stop_session(session.session_id);
+    REQUIRE(state.session_history(10).size() == 1);
+
+    const auto blocked = temp.path / pre_migration_backup_name(4);
+    std::filesystem::create_directories(blocked / "not empty");
+    std::ofstream(blocked / "not empty" / "file.txt") << "blocks removal";
+    const auto personal = temp.path / "exports" / "personal" / "snapback_my_data.md";
+    std::filesystem::create_directories(personal.parent_path());
+    std::ofstream(personal) << "must still go";
+
+    const auto result = state.delete_all_activity_data();
+
+    // The source was cleared regardless.
+    CHECK(state.session_history(10).empty());
+    CHECK(state.prediction_history(10).empty());
+    // Every other replica was still attempted, rather than the loop stopping at the failure.
+    CHECK_FALSE(std::filesystem::exists(personal));
+    // And the result says so instead of claiming a clean sweep.
+    CHECK_FALSE(result.complete());
+    CHECK(mentions(result.failed, "pre-migration database backup"));
+    CHECK(std::filesystem::exists(blocked));
+}
+
+TEST_CASE("an export that was never created is not reported as a failure") {
+    // Absence is not an obstacle: a user who has never exported anything must get a clean
+    // result, or "partial" stops meaning anything.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+
+    const auto result = state.delete_all_activity_data();
+    CHECK(result.complete());
+    CHECK(mentions(result.deleted, "personal data exports"));
+}
+
 TEST_CASE("AppState::delete_session removes one session and leaves the rest alone") {
     auto state = make_state();
     const auto keeper = state->start_session("Keeper", FocusMode::Normal);

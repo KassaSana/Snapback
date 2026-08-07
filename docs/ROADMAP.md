@@ -1753,7 +1753,45 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   notifications, or every export. Build after **7.26** makes the setting atomic and align the
   storage boundary with the threat model in **8.5**.
 
-- **8.12 — Make “Delete all activity” cover every app-owned copy of that activity.** `M`
+- **8.12 — DONE 2026-08-06.** `M` The matrix is written down in one place, both missed copies
+  are removed, and the command reports what actually happened instead of returning void.
+
+  **Two copies of the user's history survived every "delete all" the feature ever ran.**
+  `exports/personal` is the worse of them: the most legible copy that exists — window titles
+  verbatim, in Markdown — left on disk while the command reported success. `focoflow.db.pre-v<N>.bak`
+  is a *complete* database copy that 7.22 writes before every schema upgrade and never
+  removes. Backups are found by scanning for the filename shape rather than by asking the
+  current schema version, because a database two upgrades old leaves two and a build that has
+  since bumped `kSchemaVersion` would not know to look for the older one.
+
+  **Source first, then every replica, and never stop at a failure.** The old order deleted
+  exports first and *threw* on the first error, so one stale file held open by another program
+  meant the database was never cleared at all — the user asked to erase their history, saw an
+  error, and kept everything. That is the item's sharpest requirement and it now has a test
+  with a real injected failure (a non-empty directory where a backup file belongs, which
+  `remove` refuses), following 7.22's warning that its own failure test was vacuous first time.
+
+  **`ActivityDeletionResult` replaces void**, listing deleted / failed / retained. The UI
+  derives its message from it, so a partial erasure reads as "most of it, and here is what
+  remains" and is styled as a warning rather than success. `activityDeletion.ts` holds that
+  wording as pure functions with a `tsx` test — a wrong string here is a privacy claim, not a
+  cosmetic slip, and the component suite cannot run locally (**11.11**).
+
+  **One classification changed under test pressure, and the test was right.** Support bundles
+  were initially moved into the delete set; an existing case asserted they are preserved, and
+  on inspection the existing decision is the coherent one. A bundle's own privacy notice says
+  it contains no database, session history, window titles, or captured input — it is a copy of
+  the *log*, which this matrix keeps because it records operational events rather than captured
+  content and is what a user needs most right after a destructive action. Deleting the copy
+  while keeping the original would have been incoherent. Both are retained, and now **reported
+  as retained** rather than silently omitted.
+
+  Deferred as the item directs: the SQLite free-page/WAL question stays an output of **8.5**,
+  and uninstall behaviour remains **9.5**'s. Four new C++ cases and one frontend module;
+  suite **390 pass**. The original finding follows.
+
+- **8.12 (original finding) — Make “Delete all activity” cover every app-owned copy of that
+  activity.** `M`
   Opened 2026-08-05. `delete_activity_exports()` removes only `exports/training` and
   `exports/summaries`. It misses the readable `exports/personal/snapback_my_data.md`, and every
   successful schema migration can leave a complete `focoflow.db.pre-v<N>.bak`. The command

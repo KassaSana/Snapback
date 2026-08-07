@@ -344,6 +344,28 @@ struct AppSettings {
     std::int64_t idle_threshold_secs{kDefaultIdleThresholdSecs};
 };
 
+// What "Delete all activity" actually did. Roadmap 8.12.
+//
+// It used to return nothing, which meant the UI had exactly two things it could say —
+// "deleted" or "failed" — for an operation that can legitimately half-succeed: a stale export
+// held open by another program does not stop the database being cleared, and should not be
+// reported as if it did. Saying "permanently deleted" over a partial result is the specific
+// failure this structure exists to make impossible.
+struct ActivityDeletionResult {
+    // Activity-bearing artifacts that are now gone. Absence counts as removed: an export that
+    // was never created is not a copy of anything.
+    std::vector<std::string> deleted;
+    // Activity-bearing artifacts that could not be removed, each with the reason. Non-empty
+    // means the answer is "most of it", and the UI must say so.
+    std::vector<std::string> failed;
+    // Classified as configuration and deliberately kept. Listed rather than omitted so the
+    // decision is visible to the person asking what remains, instead of being an unstated
+    // assumption they would have to read the source to discover.
+    std::vector<std::string> retained;
+
+    [[nodiscard]] bool complete() const { return failed.empty(); }
+};
+
 struct PrivacySettings {
     bool private_mode{};
     std::vector<std::string> excluded_apps;
@@ -453,6 +475,8 @@ void to_json(json& j, const AppSettings& v);
 void from_json(const json& j, AppSettings& v);
 void to_json(json& j, const PrivacySettings& v);
 void from_json(const json& j, PrivacySettings& v);
+void to_json(json& j, const ActivityDeletionResult& v);
+void from_json(const json& j, ActivityDeletionResult& v);
 void to_json(json& j, const AnalyticsHour& v);
 void from_json(const json& j, AnalyticsHour& v);
 void to_json(json& j, const AnalyticsApp& v);

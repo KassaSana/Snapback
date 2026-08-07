@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type PrivacySettings } from "./api";
+import {
+  activityDeletionIsWarning,
+  activityDeletionMessage,
+  activityDeletionRetainedNote,
+} from "./activityDeletion";
 
 export const privacyExclusionWarning = (value: string): string | null => {
   const length = value.trim().length;
@@ -15,6 +20,9 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletionStatus, setDeletionStatus] = useState<string | null>(null);
+  // Roadmap 8.12. A partial erasure is not good news and must not be styled as if it were.
+  const [deletionWarning, setDeletionWarning] = useState(false);
+  const [deletionRetained, setDeletionRetained] = useState<string | null>(null);
   const [dataFolderStatus, setDataFolderStatus] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
@@ -114,15 +122,22 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
     setBusy(true);
     setError(null);
     setDeletionStatus(null);
+    setDeletionWarning(false);
+    setDeletionRetained(null);
     try {
-      await api.deleteAllActivityData();
+      const result = await api.deleteAllActivityData();
       try {
         await onActivityDataDeleted?.();
       } catch {
         // The backend deletion has already succeeded. A failed best-effort UI refresh
         // must not tell the user that their stored activity still exists.
       }
-      setDeletionStatus("All locally collected activity data was deleted.");
+      // Roadmap 8.12. The message is derived from what the native side reported rather than
+      // fixed: the operation can legitimately half-succeed, and a flat "deleted" over a
+      // partial result is the specific claim this item exists to stop.
+      setDeletionStatus(activityDeletionMessage(result));
+      setDeletionWarning(activityDeletionIsWarning(result));
+      setDeletionRetained(activityDeletionRetainedNote(result));
     } catch {
       setError("Could not delete activity data.");
     } finally {
@@ -136,6 +151,8 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
     dataFolderStatus,
     deleteAllActivityData,
     deletionStatus,
+    deletionWarning,
+    deletionRetained,
     error,
     exclusionWarning: privacyExclusionWarning(exclusionInput),
     exclusionInput,

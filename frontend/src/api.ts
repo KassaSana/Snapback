@@ -1,4 +1,5 @@
 import { invoke, listen } from "./bridge";
+import { mapActivityDeletionResult } from "./activityDeletion";
 
 import {
   mapAppRule,
@@ -435,7 +436,10 @@ export const api = {
     });
     return mapPrivacySettings(raw);
   },
-  deleteAllActivityData: () => invoke("delete_all_activity_data"),
+  deleteAllActivityData: async () => {
+    const raw = await invoke<unknown>("delete_all_activity_data");
+    return mapActivityDeletionResult(raw);
+  },
   // Resolves false when the session was already gone — the caller should refresh its list
   // rather than report a successful delete for a row that no longer existed.
   deleteSession: (sessionId: string) =>

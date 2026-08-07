@@ -69,17 +69,77 @@ std::string cutoff_rfc3339(int days_ago) {
     return out.str();
 }
 
-void delete_activity_exports(const std::filesystem::path& app_data_dir) {
-    if (app_data_dir.empty()) return;
-    for (const auto* directory : {"training", "summaries"}) {
-        std::error_code error;
-        std::filesystem::remove_all(app_data_dir / "exports" / directory, error);
-        if (error) {
-            throw std::runtime_error("failed to delete activity exports from " +
-                                     std::string(directory) + ": " + error.message());
+// Roadmap 8.12. The artifact/privacy matrix, written down in one place because it was
+// previously spread across whichever call sites happened to remember.
+//
+// **Activity-bearing** — a copy of what the user did, and therefore in scope for "delete all
+// activity":
+//
+//   exports/training   feature matrices derived from captured input
+//   exports/summaries  aggregate reports over sessions
+//   exports/personal   the readable archive; it contains window titles verbatim
+//   focoflow.db.pre-v<N>.bak   a *complete* copy of the database, written before each
+//                              migration (7.22) and kept indefinitely
+//
+// The last two were both missed. `exports/personal` is the worst of the omissions: it is the
+// most legible copy of the user's history that exists, and the command reported success while
+// leaving it on disk.
+//
+// **Configuration and diagnostics** — deliberately preserved, because erasing activity is not
+// the same request as resetting the app:
+//
+//   settings.json (+ .bak/.tmp)   the user's own choices
+//   model.onnx, model.onnx.previous, model_quality.json, training_repo.txt
+//   snapback.log and its rotations
+//   exports/support               diagnostics bundles
+//   snapback.lock
+//
+// The log is the one genuinely arguable entry, and it decides the support bundle with it. The
+// log records operational events, not captured content — no window titles, no keystrokes —
+// though it can name a session id, which is an identifier rather than activity. It is also the
+// file a user needs *most* right after using a destructive feature. A support bundle is a copy
+// of that log plus health and version, and its own privacy notice states that it contains no
+// database, session history, window titles, or captured input; classifying the bundle as
+// activity while keeping the log it was copied from would be incoherent. Both are kept, and
+// **reported as kept**, so the decision is visible rather than an omission someone has to read
+// the source to find. **8.5**'s threat model owns revisiting it, exactly as it owns the SQLite
+// free-page/WAL question this item defers to it.
+
+// One activity-bearing target and the human name the result reports it under.
+struct ActivityArtifact {
+    std::filesystem::path path;
+    const char* label;
+    bool is_directory;
+};
+
+std::vector<ActivityArtifact> activity_artifacts(const std::filesystem::path& app_data_dir) {
+    std::vector<ActivityArtifact> targets{
+        {app_data_dir / "exports" / "training", "training exports", true},
+        {app_data_dir / "exports" / "summaries", "summary reports", true},
+        {app_data_dir / "exports" / "personal", "personal data exports", true},
+    };
+
+    // Enumerated rather than derived from the schema version: a database that has been through
+    // two upgrades has two backups, and a build that has since bumped kSchemaVersion would not
+    // know to look for the older one. Anything matching the shape gets removed.
+    std::error_code error;
+    for (const auto& entry : std::filesystem::directory_iterator(app_data_dir, error)) {
+        const auto name = entry.path().filename().string();
+        if (name.rfind("focoflow.db.pre-v", 0) == 0 && name.size() > 4 &&
+            name.compare(name.size() - 4, 4, ".bak") == 0) {
+            targets.push_back({entry.path(), "pre-migration database backup", false});
         }
     }
+    // A directory that cannot be listed is reported through the caller's result rather than
+    // thrown: a backup we could not find must not stop the database being cleared.
+    return targets;
 }
+
+const char* const kRetainedArtifacts[] = {
+    "your settings",
+    "the classifier model and its metadata",
+    "the app log and any support bundles",
+};
 
 }  // namespace
 
@@ -644,19 +704,43 @@ std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
     return storage_.recent_session_summaries(limit);
 }
 
-void AppState::delete_all_activity_data() {
+ActivityDeletionResult AppState::delete_all_activity_data() {
     // The boundary fences off-lock persistence in engine_tick(). Incrementing the epoch
     // also invalidates any event already queued for asynchronous UI dispatch.
     std::lock_guard state_lock(mutex_);
     std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
     activity_epoch_.fetch_add(1, std::memory_order_release);
-    // Exported CSVs and summary reports are copies of the rows below. Remove them
-    // first so a successful "delete all" cannot leave activity elsewhere under
-    // the app's data directory. Support bundles and deployed model/config files
-    // are deliberately outside this privacy scope.
-    delete_activity_exports(app_data_dir_);
+
+    ActivityDeletionResult result;
+
+    // Roadmap 8.12. **The source first, then every replica.** This used to delete the exports
+    // first and throw on the first failure, so one stale file held open by another program
+    // meant the database was never cleared at all — the user asked to erase their history,
+    // was shown an error, and kept everything. The authoritative copy now goes first, and
+    // every replica is attempted regardless of what happened to the one before it.
     storage_.delete_all_activity_data();
+    result.deleted.emplace_back("your recorded sessions, predictions, and captured windows");
+
+    for (const auto& artifact : activity_artifacts(app_data_dir_)) {
+        if (app_data_dir_.empty()) break;
+        std::error_code error;
+        if (artifact.is_directory) {
+            std::filesystem::remove_all(artifact.path, error);
+        } else {
+            std::filesystem::remove(artifact.path, error);
+        }
+        if (error) {
+            result.failed.emplace_back(std::string(artifact.label) + " (" + error.message() + ")");
+        } else {
+            // Absence counts as removed: an export that was never created is not a copy of
+            // anything, and listing it as a failure would make an ordinary success read as a
+            // partial one.
+            result.deleted.emplace_back(artifact.label);
+        }
+    }
+    for (const char* retained : kRetainedArtifacts) result.retained.emplace_back(retained);
+
     active_session_.reset();
     session_attended_ = false;  // every span was deleted with the rows above
     latest_prediction_.reset();
@@ -673,6 +757,7 @@ void AppState::delete_all_activity_data() {
     context_tracker_.set_goal_categories(settings_.goal_categories);
     live_read_dirty_ = true;
     publish_live_read_unlocked();
+    return result;
 }
 
 ExportTrainingResult AppState::export_training_data(
