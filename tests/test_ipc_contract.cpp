@@ -38,7 +38,11 @@ std::set<std::string> load_expected_commands() {
 
 std::set<std::string> extract_bind_commands(const std::string& source) {
     std::set<std::string> out;
-    static const std::regex pattern(R"re(bind_cmd\(w,\s*"([a-z0-9_]+)")re");
+    // Roadmap 8.14 wrapped bind_cmd in a lambda that supplies the capability token, so the
+    // call sites lost their leading `w,`. Matching the *call* rather than its first argument
+    // also means a future change to bind_cmd's signature does not silently empty this set --
+    // which would make the contract test pass by finding nothing.
+    static const std::regex pattern(R"re(\bbind_cmd\(\s*"([a-z0-9_]+)")re");
     std::sregex_iterator it(source.begin(), source.end(), pattern);
     const std::sregex_iterator end;
     for (; it != end; ++it) {
@@ -79,6 +83,6 @@ TEST_CASE("IPC contract: frontend invoke names are a subset of the canonical set
     }
 }
 
-TEST_CASE("IPC contract: canonical set has 46 handler commands") {
-    CHECK(load_expected_commands().size() == 46);
+TEST_CASE("IPC contract: canonical set has 47 handler commands") {
+    CHECK(load_expected_commands().size() == 47);
 }

@@ -81,6 +81,7 @@ add_library(snapback_core STATIC
   src/snapback/overlay_common.cpp
   src/app/tray_common.cpp
   src/util/private_dir.cpp
+  src/app/webview_origin.cpp
 )
 target_include_directories(snapback_core PUBLIC src)
 target_link_libraries(snapback_core PUBLIC nlohmann_json::nlohmann_json sqlite3)
@@ -154,6 +155,8 @@ add_library(snapback_app STATIC
   src/app/autostart_systemd.cpp
   src/app/data_export.cpp
   src/app/frontend_assets.cpp
+  src/app/ipc_shim.cpp
+  src/app/open_url.cpp
   src/app/reveal_path.cpp
   src/app/single_instance.cpp
   src/app/settings.cpp
@@ -167,8 +170,11 @@ if(APPLE)
   # ROADMAP 7.6: the file-manager backend is AppKit, so macOS needs the Objective-C++ half.
   # It lives in the library (not the app target like the tray/overlay) because it has no
   # singleton and no window — the tests link it and exercise its refusal paths.
-  target_sources(snapback_app PRIVATE src/app/reveal_path_macos.mm)
-  set_source_files_properties(src/app/reveal_path_macos.mm
+  target_sources(snapback_app PRIVATE
+    src/app/open_url_macos.mm
+    src/app/reveal_path_macos.mm)
+  set_source_files_properties(
+    src/app/open_url_macos.mm src/app/reveal_path_macos.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++")
   target_link_libraries(snapback_app PUBLIC "-framework AppKit")
 endif()

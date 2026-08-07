@@ -27,6 +27,7 @@
   "delete_all_activity_data",
   "delete_session",
   "open_data_folder",
+  "open_external_url",
   "get_autostart",
   "set_autostart",
   "set_focus_mode",

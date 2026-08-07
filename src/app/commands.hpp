@@ -15,6 +15,7 @@
 
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
+#include "app/open_url.hpp"
 #include "app/reveal_path.hpp"
 #include "app/state.hpp"
 #include "app/support_bundle.hpp"
@@ -27,9 +28,14 @@ namespace detail {
 // Wraps a JSON-in/JSON-out handler as a webview sync binding. The unwrap/serialize/
 // error-envelope contract lives in run_json_command (command_dispatch.hpp) so it can be
 // unit-tested without webview.
-inline void bind_cmd(webview::webview& w, const std::string& name, JsonHandler handler) {
-    w.bind(name, [handler = std::move(handler)](const std::string& req) -> std::string {
-        return run_json_command(handler, req);
+inline void bind_cmd(webview::webview& w, const std::string& name, JsonHandler handler,
+                     std::string token) {
+    w.bind(name, [handler = std::move(handler), token = std::move(token)](
+                     const std::string& req) -> std::string {
+        // Roadmap 8.14. Every command, without exception — including the read-only ones. A
+        // page that can read your session history has read your window titles, so "only
+        // mutations need the check" would be the wrong boundary.
+        return run_json_command(handler, req, token);
     });
 }
 
@@ -38,70 +44,76 @@ inline void bind_cmd(webview::webview& w, const std::string& name, JsonHandler h
 // Registers every command the frontend calls. `data_dir` is where training exports
 // are written.
 inline void register_commands(webview::webview& w, AppState& state,
-                              const std::filesystem::path& data_dir) {
-    using detail::bind_cmd;
+                              const std::filesystem::path& data_dir,
+                              const std::string& capability_token = {}) {
     using nlohmann::json;
+    // Roadmap 8.14. Wrapped so every `bind_cmd(...)` call below carries the token without each
+    // one having to remember: a command registered without it would be a silently
+    // unprotected hole in exactly the surface this exists to protect.
+    const auto bind_cmd = [&w, &capability_token](const std::string& name, JsonHandler handler) {
+        detail::bind_cmd(w, name, std::move(handler), capability_token);
+    };
 
     // --- Health + predictions ---
-    bind_cmd(w, "get_health", [&state](const json&) { return json(state.health()); });
-    bind_cmd(w, "get_diagnostics", [&state](const json&) {
+    bind_cmd("get_health", [&state](const json&) { return json(state.health()); });
+    bind_cmd("get_diagnostics", [&state](const json&) {
         auto result = json(state.diagnostics());
         result["supportBundlePrivacyNotice"] = kSupportBundlePrivacyNotice;
         return result;
     });
-    bind_cmd(w, "export_support_bundle", [&state, data_dir](const json&) {
+    bind_cmd("export_support_bundle", [&state, data_dir](const json&) {
         const auto exported =
             export_support_bundle(data_dir / "exports" / "support", state.diagnostics());
         return json{{"outputPath", exported.output_path},
                     {"privacyNotice", exported.privacy_notice}};
     });
-    bind_cmd(w, "get_latest_prediction", [&state](const json&) {
+    bind_cmd("get_latest_prediction", [&state](const json&) {
         auto p = state.latest_prediction();
         return p ? json(*p) : json(nullptr);
     });
-    bind_cmd(w, "get_prediction_history", [&state](const json& a) {
+    bind_cmd("get_prediction_history", [&state](const json& a) {
         return json(state.prediction_history(detail::clamp_limit(a, 8)));
     });
-    bind_cmd(w, "get_focus_summary", [&state](const json& a) {
+    bind_cmd("get_focus_summary", [&state](const json& a) {
         return json(state.focus_summary(detail::clamp_limit(a, 200)));
     });
 
     // --- Session lifecycle ---
-    bind_cmd(w, "start_session", [&state](const json& a) {
+    bind_cmd("start_session", [&state](const json& a) {
         auto goal = detail::validate_required_text("Session goal", a.at("goal").get<std::string>(),
                                                    detail::kMaxSessionGoalLen);
         auto mode = focus_mode_from_string(a.value("focusMode", std::string("normal")));
         return json(state.start_session(goal, mode));
     });
-    bind_cmd(w, "stop_session", [&state](const json& a) {
+    bind_cmd("stop_session", [&state](const json& a) {
         return json(state.stop_session(a.at("sessionId").get<std::string>()));
     });
-    bind_cmd(w, "get_session", [&state](const json& a) {
+    bind_cmd("get_session", [&state](const json& a) {
         auto s = state.get_session(a.at("sessionId").get<std::string>());
         if (!s) throw std::runtime_error("session not found");
         return json(*s);
     });
-    bind_cmd(w, "get_active_session", [&state](const json&) {
+    bind_cmd("get_active_session", [&state](const json&) {
         auto s = state.active_session();
         return s ? json(*s) : json(nullptr);
     });
-    bind_cmd(w, "get_session_recap", [&state](const json& a) {
+    bind_cmd("get_session_recap", [&state](const json& a) {
         return json(state.session_recap(a.at("sessionId").get<std::string>()));
     });
-    bind_cmd(w, "get_session_history", [&state](const json& a) {
+    bind_cmd("get_session_history", [&state](const json& a) {
         return json(state.session_history(detail::clamp_limit(a, 20)));
     });
 
     // --- Optional Pomodoro timer ---
-    bind_cmd(w, "get_pomodoro_status",
+    bind_cmd("get_pomodoro_status",
              [&state](const json&) { return json(state.pomodoro_status()); });
-    bind_cmd(w, "start_pomodoro",
+    bind_cmd("start_pomodoro",
              [&state](const json&) { return json(state.start_pomodoro()); });
-    bind_cmd(w, "stop_pomodoro",
+    bind_cmd("stop_pomodoro",
              [&state](const json&) { return json(state.stop_pomodoro()); });
 
     // --- Feedback + config ---
-    bind_cmd(w, "submit_label", [&state](const json& a) {
+    bind_cmd("submit_label", [&state](const json& a) {
         auto req = a.at("request").get<LabelRequest>();
         auto sid = detail::validate_required_text("Session ID", req.session_id,
                                                   detail::kMaxSessionIdLen);
@@ -111,33 +123,33 @@ inline void register_commands(webview::webview& w, AppState& state,
         state.submit_label(sid, req.label, source, notes);
         return json(nullptr);
     });
-    bind_cmd(w, "set_focus_mode", [&state](const json& a) {
+    bind_cmd("set_focus_mode", [&state](const json& a) {
         state.set_focus_mode(focus_mode_from_string(a.at("mode").get<std::string>()));
         return json(nullptr);
     });
-    bind_cmd(w, "get_settings", [&state](const json&) { return json(state.settings()); });
+    bind_cmd("get_settings", [&state](const json&) { return json(state.settings()); });
     // Roadmap 7.23. Returns the whole settings object rather than null so the UI renders the
     // value the app actually accepted, not the one it optimistically sent.
-    bind_cmd(w, "set_idle_threshold", [&state](const json& a) {
+    bind_cmd("set_idle_threshold", [&state](const json& a) {
         state.set_idle_threshold_secs(a.at("seconds").get<std::int64_t>());
         return json(state.settings());
     });
-    bind_cmd(w, "get_privacy_settings", [&state](const json&) {
+    bind_cmd("get_privacy_settings", [&state](const json&) {
         return json(state.privacy_settings());
     });
-    bind_cmd(w, "get_analytics", [&state](const json&) { return json(state.analytics()); });
-    bind_cmd(w, "get_summary_report", [&state](const json& a) {
+    bind_cmd("get_analytics", [&state](const json&) { return json(state.analytics()); });
+    bind_cmd("get_summary_report", [&state](const json& a) {
         return json(state.summary_report(a.value("window", std::string("day"))));
     });
-    bind_cmd(w, "export_summary_report", [&state, data_dir](const json& a) {
+    bind_cmd("export_summary_report", [&state, data_dir](const json& a) {
         return json(state.export_summary_report(data_dir / "exports" / "summaries",
                                                  a.value("window", std::string("day"))));
     });
-    bind_cmd(w, "set_private_mode", [&state](const json& a) {
+    bind_cmd("set_private_mode", [&state](const json& a) {
         state.set_private_mode(a.at("enabled").get<bool>());
         return json(state.privacy_settings());
     });
-    bind_cmd(w, "set_privacy_exclusions", [&state](const json& a) {
+    bind_cmd("set_privacy_exclusions", [&state](const json& a) {
         auto exclusions = a.at("excludedApps").get<std::vector<std::string>>();
         if (exclusions.size() > 50) throw std::runtime_error("too many privacy exclusions");
         for (const auto& exclusion : exclusions) {
@@ -149,14 +161,14 @@ inline void register_commands(webview::webview& w, AppState& state,
     // Roadmap 8.12. Returns what was deleted, what could not be, and what was deliberately
     // kept. It used to return null, which left the UI able to say only "deleted" or "failed"
     // for an operation that can half-succeed.
-    bind_cmd(w, "delete_all_activity_data", [&state](const json&) {
+    bind_cmd("delete_all_activity_data", [&state](const json&) {
         return json(state.delete_all_activity_data());
     });
     // Roadmap 7.6: "delete everything" was the only eraser available, which makes removing
     // one bad session cost the user their whole history. Reports whether a row was actually
     // removed rather than returning null, so the UI can distinguish a stale list entry from
     // a successful delete instead of silently claiming success for an id that never existed.
-    bind_cmd(w, "delete_session", [&state](const json& a) {
+    bind_cmd("delete_session", [&state](const json& a) {
         auto sid = detail::validate_required_text("Session ID",
                                                   a.at("sessionId").get<std::string>(),
                                                   detail::kMaxSessionIdLen);
@@ -166,15 +178,26 @@ inline void register_commands(webview::webview& w, AppState& state,
     // the files. `path` comes back whether or not the file manager opened, because "we could
     // not open it, here is where it is" is still an answer the user can act on — and on a
     // platform with no backend it is the *only* one.
-    bind_cmd(w, "open_data_folder", [data_dir](const json&) {
+    bind_cmd("open_data_folder", [data_dir](const json&) {
         return json{{"path", data_dir.string()},
                     {"supported", reveal_supported()},
                     {"opened", reveal_directory(data_dir)}};
     });
-    bind_cmd(w, "get_goal_categories", [&state](const json&) {
+    // Roadmap 8.14. External links leave through the OS browser; this is the native half of
+    // the shim's click interceptor. Only http/https/mailto are accepted.
+    bind_cmd("open_external_url", [](const json& a) {
+        auto url =
+            detail::validate_required_text("URL", a.at("url").get<std::string>(), 4096);
+        if (!detail::open_allowed_external_url(url)) {
+            throw std::runtime_error("URL is not allowed to open externally");
+        }
+        return json{{"supported", open_external_url_supported()},
+                    {"opened", open_external_url(url)}};
+    });
+    bind_cmd("get_goal_categories", [&state](const json&) {
         return json(state.goal_categories());
     });
-    bind_cmd(w, "set_goal_categories", [&state](const json& a) {
+    bind_cmd("set_goal_categories", [&state](const json& a) {
         auto categories = a.at("categories").get<std::vector<GoalCategory>>();
         if (categories.size() > 20) throw std::runtime_error("too many goal categories");
         for (const auto& category : categories) {
@@ -185,10 +208,10 @@ inline void register_commands(webview::webview& w, AppState& state,
         state.set_goal_categories(std::move(categories));
         return json(state.goal_categories());
     });
-    bind_cmd(w, "get_autostart", [](const json&) {
+    bind_cmd("get_autostart", [](const json&) {
         return json{{"enabled", autostart_enabled()}, {"supported", autostart_supported()}};
     });
-    bind_cmd(w, "set_autostart", [](const json& a) {
+    bind_cmd("set_autostart", [](const json& a) {
         const bool enabled = a.at("enabled").get<bool>();
         if (!autostart_supported()) {
             throw std::runtime_error("autostart is not supported on this platform");
@@ -198,7 +221,7 @@ inline void register_commands(webview::webview& w, AppState& state,
         }
         return json{{"enabled", autostart_enabled()}, {"supported", true}};
     });
-    bind_cmd(w, "dismiss_snapback", [&state](const json&) {
+    bind_cmd("dismiss_snapback", [&state](const json&) {
         state.dismiss_snapback();
         // Bind callbacks run on the UI thread, so hiding the native overlay is safe here.
         Overlay::instance().dismiss();
@@ -206,8 +229,8 @@ inline void register_commands(webview::webview& w, AppState& state,
     });
 
     // --- App rules (allow/block overrides) ---
-    bind_cmd(w, "get_app_rules", [&state](const json&) { return json(state.app_rules()); });
-    bind_cmd(w, "upsert_app_rule", [&state](const json& a) {
+    bind_cmd("get_app_rules", [&state](const json&) { return json(state.app_rules()); });
+    bind_cmd("upsert_app_rule", [&state](const json& a) {
         auto req = a.at("request").get<UpsertAppRuleRequest>();
         auto pattern = detail::validate_required_text("App rule pattern", req.pattern,
                                                       detail::kMaxAppRulePatternLen);
@@ -215,29 +238,29 @@ inline void register_commands(webview::webview& w, AppState& state,
                                                    detail::kMaxAppRuleNoteLen);
         return json(state.upsert_app_rule(pattern, req.rule_type, note));
     });
-    bind_cmd(w, "delete_app_rule", [&state](const json& a) {
+    bind_cmd("delete_app_rule", [&state](const json& a) {
         state.delete_app_rule(a.at("id").get<std::int64_t>());
         return json(nullptr);
     });
 
     // --- Context timeline ---
-    bind_cmd(w, "get_context_timeline", [&state](const json& a) {
+    bind_cmd("get_context_timeline", [&state](const json& a) {
         return json(state.context_timeline(detail::opt_string(a, "sessionId"),
                                            detail::clamp_limit(a, 20)));
     });
 
     // --- ONNX + permissions ---
-    bind_cmd(w, "reload_classifier_model",
+    bind_cmd("reload_classifier_model",
              [&state](const json&) { return json(state.reload_classifier_model()); });
-    bind_cmd(w, "refresh_permissions",
+    bind_cmd("refresh_permissions",
              [&state](const json&) { return json(state.refresh_permissions()); });
     // User-initiated only (wizard "Grant access" button) — this one can raise an OS dialog,
     // so it must never be called from a poll the way refresh_permissions is.
-    bind_cmd(w, "request_permissions",
+    bind_cmd("request_permissions",
              [&state](const json&) { return json(state.request_permissions()); });
 
     // --- Training data export ---
-    bind_cmd(w, "export_training_data", [&state, data_dir](const json& a) {
+    bind_cmd("export_training_data", [&state, data_dir](const json& a) {
         const auto out_dir = data_dir / "exports" / "training";
         return json(state.export_training_data(out_dir, detail::opt_string(a, "sessionId")));
     });
@@ -245,7 +268,7 @@ inline void register_commands(webview::webview& w, AppState& state,
     // Roadmap 7.6: the legible counterpart to export_training_data. Separate command and
     // separate directory because they answer different questions and have different audiences
     // — one is for a training script, this one is for the person being recorded.
-    bind_cmd(w, "export_my_data", [&state, data_dir](const json&) {
+    bind_cmd("export_my_data", [&state, data_dir](const json&) {
         const auto result = state.export_personal_data(data_dir / "exports" / "personal");
         // Roadmap 9.16. Per-record-type omission counts and the body checksum travel with the
         // path. `truncated` is derived from the counts rather than being its own field, so the
@@ -262,19 +285,19 @@ inline void register_commands(webview::webview& w, AppState& state,
     });
 
     // --- Training pipeline ---
-    bind_cmd(w, "get_training_deploy_status", [data_dir](const json&) {
+    bind_cmd("get_training_deploy_status", [data_dir](const json&) {
         return training_deploy::training_deploy_status(data_dir);
     });
-    bind_cmd(w, "set_training_repo_path", [data_dir](const json& a) {
+    bind_cmd("set_training_repo_path", [data_dir](const json& a) {
         auto repo_path = detail::validate_required_text(
             "Repo path", a.at("repoPath").get<std::string>(), detail::kMaxRepoPathLen);
         training_deploy::write_training_repo_path(data_dir, repo_path);
         return json(nullptr);
     });
-    bind_cmd(w, "train_from_export", [data_dir](const json&) {
+    bind_cmd("train_from_export", [data_dir](const json&) {
         return training_deploy::train_from_export(data_dir);
     });
-    bind_cmd(w, "rollback_classifier_model", [&state, data_dir](const json&) {
+    bind_cmd("rollback_classifier_model", [&state, data_dir](const json&) {
         auto result = training_deploy::rollback_model(data_dir);
         result["classifier"] = state.reload_classifier_model();
         return result;

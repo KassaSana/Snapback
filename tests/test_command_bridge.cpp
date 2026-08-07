@@ -49,6 +49,46 @@ TEST_CASE("run_json_command converts a thrown exception into the error envelope"
     CHECK(parsed.at("__snapback_error") == "boom");
 }
 
+TEST_CASE("run_json_command requires the capability token when one is configured") {
+    const std::string token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    detail::JsonHandler handler = [](const json& a) { return json{{"ok", a.size()}}; };
+
+    const auto authorized = detail::run_json_command(
+        handler,
+        R"([{"__snapbackToken":")" + token + R"(","limit":3}])",
+        token);
+    CHECK(json::parse(authorized).at("ok") == 1);
+
+    const auto missing = detail::run_json_command(handler, R"([{"limit":3}])", token);
+    CHECK(json::parse(missing).at("__snapback_error") ==
+          "this page is not allowed to use Snapback's native commands");
+
+    const auto wrong = detail::run_json_command(
+        handler,
+        R"([{"__snapbackToken":"wrong","limit":3}])",
+        token);
+    CHECK(json::parse(wrong).at("__snapback_error") ==
+          "this page is not allowed to use Snapback's native commands");
+}
+
+TEST_CASE("run_json_command strips the capability token before the handler runs") {
+    const std::string token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    detail::JsonHandler handler = [](const json& a) {
+        CHECK_FALSE(a.contains(detail::kCapabilityTokenKey));
+        return json(nullptr);
+    };
+    CHECK_NOTHROW(detail::run_json_command(
+        handler,
+        R"([{"__snapbackToken":")" + token + R"("}])",
+        token));
+}
+
+TEST_CASE("token_matches rejects length mismatches without scanning") {
+    CHECK(detail::token_matches("abcd", "abcd"));
+    CHECK_FALSE(detail::token_matches("abcd", "abc"));
+    CHECK_FALSE(detail::token_matches("", "abc"));
+}
+
 TEST_CASE("event_dispatch_script crosses an escaped JSON parse boundary") {
     const std::string line_separator = "\xE2\x80\xA8";
     const std::string payload =

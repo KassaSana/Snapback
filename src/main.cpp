@@ -24,6 +24,7 @@
 #include "app/commands.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/ipc_shim.hpp"
+#include "app/webview_origin.hpp"
 #include "app/mac_ui.hpp"
 #include "app/notification.hpp"
 #include "app/single_instance.hpp"
@@ -249,10 +250,21 @@ int main() {
     w.set_title("Snapback");
     w.set_size(1100, 760, WEBVIEW_HINT_NONE);
 
-    // Inject the IPC shim BEFORE any page script runs (init scripts run on
-    // every navigation, ahead of the bundle), then register the command binds it calls.
-    w.init(kIpcShim);
-    register_commands(w, *state, data_dir);
+    // Resolve the trusted document before binding commands. Roadmap 8.14: the shim and every
+    // native bind share one canonical URL and one per-launch capability token.
+#if defined(NDEBUG)
+    const auto frontend_url = resolve_frontend_url(executable_dir(), std::nullopt, false, false);
+#else
+    const auto frontend_url =
+        resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL"), true);
+#endif
+    const auto trusted_url = canonical_document_url(frontend_url);
+    const auto capability_token = generate_capability_token();
+
+    // Inject the IPC shim BEFORE any page script runs (init scripts run on every navigation,
+    // ahead of the bundle), then register the command binds it calls.
+    w.init(build_ipc_shim_script(trusted_url, capability_token, kWebviewDebugEnabled));
+    register_commands(w, *state, data_dir, capability_token);
 
     // System tray (Phase 8): left-click/double-click or the "Show" menu item brings the
     // window forward; "Quit" ends the run loop. Both branches read the native window
@@ -338,15 +350,6 @@ int main() {
         });
     }
 
-    // Dev-only override: a release process must never let its launch environment redirect
-    // the webview to arbitrary remote content, because that page receives the full IPC shim.
-    // Demo/release path loads the bundled frontend copied next to snapback.exe.
-#if defined(NDEBUG)
-    const auto frontend_url = resolve_frontend_url(executable_dir(), std::nullopt, false, false);
-#else
-    const auto frontend_url =
-        resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL"), true);
-#endif
     // Log the URL, not just the fact that we navigated. A malformed `file:////...` URL (the
     // POSIX four-slash bug) and a missing bundle both render an empty window silently; the
     // only difference is visible in this string.

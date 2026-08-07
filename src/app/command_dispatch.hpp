@@ -101,12 +101,54 @@ using JsonHandler = std::function<nlohmann::json(const nlohmann::json&)>;
 // delivers; we take element [0] (the args object the shim forwarded), run the handler,
 // and dump the result. Any thrown exception becomes the {__snapback_error} envelope the
 // JS shim turns into a rejected Promise.
-inline std::string run_json_command(const JsonHandler& handler, const std::string& req) {
+// Roadmap 8.14. The key every native command must present.
+//
+// The shim gives it to the page's bridge only after checking that its own document is the
+// trusted one, and it makes that check before the page has run a line — `webview.init()`
+// scripts run first on every navigation. A page reached by a redirect therefore has the bound
+// functions sitting on its global object and no way to use them, because it never saw this.
+//
+// It is deliberately stripped from the args before the handler runs. A command should not be
+// able to read it, log it, or write it into an export by accident.
+inline constexpr const char* kCapabilityTokenKey = "__snapbackToken";
+
+// Constant-time-ish comparison. The token is 256 bits of CSPRNG output and an attacker gets no
+// oracle to time against here, but a length-independent compare costs nothing and removes the
+// question.
+inline bool token_matches(const std::string& expected, const std::string& supplied) {
+    if (expected.empty()) return false;
+    if (expected.size() != supplied.size()) return false;
+    unsigned char difference = 0;
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        difference |= static_cast<unsigned char>(expected[i] ^ supplied[i]);
+    }
+    return difference == 0;
+}
+
+// Unwraps args, checks the capability token, runs the handler, and serializes the result or
+// the error envelope.
+//
+// An empty `expected_token` disables the check, which is what the pure command tests and any
+// non-webview caller use. Production always supplies one.
+inline std::string run_json_command(const JsonHandler& handler, const std::string& req,
+                                    const std::string& expected_token = {}) {
     try {
         auto arr = nlohmann::json::parse(req);
         nlohmann::json args = (arr.is_array() && !arr.empty()) ? arr.at(0)
                                                                : nlohmann::json::object();
         if (!args.is_object()) args = nlohmann::json::object();
+
+        if (!expected_token.empty()) {
+            const auto supplied = args.value(kCapabilityTokenKey, std::string{});
+            if (!token_matches(expected_token, supplied)) {
+                // Deliberately uninformative. "wrong token" and "no token" are the same
+                // answer, and neither says what the right one would look like.
+                throw std::runtime_error(
+                    "this page is not allowed to use Snapback's native commands");
+            }
+            args.erase(kCapabilityTokenKey);
+        }
+
         return handler(args).dump();
     } catch (const std::exception& e) {
         return nlohmann::json{{"__snapback_error", e.what()}}.dump();
