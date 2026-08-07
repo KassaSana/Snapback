@@ -35,6 +35,7 @@
 #include "snapback/overlay.hpp"
 #include "storage/storage.hpp"
 #include "util/logger.hpp"
+#include "util/private_dir.hpp"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -73,20 +74,28 @@ std::optional<std::string> env_var(const char* name) {
 #endif
 }
 
-std::filesystem::path app_data_dir() {
-    if (auto override_dir = env_var("SNAPBACK_DATA_DIR")) {
-        return std::filesystem::path(*override_dir);
-    }
+// Roadmap 8.13. The choice of *where* is now separate from the environment lookups, so the
+// fallback rule is testable. The old version ended `return temp_directory_path() / "snapback"`
+// on both platforms: the same predictable path for every account, in a directory every local
+// account can write to. That produced a working app quietly recording window titles somewhere
+// anyone could read, with nothing said about it.
+DataDirChoice app_data_dir() {
+    const auto override_dir = env_var("SNAPBACK_DATA_DIR").value_or("");
 #if defined(_WIN32)
-    if (auto app_data = env_var("APPDATA")) return std::filesystem::path(*app_data) / "snapback";
-    if (auto local_app_data = env_var("LOCALAPPDATA")) {
-        return std::filesystem::path(*local_app_data) / "snapback";
-    }
-    return std::filesystem::temp_directory_path() / "snapback";
+    // %APPDATA% first, %LOCALAPPDATA% second: both are per-user by default, and the second is
+    // where a roaming-profile machine puts data that should not roam.
+    auto profile = env_var("APPDATA");
+    if (!profile) profile = env_var("LOCALAPPDATA");
+    const std::filesystem::path home =
+        profile ? std::filesystem::path(*profile) / "snapback" : std::filesystem::path{};
 #else
-    if (auto home = env_var("HOME")) return std::filesystem::path(*home) / ".snapback";
-    return std::filesystem::temp_directory_path() / "snapback";
+    const auto home_var = env_var("HOME");
+    const std::filesystem::path home =
+        home_var ? std::filesystem::path(*home_var) / ".snapback" : std::filesystem::path{};
 #endif
+    return choose_data_dir(override_dir.empty() ? std::filesystem::path{}
+                                                : std::filesystem::path(override_dir),
+                           home);
 }
 
 // The directory the running binary lives in — NOT the working directory. Those coincide
@@ -135,8 +144,22 @@ std::filesystem::path executable_dir() {
 int main() {
     using namespace snapback;
 
-    const auto data_dir = app_data_dir();
-    std::filesystem::create_directories(data_dir);
+    // Roadmap 8.13. Fail closed rather than record somewhere shared. There is no safe
+    // automatic answer when the user has no profile directory, so there is no automatic answer.
+    const auto chosen = app_data_dir();
+    if (!chosen.ok) {
+        std::cerr << chosen.reason << '\n';
+        return 1;
+    }
+    const auto data_dir = chosen.path;
+
+    // Owner-only from the moment it exists: `mkdir(0700)` rather than create-then-chmod, which
+    // would leave the directory readable for the interval between the two calls.
+    const auto privacy = prepare_private_dir(data_dir);
+    if (!privacy.ok) {
+        std::cerr << privacy.reason << '\n';
+        return 1;
+    }
 
     // Acquire this before opening even the rotating log: a losing process must not rotate
     // the live instance's file out from under it. The lock is tied to this object's OS
@@ -175,6 +198,15 @@ int main() {
     // be verified headlessly, which makes them exactly the two that must narrate.
     logger.info("snapback " SNAPBACK_VERSION " starting");
     logger.info("data dir: " + data_dir.string());
+    // Roadmap 8.13. Said after the logger exists, because the repair happens before it does.
+    // An entry that could not be tightened is reported rather than swallowed: claiming
+    // "secured" over a file we failed to touch is the specific failure the item names.
+    for (const auto& repaired : privacy.repaired) {
+        logger.info("restricted permissions on " + repaired);
+    }
+    for (const auto& exposed : privacy.unprotected) {
+        logger.warn("still readable by other accounts: " + exposed);
+    }
 
     try {
         auto storage = Storage::open(data_dir, &logger);

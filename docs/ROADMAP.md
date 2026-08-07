@@ -1851,8 +1851,50 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   prove the UI never says “permanently deleted” for a partial result. This is the in-app
   privacy boundary; **9.5** separately owns uninstall behavior.
 
-- **8.13 — Enforce an owner-only boundary around app-owned local data.** `S/M`
-  **release privacy**
+- **8.13 — DONE 2026-08-07.** `S/M` **release privacy** `src/util/private_dir.cpp` centralizes
+  the data root: created owner-only, verified on every launch, repaired where safe, and
+  reported where not.
+
+  **The predictable-temp fallback was the widest hole and it is gone.** Both platforms ended
+  `return temp_directory_path() / "snapback"` — the same path for every account, inside a
+  directory every local account can write to. A user with no `HOME` (or no `%APPDATA%`) got a
+  *working* app quietly recording their window titles somewhere anyone could read, with nothing
+  said. There is no safe automatic answer, so there is no automatic answer: the app now refuses
+  to start and names `SNAPBACK_DATA_DIR` as the fix.
+
+  **Race-safe creation, as the item requires.** `mkdir(0700)` applies the mode as the directory
+  comes into existence, and `umask` can only clear bits — never add them — so no umask can
+  widen it. Create-then-`chmod` would leave the directory readable for the interval between the
+  two calls, which is exactly the window an attacker on a shared machine wants.
+
+  **The directory is the boundary and the file sweep is defence in depth**, stated that way
+  rather than left implied: a `0700` directory cannot be traversed, so files beneath it are
+  unreachable at any mode. The sweep still tightens them, because an upgraded install has
+  `0644` files that stay readable if one is ever copied out.
+
+  Fails closed on a symlink, a non-directory, or a root owned by another account — all three
+  are substitution attacks on a predictable path and none has a safe automatic resolution. A
+  symlink *inside* the tree is reported rather than `chmod`-ed through, which would let a
+  planted link retarget the permission change at a file outside the data directory. `chmod` is
+  verified by re-`lstat` rather than trusted, because it succeeds silently on filesystems that
+  do not store the bits.
+
+  **Honest limit on verification.** The POSIX permission cases — the substance — are
+  `#if`-guarded and run in CI only; this machine is Windows. So the *rules* were extracted into
+  `private_mode_for` and `mode_exposes_others` and tested everywhere, including that the mask
+  is `0077` rather than `~0700` (a real `st_mode` carries file-type and setuid bits above
+  `0777`, and confusing them would report every directory as exposed). What is left
+  CI-only is `lstat`/`mkdir`/`chmod` plumbing. Twelve new cases; suite **408 pass**.
+
+  **Not done, and not claimed:** the Windows DACL walk. The item asks to validate that the
+  selected root's inherited ACL grants no unintended local principals; what landed checks the
+  root is a real directory under the user's own `%APPDATA%`/`%LOCALAPPDATA%` and creates it
+  there. A `GetNamedSecurityInfo` ACE enumeration is a separate piece of work and is left
+  open here rather than reported as covered. Encryption and the full adversary model remain
+  **8.5**'s; deletion remains **8.12**'s. The original finding follows.
+
+- **8.13 (original finding) — Enforce an owner-only boundary around app-owned local data.**
+  `S/M` **release privacy**
   Opened 2026-08-05. On POSIX, `~/.snapback` and its DB/settings/log/export children are created
   with ordinary `create_directories`/ofstream/SQLite defaults, so a common umask of `022` may
   leave the directory `0755` and files `0644`. When no home directory is available, both

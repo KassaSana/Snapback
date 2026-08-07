@@ -80,6 +80,7 @@ add_library(snapback_core STATIC
   src/snapback/title_parser.cpp
   src/snapback/overlay_common.cpp
   src/app/tray_common.cpp
+  src/util/private_dir.cpp
 )
 target_include_directories(snapback_core PUBLIC src)
 target_link_libraries(snapback_core PUBLIC nlohmann_json::nlohmann_json sqlite3)
