@@ -21,6 +21,13 @@ std::string duration_minutes(std::uint64_t seconds) {
     return std::to_string((seconds + 30) / 60) + " min";
 }
 
+// Interruptions are usually under a minute, so minutes would round most of them to "0 min".
+// Seconds below two minutes, minutes above — whichever the reader does not have to convert.
+std::string duration_seconds(std::uint32_t seconds) {
+    if (seconds < 120) return std::to_string(seconds) + " sec";
+    return duration_minutes(seconds);
+}
+
 std::string one_decimal(double value) {
     std::ostringstream out;
     out.precision(1);
@@ -106,6 +113,26 @@ std::string render_personal_archive(const PersonalArchive& archive) {
         out << "- Average focus score: " << one_decimal(recap.avg_focus_score) << " / 100\n";
         out << "- Deep focus: " << one_decimal(recap.deep_focus_pct) << "%\n";
         out << "- Snapback nudges: " << recap.snapback_count << "\n\n";
+
+        // Roadmap 2.15. Listed before the window table because it is the shorter, more
+        // interesting list: an interruption log is a summary of the session, where the window
+        // capture is the raw material.
+        if (!session.episodes.empty()) {
+            out << "#### Interruptions\n\n";
+            out << "| Left at | Came back | Away for | Returned to |\n";
+            out << "| --- | --- | --- | --- |\n";
+            for (const auto& episode : session.episodes) {
+                out << "| " << escape_table_cell(or_placeholder(episode.started_at, "unknown"))
+                    << " | " << escape_table_cell(or_placeholder(episode.ended_at, "unknown"))
+                    << " | " << duration_seconds(episode.duration_secs)  //
+                    << " | "
+                    << escape_table_cell(or_placeholder(
+                           episode.file_hint.empty() ? episode.app_name : episode.file_hint,
+                           "unknown"))
+                    << " |\n";
+            }
+            out << "\n";
+        }
 
         if (session.context.empty()) {
             out << "No windows were captured during this session.\n\n";

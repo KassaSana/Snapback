@@ -18,6 +18,8 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "app/state.hpp"
 
@@ -75,6 +77,21 @@ struct AppStateTestAccess {
     static FocusMode focus_mode(AppState& state) {
         std::lock_guard lock(state.mutex_);
         return state.focus_mode_;
+    }
+
+    // Roadmap 2.15's episodes, read back through the owned Storage. AppState exposes no
+    // getter yet — 2.9 and 10.11 own the surface that will show them — but the rows have to be
+    // assertable now, because the whole point of the item is that a write nobody could observe
+    // was missing for the entire life of the project.
+    static std::vector<SnapbackEpisode> snapback_episodes(AppState& state,
+                                                          const std::string& session_id) {
+        std::lock_guard lock(state.storage_mutex_);
+        return state.storage_.list_snapback_episodes(session_id, 100);
+    }
+
+    static bool insert_episode(AppState& state, const SnapbackEpisode& episode) {
+        std::lock_guard lock(state.storage_mutex_);
+        return state.storage_.insert_snapback_episode(episode);
     }
 };
 

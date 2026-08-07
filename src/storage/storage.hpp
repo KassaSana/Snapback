@@ -41,7 +41,7 @@ std::string pre_migration_backup_name(int from_version);
 //   2. **Never edit a released migration.** Append a new one. Editing one changes what an
 //      already-upgraded database was built from, which is precisely the drift versioning
 //      exists to prevent.
-inline constexpr int kSchemaVersion = 4;
+inline constexpr int kSchemaVersion = 5;
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
@@ -295,6 +295,23 @@ public:
     AppRuleRecord upsert_app_rule(const std::string& pattern, AppRuleKind rule_type,
                                   std::optional<std::string> note);
     void delete_app_rule(std::int64_t id);
+
+    // --- Distraction episodes (Roadmap 2.15) --------------------------------------------
+    //
+    // `recap()` has counted rows in `snapback_events` since the baseline schema, and until now
+    // nothing anywhere wrote one. These are the write and read paths that make that count real.
+
+    // Records one episode. Returns false when an episode with the same session and start time
+    // already exists, which is the ordinary outcome of a retry rather than an error — the
+    // episode is identified by when it began, so recording it twice must not double the count
+    // the user is shown.
+    bool insert_snapback_episode(const SnapbackEpisode& episode);
+
+    // A session's episodes, oldest first. Rows written before 2.15 have no start time or
+    // duration and come back with empty/zero values rather than being hidden: they are real
+    // interruptions that were counted, and nothing can reconstruct their detail.
+    std::vector<SnapbackEpisode> list_snapback_episodes(const std::string& session_id,
+                                                        std::size_t limit);
 
     // Context snapshots (the "where you left off" timeline).
     void save_context_snapshot(const std::string& session_id, const ContextSnapshotDto& snap);

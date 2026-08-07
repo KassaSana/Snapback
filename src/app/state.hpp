@@ -212,6 +212,10 @@ private:
         std::optional<ContextSnapshotDto> context_snapshot;
         std::optional<PredictionRecord> prediction;
         std::optional<FeatureVector> features;  // paired with prediction
+        // Roadmap 2.15. Carried on the same job — and therefore the same transaction and the
+        // same activity epoch — as the event that produced it, so an episode cannot survive a
+        // "delete all" that removes the rows it describes.
+        std::optional<SnapbackEpisode> snapback_episode;
     };
 
     void engine_tick();  // features -> classifier -> tracker -> (emit) ; persist off-lock

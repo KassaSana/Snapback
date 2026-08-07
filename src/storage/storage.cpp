@@ -655,11 +655,53 @@ void migrate_session_spans(sqlite3* db) {
          )sql");
 }
 
+// Roadmap 2.15. `snapback_events` has existed since the baseline schema and `recap()` has
+// always counted rows in it, but **nothing ever wrote one** — there was no production
+// `INSERT INTO snapback_events` anywhere in the tree, so every user's Snapback count was zero
+// and the only non-zero values ever seen came from hand-seeded test databases.
+//
+// Turning the write on needs more than the original two columns. A count of interruptions is
+// not an answer to "what interrupted me"; the episode needs when it began, how long it lasted,
+// and enough context to describe the way back — which the payload already carries and threw
+// away.
+//
+// The UNIQUE index is the idempotence the item asks for. An episode is identified by the
+// session it happened in and the moment it began, so a duplicate tick, a delivery retry, or a
+// restart that re-drains the same payload lands on `INSERT OR IGNORE` and writes nothing.
+//
+// Columns are added rather than the table recreated: a pre-versioning install already has
+// `snapback_events`, so `CREATE TABLE IF NOT EXISTS` would skip it and the columns would never
+// appear — the same trap `migrate_prediction_model_id` documents.
+void migrate_snapback_episodes(sqlite3* db) {
+    std::vector<std::string> existing;
+    {
+        Stmt columns(db, "PRAGMA table_info(snapback_events)");
+        while (columns.step_row()) existing.push_back(column_text(columns.get(), 1));
+    }
+    const auto has = [&](const char* name) {
+        return std::find(existing.begin(), existing.end(), name) != existing.end();
+    };
+    if (!has("started_at")) exec(db, "ALTER TABLE snapback_events ADD COLUMN started_at TEXT");
+    if (!has("duration_secs")) {
+        exec(db, "ALTER TABLE snapback_events ADD COLUMN duration_secs INTEGER");
+    }
+    if (!has("app_name")) exec(db, "ALTER TABLE snapback_events ADD COLUMN app_name TEXT");
+    if (!has("file_hint")) exec(db, "ALTER TABLE snapback_events ADD COLUMN file_hint TEXT");
+
+    // Rows written before this migration have a NULL started_at. SQLite treats NULLs as
+    // distinct in a UNIQUE index, so they neither collide with each other nor block the index
+    // — which is the right outcome: nothing can reconstruct when those episodes began.
+    exec(db,
+         "CREATE UNIQUE INDEX IF NOT EXISTS idx_snapback_events_episode "
+         "ON snapback_events(session_id, started_at)");
+}
+
 constexpr Migration kMigrations[] = {
     {1, "baseline schema", migrate_baseline_schema},
     {2, "predictions.model_id", migrate_prediction_model_id},
     {3, "predictions.state_source", migrate_prediction_state_source},
     {4, "session_spans", migrate_session_spans},
+    {5, "snapback_events episode detail", migrate_snapback_episodes},
 };
 
 static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
@@ -1658,6 +1700,51 @@ void Storage::delete_app_rule(std::int64_t id) {
     if (sqlite3_changes(db_) == 0) {
         throw std::runtime_error("app rule not found");
     }
+}
+
+bool Storage::insert_snapback_episode(const SnapbackEpisode& episode) {
+    // OR IGNORE against idx_snapback_events_episode. The alternative — checking first, then
+    // inserting — is two statements with a race between them, and this write happens inside
+    // the engine tick's transaction where a second round trip is not free.
+    Stmt stmt(db_, cached_stmt(
+                       "INSERT OR IGNORE INTO snapback_events "
+                       "(session_id, summary, timestamp, started_at, duration_secs, app_name, "
+                       "file_hint) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"));
+    stmt.bind(1, episode.session_id);
+    stmt.bind(2, episode.summary);
+    stmt.bind(3, episode.ended_at);
+    stmt.bind(4, episode.started_at);
+    stmt.bind(5, static_cast<std::int64_t>(episode.duration_secs));
+    stmt.bind(6, episode.app_name);
+    stmt.bind(7, episode.file_hint);
+    stmt.step_done();
+    return sqlite3_changes(db_) > 0;
+}
+
+std::vector<SnapbackEpisode> Storage::list_snapback_episodes(const std::string& session_id,
+                                                             std::size_t limit) {
+    // Ordered by the episode's own start where there is one, falling back to the return time
+    // for pre-2.15 rows, so a mixed table still reads chronologically.
+    Stmt stmt(db_,
+              "SELECT session_id, summary, timestamp, started_at, duration_secs, app_name, "
+              "file_hint FROM snapback_events WHERE session_id = ?1 "
+              "ORDER BY COALESCE(started_at, timestamp) ASC, id ASC LIMIT ?2");
+    stmt.bind(1, session_id);
+    stmt.bind(2, static_cast<std::int64_t>(limit));
+    std::vector<SnapbackEpisode> rows;
+    while (stmt.step_row()) {
+        SnapbackEpisode episode;
+        episode.session_id = column_text(stmt.get(), 0);
+        episode.summary = column_text(stmt.get(), 1);
+        episode.ended_at = column_text(stmt.get(), 2);
+        episode.started_at = column_text(stmt.get(), 3);
+        episode.duration_secs =
+            static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
+        episode.app_name = column_text(stmt.get(), 5);
+        episode.file_hint = column_text(stmt.get(), 6);
+        rows.push_back(std::move(episode));
+    }
+    return rows;
 }
 
 void Storage::save_context_snapshot(const std::string& session_id,

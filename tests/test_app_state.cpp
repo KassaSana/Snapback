@@ -1231,6 +1231,133 @@ TEST_CASE("AppState fires a snapback payload on return from a long distraction")
     CHECK(state->take_snapback() == std::nullopt);
 }
 
+namespace {
+
+// Drives one full distraction episode through the production path: focused on-task work, a
+// switch to an off-task window, then a return after longer than the tracker's 30-second
+// minimum. Returns the timestamp of the returning event.
+double drive_one_episode(AppState& state, double start_secs, double distraction_secs = 40.0) {
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, start_secs, "Cursor", "classifier.cpp - Snapback"));
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, start_secs + 1.0, "Google Chrome",
+                  "YouTube - Recommended"));
+    const double returned_at = start_secs + 1.0 + distraction_secs;
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, returned_at, "Cursor",
+                  "classifier.cpp - Snapback"));
+    return returned_at;
+}
+
+}  // namespace
+
+TEST_CASE("a distraction episode is recorded, and the recap finally counts it") {
+    // Roadmap 2.15. `recap()` has counted rows in `snapback_events` since the baseline schema,
+    // and **nothing anywhere wrote one** -- there was no production INSERT into that table at
+    // all. Every user's Snapback count was therefore zero, and the only non-zero values ever
+    // seen came from hand-seeded test databases, which is exactly why the gap survived.
+    //
+    // Driven through capture -> tracker -> persistence -> recap, as the item requires:
+    // inserting a row directly in a storage test would reproduce the blind spot rather than
+    // close it.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    const auto session = state.start_session("implement the classifier", FocusMode::Normal);
+
+    REQUIRE(state.session_recap(session.session_id).snapback_count == 0);
+    drive_one_episode(state, 100.0);
+
+    CHECK(state.session_recap(session.session_id).snapback_count == 1);
+}
+
+TEST_CASE("a recorded episode carries when it began, how long it lasted, and the way back") {
+    // A count of interruptions is not an answer to "what interrupted me". The payload always
+    // carried these facts; they were shown once and dropped.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    const auto session = state.start_session("implement the classifier", FocusMode::Normal);
+
+    drive_one_episode(state, 100.0, /*distraction_secs=*/40.0);
+
+    const auto episodes = AppStateTestAccess::snapback_episodes(state, session.session_id);
+    REQUIRE(episodes.size() == 1);
+    CHECK(episodes[0].session_id == session.session_id);
+    CHECK(episodes[0].duration_secs == 40);
+    CHECK(episodes[0].app_name == "Cursor");  // where they were, not where they went
+    CHECK(episodes[0].summary.find("Return to") != std::string::npos);
+    CHECK_FALSE(episodes[0].started_at.empty());
+    CHECK_FALSE(episodes[0].ended_at.empty());
+    // The start is derived from the duration on the same clock as the end, so the two are
+    // comparable to each other -- and to the session's attended spans.
+    CHECK(episodes[0].started_at <= episodes[0].ended_at);
+
+    // The distracting window is deliberately absent: this table answers "what was I doing",
+    // and recording the other half would turn an interruption log into a browsing history.
+    CHECK(episodes[0].app_name != "Google Chrome");
+    CHECK(episodes[0].summary.find("YouTube") == std::string::npos);
+    CHECK(episodes[0].file_hint.find("YouTube") == std::string::npos);
+}
+
+TEST_CASE("two distractions are two episodes, and neither is recorded twice") {
+    // The idempotence the item asks for. An episode is identified by its session and start
+    // time, so a retry cannot inflate a number the user is shown -- while two genuinely
+    // separate interruptions must still count as two.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    const auto session = state.start_session("focus", FocusMode::Normal);
+
+    drive_one_episode(state, 100.0);
+    state.dismiss_snapback();  // the tracker only leaves Recovering on dismissal
+    clock.advance_ms(60'000);  // a later wall-clock second, so the second start differs
+    drive_one_episode(state, 300.0);
+
+    CHECK(state.session_recap(session.session_id).snapback_count == 2);
+
+    // Re-inserting the first episode verbatim -- a delivery retry, a replayed tick -- adds
+    // nothing. This reaches Storage directly on purpose: the point is that the *storage*
+    // guarantee holds regardless of how careful the caller was.
+    const auto episodes = AppStateTestAccess::snapback_episodes(state, session.session_id);
+    REQUIRE(episodes.size() == 2);
+    CHECK_FALSE(AppStateTestAccess::insert_episode(state, episodes[0]));
+    CHECK(state.session_recap(session.session_id).snapback_count == 2);
+}
+
+TEST_CASE("private mode records no episode at all") {
+    // "No row or raw context may be produced while private/excluded." Private events never
+    // reach the tracker, so there is no episode to suppress later -- but the guarantee is
+    // worth pinning at the boundary the user actually toggles.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    const auto session = state.start_session("private work", FocusMode::Normal);
+
+    state.set_private_mode(true);
+    drive_one_episode(state, 100.0);
+
+    CHECK(state.session_recap(session.session_id).snapback_count == 0);
+    CHECK(AppStateTestAccess::snapback_episodes(state, session.session_id).empty());
+}
+
+TEST_CASE("deleting a session deletes its episodes with it") {
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    const auto session = state.start_session("doomed", FocusMode::Normal);
+    drive_one_episode(state, 100.0);
+    REQUIRE(AppStateTestAccess::snapback_episodes(state, session.session_id).size() == 1);
+
+    REQUIRE(state.delete_session(session.session_id));
+    CHECK(AppStateTestAccess::snapback_episodes(state, session.session_id).empty());
+}
+
 TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker for a "
           "second snapback") {
     auto state = make_state();

@@ -39,7 +39,67 @@ ContextSnapshotDto make_window(const std::string& app, const std::string& title)
     return snapshot;
 }
 
+SnapbackEpisode make_episode(const std::string& id, std::uint32_t duration_secs,
+                             const std::string& app, const std::string& file_hint) {
+    SnapbackEpisode episode;
+    episode.session_id = id;
+    episode.summary = file_hint.empty() ? "Return to " + app : "Return to " + file_hint;
+    episode.app_name = app;
+    episode.file_hint = file_hint;
+    episode.started_at = "2026-07-30T09:10:00Z";
+    episode.ended_at = "2026-07-30T09:12:00Z";
+    episode.duration_secs = duration_secs;
+    return episode;
+}
+
 }  // namespace
+
+// Roadmap 2.15. The recap has always reported an interruption count; until the episodes were
+// stored, that number was both always zero and — had it not been — unverifiable by the person
+// it describes. An export that states a count it cannot show is not an answer to "what do you
+// have on me".
+TEST_CASE("render_personal_archive lists the interruptions behind the count") {
+    PersonalArchive archive;
+    archive.generated_at = "2026-08-06T10:00:00Z";
+    auto session = make_session("s1", "ship the export");
+    session.episodes.push_back(make_episode("s1", 95, "Cursor", "state.cpp"));
+    session.episodes.push_back(make_episode("s1", 240, "Cursor", ""));
+    archive.sessions.push_back(std::move(session));
+
+    const auto markdown = render_personal_archive(archive);
+    CHECK(markdown.find("#### Interruptions") != std::string::npos);
+    CHECK(markdown.find("| Left at | Came back | Away for | Returned to |") != std::string::npos);
+    CHECK(markdown.find("2026-07-30T09:10:00Z") != std::string::npos);
+    // Under two minutes reads in seconds; above it, minutes. Rounding 95 seconds to "2 min"
+    // would make a brief glance at a notification look like a coffee break.
+    CHECK(markdown.find("95 sec") != std::string::npos);
+    CHECK(markdown.find("4 min") != std::string::npos);
+    // The route back names the file when there is one and the app when there is not.
+    CHECK(markdown.find("| state.cpp |") != std::string::npos);
+    CHECK(markdown.find("| Cursor |") != std::string::npos);
+}
+
+TEST_CASE("render_personal_archive omits the interruptions table when there were none") {
+    // An empty table with a heading reads as a missing section rather than a quiet session.
+    PersonalArchive archive;
+    archive.generated_at = "2026-08-06T10:00:00Z";
+    archive.sessions.push_back(make_session("s1", "uninterrupted"));
+
+    CHECK(render_personal_archive(archive).find("#### Interruptions") == std::string::npos);
+}
+
+TEST_CASE("render_personal_archive escapes an interruption's untrusted text") {
+    // The file hint comes from a window title, so it is the same untrusted input the window
+    // table escapes — a fact easy to forget when adding a second table.
+    PersonalArchive archive;
+    archive.generated_at = "2026-08-06T10:00:00Z";
+    auto session = make_session("s1", "escaping");
+    session.episodes.push_back(make_episode("s1", 60, "Cursor", "a | b"));
+    archive.sessions.push_back(std::move(session));
+
+    const auto markdown = render_personal_archive(archive);
+    CHECK(markdown.find("a \\| b") != std::string::npos);
+}
 
 // A window title is whatever some other program put on screen, so it is untrusted input to the
 // formatter. An unescaped `|` shifts every later column, which turns a record of what happened

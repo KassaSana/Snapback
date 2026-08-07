@@ -31,6 +31,10 @@ struct PersonalArchiveSession {
     SessionRecord record;
     SessionRecap recap;
     std::vector<ContextSnapshotDto> context;
+    // Roadmap 2.15. The interruptions recorded during this session. The recap has always
+    // reported a *count* of these; a person asking what Snapback holds on them is owed the
+    // episodes themselves, not a number they cannot check.
+    std::vector<SnapbackEpisode> episodes;
     // True when more windows were captured than this archive lists. Stated in the output
     // rather than silently dropped: an export that quietly omits data is worse than one that
     // admits a limit, because the user believes they are holding everything.

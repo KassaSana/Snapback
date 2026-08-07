@@ -638,6 +638,94 @@ TEST_CASE("an unversioned database with a full schema is adopted, not rebuilt") 
     CHECK(reopened->get_session(session_id).has_value());
 }
 
+TEST_CASE("a pre-2.15 snapback row survives the episode migration with no invented detail") {
+    // Roadmap 2.15 added columns to a table that already existed, so the migration has to
+    // adopt rows written before it. Those rows are real interruptions -- they were counted --
+    // and nothing can reconstruct when they began or how long they lasted. They come back with
+    // empty detail rather than a plausible-looking zero start time.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("older install", FocusMode::Normal).session_id;
+    }
+
+    // Write the row the old way -- summary and return time only -- then rewind the stamp so
+    // the runner replays the migration over it.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const auto insert = "INSERT INTO snapback_events (session_id, summary, timestamp) VALUES ('" +
+                        session_id + "', 'Return to old.cpp', '2026-07-30T09:00:00Z');" +
+                        "PRAGMA user_version = 4;";
+    REQUIRE(sqlite3_exec(db, insert.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+
+    // Still counted, which is the guarantee that matters: a migration must not silently reduce
+    // a number the user has already been shown.
+    CHECK(reopened->recap(session_id).snapback_count == 1);
+
+    const auto episodes = reopened->list_snapback_episodes(session_id, 10);
+    REQUIRE(episodes.size() == 1);
+    CHECK(episodes[0].summary == "Return to old.cpp");
+    CHECK(episodes[0].ended_at == "2026-07-30T09:00:00Z");
+    CHECK(episodes[0].started_at.empty());  // unknowable, and left that way
+    CHECK(episodes[0].duration_secs == 0);
+
+    // And the new UNIQUE index tolerates it: a NULL started_at is distinct from every other
+    // NULL in SQLite, so a second legacy row does not collide with the first.
+    sqlite3* again = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &again) == SQLITE_OK);
+    const auto second = "INSERT INTO snapback_events (session_id, summary, timestamp) VALUES ('" +
+                        session_id + "', 'Return to other.cpp', '2026-07-30T10:00:00Z');";
+    CHECK(sqlite3_exec(again, second.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(again);
+}
+
+TEST_CASE("an episode is written once, however many times it is offered") {
+    // The storage half of 2.15's idempotence. An episode is identified by its session and the
+    // moment it began, so a delivery retry or a replayed tick cannot inflate a count the user
+    // is shown -- while a genuinely later interruption still records.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("interrupted", FocusMode::Normal);
+
+    SnapbackEpisode episode;
+    episode.session_id = session.session_id;
+    episode.summary = "Return to state.cpp";
+    episode.app_name = "Cursor";
+    episode.file_hint = "state.cpp";
+    episode.started_at = "2026-07-30T09:10:00Z";
+    episode.ended_at = "2026-07-30T09:12:00Z";
+    episode.duration_secs = 120;
+
+    CHECK(storage->insert_snapback_episode(episode));
+    CHECK_FALSE(storage->insert_snapback_episode(episode));
+    // Even a different summary and duration do not create a second row: the identity is the
+    // start, not the payload. A retry that re-derives slightly different text is still a retry.
+    auto restated = episode;
+    restated.summary = "Return somewhere else";
+    restated.duration_secs = 999;
+    CHECK_FALSE(storage->insert_snapback_episode(restated));
+
+    CHECK(storage->recap(session.session_id).snapback_count == 1);
+    // The first write wins; a retry does not quietly rewrite what the user was shown.
+    const auto stored = storage->list_snapback_episodes(session.session_id, 10);
+    REQUIRE(stored.size() == 1);
+    CHECK(stored[0].summary == "Return to state.cpp");
+    CHECK(stored[0].duration_secs == 120);
+
+    // A later interruption is a different episode.
+    auto later = episode;
+    later.started_at = "2026-07-30T11:00:00Z";
+    CHECK(storage->insert_snapback_episode(later));
+    CHECK(storage->recap(session.session_id).snapback_count == 2);
+}
+
 TEST_CASE("a legacy database is migrated and then stamped current") {
     // The 7.3 gap in one test: an on-disk database from an older schema (no model_id, no
     // user_version) must come out of open() both upgraded *and* versioned, so the next

@@ -705,6 +705,12 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
             session.context_truncated = context.size() > windows_per_session;
             if (session.context_truncated) context.resize(windows_per_session);
 
+            // Roadmap 2.15. The recap already reports how many interruptions this session
+            // had; without the rows behind it the number is unverifiable by the person it
+            // describes, which is the opposite of what a data export is for.
+            session.episodes =
+                storage_.list_snapback_episodes(summary.record.session_id, windows_per_session);
+
             session.record = std::move(summary.record);
             session.recap = std::move(summary.recap);
             session.context = std::move(context);
@@ -1169,6 +1175,25 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
         // The tracker latches a snapback payload on the return-from-distraction edge;
         // drain it into the field the tick loop emits.
         if (auto snapback = context_tracker_.take_pending_snapback()) {
+            // Roadmap 2.15. This edge is also the only moment an episode exists as a fact, and
+            // until now it was shown once and dropped. `recap()` has counted
+            // `snapback_events` rows since the baseline schema and nothing ever wrote one, so
+            // the Snapback count every user saw was zero.
+            //
+            // The payload has a duration but no start: `rfc3339_secs_ago` turns it into one on
+            // the same clock as `ended_at`, so the two are comparable to each other and to the
+            // session's spans.
+            SnapbackEpisode episode;
+            episode.session_id = active_session_->session_id;
+            episode.summary = snapback->summary;
+            episode.app_name = snapback->app_name;
+            episode.file_hint = snapback->file_hint;
+            episode.duration_secs = snapback->distraction_duration_secs;
+            episode.ended_at = now_rfc3339();
+            episode.started_at =
+                rfc3339_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
+            job.snapback_episode = std::move(episode);
+
             latest_snapback_ = *snapback;
             live_read_dirty_ = true;
         }
@@ -1178,7 +1203,11 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     // scored as "distracted" and idle minutes don't dilute the feature windows. Context
     // snapshots (window changes) still persist so the recovery timeline stays intact.
     if (idle_) {
-        if (job.context_snapshot) return job;
+        // Roadmap 2.15: `|| job.snapback_episode`. An episode is produced on the same window
+        // change that usually produces a snapshot, but nothing guarantees both — the snapshot
+        // is suppressed for an unnamed window — and dropping the job here would silently lose
+        // the episode rather than defer it.
+        if (job.context_snapshot || job.snapback_episode) return job;
         return std::nullopt;
     }
 
@@ -1188,9 +1217,9 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     const double now = event.timestamp_secs;
 
     if (last_prediction_secs_ >= 0.0 && now - last_prediction_secs_ < 1.0) {
-        // Throttled: no new prediction this event. Persist only a context snapshot if one
-        // was produced; otherwise there's nothing to write.
-        if (job.context_snapshot) return job;
+        // Throttled: no new prediction this event. Persist the context snapshot and/or the
+        // episode if either was produced; otherwise there's nothing to write.
+        if (job.context_snapshot || job.snapback_episode) return job;
         return std::nullopt;
     }
     last_prediction_secs_ = now;
@@ -1247,6 +1276,9 @@ void AppState::persist(const PersistJob& job) {
     if (job.session_id.empty()) return;
     if (job.context_snapshot) {
         storage_.save_context_snapshot(job.session_id, *job.context_snapshot);
+    }
+    if (job.snapback_episode) {
+        storage_.insert_snapback_episode(*job.snapback_episode);
     }
     if (job.prediction) {
         storage_.insert_prediction(*job.prediction);

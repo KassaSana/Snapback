@@ -240,6 +240,29 @@ struct HealthStatus {
     ClassifierStatus classifier;
 };
 
+// SnapbackEpisode — one recorded distraction: the user left focused work and came back.
+//
+// Roadmap 2.15. The durable counterpart to SnapbackPayload, which is the transient thing the
+// overlay shows. The payload was emitted, displayed, and dropped; `recap()` has always counted
+// `snapback_events` rows, and nothing ever wrote one, so the Snapback count every user saw was
+// zero. This is what gets stored.
+//
+// `started_at` and `session_id` together identify an episode — a duplicate tick or a delivery
+// retry must not produce a second row (a UNIQUE index enforces it).
+struct SnapbackEpisode {
+    std::string session_id;
+    // The route back, exactly as it was offered to the user.
+    std::string summary;
+    // Where they were before the distraction, not where they went. The distracting app is
+    // deliberately not recorded: this table answers "what was I doing", and storing the other
+    // half would make an interruption log into a browsing history.
+    std::string app_name;
+    std::string file_hint;
+    std::string started_at;  // when the distraction began
+    std::string ended_at;    // when they returned; the pre-existing `timestamp` column
+    std::uint32_t duration_secs{};
+};
+
 // SnapbackPayload — what the overlay/dashboard show on return-from-distraction.
 struct SnapbackPayload {
     std::string summary;

@@ -1984,7 +1984,47 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   readable personal export. This requires an append-only schema migration; use **7.22**'s
   pre-migration backup and add a real prior-version upgrade case for the new field.
 
-- **2.15 — Persist distraction episodes, then make them explorable.** `M`
+- **2.15 — PERSISTENCE DONE 2026-08-06; the explorable half stays open.** `M`
+  The item's own two halves, split as it describes them: "first persist", then "compose those
+  rows into 2.9 and 10.11". The first is done and the second is still owned by those items.
+
+  **The defect was as bad as it reads.** There was no production `INSERT INTO snapback_events`
+  anywhere in the tree, and `recap()` has counted rows in that table since the baseline schema.
+  Every user's Snapback count was therefore **zero**, always — and the only non-zero values
+  ever observed came from hand-seeded test databases, which is precisely why nothing caught it.
+
+  Migration 5 extends `snapback_events` with `started_at`, `duration_secs`, `app_name`, and
+  `file_hint`. Columns added, not a table recreated: a pre-versioning install already has the
+  table, so `CREATE TABLE IF NOT EXISTS` would skip it and the columns would never appear —
+  the same trap `migrate_prediction_model_id` documents.
+
+  **Idempotence is a UNIQUE index, not caller discipline.** An episode is identified by
+  `(session_id, started_at)`, so a duplicate tick, a delivery retry, or a restart that
+  re-drains the payload lands on `INSERT OR IGNORE`. The first write wins, so a retry that
+  re-derives slightly different text cannot quietly rewrite what the user was shown. SQLite
+  treats NULLs as distinct, so pre-2.15 rows neither collide nor block the index.
+
+  **The distracting app is deliberately not recorded.** The episode stores where the user
+  *was* — the route back the overlay offered — not where they went. Storing the other half
+  would turn an interruption log into a browsing history, which is not what this table is for.
+
+  **Two guards found while wiring it.** `compute_event` returned early on both the AFK-freeze
+  and prediction-throttle paths unless a context snapshot existed; an episode usually rides
+  along with one, but nothing guarantees it (the snapshot is suppressed for an unnamed window),
+  and the job would have been dropped. Both guards now check for either.
+
+  The regression drives capture → tracker → persistence → recap, as the item demands —
+  inserting a row in a storage test would have reproduced the blind spot rather than closed it.
+  Deleting a session takes its episodes; private mode records none; the readable personal
+  export now lists them under **Interruptions** instead of stating a count the reader cannot
+  check. Verified by mutation: disabling the one new `persist()` branch turns four cases red.
+  Ten new cases; suite **386 pass**.
+
+  **Still open here:** the exploration surface — what interrupted a selected session, total
+  time lost, common contexts — which belongs to **2.9** and **10.11**, and calendar grouping
+  after **7.16**. The original finding follows.
+
+- **2.15 (original finding) — Persist distraction episodes, then make them explorable.** `M`
   Opened 2026-08-05. This begins as a correctness repair. `ContextTracker` produces a rich
   `SnapbackPayload`, `AppState` emits it, and `Storage::recap()` reports a count from the
   `snapback_events` table — but there is no production `INSERT INTO snapback_events` anywhere.
