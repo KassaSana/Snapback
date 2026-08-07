@@ -28,6 +28,13 @@ const emptyDiagnostics: DiagnosticsSnapshot = {
       modelPath: null,
       modelId: null,
     },
+    modelDeployment: {
+      state: "ok",
+      message: null,
+      preservedPaths: [],
+      retryCleanupAvailable: false,
+      rollbackAvailable: false,
+    },
   },
   recentLogs: [],
   supportBundlePrivacyNotice: "",

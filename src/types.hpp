@@ -224,6 +224,18 @@ struct ClassifierStatus {
     std::optional<std::string> model_id;
 };
 
+// ModelDeploymentHealth — optional ONNX deployment recovery state. Roadmap 13.8.
+//
+// When cleanup debris cannot be removed at startup, the core app still opens on the heuristic
+// backend. This object names what was preserved and whether the user can retry or roll back.
+struct ModelDeploymentHealth {
+    std::string state{"ok"};  // "ok" | "degraded"
+    std::optional<std::string> message;
+    std::vector<std::string> preserved_paths;
+    bool retry_cleanup_available{};
+    bool rollback_available{};
+};
+
 // HealthStatus — nests PermissionStatus + ClassifierStatus as objects.
 struct HealthStatus {
     std::string status;
@@ -238,6 +250,7 @@ struct HealthStatus {
     std::string prediction_suppression_reason{"none"};
     PermissionStatus permissions;
     ClassifierStatus classifier;
+    ModelDeploymentHealth model_deployment;
 };
 
 // SnapbackEpisode — one recorded distraction: the user left focused work and came back.
@@ -460,6 +473,8 @@ void to_json(json& j, const PermissionStatus& v);
 void from_json(const json& j, PermissionStatus& v);
 void to_json(json& j, const ClassifierStatus& v);
 void from_json(const json& j, ClassifierStatus& v);
+void to_json(json& j, const ModelDeploymentHealth& v);
+void from_json(const json& j, ModelDeploymentHealth& v);
 void to_json(json& j, const HealthStatus& v);
 void from_json(const json& j, HealthStatus& v);
 void to_json(json& j, const SnapbackPayload& v);

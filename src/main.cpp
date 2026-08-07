@@ -180,16 +180,20 @@ int main() {
     Logger logger(pick_startup_log_sink(log_file, std::cerr),
                   level_from_string(env_var("SNAPBACK_LOG").value_or("")));
 
+    const auto model_recovery =
+        training_deploy::recover_model_deployment_for_startup(data_dir);
+    if (!model_recovery.ok) {
+        logger.warn(std::string("model deployment recovery degraded: ") +
+                    model_recovery.message);
+    }
     try {
-        training_deploy::recover_model_deployment(data_dir);
 #if defined(SNAPBACK_ONNX)
         if (auto model = OnnxModel::resolve_model_path(data_dir)) {
             OnnxModel::instance().init(*model);
         }
 #endif
     } catch (const std::exception& error) {
-        logger.error(std::string("model deployment recovery failed: ") + error.what());
-        return 1;
+        logger.warn(std::string("optional model load failed: ") + error.what());
     }
 
     // Observability: log the startup sequence, one line per step, at INFO. This exists
@@ -220,7 +224,9 @@ int main() {
     // Keep AppState heap-owned so callbacks registered below can borrow one stable
     // process-lifetime address. RingBuffer independently heap-backs its 64K slots, so
     // AppState itself remains stack-friendly.
-    auto state = std::make_unique<AppState>(std::move(*storage), data_dir, &logger);
+    auto state = std::make_unique<AppState>(
+        std::move(*storage), data_dir, &logger, nullptr,
+        training_deploy::to_model_deployment_health(model_recovery));
     state->start_engine();
 
     // Read-only probe (never prompts), logged once at startup so the log answers the

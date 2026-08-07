@@ -3,14 +3,36 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
+
+#include "types.hpp"
 
 namespace snapback::training_deploy {
 
 std::filesystem::path export_dir(const std::filesystem::path& app_data_dir);
+
+struct ModelDeploymentRecoveryOutcome {
+    bool ok{};
+    std::string message;
+    std::vector<std::string> preserved_paths;
+    bool retry_cleanup_available{};
+    bool rollback_available{};
+};
+
 // Complete or roll back an interrupted model deployment before resolving the live model.
+// Throws on failure — for user-initiated paths that must observe a hard error.
 void recover_model_deployment(const std::filesystem::path& app_data_dir);
+
+// Roadmap 13.8. Startup-safe recovery: never throws, preserves live models, and reports what
+// the user can retry or roll back.
+ModelDeploymentRecoveryOutcome recover_model_deployment_for_startup(
+    const std::filesystem::path& app_data_dir);
+ModelDeploymentRecoveryOutcome retry_model_deployment_cleanup(
+    const std::filesystem::path& app_data_dir);
+ModelDeploymentHealth to_model_deployment_health(
+    const ModelDeploymentRecoveryOutcome& outcome);
 bool rollback_available(const std::filesystem::path& app_data_dir);
 // Restore the previous deployed model and its quality metadata. The swap keeps the current
 // model as the next rollback target, so a user can undo an undo.

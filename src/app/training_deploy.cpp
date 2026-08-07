@@ -309,6 +309,50 @@ bool cleanup_deployment_files(const DeploymentPaths& paths) {
     return remove_if_present(paths.committed);
 }
 
+void note_preserved_path(const std::filesystem::path& path, std::vector<std::string>& out) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) return;
+    out.push_back(path.filename().string());
+}
+
+std::vector<std::string> preserved_deployment_paths(const DeploymentPaths& paths) {
+    std::vector<std::string> out;
+    for (const auto& path :
+         {paths.marker, paths.committed, paths.deployed_model, paths.deployed_quality,
+          paths.previous_model, paths.previous_quality, paths.staged_model, paths.staged_quality,
+          paths.backup_model, paths.backup_quality, paths.previous_model_backup,
+          paths.previous_quality_backup, paths.marker_temp}) {
+        note_preserved_path(path, out);
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+bool has_retryable_deployment_state(const DeploymentPaths& paths) {
+    std::error_code ec;
+    for (const auto& path :
+         {paths.marker, paths.committed, paths.staged_model, paths.staged_quality,
+          paths.backup_model, paths.backup_quality, paths.previous_model_backup,
+          paths.previous_quality_backup, paths.marker_temp}) {
+        if (std::filesystem::exists(path, ec) && !ec) return true;
+    }
+    return false;
+}
+
+ModelDeploymentRecoveryOutcome make_recovery_outcome(bool ok,
+                                                     const std::filesystem::path& app_data_dir,
+                                                     std::string message = {}) {
+    const DeploymentPaths paths(app_data_dir);
+    ModelDeploymentRecoveryOutcome outcome;
+    outcome.ok = ok;
+    outcome.message = std::move(message);
+    outcome.preserved_paths = preserved_deployment_paths(paths);
+    outcome.rollback_available = rollback_available(app_data_dir);
+    outcome.retry_cleanup_available = !ok && has_retryable_deployment_state(paths);
+    return outcome;
+}
+
 void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
     const DeploymentPaths paths(app_data_dir);
     if (!std::filesystem::is_regular_file(paths.marker)) {
@@ -492,6 +536,32 @@ void swap_optional_file(const std::filesystem::path& first,
 
 void recover_model_deployment(const std::filesystem::path& app_data_dir) {
     recover_model_deployment_impl(app_data_dir);
+}
+
+ModelDeploymentRecoveryOutcome recover_model_deployment_for_startup(
+    const std::filesystem::path& app_data_dir) {
+    try {
+        recover_model_deployment_impl(app_data_dir);
+        return make_recovery_outcome(true, app_data_dir);
+    } catch (const std::exception& error) {
+        return make_recovery_outcome(false, app_data_dir, error.what());
+    }
+}
+
+ModelDeploymentRecoveryOutcome retry_model_deployment_cleanup(
+    const std::filesystem::path& app_data_dir) {
+    return recover_model_deployment_for_startup(app_data_dir);
+}
+
+ModelDeploymentHealth to_model_deployment_health(
+    const ModelDeploymentRecoveryOutcome& outcome) {
+    ModelDeploymentHealth health;
+    health.state = outcome.ok ? "ok" : "degraded";
+    if (!outcome.message.empty()) health.message = outcome.message;
+    health.preserved_paths = outcome.preserved_paths;
+    health.retry_cleanup_available = outcome.retry_cleanup_available;
+    health.rollback_available = outcome.rollback_available;
+    return health;
 }
 
 bool deploy_model_candidate(const std::filesystem::path& app_data_dir,

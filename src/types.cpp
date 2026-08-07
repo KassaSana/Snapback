@@ -215,6 +215,23 @@ void from_json(const json& j, ClassifierStatus& v) {
     v.model_id = opt_str(j, "modelId");
 }
 
+// ---- ModelDeploymentHealth -------------------------------------------------
+
+void to_json(json& j, const ModelDeploymentHealth& v) {
+    j = json{{"state", v.state},
+             {"preservedPaths", v.preserved_paths},
+             {"retryCleanupAvailable", v.retry_cleanup_available},
+             {"rollbackAvailable", v.rollback_available}};
+    put_opt(j, "message", v.message);
+}
+void from_json(const json& j, ModelDeploymentHealth& v) {
+    v.state = get_or<std::string>(j, "state", "ok");
+    v.message = opt_str(j, "message");
+    v.preserved_paths = get_or<std::vector<std::string>>(j, "preservedPaths", {});
+    v.retry_cleanup_available = get_or<bool>(j, "retryCleanupAvailable", false);
+    v.rollback_available = get_or<bool>(j, "rollbackAvailable", false);
+}
+
 // ---- HealthStatus ----------------------------------------------------------
 
 void to_json(json& j, const HealthStatus& v) {
@@ -225,7 +242,8 @@ void to_json(json& j, const HealthStatus& v) {
              {"captureStalled", v.capture_stalled},
              {"predictionSuppressionReason", v.prediction_suppression_reason},
              {"permissions", v.permissions},
-             {"classifier", v.classifier}};
+             {"classifier", v.classifier},
+             {"modelDeployment", v.model_deployment}};
     if (v.last_prediction_age_secs) {
         j["lastPredictionAgeSecs"] = *v.last_prediction_age_secs;
     } else {
@@ -252,6 +270,7 @@ void from_json(const json& j, HealthStatus& v) {
         get_or<std::string>(j, "predictionSuppressionReason", "none");
     v.permissions = get_or<PermissionStatus>(j, "permissions", {});
     v.classifier = get_or<ClassifierStatus>(j, "classifier", {});
+    v.model_deployment = get_or<ModelDeploymentHealth>(j, "modelDeployment", {});
 }
 
 // ---- SnapbackPayload -------------------------------------------------------

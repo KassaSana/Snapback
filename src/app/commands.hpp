@@ -302,6 +302,10 @@ inline void register_commands(webview::webview& w, AppState& state,
         result["classifier"] = state.reload_classifier_model();
         return result;
     });
+    // Roadmap 13.8. Retries startup-safe deployment cleanup without restarting the app.
+    bind_cmd("retry_model_deployment_cleanup", [&state](const json&) {
+        return json(state.retry_model_deployment_cleanup());
+    });
 }
 
 // Push an event to the frontend. The shim listens on window.__snapback.emit. MUST run

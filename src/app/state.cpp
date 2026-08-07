@@ -150,11 +150,12 @@ static_assert(kDefaultIdleThresholdSecs * 1000 == kDefaultIdleThresholdMs,
               "AppSettings' default idle threshold must match the detector's");
 
 AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger,
-                   Clock* clock)
+                   Clock* clock, ModelDeploymentHealth model_deployment)
     : storage_(std::move(storage)),
       app_data_dir_(std::move(app_data_dir)),
       logger_(logger),
-      clock_(clock) {
+      clock_(clock),
+      model_deployment_health_(std::move(model_deployment)) {
     if (!app_data_dir_.empty()) {
         // Pass the logger: 7.19's whole point is that a settings file which failed to parse
         // used to become defaults with nothing written anywhere.
@@ -619,9 +620,16 @@ HealthStatus AppState::health() const {
     const auto live = live_read_snapshot();
     HealthStatus h;
     const bool capture_failed = capture_.failed();
-    h.status = capture_failed
-                   ? "capture_failed"
-                   : engine_running_.load(std::memory_order_relaxed) ? "online" : "offline";
+    const bool engine_running = engine_running_.load(std::memory_order_relaxed);
+    if (capture_failed) {
+        h.status = "capture_failed";
+    } else if (!engine_running) {
+        h.status = "offline";
+    } else if (model_deployment_health_.state == "degraded") {
+        h.status = "degraded";
+    } else {
+        h.status = "online";
+    }
     h.capture_running = capture_.running();
     h.capture_failed = capture_failed;
     h.capture_failure_reason = capture_.failure_reason();
@@ -644,6 +652,7 @@ HealthStatus AppState::health() const {
     h.classifier.backend = live->classifier.backend;
     h.classifier.onnx_runtime_enabled = live->classifier.onnx_runtime_enabled;
     h.classifier.model_path = live->classifier.model_path;
+    h.model_deployment = model_deployment_health_;
     return h;
 }
 
@@ -1144,7 +1153,8 @@ ClassifierStatus AppState::classifier_status() const {
 
 ClassifierStatus AppState::reload_classifier_model() {
     std::lock_guard lock(mutex_);
-    training_deploy::recover_model_deployment(app_data_dir_);
+    model_deployment_health_ = training_deploy::to_model_deployment_health(
+        training_deploy::recover_model_deployment_for_startup(app_data_dir_));
     if (const auto model = OnnxModel::resolve_model_path(app_data_dir_)) {
         OnnxModel::instance().init(*model);
     } else {
@@ -1154,6 +1164,15 @@ ClassifierStatus AppState::reload_classifier_model() {
     live_read_dirty_ = true;
     publish_live_read_unlocked();
     return live_read_snapshot()->classifier;
+}
+
+ModelDeploymentHealth AppState::retry_model_deployment_cleanup() {
+    std::lock_guard lock(mutex_);
+    model_deployment_health_ = training_deploy::to_model_deployment_health(
+        training_deploy::retry_model_deployment_cleanup(app_data_dir_));
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
+    return model_deployment_health_;
 }
 
 PermissionStatus AppState::refresh_permissions() {

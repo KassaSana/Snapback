@@ -28,6 +28,14 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
       <p className="helper-text">
         Capture: {health.captureRunning ? "running" : "stopped"}. Classifier: {health.classifier.backend}.
       </p>
+      {health.modelDeployment.state === "degraded" ? (
+        <p className="diagnostics-error">
+          Model deployment cleanup is degraded: {health.modelDeployment.message}
+          {health.modelDeployment.preservedPaths.length > 0
+            ? ` Preserved: ${health.modelDeployment.preservedPaths.join(", ")}.`
+            : ""}
+        </p>
+      ) : null}
       {health.captureFailureReason || health.overlayFailureReason || health.persistenceFailureReason ? (
         <p className="diagnostics-error">
           {health.captureFailureReason || health.overlayFailureReason || health.persistenceFailureReason}

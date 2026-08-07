@@ -14,6 +14,7 @@ import type {
   ExportTrainingResult,
   FocusSummary,
   HealthStatus,
+  ModelDeploymentHealth,
   PermissionStatus,
   PomodoroPhase,
   PomodoroStatus,
@@ -176,6 +177,19 @@ export function mapClassifierStatus(raw: Record<string, unknown>): ClassifierSta
   };
 }
 
+export function mapModelDeploymentHealth(raw: Record<string, unknown>): ModelDeploymentHealth {
+  const preserved = raw.preserved_paths ?? raw.preservedPaths;
+  return {
+    state: String(raw.state ?? "ok") === "degraded" ? "degraded" : "ok",
+    message: (raw.message ?? null) as string | null,
+    preservedPaths: Array.isArray(preserved) ? preserved.map((path) => String(path)) : [],
+    retryCleanupAvailable: Boolean(
+      raw.retry_cleanup_available ?? raw.retryCleanupAvailable ?? false,
+    ),
+    rollbackAvailable: Boolean(raw.rollback_available ?? raw.rollbackAvailable ?? false),
+  };
+}
+
 export function mapHealth(raw: Record<string, unknown>): HealthStatus {
   return {
     status: String(raw.status ?? "offline"),
@@ -206,6 +220,11 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
     ),
     classifier: mapClassifierStatus(
       (raw.classifier as Record<string, unknown>) ?? {},
+    ),
+    modelDeployment: mapModelDeploymentHealth(
+      (raw.model_deployment as Record<string, unknown>) ??
+        (raw.modelDeployment as Record<string, unknown>) ??
+        {},
     ),
   };
 }

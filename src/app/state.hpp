@@ -47,7 +47,8 @@ public:
     // exercised only through `_for_test` methods that took `now_ms` as an argument — which is
     // exactly what 7.14 objects to. A test clock can advance an hour instantly.
     explicit AppState(Storage storage, std::filesystem::path app_data_dir = {},
-                      Logger* logger = nullptr, Clock* clock = nullptr);
+                      Logger* logger = nullptr, Clock* clock = nullptr,
+                      ModelDeploymentHealth model_deployment = {});
     ~AppState() noexcept;
 
     // Spawn capture and the engine tick thread.
@@ -153,6 +154,7 @@ public:
 
     ClassifierStatus classifier_status() const;
     ClassifierStatus reload_classifier_model();
+    ModelDeploymentHealth retry_model_deployment_cleanup();
     PermissionStatus refresh_permissions();
     // Prompt for capture permission (macOS Accessibility dialog), then report the result.
     // User-initiated only — refresh_permissions() is the pollable, dialog-free version.
@@ -350,6 +352,7 @@ private:
     std::optional<SnapbackPayload> latest_snapback_;
     std::optional<std::int64_t> last_prediction_at_ms_;
     AppSettings settings_;
+    ModelDeploymentHealth model_deployment_health_;
     FocusMode focus_mode_ = FocusMode::Normal;
     double last_prediction_secs_ = -1.0;
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event

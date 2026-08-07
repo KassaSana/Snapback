@@ -17,6 +17,7 @@ import {
   mapSummaryReport,
   mapSummaryExportResult,
   mapGoalCategories,
+  mapModelDeploymentHealth,
   mapPrediction,
   mapSettings,
   mapSession,
@@ -94,6 +95,14 @@ export type ClassifierStatus = {
   modelId: string | null;
 };
 
+export type ModelDeploymentHealth = {
+  state: "ok" | "degraded";
+  message: string | null;
+  preservedPaths: string[];
+  retryCleanupAvailable: boolean;
+  rollbackAvailable: boolean;
+};
+
 export type HealthStatus = {
   status: string;
   captureRunning: boolean;
@@ -107,6 +116,7 @@ export type HealthStatus = {
   predictionSuppressionReason: string;
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
+  modelDeployment: ModelDeploymentHealth;
 };
 
 export type DiagnosticsSnapshot = {
@@ -505,6 +515,10 @@ export const api = {
   rollbackClassifierModel: async () => {
     const raw = await invoke<Record<string, unknown>>("rollback_classifier_model");
     return mapRollbackClassifierModelResult(raw);
+  },
+  retryModelDeploymentCleanup: async () => {
+    const raw = await invoke<Record<string, unknown>>("retry_model_deployment_cleanup");
+    return mapModelDeploymentHealth(raw);
   },
   refreshPermissions: async () => {
     const raw = await invoke<Record<string, unknown>>("refresh_permissions");

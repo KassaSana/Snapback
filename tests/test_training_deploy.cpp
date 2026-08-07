@@ -1,5 +1,6 @@
 #include "doctest_wrapper.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -288,6 +289,60 @@ TEST_CASE("model deployment recovery retains commit state until debris cleanup s
     CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
     CHECK_FALSE(
         std::filesystem::exists(app_data.path / "model_deploy.transaction.committed"));
+}
+
+TEST_CASE("startup recovery returns degraded instead of throwing on locked cleanup debris") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model_quality.json",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+    write_text(app_data.path / "model_deploy.transaction.json",
+               "{\"hadModel\":true,\"hadQuality\":true,"
+               "\"hadPreviousModel\":false,\"hadPreviousQuality\":false}");
+    write_text(app_data.path / "model_deploy.transaction.committed", "committed\n");
+    write_text(app_data.path / "model.onnx.deploy-backup" / "locked", "x");
+
+    const auto outcome = training_deploy::recover_model_deployment_for_startup(app_data.path);
+
+    CHECK_FALSE(outcome.ok);
+    CHECK(outcome.retry_cleanup_available);
+    CHECK(outcome.message.find("cleanup") != std::string::npos);
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    CHECK(std::find(outcome.preserved_paths.begin(), outcome.preserved_paths.end(),
+                    "model.onnx") != outcome.preserved_paths.end());
+}
+
+TEST_CASE("startup recovery succeeds after cleanup debris is released") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model_deploy.transaction.json",
+               "{\"hadModel\":true,\"hadQuality\":true,"
+               "\"hadPreviousModel\":false,\"hadPreviousQuality\":false}");
+    write_text(app_data.path / "model_deploy.transaction.committed", "committed\n");
+    write_text(app_data.path / "model.onnx.deploy-backup" / "locked", "x");
+
+    CHECK_FALSE(training_deploy::recover_model_deployment_for_startup(app_data.path).ok);
+    std::filesystem::remove(app_data.path / "model.onnx.deploy-backup" / "locked");
+
+    const auto retry = training_deploy::retry_model_deployment_cleanup(app_data.path);
+    CHECK(retry.ok);
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_deploy.transaction.json"));
+}
+
+TEST_CASE("to_model_deployment_health maps degraded outcomes for health reporting") {
+    training_deploy::ModelDeploymentRecoveryOutcome outcome;
+    outcome.ok = false;
+    outcome.message = "could not finish committed model deployment cleanup";
+    outcome.preserved_paths = {"model.onnx", "model_deploy.transaction.json"};
+    outcome.retry_cleanup_available = true;
+    outcome.rollback_available = true;
+
+    const auto health = training_deploy::to_model_deployment_health(outcome);
+    CHECK(health.state == "degraded");
+    REQUIRE(health.message.has_value());
+    CHECK(health.message->find("cleanup") != std::string::npos);
+    CHECK(health.retry_cleanup_available);
+    CHECK(health.rollback_available);
 }
 
 TEST_CASE("rollback_model swaps the deployed model and quality metadata") {
