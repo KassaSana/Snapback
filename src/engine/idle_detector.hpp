@@ -62,6 +62,14 @@ public:
     [[nodiscard]] IdleState state() const noexcept { return state_; }
     [[nodiscard]] std::int64_t threshold_ms() const noexcept { return threshold_ms_; }
 
+    // Change the threshold on a running detector (Roadmap 7.23 — the five minutes are a
+    // setting now, not a constant). The activity baseline is deliberately kept: shortening
+    // the threshold should be able to conclude the user is *already* idle on the next poll,
+    // which is what someone who just lowered it expects to happen. Raising it past the
+    // current gap does not retroactively wake an idle detector either — that is `on_activity`'s
+    // job, and only real input should claim the user is back.
+    void set_threshold_ms(std::int64_t threshold_ms) noexcept { threshold_ms_ = threshold_ms; }
+
     // How long since the last input as of `now_ms` (0 before any activity is seen).
     [[nodiscard]] std::int64_t idle_for_ms(std::int64_t now_ms) const noexcept {
         if (!seen_activity_) return 0;

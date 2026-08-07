@@ -143,6 +143,21 @@ public:
     // than an error. A span is never closed earlier than it started.
     bool close_session_span(const std::string& session_id, const std::string& ended_at);
 
+    // Closes a span that a previous process left open — a crash, a kill, a power loss.
+    //
+    // The moment the user stopped attending is unknowable after the fact, so this closes at
+    // the last time the session has *evidence* of them: the newest prediction, context
+    // snapshot, or snapback event it recorded. Closing at "now" instead would credit every
+    // offline hour as attended, which is the one answer that is certainly wrong. A session
+    // with an open span and no recorded evidence collapses to a zero-length span rather than
+    // guessing.
+    //
+    // `feature_snapshots` is deliberately not consulted: its `timestamp` column is monotonic
+    // uptime seconds (Roadmap 7.24), not wall clock, so it cannot be compared with a span.
+    //
+    // Returns the timestamp it closed at, or nullopt when no span was open.
+    std::optional<std::string> close_dangling_session_span(const std::string& session_id);
+
     // Sum of closed spans, plus the open one measured to `now`. Returns nullopt when the
     // session has no spans at all — meaning "never measured", not "zero" — so callers can
     // fall back to elapsed instead of reporting a fabricated 0.

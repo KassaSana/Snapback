@@ -233,6 +233,8 @@ export type TrainingDeployStatus = {
 
 export type AppSettings = {
   defaultFocusMode: string;
+  /** Roadmap 7.23. Seconds without input before a session stops counting as attended. */
+  idleThresholdSecs: number;
 };
 
 export type PrivacySettings = {
@@ -466,6 +468,10 @@ export const api = {
     return mapAutostartStatus(raw);
   },
   setFocusMode: (mode: string) => invoke("set_focus_mode", { mode }),
+  setIdleThreshold: async (seconds: number) => {
+    const raw = await invoke<Record<string, unknown>>("set_idle_threshold", { seconds });
+    return mapSettings(raw ?? {});
+  },
   dismissSnapback: () => invoke("dismiss_snapback"),
   reloadClassifierModel: async () => {
     const raw = await invoke<Record<string, unknown>>("reload_classifier_model");

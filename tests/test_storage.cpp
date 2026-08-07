@@ -340,6 +340,94 @@ TEST_CASE("a backwards clock cannot make a span subtract time") {
     CHECK(*active == 0);
 }
 
+TEST_CASE("a dangling span closes at the newest evidence across every source") {
+    // Roadmap 7.23. The end of a crashed session's span is unknowable, so it is set to the
+    // last time the session recorded *anything* about the user. Two evidence tables are
+    // seeded with the newest written first, so the query is proven to take the maximum rather
+    // than whichever table it happens to read last. (`snapback_events` is the third source the
+    // query reads; nothing writes that table yet -- Roadmap 2.15 -- so it cannot be seeded
+    // here. It is queried anyway so this keeps working the day 2.15 lands.)
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("crashed", FocusMode::Normal);
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+
+    ContextSnapshotDto snapshot;
+    snapshot.app_name = "Cursor";
+    snapshot.window_title = "storage.cpp";
+    snapshot.summary = "editing";
+    snapshot.timestamp = "2026-08-05T09:45:00Z";  // the newest, and deliberately written first
+    storage->save_context_snapshot(session.session_id, snapshot);
+
+    PredictionRecord prediction;
+    prediction.session_id = session.session_id;
+    prediction.timestamp = "2026-08-05T09:20:00Z";
+    storage->insert_prediction(prediction);
+
+    const auto closed_at = storage->close_dangling_session_span(session.session_id);
+    REQUIRE(closed_at.has_value());
+    CHECK(*closed_at == "2026-08-05T09:45:00Z");
+    CHECK_FALSE(storage->has_open_span(session.session_id));
+
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T18:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 45 * 60);  // not the nine hours since
+}
+
+TEST_CASE("a dangling span with no evidence closes where it started") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("silent", FocusMode::Normal);
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+
+    const auto closed_at = storage->close_dangling_session_span(session.session_id);
+    REQUIRE(closed_at.has_value());
+    CHECK(*closed_at == "2026-08-05T09:00:00Z");
+
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T18:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 0);
+}
+
+TEST_CASE("evidence older than the span does not shorten it") {
+    // Evidence from before the span opened belongs to an earlier stretch. Closing at it would
+    // end the span before it began; MAX(started_at, ...) is what stops that, and this proves
+    // the fallback is chosen rather than relying on the SQL clamp downstream.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("stale evidence", FocusMode::Normal);
+
+    PredictionRecord prediction;
+    prediction.session_id = session.session_id;
+    prediction.timestamp = "2026-08-05T08:00:00Z";
+    storage->insert_prediction(prediction);
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+
+    const auto closed_at = storage->close_dangling_session_span(session.session_id);
+    REQUIRE(closed_at.has_value());
+    CHECK(*closed_at == "2026-08-05T09:00:00Z");
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T18:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 0);
+}
+
+TEST_CASE("closing a dangling span reports nothing when none is open") {
+    // The ordinary case on every clean start. It must be distinguishable from "closed one",
+    // because the caller logs a warning for the crash case and should not cry wolf.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("clean", FocusMode::Normal);
+    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
+
+    CHECK_FALSE(storage->close_dangling_session_span(session.session_id).has_value());
+    CHECK_FALSE(storage->close_dangling_session_span("no-such-session").has_value());
+    // The already-closed span is untouched.
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 10 * 60);
+}
+
 TEST_CASE("deleting a session deletes its spans") {
     // delete_session enumerates child tables explicitly rather than trusting ON DELETE
     // CASCADE, because historical databases were not all created with it. A new child table

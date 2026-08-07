@@ -85,6 +85,12 @@ void delete_activity_exports(const std::filesystem::path& app_data_dir) {
 
 }  // namespace
 
+// The threshold lives in two headers for layering reasons — types.hpp cannot include the
+// engine, and idle_detector.hpp must stay dependency-free — so the one place that owns both
+// asserts they agree. Without this, changing one default silently leaves the other behind.
+static_assert(kDefaultIdleThresholdSecs * 1000 == kDefaultIdleThresholdMs,
+              "AppSettings' default idle threshold must match the detector's");
+
 AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* logger,
                    Clock* clock)
     : storage_(std::move(storage)),
@@ -101,8 +107,29 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     active_session_ = storage_.active_session();
     latest_prediction_ = storage_.latest_prediction();
     focus_mode_ = settings_.default_focus_mode;
+    idle_detector_.set_threshold_ms(settings_.idle_threshold_secs * 1000);
     context_tracker_.set_goal_categories(settings_.goal_categories);
+    hydrate_session_attendance_unlocked();
     publish_live_read_unlocked();
+}
+
+void AppState::hydrate_session_attendance_unlocked() {
+    // Roadmap 7.23. A span still open when the process starts belongs to a process that never
+    // closed it — a crash, a kill, a power loss. Left alone it keeps counting to "now", so an
+    // app that crashed on Friday would report the weekend as attended.
+    //
+    // Attendance restarts from zero rather than being inherited: the previous stretch ended
+    // at whatever the database last saw, and whether the user is here *now* is a question the
+    // idle detector answers on the first tick, not one startup should assume.
+    session_attended_ = false;
+    if (!active_session_) return;
+    const auto closed_at = storage_.close_dangling_session_span(active_session_->session_id);
+    if (!closed_at) return;
+    std::ostringstream message;
+    message << "session " << active_session_->session_id
+            << ": closed a span left open by a previous run at " << *closed_at
+            << " (its last recorded activity)";
+    log().warn(message.str());
 }
 
 AppState::~AppState() noexcept {
@@ -174,25 +201,37 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     if (const auto poll_edge = idle_detector_.poll(now_ms); poll_edge != IdleTransition::None) {
         edge = poll_edge;
     }
+    const bool now_idle = idle_detector_.state() == IdleState::Idle;
+
     // Roadmap 7.23 / ADR-0005. This is the action idle_detector.hpp has always documented
     // ("5 minutes of no input pauses the session", "callers act on the edges, not the level")
     // and never performed — until now the edges only emitted a UI event.
     //
+    // Driven by the *level* rather than by `edge`, because attendance changes for reasons an
+    // idle edge cannot express. A process that crashed mid-session reopens with its span
+    // already closed by hydration and no edge on the way; an edge-driven rule would then wait
+    // for the user to go idle and come back before recording another second of attended time.
+    // Comparing "should there be an open span" against "is there one" covers the edges and
+    // those gaps with the same two lines.
+    //
     // Recorded here rather than acted on here: this runs under mutex_, which is deliberately
     // in-memory only, so engine_tick performs the write in its storage phase.
-    if (active_session_ && edge != IdleTransition::None) {
-        pending_span_session_ = active_session_->session_id;
-        pending_span_opens_ = edge == IdleTransition::WokeUp;
-        // An offset, not a timestamp: Storage stamps with its own clock, so handing it one of
-        // ours would compare two clocks against each other. Back-dating matters because we
-        // only notice a whole idle threshold late — stamping the pause at detection time
-        // would credit those five minutes as attended on every single pause.
-        pending_span_secs_ago_ =
-            pending_span_opens_ ? 0 : idle_detector_.idle_for_ms(now_ms) / 1000;
+    const bool should_attend = active_session_.has_value() && !now_idle;
+    if (should_attend != session_attended_) {
+        if (active_session_) {
+            pending_span_session_ = active_session_->session_id;
+            pending_span_opens_ = should_attend;
+            // An offset, not a timestamp: Storage stamps with its own clock, so handing it one
+            // of ours would compare two clocks against each other. Back-dating matters because
+            // we only notice a whole idle threshold late — stamping the pause at detection
+            // time would credit those five minutes as attended on every single pause.
+            pending_span_secs_ago_ =
+                should_attend ? 0 : idle_detector_.idle_for_ms(now_ms) / 1000;
+        }
+        session_attended_ = should_attend;
     }
 
     // Roadmap 2.7 / ADR-0005. Watch for sustained work with no session running.
-    const bool now_idle = idle_detector_.state() == IdleState::Idle;
     // Private mode means "do not record". Prompting someone to start recording while they
     // have said that is the wrong direction entirely, so the timer does not advance — and it
     // resets, so turning private mode off does not immediately fire a nudge earned while it
@@ -314,6 +353,26 @@ void AppState::stop_engine() noexcept {
     engine_running_.store(false, std::memory_order_relaxed);
     capture_.stop();
     if (engine_thread_.joinable()) engine_thread_.join();
+    close_open_span_on_shutdown();
+}
+
+void AppState::close_open_span_on_shutdown() noexcept {
+    // Roadmap 7.23. A clean exit is the last moment we know the user was attending, so the
+    // span is closed here rather than left for the next launch's crash hydration to guess at.
+    // Closing it after the engine thread has joined means nothing can reopen it behind us.
+    //
+    // noexcept and best-effort: this runs on the shutdown path and from the destructor, where
+    // an escaping exception would call std::terminate over a bookkeeping write. A span left
+    // open by a failure here is exactly the case hydration already handles on next start.
+    try {
+        std::lock_guard state_lock(mutex_);
+        std::lock_guard store_lock(storage_mutex_);
+        if (!active_session_ || !session_attended_) return;
+        storage_.close_session_span_now(active_session_->session_id);
+        session_attended_ = false;
+    } catch (...) {
+        // Deliberately swallowed; see above.
+    }
 }
 
 SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
@@ -338,6 +397,11 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // Starting a session is by definition the user attending it, so the first span opens with
     // it — stamped by Storage's clock, the same one that stamped started_at.
     storage_.begin_session_span_now(active_session_->session_id);
+    session_attended_ = true;
+    // Pressing Start *is* input. Without this the detector can still be Idle from before the
+    // session existed, and the next tick would read "should not be attended" and immediately
+    // close the span that was just opened.
+    idle_detector_.on_activity(steady_now_ms());
     last_prediction_secs_ = -1.0;
     reload_app_rules_unlocked();  // pick up any rules edited while idle
     live_read_dirty_ = true;
@@ -353,6 +417,7 @@ void AppState::stop_session() {
         // Close the span before ending the session: once ended_at is set, "the span that is
         // still open" is no longer a meaningful thing to be holding.
         storage_.close_session_span_now(active_session_->session_id);
+        session_attended_ = false;
         storage_.end_session(active_session_->session_id);
         save_auto_session_label_unlocked(active_session_->session_id);
         active_session_.reset();
@@ -373,6 +438,7 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
     save_auto_session_label_unlocked(session_id);
     if (active_session_ && active_session_->session_id == session_id) {
         pomodoro_.reset();
+        session_attended_ = false;
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
@@ -409,6 +475,10 @@ bool AppState::delete_session(const std::string& session_id) {
     // erased. Reset exactly what stop_session() resets, plus the derived prediction state.
     if (active_session_ && active_session_->session_id == session_id) {
         pomodoro_.reset();
+        // Its spans went with the row, so there is nothing left to close and nothing to
+        // reconcile against. Leaving this true would make the next tick's level check see a
+        // change that is not there.
+        session_attended_ = false;
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
@@ -535,6 +605,7 @@ void AppState::delete_all_activity_data() {
     delete_activity_exports(app_data_dir_);
     storage_.delete_all_activity_data();
     active_session_.reset();
+    session_attended_ = false;  // every span was deleted with the rows above
     latest_prediction_.reset();
     latest_snapback_.reset();
     last_prediction_at_ms_.reset();
@@ -625,6 +696,22 @@ AppSettings AppState::settings() const {
 PrivacySettings AppState::privacy_settings() const {
     std::lock_guard lock(mutex_);
     return PrivacySettings{settings_.private_mode, settings_.excluded_apps, true};
+}
+
+void AppState::set_idle_threshold_secs(std::int64_t seconds) {
+    // Roadmap 7.23. Rejected before anything is mutated, so a bad value leaves both the live
+    // detector and settings.json exactly as they were.
+    if (seconds < kMinIdleThresholdSecs || seconds > kMaxIdleThresholdSecs) {
+        throw std::runtime_error("idle threshold must be between " +
+                                 std::to_string(kMinIdleThresholdSecs) + " and " +
+                                 std::to_string(kMaxIdleThresholdSecs) + " seconds");
+    }
+    std::lock_guard lock(mutex_);
+    settings_.idle_threshold_secs = seconds;
+    // Applied to the running detector, not just stored: a threshold that takes effect on the
+    // next launch is not a setting, it is a note to self.
+    idle_detector_.set_threshold_ms(seconds * 1000);
+    if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, settings_);
 }
 
 void AppState::set_private_mode(bool enabled) {

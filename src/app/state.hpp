@@ -114,6 +114,9 @@ public:
     AppSettings settings() const;
     PrivacySettings privacy_settings() const;
     void set_private_mode(bool enabled);
+    // Roadmap 7.23. How long without input pauses attended time. Throws (changing nothing)
+    // outside [kMinIdleThresholdSecs, kMaxIdleThresholdSecs].
+    void set_idle_threshold_secs(std::int64_t seconds);
     void set_privacy_exclusions(std::vector<std::string> exclusions);
     AnalyticsSummary analytics() const;
     SummaryReport summary_report(const std::string& window) const;
@@ -235,6 +238,16 @@ private:
     std::optional<std::string> pending_span_session_;
     std::int64_t pending_span_secs_ago_ = 0;  // how far to back-date a pause
     bool pending_span_opens_ = false;  // true = the user came back, false = they went away
+    // Whether the active session currently has a span open. Attendance is tracked as a level
+    // rather than inferred from idle edges alone, because it also changes at start, stop,
+    // shutdown, and crash hydration — none of which produce an edge. Guarded by mutex_.
+    bool session_attended_ = false;
+    // Closes a span a previous process left open, at the session's last recorded activity.
+    // Requires mutex_ + storage_mutex_ (the constructor runs before either can be contended).
+    void hydrate_session_attendance_unlocked();
+    // Closes the open span on the way out, so a clean exit does not look like a crash to the
+    // next launch. Takes both locks itself; safe to call when nothing is open.
+    void close_open_span_on_shutdown() noexcept;
 
     // Hyperfocus guardrail state. `hyperfocus_latched_` prevents a second nudge inside the
     // same unbroken stretch; `hyperfocus_minutes_` is the pending emit drained by the tick.

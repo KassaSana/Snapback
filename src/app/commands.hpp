@@ -116,6 +116,12 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(nullptr);
     });
     bind_cmd(w, "get_settings", [&state](const json&) { return json(state.settings()); });
+    // Roadmap 7.23. Returns the whole settings object rather than null so the UI renders the
+    // value the app actually accepted, not the one it optimistically sent.
+    bind_cmd(w, "set_idle_threshold", [&state](const json& a) {
+        state.set_idle_threshold_secs(a.at("seconds").get<std::int64_t>());
+        return json(state.settings());
+    });
     bind_cmd(w, "get_privacy_settings", [&state](const json&) {
         return json(state.privacy_settings());
     });

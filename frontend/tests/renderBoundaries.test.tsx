@@ -46,6 +46,9 @@ describe("prediction render boundaries", () => {
     const onStart = vi.fn();
     const onStop = vi.fn();
     const onAutostartChange = vi.fn();
+    // Stable identity, like the memoized callback App passes: an inline arrow would be a new
+    // prop on every parent render and would defeat the very boundary this test measures.
+    const onIdleThresholdChange = vi.fn();
 
     function ParentWithTelemetry() {
       const [predictionSequence, setPredictionSequence] = useState(0);
@@ -66,6 +69,10 @@ describe("prediction render boundaries", () => {
             error={null}
             onAutostartChange={onAutostartChange}
             status={autostartStatus}
+            idleThresholdSecs={300}
+            idleThresholdBusy={false}
+            idleThresholdError={null}
+            onIdleThresholdChange={onIdleThresholdChange}
           />
         </>
       );

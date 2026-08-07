@@ -27,6 +27,7 @@ import type {
   TrainingDeployStatus,
   RollbackClassifierModelResult,
 } from "./api";
+import { normalizeIdleThresholdSecs } from "./idleThreshold";
 
 const FOCUS_MODE_VALUES = new Set(["deep", "normal", "recovery"]);
 
@@ -48,6 +49,9 @@ export function mapSettings(raw: Record<string, unknown>): AppSettings {
   return {
     defaultFocusMode: normalizeFocusMode(
       raw.default_focus_mode ?? raw.defaultFocusMode,
+    ),
+    idleThresholdSecs: normalizeIdleThresholdSecs(
+      raw.idle_threshold_secs ?? raw.idleThresholdSecs,
     ),
   };
 }

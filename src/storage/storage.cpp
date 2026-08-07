@@ -909,6 +909,38 @@ bool Storage::close_session_span(const std::string& session_id, const std::strin
     return sqlite3_changes(db_) > 0;
 }
 
+std::optional<std::string> Storage::close_dangling_session_span(const std::string& session_id) {
+    // The last wall-clock evidence the user was present during this session. MAX over a
+    // UNION ALL of per-table maxima rather than a UNION of rows: each subquery is answered by
+    // that table's session index, so this stays three index probes no matter how many rows
+    // the session recorded.
+    Stmt evidence(db_,
+                  "SELECT MAX(ts) FROM ("
+                  "  SELECT MAX(timestamp) AS ts FROM predictions WHERE session_id = ?1"
+                  "  UNION ALL SELECT MAX(timestamp) FROM context_snapshots WHERE session_id = ?1"
+                  "  UNION ALL SELECT MAX(timestamp) FROM snapback_events WHERE session_id = ?1)");
+    evidence.bind(1, session_id);
+    std::optional<std::string> last_seen;
+    if (evidence.step_row() && sqlite3_column_type(evidence.get(), 0) != SQLITE_NULL) {
+        last_seen = column_text(evidence.get(), 0);
+    }
+
+    Savepoint savepoint(*this, "close_dangling_session_span");
+    // Read the span's own start before closing, so the caller can be told what it settled on
+    // even when there was no evidence at all and MAX() falls back to the start.
+    Stmt open_span(db_,
+                   "SELECT started_at FROM session_spans "
+                   "WHERE session_id = ?1 AND ended_at IS NULL ORDER BY id DESC LIMIT 1");
+    open_span.bind(1, session_id);
+    if (!open_span.step_row()) return std::nullopt;
+    const std::string started_at = column_text(open_span.get(), 0);
+
+    const std::string ended_at = last_seen && *last_seen > started_at ? *last_seen : started_at;
+    close_session_span(session_id, ended_at);
+    savepoint.release();
+    return ended_at;
+}
+
 std::optional<std::uint64_t> Storage::active_secs(const std::string& session_id,
                                                   const std::string& now) {
     // ROUND per span, not a truncating CAST over the sum. julianday returns a double, so a

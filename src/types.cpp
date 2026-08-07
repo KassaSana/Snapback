@@ -358,13 +358,22 @@ void to_json(json& j, const AppSettings& v) {
     j = json{{"defaultFocusMode", v.default_focus_mode},
              {"privateMode", v.private_mode},
              {"excludedApps", v.excluded_apps},
-             {"goalCategories", v.goal_categories}};
+             {"goalCategories", v.goal_categories},
+             {"idleThresholdSecs", v.idle_threshold_secs}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
     v.private_mode = get_or<bool>(j, "privateMode", false);
     v.excluded_apps = get_or<std::vector<std::string>>(j, "excludedApps", {});
     v.goal_categories = get_or<std::vector<GoalCategory>>(j, "goalCategories", {});
+    // A settings.json written before 7.23 has no such key, and a hand-edited one can hold
+    // anything. Both land on the default rather than on a threshold that would disable idle
+    // detection (<= 0) or pause a session mid-sentence.
+    const auto threshold = get_or<std::int64_t>(j, "idleThresholdSecs", kDefaultIdleThresholdSecs);
+    v.idle_threshold_secs =
+        (threshold >= kMinIdleThresholdSecs && threshold <= kMaxIdleThresholdSecs)
+            ? threshold
+            : kDefaultIdleThresholdSecs;
 }
 
 void to_json(json& j, const PrivacySettings& v) {

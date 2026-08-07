@@ -33,6 +33,7 @@ import { usePomodoro } from "./usePomodoro";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
 import { useAutostart } from "./useAutostart";
+import { useIdleThreshold } from "./useIdleThreshold";
 import { useAnalytics } from "./useAnalytics";
 import { usePrivacy } from "./usePrivacy";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
@@ -44,6 +45,7 @@ export default function App() {
   const [surface, setSurface] = useState<Surface>("now");
   const feedback = useFeedback();
   const autostart = useAutostart();
+  const idleThreshold = useIdleThreshold();
   const { analytics, refreshAnalytics } = useAnalytics();
 
   const live = useLiveData();
@@ -451,6 +453,10 @@ export default function App() {
           error={autostart.error}
           onAutostartChange={autostart.setEnabled}
           status={autostart.status}
+          idleThresholdSecs={idleThreshold.seconds}
+          idleThresholdBusy={idleThreshold.busy}
+          idleThresholdError={idleThreshold.error}
+          onIdleThresholdChange={idleThreshold.update}
         />
 
         <PrivacyCard

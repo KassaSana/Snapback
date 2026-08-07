@@ -398,6 +398,192 @@ TEST_CASE("a session with no idle edges still records attended time") {
     CHECK(recap.active_secs.has_value());
 }
 
+TEST_CASE("reopening after a crash closes the dangling span at the last recorded activity") {
+    // Roadmap 7.23. A process that dies with a span open leaves it open. Left alone,
+    // active_secs measures that span to "now", so an app that crashed on Friday reports the
+    // whole weekend as attended -- the one answer that is certainly wrong.
+    //
+    // File-backed rather than in-memory, because the behaviour under test only exists across
+    // two processes and an in-memory database cannot be reopened.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        // Two spans of ten minutes each, then a third left open an hour before "now" -- the
+        // shape a crash leaves behind. Written straight to Storage so the timestamps are
+        // explicit rather than at the mercy of how fast the test runs.
+        auto session = storage->create_session("crashed", FocusMode::Normal);
+        session_id = session.session_id;
+        storage->begin_session_span(session_id, "2026-08-05T09:00:00Z");
+        REQUIRE(storage->close_session_span(session_id, "2026-08-05T09:10:00Z"));
+        storage->begin_session_span(session_id, "2026-08-05T09:20:00Z");
+
+        // The last thing the session managed to record before dying.
+        PredictionRecord prediction;
+        prediction.session_id = session_id;
+        prediction.timestamp = "2026-08-05T09:30:00Z";
+        storage->insert_prediction(prediction);
+    }
+
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        // Constructing AppState is what hydrates; nothing else has run yet.
+        AppState state(std::move(*storage), temp.path);
+        CHECK_FALSE(AppStateTestAccess::has_open_span(state, session_id));
+
+        // Ten closed minutes plus ten from the dangling span, ended at its last evidence.
+        // Not the hours since -- that is the whole point.
+        const auto recap = state.session_recap(session_id);
+        REQUIRE(recap.active_secs.has_value());
+        CHECK(*recap.active_secs == 1200);
+    }
+}
+
+TEST_CASE("a dangling span with nothing recorded collapses instead of guessing") {
+    // No prediction, no context snapshot, no snapback event: the session has no evidence the
+    // user was ever present after the span opened. Closing at "now" would invent attended
+    // time out of an unknown, so it closes where it started and contributes nothing.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("no evidence", FocusMode::Normal).session_id;
+        storage->begin_session_span(session_id, "2026-08-05T09:00:00Z");
+    }
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path);
+        CHECK_FALSE(AppStateTestAccess::has_open_span(state, session_id));
+        const auto recap = state.session_recap(session_id);
+        REQUIRE(recap.active_secs.has_value());
+        CHECK(*recap.active_secs == 0);
+    }
+}
+
+TEST_CASE("attendance resumes after hydration without waiting for an idle round trip") {
+    // The bug the level-based rule exists to prevent. Hydration closes the dangling span, and
+    // there is no idle edge on the way back in -- the user never went idle, the process died.
+    // An edge-driven rule would then record nothing until the user walked away for five
+    // minutes and returned, which is a silent hole in the headline number.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("resume me", FocusMode::Normal).session_id;
+        storage->begin_session_span(session_id, "2026-08-05T09:00:00Z");
+    }
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        ManualClock clock;
+        clock.set_steady_ms(0);
+        AppState state(std::move(*storage), temp.path, nullptr, &clock);
+        REQUIRE_FALSE(AppStateTestAccess::has_open_span(state, session_id));
+
+        AppStateTestAccess::engine_tick(state);
+        CHECK(AppStateTestAccess::has_open_span(state, session_id));
+    }
+}
+
+TEST_CASE("a clean shutdown closes the open span") {
+    // Roadmap 7.23. Exiting normally is the last moment we know the user was attending, so
+    // the span closes here rather than being left for the next launch to reconstruct from
+    // whatever rows happen to exist.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path);
+        session_id = state.start_session("clean exit", FocusMode::Normal).session_id;
+        REQUIRE(AppStateTestAccess::has_open_span(state, session_id));
+    }  // ~AppState -> stop_engine -> close_open_span_on_shutdown
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK_FALSE(reopened->has_open_span(session_id));
+}
+
+TEST_CASE("the idle threshold is a setting, applied live and persisted") {
+    // Roadmap 7.23. Five minutes was inherited from a constant. It is a judgement about the
+    // user's working rhythm -- reading and thinking look identical to a keyboard -- so it
+    // belongs to the user.
+    TempDir temp;
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path, nullptr, &clock);
+    CHECK(state.settings().idle_threshold_secs == kDefaultIdleThresholdSecs);
+
+    const auto session = state.start_session("short fuse", FocusMode::Normal);
+    state.set_idle_threshold_secs(60);
+    CHECK(state.settings().idle_threshold_secs == 60);
+
+    // One minute of silence is now enough, where the default would have needed five.
+    AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+    clock.advance_ms(60'000);
+    CHECK(AppStateTestAccess::update_idle(state, clock.steady_ms(), false) ==
+          IdleTransition::WentIdle);
+    AppStateTestAccess::engine_tick(state);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    // And it survives a restart, because it was written to settings.json.
+    CHECK(load_app_settings(temp.path).idle_threshold_secs == 60);
+}
+
+TEST_CASE("an out-of-range idle threshold is rejected and changes nothing") {
+    // Rejected rather than clamped: a clamped value looks like a setting someone chose. The
+    // check runs before any mutation, so both the live detector and settings.json are
+    // untouched -- 7.26's guarantee, applied to the one setter that could reach it first.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+
+    state.set_idle_threshold_secs(120);
+    CHECK_THROWS_AS(state.set_idle_threshold_secs(kMinIdleThresholdSecs - 1), std::runtime_error);
+    CHECK_THROWS_AS(state.set_idle_threshold_secs(kMaxIdleThresholdSecs + 1), std::runtime_error);
+    CHECK_THROWS_AS(state.set_idle_threshold_secs(0), std::runtime_error);
+    CHECK(state.settings().idle_threshold_secs == 120);
+    CHECK(load_app_settings(temp.path).idle_threshold_secs == 120);
+}
+
+TEST_CASE("mouse movement alone counts as presence") {
+    // Roadmap 7.23 asked whether scroll and mouse movement should count before this was
+    // treated as a trustworthy default. They do, and this pins it: a mouse-only stretch --
+    // reading a document, dragging a scrollbar -- is someone at their desk, and the OS idle
+    // timers every user already has calibrated their expectations on agree. Requiring
+    // keystrokes would report a reviewer or a reader as absent for their whole session.
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("reading", FocusMode::Normal);
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    CHECK(AppStateTestAccess::update_idle(state, clock.steady_ms(), false) ==
+          IdleTransition::WentIdle);
+    AppStateTestAccess::engine_tick(state);
+    REQUIRE_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    // A mouse move is input, so the detector wakes and the span reopens.
+    CaptureEvent moved;
+    moved.event_type = EventType::MouseMove;
+    moved.timestamp_secs = 1.0;
+    AppStateTestAccess::process_event(state, moved);
+    CHECK(AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true) ==
+          IdleTransition::WokeUp);
+    AppStateTestAccess::engine_tick(state);
+    CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
+}
+
 TEST_CASE("AppState binds Pomodoro to an active session and exposes transition edges") {
     // ROADMAP 7.14: this used to call `start_pomodoro_for_test(100)`, a public method on the
     // shipping class whose only reason to exist was passing `now_ms` in by hand. 11.4's

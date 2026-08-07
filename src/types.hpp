@@ -298,6 +298,15 @@ struct GoalCategory {
     std::vector<std::string> keywords;
 };
 
+// Roadmap 7.23. Bounds on the AFK threshold the user may choose. The floor exists because a
+// few seconds of silence is ordinary thought, not absence, and a threshold under it would
+// shred one attended stretch into hundreds of spans. The ceiling exists because a threshold
+// long enough to cover a lunch break stops measuring attendance at all. Out-of-range values
+// are rejected rather than clamped: a rejected setting is visible, a clamped one is not.
+inline constexpr std::int64_t kDefaultIdleThresholdSecs = 300;
+inline constexpr std::int64_t kMinIdleThresholdSecs = 30;
+inline constexpr std::int64_t kMaxIdleThresholdSecs = 3600;
+
 // New C++ settings DTO. Persisted in app-data/settings.json and exposed to the
 // frontend with camelCase keys.
 struct AppSettings {
@@ -305,6 +314,11 @@ struct AppSettings {
     bool private_mode{};
     std::vector<std::string> excluded_apps;
     std::vector<GoalCategory> goal_categories;
+    // Roadmap 7.23 / ADR-0005. How long without input before a session is treated as
+    // unattended and its active-time span pauses. Five minutes was inherited from
+    // kDefaultIdleThresholdMs and is a judgement about the user's working rhythm, not a
+    // constant of the system: reading and thinking look identical to a keyboard.
+    std::int64_t idle_threshold_secs{kDefaultIdleThresholdSecs};
 };
 
 struct PrivacySettings {

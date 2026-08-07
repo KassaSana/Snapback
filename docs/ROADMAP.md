@@ -679,16 +679,49 @@ internals, and the benchmark harness.
   the component suite cannot run on this machine at all (**11.11**), so anything reachable
   only through a rendered component is untested locally.
 
-  **Still open:** hydrate pause state after a crash (a dangling open span on reopen); close on
-  shutdown; make the
-  inherited five-minute threshold configurable; and verify whether scroll/mouse movement
-  counts as presence before treating it as a trustworthy default. Tests for process reopen
-  with an open span still need the injected clock that Storage does not yet have.
+  **DONE 2026-08-06 — the four remaining pieces landed.**
 
-  Tests need an injected clock across start → idle → wake → stop, process reopen with an open
-  span, repeated edges, clock rollback, replacement, and a legacy session with no spans. The
-  sum must never double-count overlaps or include an idle interval. Coordinate the lifecycle
-  boundary with **7.25** rather than adding a second owner for stop/replacement.
+  **Crash hydration, and the design change it forced.** `Storage::close_dangling_session_span`
+  closes a span a dead process left open, at the newest wall-clock evidence the session
+  recorded — the last prediction, context snapshot, or snapback event. Not at "now": an app
+  that crashed on Friday would otherwise report the weekend as attended. With no evidence at
+  all the span collapses to zero length rather than guessing. `feature_snapshots` is
+  deliberately not consulted; its `timestamp` is monotonic uptime (**7.24**), not wall clock.
+
+  Writing that exposed a real hole in the edge-driven design. Hydration closes the span with
+  **no idle edge on the way back in** — the user never went idle, the process died — so an
+  edge-driven rule records nothing more until they walk away for five minutes and return.
+  Attendance is now a **level**: `session_attended_` versus "should there be a span open",
+  compared once per tick. That subsumes the old edges and covers start, stop, replacement,
+  shutdown, and hydration with the same two lines. It also required marking activity on
+  `start_session` — starting a session while the detector was already Idle would otherwise
+  open a span and immediately close it on the next tick.
+
+  **Clean shutdown closes the span** in `stop_engine()`, after the engine thread joins so
+  nothing can reopen it behind us. It is `noexcept` and best-effort: a failure there lands in
+  exactly the case hydration already handles.
+
+  **The threshold is a setting.** `AppSettings::idle_threshold_secs`, bounded to
+  [30 s, 1 h], applied to the running detector rather than only stored, persisted through
+  `settings.json`, exposed as `set_idle_threshold`, and offered as a picker in Settings.
+  Out-of-range is **rejected before any mutation**, not clamped — a clamped value is
+  indistinguishable from one the user chose. A pre-7.23 settings file has no such key and
+  lands on the default. `IdleDetector::set_threshold_ms` keeps the activity baseline, so
+  lowering the threshold can conclude the user is *already* idle on the next poll.
+
+  **Scroll and mouse movement do count as presence**, and a case now pins it. Requiring
+  keystrokes would report a reviewer or a reader as absent for their entire session, and every
+  OS idle timer the user has already calibrated on agrees. Windows currently classifies wheel
+  traffic as `MouseClick` (**7.27** owns that), which is input either way.
+
+  **The injected clock Storage does not have turned out not to be needed.** Reopen is testable
+  without one by writing the spans with explicit timestamps and reopening a file-backed
+  database — which is closer to the real failure anyway, since a crash is two processes rather
+  than one clock. Ten new cases across storage and app state; suite **366 pass**.
+
+  **Still open, and deliberately elsewhere:** the lifecycle atomicity questions (a failed start
+  leaving the old session live, restart not restoring the saved focus mode) belong to **7.25**
+  rather than to a second owner here.
 
 - **7.22 — DONE 2026-08-05.** `S` `Storage::migrate()` now copies the database to
   `focoflow.db.pre-v<N>.bak` immediately before applying any migration, named for the version

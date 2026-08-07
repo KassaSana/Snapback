@@ -30,6 +30,7 @@
   "get_autostart",
   "set_autostart",
   "set_focus_mode",
+  "set_idle_threshold",
   "dismiss_snapback",
   "get_app_rules",
   "upsert_app_rule",
