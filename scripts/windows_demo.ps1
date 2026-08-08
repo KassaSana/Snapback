@@ -183,7 +183,14 @@ if ($NoLaunch) {
             Stop-Process -Id $process.Id -Force
         }
     }
-    Write-Host "Windows demo $BuildConfig build is ready at $BuildPath"
+    # Prove the build produced something before reporting success. Exit codes catch a build
+    # that *failed*; they cannot catch one that never ran. This step reported success in 20
+    # seconds for ten consecutive CI runs — far too fast to have configured, compiled and
+    # tested anything — because unchecked exit codes let every command fall through to here.
+    # The launch path below already resolves the exe; -NoLaunch is the CI path, and it was
+    # the one with nothing to check.
+    $builtExe = Find-SnapbackExe
+    Write-Host "Windows demo $BuildConfig build is ready at $BuildPath ($builtExe)"
     exit 0
 }
 
