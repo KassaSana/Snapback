@@ -92,6 +92,9 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
+- **Autostart scratch tests no longer leave registry keys after a crash (11.10).** The
+  fixture sweeps `test-<pid>-*` orphans whose process is gone and leaves live concurrent
+  cases untouched.
 - **ADRs no longer cite a file that clones do not have (12.7).** The Darwin-dev fact lives
   inline; the doc-path guard rejects a link or relative path to the gitignored local agent
   file even when it exists on the author's machine.

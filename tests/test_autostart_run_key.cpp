@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <string>
+#include <vector>
 
 #include "app/autostart_run_key.hpp"
 
@@ -34,6 +35,89 @@ namespace {
 // writes under SnapbackTests.
 constexpr wchar_t kScratchRoot[] = L"Software\\SnapbackTests";
 
+bool process_still_running(DWORD pid) {
+    // PROCESS_QUERY_LIMITED_INFORMATION is enough to learn STILL_ACTIVE vs exited, and is
+    // what a sibling test process is willing to grant us. A missing pid is the stale case
+    // 11.10 exists to clean up.
+    HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!handle) return false;
+    DWORD status = 0;
+    const BOOL ok = GetExitCodeProcess(handle, &status);
+    CloseHandle(handle);
+    return ok && status == STILL_ACTIVE;
+}
+
+bool parse_scratch_leaf_pid(const std::wstring& leaf, DWORD& pid) {
+    // Leaves are test-<pid>-<n>. Anything else under the root is not ours to delete.
+    if (leaf.rfind(L"test-", 0) != 0) return false;
+    const auto rest = leaf.substr(5);
+    const auto dash = rest.find(L'-');
+    if (dash == std::wstring::npos || dash == 0) return false;
+    try {
+        const unsigned long parsed = std::stoul(rest.substr(0, dash));
+        if (parsed == 0 || parsed > 0xFFFFFFFFul) return false;
+        pid = static_cast<DWORD>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void sweep_stale_scratch_keys() {
+    HKEY root = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kScratchRoot, 0, KEY_ENUMERATE_SUB_KEYS, &root) !=
+        ERROR_SUCCESS) {
+        return;  // nothing has ever been created here
+    }
+
+    std::vector<std::wstring> stale;
+    wchar_t name[256];
+    for (DWORD index = 0;; ++index) {
+        DWORD name_chars = static_cast<DWORD>(sizeof(name) / sizeof(name[0]));
+        const LONG status = RegEnumKeyExW(root, index, name, &name_chars, nullptr, nullptr,
+                                          nullptr, nullptr);
+        if (status == ERROR_NO_MORE_ITEMS) break;
+        if (status != ERROR_SUCCESS) break;
+        DWORD pid = 0;
+        if (parse_scratch_leaf_pid(name, pid) && !process_still_running(pid)) {
+            stale.emplace_back(name);
+        }
+    }
+    RegCloseKey(root);
+
+    // Delete after enumerating: mutating the key while RegEnumKeyEx walks it skips entries.
+    for (const auto& leaf : stale) {
+        run_key::delete_key(std::wstring(kScratchRoot) + L"\\" + leaf);
+    }
+}
+
+DWORD unused_pid() {
+    // Find a pid OpenProcess cannot see. Start high so we skip System (4) and similar.
+    for (DWORD pid = 100000; pid < 100000 + 10000; ++pid) {
+        if (!process_still_running(pid)) return pid;
+    }
+    return 1;  // PID 1 is not a Windows userspace process
+}
+
+bool key_exists(const std::wstring& path) {
+    HKEY key = nullptr;
+    const LONG status =
+        RegOpenKeyExW(HKEY_CURRENT_USER, path.c_str(), 0, KEY_QUERY_VALUE, &key);
+    if (status != ERROR_SUCCESS) return false;
+    RegCloseKey(key);
+    return true;
+}
+
+bool create_empty_key(const std::wstring& path) {
+    HKEY key = nullptr;
+    const LONG status =
+        RegCreateKeyExW(HKEY_CURRENT_USER, path.c_str(), 0, nullptr, REG_OPTION_NON_VOLATILE,
+                        KEY_SET_VALUE, nullptr, &key, nullptr);
+    if (status != ERROR_SUCCESS) return false;
+    RegCloseKey(key);
+    return true;
+}
+
 // A unique scratch key per fixture. The pid keeps concurrent test processes apart (11.1
 // registers each case as its own CTest entry, so several can run at once) and the counter
 // keeps cases within one process apart.
@@ -41,6 +125,10 @@ struct ScratchKey {
     std::wstring path;
 
     ScratchKey() {
+        // Roadmap 11.10. A crash or REQUIRE abort skips the destructor, so a previous
+        // process's test-<pid>-<n> can linger. Sweep only keys whose pid is gone — deleting
+        // the SnapbackTests root would race a concurrent case still using it.
+        sweep_stale_scratch_keys();
         static std::atomic<int> counter{0};
         path = std::wstring(kScratchRoot) + L"\\test-" +
                std::to_wstring(GetCurrentProcessId()) + L"-" +
@@ -124,6 +212,35 @@ TEST_CASE("the production key path is the real Run key and is never written by t
     CHECK(run_key::user_run_key_path() ==
           L"Software\\Microsoft\\Windows\\CurrentVersion\\Run");
     CHECK(run_key::value_name() == L"Snapback");
+}
+
+TEST_CASE("scratch fixture sweeps keys left by a dead process") {
+    // Roadmap 11.10. Plant a leaf named for a pid that is not running, then construct a
+    // fixture. The sweep must remove the orphan and must not remove a leaf named for us —
+    // that is the concurrent-case key a root delete would destroy.
+    const auto stale_path =
+        std::wstring(kScratchRoot) + L"\\test-" + std::to_wstring(unused_pid()) + L"-0";
+    const auto live_path = std::wstring(kScratchRoot) + L"\\test-" +
+                           std::to_wstring(GetCurrentProcessId()) + L"-9999";
+    REQUIRE(create_empty_key(stale_path));
+    REQUIRE(create_empty_key(live_path));
+    REQUIRE(key_exists(stale_path));
+    REQUIRE(key_exists(live_path));
+
+    ScratchKey scratch;
+    CHECK_FALSE(key_exists(stale_path));
+    CHECK(key_exists(live_path));
+    (void)scratch;
+
+    run_key::delete_key(live_path);
+}
+
+TEST_CASE("scratch leaf names that are not test-pid-n are left alone") {
+    const auto foreign = std::wstring(kScratchRoot) + L"\\keep-this";
+    REQUIRE(create_empty_key(foreign));
+    ScratchKey scratch;
+    CHECK(key_exists(foreign));
+    run_key::delete_key(foreign);
 }
 
 #endif  // _WIN32

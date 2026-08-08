@@ -114,7 +114,7 @@ because none of them displaces anything in it. They are listed here so they are 
 | ~~**12.7** ADR-0002's dead link~~ | `S` | **Done 2026-08-08** — Darwin-dev fact is inline; guard forbids citing the gitignored file |
 | **4.13** nothing watches the ONNX pin | `S` | 8.9 made it trustworthy, not current |
 | **11.9** capture invariant unverified | `S` | The test does not catch its own bug on GCC; MSVC never measured |
-| **11.10** stale test registry key | `S` | A crashed test process skips its cleanup |
+| ~~**11.10** stale test registry key~~ | `S` | **Done 2026-08-08** — fixture sweeps `test-<pid>-*` whose process is gone |
 | ~~**7.21** settings durability~~ | `S` | **Done 2026-08-07** — temp + directory durable flush after 7.19's atomic rename |
 | **4.12** formatter + static analysis | `M` | Neither exists for either language |
 
@@ -3381,7 +3381,15 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   Ties to **6.6** — a GCC job makes this the difference between "known-inert here" and a
   silently useless test running on every push.
 
-- **11.10 — A crashed test process leaves a registry key behind.** `S`
+- **11.10 — DONE 2026-08-08.** `S` `ScratchKey` now sweeps `HKCU\Software\SnapbackTests`
+  for `test-<pid>-<n>` leaves whose pid is not a running process, before allocating its own
+  leaf. A concurrent case named for a live pid is left alone; a leaf that does not match the
+  naming pattern is left alone. Two cases plant a dead-pid orphan and a foreign name and
+  check both outcomes.
+
+  The original finding was:
+
+- **11.10 (original finding) — A crashed test process leaves a registry key behind.** `S`
   Opened 2026-08-04 alongside 11.7. `tests/test_autostart_run_key.cpp` creates
   `HKCU\Software\SnapbackTests\test-<pid>-<n>` and deletes it in the fixture destructor. A
   crash, an abort, or a `REQUIRE` that terminates the process skips that destructor, so the
