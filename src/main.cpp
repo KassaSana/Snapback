@@ -80,7 +80,7 @@ std::optional<std::string> env_var(const char* name) {
 // on both platforms: the same predictable path for every account, in a directory every local
 // account can write to. That produced a working app quietly recording window titles somewhere
 // anyone could read, with nothing said about it.
-DataDirChoice app_data_dir() {
+snapback::DataDirChoice app_data_dir() {
     const auto override_dir = env_var("SNAPBACK_DATA_DIR").value_or("");
 #if defined(_WIN32)
     // %APPDATA% first, %LOCALAPPDATA% second: both are per-user by default, and the second is
@@ -94,9 +94,9 @@ DataDirChoice app_data_dir() {
     const std::filesystem::path home =
         home_var ? std::filesystem::path(*home_var) / ".snapback" : std::filesystem::path{};
 #endif
-    return choose_data_dir(override_dir.empty() ? std::filesystem::path{}
-                                                : std::filesystem::path(override_dir),
-                           home);
+    return snapback::choose_data_dir(override_dir.empty() ? std::filesystem::path{}
+                                                          : std::filesystem::path(override_dir),
+                                     home);
 }
 
 // The directory the running binary lives in — NOT the working directory. Those coincide

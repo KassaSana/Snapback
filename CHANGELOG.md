@@ -95,6 +95,10 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
+- **The desktop app compiles again on macOS and Linux.** `main.cpp` referred to
+  `DataDirChoice` and `choose_data_dir` unqualified from an anonymous namespace, while both
+  live in `namespace snapback` and the `using namespace` sits inside `main()`. The app build
+  and the macOS launch smoke had been red for three commits.
 - **Excluded apps no longer earn the missed-session nudge (2.7).** Time in an excluded app
   resets the untracked stretch the same way private mode does, so leaving Slack does not
   immediately ask you to start recording.
