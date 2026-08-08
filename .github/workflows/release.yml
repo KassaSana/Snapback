@@ -123,7 +123,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Same source of truth as ci.yml. Pinned literally here, this workflow could ship a
+          # release built on a different Node than the one CI tested the frontend on.
+          node-version-file: frontend/.nvmrc
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 

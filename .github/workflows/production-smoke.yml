@@ -27,7 +27,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          # Same source of truth as ci.yml, so this smoke exercises the Node the frontend is
+          # actually tested and released on.
+          node-version-file: frontend/.nvmrc
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -42,9 +44,19 @@ jobs:
         timeout-minutes: 8
         run: .\scripts\gui_smoke_windows.ps1 -BuildDir build-windows-package -NoBuild
 
+      # The ZIP name carries CMake's PROJECT_VERSION. Spelled out literally, this step would
+      # start failing the weekly smoke the first Monday after any version bump — and the
+      # failure would look like a packaging bug rather than a stale string. Resolve what was
+      # actually built instead, and insist on exactly one match so a leftover ZIP from an
+      # earlier version cannot be validated in place of this run's.
       - name: Validate packaged ZIP
         shell: pwsh
-        run: .\scripts\validate_windows_package.ps1 -PackageZip build-windows-package\Snapback-0.2.0-win64.zip
+        run: |
+          $zips = @(Get-ChildItem "build-windows-package\Snapback-*-win64.zip")
+          if ($zips.Count -ne 1) {
+            throw "Expected exactly one packaged ZIP, found $($zips.Count): $($zips.Name -join ', ')"
+          }
+          .\scripts\validate_windows_package.ps1 -PackageZip $zips[0].FullName
 
       - name: Upload unsigned package
         uses: actions/upload-artifact@v7
