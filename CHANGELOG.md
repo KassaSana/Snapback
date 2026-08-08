@@ -92,6 +92,9 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
+- **ADRs no longer cite a file that clones do not have (12.7).** The Darwin-dev fact lives
+  inline; the doc-path guard rejects a link or relative path to the gitignored local agent
+  file even when it exists on the author's machine.
 - **Privileged webview commands require a trusted document (8.14).** A per-launch capability
   token is handed only to the packaged UI; external links open in the system browser.
 - **Model deployment recovery no longer bricks startup (13.8).** Cleanup debris degrades

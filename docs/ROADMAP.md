@@ -111,7 +111,7 @@ because none of them displaces anything in it. They are listed here so they are 
 |---|---|---|
 | ~~**6.6** GCC-on-Windows CI job~~ | `S` | **Done 2026-08-06** — `windows-gcc`, verified locally at 376/376 on MinGW-w64 UCRT |
 | **9.13** orphaned `v0.2.0` tag | `S` `decision` | No release baseline exists; 9.11's gate would reject the tag |
-| **12.7** ADR-0002's dead link | `S` | An ADR cites a file absent from every clone, with a guard exemption hiding it |
+| ~~**12.7** ADR-0002's dead link~~ | `S` | **Done 2026-08-08** — Darwin-dev fact is inline; guard forbids citing the gitignored file |
 | **4.13** nothing watches the ONNX pin | `S` | 8.9 made it trustworthy, not current |
 | **11.9** capture invariant unverified | `S` | The test does not catch its own bug on GCC; MSVC never measured |
 | **11.10** stale test registry key | `S` | A crashed test process skips its cleanup |
@@ -3558,22 +3558,29 @@ later moved.
   registration, which is presumably why it was skipped. ADR-0002's six-item blocker list does
   not include it, so this is post-v1 unless that accepted scope is explicitly revised.
 
-- **12.7 — ADR-0002 links to a file that exists in no clone.** `S`
-  Opened 2026-08-04. [`docs/adr/0002-v1-supports-windows-and-macos.md`](adr/0002-v1-supports-windows-and-macos.md)
-  links to `../../CLAUDE.md` as evidence for where development happens. That file is
-  gitignored and absent from every clone, so the link is broken for everyone but Kassa —
-  and `scripts/check_doc_paths.py` carries an explicit `EXPECTED_ABSENT` exemption that keeps
-  the guard quiet about it.
+- **12.7 — DONE 2026-08-08.** `S` ADR-0002 now states inline that development happens on
+  Darwin, so the accepted record no longer depends on a gitignored local file. ADR-0001
+  describes that same local-only guidance file without citing it as a path. `.gitignore`
+  comments why those names stay untracked. `scripts/check_doc_paths.py` dropped the
+  exemption that treated the missing file as fine: a markdown link or relative path to it
+  now fails even when the file exists on the author's machine. Bare prose that names the
+  file is still allowed (the attribution note in this document does exactly that). A
+  self-test inside the guard pins the three cases.
 
-  **The exemption is doing real damage here, not just hiding a dead link.** Tier 12 exists
-  because docs asserted things no reader could check; an ADR citing a file nobody can open is
-  that exact failure, inside the document type meant to be the durable record. ADRs are
-  append-only, so the fix is not to edit the claim — it is to make the citation resolve:
-  restate the fact inline (development happens on Darwin) so the ADR stands alone, then drop
-  the exemption so the guard stops normalising an unresolvable path.
+  The original finding was:
 
-  Same treatment for the two other `CLAUDE.md` references, in ADR-0001 and the `.gitignore`
-  comment. Then `check_doc_paths.py` should fail on any *new* reference to it.
+- **12.7 (original finding) — ADR-0002 linked to a file that exists in no clone.** `S`
+  Opened 2026-08-04. ADR-0002 used a relative markdown link to a gitignored local agent
+  file as evidence for where development happens. That file is absent from every clone, so
+  the link was broken for everyone but Kassa — and `scripts/check_doc_paths.py` carried an
+  explicit exemption that kept the guard quiet about it.
+
+  **The exemption was doing real damage, not just hiding a dead link.** Tier 12 exists
+  because docs asserted things no reader could check; an ADR citing a file nobody can open
+  is that exact failure, inside the document type meant to be the durable record. ADRs are
+  append-only, so the fix was not to drop the Darwin-dev claim — it was to make the
+  citation resolve by restating the fact inline, then drop the exemption so the guard stops
+  normalising an unresolvable path.
 
 ---
 

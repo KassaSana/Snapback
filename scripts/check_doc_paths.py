@@ -54,8 +54,14 @@ GENERATED = {
     "frontend/coverage/": "same",
 }
 
+# Paths a doc must not cite, even when the file happens to exist on the author's machine.
+# CLAUDE.md is gitignored; a clone never has it, so a link that "works for Kassa" is a
+# broken citation for everyone else. Roadmap 12.7: restate the fact inline instead.
+FORBIDDEN_CLONE_ABSENT = {
+    "CLAUDE.md": "gitignored local agent file; restating the fact inline is the citation",
+}
+
 EXPECTED_ABSENT = {
-    "CLAUDE.md": "local-only agent guidance; intentionally ignored and absent from clones",
     "third_party/onnxruntime": "optional vendored ONNX Runtime; CI vendors it, absent locally",
     "third_party/onnxruntime/": "same",
     "third_party/onnxruntime/lib": "same -- the lib subdir docs tell you to populate",
@@ -91,6 +97,9 @@ def candidate_paths(text: str) -> set[str]:
             part = part.strip(",;")
             if part.startswith(ROOTS):
                 found.add(part)
+            elif ("/" in part or "\\" in part) and _leaf_name(part) in FORBIDDEN_CLONE_ABSENT:
+                # `../../CLAUDE.md` is a path claim even though it does not start at ROOTS.
+                found.add(part)
     return found
 
 
@@ -108,6 +117,16 @@ def link_paths(text: str, doc_dir: str) -> set[str]:
     return out
 
 
+def _leaf_name(path: str) -> str:
+    return os.path.basename(path.replace("\\", "/"))
+
+
+def forbidden_reason(path: str) -> str | None:
+    """Why this reference is illegal even if the file exists locally, or None."""
+    cleaned = LINE_SUFFIX.sub("", path).rstrip(".,;)")
+    return FORBIDDEN_CLONE_ABSENT.get(_leaf_name(cleaned))
+
+
 def resolve(path: str) -> tuple[bool, str]:
     """(ok, note). Globs must match at least one file."""
     cleaned = LINE_SUFFIX.sub("", path).rstrip(".,;)")
@@ -115,6 +134,9 @@ def resolve(path: str) -> tuple[bool, str]:
         return True, "placeholder"
     if cleaned in GENERATED:
         return True, f"generated ({GENERATED[cleaned]})"
+    reason = forbidden_reason(path)
+    if reason:
+        return False, f"forbidden ({reason})"
     if cleaned in EXPECTED_ABSENT:
         return True, f"expected absent ({EXPECTED_ABSENT[cleaned]})"
     full = os.path.join(REPO, cleaned)
@@ -124,8 +146,36 @@ def resolve(path: str) -> tuple[bool, str]:
     return os.path.exists(full), ""
 
 
+def self_test() -> list[str]:
+    """Pin 12.7: a CLAUDE.md *path* is always illegal; naming the file in prose is not."""
+    problems: list[str] = []
+    adr_dir = os.path.join(REPO, "docs", "adr")
+
+    link_refs = candidate_paths("") | link_paths("[see](../../CLAUDE.md)", adr_dir)
+    if not any(forbidden_reason(path) for path in link_refs):
+        problems.append("markdown link to CLAUDE.md was not rejected")
+
+    path_refs = candidate_paths("cites `../../CLAUDE.md` as evidence")
+    if not any(forbidden_reason(path) for path in path_refs):
+        problems.append("inline relative path to CLAUDE.md was not rejected")
+
+    prose_refs = candidate_paths("an existing commit refers to `CLAUDE.md` by name")
+    if any(forbidden_reason(path) for path in prose_refs):
+        problems.append("bare prose name CLAUDE.md was treated as a path citation")
+
+    return problems
+
+
 def main() -> int:
     verbose = "--verbose" in sys.argv
+
+    self_test_problems = self_test()
+    if self_test_problems:
+        print("self-test failed:")
+        for problem in self_test_problems:
+            print(f"  {problem}")
+        return 1
+
     docs = [os.path.join("docs", f) for f in sorted(os.listdir(os.path.join(REPO, "docs")))
             if f.endswith(".md")]
     docs += [os.path.join("docs", "adr", f)
@@ -133,12 +183,12 @@ def main() -> int:
              if f.endswith(".md")]
     docs += ["README.md", os.path.join("scripts", "README.md")]
 
-    failures: list[tuple[str, str]] = []
+    failures: list[tuple[str, str, str]] = []
     checked = 0
     for doc in docs:
         full_doc = os.path.join(REPO, doc)
         if not os.path.exists(full_doc):
-            failures.append((doc, "<doc itself is missing>"))
+            failures.append((doc, "<doc itself is missing>", ""))
             continue
         with open(full_doc, encoding="utf-8") as fh:
             text = fh.read()
@@ -146,15 +196,16 @@ def main() -> int:
             checked += 1
             ok, note = resolve(path)
             if not ok:
-                failures.append((doc, path))
+                failures.append((doc, path, note))
             elif verbose:
                 print(f"  ok  {doc}: {path} {note}".rstrip())
 
     print(f"checked {checked} path references across {len(docs)} docs")
     if failures:
         print(f"\n{len(failures)} broken reference(s):")
-        for doc, path in failures:
-            print(f"  {doc}: {path}")
+        for doc, path, note in failures:
+            suffix = f" — {note}" if note else ""
+            print(f"  {doc}: {path}{suffix}")
         return 1
     print("all referenced paths exist")
     return 0

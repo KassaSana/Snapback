@@ -20,8 +20,8 @@ The port itself is finished and the pipeline runs end to end, so what remains is
   and tray are compiled and CI-smoke-tested (`src/app/tray_windows.cpp`,
   `src/snapback/overlay_windows.cpp`), and start-on-login works via the HKCU Run key
   (`src/app/autostart.cpp`). None of it has ever been used interactively for a day.
-- **macOS is the author's own machine and the least verified platform.** Per
-  [CLAUDE.md](../../CLAUDE.md), development happens on Darwin. The `CGEventTap` in
+- **macOS is the author's own machine and the least verified platform.** Development
+  happens on Darwin. The `CGEventTap` in
   `src/capture/input_hook_macos.mm` was fixed on 2026-07-20 and has never run on real
   hardware with Accessibility permission granted (Roadmap 0.3). Tray and overlay are
   deliberate no-ops (`src/app/tray_stub.cpp`, `src/snapback/overlay_stub.cpp`), and there

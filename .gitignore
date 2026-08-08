@@ -14,5 +14,6 @@ third_party/onnxruntime/
 .cache/
 compile_commands.json
 AGENTS.md
+# Local-only agent guidance; never part of a clone. Docs must not cite these as paths.
 CLAUDE.md
 CLAUDE.local.md

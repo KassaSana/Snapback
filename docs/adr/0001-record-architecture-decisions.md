@@ -21,10 +21,10 @@ Two forces made this urgent:
 - **Reasoning already evaporated twice.** 5.4 and 5.6 were implemented, then reverted,
   because the rationale for the existing behavior lived only in a chat log. The revert cost
   more than the original decision would have.
-- **This repo's docs assert false things in both directions.** `CLAUDE.md` alone carried six
-  wrong claims as of 2026-07-20 — work described as missing that existed, work marked done
-  whose code never ran. A prose status table is not a durable record of *why*; a dated,
-  append-only file is.
+- **This repo's docs assert false things in both directions.** A local-only agent guidance
+  file (gitignored, absent from every clone) alone carried six wrong claims as of
+  2026-07-20 — work described as missing that existed, work marked done whose code never
+  ran. A prose status table is not a durable record of *why*; a dated, append-only file is.
 
 The decision sessions are next in the roadmap sequence, so the home has to exist before
 them, not after.
