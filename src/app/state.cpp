@@ -312,8 +312,11 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     // Private mode means "do not record". Prompting someone to start recording while they
     // have said that is the wrong direction entirely, so the timer does not advance — and it
     // resets, so turning private mode off does not immediately fire a nudge earned while it
-    // was on.
-    if (active_session_ || now_idle || settings_.private_mode) {
+    // was on. Excluded apps are the same promise scoped to one process: time in Slack must
+    // not earn a "start recording" prompt, and leaving Slack starts a fresh stretch.
+    const bool in_excluded_app =
+        !last_capture_app_.empty() && app_matches_exclusion_unlocked(last_capture_app_);
+    if (active_session_ || now_idle || settings_.private_mode || in_excluded_app) {
         // A session is recording, or the stretch ended. Either way there is nothing to nudge
         // about, and the clock restarts from the next burst of activity.
         untracked_since_ms_.reset();
@@ -1212,13 +1215,16 @@ std::vector<std::string> AppState::normalize_privacy_exclusions(
     return out;
 }
 
-bool AppState::is_private_event_unlocked(const CaptureEvent& event) const {
-    if (settings_.private_mode) return true;
-    const auto app = lower_copy(event.app_name);
+bool AppState::app_matches_exclusion_unlocked(const std::string& app_name) const {
+    const auto app = lower_copy(app_name);
     return std::any_of(settings_.excluded_apps.begin(), settings_.excluded_apps.end(),
                        [&](const auto& exclusion) {
                            return contains_whole_app_name_phrase(app, lower_copy(exclusion));
                        });
+}
+
+bool AppState::is_private_event_unlocked(const CaptureEvent& event) const {
+    return settings_.private_mode || app_matches_exclusion_unlocked(event.app_name);
 }
 
 void AppState::submit_label(FocusLabel label, const std::string& source,
@@ -1371,6 +1377,9 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     // Requires mutex_. Pure in-memory: advances features/classifier/tracker + latest_*,
     // and returns the rows to write (nullopt if this event produced nothing to persist).
     // No storage I/O — persistence happens later under storage_mutex_.
+    // Remember the foreground app even when the event is dropped: 2.7's untracked nudge
+    // consults it so excluded-app time cannot earn a "start recording" prompt.
+    last_capture_app_ = event.app_name;
     if (is_private_event_unlocked(event)) return std::nullopt;
     last_event_secs_ = event.timestamp_secs;
 

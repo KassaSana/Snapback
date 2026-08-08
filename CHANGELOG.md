@@ -95,6 +95,9 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
+- **Excluded apps no longer earn the missed-session nudge (2.7).** Time in an excluded app
+  resets the untracked stretch the same way private mode does, so leaving Slack does not
+  immediately ask you to start recording.
 - **Capture failure/running contradiction is observed from a second thread (11.9).** The
   old same-thread sample could not see inverted stores on MinGW; a paired sampler now fails
   that bug and stays quiet when the stores are ordered correctly.

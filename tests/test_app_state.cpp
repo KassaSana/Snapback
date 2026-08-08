@@ -334,6 +334,82 @@ TEST_CASE("private mode never raises the untracked nudge") {
     CHECK_FALSE(contains(work_without_session(state, clock, 5), "untracked_work"));
 }
 
+TEST_CASE("excluded apps never raise the untracked nudge") {
+    // Roadmap 2.7 leftover. Private mode already reset the timer; excluded apps are the
+    // same promise for one process. Typing in Slack for half an hour must not earn a
+    // "start recording" prompt, and leaving Slack starts a fresh stretch rather than
+    // firing a nudge earned while excluded.
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    state.set_privacy_exclusions({"Slack"});
+
+    std::vector<std::string> seen;
+    state.set_emit_hook([&seen](const std::string& name, const std::string&, std::uint64_t) {
+        seen.push_back(name);
+    });
+    for (int minute = 0; minute < 30; ++minute) {
+        clock.advance_minutes(1);
+        AppStateTestAccess::process_event(
+            state, ev(EventType::KeyPress, static_cast<double>(clock.steady_ms()) / 1000.0, "Slack"));
+        AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+        AppStateTestAccess::engine_tick(state);
+    }
+    CHECK_FALSE(contains(seen, "untracked_work"));
+
+    seen.clear();
+    // A short burst in a trackable app after leaving Slack is a new, short stretch.
+    for (int minute = 0; minute < 5; ++minute) {
+        clock.advance_minutes(1);
+        AppStateTestAccess::process_event(
+            state, ev(EventType::KeyPress, static_cast<double>(clock.steady_ms()) / 1000.0, "Cursor"));
+        AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+        AppStateTestAccess::engine_tick(state);
+    }
+    CHECK_FALSE(contains(seen, "untracked_work"));
+
+    for (int minute = 0; minute < 15; ++minute) {
+        clock.advance_minutes(1);
+        AppStateTestAccess::process_event(
+            state, ev(EventType::KeyPress, static_cast<double>(clock.steady_ms()) / 1000.0, "Cursor"));
+        AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+        AppStateTestAccess::engine_tick(state);
+    }
+    CHECK(contains(seen, "untracked_work"));
+    state.set_emit_hook(nullptr);
+}
+
+TEST_CASE("switching into an excluded app resets the untracked stretch") {
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    state.set_privacy_exclusions({"Slack"});
+
+    // Ten minutes of trackable work — under the threshold, stretch is running.
+    CHECK_FALSE(contains(work_without_session(state, clock, 10), "untracked_work"));
+    AppStateTestAccess::process_event(state, ev(EventType::KeyPress, 10.0, "Cursor"));
+
+    std::vector<std::string> seen;
+    state.set_emit_hook([&seen](const std::string& name, const std::string&, std::uint64_t) {
+        seen.push_back(name);
+    });
+    // Twenty minutes in Slack would have crossed 15 if the stretch had paused instead of
+    // resetting. It must not fire.
+    for (int minute = 0; minute < 20; ++minute) {
+        clock.advance_minutes(1);
+        AppStateTestAccess::process_event(
+            state, ev(EventType::KeyPress, static_cast<double>(clock.steady_ms()) / 1000.0, "Slack"));
+        AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+        AppStateTestAccess::engine_tick(state);
+    }
+    CHECK_FALSE(contains(seen, "untracked_work"));
+    state.set_emit_hook(nullptr);
+}
+
 TEST_CASE("going idle restarts the untracked stretch instead of firing again") {
     // Walking away ends the stretch. Coming back begins a new one, so the nudge does not
     // re-fire the moment someone returns to a machine they already declined to track.

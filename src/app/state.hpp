@@ -249,6 +249,8 @@ private:
     std::optional<std::int64_t> untracked_since_ms_;
     bool untracked_latched_ = false;
     std::optional<std::uint64_t> untracked_minutes_;  // pending emit, drained by the tick
+    // Last capture event's app. Excluded-app time resets the untracked stretch (2.7).
+    std::string last_capture_app_;
 
     std::optional<std::string> pending_span_session_;
     std::int64_t pending_span_secs_ago_ = 0;  // how far to back-date a pause
@@ -287,6 +289,7 @@ private:
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
     static std::vector<std::string> normalize_privacy_exclusions(
         std::vector<std::string> exclusions);
+    bool app_matches_exclusion_unlocked(const std::string& app_name) const;
     bool is_private_event_unlocked(const CaptureEvent& event) const;
     // ROADMAP 11.4: these were static and read the process clock directly. They now go
     // through clock(), so an injected clock reaches every timestamp the engine writes and
