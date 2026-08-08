@@ -104,6 +104,9 @@ on `v0.2.0` at the bottom before cutting one.
   not cover — so `windows_demo.ps1` built a broken binary and exited 0, keeping the Windows
   job green over the compile error above. Every native call now goes through `Invoke-Native`,
   and `scripts/check_ps_exit_codes.py` fails CI if one does not.
+- **Two high-severity advisories in the frontend lockfile.** `nanoid` (via `postcss`/`vite`)
+  and `undici` (via `jsdom`) bumped to patched versions; both are devDependencies, so nothing
+  shipped was affected. `npm audit` is clean again.
 - **Excluded apps no longer earn the missed-session nudge (2.7).** Time in an excluded app
   resets the untracked stretch the same way private mode does, so leaving Slack does not
   immediately ask you to start recording.
