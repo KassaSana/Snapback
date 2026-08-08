@@ -523,6 +523,13 @@ jobs:
       - name: Pin-freshness parser still sees every watched pin
         run: python3 scripts/check_pin_freshness.py --offline --verbose
 
+      # $ErrorActionPreference = "Stop" does not cover native executables, so an unchecked
+      # cmake/npm call in a .ps1 lets a red build exit 0. windows_demo.ps1 did exactly that:
+      # the Windows job stayed green across three commits whose main.cpp did not compile, and
+      # only the macOS/Linux jobs — which call cmake straight from the workflow — noticed.
+      - name: Every native call in a PowerShell script must check its exit code
+        run: python3 scripts/check_ps_exit_codes.py --verbose
+
       # Every commit here is Kassa's own work. Several tools append attribution trailers by
       # default, silently, at commit time. Such a commit is permanent in a way an ordinary
       # mistake is not: rewriting it changes every SHA after it, which would break release

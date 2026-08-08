@@ -14,6 +14,18 @@ $RepoRoot = Split-Path -Parent $ScriptDir
 $BuildPath = Join-Path $RepoRoot $BuildDir
 $DemoDataDir = Join-Path $RepoRoot ".demo\gui-smoke-data"
 
+# $ErrorActionPreference = "Stop" only makes *cmdlets* terminate; native executables just set
+# $LASTEXITCODE and the script sails past a failure. Unchecked, a failed demo build would fall
+# through to Find-SnapbackExe and smoke-test whatever stale snapback.exe was already there.
+# Same helper as scripts/package_windows.ps1; scripts/check_ps_exit_codes.py enforces its use.
+function Invoke-Native {
+    param([Parameter(Mandatory = $true)][scriptblock]$Command)
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed (exit $LASTEXITCODE): $Command"
+    }
+}
+
 function Find-SnapbackExe {
     $candidates = @(
         (Join-Path $BuildPath "Release\snapback.exe"),
@@ -28,7 +40,8 @@ function Find-SnapbackExe {
 }
 
 if (-not $NoBuild) {
-    powershell -ExecutionPolicy Bypass -File (Join-Path $ScriptDir "windows_demo.ps1") -NoLaunch
+    $DemoScript = Join-Path $ScriptDir "windows_demo.ps1"
+    Invoke-Native { powershell -ExecutionPolicy Bypass -File $DemoScript -NoLaunch }
 }
 
 New-Item -ItemType Directory -Force -Path $DemoDataDir | Out-Null

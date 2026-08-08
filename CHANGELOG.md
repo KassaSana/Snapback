@@ -99,6 +99,11 @@ on `v0.2.0` at the bottom before cutting one.
   `DataDirChoice` and `choose_data_dir` unqualified from an anonymous namespace, while both
   live in `namespace snapback` and the `using namespace` sits inside `main()`. The app build
   and the macOS launch smoke had been red for three commits.
+- **A failing native command fails the PowerShell script that ran it.** `cmake`, `ctest` and
+  `npm` report failure through `$LASTEXITCODE`, which `$ErrorActionPreference = "Stop"` does
+  not cover — so `windows_demo.ps1` built a broken binary and exited 0, keeping the Windows
+  job green over the compile error above. Every native call now goes through `Invoke-Native`,
+  and `scripts/check_ps_exit_codes.py` fails CI if one does not.
 - **Excluded apps no longer earn the missed-session nudge (2.7).** Time in an excluded app
   resets the untracked stretch the same way private mode does, so leaving Slack does not
   immediately ask you to start recording.

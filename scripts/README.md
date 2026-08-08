@@ -12,6 +12,7 @@ on Windows tooling, while the shell wrappers cover macOS and Linux.
 | `check_doc_paths.py` | any OS | verifies that documented repository paths exist |
 | `check_dependency_pins.py` | any OS | verifies every fetched C++ dependency is pinned to a commit SHA or a `URL_HASH` — see [docs/dependencies.md](../docs/dependencies.md) |
 | `check_pin_freshness.py` | any OS | compares those pins plus ONNX Runtime to each project's latest GitHub release; `--offline` only parses |
+| `check_ps_exit_codes.py` | any OS | verifies every native call in a `.ps1` is exit-code checked, since `$ErrorActionPreference` does not cover them |
 | `windows_demo.ps1` | **Windows only** | MSVC build + CTest + launches `snapback.exe` |
 | `gui_smoke_windows.ps1` | **Windows only** | Verifies a real Snapback window appears |
 | `gui_smoke_macos.sh` | **macOS only** | Launches the app and requires a session round trip, a loaded bundle, and a clean run-loop exit |

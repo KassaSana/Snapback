@@ -30,6 +30,19 @@ function Require-Command {
     }
 }
 
+# $ErrorActionPreference = "Stop" only makes *cmdlets* terminate; native executables
+# (npm, cmake, ctest, ...) just set $LASTEXITCODE and the script sails past a failure. That is
+# not hypothetical here: a main.cpp that did not compile rode this script through CI green,
+# because `--target snapback` failed and the script walked on to `exit 0`.
+# Same helper as scripts/package_windows.ps1; scripts/check_ps_exit_codes.py enforces its use.
+function Invoke-Native {
+    param([Parameter(Mandatory = $true)][scriptblock]$Command)
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed (exit $LASTEXITCODE): $Command"
+    }
+}
+
 function Find-SnapbackExe {
     $candidates = @(
         (Join-Path $BuildPath "$BuildConfig\snapback.exe"),
@@ -114,7 +127,7 @@ if (-not $SkipFrontend) {
     if (-not (Test-Path (Join-Path $FrontendDir "node_modules")) -and -not $SkipNpmInstall) {
         Push-Location $FrontendDir
         try {
-            npm ci
+            Invoke-Native { npm ci }
         } finally {
             Pop-Location
         }
@@ -122,8 +135,8 @@ if (-not $SkipFrontend) {
 
     Push-Location $FrontendDir
     try {
-        npm run typecheck
-        npm run build
+        Invoke-Native { npm run typecheck }
+        Invoke-Native { npm run build }
     } finally {
         Pop-Location
     }
@@ -154,10 +167,10 @@ $configureArgs = @(
     "-DSNAPBACK_BUILD_APP=ON",
     "-DSNAPBACK_ONNX=OFF"
 )
-cmake @configureArgs
-cmake --build $BuildPath --config $BuildConfig --target snapback_tests
-ctest --test-dir $BuildPath -C $BuildConfig --output-on-failure
-cmake --build $BuildPath --config $BuildConfig --target snapback
+Invoke-Native { cmake @configureArgs }
+Invoke-Native { cmake --build $BuildPath --config $BuildConfig --target snapback_tests }
+Invoke-Native { ctest --test-dir $BuildPath -C $BuildConfig --output-on-failure }
+Invoke-Native { cmake --build $BuildPath --config $BuildConfig --target snapback }
 
 if ($NoLaunch) {
     if ($null -ne $ViteProcess -and -not $ViteProcess.HasExited) {

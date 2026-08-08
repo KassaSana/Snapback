@@ -18,13 +18,28 @@ function Require-Command {
     }
 }
 
+# $ErrorActionPreference = "Stop" only makes *cmdlets* terminate; native executables just set
+# $LASTEXITCODE and the script sails past a failure — which here would publish benchmark
+# numbers produced by a stale binary. Same helper as scripts/package_windows.ps1;
+# scripts/check_ps_exit_codes.py enforces its use.
+function Invoke-Native {
+    param([Parameter(Mandatory = $true)][scriptblock]$Command)
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed (exit $LASTEXITCODE): $Command"
+    }
+}
+
 Require-Command cmake
 
 Write-Host "== Configure benchmarks =="
-cmake -S $RepoRoot -B $BuildPath -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF -DSNAPBACK_BUILD_BENCHMARKS=ON
+Invoke-Native {
+    cmake -S $RepoRoot -B $BuildPath -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF `
+        -DSNAPBACK_BUILD_BENCHMARKS=ON
+}
 
 Write-Host "== Build benchmarks =="
-cmake --build $BuildPath --config $Config --target snapback_benchmarks
+Invoke-Native { cmake --build $BuildPath --config $Config --target snapback_benchmarks }
 
 Write-Host "== Run benchmarks =="
 $Exe = Join-Path $BuildPath "$Config\snapback_benchmarks.exe"
@@ -36,4 +51,4 @@ if (-not (Test-Path $Exe)) {
 }
 
 $env:SNAPBACK_BENCH_MINUTES = "$Minutes"
-& $Exe
+Invoke-Native { & $Exe }
