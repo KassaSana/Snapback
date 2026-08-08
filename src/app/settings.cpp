@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "util/durable_file.hpp"
 #include "util/fs_replace.hpp"
 
 namespace snapback {
@@ -104,6 +105,16 @@ void save_app_settings(const std::filesystem::path& app_data_dir,
         if (!out) throw std::runtime_error("failed to write settings temp file");
     }
 
+    // Roadmap 7.21. flush() above only reaches the OS page cache. Without a durable sync, a
+    // power loss after we report success can discard the temp — and after rename, the
+    // directory entry that makes it visible. Fail closed: a save we cannot flush must not
+    // claim to have succeeded.
+    if (!durable_sync_file(temp)) {
+        std::error_code ignored;
+        std::filesystem::remove(temp, ignored);
+        throw std::runtime_error("failed to flush settings temp file to disk");
+    }
+
     // 2. Keep the copy that is currently on disk as the backup, before it is replaced. A
     //    crash between here and the rename leaves both files valid and identical in content
     //    to what the user had; the new settings are simply not applied yet.
@@ -125,6 +136,12 @@ void save_app_settings(const std::filesystem::path& app_data_dir,
     if (ec) {
         std::filesystem::remove(temp, ec);
         throw std::runtime_error("failed to replace settings.json");
+    }
+
+    // Persist the directory entry that now names the new file. Syncing only the file leaves
+    // the rename itself vulnerable to the same power-loss window 7.21 exists to close.
+    if (!durable_sync_directory(app_data_dir)) {
+        throw std::runtime_error("failed to flush settings directory to disk");
     }
 }
 

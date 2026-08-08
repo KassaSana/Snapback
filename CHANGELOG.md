@@ -96,6 +96,9 @@ on `v0.2.0` at the bottom before cutting one.
   token is handed only to the packaged UI; external links open in the system browser.
 - **Model deployment recovery no longer bricks startup (13.8).** Cleanup debris degrades
   health and offers Retry cleanup instead of exiting before the window opens.
+- **Settings survive power loss after a reported save (7.21).** The atomic rename from 7.19
+  is now followed by a durable flush of the temp file and of the parent directory, so a
+  successful save is not only tear-free but also on disk.
 - **Session replacement is atomic.** Starting a session while one is running could previously
   close the old session and then fail to create the new one, leaving no active session at all.
 - **A failed start no longer half-happens.** Focus mode and the feature extractor were reset

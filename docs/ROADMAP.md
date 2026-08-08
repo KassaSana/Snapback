@@ -115,7 +115,7 @@ because none of them displaces anything in it. They are listed here so they are 
 | **4.13** nothing watches the ONNX pin | `S` | 8.9 made it trustworthy, not current |
 | **11.9** capture invariant unverified | `S` | The test does not catch its own bug on GCC; MSVC never measured |
 | **11.10** stale test registry key | `S` | A crashed test process skips its cleanup |
-| **7.21** settings durability | `S` | 7.19 made the write atomic, not `fsync`ed |
+| ~~**7.21** settings durability~~ | `S` | **Done 2026-08-07** — temp + directory durable flush after 7.19's atomic rename |
 | **4.12** formatter + static analysis | `M` | Neither exists for either language |
 
 **6.6 was the one worth doing early, and it is now done.** The others are hygiene; 6.6 was the
@@ -816,7 +816,14 @@ internals, and the benchmark harness.
   Ties to **9.4** — walking the upgrade path deliberately is what would demonstrate this
   working, and neither is much use without the other.
 
-- **7.21 — A just-saved settings.json can still be lost to power failure.** `S`
+- **7.21 — DONE 2026-08-07.** `S` `save_app_settings` now `fsync`s / `_commit`s the temp
+  file before rename and the parent directory after, via `util/durable_file`. A save that
+  cannot flush fails closed instead of reporting success over cached bytes. Suite covers the
+  sync seam on missing paths and a successful round-trip that leaves no `.tmp` behind.
+
+  The original finding was:
+
+- **7.21 (original finding) — A just-saved settings.json can still be lost to power failure.** `S`
   Opened 2026-08-04 as 7.19's stated residual, recorded here so it is a task rather than a
   footnote inside a closed item.
 

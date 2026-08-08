@@ -81,6 +81,7 @@ add_library(snapback_core STATIC
   src/snapback/overlay_common.cpp
   src/app/tray_common.cpp
   src/util/private_dir.cpp
+  src/util/durable_file.cpp
   src/app/webview_origin.cpp
 )
 target_include_directories(snapback_core PUBLIC src)

@@ -104,6 +104,16 @@ TEST_CASE("saving keeps the previous settings as a backup") {
     CHECK(read_file(temp.path / kSettingsBackupFileName) != first_contents);
 }
 
+TEST_CASE("settings save leaves no temp file after a durable flush") {
+    // Roadmap 7.21. The temp is synced, then renamed; a leftover `.tmp` would mean the
+    // durable path never finished and a later crash could confuse the loader.
+    TempDir temp;
+    save_app_settings(temp.path, sample_settings());
+    CHECK(std::filesystem::exists(temp.path / kSettingsFileName));
+    CHECK_FALSE(std::filesystem::exists(temp.path / kSettingsTempFileName));
+    CHECK(load_app_settings(temp.path).private_mode == true);
+}
+
 TEST_CASE("malformed settings recover from the backup and say so") {
     // Roadmap 7.19. The old loader caught every parse error and returned defaults with no
     // log line, so a user whose configuration silently reverted had nothing to look at.
