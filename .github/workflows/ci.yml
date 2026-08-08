@@ -14,7 +14,7 @@ name: CI
 #
 # Anti-hang guarantees: every job has `timeout-minutes`, the riskiest steps have their
 # own step timeout, ctest uses `--timeout`/`--no-tests=error`, the GUI app is never
-# launched, and `concurrency` cancels superseded runs so nothing piles up.
+# launched here, and superseded PR runs are cancelled so nothing piles up.
 
 on:
   push:
@@ -25,7 +25,11 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded *pull request* runs are cancelled; pushes to master are not. release.yml's
+  # 9.11 gate will only publish a tag whose exact commit already has a successful ci.yml run,
+  # and a cancelled run is not a successful one — so cancelling here on master would quietly
+  # make that commit unreleasable. Nothing piles up regardless: every job has a timeout.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
