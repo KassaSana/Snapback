@@ -353,6 +353,13 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      # Roadmap 8.10 is a promise about the *shipped* page, and this is the only job that
+      # produces one. frontend/dist is gitignored, so the same guard in docs-smoke sees only
+      # the source index.html and never the inlined bundle the user actually loads. Running it
+      # here, after the build, is what checks the artifact the promise is about.
+      - name: The built bundle must not fetch anything
+        run: python3 scripts/check_no_remote_subresources.py --verbose
+
   # ---------------------------------------------------------------------------
   # Windows desktop app: build + no-launch integration smoke (never starts the
   # GUI, which would hang).
