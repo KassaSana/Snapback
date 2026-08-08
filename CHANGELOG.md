@@ -92,6 +92,9 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
+- **Capture failure/running contradiction is observed from a second thread (11.9).** The
+  old same-thread sample could not see inverted stores on MinGW; a paired sampler now fails
+  that bug and stays quiet when the stores are ordered correctly.
 - **Autostart scratch tests no longer leave registry keys after a crash (11.10).** The
   fixture sweeps `test-<pid>-*` orphans whose process is gone and leaves live concurrent
   cases untouched.

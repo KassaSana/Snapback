@@ -113,7 +113,7 @@ because none of them displaces anything in it. They are listed here so they are 
 | **9.13** orphaned `v0.2.0` tag | `S` `decision` | No release baseline exists; 9.11's gate would reject the tag |
 | ~~**12.7** ADR-0002's dead link~~ | `S` | **Done 2026-08-08** — Darwin-dev fact is inline; guard forbids citing the gitignored file |
 | **4.13** nothing watches the ONNX pin | `S` | 8.9 made it trustworthy, not current |
-| **11.9** capture invariant unverified | `S` | The test does not catch its own bug on GCC; MSVC never measured |
+| ~~**11.9** capture invariant unverified~~ | `S` | **Done 2026-08-08** — second-thread sampler fails on inverted stores (MinGW 1157/200) |
 | ~~**11.10** stale test registry key~~ | `S` | **Done 2026-08-08** — fixture sweeps `test-<pid>-*` whose process is gone |
 | ~~**7.21** settings durability~~ | `S` | **Done 2026-08-07** — temp + directory durable flush after 7.19's atomic rename |
 | **4.12** formatter + static analysis | `M` | Neither exists for either language |
@@ -3359,7 +3359,17 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   Node CI uses, so a mismatch is stated instead of discovered as a wall of DOM errors. Then
   decide separately whether to move both to a newer Node.
 
-- **11.9 — The capture contradiction invariant is unverified outside MSVC.** `S`
+- **11.9 — DONE 2026-08-08.** `S` The case now samples `failed()` and `running()` from a
+  second thread for the whole attempt — the same two separate loads `health()` performs —
+  rather than reading `running()` on the thread that just observed the flip. On MinGW UCRT
+  GCC 14, reintroducing the inverted stores (failed first, running cleared after the mutex
+  write) produced **1157 contradictions across 200 attempts**; restoring the correct order
+  is a clean pass. Same-thread post-flip sampling stayed inert on this toolchain, which is
+  why the old test could not claim to guard the invariant here.
+
+  The original finding was:
+
+- **11.9 (original finding) — The capture contradiction invariant is unverified outside MSVC.** `S`
   Opened 2026-08-04 by 11.8's fix. `CaptureThread never reports failed and running at the same
   time` exists to catch 11.1's store-ordering bug, and its comment claims "with the stores in
   the wrong order this fails."

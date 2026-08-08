@@ -214,53 +214,52 @@ TEST_CASE("CaptureThread never reports failed and running at the same time") {
     // failed" and "running: true" in the same report. Two fields that contradict each other,
     // same shape as 7.7.
     //
-    // The test above sidesteps the window by waiting for running() to go false before it
-    // asserts anything. The AppState-level test did *not*, and it failed about 1 run in 40 —
-    // a flake that had been dismissed as noise for as long as the whole suite was one CTest
-    // entry, because one bad case in a 295-case process reads as "the suite is flaky."
-    // Registering cases individually is what turned it into a reproducible single failure.
+    // ROADMAP 11.9. Sampling running() from the *same* thread that just observed failed()
+    // is inert on GCC/MinGW: reintroducing the inverted stores still left this case passing,
+    // because that thread's next load lands after both stores are visible. health() is not
+    // that thread — it is a second observer. So the sampler below is a second thread that
+    // pairs the two loads for the whole attempt, the way diagnostics actually reads them.
     //
-    // This samples the window deliberately: spin, don't sleep, so the observation lands
-    // inside the microseconds between the two stores. With the stores in the wrong order
-    // this fails; with them in the right order it is 0 for 200.
-    // ROADMAP 11.8. The precondition wait below is bounded by a *deadline*, not an iteration
-    // count. It used to spin a fixed 2,000,000 relaxed loads, which is a proxy for time that
-    // varies with the machine and the toolchain: on GCC/MinGW that window closed before
-    // Windows scheduled the hook thread on ~1-2% of attempts, and because one missed attempt
-    // fails the whole case, a ~1% per-attempt miss became an ~87-100% case failure.
-    //
-    // It is still a spin and not a sleep, and that distinction is the whole test. The
-    // measurement below has to land in the microseconds between record_failure()'s two
-    // stores, so this loop must return the instant failed() flips. Only the *bound* changed
-    // — "spin, don't sleep" was always about sampling the window, never about how long to
-    // wait for the precondition.
-    //
-    // The clock is read once per kClockCheckInterval iterations so that reading it cannot
-    // dominate the loop and widen the very window being sampled.
+    // It is still a spin and not a sleep. The window is microseconds wide; a sleep misses it.
+    // ROADMAP 11.8's deadline still bounds waiting for the hook to fail at all.
     constexpr int kAttempts = 200;
     constexpr auto kFailureDeadline = std::chrono::seconds(5);
-    constexpr int kClockCheckInterval = 1024;
     int contradictions = 0;
 
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
         ReturningHook hook;
         CaptureThread capture;
+        std::atomic<bool> stop_sampler{false};
+        std::atomic<int> paired_contradictions{0};
+
+        std::thread sampler([&] {
+            while (!stop_sampler.load(std::memory_order_relaxed)) {
+                const bool failed = capture.failed();
+                const bool running = capture.running();
+                if (failed && running) {
+                    paired_contradictions.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        });
+
         capture.start(&hook);
 
         const auto deadline = std::chrono::steady_clock::now() + kFailureDeadline;
         bool failed = false;
-        for (int spin = 0; !failed; ++spin) {
+        while (!failed) {
             failed = capture.failed();
-            if (!failed && spin % kClockCheckInterval == 0 &&
-                std::chrono::steady_clock::now() >= deadline) {
-                break;
-            }
+            if (!failed && std::chrono::steady_clock::now() >= deadline) break;
         }
+
+        stop_sampler.store(true, std::memory_order_relaxed);
+        sampler.join();
+
         INFO("attempt ", attempt, ": the hook thread never recorded failure within the "
              "deadline, so the contradiction window below was never reached");
         REQUIRE(failed);
 
-        // The invariant: if the class says it failed, it must already say it is not running.
+        contradictions += paired_contradictions.load(std::memory_order_relaxed);
+        // health() can also sample after the flip on the calling thread.
         if (capture.running()) ++contradictions;
         capture.stop();
     }
