@@ -17,6 +17,9 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **Pinned C++ deps are watched for new upstream releases (4.13).** A weekly workflow
+  compares ONNX Runtime and the three git FetchContent pins to each latest GitHub release
+  and opens an issue when any is behind. It never edits a digest.
 - **macOS support.** Native `NSStatusItem` tray and a Cocoa `NSPanel` snapback overlay, a
   live `CGEventTap` capture path, and a hosted CI launch smoke that starts and quits the real
   app. Start-on-login via a launchd user agent.

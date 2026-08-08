@@ -112,7 +112,7 @@ because none of them displaces anything in it. They are listed here so they are 
 | ~~**6.6** GCC-on-Windows CI job~~ | `S` | **Done 2026-08-06** — `windows-gcc`, verified locally at 376/376 on MinGW-w64 UCRT |
 | **9.13** orphaned `v0.2.0` tag | `S` `decision` | No release baseline exists; 9.11's gate would reject the tag |
 | ~~**12.7** ADR-0002's dead link~~ | `S` | **Done 2026-08-08** — Darwin-dev fact is inline; guard forbids citing the gitignored file |
-| **4.13** nothing watches the ONNX pin | `S` | 8.9 made it trustworthy, not current |
+| ~~**4.13** nothing watches the ONNX pin~~ | `S` | **Done 2026-08-08** — weekly pin-freshness job opens an issue, never a digest PR |
 | ~~**11.9** capture invariant unverified~~ | `S` | **Done 2026-08-08** — second-thread sampler fails on inverted stores (MinGW 1157/200) |
 | ~~**11.10** stale test registry key~~ | `S` | **Done 2026-08-08** — fixture sweeps `test-<pid>-*` whose process is gone |
 | ~~**7.21** settings durability~~ | `S` | **Done 2026-08-07** — temp + directory durable flush after 7.19's atomic rename |
@@ -2499,7 +2499,16 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   real portability defects has already proven more valuable here than a style checker would
   have.
 
-- **4.13 — Nothing watches the ONNX Runtime pin.** `S`
+- **4.13 — DONE 2026-08-08.** `S` `scripts/check_pin_freshness.py` compares the ONNX
+  manifest and the three git FetchContent pins (nlohmann_json, doctest, webview) to each
+  project's latest GitHub release. `.github/workflows/pin-freshness.yml` runs weekly (and
+  on demand), opens or comments on a `[pin-freshness]` issue when any pin is behind, and
+  never edits a digest. `docs-smoke` runs the parser offline so a CMake rename cannot
+  empty the watcher silently. CVE/advisory monitoring remains out of scope until 8.5.
+
+  The original finding was:
+
+- **4.13 (original finding) — Nothing watches the ONNX Runtime pin.** `S`
   Opened 2026-08-04, from 8.9's work. Dependabot covers `github-actions` and the frontend
   `npm` tree. It does not cover CMake `FetchContent` (4.6 already records that) and it does
   not cover the ONNX Runtime archives pinned in

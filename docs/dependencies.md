@@ -112,7 +112,10 @@ one matters: a guard that silently stops finding anything reports success foreve
 - **No advisory monitoring.** Nothing watches these four projects for CVEs today; pinning
   makes builds reproducible, which is a different property from being current. Pinning
   arguably makes staleness *more* likely, since there is no longer a tag quietly pulling in
-  patch releases — that is the trade being accepted, not an oversight. Revisit under 8.5 once
+  patch releases. **New upstream releases** are watched: `.github/workflows/pin-freshness.yml`
+  compares the ONNX manifest and the three git `FetchContent` pins to each project's latest
+  GitHub release and opens an issue when any is behind. It does not open a PR and must not
+  edit digests — that human step is the process above. Revisit CVE response under 8.5 once
   there is a threat model to weigh it against.
 - **Vendored SQLite.** `third_party/sqlite/` is preferred over the fetch when present, so
   offline builds work. That copy is checked in and reviewable, which is a stronger guarantee

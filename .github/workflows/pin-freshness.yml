@@ -1,0 +1,66 @@
+name: Pin freshness
+
+# ROADMAP 4.13. Dependabot cannot see CMake FetchContent or the ONNX archive pin.
+# Once a week, compare those pins to upstream's latest GitHub release and open an
+# issue when any is behind. Never open a PR and never edit a digest: the human step
+# is downloading the archives / resolving the annotated tag, which
+# docs/dependencies.md documents.
+
+on:
+  schedule:
+    - cron: "17 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Compare C++ pins to upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Compare pins to latest GitHub releases
+        id: freshness
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          python3 scripts/check_pin_freshness.py --verbose | tee freshness.out
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 2 ]; then
+            echo "Pin freshness check could not reach GitHub; failing closed."
+            exit 1
+          fi
+          exit 0
+
+      - name: Open or update an issue when pins are behind
+        if: steps.freshness.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          body=$(awk '/BEHIND_MARKDOWN_START/{flag=1;next}/BEHIND_MARKDOWN_END/{flag=0}flag' freshness.out)
+          title="[pin-freshness] C++ pins are behind upstream"
+          header=$'Some C++ pins are behind the latest GitHub release.\n\n'
+          header+=$'This issue is opened by the scheduled pin-freshness workflow. '
+          header+=$'It must not be resolved by a bot PR that edits SHAs or digests — '
+          header+=$'that would defeat the pin. Follow docs/dependencies.md.\n\n'
+          full="${header}${body}"
+
+          existing=$(gh issue list --search "$title in:title state:open" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$full"
+            echo "Updated existing issue #$existing"
+          else
+            gh issue create --title "$title" --body "$full"
+          fi

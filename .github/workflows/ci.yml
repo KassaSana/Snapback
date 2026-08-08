@@ -517,6 +517,12 @@ jobs:
       - name: Every vendored ONNX archive must be verified before extraction
         run: python3 scripts/check_onnx_pins.py --verbose
 
+      # Roadmap 4.13. The scheduled pin-freshness workflow queries GitHub; this only
+      # checks that the parser still sees onnx + the three git FetchContent pins, so a
+      # CMake rename cannot silently empty the watcher.
+      - name: Pin-freshness parser still sees every watched pin
+        run: python3 scripts/check_pin_freshness.py --offline --verbose
+
       # Every commit here is Kassa's own work. Several tools append attribution trailers by
       # default, silently, at commit time. Such a commit is permanent in a way an ordinary
       # mistake is not: rewriting it changes every SHA after it, which would break release
