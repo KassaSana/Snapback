@@ -27,9 +27,11 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Least privilege by default; each job widens only what it needs. Set workflow-wide, the
+# write token reached the packaging job too — the one that runs a build script and handles a
+# signing secret, and the one with no reason to be able to write to the repository.
 permissions:
-  contents: write # needed to create the GitHub Release
-  actions: read # needed to read the tagged commit's CI conclusion (9.11)
+  contents: read
 
 defaults:
   run:
@@ -49,6 +51,9 @@ jobs:
     name: Verify release tag
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # reads the tagged commit's ci.yml conclusion (9.11)
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -155,6 +160,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write # the only job that publishes; the only one that needs write
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
