@@ -11,6 +11,13 @@ on:
     - cron: "17 13 * * 1"
   workflow_dispatch:
 
+# This job comments on a shared issue, so two runs overlapping post the same report twice.
+# Queue rather than cancel: a run that is already partway through querying upstream should
+# finish and report, not be discarded because someone pressed "Run workflow".
+concurrency:
+  group: pin-freshness
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
