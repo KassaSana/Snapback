@@ -1,7 +1,9 @@
 param(
     [string]$BuildDir = "build-windows-demo",
     [string]$FrontendUrl = "http://127.0.0.1:5173",
-    [string]$Generator = "Visual Studio 17 2022",
+    # Empty means "whatever Visual Studio CMake finds". Pass one explicitly to force a build
+    # against a specific toolchain locally. See the configure step for why the default moved.
+    [string]$Generator = "",
     [string]$Arch = "x64",
     [switch]$SkipFrontend,
     [switch]$SkipNpmInstall,
@@ -159,14 +161,15 @@ if ($UseVite) {
     Wait-ForFrontend
 }
 
-$configureArgs = @(
-    "-S", $RepoRoot,
-    "-B", $BuildPath,
-    "-G", $Generator,
-    "-A", $Arch,
-    "-DSNAPBACK_BUILD_APP=ON",
-    "-DSNAPBACK_ONNX=OFF"
-)
+# No -G unless asked for. Pinning "Visual Studio 17 2022" tied this script to one runner
+# image, and it broke the moment windows-latest stopped shipping that version: CMake failed
+# with "could not find any instance of Visual Studio" while every other Windows CI job — none
+# of which names a generator — kept building fine against whatever MSVC is installed.
+# -A stays, because the artifact is named win64 and the architecture should be asserted.
+$configureArgs = @("-S", $RepoRoot, "-B", $BuildPath)
+if ($Generator) { $configureArgs += @("-G", $Generator) }
+if ($Arch) { $configureArgs += @("-A", $Arch) }
+$configureArgs += @("-DSNAPBACK_BUILD_APP=ON", "-DSNAPBACK_ONNX=OFF")
 Invoke-Native { cmake @configureArgs }
 Invoke-Native { cmake --build $BuildPath --config $BuildConfig --target snapback_tests }
 Invoke-Native { ctest --test-dir $BuildPath -C $BuildConfig --output-on-failure }

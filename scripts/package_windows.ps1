@@ -114,7 +114,12 @@ try {
     Pop-Location
 }
 
-Invoke-Native { cmake -S $RepoRoot -B $BuildPath -G "Visual Studio 17 2022" -A x64 -DSNAPBACK_BUILD_APP=ON -DSNAPBACK_ONNX=OFF }
+# No -G: naming "Visual Studio 17 2022" pinned the release build to one runner image, and
+# CMake fails outright ("could not find any instance of Visual Studio") once that image moves
+# on — so a release would stop building for a reason that has nothing to do with the code.
+# -A x64 stays: this script names its artifacts win64, so the architecture is asserted here
+# rather than inherited from whatever the default generator happens to pick.
+Invoke-Native { cmake -S $RepoRoot -B $BuildPath -A x64 -DSNAPBACK_BUILD_APP=ON -DSNAPBACK_ONNX=OFF }
 Invoke-Native { cmake --build $BuildPath --config $Config --target snapback_tests }
 Invoke-Native { ctest --test-dir $BuildPath -C $Config --output-on-failure }
 Invoke-Native { cmake --build $BuildPath --config $Config --target snapback }
