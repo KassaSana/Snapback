@@ -95,10 +95,12 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
-- **The desktop app compiles again on macOS and Linux.** `main.cpp` referred to
-  `DataDirChoice` and `choose_data_dir` unqualified from an anonymous namespace, while both
-  live in `namespace snapback` and the `using namespace` sits inside `main()`. The app build
-  and the macOS launch smoke had been red for three commits.
+- **The desktop app compiles again.** Two unqualified names, in the only translation unit no
+  test compiles: `main.cpp` used `DataDirChoice` / `choose_data_dir` from an anonymous
+  namespace while both live in `namespace snapback`, and `commands.hpp` used `JsonHandler`
+  from `namespace snapback` while it lives in `snapback::detail`. Nothing outside `main.cpp`
+  includes `commands.hpp` — `test_ipc_contract` reads it as text — so the app had been
+  unbuildable on every platform with no test able to say so.
 - **A failing native command fails the PowerShell script that ran it.** `cmake`, `ctest` and
   `npm` report failure through `$LASTEXITCODE`, which `$ErrorActionPreference = "Stop"` does
   not cover — so `windows_demo.ps1` built a broken binary and exited 0, keeping the Windows

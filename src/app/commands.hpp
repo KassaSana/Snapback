@@ -51,7 +51,8 @@ inline void register_commands(webview::webview& w, AppState& state,
     // Roadmap 8.14. Wrapped so every `bind_cmd(...)` call below carries the token without each
     // one having to remember: a command registered without it would be a silently
     // unprotected hole in exactly the surface this exists to protect.
-    const auto bind_cmd = [&w, &capability_token](const std::string& name, JsonHandler handler) {
+    const auto bind_cmd = [&w, &capability_token](const std::string& name,
+                                                  detail::JsonHandler handler) {
         detail::bind_cmd(w, name, std::move(handler), capability_token);
     };
 
