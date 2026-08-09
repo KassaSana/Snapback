@@ -19,6 +19,8 @@ const summary = (
     goal: "g",
     status: "COMPLETED",
     focusMode: "normal",
+    reflectionDone: null,
+    reflectionNextStep: null,
     startedAt: null,
     endedAt: null,
   },

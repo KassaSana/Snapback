@@ -41,7 +41,7 @@ std::string pre_migration_backup_name(int from_version);
 //   2. **Never edit a released migration.** Append a new one. Editing one changes what an
 //      already-upgraded database was built from, which is precisely the drift versioning
 //      exists to prevent.
-inline constexpr int kSchemaVersion = 5;
+inline constexpr int kSchemaVersion = 6;
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
@@ -178,6 +178,15 @@ public:
     std::optional<SessionRecord> active_session();
     std::vector<SessionRecord> recent_sessions(std::size_t limit);
     SessionRecap recap(const std::string& session_id);
+
+    // Roadmap 2.14. Writes (or clears) the session's optional reflection and returns the
+    // updated row; nullopt when no such session exists, so a caller cannot mistake a typo'd id
+    // for a successful save. Either field may be nullopt to leave that answer unrecorded —
+    // clearing is how an edit removes an answer, and is distinct from never having answered
+    // only in that the user chose it. Returns the row so the caller does not re-read.
+    std::optional<SessionRecord> save_session_reflection(
+        const std::string& session_id, const std::optional<std::string>& done,
+        const std::optional<std::string>& next_step);
 
     // recent_sessions(limit) + recap() for each, in three queries instead of 1 + 5N.
     //

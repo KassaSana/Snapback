@@ -26,6 +26,10 @@ constexpr std::size_t kMaxSessionIdLen = 128;
 constexpr std::size_t kMaxAppRulePatternLen = 200;
 constexpr std::size_t kMaxAppRuleNoteLen = 500;
 constexpr std::size_t kMaxRepoPathLen = 4096;
+// Roadmap 2.14. A reflection is a sentence or two for tomorrow's restart, not a journal
+// entry. Capped well below label notes because these render into the readable personal
+// export for *every* session, where an unbounded paste would drown the file it belongs to.
+constexpr std::size_t kMaxReflectionLen = 1000;
 
 inline std::string trim(const std::string& s) {
     const char* ws = " \t\n\r\f\v";

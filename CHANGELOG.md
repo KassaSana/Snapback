@@ -17,6 +17,12 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **An optional end-of-session reflection (2.14).** Two free-text answers — what got done, and
+  the next step — stored per session and carried into the readable personal export, so the
+  thing that makes tomorrow's restart easier survives the session that produced it. Skipping
+  costs nothing and records nothing: blank, whitespace, and never-asked are the same absent
+  state, and clearing an answer returns it to that state. Kept out of the label table and out
+  of training data on purpose; a label is a signal for the model, this is a note to yourself.
 - **Pinned C++ deps are watched for new upstream releases (4.13).** A weekly workflow
   compares ONNX Runtime and the three git FetchContent pins to each latest GitHub release
   and opens an issue when any is behind. It never edits a digest.

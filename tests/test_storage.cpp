@@ -1975,3 +1975,133 @@ TEST_CASE("the analytics aggregates run in a bounded number of queries") {
     });
     CHECK(per_session > 5 * LargeFixture::kSessions);
 }
+
+// --- Roadmap 2.14: optional end-of-session reflection --------------------------------------
+
+TEST_CASE("a session reflection round-trips, and never answering stays distinguishable") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("ship the exporter", FocusMode::Deep);
+
+    // The state every session starts in, and the one Skip leaves behind: no answer at all,
+    // which is not the same as an empty answer.
+    CHECK_FALSE(storage->get_session(session.session_id)->reflection_done.has_value());
+    CHECK_FALSE(storage->get_session(session.session_id)->reflection_next_step.has_value());
+
+    const auto saved = storage->save_session_reflection(session.session_id, "wired the CSV path",
+                                                        "add the header row");
+    REQUIRE(saved.has_value());
+    CHECK(saved->reflection_done == "wired the CSV path");
+    CHECK(saved->reflection_next_step == "add the header row");
+
+    // Durable, not just returned.
+    const auto reread = storage->get_session(session.session_id);
+    REQUIRE(reread.has_value());
+    CHECK(reread->reflection_done == "wired the CSV path");
+    CHECK(reread->reflection_next_step == "add the header row");
+
+    // And it survives the other readers, which each build their own SELECT.
+    const auto recent = storage->recent_sessions(10);
+    REQUIRE_FALSE(recent.empty());
+    CHECK(recent[0].reflection_done == "wired the CSV path");
+}
+
+TEST_CASE("one half of a reflection can be answered without inventing the other") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("read the spec", FocusMode::Normal);
+
+    const auto saved =
+        storage->save_session_reflection(session.session_id, std::nullopt, "start the draft");
+    REQUIRE(saved.has_value());
+    CHECK_FALSE(saved->reflection_done.has_value());
+    CHECK(saved->reflection_next_step == "start the draft");
+}
+
+TEST_CASE("clearing a reflection removes it rather than storing a blank") {
+    // The edit path: an answer the user no longer wants goes back to the same NULL that means
+    // "never answered". Storing "" instead would leave an empty heading in the export.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("triage", FocusMode::Recovery);
+    storage->save_session_reflection(session.session_id, "closed 4 issues", "reply to review");
+
+    const auto cleared =
+        storage->save_session_reflection(session.session_id, std::nullopt, std::nullopt);
+    REQUIRE(cleared.has_value());
+    CHECK_FALSE(cleared->reflection_done.has_value());
+    CHECK_FALSE(cleared->reflection_next_step.has_value());
+}
+
+TEST_CASE("reflecting on a session that does not exist reports it instead of silently passing") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    CHECK_FALSE(storage->save_session_reflection("no-such-session", "something", "next").has_value());
+}
+
+TEST_CASE("a pre-reflection database upgrades without disturbing the sessions in it") {
+    // The real prior-version upgrade case 2.14 asks for: a v5 install, with a session already
+    // recorded, meeting the v6 schema. The columns must appear, the session must survive
+    // intact, and its reflection must read as never-answered rather than as anything else.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("written before reflections existed",
+                                             FocusMode::Deep)
+                         .session_id;
+    }
+
+    // Rewind to v5 and drop the columns the way that version had it: no ALTER ever ran.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const char* rewind =
+        "ALTER TABLE sessions DROP COLUMN reflection_done;"
+        "ALTER TABLE sessions DROP COLUMN reflection_next_step;"
+        "PRAGMA user_version = 5;";
+    REQUIRE(sqlite3_exec(db, rewind, nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+
+    const auto migrated = reopened->get_session(session_id);
+    REQUIRE(migrated.has_value());
+    CHECK(migrated->goal == "written before reflections existed");
+    CHECK_FALSE(migrated->reflection_done.has_value());
+    CHECK_FALSE(migrated->reflection_next_step.has_value());
+
+    // Not merely readable: writable, which is what proves the columns are really there.
+    const auto saved =
+        reopened->save_session_reflection(session_id, "upgraded fine", std::nullopt);
+    REQUIRE(saved.has_value());
+    CHECK(saved->reflection_done == "upgraded fine");
+}
+
+TEST_CASE("the reflection migration is idempotent when the columns already exist") {
+    // Rule 1 of kSchemaVersion: user_version 0 replays every migration over a database that
+    // already has the full schema, so this must be a no-op rather than an error.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("already current", FocusMode::Normal).session_id;
+        storage->save_session_reflection(session_id, "kept", "kept too");
+    }
+
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(db, "PRAGMA user_version = 0;", nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->schema_version() == kSchemaVersion);
+    const auto kept = reopened->get_session(session_id);
+    REQUIRE(kept.has_value());
+    CHECK(kept->reflection_done == "kept");
+    CHECK(kept->reflection_next_step == "kept too");
+}

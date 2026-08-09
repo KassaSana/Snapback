@@ -188,3 +188,24 @@ TEST_CASE("Pomodoro handlers return the stable status envelope through the bridg
     CHECK(stopped.at("running") == false);
     CHECK(stopped.at("remainingMs") == 0);
 }
+
+TEST_CASE("a reflection answer is trimmed, blank-rejected, and length-capped") {
+    // Roadmap 2.14. The command runs both answers through validate_optional_text, so Skip, a
+    // whitespace-only submission, and clearing an answer all collapse to the same nullopt the
+    // schema stores as NULL -- an empty string would be a fourth, wrong state.
+    CHECK_FALSE(detail::validate_optional_text("What got done", std::string("   \t \n "),
+                                               detail::kMaxReflectionLen)
+                    .has_value());
+    CHECK_FALSE(
+        detail::validate_optional_text("What got done", std::nullopt, detail::kMaxReflectionLen)
+            .has_value());
+    CHECK(detail::validate_optional_text("Next step", std::string("  ship it  "),
+                                         detail::kMaxReflectionLen) == "ship it");
+
+    const std::string at_limit(detail::kMaxReflectionLen, 'x');
+    CHECK(detail::validate_optional_text("Next step", at_limit, detail::kMaxReflectionLen) ==
+          at_limit);
+    CHECK_THROWS_AS(detail::validate_optional_text("Next step", at_limit + "x",
+                                                   detail::kMaxReflectionLen),
+                    std::runtime_error);
+}

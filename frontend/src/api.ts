@@ -55,6 +55,10 @@ export type SessionRecord = {
   focusMode: string;
   startedAt: string | null;
   endedAt: string | null;
+  // Roadmap 2.14. null means the question was never answered, which is what Skip leaves
+  // behind — deliberately not "" so the UI can tell "skipped" from "answered with nothing".
+  reflectionDone: string | null;
+  reflectionNextStep: string | null;
 };
 
 export type PermissionStatus = {
@@ -418,6 +422,21 @@ export const api = {
     source: LabelSource = "manual",
   ) =>
     invoke("submit_label", { request: { sessionId, label, notes, source } }),
+  // Roadmap 2.14. Pass null (or omit) for an answer the user skipped or cleared; the backend
+  // trims, treats blank as unanswered, and returns the saved row so the caller renders what
+  // was actually stored.
+  saveSessionReflection: async (
+    sessionId: string,
+    done: string | null,
+    nextStep: string | null,
+  ) => {
+    const raw = await invoke<Record<string, unknown>>("save_session_reflection", {
+      sessionId,
+      done,
+      nextStep,
+    });
+    return mapSession(raw);
+  },
   getSessionRecap: async (sessionId: string) => {
     const raw = await invoke<Record<string, unknown>>("get_session_recap", { sessionId });
     return mapSessionRecap(raw);

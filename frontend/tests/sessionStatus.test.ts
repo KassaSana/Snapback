@@ -8,6 +8,8 @@ const session = (status: string): SessionRecord => ({
   goal: "ship it",
   status,
   focusMode: "normal",
+  reflectionDone: null,
+  reflectionNextStep: null,
   startedAt: null,
   endedAt: null,
 });

@@ -2101,7 +2101,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   that relaunch policy, session replacement, and simultaneous session stop.
   macOS native alerts remain downstream of **3.3**, but the portable behavior need not wait.
 
-- **2.14 — Add an optional end-of-session reflection.** `M`
+- **2.14 — STORAGE + EXPORT DONE 2026-08-09; the in-app form stays open.** `M`
   Opened 2026-08-05. The current check-in records only a coarse focus label and the recap is
   metrics-only. That helps model training, but it does not preserve what the user accomplished
   or the next step that makes tomorrow's restart easier.
@@ -2111,6 +2111,20 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   otherwise. Reflections are editable from the session detail in **2.9** and appear in the
   readable personal export. This requires an append-only schema migration; use **7.22**'s
   pre-migration backup and add a real prior-version upgrade case for the new field.
+
+  **Done:** schema v6 adds two nullable columns to `sessions` (append-only, idempotent, no
+  backfill); `save_session_reflection` on Storage and AppState; the `save_session_reflection`
+  command with trim/blank/length validation; the reflection section in the readable personal
+  export; and `saveSessionReflection` in the frontend API with the mapped record fields. The
+  prior-version upgrade case the item asks for is real — it rewinds a v6 database to v5 by
+  dropping the columns, reopens, and proves the session survives and the columns are writable.
+  Answers are stored on `sessions`, never on `labels`, which is what keeps them out of training
+  data by construction rather than by the exporter remembering.
+
+  **Still open:** the in-app form. Nothing yet prompts for a reflection at session end or lets
+  one be edited — the command exists and is callable, but no surface calls it. That surface is
+  where the "Skip is one click" promise actually gets kept, and editing belongs with **2.9**'s
+  session detail.
 
 - **2.15 — PERSISTENCE DONE 2026-08-06; the explorable half stays open.** `M`
   The item's own two halves, split as it describes them: "first persist", then "compose those

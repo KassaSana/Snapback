@@ -2267,3 +2267,39 @@ TEST_CASE("AppState exports a document, not an empty file, with no history") {
     CHECK_FALSE(markdown.empty());
     CHECK(markdown.find("No sessions have been recorded yet") != std::string::npos);
 }
+
+// --- Roadmap 2.14: reflections through AppState --------------------------------------------
+
+TEST_CASE("a reflection saved on the running session is visible without a restart") {
+    // AppState caches the active session, so the write reaching storage is only half the job:
+    // without refreshing that cache, active_session() keeps serving a copy with no reflection
+    // and the UI shows the field empty immediately after the user filled it in.
+    auto state = make_state();
+    const auto started = state->start_session("write the recap", FocusMode::Deep);
+
+    const auto saved =
+        state->save_session_reflection(started.session_id, "drafted it", "edit tomorrow");
+    REQUIRE(saved.has_value());
+    CHECK(saved->reflection_done == "drafted it");
+
+    const auto active = state->active_session();
+    REQUIRE(active.has_value());
+    CHECK(active->session_id == started.session_id);
+    CHECK(active->reflection_done == "drafted it");
+    CHECK(active->reflection_next_step == "edit tomorrow");
+}
+
+TEST_CASE("reflecting on one session leaves another session's cached copy alone") {
+    auto state = make_state();
+    const auto first = state->start_session("first", FocusMode::Normal);
+    state->stop_session(first.session_id);
+    const auto second = state->start_session("second", FocusMode::Normal);
+
+    state->save_session_reflection(first.session_id, "finished first", std::nullopt);
+
+    const auto active = state->active_session();
+    REQUIRE(active.has_value());
+    CHECK(active->session_id == second.session_id);
+    CHECK_FALSE(active->reflection_done.has_value());
+    CHECK(state->get_session(first.session_id)->reflection_done == "finished first");
+}

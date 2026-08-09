@@ -276,6 +276,10 @@ export function mapSession(raw: Record<string, unknown>): SessionRecord {
     focusMode: String(raw.focus_mode ?? raw.focusMode ?? "normal"),
     startedAt: (raw.started_at ?? raw.startedAt ?? null) as string | null,
     endedAt: (raw.ended_at ?? raw.endedAt ?? null) as string | null,
+    reflectionDone: (raw.reflection_done ?? raw.reflectionDone ?? null) as string | null,
+    reflectionNextStep: (raw.reflection_next_step ?? raw.reflectionNextStep ?? null) as
+      | string
+      | null,
   };
 }
 

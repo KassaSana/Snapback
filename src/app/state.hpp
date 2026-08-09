@@ -90,6 +90,11 @@ public:
     std::optional<SnapbackPayload> take_snapback();
     void dismiss_snapback();
     SessionRecap session_recap(const std::string& session_id);
+    // Roadmap 2.14. Saves the optional end-of-session reflection. nullopt result means no such
+    // session. Either field may be nullopt to leave (or clear) that answer.
+    std::optional<SessionRecord> save_session_reflection(
+        const std::string& session_id, const std::optional<std::string>& done,
+        const std::optional<std::string>& next_step);
     std::vector<PredictionRecord> prediction_history(std::size_t limit);
     // Aggregate the most recent `limit` predictions into recap stats (avg/peak/streak).
     FocusSummary focus_summary(std::size_t limit = 200);

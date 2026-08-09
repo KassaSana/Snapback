@@ -182,6 +182,12 @@ struct SessionRecord {
     std::string focus_mode;
     std::optional<std::string> started_at;
     std::optional<std::string> ended_at;
+    // Roadmap 2.14. The user's own account of the session, kept deliberately apart from the
+    // focus label: a label is a training signal, this is a note to their future self. nullopt
+    // means the question was never answered — Skip is one click and must stay indistinguishable
+    // from never being asked, so it writes nothing rather than an empty string.
+    std::optional<std::string> reflection_done;
+    std::optional<std::string> reflection_next_step;
 };
 
 // SessionRecap.

@@ -160,6 +160,17 @@ std::optional<std::string> column_opt_text(sqlite3_stmt* stmt, int column) {
     return column_text(stmt, column);
 }
 
+// The column list every `sessions` read shares, and the count `read_session` consumes.
+//
+// Named rather than spelled out per query because it was spelled out six times, and 2.14 had
+// to touch all six to add two columns. A query that needs more than these appends its own
+// after the list and reads them from kSessionColumnCount onward, so adding a column here can
+// never silently shift somebody else's index.
+constexpr const char* kSessionColumns =
+    "session_id, goal, status, focus_mode, started_at, ended_at, "
+    "reflection_done, reflection_next_step";
+constexpr int kSessionColumnCount = 8;
+
 SessionRecord read_session(sqlite3_stmt* stmt) {
     SessionRecord r;
     r.session_id = column_text(stmt, 0);
@@ -168,6 +179,8 @@ SessionRecord read_session(sqlite3_stmt* stmt) {
     r.focus_mode = column_text(stmt, 3);
     r.started_at = column_opt_text(stmt, 4);
     r.ended_at = column_opt_text(stmt, 5);
+    r.reflection_done = column_opt_text(stmt, 6);
+    r.reflection_next_step = column_opt_text(stmt, 7);
     return r;
 }
 
@@ -698,12 +711,47 @@ void migrate_snapback_episodes(sqlite3* db) {
          "ON snapback_events(session_id, started_at)");
 }
 
+// Roadmap 2.14. Two nullable columns on `sessions`, deliberately not a table of their own: a
+// reflection is exactly one optional pair per session, so a row per session with NULLs is the
+// honest shape and a join buys nothing.
+//
+// Nullable with no default, and no backfill. NULL means "never answered", which is the same
+// state Skip leaves behind — the product promise is that skipping costs one click and records
+// nothing, so an empty string would be a different, wrongly-answered state. Sessions that
+// predate this simply never had the chance to answer.
+//
+// These are kept off the `labels` table on purpose. A label is a training signal; this is the
+// user writing to their future self, and 2.14 is explicit that it stays out of training data
+// unless a later decision says otherwise. Storing them apart is what makes that enforceable
+// rather than a convention the exporter has to remember.
+//
+// ALTER rather than CREATE: a pre-versioning install already has `sessions`, so a
+// CREATE TABLE IF NOT EXISTS would skip it and the columns would never appear — the trap
+// migrate_prediction_model_id documents.
+void migrate_session_reflection(sqlite3* db) {
+    std::vector<std::string> existing;
+    {
+        Stmt columns(db, "PRAGMA table_info(sessions)");
+        while (columns.step_row()) existing.push_back(column_text(columns.get(), 1));
+    }
+    const auto has = [&](const char* name) {
+        return std::find(existing.begin(), existing.end(), name) != existing.end();
+    };
+    if (!has("reflection_done")) {
+        exec(db, "ALTER TABLE sessions ADD COLUMN reflection_done TEXT");
+    }
+    if (!has("reflection_next_step")) {
+        exec(db, "ALTER TABLE sessions ADD COLUMN reflection_next_step TEXT");
+    }
+}
+
 constexpr Migration kMigrations[] = {
     {1, "baseline schema", migrate_baseline_schema},
     {2, "predictions.model_id", migrate_prediction_model_id},
     {3, "predictions.state_source", migrate_prediction_state_source},
     {4, "session_spans", migrate_session_spans},
     {5, "snapback_events episode detail", migrate_snapback_episodes},
+    {6, "sessions reflection", migrate_session_reflection},
 };
 
 static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
@@ -861,9 +909,9 @@ Storage& Storage::operator=(Storage&& other) noexcept {
 }
 
 std::optional<SessionRecord> Storage::get_session(const std::string& session_id) {
-    Stmt stmt(db_,
-              "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-              "FROM sessions WHERE session_id = ?1");
+    const std::string sql =
+        "SELECT " + std::string(kSessionColumns) + " FROM sessions WHERE session_id = ?1";
+    Stmt stmt(db_, sql.c_str());
     stmt.bind(1, session_id);
     if (!stmt.step_row()) return std::nullopt;
     return read_session(stmt.get());
@@ -1057,22 +1105,55 @@ SessionRecord Storage::stop_session(const std::string& session_id) {
 }
 
 std::optional<SessionRecord> Storage::active_session() {
-    Stmt stmt(db_,
-              "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-              "FROM sessions WHERE status = 'ACTIVE' "
-              "ORDER BY started_at DESC, session_id DESC LIMIT 1");
+    const std::string sql = "SELECT " + std::string(kSessionColumns) +
+                            " FROM sessions WHERE status = 'ACTIVE' "
+                            "ORDER BY started_at DESC, session_id DESC LIMIT 1";
+    Stmt stmt(db_, sql.c_str());
     if (!stmt.step_row()) return std::nullopt;
     return read_session(stmt.get());
 }
 
 std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
-    Stmt stmt(db_,
-              "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-              "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1");
+    const std::string sql = "SELECT " + std::string(kSessionColumns) +
+                            " FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1";
+    Stmt stmt(db_, sql.c_str());
     stmt.bind(1, static_cast<std::int64_t>(limit));
     std::vector<SessionRecord> rows;
     while (stmt.step_row()) rows.push_back(read_session(stmt.get()));
     return rows;
+}
+
+std::optional<SessionRecord> Storage::save_session_reflection(
+    const std::string& session_id, const std::optional<std::string>& done,
+    const std::optional<std::string>& next_step) {
+    // Roadmap 2.14. One UPDATE, both columns, every time — including the nullopt case, which
+    // writes NULL. A "only update what was provided" variant would make clearing an answer
+    // impossible to express, and the edit path in 2.9 needs exactly that.
+    //
+    // No status check. A reflection is offered at the end of a session but the item calls it
+    // editable afterwards, so refusing to write one to a COMPLETED session would forbid the
+    // ordinary case rather than a wrong one.
+    {
+        Stmt stmt(db_,
+                  "UPDATE sessions SET reflection_done = ?1, reflection_next_step = ?2 "
+                  "WHERE session_id = ?3");
+        if (done) {
+            stmt.bind(1, *done);
+        } else {
+            stmt.bind_null(1);
+        }
+        if (next_step) {
+            stmt.bind(2, *next_step);
+        } else {
+            stmt.bind_null(2);
+        }
+        stmt.bind(3, session_id);
+        stmt.step_done();
+    }
+    // Re-read rather than trusting sqlite3_changes(): an UPDATE that sets a column to the value
+    // it already held reports zero rows changed, which would make a genuine no-op save
+    // indistinguishable from a missing session.
+    return get_session(session_id);
 }
 
 std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit) {
@@ -1093,14 +1174,17 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
     std::vector<SessionSummary> out;
     std::unordered_map<std::string, std::size_t> index_of;
     {
-        Stmt stmt(db_,
-                  "SELECT session_id, goal, status, focus_mode, started_at, ended_at, "
-                  // ROUND before CAST: see active_secs. A truncating CAST reported an exact
-                  // hour as 3599, and leaving it here while active time rounds would let a
-                  // fully-attended session claim more attended seconds than elapsed ones.
-                  "CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
-                  "julianday(started_at)) * 86400)) AS INTEGER) "
-                  "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1");
+        // The computed duration is appended *after* the shared column list and read at
+        // kSessionColumnCount, so growing that list cannot silently move it.
+        const std::string sql =
+            "SELECT " + std::string(kSessionColumns) + ", " +
+            // ROUND before CAST: see active_secs. A truncating CAST reported an exact
+            // hour as 3599, and leaving it here while active time rounds would let a
+            // fully-attended session claim more attended seconds than elapsed ones.
+            "CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
+            "julianday(started_at)) * 86400)) AS INTEGER) "
+            "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1";
+        Stmt stmt(db_, sql.c_str());
         stmt.bind(1, static_cast<std::int64_t>(limit));
         while (stmt.step_row()) {
             SessionSummary summary;
@@ -1108,7 +1192,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
             summary.recap.session_id = summary.record.session_id;
             summary.recap.goal = summary.record.goal;
             summary.recap.duration_secs =
-                static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 6));
+                static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), kSessionColumnCount));
             index_of.emplace(summary.record.session_id, out.size());
             out.push_back(std::move(summary));
         }
@@ -1485,9 +1569,9 @@ bool Storage::delete_session(const std::string& session_id) {
 SessionRecap Storage::recap(const std::string& session_id) {
     SessionRecord session;
     {
-        Stmt stmt(db_,
-                  "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-                  "FROM sessions WHERE session_id = ?1");
+        const std::string sql =
+            "SELECT " + std::string(kSessionColumns) + " FROM sessions WHERE session_id = ?1";
+        Stmt stmt(db_, sql.c_str());
         stmt.bind(1, session_id);
         if (!stmt.step_row()) throw std::runtime_error("session not found");
         session = read_session(stmt.get());
@@ -1804,13 +1888,11 @@ std::vector<SessionRecord> Storage::sessions_after(const std::optional<SessionCu
     // The row-value comparison `(a, b) < (?, ?)` is the keyset predicate written the way
     // SQLite can serve from idx_sessions_status_started / the primary key, and it expresses
     // "strictly after in this ordering" without the three-way OR expansion by hand.
-    const char* sql =
-        after ? "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-                "FROM sessions WHERE (started_at, session_id) < (?2, ?3) "
-                "ORDER BY started_at DESC, session_id DESC LIMIT ?1"
-              : "SELECT session_id, goal, status, focus_mode, started_at, ended_at "
-                "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1";
-    Stmt stmt(db_, sql);
+    const std::string sql =
+        "SELECT " + std::string(kSessionColumns) + " FROM sessions " +
+        (after ? "WHERE (started_at, session_id) < (?2, ?3) " : "") +
+        "ORDER BY started_at DESC, session_id DESC LIMIT ?1";
+    Stmt stmt(db_, sql.c_str());
     stmt.bind(1, static_cast<std::int64_t>(limit));
     if (after) {
         stmt.bind(2, after->started_at);

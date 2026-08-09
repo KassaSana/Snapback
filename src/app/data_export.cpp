@@ -113,6 +113,20 @@ std::string render_archive_session_header(const PersonalArchiveSession& session,
     out << "- Average focus score: " << one_decimal(recap.avg_focus_score) << " / 100\n";
     out << "- Deep focus: " << one_decimal(recap.deep_focus_pct) << "%\n";
     out << "- Interruptions recorded: " << recap.snapback_count << "\n\n";
+    // Roadmap 2.14. The user's own words, printed as prose under the metrics rather than as
+    // another bullet: this is the one part of the entry they wrote, and the export exists so
+    // they keep it. Absent when never answered — a heading over nothing would read as though
+    // the app lost something, when in fact the question was skipped.
+    if (record.reflection_done || record.reflection_next_step) {
+        out << "#### Reflection\n\n";
+        if (record.reflection_done) {
+            out << "- What got done: " << *record.reflection_done << "\n";
+        }
+        if (record.reflection_next_step) {
+            out << "- Next step: " << *record.reflection_next_step << "\n";
+        }
+        out << "\n";
+    }
     return out.str();
 }
 

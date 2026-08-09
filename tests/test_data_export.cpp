@@ -199,3 +199,39 @@ TEST_CASE("render_personal_archive names an untitled session rather than leaving
 
     CHECK(contains(render_personal_archive(archive), "Untitled session"));
 }
+
+TEST_CASE("the personal export carries the user's own words back to them") {
+    // Roadmap 2.14. The export exists so the user keeps what they wrote; metrics they can
+    // recompute, a reflection they cannot.
+    PersonalArchive archive;
+    auto session = make_session("s1", "ship the exporter");
+    session.record.reflection_done = "wired the CSV path";
+    session.record.reflection_next_step = "add the header row";
+    archive.sessions.push_back(session);
+
+    const auto markdown = render_personal_archive(archive);
+    CHECK(markdown.find("#### Reflection") != std::string::npos);
+    CHECK(markdown.find("wired the CSV path") != std::string::npos);
+    CHECK(markdown.find("add the header row") != std::string::npos);
+}
+
+TEST_CASE("a skipped reflection leaves no empty heading in the export") {
+    // Skip must cost nothing and leave nothing: a "Reflection" heading over blank lines reads
+    // as though the app lost something the user wrote.
+    PersonalArchive archive;
+    archive.sessions.push_back(make_session("s1", "ship the exporter"));
+    const auto markdown = render_personal_archive(archive);
+    CHECK(markdown.find("#### Reflection") == std::string::npos);
+}
+
+TEST_CASE("one answered half renders without inventing the other") {
+    PersonalArchive archive;
+    auto session = make_session("s1", "read the spec");
+    session.record.reflection_next_step = "start the draft";
+    archive.sessions.push_back(session);
+
+    const auto markdown = render_personal_archive(archive);
+    CHECK(markdown.find("#### Reflection") != std::string::npos);
+    CHECK(markdown.find("Next step: start the draft") != std::string::npos);
+    CHECK(markdown.find("What got done") == std::string::npos);
+}

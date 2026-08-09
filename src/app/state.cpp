@@ -701,6 +701,28 @@ SessionRecap AppState::session_recap(const std::string& session_id) {
     return storage_.recap(session_id);
 }
 
+std::optional<SessionRecord> AppState::save_session_reflection(
+    const std::string& session_id, const std::optional<std::string>& done,
+    const std::optional<std::string>& next_step) {
+    // Mixed: writes storage, then repairs in-memory state. Both locks, in LockRank order.
+    // storage_mutex_ alone would be enough to make the write safe and still leave the bug:
+    // active_session_ caches the row, so reflecting on the running session would keep serving
+    // a copy without the answer the user just saved until the next restart.
+    std::lock_guard state_lock(mutex_);
+    std::lock_guard store_lock(storage_mutex_);
+    auto saved = storage_.save_session_reflection(session_id, done, next_step);
+    if (saved && active_session_ && active_session_->session_id == session_id) {
+        active_session_ = saved;
+        // Updating the cache is not enough on its own: active_session() is served from the
+        // published immutable snapshot, which is only rebuilt when this flag says the state
+        // behind it moved. Without it the UI shows the field empty right after the user
+        // filled it in, and keeps doing so until something unrelated dirties the snapshot.
+        live_read_dirty_ = true;
+        publish_live_read_unlocked();
+    }
+    return saved;
+}
+
 std::vector<PredictionRecord> AppState::prediction_history(std::size_t limit) {
     std::lock_guard lock(storage_mutex_);
     return storage_.recent_predictions(limit);

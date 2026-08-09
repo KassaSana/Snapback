@@ -131,6 +131,8 @@ void to_json(json& j, const SessionRecord& v) {
              {"focusMode", v.focus_mode}};
     put_opt(j, "startedAt", v.started_at);
     put_opt(j, "endedAt", v.ended_at);
+    put_opt(j, "reflectionDone", v.reflection_done);
+    put_opt(j, "reflectionNextStep", v.reflection_next_step);
 }
 void from_json(const json& j, SessionRecord& v) {
     v.session_id = get_or<std::string>(j, "sessionId", "");
@@ -139,6 +141,8 @@ void from_json(const json& j, SessionRecord& v) {
     v.focus_mode = get_or<std::string>(j, "focusMode", "normal");
     v.started_at = opt_str(j, "startedAt");
     v.ended_at = opt_str(j, "endedAt");
+    v.reflection_done = opt_str(j, "reflectionDone");
+    v.reflection_next_step = opt_str(j, "reflectionNextStep");
 }
 
 // ---- SessionRecap ----------------------------------------------------------

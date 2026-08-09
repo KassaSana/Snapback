@@ -105,6 +105,24 @@ inline void register_commands(webview::webview& w, AppState& state,
     bind_cmd("get_session_history", [&state](const json& a) {
         return json(state.session_history(detail::clamp_limit(a, 20)));
     });
+    // Roadmap 2.14. Both answers are optional, and blank is not an answer:
+    // validate_optional_text trims and turns "" into nullopt, so Skip, an all-whitespace
+    // submission, and clearing a previous answer all land on the same NULL the schema uses
+    // for "never answered". Returns the saved row so the UI renders what was stored rather
+    // than what it hoped was stored.
+    bind_cmd("save_session_reflection", [&state](const json& a) {
+        auto sid = detail::validate_required_text(
+            "Session ID", a.at("sessionId").get<std::string>(), detail::kMaxSessionIdLen);
+        auto done = detail::validate_optional_text("What got done",
+                                                   detail::opt_string(a, "done"),
+                                                   detail::kMaxReflectionLen);
+        auto next_step = detail::validate_optional_text("Next step",
+                                                        detail::opt_string(a, "nextStep"),
+                                                        detail::kMaxReflectionLen);
+        auto saved = state.save_session_reflection(sid, done, next_step);
+        if (!saved) throw std::runtime_error("session not found");
+        return json(*saved);
+    });
 
     // --- Optional Pomodoro timer ---
     bind_cmd("get_pomodoro_status",

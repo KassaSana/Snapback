@@ -46,5 +46,6 @@
   "set_training_repo_path",
   "train_from_export",
   "rollback_classifier_model",
-  "retry_model_deployment_cleanup"
+  "retry_model_deployment_cleanup",
+  "save_session_reflection"
 ]
