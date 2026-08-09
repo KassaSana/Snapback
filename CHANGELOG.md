@@ -106,6 +106,13 @@ on `v0.2.0` at the bottom before cutting one.
   not cover — so `windows_demo.ps1` built a broken binary and exited 0, keeping the Windows
   job green over the compile error above. Every native call now goes through `Invoke-Native`,
   and `scripts/check_ps_exit_codes.py` fails CI if one does not.
+- **The Windows app target builds.** webview reaches WebView2, which reaches `windows.h`,
+  which defines `min`/`max` as macros unless `NOMINMAX` is set — so every `std::max(a, b)`
+  afterwards expanded to `std::((a) > (b) ? ...)` and MSVC rejected it (C2589) at
+  `focus_summary.hpp` and `logger.hpp`. `webview_compat.hpp`, which exists to contain exactly
+  this kind of pollution, now sets `NOMINMAX` before the include and scrubs both macros after.
+  Only MSVC ever saw it: libstdc++ `#undef`s them itself, which is why the windows-gcc job
+  stayed green throughout.
 - **Windows builds no longer name a Visual Studio version.** `windows_demo.ps1` and
   `package_windows.ps1` asked CMake for "Visual Studio 17 2022"; once `windows-latest` stopped
   shipping it, configure failed with "could not find any instance of Visual Studio" — which
