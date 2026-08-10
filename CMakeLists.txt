@@ -161,6 +161,7 @@ add_library(snapback_app STATIC
   src/app/reveal_path.cpp
   src/app/single_instance.cpp
   src/app/settings.cpp
+  src/app/uninstall.cpp
   src/app/state.cpp
   src/app/support_bundle.cpp
   src/app/training_deploy.cpp

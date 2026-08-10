@@ -17,6 +17,13 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **`snapback --purge` removes everything the app created (9.5).** The database of window
+  titles, settings, logs and rotations, exports, the model, SQLite's side files, every
+  pre-migration backup, and the start-on-login entry. The decision behind it: someone who
+  uninstalls an app that recorded their window titles believes they removed what it recorded,
+  so leaving the database behind is the one outcome this product cannot afford. It reports what
+  went and what did not, and exits non-zero on a partial removal rather than claiming a clean
+  one. Files it did not create are left alone, as is the folder holding them.
 - **One answer to "am I being recorded right now?" (2.10).** A Recording status card states
   one of five things — Recording, Paused for idle, Paused privately, No session, or Blocked —
   decided in one place in the backend so two surfaces cannot disagree about it. Privacy pause

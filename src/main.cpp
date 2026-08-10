@@ -36,6 +36,7 @@
 #include "snapback/overlay.hpp"
 #include "storage/storage.hpp"
 #include "util/logger.hpp"
+#include "app/uninstall.hpp"
 #include "util/private_dir.hpp"
 
 #if defined(_WIN32)
@@ -142,8 +143,15 @@ std::filesystem::path executable_dir() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     using namespace snapback;
+
+    // Roadmap 9.5. `snapback --purge` removes everything this app created and exits. The
+    // Windows uninstaller runs it before deleting the binary, which is the only moment both
+    // the data directory and something that knows where it is still exist. It prints what went
+    // and what did not, because "most of it" must never be reported as "all of it" for an
+    // application that recorded window titles.
+    const bool purge = argc > 1 && std::string(argv[1]) == "--purge";
 
     // Roadmap 8.13. Fail closed rather than record somewhere shared. There is no safe
     // automatic answer when the user has no profile directory, so there is no automatic answer.
@@ -153,6 +161,19 @@ int main() {
         return 1;
     }
     const auto data_dir = chosen.path;
+
+    if (purge) {
+        const auto removed = purge_app_data(data_dir);
+        for (const auto& gone : removed.deleted) {
+            std::cout << "removed: " << gone << "\n";
+        }
+        for (const auto& kept : removed.failed) {
+            std::cerr << "could not remove: " << kept << "\n";
+        }
+        // Non-zero on a partial purge so an uninstaller can surface it rather than claiming a
+        // clean removal it did not achieve.
+        return removed.complete() ? 0 : 1;
+    }
 
     // Owner-only from the moment it exists: `mkdir(0700)` rather than create-then-chmod, which
     // would leave the directory readable for the interval between the two calls.

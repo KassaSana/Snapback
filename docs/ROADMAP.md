@@ -2694,12 +2694,36 @@ small; the tier is large because nobody has walked that path yet.
   `focoflow.db` are discovered and migrated rather than appearing lost under the C++ app's
   current data-directory rules.
 
-- **9.5 — Uninstall leaves no surprises.** `S`
+- **9.5 — DECIDED AND IMPLEMENTED 2026-08-09; wiring the installer stays open.** `S`
   Decide and implement what uninstall removes. Today it plausibly leaves behind: the
   `focoflow.db` with full window-title history, the HKCU Run key (a startup entry pointing at
   a deleted binary), the log files and rotated backups, and the exported training CSVs. For a
   keystroke-recording app, **leaving the database behind after uninstall is the worst of the
   four** — the user believes they removed it. Ties to 7.6 and 8.5.
+
+  **The decision: uninstall removes all of it, database included.** Not for tidiness — because
+  a person who uninstalls an application that recorded their window titles believes they have
+  removed what it recorded, and leaving `focoflow.db` makes that belief false without telling
+  them. Everything else follows from the same rule: settings, logs and their rotations, every
+  export, the model, SQLite's `-wal`/`-shm` companions (which hold recent writes, and so recent
+  window titles), every pre-migration backup, and the start-on-login entry.
+
+  **Done:** `src/app/uninstall.hpp` enumerates it and `purge_app_data` removes it, reporting
+  per-item what went and what did not through 8.12's `ActivityDeletionResult` rather than a
+  parallel shape — the question afterwards is identical. Reachable as `snapback --purge`, which
+  exits non-zero on a partial purge so a caller cannot report a clean removal it did not
+  achieve. Deliberately **not** `delete_all_activity_data`: that one keeps the database file,
+  the settings and the model because the app keeps running: uninstall has no afterwards.
+  Two boundaries are pinned by test: files that merely look like ours (`snapback.log.bak`) are
+  left alone, and the data directory itself is removed only if empty, so someone who pointed
+  `SNAPBACK_DATA_DIR` at a folder of their own keeps what is theirs. An empty data directory
+  reports a failure rather than a silent success, because "nowhere to look" is not "nothing to
+  remove".
+
+  **Still open:** the Windows uninstaller does not call it yet — `package_windows.ps1` builds
+  an IExpress installer, and wiring an uninstall hook to run `snapback --purge` before deleting
+  the binary is packaging work that belongs with **3.3**/**3.4**. macOS and Linux have no
+  uninstaller at all yet. The command exists and is the single implementation each will use.
 
 - **9.6 — Failure UX: what does the user actually see when it breaks?** `M`
   The backend reports several rich failure states (7.4, 7.10, 8.1), but there is no designed
