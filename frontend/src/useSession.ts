@@ -45,6 +45,10 @@ export const useSession = ({
   const [focusMode, setFocusMode] = useState<FocusMode>("normal");
   const [recap, setRecap] = useState<SessionRecap | null>(null);
   const [surveyPending, setSurveyPending] = useState(false);
+  // Roadmap 2.14. Tracks only whether *this* end-of-session prompt is still open. Skipping and
+  // saving both close it; neither is remembered past the session it belongs to.
+  const [reflectionPending, setReflectionPending] = useState(false);
+  const [reflectionSaved, setReflectionSaved] = useState(false);
 
   const hydrateActiveSession = useCallback(async () => {
     const [settings, active] = await Promise.all([
@@ -136,6 +140,8 @@ export const useSession = ({
       const sessionRecap = await api.getSessionRecap(sessionId);
       setRecap(sessionRecap);
       setSurveyPending(true);
+      setReflectionPending(true);
+      setReflectionSaved(false);
       setLabelStatus("Automatic session label saved. How did this session feel overall?");
       setLabelStatusWarning(false);
       setActionError(null);
@@ -152,6 +158,30 @@ export const useSession = ({
     setLabelStatus,
     setLabelStatusWarning,
   ]);
+
+  // Roadmap 2.14. Saves against the session that just ended, not a live one -- by the time
+  // this prompt is on screen there is no active session, and `sessionId` still names the right
+  // row because stopping does not clear it.
+  const handleSaveReflection = useCallback(
+    async (done: string | null, nextStep: string | null) => {
+      if (!sessionId) {
+        return;
+      }
+      try {
+        await api.saveSessionReflection(sessionId, done, nextStep);
+        setReflectionSaved(true);
+        setActionError(null);
+      } catch {
+        setActionError("Could not save the reflection.");
+      }
+    },
+    [sessionId, setActionError],
+  );
+
+  // Skip writes nothing at all: absent and skipped are the same state by design.
+  const handleSkipReflection = useCallback(() => {
+    setReflectionPending(false);
+  }, []);
 
   const handleFocusModeChange = useCallback(async (mode: FocusMode) => {
     setFocusMode(mode);
@@ -188,6 +218,8 @@ export const useSession = ({
     focusMode,
     handleFocusModeChange,
     handleLabel,
+    handleSaveReflection,
+    handleSkipReflection,
     handleSkipSurvey,
     handleStartSession,
     handleStopSession,
@@ -198,6 +230,8 @@ export const useSession = ({
     sessionRecord,
     sessionStatusLabel,
     setSessionGoal,
+    reflectionPending,
+    reflectionSaved,
     surveyPending,
   };
 };

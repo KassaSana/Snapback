@@ -2087,7 +2087,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   state — no analytics service is implied by this item. This extends completed **1.1** rather
   than replacing the OS-permission wizard.
 
-- **2.13 — STATE MACHINE + PERSISTENCE DONE 2026-08-09; tray and alerts stay open.** `M`
+- **2.13 — DONE 2026-08-09 except tray countdown and native alerts.** `M`
   Opened 2026-08-05. The existing state machine hardcodes 25/5/15-minute phases, while IPC and
   `PomodoroCard` expose only start and stop. There is no pause/resume, skip, restart, long-break
   cadence setting, or durable indication when the main window is hidden.
@@ -2119,12 +2119,17 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   present for. All four named test cases exist, plus pause/resume, skip, auto-start-off, and
   the stopped/paused/awaiting restore paths.
 
+  **The card is wired:** pause/resume swap in place, skip and restart act on the phase in
+  progress, and an ended phase shows "Done" with a single *Start <next phase>* button — skip and
+  restart are withheld there, because there is no phase running to skip or replay. Covered by
+  `frontend/tests/pomodoroFlow.test.tsx` driving the real card, hook and api against a mocked boundary.
+
   **Still open:** remaining time in the tray while the dashboard is hidden, and in-app/native
   phase alerts. Both are platform surfaces rather than state-machine behaviour — the timer
-  already reports each boundary exactly once, which is the hook they need. `PomodoroCard` also
-  still shows only start/stop; the six new commands exist and are callable but unbound.
+  already reports each boundary exactly once, which is the hook they need. Editing the rhythm
+  also has no Settings surface yet; `set_pomodoro_config` exists and is callable.
 
-- **2.14 — STORAGE + EXPORT DONE 2026-08-09; the in-app form stays open.** `M`
+- **2.14 — DONE 2026-08-09 except editing an existing reflection.** `M`
   Opened 2026-08-05. The current check-in records only a coarse focus label and the recap is
   metrics-only. That helps model training, but it does not preserve what the user accomplished
   or the next step that makes tomorrow's restart easier.
@@ -2144,10 +2149,14 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   Answers are stored on `sessions`, never on `labels`, which is what keeps them out of training
   data by construction rather than by the exporter remembering.
 
-  **Still open:** the in-app form. Nothing yet prompts for a reflection at session end or lets
-  one be edited — the command exists and is callable, but no surface calls it. That surface is
-  where the "Skip is one click" promise actually gets kept, and editing belongs with **2.9**'s
-  session detail.
+  **The form is wired:** a Reflection card appears with the end-of-session check-in on Review,
+  Save is disabled until there is something to save, and Skip is one click that writes nothing
+  at all — so a skipped reflection stays indistinguishable from one never offered, which is the
+  promise the storage half was built around. Covered by `frontend/tests/reflectionFlow.test.tsx`.
+
+  **Still open:** editing a reflection after the prompt is gone. That belongs with **2.9**'s
+  session detail, which does not exist yet; the command already accepts an edit, including
+  clearing an answer back to unset.
 
 - **2.15 — PERSISTENCE DONE 2026-08-06; the explorable half stays open.** `M`
   The item's own two halves, split as it describes them: "first persist", then "compose those

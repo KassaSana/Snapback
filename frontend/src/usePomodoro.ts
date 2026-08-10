@@ -50,11 +50,54 @@ export const usePomodoro = ({ setActionError }: UsePomodoroArgs) => {
     }
   }, [setActionError]);
 
+  // Roadmap 2.13. The five controls share one shape: call, take the status the backend
+  // actually reached, and report a failure in the user's terms. The backend treats a control
+  // that does not apply as a no-op rather than an error, so there is nothing to guard here.
+  const runPomodoroAction = useCallback(
+    async (action: () => Promise<PomodoroStatus>, failure: string) => {
+      try {
+        const status = await action();
+        setPomodoroStatus(status);
+        setActionError(null);
+      } catch {
+        setActionError(failure);
+      }
+    },
+    [setActionError],
+  );
+
+  const handlePausePomodoro = useCallback(
+    () => runPomodoroAction(api.pausePomodoro, "Could not pause the Pomodoro timer."),
+    [runPomodoroAction],
+  );
+  const handleResumePomodoro = useCallback(
+    () => runPomodoroAction(api.resumePomodoro, "Could not resume the Pomodoro timer."),
+    [runPomodoroAction],
+  );
+  const handleSkipPomodoroPhase = useCallback(
+    () => runPomodoroAction(api.skipPomodoroPhase, "Could not skip this phase."),
+    [runPomodoroAction],
+  );
+  const handleRestartPomodoroPhase = useCallback(
+    () => runPomodoroAction(api.restartPomodoroPhase, "Could not restart this phase."),
+    [runPomodoroAction],
+  );
+  const handleAcknowledgePomodoroPhase = useCallback(
+    () =>
+      runPomodoroAction(api.acknowledgePomodoroPhase, "Could not start the next phase."),
+    [runPomodoroAction],
+  );
+
   return {
     pomodoroStatus,
     refreshPomodoroStatus,
     handlePomodoroEvent,
     handleStartPomodoro,
     handleStopPomodoro,
+    handlePausePomodoro,
+    handleResumePomodoro,
+    handleSkipPomodoroPhase,
+    handleRestartPomodoroPhase,
+    handleAcknowledgePomodoroPhase,
   };
 };

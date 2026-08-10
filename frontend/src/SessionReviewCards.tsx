@@ -1,12 +1,19 @@
 import { memo } from "react";
 
 import { formatScore, type FocusLabel, type SessionRecap } from "./api";
+import { SessionReflectionCard } from "./SessionReflectionCard";
 
 type SessionReviewCardsProps = {
   handleLabel: (label: FocusLabel, source?: "manual" | "hotkey" | "survey" | "auto") => void | Promise<void>;
   handleSkipSurvey: () => void;
   recap: SessionRecap | null;
   surveyPending: boolean;
+  // Roadmap 2.14. Shown alongside the check-in at the end of a session, and closed by either
+  // saving or skipping.
+  reflectionPending: boolean;
+  reflectionSaved: boolean;
+  handleSaveReflection: (done: string | null, nextStep: string | null) => void | Promise<void>;
+  handleSkipReflection: () => void;
 };
 
 export const SessionReviewCards = memo(function SessionReviewCards({
@@ -14,6 +21,10 @@ export const SessionReviewCards = memo(function SessionReviewCards({
   handleSkipSurvey,
   recap,
   surveyPending,
+  reflectionPending,
+  reflectionSaved,
+  handleSaveReflection,
+  handleSkipReflection,
 }: SessionReviewCardsProps) {
   return (
     <>
@@ -47,6 +58,14 @@ export const SessionReviewCards = memo(function SessionReviewCards({
             </button>
           </div>
         </section>
+      ) : null}
+
+      {reflectionPending && recap ? (
+        <SessionReflectionCard
+          onSave={handleSaveReflection}
+          onSkip={handleSkipReflection}
+          saved={reflectionSaved}
+        />
       ) : null}
 
       {recap ? (

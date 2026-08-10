@@ -48,6 +48,30 @@ const boundary = vi.hoisted(() => {
           remaining_ms: 0,
         };
         return state.pomodoro;
+      case "pause_pomodoro":
+        state.pomodoro = { ...state.pomodoro, paused: true };
+        return state.pomodoro;
+      case "resume_pomodoro":
+        state.pomodoro = { ...state.pomodoro, paused: false };
+        return state.pomodoro;
+      case "skip_pomodoro_phase":
+        state.pomodoro = {
+          ...state.pomodoro,
+          phase: "shortBreak",
+          remaining_ms: 5 * 60 * 1000,
+        };
+        return state.pomodoro;
+      case "restart_pomodoro_phase":
+        state.pomodoro = { ...state.pomodoro, remaining_ms: 25 * 60 * 1000 };
+        return state.pomodoro;
+      case "acknowledge_pomodoro_phase":
+        state.pomodoro = {
+          ...state.pomodoro,
+          awaiting_acknowledgement: false,
+          phase: "shortBreak",
+          remaining_ms: 5 * 60 * 1000,
+        };
+        return state.pomodoro;
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -132,5 +156,78 @@ describe("Pomodoro card", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Stop Pomodoro" }));
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("stop_pomodoro"));
     expect(await within(card).findByText("--:--")).toBeInTheDocument();
+  });
+
+  // Roadmap 2.13. Drives the real card + usePomodoro + api.ts against the mocked boundary,
+  // so a control that is wired to the wrong command fails here rather than in the app.
+  const startSessionAndTimer = async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await screen.findByText("running");
+    const card = pomodoroCard();
+    fireEvent.click(within(card).getByRole("button", { name: "Start Pomodoro" }));
+    await within(card).findByText("25:00");
+    return card;
+  };
+
+  it("pauses and resumes, swapping the control rather than showing both", async () => {
+    const card = await startSessionAndTimer();
+
+    fireEvent.click(within(card).getByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("pause_pomodoro"));
+    expect(await within(card).findByText(/Paused/i)).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(card).getByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("resume_pomodoro"));
+    expect(within(card).getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  });
+
+  it("skips and restarts the phase in progress", async () => {
+    const card = await startSessionAndTimer();
+
+    fireEvent.click(within(card).getByRole("button", { name: "Skip phase" }));
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("skip_pomodoro_phase"));
+    expect(await within(card).findByText("Short break")).toBeInTheDocument();
+
+    fireEvent.click(within(card).getByRole("button", { name: "Restart phase" }));
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("restart_pomodoro_phase"));
+  });
+
+  it("waits for acknowledgement when a phase has ended, and offers nothing to skip", async () => {
+    // The auto-start-off state: the phase is over, the next one has not begun, and the only
+    // sensible action is to start it. Skip and restart would act on a phase that is not
+    // running, so the card does not offer them.
+    boundary.state.pomodoro = {
+      running: true,
+      paused: false,
+      awaiting_acknowledgement: true,
+      phase: "shortBreak",
+      completed_work_intervals: 1,
+      remaining_ms: 0,
+    };
+    render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+    // The controls only exist while a session is active -- the timer belongs to a session.
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await screen.findByText("running");
+    const card = pomodoroCard();
+
+    expect(await within(card).findByText("Done")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Skip phase" })).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(card).getByRole("button", { name: /Start short break/i }));
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("acknowledge_pomodoro_phase"),
+    );
+    expect(await within(card).findByText("5:00")).toBeInTheDocument();
   });
 });

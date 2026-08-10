@@ -45,6 +45,13 @@ describe("prediction render boundaries", () => {
     } as AutostartStatus;
     const onStart = vi.fn();
     const onStop = vi.fn();
+    // Roadmap 2.13's controls, declared out here for the same reason as the two above: a
+    // callback recreated per render would defeat the memo boundary this test measures.
+    const onPause = vi.fn();
+    const onResume = vi.fn();
+    const onSkip = vi.fn();
+    const onRestart = vi.fn();
+    const onAcknowledge = vi.fn();
     const onAutostartChange = vi.fn();
     // Stable identity, like the memoized callback App passes: an inline arrow would be a new
     // prop on every parent render and would defeat the very boundary this test measures.
@@ -62,6 +69,11 @@ describe("prediction render boundaries", () => {
             sessionActive
             onStart={onStart}
             onStop={onStop}
+            onPause={onPause}
+            onResume={onResume}
+            onSkip={onSkip}
+            onRestart={onRestart}
+            onAcknowledge={onAcknowledge}
           />
           <FocusSummaryCard focusSummary={focusSummary} />
           <SettingsCard

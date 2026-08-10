@@ -59,6 +59,11 @@ export default function App() {
     handlePomodoroEvent,
     handleStartPomodoro,
     handleStopPomodoro,
+    handlePausePomodoro,
+    handleResumePomodoro,
+    handleSkipPomodoroPhase,
+    handleRestartPomodoroPhase,
+    handleAcknowledgePomodoroPhase,
   } = usePomodoro({ setActionError: feedback.setActionError });
 
   const {
@@ -111,6 +116,8 @@ export default function App() {
     focusMode,
     handleFocusModeChange,
     handleLabel,
+    handleSaveReflection,
+    handleSkipReflection,
     handleSkipSurvey,
     handleStartSession,
     handleStopSession,
@@ -120,6 +127,8 @@ export default function App() {
     sessionId,
     sessionRecord,
     setSessionGoal,
+    reflectionPending,
+    reflectionSaved,
     surveyPending,
   } = useSession({
     refreshContextTimeline: live.refreshContextTimeline,
@@ -362,6 +371,11 @@ export default function App() {
           sessionActive={sessionRecord?.status === "ACTIVE"}
           onStart={handleStartPomodoro}
           onStop={handleStopPomodoro}
+          onPause={handlePausePomodoro}
+          onResume={handleResumePomodoro}
+          onSkip={handleSkipPomodoroPhase}
+          onRestart={handleRestartPomodoroPhase}
+          onAcknowledge={handleAcknowledgePomodoroPhase}
         />
           </>
         )}
@@ -387,6 +401,10 @@ export default function App() {
           handleSkipSurvey={handleSkipSurvey}
           recap={recap}
           surveyPending={surveyPending}
+          reflectionPending={reflectionPending}
+          reflectionSaved={reflectionSaved}
+          handleSaveReflection={handleSaveReflection}
+          handleSkipReflection={handleSkipReflection}
         />
 
         <ActivityCards
