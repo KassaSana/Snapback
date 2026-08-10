@@ -3785,11 +3785,12 @@ below still determine whether, where, and how the retraining loop should operate
   state — a prominent workflow whose required files do not exist — is not an acceptable
   fallback.
 
-- **13.8 — PARTIAL 2026-08-07.** `S/M` Startup no longer exits on model-recovery failure
+- **13.8 — PARTIAL 2026-08-10.** `S/M` Startup no longer exits on model-recovery failure
   (`recover_model_deployment_for_startup`); health reports `degraded` with preserved paths and
-  Diagnostics offers **Retry cleanup**. Remaining from this item: Reveal-files affordance for
-  the preserved names, and the adversarial real-webview harness cases named in the original
-  acceptance (coordinate with **10.1**).
+  Diagnostics offers **Retry cleanup** and **Reveal preserved files**, which opens the private
+  data directory and still reports its path when the OS refuses. Remaining from this item:
+  the adversarial real-webview harness cases named in the original acceptance (coordinate
+  with **10.1**).
 
   The original finding was:
 

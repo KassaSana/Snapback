@@ -22,6 +22,17 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
     }
   }, [refresh]);
 
+  const revealModelFiles = useCallback(async () => {
+    try {
+      const result = await api.openDataFolder();
+      setCleanupStatus(result.opened
+        ? `Opened ${result.path}`
+        : `Could not open the folder. Preserved model files are in ${result.path}`);
+    } catch {
+      setCleanupStatus("Could not reveal the preserved model files.");
+    }
+  }, []);
+
   return (
     <section className="card diagnostics-card">
       <div className="card-header">
@@ -55,6 +66,11 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
           {health.modelDeployment.retryCleanupAvailable ? (
             <button className="secondary-button" onClick={() => void retryModelCleanup()}>
               Retry cleanup
+            </button>
+          ) : null}
+          {health.modelDeployment.preservedPaths.length > 0 ? (
+            <button className="secondary-button" onClick={() => void revealModelFiles()}>
+              Reveal preserved files
             </button>
           ) : null}
         </div>

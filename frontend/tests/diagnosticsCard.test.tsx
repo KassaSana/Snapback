@@ -42,6 +42,9 @@ const boundary = vi.hoisted(() => {
         supportBundlePrivacyNotice: "",
       };
     }
+    if (cmd === "open_data_folder") {
+      return { path: "C:/Users/Kassa/AppData/Roaming/Snapback", supported: true, opened: true };
+    }
     return null;
   });
   return { invoke };
@@ -96,6 +99,9 @@ beforeEach(() => {
         supportBundlePrivacyNotice: "",
       };
     }
+    if (cmd === "open_data_folder") {
+      return { path: "C:/Users/Kassa/AppData/Roaming/Snapback", supported: true, opened: true };
+    }
     return null;
   });
 });
@@ -114,6 +120,10 @@ describe("DiagnosticsCard model deployment recovery", () => {
     expect(
       screen.getByText(/Preserved: model.onnx, model_deploy.transaction.json/i),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reveal preserved files" }));
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("open_data_folder"));
+    expect(await screen.findByText(/Opened C:\/Users\/Kassa/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry cleanup" }));
     await waitFor(() =>
