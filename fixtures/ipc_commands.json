@@ -58,5 +58,6 @@
   "set_attended_targets",
   "get_recording_status",
   "pause_recording_privately",
-  "resume_recording"
+  "resume_recording",
+  "dismiss_untracked_nudge"
 ]

@@ -83,6 +83,6 @@ TEST_CASE("IPC contract: frontend invoke names are a subset of the canonical set
     }
 }
 
-TEST_CASE("IPC contract: canonical set has 60 handler commands") {
-    CHECK(load_expected_commands().size() == 60);
+TEST_CASE("IPC contract: canonical set has 61 handler commands") {
+    CHECK(load_expected_commands().size() == 61);
 }
