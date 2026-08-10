@@ -180,9 +180,22 @@ export type PomodoroPhase = "work" | "shortBreak" | "longBreak";
 
 export type PomodoroStatus = {
   running: boolean;
+  // Roadmap 2.13. Both read as "not counting down", and they are not the same thing: paused
+  // is the user's choice and resumes where it stopped; awaiting means a phase ended and the
+  // next one is deliberately waiting to be started.
+  paused: boolean;
+  awaitingAcknowledgement: boolean;
   phase: PomodoroPhase;
   completedWorkIntervals: number;
   remainingMs: number;
+};
+
+export type PomodoroConfig = {
+  workMs: number;
+  shortBreakMs: number;
+  longBreakMs: number;
+  intervalsBeforeLongBreak: number;
+  autoStartNextPhase: boolean;
 };
 
 export type FocusLabel =
@@ -397,6 +410,32 @@ export const api = {
   },
   stopPomodoro: async () => {
     const raw = await invoke<Record<string, unknown>>("stop_pomodoro");
+    return mapPomodoroStatus(raw);
+  },
+  // Roadmap 2.13. Each returns the status the timer actually reached; a control that does not
+  // apply in the current state is a no-op, not an error.
+  pausePomodoro: async () => {
+    const raw = await invoke<Record<string, unknown>>("pause_pomodoro");
+    return mapPomodoroStatus(raw);
+  },
+  resumePomodoro: async () => {
+    const raw = await invoke<Record<string, unknown>>("resume_pomodoro");
+    return mapPomodoroStatus(raw);
+  },
+  skipPomodoroPhase: async () => {
+    const raw = await invoke<Record<string, unknown>>("skip_pomodoro_phase");
+    return mapPomodoroStatus(raw);
+  },
+  restartPomodoroPhase: async () => {
+    const raw = await invoke<Record<string, unknown>>("restart_pomodoro_phase");
+    return mapPomodoroStatus(raw);
+  },
+  acknowledgePomodoroPhase: async () => {
+    const raw = await invoke<Record<string, unknown>>("acknowledge_pomodoro_phase");
+    return mapPomodoroStatus(raw);
+  },
+  setPomodoroConfig: async (config: PomodoroConfig) => {
+    const raw = await invoke<Record<string, unknown>>("set_pomodoro_config", { config });
     return mapPomodoroStatus(raw);
   },
   startSession: async (goal: string, focusMode = "normal") => {

@@ -4,6 +4,8 @@ import { api, type PomodoroStatus } from "./api";
 
 const EMPTY_POMODORO_STATUS: PomodoroStatus = {
   running: false,
+  paused: false,
+  awaitingAcknowledgement: false,
   phase: "work",
   completedWorkIntervals: 0,
   remainingMs: 0,

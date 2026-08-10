@@ -379,12 +379,62 @@ void from_json(const json& j, ExportTrainingResult& v) {
 
 // ---- AppSettings -----------------------------------------------------------
 
+// Roadmap 2.13. Config and running state are separate objects in the file because they answer
+// different questions: one is the rhythm the user chose, the other is where the timer got to.
+// Restoring a rhythm should never depend on a stale deadline being parseable, and vice versa.
+void to_json(json& j, const PomodoroConfig& v) {
+    j = json{{"workMs", v.work_ms},
+             {"shortBreakMs", v.short_break_ms},
+             {"longBreakMs", v.long_break_ms},
+             {"intervalsBeforeLongBreak", v.intervals_before_long_break},
+             {"autoStartNextPhase", v.auto_start_next_phase}};
+}
+void from_json(const json& j, PomodoroConfig& v) {
+    const PomodoroConfig d;
+    // Each length is floored at one second. A zero or negative phase would end the instant it
+    // began, and poll()'s catch-up loop would spin through phases without advancing time.
+    const auto positive = [](std::int64_t value, std::int64_t fallback) {
+        return value > 0 ? value : fallback;
+    };
+    v.work_ms = positive(get_or<std::int64_t>(j, "workMs", d.work_ms), d.work_ms);
+    v.short_break_ms =
+        positive(get_or<std::int64_t>(j, "shortBreakMs", d.short_break_ms), d.short_break_ms);
+    v.long_break_ms =
+        positive(get_or<std::int64_t>(j, "longBreakMs", d.long_break_ms), d.long_break_ms);
+    // 0 is meaningful here — it disables long breaks — so only negatives fall back.
+    const auto intervals =
+        get_or<int>(j, "intervalsBeforeLongBreak", d.intervals_before_long_break);
+    v.intervals_before_long_break = intervals >= 0 ? intervals : d.intervals_before_long_break;
+    v.auto_start_next_phase = get_or<bool>(j, "autoStartNextPhase", d.auto_start_next_phase);
+}
+
+void to_json(json& j, const PomodoroSnapshot& v) {
+    j = json{{"running", v.running},
+             {"paused", v.paused},
+             {"awaitingAcknowledgement", v.awaiting_acknowledgement},
+             {"phase", pomodoro_phase_as_str(v.phase)},
+             {"completedWorkIntervals", v.completed_work_intervals},
+             {"deadlineWallMs", v.deadline_wall_ms},
+             {"pausedRemainingMs", v.paused_remaining_ms}};
+}
+void from_json(const json& j, PomodoroSnapshot& v) {
+    v.running = get_or<bool>(j, "running", false);
+    v.paused = get_or<bool>(j, "paused", false);
+    v.awaiting_acknowledgement = get_or<bool>(j, "awaitingAcknowledgement", false);
+    v.phase = pomodoro_phase_from_string(get_or<std::string>(j, "phase", "work"));
+    v.completed_work_intervals = std::max(0, get_or<int>(j, "completedWorkIntervals", 0));
+    v.deadline_wall_ms = get_or<std::int64_t>(j, "deadlineWallMs", 0);
+    v.paused_remaining_ms = std::max<std::int64_t>(0, get_or<std::int64_t>(j, "pausedRemainingMs", 0));
+}
+
 void to_json(json& j, const AppSettings& v) {
     j = json{{"defaultFocusMode", v.default_focus_mode},
              {"privateMode", v.private_mode},
              {"excludedApps", v.excluded_apps},
              {"goalCategories", v.goal_categories},
-             {"idleThresholdSecs", v.idle_threshold_secs}};
+             {"idleThresholdSecs", v.idle_threshold_secs},
+             {"pomodoro", v.pomodoro},
+             {"pomodoroState", v.pomodoro_state}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
@@ -399,6 +449,8 @@ void from_json(const json& j, AppSettings& v) {
         (threshold >= kMinIdleThresholdSecs && threshold <= kMaxIdleThresholdSecs)
             ? threshold
             : kDefaultIdleThresholdSecs;
+    v.pomodoro = get_or<PomodoroConfig>(j, "pomodoro", PomodoroConfig{});
+    v.pomodoro_state = get_or<PomodoroSnapshot>(j, "pomodoroState", PomodoroSnapshot{});
 }
 
 void to_json(json& j, const PrivacySettings& v) {

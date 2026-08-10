@@ -6,6 +6,8 @@ namespace snapback {
 
 void to_json(nlohmann::json& json, const PomodoroStatus& status) {
     json = nlohmann::json{{"running", status.running},
+                          {"paused", status.paused},
+                          {"awaitingAcknowledgement", status.awaiting_acknowledgement},
                           {"phase", pomodoro_phase_as_str(status.phase)},
                           {"completedWorkIntervals", status.completed_work_intervals},
                           {"remainingMs", status.remaining_ms}};

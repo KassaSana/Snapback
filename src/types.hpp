@@ -16,6 +16,10 @@
 
 #include <nlohmann/json.hpp>
 
+// PomodoroConfig/PomodoroSnapshot are part of AppSettings below. pomodoro.hpp is a leaf —
+// it includes only <cstdint> and json_fwd — so this cannot cycle back into types.hpp.
+#include "engine/pomodoro.hpp"
+
 namespace snapback {
 
 using json = nlohmann::json;
@@ -363,6 +367,13 @@ struct AppSettings {
     // kDefaultIdleThresholdMs and is a judgement about the user's working rhythm, not a
     // constant of the system: reading and thinking look identical to a keyboard.
     std::int64_t idle_threshold_secs{kDefaultIdleThresholdSecs};
+    // Roadmap 2.13. Phase lengths, long-break cadence, and whether the next phase begins on
+    // its own — a rhythm is a preference, and hardcoding 25/5/15 made it the app's opinion.
+    PomodoroConfig pomodoro{};
+    // Roadmap 2.13. The running timer, written down so a relaunch resumes it. Settings is
+    // where this lives because it is already the app's atomically-written, fsync'd file; a
+    // second store for six fields would be a second thing that can half-write.
+    PomodoroSnapshot pomodoro_state{};
 };
 
 // What "Delete all activity" actually did. Roadmap 8.12.

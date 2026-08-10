@@ -2087,7 +2087,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   state — no analytics service is implied by this item. This extends completed **1.1** rather
   than replacing the OS-permission wizard.
 
-- **2.13 — Finish the Pomodoro workflow rather than stopping at start/stop.** `M`
+- **2.13 — STATE MACHINE + PERSISTENCE DONE 2026-08-09; tray and alerts stay open.** `M`
   Opened 2026-08-05. The existing state machine hardcodes 25/5/15-minute phases, while IPC and
   `PomodoroCard` expose only start and stop. There is no pause/resume, skip, restart, long-break
   cadence setting, or durable indication when the main window is hidden.
@@ -2100,6 +2100,29 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   advancing through phases while the app was absent. State-machine tests must cover restart,
   that relaunch policy, session replacement, and simultaneous session stop.
   macOS native alerts remain downstream of **3.3**, but the portable behavior need not wait.
+
+  **Decided while building, as the item asked:** automatic phase starts are a setting,
+  **default on**. That is what the timer has always done, and changing the rhythm under
+  existing users to settle a design question would be the worse answer. Turned off, a phase
+  that ends reports its boundary once — so the UI can still alert — and then waits for
+  `acknowledge()`. **Also decided:** a *skipped* work phase is not credited as a completed
+  interval, because the long-break cadence is a reward for work actually done and counting
+  skips would let four clicks earn a long break.
+
+  **Done:** `PomodoroConfig` carries the lengths, the long-break cadence and the auto-start
+  flag, persisted in settings.json and applied from the next phase rather than restarting the
+  one in progress; pause/resume, skip, restart and acknowledge on the timer, AppState and IPC;
+  and the relaunch policy via a wall-clock snapshot — a monotonic deadline is meaningless
+  after a restart, since that timeline begins again with the process. A deadline still in the
+  future resumes with the time genuinely left; one that passed while the app was closed
+  restores **at zero, awaiting acknowledgement**, never chaining through phases nobody was
+  present for. All four named test cases exist, plus pause/resume, skip, auto-start-off, and
+  the stopped/paused/awaiting restore paths.
+
+  **Still open:** remaining time in the tray while the dashboard is hidden, and in-app/native
+  phase alerts. Both are platform surfaces rather than state-machine behaviour — the timer
+  already reports each boundary exactly once, which is the hook they need. `PomodoroCard` also
+  still shows only start/stop; the six new commands exist and are callable but unbound.
 
 - **2.14 — STORAGE + EXPORT DONE 2026-08-09; the in-app form stays open.** `M`
   Opened 2026-08-05. The current check-in records only a coarse focus label and the recap is

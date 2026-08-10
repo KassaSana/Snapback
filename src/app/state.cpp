@@ -169,6 +169,11 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     focus_mode_ = settings_.default_focus_mode;
     idle_detector_.set_threshold_ms(settings_.idle_threshold_secs * 1000);
     context_tracker_.set_goal_categories(settings_.goal_categories);
+    // Roadmap 2.13. The timer's rhythm and its position, restored together. A deadline still
+    // in the future resumes; one that passed while the app was closed waits for the user
+    // rather than chaining through phases nobody was present for — see PomodoroTimer::restore.
+    pomodoro_ = PomodoroTimer(settings_.pomodoro);
+    pomodoro_.restore(settings_.pomodoro_state, wall_now_ms(), steady_now_ms());
     hydrate_active_session_unlocked();
     hydrate_session_attendance_unlocked();
     publish_live_read_unlocked();
@@ -234,6 +239,14 @@ std::string AppState::rfc3339_secs_ago(std::int64_t secs) const {
     // those five minutes as attended on every single pause.
     if (secs <= 0) return now_rfc3339();
     return rfc3339_at(clock().wall_time() - static_cast<std::time_t>(secs));
+}
+
+// Roadmap 2.13. The wall clock this app carries has second resolution, so a restored phase can
+// be up to a second off the one that was written. Against a 25-minute phase that is noise, and
+// the alternative — a monotonic deadline — is not off by a second but meaningless, because the
+// monotonic timeline restarts with the process.
+std::int64_t AppState::wall_now_ms() const {
+    return static_cast<std::int64_t>(clock().wall_time()) * 1000;
 }
 
 std::int64_t AppState::steady_now_ms() const {
@@ -358,10 +371,85 @@ PomodoroStatus AppState::start_pomodoro() {
     return start_pomodoro_unlocked(steady_now_ms());
 }
 
+// Roadmap 2.13. Write the timer's position down after every change that moves it.
+//
+// Best-effort by design: a settings file that could not be written must not take the running
+// timer down with it. The user loses the ability to resume across a relaunch, which is the
+// feature; they do not lose the phase they are in, which is the session.
+void AppState::persist_pomodoro_unlocked() {
+    if (app_data_dir_.empty()) return;
+    AppSettings candidate = settings_;
+    candidate.pomodoro_state = pomodoro_.snapshot(wall_now_ms(), steady_now_ms());
+    try {
+        save_app_settings(app_data_dir_, candidate);
+        settings_ = std::move(candidate);
+    } catch (const std::exception& error) {
+        log().warn(std::string("pomodoro: could not persist timer state: ") + error.what());
+    }
+}
+
+// The five controls 2.13 asks for, all the same shape: move the timer, write it down, report
+// where it ended up. `apply` runs under mutex_ so status and snapshot describe one instant.
+PomodoroStatus AppState::mutate_pomodoro(const std::function<void(std::int64_t)>& apply) {
+    std::lock_guard lock(mutex_);
+    const auto now = steady_now_ms();
+    apply(now);
+    persist_pomodoro_unlocked();
+    live_read_dirty_ = true;
+    publish_live_read_unlocked();
+    return pomodoro_.status(now);
+}
+
+PomodoroStatus AppState::pause_pomodoro() {
+    return mutate_pomodoro([this](std::int64_t now) { pomodoro_.pause(now); });
+}
+
+PomodoroStatus AppState::resume_pomodoro() {
+    return mutate_pomodoro([this](std::int64_t now) { pomodoro_.resume(now); });
+}
+
+PomodoroStatus AppState::skip_pomodoro_phase() {
+    return mutate_pomodoro([this](std::int64_t now) { pomodoro_.skip(now); });
+}
+
+PomodoroStatus AppState::restart_pomodoro_phase() {
+    return mutate_pomodoro([this](std::int64_t now) { pomodoro_.restart_phase(now); });
+}
+
+PomodoroStatus AppState::acknowledge_pomodoro_phase() {
+    return mutate_pomodoro([this](std::int64_t now) { pomodoro_.acknowledge(now); });
+}
+
+PomodoroStatus AppState::set_pomodoro_config(const PomodoroConfig& config) {
+    // Validated before anything moves, so a rejected rhythm leaves both the live timer and
+    // settings.json exactly as they were.
+    if (config.work_ms <= 0 || config.short_break_ms <= 0 || config.long_break_ms <= 0) {
+        throw std::runtime_error("pomodoro phase lengths must be greater than zero");
+    }
+    if (config.intervals_before_long_break < 0) {
+        throw std::runtime_error("intervals before a long break cannot be negative");
+    }
+    std::lock_guard lock(mutex_);
+    AppSettings candidate = settings_;
+    candidate.pomodoro = config;
+    // A rhythm change takes effect on the phase after this one. Rebuilding the timer would
+    // restart the countdown the user is currently inside, which is not what changing a
+    // preference should do.
+    commit_settings_unlocked(std::move(candidate), [this, config] {
+        pomodoro_.set_config(config);
+    });
+    return pomodoro_.status(steady_now_ms());
+}
+
 PomodoroStatus AppState::stop_pomodoro() {
     std::lock_guard lock(mutex_);
     pomodoro_.stop();
     return pomodoro_.status(steady_now_ms());
+}
+
+PomodoroConfig AppState::pomodoro_config() const {
+    std::lock_guard lock(mutex_);
+    return settings_.pomodoro;
 }
 
 PomodoroStatus AppState::pomodoro_status() const {

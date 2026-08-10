@@ -47,5 +47,11 @@
   "train_from_export",
   "rollback_classifier_model",
   "retry_model_deployment_cleanup",
-  "save_session_reflection"
+  "save_session_reflection",
+  "pause_pomodoro",
+  "resume_pomodoro",
+  "skip_pomodoro_phase",
+  "restart_pomodoro_phase",
+  "acknowledge_pomodoro_phase",
+  "set_pomodoro_config"
 ]

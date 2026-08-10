@@ -2303,3 +2303,81 @@ TEST_CASE("reflecting on one session leaves another session's cached copy alone"
     CHECK_FALSE(active->reflection_done.has_value());
     CHECK(state->get_session(first.session_id)->reflection_done == "finished first");
 }
+
+// --- Roadmap 2.13: the timer against the session lifecycle ---------------------------------
+
+TEST_CASE("replacing a session clears the timer rather than carrying it into the new one") {
+    // 2.13 names this case explicitly. A pomodoro belongs to the session it was started in;
+    // inheriting a half-finished break -- or worse, four earned intervals -- would credit the
+    // new session with a rhythm it never established.
+    auto state = make_state();
+    state->start_session("first", FocusMode::Deep);
+    state->start_pomodoro();
+    state->pause_pomodoro();
+    REQUIRE(state->pomodoro_status().paused);
+
+    state->start_session("second", FocusMode::Deep);  // replacement, not a stop
+    const auto status = state->pomodoro_status();
+    CHECK_FALSE(status.running);
+    CHECK_FALSE(status.paused);
+    CHECK_FALSE(status.awaiting_acknowledgement);
+    CHECK(status.completed_work_intervals == 0);
+    CHECK(status.remaining_ms == 0);
+}
+
+TEST_CASE("stopping the session stops the timer with it") {
+    // The other case 2.13 names: the timer must not keep counting down against a session that
+    // has ended, where nothing is being measured any more.
+    auto state = make_state();
+    const auto session = state->start_session("only", FocusMode::Normal);
+    state->start_pomodoro();
+    REQUIRE(state->pomodoro_status().running);
+
+    state->stop_session(session.session_id);
+    const auto status = state->pomodoro_status();
+    CHECK_FALSE(status.running);
+    CHECK(status.remaining_ms == 0);
+}
+
+TEST_CASE("the pomodoro controls are safe to press when no timer is running") {
+    // Every control is reachable from the card before the first start.
+    auto state = make_state();
+    CHECK_FALSE(state->pause_pomodoro().running);
+    CHECK_FALSE(state->resume_pomodoro().running);
+    CHECK_FALSE(state->skip_pomodoro_phase().running);
+    CHECK_FALSE(state->restart_pomodoro_phase().running);
+    CHECK_FALSE(state->acknowledge_pomodoro_phase().running);
+}
+
+TEST_CASE("a rejected pomodoro rhythm changes neither the timer nor the stored settings") {
+    auto state = make_state();
+    const auto before = state->pomodoro_config();
+
+    PomodoroConfig bad;
+    bad.work_ms = 0;
+    CHECK_THROWS_AS(state->set_pomodoro_config(bad), std::runtime_error);
+
+    PomodoroConfig negative;
+    negative.intervals_before_long_break = -1;
+    CHECK_THROWS_AS(state->set_pomodoro_config(negative), std::runtime_error);
+
+    const auto after = state->pomodoro_config();
+    CHECK(after.work_ms == before.work_ms);
+    CHECK(after.intervals_before_long_break == before.intervals_before_long_break);
+}
+
+TEST_CASE("changing the rhythm does not restart the phase the user is already inside") {
+    auto state = make_state();
+    state->start_session("something to time", FocusMode::Normal);
+    state->start_pomodoro();
+    const auto before = state->pomodoro_status();
+    REQUIRE(before.running);
+
+    PomodoroConfig faster;
+    faster.work_ms = 60 * 1000;
+    const auto after = state->set_pomodoro_config(faster);
+    CHECK(after.running);
+    // Still inside the original phase: the new length applies to the phases that follow.
+    CHECK(after.remaining_ms > 60 * 1000);
+    CHECK(state->pomodoro_config().work_ms == 60 * 1000);
+}

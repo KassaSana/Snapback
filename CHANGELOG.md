@@ -17,6 +17,15 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **A Pomodoro timer you can actually drive (2.13).** Pause and resume, skip a phase, restart
+  the one you are in, and configurable work/break lengths, long-break cadence, and whether the
+  next phase begins on its own. The rhythm is a setting now rather than the app's opinion, and
+  changing it applies from the next phase instead of restarting the one under way. **The timer
+  survives a relaunch:** its phase and deadline are written down against the wall clock, so a
+  deadline still in the future resumes with the time genuinely left — while one that passed
+  while the app was closed restores at zero and waits for you, rather than silently running
+  through the breaks and work blocks you were not there for. A skipped work block does not
+  count toward the long break; that is a reward for work done.
 - **An optional end-of-session reflection (2.14).** Two free-text answers — what got done, and
   the next step — stored per session and carried into the readable personal export, so the
   thing that makes tomorrow's restart easier survives the session that produced it. Skipping

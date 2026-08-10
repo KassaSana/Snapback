@@ -145,6 +145,18 @@ public:
     PomodoroStatus start_pomodoro();
     PomodoroStatus stop_pomodoro();
     PomodoroStatus pomodoro_status() const;
+    // Roadmap 2.13. Pause/resume freeze and continue the current phase; skip ends it early
+    // (without crediting an unfinished work interval); restart replays it; acknowledge begins
+    // the phase that has been waiting since the last boundary. Each persists the timer so a
+    // relaunch resumes where the user left it.
+    PomodoroStatus pause_pomodoro();
+    PomodoroStatus resume_pomodoro();
+    PomodoroStatus skip_pomodoro_phase();
+    PomodoroStatus restart_pomodoro_phase();
+    PomodoroStatus acknowledge_pomodoro_phase();
+    // Phase lengths, long-break cadence, and auto-start. Applies from the next phase on.
+    PomodoroStatus set_pomodoro_config(const PomodoroConfig& config);
+    PomodoroConfig pomodoro_config() const;
 
     // App rules (allow/block overrides). The CRUD methods keep the cached rule set
     // (app_rules_) in sync so the live classifier sees changes immediately.
@@ -312,6 +324,11 @@ private:
     // edge so the tick loop can emit it. Sets idle_ from the resulting state.
     IdleTransition update_idle_unlocked(std::int64_t now_ms, bool had_input);
     PomodoroStatus start_pomodoro_unlocked(std::int64_t now_ms);
+    // Roadmap 2.13. Writes the timer's position into settings.json; best-effort, so a failed
+    // save costs the relaunch-resume but never the running phase.
+    void persist_pomodoro_unlocked();
+    PomodoroStatus mutate_pomodoro(const std::function<void(std::int64_t)>& apply);
+    std::int64_t wall_now_ms() const;
     // Injected logger if one was passed in, otherwise the stderr fallback below.
     Logger& log() { return logger_ ? *logger_ : local_logger_; }
     const Logger& log() const { return logger_ ? *logger_ : local_logger_; }

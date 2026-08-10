@@ -320,6 +320,10 @@ export function mapFocusSummary(raw: Record<string, unknown>): FocusSummary {
 export function mapPomodoroStatus(raw: Record<string, unknown>): PomodoroStatus {
   return {
     running: Boolean(raw.running ?? false),
+    paused: Boolean(raw.paused ?? false),
+    awaitingAcknowledgement: Boolean(
+      raw.awaiting_acknowledgement ?? raw.awaitingAcknowledgement ?? false,
+    ),
     phase: normalizePomodoroPhase(raw.phase),
     completedWorkIntervals: Number(
       raw.completed_work_intervals ?? raw.completedWorkIntervals ?? 0,

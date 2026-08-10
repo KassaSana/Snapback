@@ -131,6 +131,23 @@ inline void register_commands(webview::webview& w, AppState& state,
              [&state](const json&) { return json(state.start_pomodoro()); });
     bind_cmd("stop_pomodoro",
              [&state](const json&) { return json(state.stop_pomodoro()); });
+    // Roadmap 2.13. Each returns the resulting status, so the UI renders the state the timer
+    // actually reached rather than the one the click hoped for — pause on an already-ended
+    // phase, or acknowledge on a running one, are deliberate no-ops.
+    bind_cmd("pause_pomodoro", [&state](const json&) { return json(state.pause_pomodoro()); });
+    bind_cmd("resume_pomodoro",
+             [&state](const json&) { return json(state.resume_pomodoro()); });
+    bind_cmd("skip_pomodoro_phase",
+             [&state](const json&) { return json(state.skip_pomodoro_phase()); });
+    bind_cmd("restart_pomodoro_phase",
+             [&state](const json&) { return json(state.restart_pomodoro_phase()); });
+    bind_cmd("acknowledge_pomodoro_phase",
+             [&state](const json&) { return json(state.acknowledge_pomodoro_phase()); });
+    // The rhythm itself. Read it back through get_settings, which already carries it — a
+    // dedicated getter would be a second description of one thing.
+    bind_cmd("set_pomodoro_config", [&state](const json& a) {
+        return json(state.set_pomodoro_config(a.at("config").get<PomodoroConfig>()));
+    });
 
     // --- Feedback + config ---
     bind_cmd("submit_label", [&state](const json& a) {
