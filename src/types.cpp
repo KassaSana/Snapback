@@ -427,6 +427,11 @@ void from_json(const json& j, PomodoroSnapshot& v) {
     v.paused_remaining_ms = std::max<std::int64_t>(0, get_or<std::int64_t>(j, "pausedRemainingMs", 0));
 }
 
+void to_json(json& j, const RecordingStatus& v) {
+    j = json{{"state", recording_state_as_str(v.state)},
+             {"privatePauseRemainingMs", v.private_pause_remaining_ms}};
+}
+
 void to_json(json& j, const AttendedProgress& v) {
     j = json{{"dailyTargetMins", v.daily_target_mins},
              {"dailyActualMins", v.daily_actual_mins},
@@ -443,7 +448,8 @@ void to_json(json& j, const AppSettings& v) {
              {"pomodoro", v.pomodoro},
              {"pomodoroState", v.pomodoro_state},
              {"attendedTargetDailyMins", v.attended_target_daily_mins},
-             {"attendedTargetWeeklyMins", v.attended_target_weekly_mins}};
+             {"attendedTargetWeeklyMins", v.attended_target_weekly_mins},
+             {"privateUntilWallMs", v.private_until_wall_ms}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
@@ -462,10 +468,12 @@ void from_json(const json& j, AppSettings& v) {
     v.pomodoro_state = get_or<PomodoroSnapshot>(j, "pomodoroState", PomodoroSnapshot{});
     v.attended_target_daily_mins = get_or<std::uint32_t>(j, "attendedTargetDailyMins", 0);
     v.attended_target_weekly_mins = get_or<std::uint32_t>(j, "attendedTargetWeeklyMins", 0);
+    v.private_until_wall_ms = get_or<std::int64_t>(j, "privateUntilWallMs", 0);
 }
 
 void to_json(json& j, const PrivacySettings& v) {
     j = json{{"privateMode", v.private_mode},
+             {"privateUntilWallMs", v.private_until_wall_ms},
              {"excludedApps", v.excluded_apps},
              {"localOnly", v.local_only}};
 }
@@ -488,6 +496,7 @@ void from_json(const json& j, PrivacySettings& v) {
     v.private_mode = get_or<bool>(j, "privateMode", false);
     v.excluded_apps = get_or<std::vector<std::string>>(j, "excludedApps", {});
     v.local_only = get_or<bool>(j, "localOnly", true);
+    v.private_until_wall_ms = get_or<std::int64_t>(j, "privateUntilWallMs", 0);
 }
 
 void to_json(json& j, const AnalyticsHour& v) {

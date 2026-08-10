@@ -19,6 +19,7 @@ import { PermissionsCard } from "./PermissionsCard";
 import { PrivacyCard } from "./PrivacyCard";
 import { PermissionWizard } from "./PermissionWizard";
 import { AttendedTargetsCard } from "./AttendedTargetsCard";
+import { RecordingStatusCard } from "./RecordingStatusCard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { sessionStatusLabel } from "./sessionStatus";
@@ -32,6 +33,7 @@ import { useHealth } from "./useHealth";
 import { useInsights } from "./useInsights";
 import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
 import { useAttendedTargets } from "./useAttendedTargets";
+import { useRecordingStatus } from "./useRecordingStatus";
 import { usePomodoro } from "./usePomodoro";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
@@ -70,6 +72,13 @@ export default function App() {
 
   const { attendedProgress, refreshAttendedProgress, handleSaveAttendedTargets } =
     useAttendedTargets({ setActionError: feedback.setActionError });
+
+  const {
+    recordingStatus,
+    refreshRecordingStatus,
+    handlePausePrivately,
+    handleResumeRecording,
+  } = useRecordingStatus({ setActionError: feedback.setActionError });
 
   const {
     activeWindowAvailable,
@@ -244,6 +253,7 @@ export default function App() {
       refreshHealth(),
       refreshPomodoroStatus(),
       refreshAttendedProgress(),
+      refreshRecordingStatus(),
     ]);
   }, [
     clearActivitySession,
@@ -253,6 +263,7 @@ export default function App() {
     refreshHealth,
     refreshInsights,
     refreshAttendedProgress,
+    refreshRecordingStatus,
     refreshPomodoroStatus,
   ]);
   const privacy = usePrivacy(handleActivityDataDeleted);
@@ -265,6 +276,7 @@ export default function App() {
     refreshAnalytics,
     refreshPomodoroStatus,
     refreshAttendedProgress,
+    refreshRecordingStatus,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
     refreshDeployStatus,
@@ -372,6 +384,12 @@ export default function App() {
           setSessionGoal={setSessionGoal}
           untrackedNote={live.untrackedNote}
           dismissUntrackedNote={live.clearUntrackedNote}
+        />
+
+        <RecordingStatusCard
+          status={recordingStatus}
+          onPause={handlePausePrivately}
+          onResume={handleResumeRecording}
         />
 
         <AttendedTargetsCard

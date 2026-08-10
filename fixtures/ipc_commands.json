@@ -55,5 +55,8 @@
   "acknowledge_pomodoro_phase",
   "set_pomodoro_config",
   "get_attended_progress",
-  "set_attended_targets"
+  "set_attended_targets",
+  "get_recording_status",
+  "pause_recording_privately",
+  "resume_recording"
 ]

@@ -129,6 +129,14 @@ public:
     AppSettings settings() const;
     PrivacySettings privacy_settings() const;
     void set_private_mode(bool enabled);
+    // Roadmap 2.10. The one answer to "am I being recorded right now?", derived here so the
+    // header and the tray cannot compute it differently. Also lapses an expired timed pause,
+    // so nobody has to poll a deadline separately to keep the answer honest.
+    RecordingStatus recording_status();
+    // Turns private mode on for a fixed stretch. 0 minutes means indefinite (the old
+    // behaviour). Returns the resulting status so the caller renders what was accepted.
+    RecordingStatus pause_privately_for(std::int64_t minutes);
+    RecordingStatus resume_from_private_pause();
     // Roadmap 7.23. How long without input pauses attended time. Throws (changing nothing)
     // outside [kMinIdleThresholdSecs, kMaxIdleThresholdSecs].
     void set_idle_threshold_secs(std::int64_t seconds);
@@ -306,6 +314,8 @@ private:
     // `publish` runs only after the commit and must not throw: its only job is to copy
     // already-committed settings into the live fields that mirror them.
     void commit_settings_unlocked(AppSettings candidate, const std::function<void()>& publish);
+    // Roadmap 2.10. Ends a timed privacy pause whose deadline has passed. Requires mutex_.
+    bool lapse_private_pause_unlocked();
     void save_auto_session_label_unlocked(const std::string& session_id);
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
     static std::vector<std::string> normalize_privacy_exclusions(

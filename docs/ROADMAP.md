@@ -2045,7 +2045,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   database into the browser. This needs per-session query commands and should follow **7.16**
   and align with **14.3**'s command contract.
 
-- **2.10 — Make recording/privacy state visible and pausable from anywhere.** `M`
+- **2.10 — DASHBOARD HALF DONE 2026-08-09; the tray stays open.** `M`
   Opened 2026-08-05. The header says capture is running or idle without incorporating private
   mode, the private toggle is buried in Settings, and the tray offers only Show and Quit. For
   software that observes window titles, "am I recording right now?" should never require
@@ -2057,6 +2057,23 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   before processing resumes and survive window close/reopen without silently changing meaning.
   The tray and dashboard must drive the same command and cannot disagree. Build after **7.26**
   and consume **7.23**'s running/paused state rather than inventing a frontend-only version.
+
+  **Done:** the five-state model — Recording, Paused for idle, Paused privately, No session,
+  Blocked — derived by `derive_recording_state` as a pure function of capture health, private
+  mode, session presence and 7.23's idle state, and exposed through one command. Precedence is
+  pinned by test: Blocked outranks everything because nothing else can be true when capture
+  cannot run, and Paused privately outranks both No session and idle because it is the reason
+  the *user* chose and stays true when they start a session or return to the keyboard. Also
+  one-click privacy pause/resume and 15/30/60-minute pauses with visible remaining time, stored
+  as a wall-clock deadline in settings.json so a pause survives close/reopen without silently
+  changing meaning, and lapsing itself once the deadline passes. A resume that cannot be
+  written down leaves the app paused — failing closed, because resuming on a promise the next
+  launch will not remember is the worse error for this particular feature.
+
+  **Still open:** the tray. It offers Show and Quit and does not yet show the state or drive
+  the pause, which is the half of "from anywhere" that needs per-OS menu work. The command is
+  deliberately the single source, so the tray consumes it rather than deriving its own answer.
+  The header pill is also unchanged — the status has its own card on Now for now.
 
 - **2.11 — Make the session cockpit fast, state-aware, and safe.** `M`
   Opened 2026-08-05. Start and Stop are always enabled, a blank goal silently does nothing,

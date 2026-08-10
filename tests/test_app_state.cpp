@@ -2381,3 +2381,73 @@ TEST_CASE("changing the rhythm does not restart the phase the user is already in
     CHECK(after.remaining_ms > 60 * 1000);
     CHECK(state->pomodoro_config().work_ms == 60 * 1000);
 }
+
+// --- Roadmap 2.10: one recording status, and a privacy pause that can be timed -------------
+
+TEST_CASE("the recording state names the strongest reason recording is not happening") {
+    // The precedence is the substance of 2.10: two surfaces deriving this separately is the
+    // defect, so the rule is a pure function and pinned here rather than implied by a layout.
+    RecordingInputs in;
+
+    in = {}; in.has_active_session = true;
+    CHECK(derive_recording_state(in) == RecordingState::Recording);
+
+    in = {}; in.has_active_session = true; in.idle = true;
+    CHECK(derive_recording_state(in) == RecordingState::PausedIdle);
+
+    in = {};
+    CHECK(derive_recording_state(in) == RecordingState::NoSession);
+
+    // Private outranks both "no session" and "idle": it is the reason the user chose, and it
+    // stays true when they start a session or come back to the keyboard.
+    in = {}; in.private_mode = true;
+    CHECK(derive_recording_state(in) == RecordingState::PausedPrivate);
+    in = {}; in.private_mode = true; in.has_active_session = true; in.idle = true;
+    CHECK(derive_recording_state(in) == RecordingState::PausedPrivate);
+
+    // Blocked outranks everything: nothing else can be true when capture cannot run.
+    in = {}; in.capture_failed = true; in.private_mode = true; in.has_active_session = true;
+    CHECK(derive_recording_state(in) == RecordingState::Blocked);
+    in = {}; in.capture_permitted = false; in.has_active_session = true;
+    CHECK(derive_recording_state(in) == RecordingState::Blocked);
+}
+
+TEST_CASE("a timed privacy pause reports the time left and lapses on its own") {
+    ManualClock clock;
+    clock.set_wall_time(1'700'000'000);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto paused = state.pause_privately_for(30);
+    CHECK(paused.state == RecordingState::PausedPrivate);
+    CHECK(paused.private_pause_remaining_ms == 30 * 60 * 1000);
+
+    clock.advance_minutes(10);
+    CHECK(state.recording_status().private_pause_remaining_ms == 20 * 60 * 1000);
+
+    // Past the deadline the pause is over -- and the setting says so, rather than leaving the
+    // app paused forever behind a stale deadline.
+    clock.advance_minutes(21);
+    const auto after = state.recording_status();
+    CHECK(after.state != RecordingState::PausedPrivate);
+    CHECK(after.private_pause_remaining_ms == 0);
+    CHECK_FALSE(state.privacy_settings().private_mode);
+}
+
+TEST_CASE("an indefinite privacy pause never lapses by itself") {
+    ManualClock clock;
+    clock.set_wall_time(1'700'000'000);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto paused = state.pause_privately_for(0);
+    CHECK(paused.state == RecordingState::PausedPrivate);
+    CHECK(paused.private_pause_remaining_ms == 0);  // no deadline to count down to
+
+    clock.advance_minutes(48 * 60);
+    CHECK(state.recording_status().state == RecordingState::PausedPrivate);
+
+    CHECK(state.resume_from_private_pause().state != RecordingState::PausedPrivate);
+}

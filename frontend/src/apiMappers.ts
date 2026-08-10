@@ -19,6 +19,8 @@ import type {
   PomodoroPhase,
   PomodoroStatus,
   AttendedProgress,
+  RecordingState,
+  RecordingStatus,
   PrivacySettings,
   PredictionRecord,
   SessionRecap,
@@ -315,6 +317,28 @@ export function mapFocusSummary(raw: Record<string, unknown>): FocusSummary {
     distractedSamples: Number(raw.distracted_samples ?? raw.distractedSamples ?? 0),
     distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
     longestFocusSecs: Number(raw.longest_focus_secs ?? raw.longestFocusSecs ?? 0),
+  };
+}
+
+const RECORDING_STATES: RecordingState[] = [
+  "blocked",
+  "pausedPrivate",
+  "noSession",
+  "pausedIdle",
+  "recording",
+];
+
+export function mapRecordingStatus(raw: Record<string, unknown>): RecordingStatus {
+  const state = String(raw.state ?? "blocked");
+  return {
+    // An unknown state reads as "blocked" rather than "recording": if the two ends disagree
+    // about what is happening, the safe thing to show is that nothing is being captured.
+    state: (RECORDING_STATES as string[]).includes(state)
+      ? (state as RecordingState)
+      : "blocked",
+    privatePauseRemainingMs: Number(
+      raw.private_pause_remaining_ms ?? raw.privatePauseRemainingMs ?? 0,
+    ),
   };
 }
 

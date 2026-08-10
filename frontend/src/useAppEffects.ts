@@ -21,6 +21,9 @@ type UseAppEffectsArgs = {
   refreshPomodoroStatus: () => void | Promise<void>;
   // Roadmap 2.19. Refreshed alongside the timer: both describe the session that just changed.
   refreshAttendedProgress: () => void | Promise<void>;
+  // Roadmap 2.10. Polled with the rest: a timed pause lapses on the backend's clock, so the
+  // header learns it has ended the same way it learns anything else.
+  refreshRecordingStatus: () => void | Promise<void>;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
   refreshDeployStatus: () => void | Promise<void>;
@@ -55,6 +58,7 @@ export const useAppEffects = ({
   refreshAnalytics,
   refreshPomodoroStatus,
   refreshAttendedProgress,
+  refreshRecordingStatus,
   refreshLatest,
   refreshAppRules,
   refreshDeployStatus,
@@ -112,7 +116,8 @@ export const useAppEffects = ({
   useEffect(() => {
     void refreshPomodoroStatus();
     void refreshAttendedProgress();
-  }, [sessionId, refreshPomodoroStatus, refreshAttendedProgress]);
+    void refreshRecordingStatus();
+  }, [sessionId, refreshPomodoroStatus, refreshAttendedProgress, refreshRecordingStatus]);
 
   useEffect(() => {
     if (!sessionId || sessionStatus !== "ACTIVE") {

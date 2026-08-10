@@ -13,6 +13,7 @@ import {
   mapHealth,
   mapPermissionStatus,
   mapAttendedProgress,
+  mapRecordingStatus,
   mapPomodoroStatus,
   mapPrivacySettings,
   mapSummaryReport,
@@ -189,6 +190,21 @@ export type PomodoroStatus = {
   phase: PomodoroPhase;
   completedWorkIntervals: number;
   remainingMs: number;
+};
+
+// Roadmap 2.10. One status model, derived in the backend so the header and the tray cannot
+// disagree about the only question this app must never be vague on.
+export type RecordingState =
+  | "blocked"
+  | "pausedPrivate"
+  | "noSession"
+  | "pausedIdle"
+  | "recording";
+
+export type RecordingStatus = {
+  state: RecordingState;
+  /** Milliseconds left on a timed privacy pause; 0 when indefinite or not paused. */
+  privatePauseRemainingMs: number;
 };
 
 // Roadmap 2.19. A target of 0 means "not set" -- there is no separate enabled flag to drift
@@ -409,6 +425,18 @@ export const api = {
   getFocusSummary: async (limit = 200) => {
     const raw = await invoke<Record<string, unknown>>("get_focus_summary", { limit });
     return mapFocusSummary(raw);
+  },
+  getRecordingStatus: async () => {
+    const raw = await invoke<Record<string, unknown>>("get_recording_status");
+    return mapRecordingStatus(raw);
+  },
+  pauseRecordingPrivately: async (minutes: number) => {
+    const raw = await invoke<Record<string, unknown>>("pause_recording_privately", { minutes });
+    return mapRecordingStatus(raw);
+  },
+  resumeRecording: async () => {
+    const raw = await invoke<Record<string, unknown>>("resume_recording");
+    return mapRecordingStatus(raw);
   },
   getAttendedProgress: async () => {
     const raw = await invoke<Record<string, unknown>>("get_attended_progress");

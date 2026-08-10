@@ -143,6 +143,17 @@ inline void register_commands(webview::webview& w, AppState& state,
              [&state](const json&) { return json(state.restart_pomodoro_phase()); });
     bind_cmd("acknowledge_pomodoro_phase",
              [&state](const json&) { return json(state.acknowledge_pomodoro_phase()); });
+    // Roadmap 2.10. One status, one command. The header and the tray both call this rather
+    // than each deriving "am I recording?" from health plus settings, which is how two
+    // surfaces come to disagree about the only question this app must never be vague on.
+    bind_cmd("get_recording_status",
+             [&state](const json&) { return json(state.recording_status()); });
+    bind_cmd("pause_recording_privately", [&state](const json& a) {
+        // 0 (or absent) means indefinite, matching the Settings toggle.
+        return json(state.pause_privately_for(a.value("minutes", std::int64_t{0})));
+    });
+    bind_cmd("resume_recording",
+             [&state](const json&) { return json(state.resume_from_private_pause()); });
     // Roadmap 2.19. Opt-in attended-minute targets. Reported together with the actuals so
     // the UI never has to pair a plan with a total fetched separately and possibly later.
     bind_cmd("get_attended_progress",

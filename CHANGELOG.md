@@ -17,6 +17,12 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **One answer to "am I being recorded right now?" (2.10).** A Recording status card states
+  one of five things — Recording, Paused for idle, Paused privately, No session, or Blocked —
+  decided in one place in the backend so two surfaces cannot disagree about it. Privacy pause
+  is one click, with 15/30/60-minute options that show the time left and end on their own. A
+  timed pause is stored as a deadline rather than a countdown, so closing and reopening the
+  window does not quietly restart or extend it.
 - **Optional attended-time targets (2.19).** Set a daily or weekly goal in minutes and the Now
   surface shows how today and this week compare — or just what you attended, if you set no
   target. Off by default, and the copy stays flat: no streaks, no encouragement, no notification

@@ -1128,6 +1128,78 @@ void AppState::set_idle_threshold_secs(std::int64_t seconds) {
     });
 }
 
+// Roadmap 2.10. Lapses a timed pause whose deadline has passed, and reports whether it did.
+// Requires mutex_.
+bool AppState::lapse_private_pause_unlocked() {
+    if (!settings_.private_mode || settings_.private_until_wall_ms == 0) return false;
+    if (wall_now_ms() < settings_.private_until_wall_ms) return false;
+    // The deadline is the promise: when it passes, recording resumes and the setting must say
+    // so. Leaving private_mode true with a stale deadline would keep the app paused forever
+    // after one timed pause; clearing the deadline but not the mode would do the opposite.
+    AppSettings candidate = settings_;
+    candidate.private_mode = false;
+    candidate.private_until_wall_ms = 0;
+    try {
+        commit_settings_unlocked(std::move(candidate), [] {});
+    } catch (const std::exception& error) {
+        // Fail *closed*: if the resume cannot be written down, stay paused rather than
+        // resuming on a promise the next launch will not remember making.
+        log().warn(std::string("privacy: could not lapse the timed pause: ") + error.what());
+        return false;
+    }
+    return true;
+}
+
+RecordingStatus AppState::recording_status() {
+    std::lock_guard lock(mutex_);
+    lapse_private_pause_unlocked();
+
+    RecordingInputs inputs;
+    // Same sources health() reads, deliberately: two descriptions of whether capture works
+    // that can disagree is the defect 2.10 is about, one layer down.
+    inputs.capture_failed = capture_.failed();
+    inputs.capture_permitted =
+        check_capture_permissions(capture_.running(), capture_.input_observed())
+            .capture_available;
+    inputs.private_mode = settings_.private_mode;
+    inputs.has_active_session = active_session_.has_value();
+    inputs.idle = idle_;
+
+    RecordingStatus status;
+    status.state = derive_recording_state(inputs);
+    if (status.state == RecordingState::PausedPrivate && settings_.private_until_wall_ms > 0) {
+        const auto left = settings_.private_until_wall_ms - wall_now_ms();
+        status.private_pause_remaining_ms = left > 0 ? left : 0;
+    }
+    return status;
+}
+
+RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
+    if (minutes < 0) throw std::runtime_error("a privacy pause cannot be negative");
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        candidate.private_mode = true;
+        // 0 means indefinite, which is what the Settings toggle has always done. A timed pause
+        // stores the instant it ends rather than a duration, so closing the window does not
+        // restart the clock.
+        candidate.private_until_wall_ms = minutes > 0 ? wall_now_ms() + minutes * 60 * 1000 : 0;
+        commit_settings_unlocked(std::move(candidate), [] {});
+    }
+    return recording_status();
+}
+
+RecordingStatus AppState::resume_from_private_pause() {
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        candidate.private_mode = false;
+        candidate.private_until_wall_ms = 0;
+        commit_settings_unlocked(std::move(candidate), [] {});
+    }
+    return recording_status();
+}
+
 void AppState::set_private_mode(bool enabled) {
     std::lock_guard lock(mutex_);
     AppSettings candidate = settings_;
