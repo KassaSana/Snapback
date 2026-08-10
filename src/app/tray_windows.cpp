@@ -50,9 +50,15 @@ public:
         if (hwnd_) DestroyWindow(hwnd_);
     }
 
-    void install(std::function<void()> on_show, std::function<void()> on_quit) override {
+    void install(std::function<void()> on_show, std::function<void()> on_quit,
+                 std::function<RecordingStatus()> recording_status,
+                 std::function<void()> on_pause_recording,
+                 std::function<void()> on_resume_recording) override {
         on_show_ = std::move(on_show);
         on_quit_ = std::move(on_quit);
+        recording_status_ = std::move(recording_status);
+        on_pause_recording_ = std::move(on_pause_recording);
+        on_resume_recording_ = std::move(on_resume_recording);
 
         HINSTANCE inst = GetModuleHandleW(nullptr);
         WNDCLASSEXW wc{};
@@ -112,6 +118,8 @@ private:
     void fire(TrayAction action) {
         if (action == TrayAction::Show && on_show_) on_show_();
         else if (action == TrayAction::Quit && on_quit_) on_quit_();
+        else if (action == TrayAction::PauseRecording && on_pause_recording_) on_pause_recording_();
+        else if (action == TrayAction::ResumeRecording && on_resume_recording_) on_resume_recording_();
     }
 
     void show_menu() {
@@ -122,7 +130,8 @@ private:
         // here cannot silently go missing from the macOS menu (tray_macos.mm) or vice
         // versa. The labels are ASCII today; utf8_to_wide keeps that from being a
         // constraint.
-        for (const TrayMenuEntry& entry : tray_menu_entries()) {
+        const auto status = recording_status_ ? recording_status_() : RecordingStatus{};
+        for (const TrayMenuEntry& entry : tray_menu_entries(status)) {
             if (tray_menu_entry_is_separator(entry)) {
                 AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
                 continue;
@@ -137,6 +146,9 @@ private:
 
     std::function<void()> on_show_;
     std::function<void()> on_quit_;
+    std::function<RecordingStatus()> recording_status_;
+    std::function<void()> on_pause_recording_;
+    std::function<void()> on_resume_recording_;
     HWND hwnd_ = nullptr;
     NOTIFYICONDATAW nid_{};
     bool installed_ = false;

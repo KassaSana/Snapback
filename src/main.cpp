@@ -305,7 +305,9 @@ int main(int argc, char** argv) {
                 ShowWindow(main_hwnd, SW_SHOW);
                 SetForegroundWindow(main_hwnd);
             },
-            [&w] { w.terminate(); });
+            [&w] { w.terminate(); }, [state = state.get()] { return state->recording_status(); },
+            [state = state.get()] { state->pause_privately_for(0); },
+            [state = state.get()] { state->resume_from_private_pause(); });
     }
 #elif defined(__APPLE__)
     // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
@@ -313,7 +315,10 @@ int main(int argc, char** argv) {
     if (auto win = w.window(); win.ok()) {
         void* main_window = win.value();
         Tray::instance().install([main_window] { mac::bring_window_to_front(main_window); },
-                                 [&w] { w.terminate(); });
+                                 [&w] { w.terminate(); },
+                                 [state = state.get()] { return state->recording_status(); },
+                                 [state = state.get()] { state->pause_privately_for(0); },
+                                 [state = state.get()] { state->resume_from_private_pause(); });
     }
 #endif
 

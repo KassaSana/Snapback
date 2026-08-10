@@ -26,7 +26,9 @@ class NoopTray final : public Tray {
 public:
     // Callbacks are stored, not wired: there is no menu to fire them. main.cpp keeps
     // working because quitting and showing the window are both reachable from the UI.
-    void install(std::function<void()> on_show, std::function<void()> on_quit) override {
+    void install(std::function<void()> on_show, std::function<void()> on_quit,
+                 std::function<RecordingStatus()>, std::function<void()>,
+                 std::function<void()>) override {
         on_show_ = std::move(on_show);
         on_quit_ = std::move(on_quit);
     }

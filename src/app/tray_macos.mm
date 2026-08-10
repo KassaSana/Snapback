@@ -27,19 +27,31 @@
 // Bridges NSMenuItem clicks back into the C++ callbacks. Compiled without ARC (CMake
 // passes plain -x objective-c++), so std::function ivars are constructed and destroyed
 // normally and manual retain/release rules apply to the Cocoa objects below.
-@interface SnapbackTrayTarget : NSObject {
+@interface SnapbackTrayTarget : NSObject <NSMenuDelegate> {
     std::function<void()> onShow_;
     std::function<void()> onQuit_;
+    std::function<snapback::RecordingStatus()> recordingStatus_;
+    std::function<void()> onPauseRecording_;
+    std::function<void()> onResumeRecording_;
 }
-- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit;
+- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit
+ recordingStatus:(std::function<snapback::RecordingStatus()>)recordingStatus
+ onPauseRecording:(std::function<void()>)onPauseRecording
+ onResumeRecording:(std::function<void()>)onResumeRecording;
 - (void)menuItemClicked:(NSMenuItem*)sender;
 @end
 
 @implementation SnapbackTrayTarget
 
-- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit {
+- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit
+ recordingStatus:(std::function<snapback::RecordingStatus()>)recordingStatus
+ onPauseRecording:(std::function<void()>)onPauseRecording
+ onResumeRecording:(std::function<void()>)onResumeRecording {
     onShow_ = std::move(onShow);
     onQuit_ = std::move(onQuit);
+    recordingStatus_ = std::move(recordingStatus);
+    onPauseRecording_ = std::move(onPauseRecording);
+    onResumeRecording_ = std::move(onResumeRecording);
 }
 
 - (void)menuItemClicked:(NSMenuItem*)sender {
@@ -52,8 +64,31 @@
         case snapback::TrayAction::Quit:
             if (onQuit_) onQuit_();
             break;
+        case snapback::TrayAction::PauseRecording:
+            if (onPauseRecording_) onPauseRecording_();
+            break;
+        case snapback::TrayAction::ResumeRecording:
+            if (onResumeRecording_) onResumeRecording_();
+            break;
         case snapback::TrayAction::None:
             break;
+    }
+}
+
+- (void)menuNeedsUpdate:(NSMenu*)menu {
+    [menu removeAllItems];
+    const auto status = recordingStatus_ ? recordingStatus_() : snapback::RecordingStatus{};
+    for (const snapback::TrayMenuEntry& entry : snapback::tray_menu_entries(status)) {
+        if (snapback::tray_menu_entry_is_separator(entry)) {
+            [menu addItem:[NSMenuItem separatorItem]];
+            continue;
+        }
+        NSMenuItem* item = [[[NSMenuItem alloc] initWithTitle:@(entry.label)
+            action:@selector(menuItemClicked:) keyEquivalent:@""] autorelease];
+        item.target = self;
+        item.tag = static_cast<NSInteger>(entry.command_id);
+        item.enabled = YES;
+        [menu addItem:item];
     }
 }
 
@@ -72,14 +107,20 @@ public:
         [target_ release];
     }
 
-    void install(std::function<void()> on_show, std::function<void()> on_quit) override {
+    void install(std::function<void()> on_show, std::function<void()> on_quit,
+                 std::function<RecordingStatus()> recording_status,
+                 std::function<void()> on_pause_recording,
+                 std::function<void()> on_resume_recording) override {
         // AppKit is main-thread-only. Returning instead of asserting keeps a mis-wired
         // caller from taking the process down, and the missing menu bar item is a loud
         // enough symptom on its own.
         if (![NSThread isMainThread]) return;
 
         if (!target_) target_ = [[SnapbackTrayTarget alloc] init];
-        [target_ setOnShow:std::move(on_show) onQuit:std::move(on_quit)];
+        [target_ setOnShow:std::move(on_show) onQuit:std::move(on_quit)
+            recordingStatus:std::move(recording_status)
+            onPauseRecording:std::move(on_pause_recording)
+            onResumeRecording:std::move(on_resume_recording)];
 
         if (!status_item_) {
             // systemStatusBar owns the item, so retain it to keep our pointer valid for
@@ -92,36 +133,16 @@ public:
             status_item_.button.toolTip = @"Snapback";
         }
 
-        status_item_.menu = build_menu();
+        NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"Snapback"] autorelease];
+        menu.autoenablesItems = NO;
+        menu.delegate = target_;
+        status_item_.menu = menu;
     }
 
     // Deliberately unimplemented until Roadmap 3.3 — see the file header.
     bool show_notification(const NotificationPayload&) override { return false; }
 
 private:
-    NSMenu* build_menu() const {
-        NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"Snapback"] autorelease];
-        // Cocoa's default auto-enabling asks a validator whether each item is live; we
-        // have no validator, so items would arrive permanently greyed out.
-        menu.autoenablesItems = NO;
-
-        for (const TrayMenuEntry& entry : tray_menu_entries()) {
-            if (tray_menu_entry_is_separator(entry)) {
-                [menu addItem:[NSMenuItem separatorItem]];
-                continue;
-            }
-            NSMenuItem* item =
-                [[[NSMenuItem alloc] initWithTitle:@(entry.label)
-                                            action:@selector(menuItemClicked:)
-                                     keyEquivalent:@""] autorelease];
-            item.target = target_;
-            item.tag = static_cast<NSInteger>(entry.command_id);
-            item.enabled = YES;
-            [menu addItem:item];
-        }
-        return menu;
-    }
-
     NSStatusItem* status_item_ = nil;
     SnapbackTrayTarget* target_ = nil;
 };

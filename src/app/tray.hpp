@@ -8,19 +8,23 @@
 
 #include <functional>
 #include <span>
+#include <vector>
 
 #include "app/notification.hpp"
+#include "types.hpp"
 
 namespace snapback {
 
 // What a clicked tray menu item means.
-enum class TrayAction { None, Show, Quit };
+enum class TrayAction { None, Show, PauseRecording, ResumeRecording, Quit };
 
 // Popup-menu command IDs (also the WM_COMMAND ids the Win32 menu posts and the NSMenuItem
 // tags the Cocoa menu carries). Zero is reserved for "not a command" — see kTrayCmdNone.
 constexpr unsigned int kTrayCmdNone = 0;
 constexpr unsigned int kTrayCmdShow = 1001;
 constexpr unsigned int kTrayCmdQuit = 1002;
+constexpr unsigned int kTrayCmdPauseRecording = 1003;
+constexpr unsigned int kTrayCmdResumeRecording = 1004;
 
 TrayAction tray_action_for(unsigned int menu_id);
 
@@ -38,7 +42,7 @@ struct TrayMenuEntry {
 
 // The tray menu in display order. Backed by static storage, so the span outlives any
 // caller.
-std::span<const TrayMenuEntry> tray_menu_entries();
+std::vector<TrayMenuEntry> tray_menu_entries(const RecordingStatus& status);
 
 inline bool tray_menu_entry_is_separator(const TrayMenuEntry& entry) {
     return entry.command_id == kTrayCmdNone;
@@ -52,7 +56,10 @@ public:
     virtual ~Tray() = default;
 
     // on_show: bring the main window forward. on_quit: end the app's run loop.
-    virtual void install(std::function<void()> on_show, std::function<void()> on_quit) = 0;
+    virtual void install(std::function<void()> on_show, std::function<void()> on_quit,
+                         std::function<RecordingStatus()> recording_status,
+                         std::function<void()> on_pause_recording,
+                         std::function<void()> on_resume_recording) = 0;
 
     // Show a native notification using the icon registered by install(). The return value
     // reports whether the OS accepted the request; callers can safely ignore it when a

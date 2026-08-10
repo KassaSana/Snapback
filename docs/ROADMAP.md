@@ -2046,7 +2046,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   database into the browser. This needs per-session query commands and should follow **7.16**
   and align with **14.3**'s command contract.
 
-- **2.10 — DASHBOARD HALF DONE 2026-08-09; the tray stays open.** `M`
+- **2.10 — DONE 2026-08-10.** `M`
   Opened 2026-08-05. The header says capture is running or idle without incorporating private
   mode, the private toggle is buried in Settings, and the tray offers only Show and Quit. For
   software that observes window titles, "am I recording right now?" should never require
@@ -2071,10 +2071,10 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   written down leaves the app paused — failing closed, because resuming on a promise the next
   launch will not remember is the worse error for this particular feature.
 
-  **Still open:** the tray. It offers Show and Quit and does not yet show the state or drive
-  the pause, which is the half of "from anywhere" that needs per-OS menu work. The command is
-  deliberately the single source, so the tray consumes it rather than deriving its own answer.
-  The header pill is also unchanged — the status has its own card on Now for now.
+  **The tray is wired on Windows and macOS:** opening its menu asks the same native status
+  command source used by the dashboard, shows the five-state answer, and offers Pause or Resume
+  as appropriate. The actions call the same durable privacy-pause methods as the dashboard;
+  neither platform derives a parallel answer. Linux remains under its existing tray stub.
 
 - **2.11 — Make the session cockpit fast, state-aware, and safe.** `M`
   Opened 2026-08-05. Start and Stop are always enabled, a blank goal silently does nothing,
