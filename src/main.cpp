@@ -15,6 +15,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -139,6 +140,29 @@ std::filesystem::path executable_dir() {
     if (!error) return self.parent_path();
 #endif
     return std::filesystem::current_path();
+}
+
+void run_tray_action(snapback::Logger& logger, const char* action,
+                     const std::function<void()>& fn) noexcept {
+    try {
+        fn();
+    } catch (const std::exception& error) {
+        logger.warn(std::string("tray: ") + action + " failed: " + error.what());
+    } catch (...) {
+        logger.warn(std::string("tray: ") + action + " failed with an unknown error");
+    }
+}
+
+snapback::RecordingStatus tray_recording_status(snapback::AppState& state,
+                                                snapback::Logger& logger) noexcept {
+    try {
+        return state.recording_status();
+    } catch (const std::exception& error) {
+        logger.warn(std::string("tray: recording status failed: ") + error.what());
+    } catch (...) {
+        logger.warn("tray: recording status failed with an unknown error");
+    }
+    return snapback::RecordingStatus{snapback::RecordingState::Blocked, 0};
 }
 
 }  // namespace
@@ -305,9 +329,16 @@ int main(int argc, char** argv) {
                 ShowWindow(main_hwnd, SW_SHOW);
                 SetForegroundWindow(main_hwnd);
             },
-            [&w] { w.terminate(); }, [state = state.get()] { return state->recording_status(); },
-            [state = state.get()] { state->pause_privately_for(0); },
-            [state = state.get()] { state->resume_from_private_pause(); });
+            [&w] { w.terminate(); },
+            [state = state.get(), &logger] { return tray_recording_status(*state, logger); },
+            [state = state.get(), &logger] {
+                run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
+            },
+            [state = state.get(), &logger] {
+                run_tray_action(logger, "resume recording", [state] {
+                    state->resume_from_private_pause();
+                });
+            });
     }
 #elif defined(__APPLE__)
     // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
@@ -316,9 +347,19 @@ int main(int argc, char** argv) {
         void* main_window = win.value();
         Tray::instance().install([main_window] { mac::bring_window_to_front(main_window); },
                                  [&w] { w.terminate(); },
-                                 [state = state.get()] { return state->recording_status(); },
-                                 [state = state.get()] { state->pause_privately_for(0); },
-                                 [state = state.get()] { state->resume_from_private_pause(); });
+                                 [state = state.get(), &logger] {
+                                     return tray_recording_status(*state, logger);
+                                 },
+                                 [state = state.get(), &logger] {
+                                     run_tray_action(logger, "pause recording", [state] {
+                                         state->pause_privately_for(0);
+                                     });
+                                 },
+                                 [state = state.get(), &logger] {
+                                     run_tray_action(logger, "resume recording", [state] {
+                                         state->resume_from_private_pause();
+                                     });
+                                 });
     }
 #endif
 
