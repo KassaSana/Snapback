@@ -50,6 +50,7 @@ function normalizePomodoroPhase(value: unknown): PomodoroPhase {
 }
 
 export function mapSettings(raw: Record<string, unknown>): AppSettings {
+  const pomodoro = (raw.pomodoro ?? {}) as Record<string, unknown>;
   return {
     defaultFocusMode: normalizeFocusMode(
       raw.default_focus_mode ?? raw.defaultFocusMode,
@@ -57,6 +58,17 @@ export function mapSettings(raw: Record<string, unknown>): AppSettings {
     idleThresholdSecs: normalizeIdleThresholdSecs(
       raw.idle_threshold_secs ?? raw.idleThresholdSecs,
     ),
+    pomodoro: {
+      workMs: Number(pomodoro.work_ms ?? pomodoro.workMs ?? 25 * 60 * 1000),
+      shortBreakMs: Number(pomodoro.short_break_ms ?? pomodoro.shortBreakMs ?? 5 * 60 * 1000),
+      longBreakMs: Number(pomodoro.long_break_ms ?? pomodoro.longBreakMs ?? 15 * 60 * 1000),
+      intervalsBeforeLongBreak: Number(
+        pomodoro.intervals_before_long_break ?? pomodoro.intervalsBeforeLongBreak ?? 4,
+      ),
+      autoStartNextPhase: Boolean(
+        pomodoro.auto_start_next_phase ?? pomodoro.autoStartNextPhase ?? true,
+      ),
+    },
   };
 }
 

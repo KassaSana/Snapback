@@ -1,9 +1,10 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 
-import { formatPomodoroRemaining, type PomodoroStatus } from "./api";
+import { formatPomodoroRemaining, type PomodoroConfig, type PomodoroStatus } from "./api";
 
 type PomodoroCardProps = {
   pomodoroStatus: PomodoroStatus;
+  pomodoroConfig: PomodoroConfig;
   sessionActive: boolean;
   onStart: () => void;
   onStop: () => void;
@@ -12,6 +13,7 @@ type PomodoroCardProps = {
   onSkip: () => void;
   onRestart: () => void;
   onAcknowledge: () => void;
+  onSaveConfig: (config: PomodoroConfig) => void;
 };
 
 const PHASE_LABELS: Record<PomodoroStatus["phase"], string> = {
@@ -22,6 +24,7 @@ const PHASE_LABELS: Record<PomodoroStatus["phase"], string> = {
 
 export const PomodoroCard = memo(function PomodoroCard({
   pomodoroStatus,
+  pomodoroConfig,
   sessionActive,
   onStart,
   onStop,
@@ -30,7 +33,10 @@ export const PomodoroCard = memo(function PomodoroCard({
   onSkip,
   onRestart,
   onAcknowledge,
+  onSaveConfig,
 }: PomodoroCardProps) {
+  const [draft, setDraft] = useState(pomodoroConfig);
+  useEffect(() => setDraft(pomodoroConfig), [pomodoroConfig]);
   const { running, paused, awaitingAcknowledgement, phase, completedWorkIntervals, remainingMs } =
     pomodoroStatus;
 
@@ -108,6 +114,36 @@ export const PomodoroCard = memo(function PomodoroCard({
           </button>
         </div>
       )}
+
+      <details className="pomodoro-settings">
+        <summary>Customize rhythm</summary>
+        <div className="form-grid">
+          {([
+            ["Work minutes", "workMs"],
+            ["Short break minutes", "shortBreakMs"],
+            ["Long break minutes", "longBreakMs"],
+          ] as const).map(([label, key]) => (
+            <label className="field-label" key={key}>
+              {label}
+              <input type="number" min="1" max="180" value={Math.round(draft[key] / 60000)}
+                onChange={(event) => setDraft({ ...draft, [key]: Number(event.target.value) * 60000 })} />
+            </label>
+          ))}
+          <label className="field-label">
+            Work intervals before a long break
+            <input type="number" min="1" max="12" value={draft.intervalsBeforeLongBreak}
+              onChange={(event) => setDraft({ ...draft, intervalsBeforeLongBreak: Number(event.target.value) })} />
+          </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={draft.autoStartNextPhase}
+              onChange={(event) => setDraft({ ...draft, autoStartNextPhase: event.target.checked })} />
+            Start the next phase automatically
+          </label>
+          <button className="secondary-button" onClick={() => onSaveConfig(draft)}>
+            Save rhythm
+          </button>
+        </div>
+      </details>
     </section>
   );
 });

@@ -295,6 +295,7 @@ export type AppSettings = {
   defaultFocusMode: string;
   /** Roadmap 7.23. Seconds without input before a session stops counting as attended. */
   idleThresholdSecs: number;
+  pomodoro: PomodoroConfig;
 };
 
 export type PrivacySettings = {

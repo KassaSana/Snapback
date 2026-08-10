@@ -66,6 +66,8 @@ describe("prediction render boundaries", () => {
           </button>
           <PomodoroCard
             pomodoroStatus={pomodoroStatus}
+            pomodoroConfig={{ workMs: 1500000, shortBreakMs: 300000, longBreakMs: 900000,
+              intervalsBeforeLongBreak: 4, autoStartNextPhase: true }}
             sessionActive
             onStart={onStart}
             onStop={onStop}
@@ -74,6 +76,7 @@ describe("prediction render boundaries", () => {
             onSkip={onSkip}
             onRestart={onRestart}
             onAcknowledge={onAcknowledge}
+            onSaveConfig={vi.fn()}
           />
           <FocusSummaryCard focusSummary={focusSummary} />
           <SettingsCard

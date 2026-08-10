@@ -59,6 +59,7 @@ export default function App() {
 
   const {
     pomodoroStatus,
+    pomodoroConfig,
     refreshPomodoroStatus,
     handlePomodoroEvent,
     handleStartPomodoro,
@@ -68,6 +69,7 @@ export default function App() {
     handleSkipPomodoroPhase,
     handleRestartPomodoroPhase,
     handleAcknowledgePomodoroPhase,
+    handleSavePomodoroConfig,
   } = usePomodoro({ setActionError: feedback.setActionError });
 
   const { attendedProgress, refreshAttendedProgress, handleSaveAttendedTargets } =
@@ -399,6 +401,7 @@ export default function App() {
 
         <PomodoroCard
           pomodoroStatus={pomodoroStatus}
+          pomodoroConfig={pomodoroConfig}
           sessionActive={sessionRecord?.status === "ACTIVE"}
           onStart={handleStartPomodoro}
           onStop={handleStopPomodoro}
@@ -407,6 +410,7 @@ export default function App() {
           onSkip={handleSkipPomodoroPhase}
           onRestart={handleRestartPomodoroPhase}
           onAcknowledge={handleAcknowledgePomodoroPhase}
+          onSaveConfig={handleSavePomodoroConfig}
         />
           </>
         )}

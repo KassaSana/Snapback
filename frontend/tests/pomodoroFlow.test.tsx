@@ -32,6 +32,9 @@ const boundary = vi.hoisted(() => {
         };
       case "get_pomodoro_status":
         return state.pomodoro;
+      case "set_pomodoro_config":
+        state.settings = { ...state.settings, pomodoro: args?.config };
+        return state.pomodoro;
       case "start_pomodoro":
         state.pomodoro = {
           running: true,
@@ -229,5 +232,21 @@ describe("Pomodoro card", () => {
       expect(boundary.invoke).toHaveBeenCalledWith("acknowledge_pomodoro_phase"),
     );
     expect(await within(card).findByText("5:00")).toBeInTheDocument();
+  });
+
+  it("edits and saves the persisted Pomodoro rhythm", async () => {
+    boundary.state.settings = {
+      default_focus_mode: "normal",
+      pomodoro: { work_ms: 1500000, short_break_ms: 300000, long_break_ms: 900000,
+        intervals_before_long_break: 4, auto_start_next_phase: true },
+    };
+    render(<App />);
+    const card = pomodoroCard();
+    fireEvent.click(within(card).getByText("Customize rhythm"));
+    fireEvent.change(within(card).getByLabelText("Work minutes"), { target: { value: "40" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Save rhythm" }));
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("set_pomodoro_config", {
+      config: expect.objectContaining({ workMs: 40 * 60 * 1000 }),
+    }));
   });
 });

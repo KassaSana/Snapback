@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { api, type PomodoroStatus } from "./api";
+import { api, type PomodoroConfig, type PomodoroStatus } from "./api";
 
 const EMPTY_POMODORO_STATUS: PomodoroStatus = {
   running: false,
@@ -17,15 +17,34 @@ type UsePomodoroArgs = {
 
 export const usePomodoro = ({ setActionError }: UsePomodoroArgs) => {
   const [pomodoroStatus, setPomodoroStatus] = useState<PomodoroStatus>(EMPTY_POMODORO_STATUS);
+  const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>({
+    workMs: 25 * 60 * 1000,
+    shortBreakMs: 5 * 60 * 1000,
+    longBreakMs: 15 * 60 * 1000,
+    intervalsBeforeLongBreak: 4,
+    autoStartNextPhase: true,
+  });
 
   const refreshPomodoroStatus = useCallback(async () => {
     try {
-      const status = await api.getPomodoroStatus();
+      const [status, settings] = await Promise.all([api.getPomodoroStatus(), api.getSettings()]);
       setPomodoroStatus(status);
+      setPomodoroConfig(settings.pomodoro);
     } catch {
       // Non-critical; leave the last good status in place.
     }
   }, []);
+
+  const handleSavePomodoroConfig = useCallback(async (config: PomodoroConfig) => {
+    try {
+      const status = await api.setPomodoroConfig(config);
+      setPomodoroConfig(config);
+      setPomodoroStatus(status);
+      setActionError(null);
+    } catch {
+      setActionError("Could not save the Pomodoro rhythm.");
+    }
+  }, [setActionError]);
 
   const handlePomodoroEvent = useCallback((status: PomodoroStatus) => {
     setPomodoroStatus(status);
@@ -90,6 +109,7 @@ export const usePomodoro = ({ setActionError }: UsePomodoroArgs) => {
 
   return {
     pomodoroStatus,
+    pomodoroConfig,
     refreshPomodoroStatus,
     handlePomodoroEvent,
     handleStartPomodoro,
@@ -99,5 +119,6 @@ export const usePomodoro = ({ setActionError }: UsePomodoroArgs) => {
     handleSkipPomodoroPhase,
     handleRestartPomodoroPhase,
     handleAcknowledgePomodoroPhase,
+    handleSavePomodoroConfig,
   };
 };

@@ -2104,7 +2104,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   state — no analytics service is implied by this item. This extends completed **1.1** rather
   than replacing the OS-permission wizard.
 
-- **2.13 — DONE 2026-08-09 except tray countdown and native alerts.** `M`
+- **2.13 — DONE 2026-08-10 except tray countdown and native alerts.** `M`
   Opened 2026-08-05. The existing state machine hardcodes 25/5/15-minute phases, while IPC and
   `PomodoroCard` expose only start and stop. There is no pause/resume, skip, restart, long-break
   cadence setting, or durable indication when the main window is hidden.
@@ -2143,8 +2143,9 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
   **Still open:** remaining time in the tray while the dashboard is hidden, and in-app/native
   phase alerts. Both are platform surfaces rather than state-machine behaviour — the timer
-  already reports each boundary exactly once, which is the hook they need. Editing the rhythm
-  also has no Settings surface yet; `set_pomodoro_config` exists and is callable.
+  already reports each boundary exactly once, which is the hook they need. The Now card now
+  exposes **Customize rhythm**, hydrates all duration/cadence fields from persisted settings,
+  and saves them through the existing command without restarting the phase in progress.
 
 - **2.14 — DONE 2026-08-09 except editing an existing reflection.** `M`
   Opened 2026-08-05. The current check-in records only a coarse focus label and the recap is
