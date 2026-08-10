@@ -137,6 +137,8 @@ public:
     // behaviour). Returns the resulting status so the caller renders what was accepted.
     RecordingStatus pause_privately_for(std::int64_t minutes);
     RecordingStatus resume_from_private_pause();
+    // Suppress the missed-session nudge for a deliberate interval (60 minutes by default).
+    void dismiss_untracked_nudge(std::int64_t minutes = 60);
     // Roadmap 7.23. How long without input pauses attended time. Throws (changing nothing)
     // outside [kMinIdleThresholdSecs, kMaxIdleThresholdSecs].
     void set_idle_threshold_secs(std::int64_t seconds);

@@ -1965,7 +1965,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
 ## Tier 2 — Product & ML depth
 
-- **2.7 — PARTIAL 2026-08-05; excluded-app gate DONE 2026-08-08.** `M` The nudge is
+- **2.7 — PARTIAL 2026-08-10; dismissal interval DONE.** `M` The nudge is
   implemented and wired end to end. After **15 minutes** of sustained activity with no
   session, the engine emits `untracked_work` once and the Session Control card shows a
   dismissible notice — placed there, not as a toast, because the Start button is on the same
@@ -1980,10 +1980,11 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   (session running, stretch too short, private mode, excluded app, stretch reset by switching
   into an excluded app).
 
-  **Still open from this item's own list:** there is no dismissal *interval*, only a cleared
-  notice; the notice does not itself open the goal/mode start flow (it relies on the adjacent
-  Start button, so coordinate with **2.11** before adding a second entry point); and there are
-  no app-restart tests. The threshold is a named constant rather than a setting — that belongs
+  Dismiss now suppresses the nudge for one hour, persisted as a wall-clock deadline so closing
+  and reopening the app cannot immediately nag again; a failed settings write leaves the notice
+  visible. **Still open from this item's own list:** the notice does not itself open the goal/mode
+  start flow (it relies on the adjacent Start button, so coordinate with **2.11** before adding a
+  second entry point). The threshold is a named constant rather than a setting — that belongs
   with 7.23's inherited five-minute idle threshold, which raises the same question.
 
   The original finding was:

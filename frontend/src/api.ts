@@ -617,6 +617,7 @@ export const api = {
     return mapSettings(raw ?? {});
   },
   dismissSnapback: () => invoke("dismiss_snapback"),
+  dismissUntrackedNudge: (minutes = 60) => invoke("dismiss_untracked_nudge", { minutes }),
   reloadClassifierModel: async () => {
     const raw = await invoke<Record<string, unknown>>("reload_classifier_model");
     return mapClassifierStatus(raw);

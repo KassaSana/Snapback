@@ -126,7 +126,15 @@ export const useLiveData = () => {
 
   // Starting a session is the answer to the nudge, so it clears immediately rather than
   // waiting for the next tick to notice a session now exists.
-  const clearUntrackedNote = useCallback(() => setUntrackedNote(null), []);
+  const clearUntrackedNote = useCallback(async () => {
+    try {
+      await api.dismissUntrackedNudge(60);
+      setUntrackedNote(null);
+    } catch {
+      // Keep the notice visible when persistence failed; hiding it would imply a dismissal
+      // that the next launch cannot remember.
+    }
+  }, []);
 
   const clearActivityData = useCallback(() => {
     setPrediction(null);

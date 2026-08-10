@@ -384,6 +384,8 @@ struct AppSettings {
     // requires exactly that, since a pause that quietly ended while the app was closed would
     // resume recording without the user ever being told.
     std::int64_t private_until_wall_ms{};
+    // Roadmap 2.7. A dismissed missed-session prompt stays dismissed across a restart.
+    std::int64_t untracked_nudge_until_wall_ms{};
 };
 
 // Roadmap 2.19. A plan and what actually happened, side by side.

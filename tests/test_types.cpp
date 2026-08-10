@@ -193,17 +193,21 @@ TEST_CASE("SessionRecord optional timestamps round-trip as null when absent") {
 TEST_CASE("AppSettings serializes default focus mode as camelCase") {
     AppSettings settings;
     settings.default_focus_mode = FocusMode::Recovery;
+    settings.untracked_nudge_until_wall_ms = 1'700'003'600'000;
 
     json j = settings;
     CHECK(j.contains("defaultFocusMode"));
     CHECK_FALSE(j.contains("default_focus_mode"));
     CHECK(j["defaultFocusMode"].get<std::string>() == "recovery");
+    CHECK(j["untrackedNudgeUntilWallMs"] == 1'700'003'600'000);
 
     auto back = j.get<AppSettings>();
     CHECK(back.default_focus_mode == FocusMode::Recovery);
+    CHECK(back.untracked_nudge_until_wall_ms == 1'700'003'600'000);
 
     auto missing = json::object().get<AppSettings>();
     CHECK(missing.default_focus_mode == FocusMode::Normal);
+    CHECK(missing.untracked_nudge_until_wall_ms == 0);
 }
 
 TEST_CASE("LabelRequest carries the nested camelCase arg shape") {

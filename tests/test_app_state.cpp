@@ -316,6 +316,20 @@ TEST_CASE("brief activity below the threshold raises no nudge") {
     CHECK_FALSE(contains(work_without_session(state, clock, 5), "untracked_work"));
 }
 
+TEST_CASE("dismissing untracked work suppresses it until the durable interval expires") {
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    REQUIRE(contains(work_without_session(state, clock, 20), "untracked_work"));
+    state.dismiss_untracked_nudge(60);
+    CHECK(state.settings().untracked_nudge_until_wall_ms > 0);
+    CHECK_FALSE(contains(work_without_session(state, clock, 59), "untracked_work"));
+    CHECK(contains(work_without_session(state, clock, 2), "untracked_work"));
+}
+
 TEST_CASE("private mode never raises the untracked nudge") {
     // The user has said "do not record". Asking them to start recording is the wrong
     // direction, and the timer resets rather than pausing, so leaving private mode does not

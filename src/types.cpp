@@ -449,7 +449,8 @@ void to_json(json& j, const AppSettings& v) {
              {"pomodoroState", v.pomodoro_state},
              {"attendedTargetDailyMins", v.attended_target_daily_mins},
              {"attendedTargetWeeklyMins", v.attended_target_weekly_mins},
-             {"privateUntilWallMs", v.private_until_wall_ms}};
+             {"privateUntilWallMs", v.private_until_wall_ms},
+             {"untrackedNudgeUntilWallMs", v.untracked_nudge_until_wall_ms}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
@@ -469,6 +470,8 @@ void from_json(const json& j, AppSettings& v) {
     v.attended_target_daily_mins = get_or<std::uint32_t>(j, "attendedTargetDailyMins", 0);
     v.attended_target_weekly_mins = get_or<std::uint32_t>(j, "attendedTargetWeeklyMins", 0);
     v.private_until_wall_ms = get_or<std::int64_t>(j, "privateUntilWallMs", 0);
+    v.untracked_nudge_until_wall_ms =
+        std::max<std::int64_t>(0, get_or<std::int64_t>(j, "untrackedNudgeUntilWallMs", 0));
 }
 
 void to_json(json& j, const PrivacySettings& v) {

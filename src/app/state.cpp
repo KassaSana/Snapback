@@ -337,7 +337,8 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     } else {
         if (!untracked_since_ms_) untracked_since_ms_ = now_ms;
         const auto minutes = (now_ms - *untracked_since_ms_) / (60 * 1000);
-        if (!untracked_latched_ && minutes >= kUntrackedNudgeMinutes) {
+        const bool dismissal_active = wall_now_ms() < settings_.untracked_nudge_until_wall_ms;
+        if (!dismissal_active && !untracked_latched_ && minutes >= kUntrackedNudgeMinutes) {
             untracked_latched_ = true;
             untracked_minutes_ = static_cast<std::uint64_t>(minutes);
         }
@@ -1198,6 +1199,21 @@ RecordingStatus AppState::resume_from_private_pause() {
         commit_settings_unlocked(std::move(candidate), [] {});
     }
     return recording_status();
+}
+
+void AppState::dismiss_untracked_nudge(std::int64_t minutes) {
+    if (minutes <= 0 || minutes > 24 * 60) {
+        throw std::runtime_error("nudge dismissal must be between 1 minute and 24 hours");
+    }
+    std::lock_guard lock(mutex_);
+    AppSettings candidate = settings_;
+    candidate.untracked_nudge_until_wall_ms = wall_now_ms() + minutes * 60 * 1000;
+    commit_settings_unlocked(std::move(candidate), [this] {
+        untracked_minutes_.reset();
+        // The deadline is the latch. Keeping the ordinary per-stretch latch set would make
+        // expiry ineffective until the user went idle.
+        untracked_latched_ = false;
+    });
 }
 
 void AppState::set_private_mode(bool enabled) {

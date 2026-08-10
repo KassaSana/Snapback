@@ -154,6 +154,10 @@ inline void register_commands(webview::webview& w, AppState& state,
     });
     bind_cmd("resume_recording",
              [&state](const json&) { return json(state.resume_from_private_pause()); });
+    bind_cmd("dismiss_untracked_nudge", [&state](const json& a) {
+        state.dismiss_untracked_nudge(a.value("minutes", std::int64_t{60}));
+        return json{{"dismissed", true}};
+    });
     // Roadmap 2.19. Opt-in attended-minute targets. Reported together with the actuals so
     // the UI never has to pair a plan with a total fetched separately and possibly later.
     bind_cmd("get_attended_progress",
