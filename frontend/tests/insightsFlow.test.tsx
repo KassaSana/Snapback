@@ -9,6 +9,7 @@ const boundary = vi.hoisted(() => {
     analytics: Record<string, unknown>;
     summary: Record<string, unknown>;
     deleteThrows: boolean;
+    reflectionThrows: boolean;
     historyThrows: boolean;
   } = {
     health: {},
@@ -17,6 +18,7 @@ const boundary = vi.hoisted(() => {
     analytics: {},
     summary: {},
     deleteThrows: false,
+    reflectionThrows: false,
     historyThrows: false,
   };
 
@@ -38,6 +40,7 @@ const boundary = vi.hoisted(() => {
         return state.history.length !== before;
       }
       case "save_session_reflection": {
+        if (state.reflectionThrows) throw new Error("reflection failed");
         const row = state.history.find(
           (entry) => (entry.record as { sessionId: string }).sessionId === args?.sessionId,
         );
@@ -122,6 +125,7 @@ beforeEach(() => {
   boundary.state.analytics = {};
   boundary.state.summary = {};
   boundary.state.deleteThrows = false;
+  boundary.state.reflectionThrows = false;
   boundary.state.historyThrows = false;
 });
 
@@ -269,6 +273,21 @@ describe("Session reflection editing from Insights", () => {
       sessionId: "a", done: "new result", nextStep: "old next",
     }));
     expect(await screen.findByText("Reflection updated.")).toBeInTheDocument();
+  });
+
+  it("keeps the editor open when a reflection update fails", async () => {
+    boundary.state.reflectionThrows = true;
+    const summary = rawSummary("a", 50, 0, 0);
+    boundary.state.history = [{ ...summary, record: { ...summary.record,
+      reflection_done: "old result", reflection_next_step: "old next" } }];
+    renderApp("review");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit reflection" }));
+    fireEvent.change(screen.getByLabelText("What got done?"), { target: { value: "new result" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
+
+    expect(await screen.findByText("Could not update that reflection.")).toBeInTheDocument();
+    expect(screen.getByLabelText("What got done?")).toHaveValue("new result");
   });
 });
 

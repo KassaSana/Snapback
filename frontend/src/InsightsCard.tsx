@@ -14,7 +14,11 @@ type InsightsCardProps = {
   deleteStatus?: string | null;
   deletingSessionId?: string | null;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
-  onSaveReflection?: (sessionId: string, done: string | null, nextStep: string | null) => void | Promise<void>;
+  onSaveReflection?: (
+    sessionId: string,
+    done: string | null,
+    nextStep: string | null,
+  ) => boolean | Promise<boolean>;
   reflectionStatus?: string | null;
   sessionHistory: SessionSummary[];
 };
@@ -79,18 +83,13 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
 function SessionDeleteList({
   deletingSessionId,
   onDelete,
-  onSaveReflection,
   summaries,
 }: {
   deletingSessionId: string | null;
   onDelete: (sessionId: string) => void | Promise<void>;
-  onSaveReflection?: (sessionId: string, done: string | null, nextStep: string | null) => void | Promise<void>;
   summaries: SessionSummary[];
 }) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [done, setDone] = useState("");
-  const [nextStep, setNextStep] = useState("");
 
   return (
     <ul className="rules-list session-list">
@@ -110,31 +109,6 @@ function SessionDeleteList({
                 {formatScore(summary.recap.avgFocusScore)}
               </p>
             </div>
-            {editingId === sessionId ? (
-              <div className="reflection-editor">
-                <label className="field-label">What got done?
-                  <textarea value={done} maxLength={1000} onChange={(event) => setDone(event.target.value)} />
-                </label>
-                <label className="field-label">Next step
-                  <textarea value={nextStep} maxLength={1000} onChange={(event) => setNextStep(event.target.value)} />
-                </label>
-                <div className="button-row">
-                  <button className="primary-button" onClick={() => {
-                    void onSaveReflection?.(sessionId, done.trim() || null, nextStep.trim() || null);
-                    setEditingId(null);
-                  }}>Save reflection</button>
-                  <button className="ghost-button" onClick={() => setEditingId(null)}>Cancel</button>
-                </div>
-              </div>
-            ) : onSaveReflection && sessionId !== "" ? (
-              <button className="secondary-button" onClick={() => {
-                setDone(summary.record.reflectionDone ?? "");
-                setNextStep(summary.record.reflectionNextStep ?? "");
-                setEditingId(sessionId);
-              }}>Edit reflection</button>
-            ) : null}
-            {/* A row with no session id cannot be addressed by `delete_session`, so it gets
-                no button rather than a button that silently does nothing. */}
             {sessionId === "" ? null : confirming ? (
               <div className="button-row">
                 <button
@@ -166,6 +140,75 @@ function SessionDeleteList({
                 Delete
               </button>
             )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function SessionReflectionList({
+  onSaveReflection,
+  summaries,
+}: {
+  onSaveReflection: (
+    sessionId: string,
+    done: string | null,
+    nextStep: string | null,
+  ) => boolean | Promise<boolean>;
+  summaries: SessionSummary[];
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [done, setDone] = useState("");
+  const [nextStep, setNextStep] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  return (
+    <ul className="rules-list session-list">
+      {summaries.map((summary, index) => {
+        const sessionId = summary.record.sessionId;
+        const label = sessionRowLabel(summary);
+        const saving = savingId === sessionId;
+
+        return (
+          <li className="rules-item" key={sessionId || index}>
+            <div className="session-row-detail">
+              <span className="rules-pattern">{label}</span>
+              <p className="rules-note">
+                {formatTime(summary.record.startedAt)} ·{" "}
+                {Math.round(summary.recap.durationSecs / 60)} min · focus{" "}
+                {formatScore(summary.recap.avgFocusScore)}
+              </p>
+            </div>
+            {editingId === sessionId ? (
+              <div className="reflection-editor">
+                <label className="field-label">What got done?
+                  <textarea value={done} maxLength={1000} onChange={(event) => setDone(event.target.value)} />
+                </label>
+                <label className="field-label">Next step
+                  <textarea value={nextStep} maxLength={1000} onChange={(event) => setNextStep(event.target.value)} />
+                </label>
+                <div className="button-row">
+                  <button className="primary-button" disabled={saving} onClick={async () => {
+                    setSavingId(sessionId);
+                    const saved = await onSaveReflection(
+                      sessionId,
+                      done.trim() || null,
+                      nextStep.trim() || null,
+                    );
+                    setSavingId(null);
+                    if (saved) setEditingId(null);
+                  }}>Save reflection</button>
+                  <button className="ghost-button" disabled={saving} onClick={() => setEditingId(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : sessionId !== "" ? (
+              <button className="secondary-button" onClick={() => {
+                setDone(summary.record.reflectionDone ?? "");
+                setNextStep(summary.record.reflectionNextStep ?? "");
+                setEditingId(sessionId);
+              }}>Edit reflection</button>
+            ) : null}
           </li>
         );
       })}
@@ -214,6 +257,16 @@ export const InsightsCard = memo(function InsightsCard({
           <p className="insights-caption">
             Avg focus score (0–100) per session · oldest → newest
           </p>
+          {onSaveReflection ? (
+            <div className="session-reflection-zone">
+              <h3>Session reflections</h3>
+              <SessionReflectionList
+                onSaveReflection={onSaveReflection}
+                summaries={sessionHistory}
+              />
+              {reflectionStatus ? <p className="helper-text">{reflectionStatus}</p> : null}
+            </div>
+          ) : null}
           {onDeleteSession ? (
             <div className="session-delete-zone">
               <h3>Delete a session</h3>
@@ -224,10 +277,8 @@ export const InsightsCard = memo(function InsightsCard({
               <SessionDeleteList
                 deletingSessionId={deletingSessionId}
                 onDelete={onDeleteSession}
-                onSaveReflection={onSaveReflection}
                 summaries={sessionHistory}
               />
-              {reflectionStatus ? <p className="helper-text">{reflectionStatus}</p> : null}
               {deleteStatus ? <p className="helper-text success">{deleteStatus}</p> : null}
               {deleteError ? <p className="helper-text alert">{deleteError}</p> : null}
             </div>

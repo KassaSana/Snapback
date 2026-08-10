@@ -64,8 +64,10 @@ export const useInsights = (
       setSessionHistory((current) => current.map((summary) =>
         summary.record.sessionId === sessionId ? { ...summary, record: saved } : summary));
       setReflectionStatus("Reflection updated.");
+      return true;
     } catch {
       setReflectionStatus("Could not update that reflection.");
+      return false;
     }
   }, []);
 
