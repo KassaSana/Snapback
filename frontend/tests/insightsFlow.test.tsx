@@ -37,6 +37,15 @@ const boundary = vi.hoisted(() => {
         );
         return state.history.length !== before;
       }
+      case "save_session_reflection": {
+        const row = state.history.find(
+          (entry) => (entry.record as { sessionId: string }).sessionId === args?.sessionId,
+        );
+        if (!row) throw new Error("missing session");
+        row.record = { ...(row.record as object), reflection_done: args?.done ?? null,
+          reflection_next_step: args?.nextStep ?? null };
+        return row.record;
+      }
       case "get_focus_summary":
         return state.focusSummary;
       case "get_analytics":
@@ -241,6 +250,25 @@ describe("Session deletion from Insights", () => {
       expect(screen.getByText("Could not delete that session.")).toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: "Delete session alpha" })).toBeInTheDocument();
+  });
+});
+
+describe("Session reflection editing from Insights", () => {
+  it("prefills and updates an existing reflection", async () => {
+    const summary = rawSummary("a", 50, 0, 0);
+    boundary.state.history = [{ ...summary, record: { ...summary.record,
+      reflection_done: "old result", reflection_next_step: "old next" } }];
+    renderApp("review");
+    await screen.findByRole("button", { name: "Edit reflection" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit reflection" }));
+    fireEvent.change(screen.getByLabelText("What got done?"), { target: { value: "new result" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
+
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("save_session_reflection", {
+      sessionId: "a", done: "new result", nextStep: "old next",
+    }));
+    expect(await screen.findByText("Reflection updated.")).toBeInTheDocument();
   });
 });
 

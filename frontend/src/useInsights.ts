@@ -9,6 +9,7 @@ export const useInsights = (
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [reflectionStatus, setReflectionStatus] = useState<string | null>(null);
 
   const refreshInsights = useCallback(async () => {
     try {
@@ -55,12 +56,27 @@ export const useInsights = (
     [onSessionDeleted, refreshInsights],
   );
 
+  const saveReflection = useCallback(async (
+    sessionId: string, done: string | null, nextStep: string | null,
+  ) => {
+    try {
+      const saved = await api.saveSessionReflection(sessionId, done, nextStep);
+      setSessionHistory((current) => current.map((summary) =>
+        summary.record.sessionId === sessionId ? { ...summary, record: saved } : summary));
+      setReflectionStatus("Reflection updated.");
+    } catch {
+      setReflectionStatus("Could not update that reflection.");
+    }
+  }, []);
+
   return {
     deleteError,
     deleteSession,
     deleteStatus,
     deletingSessionId,
     refreshInsights,
+    reflectionStatus,
+    saveReflection,
     sessionHistory,
   };
 };

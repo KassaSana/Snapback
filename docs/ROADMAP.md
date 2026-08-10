@@ -2147,7 +2147,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   exposes **Customize rhythm**, hydrates all duration/cadence fields from persisted settings,
   and saves them through the existing command without restarting the phase in progress.
 
-- **2.14 — DONE 2026-08-09 except editing an existing reflection.** `M`
+- **2.14 — DONE 2026-08-10.** `M`
   Opened 2026-08-05. The current check-in records only a coarse focus label and the recap is
   metrics-only. That helps model training, but it does not preserve what the user accomplished
   or the next step that makes tomorrow's restart easier.
@@ -2172,9 +2172,10 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   at all — so a skipped reflection stays indistinguishable from one never offered, which is the
   promise the storage half was built around. Covered by `frontend/tests/reflectionFlow.test.tsx`.
 
-  **Still open:** editing a reflection after the prompt is gone. That belongs with **2.9**'s
-  session detail, which does not exist yet; the command already accepts an edit, including
-  clearing an answer back to unset.
+  **Editing is wired too:** every completed-session row exposes an editor prefilled from the
+  stored answers. Saving updates that row immediately through the same validated command,
+  including clearing either answer back to unset. **2.9** may move this editor into its richer
+  session-detail view later; it no longer blocks correcting a reflection today.
 
 - **2.15 — PERSISTENCE DONE 2026-08-06; the explorable half stays open.** `M`
   The item's own two halves, split as it describes them: "first persist", then "compose those

@@ -242,6 +242,8 @@ export default function App() {
     deleteStatus: sessionDeleteStatus,
     deletingSessionId,
     refreshInsights,
+    reflectionStatus,
+    saveReflection: handleEditReflection,
     sessionHistory,
   } = useInsights(handleSessionDeleted);
 
@@ -422,6 +424,8 @@ export default function App() {
           deleteStatus={sessionDeleteStatus}
           deletingSessionId={deletingSessionId}
           onDeleteSession={handleDeleteSession}
+          onSaveReflection={handleEditReflection}
+          reflectionStatus={reflectionStatus}
           sessionHistory={sessionHistory}
         />
 
