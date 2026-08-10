@@ -1123,6 +1123,62 @@ std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
     return rows;
 }
 
+namespace {
+
+// Roadmap 2.19. Attended seconds inside one local-time window, clipped per span.
+//
+// Everything is converted to local time first — the same `datetime(col, 'localtime')` the
+// hourly analytics buckets use — so the window boundaries and the spans are compared on one
+// clock. Doing the arithmetic in UTC and shifting afterwards is what puts a session on the
+// wrong side of midnight for anyone not on UTC, and it is why DST is not special-cased here:
+// SQLite resolves 'localtime' per timestamp, so an hour that repeats or never happens is
+// already accounted for by the conversion rather than by arithmetic on an offset.
+//
+// MIN/MAX with two arguments are the scalar forms; the comparison is lexicographic over
+// 'YYYY-MM-DD HH:MM:SS', which orders identically to time. ROUND before CAST for the reason
+// active_secs documents: a truncating CAST loses a second per span.
+constexpr const char* kAttendedInWindowSql =
+    "SELECT CAST(ROUND(COALESCE(SUM(MAX(0, ("
+    "  julianday(MIN(datetime(COALESCE(ended_at, ?1), 'localtime'), :window_end))"
+    "  - julianday(MAX(datetime(started_at, 'localtime'), :window_start))"
+    ") * 86400)), 0)) AS INTEGER) FROM session_spans";
+
+std::uint64_t attended_in_window(sqlite3* db, const std::string& now,
+                                 const std::string& window_start_expr,
+                                 const std::string& window_end_expr) {
+    std::string sql = kAttendedInWindowSql;
+    const auto replace_all = [&sql](const std::string& token, const std::string& value) {
+        for (auto at = sql.find(token); at != std::string::npos; at = sql.find(token, at)) {
+            sql.replace(at, token.size(), value);
+            at += value.size();
+        }
+    };
+    replace_all(":window_end", window_end_expr);
+    replace_all(":window_start", window_start_expr);
+
+    Stmt stmt(db, sql.c_str());
+    stmt.bind(1, now);
+    if (!stmt.step_row()) return 0;
+    const auto secs = sqlite3_column_int64(stmt.get(), 0);
+    return secs > 0 ? static_cast<std::uint64_t>(secs) : 0;
+}
+
+}  // namespace
+
+std::uint64_t Storage::attended_secs_in_local_day(const std::string& now) {
+    return attended_in_window(db_, now, "datetime(?1, 'localtime', 'start of day')",
+                              "datetime(?1, 'localtime', 'start of day', '+1 day')");
+}
+
+std::uint64_t Storage::attended_secs_in_local_week(const std::string& now) {
+    // ISO weeks: Monday to Sunday. `weekday 1` moves *forward* to the next Monday, so stepping
+    // back six days first lands on the Monday on or before today — including when today is
+    // itself Monday, which is the case a naive `weekday 1` gets wrong by a whole week.
+    return attended_in_window(
+        db_, now, "datetime(?1, 'localtime', 'start of day', '-6 days', 'weekday 1')",
+        "datetime(?1, 'localtime', 'start of day', '-6 days', 'weekday 1', '+7 days')");
+}
+
 std::optional<SessionRecord> Storage::save_session_reflection(
     const std::string& session_id, const std::optional<std::string>& done,
     const std::optional<std::string>& next_step) {
@@ -1286,6 +1342,8 @@ void Storage::analyze_for_test() {
     Stmt stmt(db_, "ANALYZE");
     stmt.step_done();
 }
+
+void Storage::execute_for_test(const std::string& sql) { exec(db_, sql.c_str()); }
 
 std::size_t Storage::count_statements_for_test(const std::function<void()>& body) {
     std::size_t count = 0;

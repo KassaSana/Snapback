@@ -53,5 +53,7 @@
   "skip_pomodoro_phase",
   "restart_pomodoro_phase",
   "acknowledge_pomodoro_phase",
-  "set_pomodoro_config"
+  "set_pomodoro_config",
+  "get_attended_progress",
+  "set_attended_targets"
 ]

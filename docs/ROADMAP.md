@@ -2286,7 +2286,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   capture (that is **8.11**). Depends on stable context identity in **7.27**, stable category
   identity in **7.28**, and title-parser policy in **4.11** for title-derived suggestions.
 
-- **2.19 — Add optional attended-time plans and targets.** `M`
+- **2.19 — FIRST SLICE DONE 2026-08-09; Review comparison stays open.** `M`
   Opened 2026-08-05. Sessions have a free-text goal and Review has retrospective totals, but
   nothing records the user's intention for today or this week. A focus score is unsuitable as
   a target — it is a model opinion — while **7.23** now provides the honest quantity a user can
@@ -2297,6 +2297,27 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   or notifications unless separately enabled through **2.16**. The first slice is total
   attended time only. Category allocations and calendar scheduling can wait for evidence that
   the simpler plan is useful.
+
+  **Done:** opt-in daily and weekly attended-minute targets in settings.json, **0 meaning no
+  target** so there is no separate enabled flag to drift out of step with the number; an
+  Attended time card on Now showing today and this week with the ratio when a target is set and
+  the bare measurement when it is not; and `get_attended_progress` / `set_attended_targets`.
+  Totals are summed from `session_spans` and nothing else — never session-open duration,
+  prediction rows, or a classifier score. Spans are **clipped to the window** rather than
+  counted whole, so an evening past midnight lands its real minutes on each day, and sessions
+  predating spans contribute zero rather than an invented total. Minutes round down: 59 seconds
+  is not a minute of attendance. Tested for cross-window spans, open spans bounded at now, the
+  Monday off-by-a-week case, and legacy sessions with no spans.
+
+  **Local day/week boundaries** use `datetime(col, 'localtime')`, the same convention the
+  hourly analytics buckets already use, rather than waiting on **7.16** — which may still
+  revisit the representation. DST is not special-cased because SQLite resolves `localtime` per
+  timestamp, so a repeated or missing hour is handled by the conversion rather than by
+  arithmetic on a fixed offset.
+
+  **Still open:** planned-versus-actual in Review, which the item says should compose with
+  **10.11**'s shared time range rather than introduce another hidden one; 10.11 does not exist
+  yet. Target *editing* lives on the Now card for now rather than in Settings.
 
   Count durable active spans, never session-open duration, prediction rows, or classifier
   score. Define local-day/week boundaries after **7.16** and test idle/paused sessions,

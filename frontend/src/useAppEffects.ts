@@ -19,6 +19,8 @@ type UseAppEffectsArgs = {
   refreshFocusSummary: () => void | Promise<void>;
   refreshAnalytics: () => void | Promise<void>;
   refreshPomodoroStatus: () => void | Promise<void>;
+  // Roadmap 2.19. Refreshed alongside the timer: both describe the session that just changed.
+  refreshAttendedProgress: () => void | Promise<void>;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
   refreshDeployStatus: () => void | Promise<void>;
@@ -52,6 +54,7 @@ export const useAppEffects = ({
   refreshFocusSummary,
   refreshAnalytics,
   refreshPomodoroStatus,
+  refreshAttendedProgress,
   refreshLatest,
   refreshAppRules,
   refreshDeployStatus,
@@ -108,7 +111,8 @@ export const useAppEffects = ({
   // refetch whenever the session identity changes to pick up the cleared state.
   useEffect(() => {
     void refreshPomodoroStatus();
-  }, [sessionId, refreshPomodoroStatus]);
+    void refreshAttendedProgress();
+  }, [sessionId, refreshPomodoroStatus, refreshAttendedProgress]);
 
   useEffect(() => {
     if (!sessionId || sessionStatus !== "ACTIVE") {

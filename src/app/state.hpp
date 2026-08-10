@@ -157,6 +157,10 @@ public:
     // Phase lengths, long-break cadence, and auto-start. Applies from the next phase on.
     PomodoroStatus set_pomodoro_config(const PomodoroConfig& config);
     PomodoroConfig pomodoro_config() const;
+    // Roadmap 2.19. Opt-in attended-minute targets and how today/this week compare. Targets of
+    // 0 mean "not set"; setting 0 turns a target off.
+    AttendedProgress attended_progress();
+    AttendedProgress set_attended_targets(std::uint32_t daily_mins, std::uint32_t weekly_mins);
 
     // App rules (allow/block overrides). The CRUD methods keep the cached rule set
     // (app_rules_) in sync so the live classifier sees changes immediately.

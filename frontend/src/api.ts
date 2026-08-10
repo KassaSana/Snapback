@@ -12,6 +12,7 @@ import {
   mapFocusSummary,
   mapHealth,
   mapPermissionStatus,
+  mapAttendedProgress,
   mapPomodoroStatus,
   mapPrivacySettings,
   mapSummaryReport,
@@ -188,6 +189,15 @@ export type PomodoroStatus = {
   phase: PomodoroPhase;
   completedWorkIntervals: number;
   remainingMs: number;
+};
+
+// Roadmap 2.19. A target of 0 means "not set" -- there is no separate enabled flag to drift
+// out of step with the number.
+export type AttendedProgress = {
+  dailyTargetMins: number;
+  dailyActualMins: number;
+  weeklyTargetMins: number;
+  weeklyActualMins: number;
 };
 
 export type PomodoroConfig = {
@@ -399,6 +409,17 @@ export const api = {
   getFocusSummary: async (limit = 200) => {
     const raw = await invoke<Record<string, unknown>>("get_focus_summary", { limit });
     return mapFocusSummary(raw);
+  },
+  getAttendedProgress: async () => {
+    const raw = await invoke<Record<string, unknown>>("get_attended_progress");
+    return mapAttendedProgress(raw);
+  },
+  setAttendedTargets: async (dailyMins: number, weeklyMins: number) => {
+    const raw = await invoke<Record<string, unknown>>("set_attended_targets", {
+      dailyMins,
+      weeklyMins,
+    });
+    return mapAttendedProgress(raw);
   },
   getPomodoroStatus: async () => {
     const raw = await invoke<Record<string, unknown>>("get_pomodoro_status");

@@ -17,6 +17,12 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **Optional attended-time targets (2.19).** Set a daily or weekly goal in minutes and the Now
+  surface shows how today and this week compare — or just what you attended, if you set no
+  target. Off by default, and the copy stays flat: no streaks, no encouragement, no notification
+  telling you that you are behind. The number counts durable attended spans only, never how long
+  a session was left open or what the classifier thought of it, and a stretch that runs past
+  midnight is split across the days it actually covered.
 - **A Pomodoro timer you can actually drive (2.13).** The card now carries the controls: pause and resume, skip a phase, restart
   the one you are in, and configurable work/break lengths, long-break cadence, and whether the
   next phase begins on its own. The rhythm is a setting now rather than the app's opinion, and

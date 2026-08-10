@@ -179,6 +179,18 @@ public:
     std::vector<SessionRecord> recent_sessions(std::size_t limit);
     SessionRecap recap(const std::string& session_id);
 
+    // Roadmap 2.19. Attended seconds inside the local day / ISO week containing `now`.
+    //
+    // Summed from `session_spans` and nothing else — never session-open duration, prediction
+    // rows, or a classifier score. A span is clipped to the window rather than counted whole,
+    // so an evening that runs past midnight contributes its real minutes to each day instead
+    // of all of them to one. Sessions recorded before spans existed have none and contribute
+    // zero, which is the honest answer: their attendance was never measured.
+    //
+    // `now` is an RFC3339 UTC stamp; it bounds still-open spans and selects the window.
+    std::uint64_t attended_secs_in_local_day(const std::string& now);
+    std::uint64_t attended_secs_in_local_week(const std::string& now);
+
     // Roadmap 2.14. Writes (or clears) the session's optional reflection and returns the
     // updated row; nullopt when no such session exists, so a caller cannot mistake a typo'd id
     // for a successful save. Either field may be nullopt to leave that answer unrecorded —
@@ -424,6 +436,14 @@ public:
     // so there is no new member — Storage's move operations carry only `db_` and `stmt_cache_`,
     // and a member added to one and not the other fails silently.
     std::size_t count_statements_for_test(const std::function<void()>& body);
+
+    // Test seam: run one statement against this connection.
+    //
+    // Roadmap 2.19's window arithmetic is about spans at specific instants, and the production
+    // path only ever creates them at "now" through idle transitions. Seeding them directly is
+    // what lets a test ask about midnight, a Monday, or last week at all. Deliberately narrow:
+    // it takes SQL, not data, and nothing outside tests calls it.
+    void execute_for_test(const std::string& sql);
 
 private:
     explicit Storage(sqlite3* db) : db_(db) {}

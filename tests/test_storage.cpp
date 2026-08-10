@@ -2105,3 +2105,88 @@ TEST_CASE("the reflection migration is idempotent when the columns already exist
     CHECK(kept->reflection_done == "kept");
     CHECK(kept->reflection_next_step == "kept too");
 }
+
+// --- Roadmap 2.19: attended time inside a local day / week ---------------------------------
+
+namespace {
+
+// Writes a closed span directly. The production path opens and closes spans through idle
+// transitions; these tests are about the window arithmetic, so the spans are given.
+void seed_span(Storage& storage, const std::string& session_id, const std::string& started_at,
+               const std::string& ended_at) {
+    storage.execute_for_test("INSERT INTO session_spans (session_id, started_at, ended_at) "
+                             "VALUES ('" + session_id + "', '" + started_at + "', '" +
+                             ended_at + "')");
+}
+
+}  // namespace
+
+TEST_CASE("attended time counts durable spans and nothing else") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("measured", FocusMode::Normal);
+
+    // A session that is open for an hour but attended for thirty minutes reports thirty.
+    seed_span(*storage, session.session_id, "2026-08-09T10:00:00Z", "2026-08-09T10:30:00Z");
+    const auto day = storage->attended_secs_in_local_day("2026-08-09T12:00:00Z");
+    CHECK(day == 30 * 60);
+}
+
+TEST_CASE("a session with no spans contributes nothing rather than its open duration") {
+    // ADR-0005's rule, at the reporting end: attendance that was never measured is not zero
+    // minutes of presence, but it must not be invented from how long the session was open.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    storage->create_session("legacy, never measured", FocusMode::Normal);
+    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") == 0);
+    CHECK(storage->attended_secs_in_local_week("2026-08-09T12:00:00Z") == 0);
+}
+
+TEST_CASE("a span outside the window does not leak into it") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("yesterday", FocusMode::Normal);
+    seed_span(*storage, session.session_id, "2026-08-01T10:00:00Z", "2026-08-01T11:00:00Z");
+    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") == 0);
+}
+
+TEST_CASE("an open span is counted only up to now, not to the end of time") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("still going", FocusMode::Normal);
+    storage->execute_for_test("INSERT INTO session_spans (session_id, started_at) VALUES ('" +
+                              session.session_id + "', '2026-08-09T10:00:00Z')");
+    CHECK(storage->attended_secs_in_local_day("2026-08-09T10:20:00Z") == 20 * 60);
+}
+
+TEST_CASE("the week window holds a day the daily window does not") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("earlier this week", FocusMode::Normal);
+    // 2026-08-09 is a Sunday; the ISO week containing it began Monday 2026-08-03.
+    seed_span(*storage, session.session_id, "2026-08-05T10:00:00Z", "2026-08-05T10:45:00Z");
+    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") == 0);
+    CHECK(storage->attended_secs_in_local_week("2026-08-09T12:00:00Z") == 45 * 60);
+
+    // ...and not into the week before it.
+    CHECK(storage->attended_secs_in_local_week("2026-08-02T12:00:00Z") == 0);
+}
+
+TEST_CASE("a Monday sees its own week rather than the one that just ended") {
+    // The off-by-a-week case: `weekday 1` moves *forward* to Monday, so asking on a Monday
+    // without stepping back first lands on next Monday and reports an empty week.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("monday morning", FocusMode::Normal);
+    seed_span(*storage, session.session_id, "2026-08-03T09:00:00Z", "2026-08-03T09:30:00Z");
+    CHECK(storage->attended_secs_in_local_week("2026-08-03T12:00:00Z") == 30 * 60);
+}
+
+TEST_CASE("attended minutes are whole and never rounded up") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("partial", FocusMode::Normal);
+    seed_span(*storage, session.session_id, "2026-08-09T10:00:00Z", "2026-08-09T10:00:59Z");
+    // 59 seconds of presence is not a minute of attendance.
+    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") / 60 == 0);
+}

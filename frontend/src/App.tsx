@@ -18,6 +18,7 @@ import { SummaryCard } from "./SummaryCard";
 import { PermissionsCard } from "./PermissionsCard";
 import { PrivacyCard } from "./PrivacyCard";
 import { PermissionWizard } from "./PermissionWizard";
+import { AttendedTargetsCard } from "./AttendedTargetsCard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { sessionStatusLabel } from "./sessionStatus";
@@ -30,6 +31,7 @@ import { useFocusSummary } from "./useFocusSummary";
 import { useHealth } from "./useHealth";
 import { useInsights } from "./useInsights";
 import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
+import { useAttendedTargets } from "./useAttendedTargets";
 import { usePomodoro } from "./usePomodoro";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
@@ -65,6 +67,9 @@ export default function App() {
     handleRestartPomodoroPhase,
     handleAcknowledgePomodoroPhase,
   } = usePomodoro({ setActionError: feedback.setActionError });
+
+  const { attendedProgress, refreshAttendedProgress, handleSaveAttendedTargets } =
+    useAttendedTargets({ setActionError: feedback.setActionError });
 
   const {
     activeWindowAvailable,
@@ -238,6 +243,7 @@ export default function App() {
       refreshAnalytics(),
       refreshHealth(),
       refreshPomodoroStatus(),
+      refreshAttendedProgress(),
     ]);
   }, [
     clearActivitySession,
@@ -246,6 +252,7 @@ export default function App() {
     refreshFocusSummary,
     refreshHealth,
     refreshInsights,
+    refreshAttendedProgress,
     refreshPomodoroStatus,
   ]);
   const privacy = usePrivacy(handleActivityDataDeleted);
@@ -257,6 +264,7 @@ export default function App() {
     refreshFocusSummary,
     refreshAnalytics,
     refreshPomodoroStatus,
+    refreshAttendedProgress,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
     refreshDeployStatus,
@@ -364,6 +372,11 @@ export default function App() {
           setSessionGoal={setSessionGoal}
           untrackedNote={live.untrackedNote}
           dismissUntrackedNote={live.clearUntrackedNote}
+        />
+
+        <AttendedTargetsCard
+          progress={attendedProgress}
+          onSave={handleSaveAttendedTargets}
         />
 
         <PomodoroCard

@@ -143,6 +143,16 @@ inline void register_commands(webview::webview& w, AppState& state,
              [&state](const json&) { return json(state.restart_pomodoro_phase()); });
     bind_cmd("acknowledge_pomodoro_phase",
              [&state](const json&) { return json(state.acknowledge_pomodoro_phase()); });
+    // Roadmap 2.19. Opt-in attended-minute targets. Reported together with the actuals so
+    // the UI never has to pair a plan with a total fetched separately and possibly later.
+    bind_cmd("get_attended_progress",
+             [&state](const json&) { return json(state.attended_progress()); });
+    bind_cmd("set_attended_targets", [&state](const json& a) {
+        // 0 turns a target off, which is also the default -- there is no separate "enabled"
+        // flag to drift out of step with the number.
+        return json(state.set_attended_targets(a.value("dailyMins", 0u),
+                                               a.value("weeklyMins", 0u)));
+    });
     // The rhythm itself. Read it back through get_settings, which already carries it — a
     // dedicated getter would be a second description of one thing.
     bind_cmd("set_pomodoro_config", [&state](const json& a) {

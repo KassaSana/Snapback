@@ -447,6 +447,51 @@ PomodoroStatus AppState::stop_pomodoro() {
     return pomodoro_.status(steady_now_ms());
 }
 
+// Roadmap 2.19. Reads the plan from settings and the actuals from durable spans -- never
+// from session-open duration, prediction rows, or a classifier score, which are the three
+// numbers that look like attendance and are not.
+AttendedProgress AppState::attended_progress() {
+    // Targets live under mutex_ with the rest of settings; the spans live behind
+    // storage_mutex_. Taken in LockRank order, and the settings copy is released before the
+    // storage read so a slow query does not hold the state lock.
+    AppSettings snapshot;
+    {
+        std::lock_guard lock(mutex_);
+        snapshot = settings_;
+    }
+    const auto now = now_rfc3339();
+    std::lock_guard store_lock(storage_mutex_);
+    AttendedProgress out;
+    out.daily_target_mins = snapshot.attended_target_daily_mins;
+    out.weekly_target_mins = snapshot.attended_target_weekly_mins;
+    // Whole minutes, rounded down: a plan is not improved by claiming a minute that has not
+    // finished, and rounding up would let 59 seconds read as a minute of attendance.
+    out.daily_actual_mins = storage_.attended_secs_in_local_day(now) / 60;
+    out.weekly_actual_mins = storage_.attended_secs_in_local_week(now) / 60;
+    return out;
+}
+
+AttendedProgress AppState::set_attended_targets(std::uint32_t daily_mins,
+                                                std::uint32_t weekly_mins) {
+    // A week cannot hold more than seven days of minutes, and a day cannot hold more than
+    // itself. Rejected before anything is written, so a bad plan leaves the old one intact.
+    constexpr std::uint32_t kMinsPerDay = 24 * 60;
+    if (daily_mins > kMinsPerDay) {
+        throw std::runtime_error("a daily target cannot exceed 24 hours");
+    }
+    if (weekly_mins > 7 * kMinsPerDay) {
+        throw std::runtime_error("a weekly target cannot exceed 7 days");
+    }
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        candidate.attended_target_daily_mins = daily_mins;
+        candidate.attended_target_weekly_mins = weekly_mins;
+        commit_settings_unlocked(std::move(candidate), [] {});
+    }
+    return attended_progress();
+}
+
 PomodoroConfig AppState::pomodoro_config() const {
     std::lock_guard lock(mutex_);
     return settings_.pomodoro;

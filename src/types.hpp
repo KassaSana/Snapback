@@ -374,6 +374,23 @@ struct AppSettings {
     // where this lives because it is already the app's atomically-written, fsync'd file; a
     // second store for six fields would be a second thing that can half-write.
     PomodoroSnapshot pomodoro_state{};
+    // Roadmap 2.19. Opt-in attended-minute targets, **0 meaning no target**. Off by default
+    // and deliberately so: a focus tool that ships with a quota has decided how much someone
+    // should work before meeting them.
+    std::uint32_t attended_target_daily_mins{};
+    std::uint32_t attended_target_weekly_mins{};
+};
+
+// Roadmap 2.19. A plan and what actually happened, side by side.
+//
+// Minutes rather than seconds because that is the unit a target is set in, and reporting a
+// finer one would imply a precision the plan does not have. A target of 0 means "not set" —
+// the UI shows attendance without a bar rather than progress toward nothing.
+struct AttendedProgress {
+    std::uint32_t daily_target_mins{};
+    std::uint64_t daily_actual_mins{};
+    std::uint32_t weekly_target_mins{};
+    std::uint64_t weekly_actual_mins{};
 };
 
 // What "Delete all activity" actually did. Roadmap 8.12.
@@ -508,6 +525,7 @@ void to_json(json& j, const LabelRequest& v);
 void from_json(const json& j, LabelRequest& v);
 void to_json(json& j, const ExportTrainingResult& v);
 void from_json(const json& j, ExportTrainingResult& v);
+void to_json(json& j, const AttendedProgress& v);
 void to_json(json& j, const AppSettings& v);
 void from_json(const json& j, AppSettings& v);
 void to_json(json& j, const PrivacySettings& v);

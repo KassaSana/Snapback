@@ -427,6 +427,13 @@ void from_json(const json& j, PomodoroSnapshot& v) {
     v.paused_remaining_ms = std::max<std::int64_t>(0, get_or<std::int64_t>(j, "pausedRemainingMs", 0));
 }
 
+void to_json(json& j, const AttendedProgress& v) {
+    j = json{{"dailyTargetMins", v.daily_target_mins},
+             {"dailyActualMins", v.daily_actual_mins},
+             {"weeklyTargetMins", v.weekly_target_mins},
+             {"weeklyActualMins", v.weekly_actual_mins}};
+}
+
 void to_json(json& j, const AppSettings& v) {
     j = json{{"defaultFocusMode", v.default_focus_mode},
              {"privateMode", v.private_mode},
@@ -434,7 +441,9 @@ void to_json(json& j, const AppSettings& v) {
              {"goalCategories", v.goal_categories},
              {"idleThresholdSecs", v.idle_threshold_secs},
              {"pomodoro", v.pomodoro},
-             {"pomodoroState", v.pomodoro_state}};
+             {"pomodoroState", v.pomodoro_state},
+             {"attendedTargetDailyMins", v.attended_target_daily_mins},
+             {"attendedTargetWeeklyMins", v.attended_target_weekly_mins}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
@@ -451,6 +460,8 @@ void from_json(const json& j, AppSettings& v) {
             : kDefaultIdleThresholdSecs;
     v.pomodoro = get_or<PomodoroConfig>(j, "pomodoro", PomodoroConfig{});
     v.pomodoro_state = get_or<PomodoroSnapshot>(j, "pomodoroState", PomodoroSnapshot{});
+    v.attended_target_daily_mins = get_or<std::uint32_t>(j, "attendedTargetDailyMins", 0);
+    v.attended_target_weekly_mins = get_or<std::uint32_t>(j, "attendedTargetWeeklyMins", 0);
 }
 
 void to_json(json& j, const PrivacySettings& v) {

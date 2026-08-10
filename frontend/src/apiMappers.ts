@@ -18,6 +18,7 @@ import type {
   PermissionStatus,
   PomodoroPhase,
   PomodoroStatus,
+  AttendedProgress,
   PrivacySettings,
   PredictionRecord,
   SessionRecap,
@@ -314,6 +315,15 @@ export function mapFocusSummary(raw: Record<string, unknown>): FocusSummary {
     distractedSamples: Number(raw.distracted_samples ?? raw.distractedSamples ?? 0),
     distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
     longestFocusSecs: Number(raw.longest_focus_secs ?? raw.longestFocusSecs ?? 0),
+  };
+}
+
+export function mapAttendedProgress(raw: Record<string, unknown>): AttendedProgress {
+  return {
+    dailyTargetMins: Number(raw.daily_target_mins ?? raw.dailyTargetMins ?? 0),
+    dailyActualMins: Number(raw.daily_actual_mins ?? raw.dailyActualMins ?? 0),
+    weeklyTargetMins: Number(raw.weekly_target_mins ?? raw.weeklyTargetMins ?? 0),
+    weeklyActualMins: Number(raw.weekly_actual_mins ?? raw.weeklyActualMins ?? 0),
   };
 }
 
