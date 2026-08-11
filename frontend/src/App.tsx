@@ -44,6 +44,16 @@ import { useAnalytics } from "./useAnalytics";
 import { usePrivacy } from "./usePrivacy";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
 import { SettingsNav } from "./SettingsNav";
+import { OnboardingGuide } from "./OnboardingGuide";
+import { captureIsReady } from "./permissionWizardState";
+import {
+  clearOnboardingComplete,
+  currentOnboardingStep,
+  onboardingFailure,
+  readOnboardingComplete,
+  shouldShowOnboarding,
+  writeOnboardingComplete,
+} from "./onboardingJourney";
 import {
   DEFAULT_SETTINGS_SECTION,
   SETTINGS_SECTION_BLURBS,
@@ -77,6 +87,22 @@ export default function App() {
   const openSettingsSection = useCallback((section: SettingsSection) => {
     setSurface("settings");
     setSettingsSection(section);
+  }, []);
+
+  // Roadmap 2.12. Skipping and finishing are the same durable state: the guide is done.
+  const [onboardingComplete, setOnboardingComplete] = useState(() => readOnboardingComplete());
+  // Latched, because "has read the recap" is a thing that happened, not a thing that is true
+  // right now — navigating away from Review must not un-finish the journey.
+  const [recapSeen, setRecapSeen] = useState(false);
+  const skipOnboarding = useCallback(() => {
+    writeOnboardingComplete();
+    setOnboardingComplete(true);
+  }, []);
+  const restartOnboarding = useCallback(() => {
+    clearOnboardingComplete();
+    setRecapSeen(false);
+    setOnboardingComplete(false);
+    setSurface("now");
   }, []);
   const feedback = useFeedback();
   const autostart = useAutostart();
@@ -325,6 +351,52 @@ export default function App() {
   ]);
   const privacy = usePrivacy(handleActivityDataDeleted);
 
+  // Roadmap 2.12. Every input is state the app already tracks for its own reasons — the guide
+  // reads them and issues nothing. `feedbackGiven` uses `labelStatus` because it is set by both
+  // submitting a correction and deliberately skipping the survey, and the step is "you have been
+  // offered the correction and dealt with it", not "you disagreed with the classifier".
+  const onboardingState = useMemo(
+    () => ({
+      captureReady: captureIsReady(captureRunning, captureProbeConfirmed),
+      goalEntered: sessionGoal.trim().length > 0,
+      sessionActive: sessionRecord?.status === "ACTIVE",
+      predictionSeen: live.prediction !== null,
+      feedbackGiven: feedback.labelStatus !== null,
+      sessionCompleted: recap !== null,
+      recapSeen,
+    }),
+    [
+      captureProbeConfirmed,
+      captureRunning,
+      feedback.labelStatus,
+      live.prediction,
+      recap,
+      recapSeen,
+      sessionGoal,
+      sessionRecord,
+    ],
+  );
+  const onboardingStep = currentOnboardingStep(onboardingState);
+  const onboardingVisible = shouldShowOnboarding({
+    captureReady: onboardingState.captureReady,
+    completed: onboardingComplete,
+    step: onboardingStep,
+  });
+
+  // The last step completes by being *read*, so it latches when Review is open with a recap
+  // on it rather than when the user clicks anything.
+  useEffect(() => {
+    if (surface === "review" && recap !== null) setRecapSeen(true);
+  }, [surface, recap]);
+
+  // Finishing is remembered the same way skipping is: the guide has done its job either way.
+  useEffect(() => {
+    if (onboardingState.recapSeen && !onboardingComplete) {
+      writeOnboardingComplete();
+      setOnboardingComplete(true);
+    }
+  }, [onboardingState.recapSeen, onboardingComplete]);
+
   useAppEffects({
     refreshHealth,
     captureRunning,
@@ -404,6 +476,23 @@ export default function App() {
       >
         {surface === "now" && (
           <>
+        {/*
+          Roadmap 2.12. Above the cockpit because every step but the last happens there, and
+          only while the journey is unfinished. It observes and never acts, which is what lets
+          it be replayed without manufacturing a session or a label.
+        */}
+        {onboardingVisible && onboardingStep && (
+          <OnboardingGuide
+            step={onboardingStep}
+            failure={onboardingFailure({
+              captureFailed,
+              privateMode: privacy.settings?.privateMode ?? false,
+            })}
+            onSkip={skipOnboarding}
+            onRecover={() => openSettingsSection("privacy")}
+          />
+        )}
+
         <FocusStateHero
           goal={sessionRecord?.goal ?? null}
           hyperfocusNote={live.hyperfocusNote}
@@ -532,6 +621,24 @@ export default function App() {
         </div>
 
         {settingsSection === "general" && (
+          <>
+          {/*
+            Roadmap 2.12's "resumable from Help". Safe to offer unconditionally because
+            replaying the guide creates nothing — it reads state and points at controls.
+          */}
+          <section className="card">
+            <div className="card-header">
+              <h2>Getting started</h2>
+            </div>
+            <p className="helper-text">
+              A short walkthrough of one real session, from naming a goal to reading the recap.
+              It only points at the controls — it never starts or records anything for you.
+            </p>
+            <button type="button" className="secondary-button" onClick={restartOnboarding}>
+              Replay the walkthrough
+            </button>
+          </section>
+
           <SettingsCard
             busy={autostart.busy}
             error={autostart.error}
@@ -542,6 +649,7 @@ export default function App() {
             idleThresholdError={idleThreshold.error}
             onIdleThresholdChange={idleThreshold.update}
           />
+          </>
         )}
 
         {settingsSection === "focus" && (

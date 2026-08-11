@@ -1180,6 +1180,42 @@ h1 {
   }
 }
 
+/* Roadmap 2.12 — the getting-started walkthrough. */
+
+.onboarding-guide {
+  grid-column: 1 / -1;
+  border-left: 3px solid var(--accent, #7eb6ff);
+}
+
+.onboarding-step-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.onboarding-track {
+  list-style: none;
+  display: flex;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 0;
+}
+
+.onboarding-dot {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(126, 182, 255, 0.2);
+}
+
+.onboarding-dot-done {
+  background: rgba(126, 182, 255, 0.55);
+}
+
+.onboarding-dot-current {
+  background: var(--accent, #7eb6ff);
+}
+
 /* Roadmap 10.9 — the second level inside Settings.
    Visually lighter than .surface-tab on purpose: ADR-0003's three surfaces stay the primary
    navigation, and a second row of equally loud pills would read as six top-level tabs. */

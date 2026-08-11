@@ -2116,7 +2116,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   how two figures that must agree stop agreeing. Running/Paused itself is already shown, from
   7.23's `sessionStatusLabel`.
 
-- **2.12 — Extend onboarding through the first useful result.** `M`
+- **2.12 — DONE 2026-08-11.** `M`
   Opened 2026-08-05. `PermissionWizard` disappears once capture is available. It explains OS
   permission and default mode, but never teaches the product loop: choose a goal, start, read
   a verdict, correct it, stop, and inspect the recap. A successful permission grant is not
@@ -2128,6 +2128,34 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   safe to repeat without generating fake records or labels. Instrument only local completion
   state — no analytics service is implied by this item. This extends completed **1.1** rather
   than replacing the OS-permission wizard.
+
+  **Done:** `onboardingJourney.ts` derives the current step from app state; `OnboardingGuide`
+  renders it on Now, above the cockpit, from capture-ready until the recap has been read. Six
+  steps — goal, start, verdict, correct, stop, review — each advancing because the state
+  changed, not because a button was pressed. There is no Next button anywhere in it, and a
+  test asserts that there isn't.
+
+  **The design decision that makes the rest fall out: the guide is a pure observer.** It
+  issues no commands and writes no rows. That is what makes it safe to repeat — a walkthrough
+  that started a session to demonstrate starting a session would manufacture exactly the fake
+  records and labels the item forbids — and it is why "resumable from Help" cost nothing:
+  replaying it creates no second session and no duplicate label, which is asserted directly.
+  Skip and finish write the same single local flag; nothing else is instrumented.
+
+  **Deriving the step instead of counting it is what handles the user who ran ahead.** Each
+  step's evidence is a superset of the ones before it, so someone who started a session without
+  reading the guide lands on "wait for your first reading" rather than being told to type a goal
+  over a running session. Failures hand off rather than talking over the problem: a dead capture
+  or private mode routes to 10.9's Privacy & permissions section instead of growing a second
+  set of remediation copy that would have to be kept true.
+
+  **Two things this pass got wrong.** The progress track labelled every dot with its step title
+  for screen readers, which meant a reader would recite the whole journey on each advance; the
+  dots are decorative now, and the live region plus the step count carry the meaning. And the
+  new state shifted timing enough to expose that two of 10.9's own tests were passing on luck —
+  `App.test.tsx`'s default health has capture blocked, so the auto-reveal was racing the
+  explicit navigation those cases were about. They now opt into a healthy capture and test one
+  thing each; the suite was run three times to confirm it.
 
 - **2.13 — DONE 2026-08-10 except tray countdown and native alerts.** `M`
   Opened 2026-08-05. The existing state machine hardcodes 25/5/15-minute phases, while IPC and

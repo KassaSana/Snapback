@@ -89,10 +89,28 @@ describe("App first-run permission wizard", () => {
     expect(screen.queryByRole("heading", { name: "Diagnostics" })).not.toBeInTheDocument();
   });
 
+  // This file's default health has capture *blocked*, which 10.9 treats as an actionable
+  // failure and answers by revealing Privacy & permissions. That is correct behaviour and it
+  // is asserted in settingsNavFlow; here it would race the explicit navigation these two cases
+  // are about. So they opt into a healthy capture and test one thing each.
+  const healthyCapture = (): Record<string, unknown> =>
+    health({
+      capture_running: true,
+      permissions: {
+        capture_available: true,
+        capture_probe_confirmed: true,
+        active_window_available: true,
+        message: "",
+        setup_steps: [],
+      },
+    });
+
   // Roadmap 10.9. Settings is four groups, and each card lives in exactly one of them. The
   // negative half is the point: before this item every one of these was on screen at once,
   // which is what made Settings read as an engineering console.
   it("groups the configuration cards into Settings sections", async () => {
+    boundary.state.health = healthyCapture();
+
     const { unmount } = renderApp("settings", "privacy");
     expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Diagnostics" })).not.toBeInTheDocument();
@@ -112,6 +130,8 @@ describe("App first-run permission wizard", () => {
   // Settings opens on ordinary settings, never on developer tooling — the complaint the item
   // was opened for.
   it("opens Settings on General rather than on model training", async () => {
+    boundary.state.health = healthyCapture();
+
     renderApp("settings");
 
     expect(await screen.findByRole("tab", { name: "General" })).toHaveAttribute(
