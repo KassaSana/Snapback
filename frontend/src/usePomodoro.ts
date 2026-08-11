@@ -27,11 +27,16 @@ export const usePomodoro = ({ setActionError }: UsePomodoroArgs) => {
 
   const refreshPomodoroStatus = useCallback(async () => {
     try {
-      const [status, settings] = await Promise.all([api.getPomodoroStatus(), api.getSettings()]);
+      const status = await api.getPomodoroStatus();
       setPomodoroStatus(status);
-      setPomodoroConfig(settings.pomodoro);
     } catch {
       // Non-critical; leave the last good status in place.
+    }
+    try {
+      const settings = await api.getSettings();
+      setPomodoroConfig(settings.pomodoro);
+    } catch {
+      // The timer status is useful even when settings cannot be read.
     }
   }, []);
 

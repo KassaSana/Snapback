@@ -6,10 +6,12 @@ const boundary = vi.hoisted(() => {
   const state: {
     health: Record<string, unknown>;
     settings: Record<string, unknown>;
+    settingsThrows: boolean;
     pomodoro: Record<string, unknown>;
   } = {
     health: {},
     settings: {},
+    settingsThrows: false,
     pomodoro: { running: false, phase: "work", completed_work_intervals: 0, remaining_ms: 0 },
   };
 
@@ -20,6 +22,7 @@ const boundary = vi.hoisted(() => {
       case "refresh_permissions":
         return (state.health.permissions as Record<string, unknown>) ?? {};
       case "get_settings":
+        if (state.settingsThrows) throw new Error("settings unavailable");
         return state.settings;
       case "start_session":
         return {
@@ -117,6 +120,7 @@ beforeEach(() => {
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
   boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settingsThrows = false;
   boundary.state.pomodoro = {
     running: false,
     phase: "work",
@@ -159,6 +163,22 @@ describe("Pomodoro card", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Stop Pomodoro" }));
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("stop_pomodoro"));
     expect(await within(card).findByText("--:--")).toBeInTheDocument();
+  });
+
+  it("still renders timer status when settings hydration fails", async () => {
+    boundary.state.settingsThrows = true;
+    boundary.state.pomodoro = {
+      running: true,
+      phase: "work",
+      completed_work_intervals: 0,
+      remaining_ms: 12 * 60 * 1000,
+    };
+
+    render(<App />);
+    const card = pomodoroCard();
+
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_pomodoro_status"));
+    expect(await within(card).findByText("12:00")).toBeInTheDocument();
   });
 
   // Roadmap 2.13. Drives the real card + usePomodoro + api.ts against the mocked boundary,
