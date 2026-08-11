@@ -23,6 +23,7 @@
 #include <nlohmann/json.hpp>
 
 #include "app/commands.hpp"
+#include "app/data_import.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/ipc_shim.hpp"
 #include "app/webview_origin.hpp"
@@ -256,6 +257,19 @@ int main(int argc, char** argv) {
     }
     for (const auto& exposed : privacy.unprotected) {
         logger.warn("still readable by other accounts: " + exposed);
+    }
+
+    // Roadmap 9.14. Before anything opens the database, apply an import the user staged in a
+    // previous run. It has to be here: the swap replaces the file, so it cannot happen while a
+    // connection is open, and 9.8's lock means the running app is always that connection.
+    if (const auto imported = apply_staged_import(data_dir / "focoflow.db", &logger)) {
+        if (imported->ok) {
+            logger.info("startup: applied staged import — " + imported->message);
+        } else {
+            // Not fatal. The apply is written so that a failure leaves the previous database in
+            // place, so the right move is to start normally and say what happened.
+            logger.error("startup: staged import failed — " + imported->message);
+        }
     }
 
     try {

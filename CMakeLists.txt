@@ -155,6 +155,7 @@ add_library(snapback_app STATIC
   src/app/autostart_run_key.cpp
   src/app/autostart_systemd.cpp
   src/app/data_export.cpp
+  src/app/data_import.cpp
   src/app/frontend_assets.cpp
   src/app/ipc_shim.cpp
   src/app/open_url.cpp

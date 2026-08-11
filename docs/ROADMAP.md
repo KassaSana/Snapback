@@ -2872,7 +2872,7 @@ small; the tier is large because nobody has walked that path yet.
   Whatever is chosen, cutting a release needs the version bumped first, then a tag on a
   `master` commit CI has proven green.
 
-- **9.14 — There are four ways to get data out and none to get it back in.** `M`
+- **9.14 — DONE 2026-08-11.** `M`
   Opened 2026-08-05. `export_my_data`, `export_summary_report`, `export_support_bundle`, and
   `export_training_data` all exist. There is **no import, restore, or migrate-to-a-new-machine
   path of any kind.**
@@ -2897,6 +2897,44 @@ small; the tier is large because nobody has walked that path yet.
   Use `VACUUM INTO` for the export side: it produces a consistent single-file snapshot of a
   live WAL database, which hand-copying does not. Ties to **7.22** (the same backup
   machinery), **9.4**, and **9.5**.
+
+  **Done:** `src/app/data_import.{hpp,cpp}` with `inspect_import_candidate` (read-only),
+  `import_database` (the swap), and the staging trio; four IPC commands; `useDataImport` +
+  `DataImportCard` beside Privacy's exports. Every copy goes through `VACUUM INTO`, never a
+  file copy — an import source taken from a running Snapback keeps recent commits in a `-wal`
+  beside it, so copying the `.db` alone would silently drop the newest sessions, which is the
+  exact data loss this item exists to prevent.
+
+  **The swap cannot happen while the app is running, so it doesn't.** 9.8's process-lifetime
+  lock means the running process is always the open connection; on Windows the rename would
+  fail outright, and everywhere else the engine thread would keep writing into a database the
+  user is no longer looking at. So the choice is verified and *staged*, and applied at the next
+  launch from `main.cpp` before anything opens storage. That constraint turned out to be a
+  feature: a staged import is cancellable right up to the restart, which is the undo a
+  whole-database replace would otherwise lack.
+
+  **Refusals happen before the swap, not after it.** 7.3's downgrade guard is checked during
+  inspection, so a database from a newer build is declined with an explanation instead of
+  landing and leaving the app unable to open its own data — the precise way the hand-copy
+  workaround strands people today. Two other refusals matter as much: `sqlite3_open` *succeeds*
+  on arbitrary bytes because it defers reading until a page is touched, so a renamed JPEG would
+  otherwise be accepted; and a valid SQLite file with no `sessions` table would import cleanly
+  and leave the product with an empty history it believed was the user's.
+
+  **Ordering is chosen so every failure leaves a working database:** inspect, back up the
+  current data, stage a verified snapshot of the incoming file *beside* its destination, then
+  rename. Only the rename is destructive, and by then the replacement is one operation away.
+  The old `-wal`/`-shm` are removed with it — they describe the database that was just
+  replaced, and SQLite would otherwise apply them to the new one. A staged file is consumed
+  even when applying it fails, because retrying on every launch turns one bad import into an
+  app that never starts properly again.
+
+  **Merge stays out of scope and the UI says so in words.** The confirmation states that
+  importing replaces rather than merges, names the session count being adopted, and names the
+  backup being written — all before the click, since after the restart there is nothing to take
+  back. 17 C++ cases cover it; three guards (the newer-schema refusal, the not-a-database
+  check, and the `-wal` cleanup) were each deliberately broken to confirm a test fails. The IPC
+  contract count moved 61 → 65, caught by its own guard rather than by remembering.
 
 - **9.15 — Define one coherent desktop instance and window lifecycle.** `M/L`
   Opened 2026-08-05. **9.8** correctly prevents two processes from opening the same database,

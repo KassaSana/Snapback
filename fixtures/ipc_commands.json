@@ -59,5 +59,9 @@
   "get_recording_status",
   "pause_recording_privately",
   "resume_recording",
-  "dismiss_untracked_nudge"
+  "dismiss_untracked_nudge",
+  "inspect_data_import",
+  "stage_data_import",
+  "cancel_data_import",
+  "get_data_import_status"
 ]

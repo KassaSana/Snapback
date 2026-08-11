@@ -15,6 +15,7 @@
 
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
+#include "app/data_import.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/open_url.hpp"
 #include "app/reveal_path.hpp"
@@ -325,6 +326,43 @@ inline void register_commands(webview::webview& w, AppState& state,
     bind_cmd("export_training_data", [&state, data_dir](const json& a) {
         const auto out_dir = data_dir / "exports" / "training";
         return json(state.export_training_data(out_dir, detail::opt_string(a, "sessionId")));
+    });
+
+    // Roadmap 9.14. The missing direction. `inspect` is read-only and exists so the
+    // confirmation can state what the user is about to adopt *and* what they are about to lose;
+    // a destructive replace behind a single unlabelled button is the wrong shape for this.
+    bind_cmd("inspect_data_import", [data_dir](const json& a) {
+        const auto candidate = inspect_import_candidate(
+            std::filesystem::path(detail::opt_string(a, "path").value_or("")),
+            data_dir / "focoflow.db");
+        return json{{"acceptable", candidate.acceptable},
+                    {"message", candidate.message},
+                    {"schemaVersion", candidate.schema_version},
+                    {"sessionCount", candidate.session_count}};
+    });
+
+    // Staged rather than applied, because the swap cannot happen while this process holds the
+    // database open — see data_import.hpp. Returns what will happen at the next launch.
+    bind_cmd("stage_data_import", [data_dir](const json& a) {
+        const auto staged = stage_import(
+            std::filesystem::path(detail::opt_string(a, "path").value_or("")),
+            data_dir / "focoflow.db", nullptr);
+        return json{{"ok", staged.ok},
+                    {"message", staged.message},
+                    {"schemaVersion", staged.schema_version},
+                    {"sessionCount", staged.session_count}};
+    });
+
+    // The undo. A staged import that has not been applied is one file deletion away from never
+    // having happened, and the user is entitled to that before they restart.
+    bind_cmd("cancel_data_import", [data_dir](const json&) {
+        const auto db_path = data_dir / "focoflow.db";
+        const bool cancelled = cancel_staged_import(db_path);
+        return json{{"cancelled", cancelled}, {"pending", has_staged_import(db_path)}};
+    });
+
+    bind_cmd("get_data_import_status", [data_dir](const json&) {
+        return json{{"pending", has_staged_import(data_dir / "focoflow.db")}};
     });
 
     // Roadmap 7.6: the legible counterpart to export_training_data. Separate command and

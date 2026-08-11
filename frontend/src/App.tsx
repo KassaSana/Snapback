@@ -45,6 +45,8 @@ import { usePrivacy } from "./usePrivacy";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
 import { SettingsNav } from "./SettingsNav";
 import { OnboardingGuide } from "./OnboardingGuide";
+import { DataImportCard } from "./DataImportCard";
+import { useDataImport } from "./useDataImport";
 import { captureIsReady } from "./permissionWizardState";
 import {
   clearOnboardingComplete,
@@ -350,6 +352,7 @@ export default function App() {
     refreshPomodoroStatus,
   ]);
   const privacy = usePrivacy(handleActivityDataDeleted);
+  const dataImport = useDataImport();
 
   // Roadmap 2.12. Every input is state the app already tracks for its own reasons — the guide
   // reads them and issues nothing. `feedbackGiven` uses `labelStatus` because it is set by both
@@ -382,6 +385,12 @@ export default function App() {
     completed: onboardingComplete,
     step: onboardingStep,
   });
+
+  // Roadmap 9.14. Asked once at launch: an import staged in a previous run is still waiting,
+  // and the card must say so rather than offering to stage a second one over it.
+  useEffect(() => {
+    void dataImport.refreshImportStatus();
+  }, [dataImport.refreshImportStatus]);
 
   // The last step completes by being *read*, so it latches when Review is open with a recap
   // on it rather than when the user clicks anything.
@@ -700,6 +709,20 @@ export default function App() {
               onRemoveExclusion={privacy.removeExclusion}
               setExclusionInput={privacy.setExclusionInput}
               settings={privacy.settings}
+            />
+
+            <DataImportCard
+              busy={dataImport.busy}
+              candidate={dataImport.candidate}
+              path={dataImport.path}
+              pending={dataImport.pending}
+              status={dataImport.status}
+              warning={dataImport.warning}
+              setPath={dataImport.setPath}
+              onInspect={dataImport.inspect}
+              onConfirm={dataImport.confirm}
+              onCancel={dataImport.cancel}
+              onDismissCandidate={dataImport.dismissCandidate}
             />
 
             <PermissionsCard

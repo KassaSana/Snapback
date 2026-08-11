@@ -159,6 +159,23 @@ export type SessionRecap = {
   deepFocusPct: number;
 };
 
+// Roadmap 9.14. What a candidate file turned out to be, so the confirmation can state both
+// halves of the trade: what is adopted and what is replaced.
+export type DataImportCandidate = {
+  acceptable: boolean;
+  /** Why it was refused, already phrased for display. Empty when acceptable. */
+  message: string;
+  schemaVersion: number;
+  sessionCount: number;
+};
+
+export type DataImportStaged = {
+  ok: boolean;
+  message: string;
+  schemaVersion: number;
+  sessionCount: number;
+};
+
 export type SessionSummary = {
   record: SessionRecord;
   recap: SessionRecap;
@@ -592,6 +609,36 @@ export const api = {
       truncated: Boolean(raw.truncated),
       checksum: typeof raw.checksum === "string" ? raw.checksum : "",
     } satisfies MyDataExportResult;
+  },
+  // Roadmap 9.14. Read-only: it reports whether a file could be imported and what it holds,
+  // so the confirmation can name what is being adopted as well as what is being replaced.
+  inspectDataImport: async (path: string) => {
+    const raw = await invoke<Record<string, unknown>>("inspect_data_import", { path });
+    return {
+      acceptable: Boolean(raw.acceptable),
+      message: typeof raw.message === "string" ? raw.message : "",
+      schemaVersion: Number(raw.schemaVersion ?? 0),
+      sessionCount: Number(raw.sessionCount ?? 0),
+    } satisfies DataImportCandidate;
+  },
+  // Stages rather than applies: the running app holds the database open, so the swap happens
+  // at the next launch. `message` says so, and is the only thing the UI shows.
+  stageDataImport: async (path: string) => {
+    const raw = await invoke<Record<string, unknown>>("stage_data_import", { path });
+    return {
+      ok: Boolean(raw.ok),
+      message: typeof raw.message === "string" ? raw.message : "",
+      schemaVersion: Number(raw.schemaVersion ?? 0),
+      sessionCount: Number(raw.sessionCount ?? 0),
+    } satisfies DataImportStaged;
+  },
+  cancelDataImport: async () => {
+    const raw = await invoke<Record<string, unknown>>("cancel_data_import");
+    return { cancelled: Boolean(raw.cancelled), pending: Boolean(raw.pending) };
+  },
+  getDataImportStatus: async () => {
+    const raw = await invoke<Record<string, unknown>>("get_data_import_status");
+    return { pending: Boolean(raw.pending) };
   },
   // `path` is populated even when `opened` is false, so a platform without a file-manager
   // backend (or an OS that refused) can still tell the user where their data lives.
