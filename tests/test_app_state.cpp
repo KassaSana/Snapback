@@ -19,6 +19,7 @@
 
 #include "app/settings.hpp"
 #include "app/state.hpp"
+#include "capture/permissions.hpp"
 #include "app_state_test_access.hpp"
 #include "manual_clock.hpp"
 #include "util/logger.hpp"
@@ -2435,6 +2436,25 @@ TEST_CASE("the recording state names the strongest reason recording is not happe
     CHECK(derive_recording_state(in) == RecordingState::Blocked);
 }
 
+// The derived state these two cases used to assert directly depends on something neither of
+// them controls: `recording_status()` reads the *real* capture permission, and Blocked outranks
+// PausedPrivate by design (pinned above). On Windows `check_capture_permissions` always reports
+// available, so the assertion held; on a headless CI Linux host (no DISPLAY, no xdotool) and on
+// an untrusted macOS one it reports unavailable, so the state is legitimately Blocked and both
+// cases failed with "expected 1, got 0" — PausedPrivate against Blocked.
+//
+// The pause itself is what these cases are about, and it is host-independent. The private-mode
+// -> PausedPrivate mapping is already pinned on the pure function above, where it belongs and
+// where no ambient permission can reach it.
+namespace {
+
+// True when this host can actually run capture, so the integrated state is worth asserting.
+bool capture_is_permitted_here() {
+    return check_capture_permissions(false, false).capture_available;
+}
+
+}  // namespace
+
 TEST_CASE("a timed privacy pause reports the time left and lapses on its own") {
     ManualClock clock;
     clock.set_wall_time(1'700'000'000);
@@ -2443,10 +2463,20 @@ TEST_CASE("a timed privacy pause reports the time left and lapses on its own") {
     AppState state(std::move(*storage), {}, nullptr, &clock);
 
     const auto paused = state.pause_privately_for(30);
-    CHECK(paused.state == RecordingState::PausedPrivate);
+    // The durable facts: the mode is on and the deadline is 30 minutes out. Asserted from the
+    // settings rather than the derived state so a host that cannot capture still proves the
+    // pause was recorded.
+    CHECK(state.privacy_settings().private_mode);
     CHECK(paused.private_pause_remaining_ms == 30 * 60 * 1000);
+    if (capture_is_permitted_here()) {
+        CHECK(paused.state == RecordingState::PausedPrivate);
+    } else {
+        CHECK(paused.state == RecordingState::Blocked);
+    }
 
     clock.advance_minutes(10);
+    // The countdown is reported whatever outranked it in the state — a pause that is still
+    // running must not read as zero just because capture happens to be down.
     CHECK(state.recording_status().private_pause_remaining_ms == 20 * 60 * 1000);
 
     // Past the deadline the pause is over -- and the setting says so, rather than leaving the
@@ -2466,11 +2496,20 @@ TEST_CASE("an indefinite privacy pause never lapses by itself") {
     AppState state(std::move(*storage), {}, nullptr, &clock);
 
     const auto paused = state.pause_privately_for(0);
-    CHECK(paused.state == RecordingState::PausedPrivate);
+    CHECK(state.privacy_settings().private_mode);
     CHECK(paused.private_pause_remaining_ms == 0);  // no deadline to count down to
+    if (capture_is_permitted_here()) {
+        CHECK(paused.state == RecordingState::PausedPrivate);
+    }
 
     clock.advance_minutes(48 * 60);
-    CHECK(state.recording_status().state == RecordingState::PausedPrivate);
+    // Two days later it is still on, because nothing was ever scheduled to turn it off.
+    CHECK(state.privacy_settings().private_mode);
+    CHECK(state.recording_status().private_pause_remaining_ms == 0);
+    if (capture_is_permitted_here()) {
+        CHECK(state.recording_status().state == RecordingState::PausedPrivate);
+    }
 
     CHECK(state.resume_from_private_pause().state != RecordingState::PausedPrivate);
+    CHECK_FALSE(state.privacy_settings().private_mode);
 }

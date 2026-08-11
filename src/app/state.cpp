@@ -1168,7 +1168,12 @@ RecordingStatus AppState::recording_status() {
 
     RecordingStatus status;
     status.state = derive_recording_state(inputs);
-    if (status.state == RecordingState::PausedPrivate && settings_.private_until_wall_ms > 0) {
+    // The countdown is a fact about the *pause*, not about the state that outranked it. This
+    // used to be gated on `status.state == PausedPrivate`, which meant a timed pause running
+    // while capture was broken reported zero time left: Blocked outranks PausedPrivate, so the
+    // branch never ran even though the deadline was real and still approaching. The user would
+    // fix their permissions and find the countdown had apparently restarted.
+    if (settings_.private_mode && settings_.private_until_wall_ms > 0) {
         const auto left = settings_.private_until_wall_ms - wall_now_ms();
         status.private_pause_remaining_ms = left > 0 ? left : 0;
     }
