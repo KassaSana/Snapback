@@ -1180,6 +1180,75 @@ h1 {
   }
 }
 
+/* Roadmap 10.9 — the second level inside Settings.
+   Visually lighter than .surface-tab on purpose: ADR-0003's three surfaces stay the primary
+   navigation, and a second row of equally loud pills would read as six top-level tabs. */
+
+.settings-nav,
+.settings-section {
+  grid-column: 1 / -1;
+}
+
+.settings-nav > div[role="tablist"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+}
+
+.settings-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 6px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.settings-tab:hover {
+  color: var(--ink);
+}
+
+.settings-tab-active {
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-section-title {
+  margin: 0 0 2px;
+  font-size: 1rem;
+}
+
+/* Training, raw signals, and logs: present, one click away, closed until asked for. */
+.settings-disclosure {
+  grid-column: 1 / -1;
+}
+
+.settings-disclosure > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 10px 0;
+  color: var(--muted);
+}
+
+.settings-disclosure > summary:hover {
+  color: var(--ink);
+}
+
 /* Roadmap 2.11 — the session cockpit. */
 
 .session-live {

@@ -89,12 +89,37 @@ describe("App first-run permission wizard", () => {
     expect(screen.queryByRole("heading", { name: "Diagnostics" })).not.toBeInTheDocument();
   });
 
-  it("renders the configuration cards on the Settings surface", async () => {
+  // Roadmap 10.9. Settings is four groups, and each card lives in exactly one of them. The
+  // negative half is the point: before this item every one of these was on screen at once,
+  // which is what made Settings read as an engineering console.
+  it("groups the configuration cards into Settings sections", async () => {
+    const { unmount } = renderApp("settings", "privacy");
+    expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Diagnostics" })).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("coding")).not.toBeInTheDocument();
+    unmount();
+
+    const focusRender = renderApp("settings", "focus");
+    expect(await screen.findByDisplayValue("coding")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Permissions" })).not.toBeInTheDocument();
+    focusRender.unmount();
+
+    renderApp("settings", "advanced");
+    expect(await screen.findByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Permissions" })).not.toBeInTheDocument();
+  });
+
+  // Settings opens on ordinary settings, never on developer tooling — the complaint the item
+  // was opened for.
+  it("opens Settings on General rather than on model training", async () => {
     renderApp("settings");
 
-    expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
-    expect(await screen.findByDisplayValue("coding")).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "General" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByText(/Model training/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Diagnostics" })).not.toBeInTheDocument();
   });
 
   it("moves between surfaces with the arrow keys", async () => {

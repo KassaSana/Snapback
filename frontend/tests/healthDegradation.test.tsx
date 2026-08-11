@@ -64,7 +64,7 @@ afterEach(() => {
 describe("Health degradation visibility", () => {
   it("warns when capture events are being dropped", async () => {
     boundary.state.health = health({ capture_events_dropped: 5 });
-    renderApp("settings");
+    renderApp("settings", "privacy");
 
     const card = within(permissionsCard());
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
@@ -80,7 +80,7 @@ describe("Health degradation visibility", () => {
       capture_failed: true,
       capture_failure_reason: "listener died",
     });
-    renderApp("settings");
+    renderApp("settings", "privacy");
 
     const card = within(permissionsCard());
     expect(await card.findByText("capture failed")).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe("Health degradation visibility", () => {
 
   it("warns when capture is running but receiving no events (stalled)", async () => {
     boundary.state.health = health({ capture_stalled: true });
-    renderApp("settings");
+    renderApp("settings", "privacy");
 
     const card = within(permissionsCard());
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
@@ -111,7 +111,7 @@ describe("Health degradation visibility", () => {
           setup_steps: [],
         },
       });
-      renderApp("settings");
+      renderApp("settings", "privacy");
       // Flush the mount health load (state updates must run inside act).
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
@@ -138,7 +138,7 @@ describe("Health degradation visibility", () => {
       window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
       // Capture is up and looks fine at launch (grace not elapsed yet).
       boundary.state.health = health({ capture_running: true, capture_stalled: false });
-      renderApp("settings");
+      renderApp("settings", "privacy");
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });

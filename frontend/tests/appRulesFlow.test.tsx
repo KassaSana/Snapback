@@ -79,7 +79,7 @@ afterEach(() => {
 
 describe("App rules add/delete flow", () => {
   it("adds a rule and shows it in the list", async () => {
-    renderApp("settings");
+    renderApp("settings", "focus");
     await screen.findByRole("heading", { name: "Personal App Rules" });
 
     fireEvent.change(screen.getByPlaceholderText("discord, notion, youtube"), {
@@ -97,7 +97,7 @@ describe("App rules add/delete flow", () => {
   });
 
   it("does not save when the pattern is empty", async () => {
-    renderApp("settings");
+    renderApp("settings", "focus");
     await screen.findByRole("heading", { name: "Personal App Rules" });
 
     fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
@@ -117,7 +117,7 @@ describe("App rules add/delete flow", () => {
         updated_at: "2026-07-11T00:00:00Z",
       },
     ];
-    renderApp("settings");
+    renderApp("settings", "focus");
     expect(await screen.findByText("notion")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));

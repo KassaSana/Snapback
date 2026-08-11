@@ -85,7 +85,7 @@ afterEach(() => {
 
 describe("permission request flow", () => {
   it("asks the OS for permission when Grant access is clicked", async () => {
-    renderApp("settings");
+    renderApp("settings", "privacy");
 
     // Two render while ungranted — the onboarding wizard (modal, on top) and the
     // Permissions card behind it. Either should reach the same IPC command.
@@ -97,7 +97,7 @@ describe("permission request flow", () => {
 
   it("hides Grant access once permission is already held", async () => {
     boundary.state.permissions = granted;
-    renderApp("settings");
+    renderApp("settings", "privacy");
 
     // Wait for the first health poll to settle before asserting an absence.
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
@@ -107,7 +107,7 @@ describe("permission request flow", () => {
   it("never prompts from the pollable refresh path", async () => {
     // The dialog-free probe must stay dialog-free: refreshing should never call
     // request_permissions, or a timer-driven refresh would spam the user with dialogs.
-    renderApp("settings");
+    renderApp("settings", "privacy");
 
     const refresh = await screen.findAllByRole("button", { name: /Check again|Refresh permissions/ });
     fireEvent.click(refresh[0]);

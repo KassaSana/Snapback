@@ -30,6 +30,10 @@ export const useHealth = () => {
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
   const [classifierModelId, setClassifierModelId] = useState<string | null>(null);
   const [developerToolsEnabled, setDeveloperToolsEnabled] = useState(false);
+  // Roadmap 10.9. The one model signal that is a *failure* rather than a configuration fact,
+  // so it is the only one the header badge can honestly react to. It already arrives on
+  // `get_health` for DiagnosticsCard; surfacing it here adds no query.
+  const [modelDeploymentDegraded, setModelDeploymentDegraded] = useState(false);
 
   const applyClassifierStatus = useCallback((status: ClassifierStatus) => {
     setClassifierBackend(status.backend);
@@ -59,6 +63,7 @@ export const useHealth = () => {
     setPermissionSteps(health.permissions.setupSteps);
     applyClassifierStatus(health.classifier);
     setDeveloperToolsEnabled(health.developerToolsEnabled);
+    setModelDeploymentDegraded(health.modelDeployment.state === "degraded");
   }, [applyClassifierStatus]);
 
   const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
@@ -141,6 +146,7 @@ export const useHealth = () => {
     handleRefreshPermissions,
     handleRequestPermissions,
     healthStatus,
+    modelDeploymentDegraded,
     overlayFailureReason,
     persistenceFailureReason,
     permissionCaptureAvailable,

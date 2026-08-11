@@ -74,7 +74,7 @@ afterEach(() => cleanup());
 
 describe("privacy controls", () => {
   it("toggles private mode through the backend", async () => {
-    renderApp("settings");
+    renderApp("settings", "privacy");
     const toggle = await screen.findByRole("checkbox", { name: "Private mode" });
     await waitFor(() => expect(toggle).not.toBeDisabled());
     fireEvent.click(toggle);
@@ -83,7 +83,7 @@ describe("privacy controls", () => {
   });
 
   it("adds and removes an excluded app", async () => {
-    renderApp("settings");
+    renderApp("settings", "privacy");
     const input = await screen.findByPlaceholderText("Banking, 1Password");
     fireEvent.change(input, { target: { value: "Banking" } });
     fireEvent.click(screen.getByRole("button", { name: "Add exclusion" }));
@@ -94,14 +94,14 @@ describe("privacy controls", () => {
   });
 
   it("warns before saving a broad one-character exclusion", async () => {
-    renderApp("settings");
+    renderApp("settings", "privacy");
     const input = await screen.findByPlaceholderText("Banking, 1Password");
     fireEvent.change(input, { target: { value: "a" } });
     expect(screen.getByText("A one-character exclusion can hide many unrelated apps.")).toBeInTheDocument();
   });
 
   it("requires confirmation before deleting all local activity data", async () => {
-    renderApp("settings");
+    renderApp("settings", "privacy");
     fireEvent.click(await screen.findByRole("button", { name: "Delete all activity data" }));
 
     expect(boundary.invoke).not.toHaveBeenCalledWith("delete_all_activity_data");
@@ -121,7 +121,7 @@ describe("privacy controls", () => {
 // convenient version of that answer.
 describe("data folder", () => {
   const clickShowDataFolder = async () => {
-    renderApp("settings");
+    renderApp("settings", "privacy");
     fireEvent.click(await screen.findByRole("button", { name: "Show data folder" }));
   };
 
@@ -166,7 +166,7 @@ describe("data folder", () => {
 // which writes a feature matrix for the model rather than a record a person can read.
 describe("legible data export", () => {
   const clickExport = async () => {
-    renderApp("settings");
+    renderApp("settings", "privacy");
     fireEvent.click(await screen.findByRole("button", { name: "Export my data" }));
   };
 

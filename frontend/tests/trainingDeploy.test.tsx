@@ -77,8 +77,10 @@ afterEach(() => {
 });
 
 describe("Training / deploy card", () => {
+  // Roadmap 10.9 moved the feedback controls into **Focus** and left model tooling in
+  // **Advanced**, so this assertion follows the card rather than the surface.
   it("describes the available feedback controls without claiming global hotkeys", async () => {
-    renderApp("settings");
+    renderApp("settings", "focus");
 
     expect(
       await screen.findByText(/Use these controls to label it while a session is active/i),
@@ -88,11 +90,12 @@ describe("Training / deploy card", () => {
 
   it("hides model tooling when developer tools are off", async () => {
     boundary.state.health = { ...healthyCaptureRunning(), developer_tools_enabled: false };
-    renderApp("settings");
+    renderApp("settings", "advanced");
 
-    expect(
-      await screen.findByText(/Use these controls to label it while a session is active/i),
-    ).toBeInTheDocument();
+    // Advanced still renders — it is the diagnostics home too — but the training disclosure
+    // is absent entirely rather than present and empty.
+    expect(await screen.findByText(/Logs and diagnostics/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Model training/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Train from export" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Model tooling/i)).not.toBeInTheDocument();
     expect(boundary.invoke).not.toHaveBeenCalledWith("get_training_deploy_status");
@@ -100,7 +103,7 @@ describe("Training / deploy card", () => {
 
   it("disables 'Train from export' until export + repo + python are ready", async () => {
     boundary.state.deployStatus = { ...readyToTrain(), has_export: false };
-    renderApp("settings");
+    renderApp("settings", "advanced");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_training_deploy_status"));
@@ -117,7 +120,7 @@ describe("Training / deploy card", () => {
       metrics: null,
       log_tail: "",
     };
-    renderApp("settings");
+    renderApp("settings", "advanced");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(trainButton).not.toBeDisabled());
@@ -137,7 +140,7 @@ describe("Training / deploy card", () => {
         reason: "Model rejected: held_out_accuracy=0.59 is below the threshold.",
       },
     };
-    renderApp("settings");
+    renderApp("settings", "advanced");
 
     const reloadButton = await screen.findByRole("button", { name: "Reload model" });
     expect(reloadButton).toBeDisabled();
@@ -156,7 +159,7 @@ describe("Training / deploy card", () => {
       metrics: null,
       log_tail: "",
     };
-    renderApp("settings");
+    renderApp("settings", "advanced");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(trainButton).not.toBeDisabled());
@@ -176,7 +179,7 @@ describe("Training / deploy card", () => {
       metrics: { cv_accuracy: 0.7 },
       log_tail: "",
     };
-    renderApp("settings");
+    renderApp("settings", "advanced");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(trainButton).not.toBeDisabled());

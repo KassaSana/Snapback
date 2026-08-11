@@ -1,4 +1,4 @@
-﻿import { useCallback, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppEffects } from "./useAppEffects";
 
@@ -43,12 +43,41 @@ import { useIdleThreshold } from "./useIdleThreshold";
 import { useAnalytics } from "./useAnalytics";
 import { usePrivacy } from "./usePrivacy";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
+import { SettingsNav } from "./SettingsNav";
+import {
+  DEFAULT_SETTINGS_SECTION,
+  SETTINGS_SECTION_BLURBS,
+  SETTINGS_SECTION_LABELS,
+  parseSettingsDeepLink,
+  settingsPanelId,
+  settingsSectionForFailure,
+  settingsTabId,
+  type SettingsSection,
+} from "./settingsSections";
 import type { FocusLabel } from "./api";
 
 export default function App() {
   // Which surface is showing (ADR-0003). Defaults to Now: it is the 95% case, and the
   // only one that matters while a session is running.
   const [surface, setSurface] = useState<Surface>("now");
+  // Roadmap 10.9. Settings' second level. Seeded from the URL hash so a support instruction
+  // ("open #settings/privacy") lands on the right group; a hash naming anything else leaves
+  // both levels alone rather than bouncing the user somewhere they did not ask for.
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => {
+    const deepLink =
+      typeof globalThis.location === "undefined"
+        ? null
+        : parseSettingsDeepLink(globalThis.location.hash);
+    return deepLink ?? DEFAULT_SETTINGS_SECTION;
+  });
+  // Set once a failure has steered the user; without it the effect below would drag them back
+  // to Privacy every time it re-ran, making the other sections unusable while capture is down.
+  const failureRevealed = useRef(false);
+
+  const openSettingsSection = useCallback((section: SettingsSection) => {
+    setSurface("settings");
+    setSettingsSection(section);
+  }, []);
   const feedback = useFeedback();
   const autostart = useAutostart();
   const idleThreshold = useIdleThreshold();
@@ -103,6 +132,7 @@ export default function App() {
     handleRefreshPermissions,
     handleRequestPermissions,
     healthStatus,
+    modelDeploymentDegraded,
     overlayFailureReason,
     persistenceFailureReason,
     permissionCaptureAvailable,
@@ -112,6 +142,21 @@ export default function App() {
     setOverlayFailureReason,
     setPersistenceFailureReason,
   } = useHealth();
+
+  // Roadmap 10.9's one exception to "Advanced stays put": a real, actionable failure may
+  // reveal the section that can fix it. It fires at most once per app run — a user who has
+  // been shown the problem and navigated away is not lost, and re-steering them would make
+  // every other section unreachable for as long as the failure lasts.
+  const failureSection = settingsSectionForFailure({
+    permissionBlocked: !permissionCaptureAvailable && healthStatus !== "checking",
+    captureFailed,
+    modelFailed: modelDeploymentDegraded,
+  });
+  useEffect(() => {
+    if (!failureSection || failureRevealed.current) return;
+    failureRevealed.current = true;
+    setSettingsSection(failureSection);
+  }, [failureSection]);
 
   const captureReadiness = useMemo(
     () => ({
@@ -329,14 +374,12 @@ export default function App() {
         captureFailed={captureFailed}
         captureProbeConfirmed={captureProbeConfirmed}
         captureRunning={captureRunning}
-        classifierBackend={classifierBackend}
-        classifierMetrics={deployStatus?.metrics ?? null}
-        classifierModelPath={classifierModelPath}
-        classifierOnnxRuntimeEnabled={classifierOnnxRuntimeEnabled}
         healthStatus={healthStatus}
+        modelDeploymentDegraded={modelDeploymentDegraded}
         permissionCaptureAvailable={permissionCaptureAvailable}
         permissionMessage={permissionMessage}
         permissionSteps={permissionSteps}
+        onOpenTechnicalDetails={openSettingsSection}
       />
 
       <ActionErrorBanner
@@ -469,14 +512,114 @@ export default function App() {
 
         {surface === "settings" && (
           <>
-        <FocusFeedbackCard
-          handleLabel={handleLabel}
-          labelStatus={feedback.labelStatus}
-          labelStatusWarning={feedback.labelStatusWarning}
-        />
+        {/*
+          Roadmap 10.9. Settings is now four groups rather than one stream of eight cards.
+          ADR-0003's three surfaces are untouched: this is a second level *inside* Settings.
+          Only the active group renders, which is what makes the common settings reachable
+          without scrolling past developer controls at the default 1100×760 window.
+        */}
+        <SettingsNav active={settingsSection} onChange={setSettingsSection} />
+        <div
+          className="settings-section"
+          role="tabpanel"
+          id={settingsPanelId(settingsSection)}
+          aria-labelledby={settingsTabId(settingsSection)}
+        >
+          <h2 className="settings-section-title">
+            {SETTINGS_SECTION_LABELS[settingsSection]}
+          </h2>
+          <p className="helper-text">{SETTINGS_SECTION_BLURBS[settingsSection]}</p>
+        </div>
 
-        {developerToolsEnabled ? (
-          <TrainingDeployCard
+        {settingsSection === "general" && (
+          <SettingsCard
+            busy={autostart.busy}
+            error={autostart.error}
+            onAutostartChange={autostart.setEnabled}
+            status={autostart.status}
+            idleThresholdSecs={idleThreshold.seconds}
+            idleThresholdBusy={idleThreshold.busy}
+            idleThresholdError={idleThreshold.error}
+            onIdleThresholdChange={idleThreshold.update}
+          />
+        )}
+
+        {settingsSection === "focus" && (
+          <>
+            <FocusFeedbackCard
+              handleLabel={handleLabel}
+              labelStatus={feedback.labelStatus}
+              labelStatusWarning={feedback.labelStatusWarning}
+            />
+
+            <GoalCategoriesCard />
+
+            <RulesCard
+              appRules={appRules}
+              handleAddAppRule={handleAddAppRule}
+              handleDeleteAppRule={handleDeleteAppRule}
+              ruleKind={ruleKind}
+              ruleKindLabel={ruleKindLabel}
+              ruleKinds={ruleKinds}
+              ruleNote={ruleNote}
+              rulePattern={rulePattern}
+              rulePreview={rulePreview}
+              rulesStatus={rulesStatus}
+              setRuleKind={setRuleKind}
+              setRuleNote={setRuleNote}
+              setRulePattern={setRulePattern}
+            />
+          </>
+        )}
+
+        {settingsSection === "privacy" && (
+          <>
+            <PrivacyCard
+              busy={privacy.busy}
+              dataFolderStatus={privacy.dataFolderStatus}
+              error={privacy.error}
+              exclusionWarning={privacy.exclusionWarning}
+              exclusionInput={privacy.exclusionInput}
+              exportStatus={privacy.exportStatus}
+              deletionStatus={privacy.deletionStatus}
+              deletionWarning={privacy.deletionWarning}
+              deletionRetained={privacy.deletionRetained}
+              onAddExclusion={privacy.addExclusion}
+              onDeleteAllActivityData={privacy.deleteAllActivityData}
+              onExportMyData={privacy.exportMyData}
+              onOpenDataFolder={privacy.openDataFolder}
+              onPrivateModeChange={privacy.setPrivateMode}
+              onRemoveExclusion={privacy.removeExclusion}
+              setExclusionInput={privacy.setExclusionInput}
+              settings={privacy.settings}
+            />
+
+            <PermissionsCard
+              captureEventsDropped={captureEventsDropped}
+              captureFailed={captureFailed}
+              captureFailureReason={captureFailureReason}
+              captureProbeConfirmed={captureProbeConfirmed}
+              captureRunning={captureRunning}
+              captureStalled={captureStalled}
+              onRefreshPermissions={handleRefreshPermissions}
+              onRequestPermissions={handleRequestPermissions}
+              permissionMessage={permissionMessage}
+              permissionSteps={permissionSteps}
+            />
+          </>
+        )}
+
+        {/*
+          Advanced. Training, raw signals, and logs are collapsed by default — the item's
+          explicit requirement, and the reason Settings no longer opens on model tooling.
+          They stay one click away rather than moving somewhere else.
+        */}
+        {settingsSection === "advanced" && (
+          <>
+            {developerToolsEnabled ? (
+              <details className="settings-disclosure">
+                <summary>Model training</summary>
+                <TrainingDeployCard
             canTrainFromExport={canTrainFromExport}
             classifierBackend={classifierBackend}
             classifierModelId={classifierModelId}
@@ -497,76 +640,23 @@ export default function App() {
             setShowAdvancedCommand={setShowAdvancedCommand}
             showAdvancedCommand={showAdvancedCommand}
             trainFromExportHint={trainFromExportHint}
-            trainingCommand={trainingCommand}
-            trainingInProgress={trainingInProgress}
-          />
-        ) : null}
+                  trainingCommand={trainingCommand}
+                  trainingInProgress={trainingInProgress}
+                />
+              </details>
+            ) : null}
 
-        <GoalCategoriesCard />
+            <details className="settings-disclosure">
+              <summary>Logs and diagnostics</summary>
+              <DiagnosticsCard />
+            </details>
 
-        <DiagnosticsCard />
-
-        <SignalsCard signals={live.signals} />
-
-        <RulesCard
-          appRules={appRules}
-          handleAddAppRule={handleAddAppRule}
-          handleDeleteAppRule={handleDeleteAppRule}
-          ruleKind={ruleKind}
-          ruleKindLabel={ruleKindLabel}
-          ruleKinds={ruleKinds}
-          ruleNote={ruleNote}
-          rulePattern={rulePattern}
-          rulePreview={rulePreview}
-          rulesStatus={rulesStatus}
-          setRuleKind={setRuleKind}
-          setRuleNote={setRuleNote}
-          setRulePattern={setRulePattern}
-        />
-
-        <SettingsCard
-          busy={autostart.busy}
-          error={autostart.error}
-          onAutostartChange={autostart.setEnabled}
-          status={autostart.status}
-          idleThresholdSecs={idleThreshold.seconds}
-          idleThresholdBusy={idleThreshold.busy}
-          idleThresholdError={idleThreshold.error}
-          onIdleThresholdChange={idleThreshold.update}
-        />
-
-        <PrivacyCard
-          busy={privacy.busy}
-          dataFolderStatus={privacy.dataFolderStatus}
-          error={privacy.error}
-          exclusionWarning={privacy.exclusionWarning}
-          exclusionInput={privacy.exclusionInput}
-          exportStatus={privacy.exportStatus}
-          deletionStatus={privacy.deletionStatus}
-          deletionWarning={privacy.deletionWarning}
-          deletionRetained={privacy.deletionRetained}
-          onAddExclusion={privacy.addExclusion}
-          onDeleteAllActivityData={privacy.deleteAllActivityData}
-          onExportMyData={privacy.exportMyData}
-          onOpenDataFolder={privacy.openDataFolder}
-          onPrivateModeChange={privacy.setPrivateMode}
-          onRemoveExclusion={privacy.removeExclusion}
-          setExclusionInput={privacy.setExclusionInput}
-          settings={privacy.settings}
-        />
-
-        <PermissionsCard
-          captureEventsDropped={captureEventsDropped}
-          captureFailed={captureFailed}
-          captureFailureReason={captureFailureReason}
-          captureProbeConfirmed={captureProbeConfirmed}
-          captureRunning={captureRunning}
-          captureStalled={captureStalled}
-          onRefreshPermissions={handleRefreshPermissions}
-          onRequestPermissions={handleRequestPermissions}
-          permissionMessage={permissionMessage}
-          permissionSteps={permissionSteps}
-        />
+            <details className="settings-disclosure">
+              <summary>Raw signals</summary>
+              <SignalsCard signals={live.signals} />
+            </details>
+          </>
+        )}
           </>
         )}
       </main>

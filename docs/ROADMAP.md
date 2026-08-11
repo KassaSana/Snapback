@@ -3087,7 +3087,7 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   zero, missing hours, and periodic snapshots. This is data correctness, not a substitute for
   the broader accessibility audit in **10.3**.
 
-- **10.9 — Add second-level hierarchy inside Settings.** `S/M`
+- **10.9 — DONE 2026-08-11.** `S/M`
   Opened 2026-08-05. Settings currently opens with model training, followed by goal
   categories, diagnostics, raw signals, rules, ordinary settings, privacy, and permissions
   in one card stream. The global header permanently exposes classifier backend, model file,
@@ -3100,6 +3100,35 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   real actionable failure may reveal the relevant section automatically. At the default
   1100×760 window, common settings must be reachable without scrolling through developer
   controls. Add navigation/focus tests and keep deep links for support instructions.
+
+  **Done:** `settingsSections.ts` owns the four groups, the deep-link parser, the failure
+  routing, and the badge; `SettingsNav.tsx` is a second-level tablist with the same roving
+  tabindex and arrow/Home/End contract as `SurfaceNav`. ADR-0003's three surfaces are
+  untouched — this is a level *below* Settings, not a fourth tab. Only the selected group
+  mounts, which is what actually satisfies "reachable without scrolling through developer
+  controls": the ordinary settings are no longer *below* the console, they are elsewhere.
+  Training, logs, and raw signals sit in `<details>` inside Advanced, closed by default.
+
+  **The header lost three permanent engineering fields and gained one badge.** Classifier
+  backend, model file, and training quality were on the first screen of a focus tool at all
+  times; they are now one line that says whether anything needs attention plus a
+  **Technical details** link into the section that holds the detail. That is ordering the
+  information rather than hiding it — everything is still one click away.
+
+  **Two things this pass got wrong first, both caught by a test rather than by reading.**
+  The badge's two capture labels were written against `summarizePermissions`, whose `blocked`
+  collapses a refused OS permission and a dead capture listener into one value — so "Capture
+  stopped" was unreachable and every capture failure read as a permission problem. They are
+  different problems with different fixes (a settings dialog versus a restart), so the badge
+  now reads the two causes separately. And the auto-reveal effect had no latch, so it dragged
+  the user back to Privacy on every re-render for as long as capture stayed down, making the
+  other three sections unusable exactly when someone might need them. It now fires once per
+  run.
+
+  **The reorganisation broke 28 existing assertions, which was the point.** Every Settings
+  test had been passing because all eight cards were mounted at once — the same shape of
+  failure ADR-0003 fixed at the top level. `renderApp` now takes a section, and each test
+  names the group its card lives in.
 
 - **10.10 — Build a complete visual-token and appearance system.** `M`
   Opened 2026-08-05. `styles.css` declares `color-scheme: light`, duplicates semantic colors

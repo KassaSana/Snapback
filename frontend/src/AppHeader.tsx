@@ -1,30 +1,21 @@
 import { memo } from "react";
 
-import { classifierBackendLabel, formatTrainingMetrics } from "./trainingHints";
 import { summarizePermissions } from "./healthHints";
+import { settingsHealthBadge, type SettingsSection } from "./settingsSections";
 
 type AppHeaderProps = {
   activeWindowAvailable: boolean;
   captureFailed: boolean;
   captureProbeConfirmed: boolean;
   captureRunning: boolean;
-  classifierBackend: string;
-  classifierModelPath: string | null;
-  classifierOnnxRuntimeEnabled: boolean;
-  classifierMetrics: Record<string, number> | null;
   healthStatus: string;
+  /** Roadmap 10.9. The one model fact that is a failure rather than configuration. */
+  modelDeploymentDegraded: boolean;
   permissionCaptureAvailable: boolean;
   permissionMessage: string | null;
   permissionSteps: string[];
-};
-
-const modelFileLabel = (path: string | null) => {
-  if (!path) {
-    return "No model file";
-  }
-  const normalized = path.replace(/\\/g, "/");
-  const segments = normalized.split("/").filter(Boolean);
-  return segments[segments.length - 1] ?? path;
+  /** Opens the Settings section holding the technical details behind the badge. */
+  onOpenTechnicalDetails: (section: SettingsSection) => void;
 };
 
 export const AppHeader = memo(function AppHeader({
@@ -32,14 +23,12 @@ export const AppHeader = memo(function AppHeader({
   captureFailed,
   captureProbeConfirmed,
   captureRunning,
-  classifierBackend,
-  classifierModelPath,
-  classifierOnnxRuntimeEnabled,
-  classifierMetrics,
   healthStatus,
+  modelDeploymentDegraded,
   permissionCaptureAvailable,
   permissionMessage,
   permissionSteps,
+  onOpenTechnicalDetails,
 }: AppHeaderProps) {
   const permissionHealth = summarizePermissions({
     captureAvailable: permissionCaptureAvailable,
@@ -50,16 +39,22 @@ export const AppHeader = memo(function AppHeader({
     message: permissionMessage ?? "",
     setupSteps: permissionSteps,
   });
-  const classifierRuntimeLabel = classifierOnnxRuntimeEnabled
-    ? "ONNX runtime enabled"
-    : "ONNX runtime unavailable";
-  const classifierQualityLabel = formatTrainingMetrics(classifierMetrics);
-  const activeModelLabel =
-    classifierBackend === "onnx"
-      ? modelFileLabel(classifierModelPath)
-      : classifierModelPath
-        ? `${modelFileLabel(classifierModelPath)} available`
-        : "Heuristic only";
+
+  // Roadmap 10.9. Classifier backend, model file, and training quality used to sit here
+  // permanently — three engineering fields on the first screen of a focus tool. They are now
+  // one badge that says whether anything needs attention, and a link to the section where the
+  // detail lives. That is ordering the information, not hiding it.
+  //
+  // `permissionHealth.label` is deliberately *not* the input here. It collapses to "blocked"
+  // for a failed capture listener as well as a refused OS permission, and those are different
+  // problems with different fixes — one is a settings dialog, the other is a restart. Reading
+  // the two causes separately is what keeps both badge labels reachable. The `checking` guard
+  // stops a not-yet-loaded health payload from being reported as a refusal.
+  const badge = settingsHealthBadge({
+    permissionBlocked: !permissionCaptureAvailable && healthStatus !== "checking",
+    captureFailed,
+    modelFailed: modelDeploymentDegraded,
+  });
 
   return (
     <header className="app-header">
@@ -93,16 +88,18 @@ export const AppHeader = memo(function AppHeader({
           </span>
           <span className="status-detail">{permissionHealth.detail}</span>
         </div>
-        <div className="status-pill">
-          <span className="status-label">Classifier</span>
-          <span className="status-value">{classifierBackendLabel(classifierBackend)}</span>
-        </div>
         <div className="status-pill status-pill-stack">
-          <span className="status-label">Model</span>
-          <span className="status-value">{activeModelLabel}</span>
-          <span className="status-detail">
-            {classifierQualityLabel ? `${classifierRuntimeLabel} · ${classifierQualityLabel}` : classifierRuntimeLabel}
+          <span className="status-label">System</span>
+          <span className={`status-value${badge.warning ? " status-alert" : ""}`}>
+            {badge.label}
           </span>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => onOpenTechnicalDetails(badge.section)}
+          >
+            Technical details
+          </button>
         </div>
       </div>
     </header>
