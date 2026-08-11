@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   api,
@@ -9,17 +9,13 @@ import {
   type SessionRecord,
 } from "./api";
 import { sessionStartCaptureWarning, type SessionCaptureReadiness } from "./healthHints";
+import { normalizeFocusMode, type FocusMode } from "./sessionCockpit";
 
-export const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
-export type FocusMode = (typeof FOCUS_MODES)[number];
-
-const normalizeFocusMode = (
-  value: string | null | undefined,
-  fallback: FocusMode = "normal",
-): FocusMode => {
-  const mode = String(value ?? "").toLowerCase();
-  return FOCUS_MODES.includes(mode as FocusMode) ? (mode as FocusMode) : fallback;
-};
+// Roadmap 2.11 moved these to the pure module so the cockpit's rules could be unit-tested
+// without React. Re-exported because they are the app's vocabulary for focus modes and every
+// existing importer names this module.
+export { FOCUS_MODES, normalizeFocusMode } from "./sessionCockpit";
+export type { FocusMode } from "./sessionCockpit";
 
 type UseSessionArgs = {
   refreshContextTimeline: (sid?: string | null) => void | Promise<void>;
@@ -49,6 +45,13 @@ export const useSession = ({
   // saving both close it; neither is remembered past the session it belongs to.
   const [reflectionPending, setReflectionPending] = useState(false);
   const [reflectionSaved, setReflectionSaved] = useState(false);
+  // Roadmap 2.11. `sessionPending` drives the disabled state; `inFlight` enforces it.
+  // A disabled button is a courtesy — Enter on a focused form, a synthetic click, or a second
+  // click landing inside the await before React has re-rendered all reach the handler anyway.
+  // The ref is checked and set synchronously, so the second caller returns before it can issue
+  // a duplicate `start_session` and create a second row for one intent.
+  const [sessionPending, setSessionPending] = useState(false);
+  const inFlight = useRef(false);
 
   const hydrateActiveSession = useCallback(async () => {
     const [settings, active] = await Promise.all([
@@ -99,10 +102,14 @@ export const useSession = ({
 
   const handleStartSession = useCallback(async () => {
     const goal = sessionGoal.trim();
-    if (!goal) {
+    // Validation lives in the card, which can explain itself; this stays as the last line of
+    // defence so a programmatic caller cannot open an unnamed session.
+    if (!goal || inFlight.current) {
       return;
     }
 
+    inFlight.current = true;
+    setSessionPending(true);
     try {
       const record = await api.startSession(goal, focusMode);
       setSessionRecord(record);
@@ -119,6 +126,12 @@ export const useSession = ({
       void refreshContextTimeline(record.sessionId);
     } catch {
       setActionError("Could not start session. Check capture permissions and try again.");
+    } finally {
+      // Cleared in `finally`, never on the success path alone: a failed start that left the
+      // guard set would wedge the button until reload, which is a worse bug than the duplicate
+      // request it is here to prevent.
+      inFlight.current = false;
+      setSessionPending(false);
     }
   }, [
     captureReadiness,
@@ -130,10 +143,12 @@ export const useSession = ({
   ]);
 
   const handleStopSession = useCallback(async () => {
-    if (!sessionId) {
+    if (!sessionId || inFlight.current) {
       return;
     }
 
+    inFlight.current = true;
+    setSessionPending(true);
     try {
       const record = await api.stopSession(sessionId);
       setSessionRecord(record);
@@ -149,6 +164,9 @@ export const useSession = ({
       void refreshContextTimeline(sessionId);
     } catch {
       setActionError("Could not stop session or load recap.");
+    } finally {
+      inFlight.current = false;
+      setSessionPending(false);
     }
   }, [
     refreshContextTimeline,
@@ -157,6 +175,60 @@ export const useSession = ({
     setActionError,
     setLabelStatus,
     setLabelStatusWarning,
+  ]);
+
+  /**
+   * Roadmap 2.11's guarded "start a different session".
+   *
+   * Switching is stop-then-start rather than a single command because ADR-0005 makes a session
+   * a declared, attended thing: the old one must end honestly, with its recap and label, before
+   * a new one begins. If the stop fails the switch stops there — starting anyway would leave
+   * two sessions the user believes are one.
+   */
+  const handleSwitchSession = useCallback(async () => {
+    const goal = sessionGoal.trim();
+    if (!goal || !sessionId || inFlight.current) {
+      return;
+    }
+
+    inFlight.current = true;
+    setSessionPending(true);
+    try {
+      await api.stopSession(sessionId);
+    } catch {
+      setActionError("Could not stop the current session, so it is still running.");
+      inFlight.current = false;
+      setSessionPending(false);
+      return;
+    }
+
+    try {
+      const record = await api.startSession(goal, focusMode);
+      setSessionRecord(record);
+      setSessionId(record.sessionId);
+      setSessionGoal(record.goal);
+      setRecap(null);
+      setSurveyPending(false);
+      setActionError(
+        captureReadiness ? sessionStartCaptureWarning(captureReadiness) : null,
+      );
+      resetTimelineRefreshGate();
+      void refreshContextTimeline(record.sessionId);
+    } catch {
+      // The old session really did stop, so say so rather than implying nothing happened.
+      setActionError("Stopped the previous session, but could not start the new one.");
+    } finally {
+      inFlight.current = false;
+      setSessionPending(false);
+    }
+  }, [
+    captureReadiness,
+    focusMode,
+    refreshContextTimeline,
+    resetTimelineRefreshGate,
+    sessionGoal,
+    sessionId,
+    setActionError,
   ]);
 
   // Roadmap 2.14. Saves against the session that just ended, not a live one -- by the time
@@ -223,7 +295,9 @@ export const useSession = ({
     handleSkipSurvey,
     handleStartSession,
     handleStopSession,
+    handleSwitchSession,
     hydrateActiveSession,
+    sessionPending,
     recap,
     sessionGoal,
     sessionId,

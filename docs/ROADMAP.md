@@ -2076,7 +2076,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   as appropriate. The actions call the same durable privacy-pause methods as the dashboard;
   neither platform derives a parallel answer. Linux remains under its existing tray stub.
 
-- **2.11 — Make the session cockpit fast, state-aware, and safe.** `M`
+- **2.11 — DONE 2026-08-10 except the Pomodoro preset and Running/Paused elapsed split.** `M`
   Opened 2026-08-05. Start and Stop are always enabled, a blank goal silently does nothing,
   duplicate clicks can issue duplicate requests, and the prominent running-session metadata
   is a raw UUID rather than elapsed work time. Every new UI session also starts with an empty
@@ -2091,6 +2091,30 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   details. Presets never auto-start, so this reduces friction while preserving ADR-0005's
   explicit-declaration boundary. Backend timestamps, not a browser-only counter, remain the
   source of truth.
+
+  **Done:** `frontend/src/sessionCockpit.ts` holds the rules as pure functions — goal
+  validation, recent-goal dedup, pinned presets with reorder/persistence, elapsed formatting,
+  and the two action gates. The card grew inline validation, Enter-to-start, recent-goal chips,
+  **Repeat last**, pinned presets with keyboard-reachable up/down, a live elapsed readout, and a
+  guarded "start a different session" that stops the old one first. The session UUID moved into
+  a collapsed **Technical details** block — still copyable, because support instructions ask for
+  it, just no longer occupying the spot where elapsed time belongs.
+
+  **Duplicate clicks are stopped twice, and the second guard needed its own test to be real.**
+  The card disables its controls while a request is in flight, which also closes the Enter path
+  a `disabled` attribute does not. Underneath, `useSession` holds a ref that is read and written
+  synchronously, because `sessionPending` is React state and cannot disable anything until the
+  next render — two calls in the *same* turn both see the old value. The first draft asserted
+  that ref through the DOM and **passed with the ref deleted**: the card's own gating masked it.
+  It is now asserted at the hook, where it is the only thing standing between two calls and two
+  session rows, and it fails when the ref is removed. This is the file's own rule about empty
+  checks, met by a check that was empty until it was mutated.
+
+  **Left open, both because they depend on work that has not landed:** the optional Pomodoro
+  preset waits on 2.13's remaining tray/native half, and splitting the elapsed readout into
+  elapsed *and attended* time needs 7.23's spans — inventing a second attended number here is
+  how two figures that must agree stop agreeing. Running/Paused itself is already shown, from
+  7.23's `sessionStatusLabel`.
 
 - **2.12 — Extend onboarding through the first useful result.** `M`
   Opened 2026-08-05. `PermissionWizard` disappears once capture is available. It explains OS

@@ -22,6 +22,7 @@ import { AttendedTargetsCard } from "./AttendedTargetsCard";
 import { RecordingStatusCard } from "./RecordingStatusCard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
+import { recentGoals } from "./sessionCockpit";
 import { sessionStatusLabel } from "./sessionStatus";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { FocusFeedbackCard } from "./FocusFeedbackCard";
@@ -137,10 +138,12 @@ export default function App() {
     handleSkipSurvey,
     handleStartSession,
     handleStopSession,
+    handleSwitchSession,
     hydrateActiveSession,
     recap,
     sessionGoal,
     sessionId,
+    sessionPending,
     sessionRecord,
     setSessionGoal,
     reflectionPending,
@@ -246,6 +249,11 @@ export default function App() {
     saveReflection: handleEditReflection,
     sessionHistory,
   } = useInsights(handleSessionDeleted);
+
+  // Roadmap 2.11. The cockpit's "recent goals" and Repeat last come from history the app has
+  // already fetched for Insights, so offering them costs no extra query. Memoized because
+  // SessionControlCard is memo'd: a fresh array every render would defeat that boundary.
+  const cockpitRecentGoals = useMemo(() => recentGoals(sessionHistory), [sessionHistory]);
 
   const handleActivityDataDeleted = useCallback(async () => {
     clearActivitySession();
@@ -381,11 +389,14 @@ export default function App() {
           handleFocusModeChange={handleFocusModeChange}
           handleStartSession={handleStartSession}
           handleStopSession={handleStopSession}
+          handleSwitchSession={handleSwitchSession}
           sessionGoal={sessionGoal}
           sessionId={sessionId}
+          sessionPending={sessionPending}
           sessionRecord={sessionRecord}
           sessionStatusLabel={liveSessionStatusLabel}
           setSessionGoal={setSessionGoal}
+          recentGoals={cockpitRecentGoals}
           untrackedNote={live.untrackedNote}
           dismissUntrackedNote={live.clearUntrackedNote}
         />

@@ -1179,3 +1179,96 @@ h1 {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Roadmap 2.11 — the session cockpit. */
+
+.session-live {
+  display: grid;
+  gap: 10px;
+}
+
+.helper-error {
+  color: var(--danger, #d9534f);
+}
+
+.recent-goals,
+.session-presets {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.chip-list,
+.preset-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-list {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.preset-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chip {
+  background: rgba(126, 182, 255, 0.12);
+  border: 1px solid rgba(126, 182, 255, 0.35);
+  border-radius: 999px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.76rem;
+  padding: 4px 10px;
+  /* Goals are free text and can be long; the chip truncates rather than reflowing the card. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-row .chip {
+  flex: 1;
+  text-align: left;
+}
+
+.chip:disabled,
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.icon-button {
+  background: none;
+  border: 1px solid rgba(126, 182, 255, 0.25);
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+/* The session UUID lives here now: reachable for support, no longer the headline. */
+.technical-details {
+  margin-top: 14px;
+  font-size: 0.78rem;
+}
+
+.technical-details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.technical-details code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  user-select: all;
+}
