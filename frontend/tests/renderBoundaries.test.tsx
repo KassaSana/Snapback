@@ -52,6 +52,17 @@ describe("prediction render boundaries", () => {
     const onSkip = vi.fn();
     const onRestart = vi.fn();
     const onAcknowledge = vi.fn();
+    const onSaveConfig = vi.fn();
+    // 2.13's config travels as one object. App holds it in state and passes the same
+    // reference until it actually changes, so the harness has to hoist it too — an inline
+    // literal is a new prop identity per render and would defeat the boundary being measured.
+    const pomodoroConfig = {
+      workMs: 1500000,
+      shortBreakMs: 300000,
+      longBreakMs: 900000,
+      intervalsBeforeLongBreak: 4,
+      autoStartNextPhase: true,
+    };
     const onAutostartChange = vi.fn();
     // Stable identity, like the memoized callback App passes: an inline arrow would be a new
     // prop on every parent render and would defeat the very boundary this test measures.
@@ -66,8 +77,7 @@ describe("prediction render boundaries", () => {
           </button>
           <PomodoroCard
             pomodoroStatus={pomodoroStatus}
-            pomodoroConfig={{ workMs: 1500000, shortBreakMs: 300000, longBreakMs: 900000,
-              intervalsBeforeLongBreak: 4, autoStartNextPhase: true }}
+            pomodoroConfig={pomodoroConfig}
             sessionActive
             onStart={onStart}
             onStop={onStop}
@@ -76,7 +86,7 @@ describe("prediction render boundaries", () => {
             onSkip={onSkip}
             onRestart={onRestart}
             onAcknowledge={onAcknowledge}
-            onSaveConfig={vi.fn()}
+            onSaveConfig={onSaveConfig}
           />
           <FocusSummaryCard focusSummary={focusSummary} />
           <SettingsCard
