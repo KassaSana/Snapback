@@ -2898,7 +2898,8 @@ small; the tier is large because nobody has walked that path yet.
   live WAL database, which hand-copying does not. Ties to **7.22** (the same backup
   machinery), **9.4**, and **9.5**.
 
-  **Done:** `src/app/data_import.{hpp,cpp}` with `inspect_import_candidate` (read-only),
+  **Done:** [`src/app/data_import.hpp`](../src/app/data_import.hpp) and
+  [`src/app/data_import.cpp`](../src/app/data_import.cpp), with `inspect_import_candidate` (read-only),
   `import_database` (the swap), and the staging trio; four IPC commands; `useDataImport` +
   `DataImportCard` beside Privacy's exports. Every copy goes through `VACUUM INTO`, never a
   file copy — an import source taken from a running Snapback keeps recent commits in a `-wal`
