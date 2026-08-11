@@ -14,15 +14,62 @@
 
 namespace snapback {
 
-// Overlay geometry constants.
+// Overlay geometry constants, in design units at 96 DPI. Roadmap 10.12: these are no longer
+// pixel counts. On a 200% display, 420 design units is 840 physical pixels, and treating them
+// as pixels is what makes the card render physically tiny on a high-DPI monitor.
 constexpr int kOverlayWidth = 420;
 constexpr int kOverlayHeight = 250;
 constexpr int kScreenMargin = 20;
+
+// The DPI the constants above are written against. Windows' own baseline (USER_DEFAULT_SCREEN_DPI).
+constexpr int kOverlayBaseDpi = 96;
 
 struct ScreenPoint {
     int x{};
     int y{};
 };
+
+// Roadmap 10.12. Which display the card belongs on, decided as a policy rather than inline at
+// the call site so the fallback order is testable without a second monitor.
+//
+// The foreground window is the right answer because it is *where the user was looking* — a
+// nudge caused by what happened on one screen appearing on another is the bug this replaces.
+// The cursor is the explicit fallback for the case the item names: there may be no foreground
+// window at all (it was just closed, or the desktop has focus). Primary is the last resort, and
+// is also what a monitor unplugged between the snapback firing and the card showing degrades
+// to — an overlay on a display that no longer exists is worse than one in the wrong corner.
+enum class OverlayMonitorSource { kForegroundWindow, kCursor, kPrimary };
+
+OverlayMonitorSource choose_overlay_monitor(bool foreground_monitor_valid,
+                                            bool cursor_monitor_valid);
+
+// Scale a design-unit length to physical pixels for a monitor's effective DPI.
+//
+// Rounds to nearest rather than truncating: at 150% a 1-unit border truncates to 1 pixel and
+// stays hairline, which is how "scaled" UIs end up looking unscaled in their details. A
+// nonsensical DPI (0 or negative, which is what the Win32 query returns on failure) falls back
+// to the base rather than collapsing every dimension to zero.
+int scale_for_dpi(int design_units, int dpi);
+
+struct OverlayRect {
+    int x{};
+    int y{};
+    int width{};
+    int height{};
+};
+
+// The card's physical rectangle: top-right of `work_pos`/`work_size`, scaled for `dpi`.
+//
+// The work area is passed in rather than queried so this stays pure. It is the *target
+// monitor's* work area, which is the other half of 10.12's fix — Windows was asking
+// SPI_GETWORKAREA, which always answers for the primary display no matter where the user was.
+//
+// Two properties the tests pin, because both fail silently rather than loudly:
+//   - the result always lies inside the work area, including on monitors whose origin is
+//     negative (mounted above or to the left of the primary one)
+//   - a card that would not fit is shrunk to the work area rather than allowed to clip, which
+//     is the realistic outcome at 200% on a small laptop panel
+OverlayRect overlay_rect(ScreenPoint work_pos, ScreenPoint work_size, int dpi);
 
 // Top-right placement within a monitor's work area, with a margin.
 //

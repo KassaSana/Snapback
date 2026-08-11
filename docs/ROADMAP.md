@@ -3225,7 +3225,7 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   and **7.12** makes those queries bounded; implement through **14.4**, not another set of
   cross-card callbacks in `App.tsx`.
 
-- **10.12 — Make the Windows snapback overlay monitor- and DPI-aware.** `S/M`
+- **10.12 — CODE DONE 2026-08-11; the Windows desktop smoke stays open.** `S/M`
   Opened 2026-08-05. The shared placement helper and its test already support a display whose
   origin is not `(0,0)`, but Windows production always asks `SPI_GETWORKAREA` for the primary
   work area. It then lays out a fixed 420×250-pixel window. On a multi-monitor or mixed-DPI
@@ -3240,6 +3240,33 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   primary display, taskbars on every edge, unplugging the target monitor, and 100/125/150/200%
   scale without clipped copy or controls. Coordinate colors/typography with **10.10**, focus and
   zoom behavior with **10.3**, and the future action layout with **2.8**.
+
+  **Done:** `overlay.hpp`/`overlay_common.cpp` gained `choose_overlay_monitor`,
+  `scale_for_dpi`, and `overlay_rect`, all pure and covered by seven cases — negative-origin
+  monitors above and to the left of the primary, taskbars on all four edges, 100/125/150/200%,
+  an unplugged/degenerate work area, and the fallback order. `overlay_windows.cpp` now targets
+  the foreground window's monitor (cursor, then primary, as fallbacks), reads `rcWork` from
+  *that* monitor instead of `SPI_GETWORKAREA`, scales the card and its inner padding by the
+  monitor's effective DPI, and handles `WM_DPICHANGED` while visible. `SWP_NOACTIVATE` and
+  `WS_EX_NOACTIVATE` are untouched: better placement must not start stealing the keyboard.
+
+  **`MONITOR_DEFAULTTONULL`, not `TONEAREST`, is the load-bearing detail.** The question being
+  asked is whether a valid foreground monitor *exists*; `TONEAREST` answers "yes" by silently
+  substituting the primary one, which collapses the whole fallback chain into its last step and
+  reproduces the bug. The constants are also no longer pixel counts — they are design units at
+  96 DPI, which is what stops 420×250 from rendering physically tiny at 200%.
+
+  **The shrink-to-fit test was vacuous when first written and passed with the clamp deleted.**
+  It used a 1024×600 work area, which a 200%-scaled card still fits inside, so it asserted
+  nothing. It now uses 800×460 and first asserts that the scaled card genuinely does not fit,
+  before asserting that it was shrunk. The same mutation now fails, as do the equivalents for
+  the other guards.
+
+  **Left open:** the Windows *desktop smoke* the item also asks for. The pure geometry is fully
+  covered on this machine, and `overlay_windows.cpp` is compile-verified, but it only builds
+  into the app target, which needs webview and is not configured here — so no build of this
+  change has been run against real monitors. Unplugging a display, four taskbar edges, and the
+  four scale factors still need a human at a multi-monitor desk.
 
 - **10.13 — DONE 2026-08-06.** `S/M` The two prediction-row tiles became a real
   continuous-focus **duration**, and the session metric says "sessions" in its own label.
