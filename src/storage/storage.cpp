@@ -1212,7 +1212,8 @@ std::optional<SessionRecord> Storage::save_session_reflection(
     return get_session(session_id);
 }
 
-std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit) {
+std::vector<SessionSummary> Storage::recent_session_summaries(
+    std::size_t limit, const std::optional<std::string>& started_after) {
     // All three queries below re-derive "the most recent `limit` sessions" independently,
     // so they must agree on *which* sessions those are. `started_at` has only second
     // resolution (ROADMAP 7.16), which makes ties common rather than exotic, and SQLite does
@@ -1234,14 +1235,18 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
         // kSessionColumnCount, so growing that list cannot silently move it.
         const std::string sql =
             "SELECT " + std::string(kSessionColumns) + ", " +
-            // ROUND before CAST: see active_secs. A truncating CAST reported an exact
-            // hour as 3599, and leaving it here while active time rounds would let a
-            // fully-attended session claim more attended seconds than elapsed ones.
             "CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
             "julianday(started_at)) * 86400)) AS INTEGER) "
-            "FROM sessions ORDER BY started_at DESC, session_id DESC LIMIT ?1";
+            "FROM sessions "
+            "WHERE (?2 IS NULL OR (started_at IS NOT NULL AND started_at >= ?2)) "
+            "ORDER BY started_at DESC, session_id DESC LIMIT ?1";
         Stmt stmt(db_, sql.c_str());
         stmt.bind(1, static_cast<std::int64_t>(limit));
+        if (started_after) {
+            stmt.bind(2, *started_after);
+        } else {
+            stmt.bind_null(2);
+        }
         while (stmt.step_row()) {
             SessionSummary summary;
             summary.record = read_session(stmt.get());
@@ -1262,6 +1267,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
     {
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
+                  "                WHERE (?2 IS NULL OR (started_at IS NOT NULL AND started_at >= ?2)) "
                   "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
                   "SELECT p.session_id, "
                   "COALESCE(AVG(p.focus_score), 0), "
@@ -1272,6 +1278,11 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
                   "FROM predictions p JOIN recent r ON p.session_id = r.session_id "
                   "GROUP BY p.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
+        if (started_after) {
+            stmt.bind(2, *started_after);
+        } else {
+            stmt.bind_null(2);
+        }
         while (stmt.step_row()) {
             const auto it = index_of.find(column_text(stmt.get(), 0));
             if (it == index_of.end()) continue;
@@ -1288,11 +1299,17 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
     {
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
+                  "                WHERE (?2 IS NULL OR (started_at IS NOT NULL AND started_at >= ?2)) "
                   "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
                   "SELECT e.session_id, COUNT(*) "
                   "FROM snapback_events e JOIN recent r ON e.session_id = r.session_id "
                   "GROUP BY e.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
+        if (started_after) {
+            stmt.bind(2, *started_after);
+        } else {
+            stmt.bind_null(2);
+        }
         while (stmt.step_row()) {
             const auto it = index_of.find(column_text(stmt.get(), 0));
             if (it == index_of.end()) continue;
@@ -1311,6 +1328,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
         const auto now = utc_now_rfc3339();
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
+                  "                WHERE (?3 IS NULL OR (started_at IS NOT NULL AND started_at >= ?3)) "
                   "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
                   "SELECT s.session_id, CAST(COALESCE(SUM(ROUND(MAX(0, "
                   "  (julianday(COALESCE(s.ended_at, MAX(s.started_at, ?2))) "
@@ -1319,6 +1337,11 @@ std::vector<SessionSummary> Storage::recent_session_summaries(std::size_t limit)
                   "GROUP BY s.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
         stmt.bind(2, now);
+        if (started_after) {
+            stmt.bind(3, *started_after);
+        } else {
+            stmt.bind_null(3);
+        }
         while (stmt.step_row()) {
             const auto it = index_of.find(column_text(stmt.get(), 0));
             if (it == index_of.end()) continue;
@@ -1482,18 +1505,12 @@ std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
     return hourly;
 }
 
-std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg_focus) {
-    // `recent` reproduces recent_sessions(limit)'s ordering and cap; `completed` renumbers
-    // only the completed ones, so a session still running is skipped rather than ending the
-    // streak — the `continue` in the loop this replaces. AVG over no predictions is NULL, and
-    // COALESCE(...,0) makes such a session score zero and break the streak, matching recap()'s
-    // `COALESCE(AVG(focus_score), 0)`.
-    //
-    // The answer is the position of the first session below the bar, minus one; with none
-    // below it, every completed session in the window counts.
+std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg_focus,
+                                               const std::optional<std::string>& started_after) {
     Stmt stmt(db_,
               "WITH recent AS ("
               "  SELECT session_id, status, started_at FROM sessions"
+              "  WHERE (?3 IS NULL OR (started_at IS NOT NULL AND started_at >= ?3))"
               "  ORDER BY started_at DESC, session_id DESC LIMIT ?1"
               "), completed AS ("
               "  SELECT session_id,"
@@ -1508,6 +1525,11 @@ std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg
               "                (SELECT COUNT(*) FROM scored))");
     stmt.bind(1, static_cast<std::int64_t>(limit));
     stmt.bind(2, min_avg_focus);
+    if (started_after) {
+        stmt.bind(3, *started_after);
+    } else {
+        stmt.bind_null(3);
+    }
     if (!stmt.step_row()) return 0;
     return static_cast<std::size_t>(std::max<std::int64_t>(0, sqlite3_column_int64(stmt.get(), 0)));
 }

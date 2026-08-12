@@ -20,6 +20,7 @@ type InsightsCardProps = {
     nextStep: string | null,
   ) => boolean | Promise<boolean>;
   reflectionStatus?: string | null;
+  rangeLabel: string;
   sessionHistory: SessionSummary[];
 };
 
@@ -223,6 +224,7 @@ export const InsightsCard = memo(function InsightsCard({
   onDeleteSession,
   onSaveReflection,
   reflectionStatus = null,
+  rangeLabel,
   sessionHistory,
 }: InsightsCardProps) {
   const aggregates = useMemo(
@@ -236,9 +238,7 @@ export const InsightsCard = memo(function InsightsCard({
     <section className="card insights-card">
       <div className="card-header">
         <h2>Insights</h2>
-        <span className="pill">
-          last {count} session{count === 1 ? "" : "s"}
-        </span>
+        <span className="pill">{rangeLabel}</span>
       </div>
 
       {count === 0 ? (

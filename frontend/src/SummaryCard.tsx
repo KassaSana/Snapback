@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { FOCUS_STRETCH_LABEL, formatFocusStretch } from "./focusStreak";
 
-import { useSummaryReport } from "./useSummaryReport";
+import type { SummaryReport } from "./api";
 
 const formatDuration = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -9,21 +9,26 @@ const formatDuration = (seconds: number) => {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 };
 
-export const SummaryCard = memo(function SummaryCard() {
-  const { exportSummary, report, setWindow, status, window } = useSummaryReport();
-  // A just-started first session is counted before its first prediction. A completed
-  // zero-prediction session is still real history (for example, capture permission failed),
-  // so the backend reports that state separately.
+type SummaryCardProps = {
+  exportStatus: string | null;
+  onExport: () => void;
+  rangeLabel: string;
+  report: SummaryReport;
+};
+
+export const SummaryCard = memo(function SummaryCard({
+  exportStatus,
+  onExport,
+  rangeLabel,
+  report,
+}: SummaryCardProps) {
   const hasHistory = report.sampleCount > 0 || report.completedSessionCount > 0;
 
   return (
     <section className="card insights-card">
       <div className="card-header">
         <h2>Summary</h2>
-        <select aria-label="Summary window" value={window} onChange={(event) => setWindow(event.target.value as "day" | "week")}>
-          <option value="day">Last 24 hours</option>
-          <option value="week">Last 7 days</option>
-        </select>
+        <span className="pill">{rangeLabel}</span>
       </div>
       {hasHistory ? (
         <>
@@ -40,19 +45,19 @@ export const SummaryCard = memo(function SummaryCard() {
         </>
       ) : (
         <p className="helper-text">
-          No summary data yet. Complete a session to unlock 24-hour and 7-day reports.
+          No summary data for this range yet. Complete a session to build your report.
         </p>
       )}
       <div className="button-row">
         <button
           className="secondary-button"
           disabled={!hasHistory}
-          onClick={() => void exportSummary()}
+          onClick={onExport}
         >
           Export summary
         </button>
       </div>
-      {status ? <p className="helper-text">{status}</p> : null}
+      {exportStatus ? <p className="helper-text">{exportStatus}</p> : null}
     </section>
   );
 });

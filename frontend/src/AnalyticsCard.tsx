@@ -13,9 +13,15 @@ import {
   productiveSessionsHelperText,
 } from "./focusStreak";
 
-type AnalyticsCardProps = { analytics: AnalyticsSummary };
+type AnalyticsCardProps = {
+  analytics: AnalyticsSummary;
+  rangeLabel: string;
+};
 
-export const AnalyticsCard = memo(function AnalyticsCard({ analytics }: AnalyticsCardProps) {
+export const AnalyticsCard = memo(function AnalyticsCard({
+  analytics,
+  rangeLabel,
+}: AnalyticsCardProps) {
   // Roadmap 10.8. Geometry lives in analyticsChart.ts so it can be tested without a DOM;
   // this component only places what it is given.
   const bars = hourBars(analytics.hourly);
@@ -25,7 +31,7 @@ export const AnalyticsCard = memo(function AnalyticsCard({ analytics }: Analytic
     <section className="card insights-card analytics-card">
       <div className="card-header">
         <h2>Trends</h2>
-        <span className="pill">all recorded sessions</span>
+        <span className="pill">{rangeLabel}</span>
       </div>
       {analytics.sampleCount === 0 ? (
         <p className="helper-text">No prediction data yet. Start a session to build trends.</p>

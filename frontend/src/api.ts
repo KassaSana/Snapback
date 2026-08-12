@@ -371,7 +371,12 @@ export type AnalyticsSummary = {
   topApps: AnalyticsApp[];
 };
 
-export type SummaryWindow = "day" | "week";
+export type SummaryWindow = "day" | "week" | "7d" | "30d" | "all" | "custom";
+
+export type ReviewWindowRequest = {
+  window: string;
+  since?: string;
+};
 
 export type SummaryReport = {
   window: SummaryWindow;
@@ -440,8 +445,12 @@ export const api = {
     const rows = await invoke<Record<string, unknown>[]>("get_prediction_history", { limit });
     return rows.map(mapPrediction);
   },
-  getFocusSummary: async (limit = 200) => {
-    const raw = await invoke<Record<string, unknown>>("get_focus_summary", { limit });
+  getFocusSummary: async (range?: ReviewWindowRequest | { limit?: number }) => {
+    const args =
+      range && "window" in range
+        ? { window: range.window, since: range.since }
+        : { limit: (range as { limit?: number } | undefined)?.limit ?? 200 };
+    const raw = await invoke<Record<string, unknown>>("get_focus_summary", args);
     return mapFocusSummary(raw);
   },
   getRecordingStatus: async () => {
@@ -547,8 +556,12 @@ export const api = {
     const raw = await invoke<Record<string, unknown>>("get_session_recap", { sessionId });
     return mapSessionRecap(raw);
   },
-  getSessionHistory: async (limit = 20) => {
-    const rows = await invoke<Record<string, unknown>[]>("get_session_history", { limit });
+  getSessionHistory: async (range?: ReviewWindowRequest | { limit?: number }) => {
+    const args =
+      range && "window" in range
+        ? { window: range.window, since: range.since }
+        : { limit: (range as { limit?: number } | undefined)?.limit ?? 20 };
+    const rows = await invoke<Record<string, unknown>[]>("get_session_history", args);
     return rows.map(mapSessionSummary);
   },
   getSettings: async () => {
@@ -559,16 +572,16 @@ export const api = {
     const raw = await invoke<Record<string, unknown> | null>("get_privacy_settings");
     return mapPrivacySettings(raw ?? {});
   },
-  getAnalytics: async () => {
-    const raw = await invoke<Record<string, unknown> | null>("get_analytics");
+  getAnalytics: async (range: ReviewWindowRequest = { window: "all" }) => {
+    const raw = await invoke<Record<string, unknown> | null>("get_analytics", range);
     return mapAnalyticsSummary(raw ?? {});
   },
-  getSummaryReport: async (window: SummaryWindow = "day") => {
-    const raw = await invoke<Record<string, unknown> | null>("get_summary_report", { window });
+  getSummaryReport: async (range: ReviewWindowRequest = { window: "day" }) => {
+    const raw = await invoke<Record<string, unknown> | null>("get_summary_report", range);
     return mapSummaryReport(raw ?? {});
   },
-  exportSummaryReport: async (window: SummaryWindow) => {
-    const raw = await invoke<Record<string, unknown>>("export_summary_report", { window });
+  exportSummaryReport: async (range: ReviewWindowRequest) => {
+    const raw = await invoke<Record<string, unknown>>("export_summary_report", range);
     return mapSummaryExportResult(raw);
   },
   getGoalCategories: async () => {

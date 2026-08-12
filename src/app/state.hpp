@@ -20,6 +20,7 @@
 #include "engine/classifier.hpp"
 #include "engine/features.hpp"
 #include "engine/focus_summary.hpp"
+#include "review_window.hpp"
 #include "engine/idle_detector.hpp"
 #include "engine/pomodoro.hpp"
 #include "snapback/tracker.hpp"
@@ -143,10 +144,19 @@ public:
     // outside [kMinIdleThresholdSecs, kMaxIdleThresholdSecs].
     void set_idle_threshold_secs(std::int64_t seconds);
     void set_privacy_exclusions(std::vector<std::string> exclusions);
-    AnalyticsSummary analytics() const;
-    SummaryReport summary_report(const std::string& window) const;
+    AnalyticsSummary analytics(const std::string& window = "all",
+                               const std::optional<std::string>& since = std::nullopt) const;
+    SummaryReport summary_report(const std::string& window,
+                                 const std::optional<std::string>& since = std::nullopt) const;
     SummaryExportResult export_summary_report(const std::filesystem::path& out_dir,
-                                              const std::string& window) const;
+                                              const std::string& window,
+                                              const std::optional<std::string>& since =
+                                                  std::nullopt) const;
+    FocusSummary focus_summary_for_window(const std::string& window,
+                                          const std::optional<std::string>& since =
+                                              std::nullopt);
+    std::vector<SessionSummary> session_history_for_window(
+        const std::string& window, const std::optional<std::string>& since = std::nullopt);
     std::vector<GoalCategory> goal_categories() const;
     void set_goal_categories(std::vector<GoalCategory> categories);
 

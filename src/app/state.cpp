@@ -865,12 +865,23 @@ std::vector<PredictionRecord> AppState::prediction_history(std::size_t limit) {
 FocusSummary AppState::focus_summary(std::size_t limit) {
     std::lock_guard lock(storage_mutex_);
     auto rows = storage_.recent_predictions(limit);
-    // Roadmap 10.13. `recent_predictions` returns newest-first, which was fine while the
-    // summary only counted rows. The focus *duration* is measured between neighbours, so the
-    // order is now load-bearing: reversed, every interval comes out negative and the longest
-    // run reports zero.
     std::reverse(rows.begin(), rows.end());
     return summarize_predictions(rows);
+}
+
+FocusSummary AppState::focus_summary_for_window(const std::string& window,
+                                                const std::optional<std::string>& since) {
+    const auto cutoff = review_window_cutoff(window, since, cutoff_rfc3339);
+    std::lock_guard lock(storage_mutex_);
+    auto rows = storage_.predictions_since(cutoff);
+    return summarize_predictions(rows);
+}
+
+std::vector<SessionSummary> AppState::session_history_for_window(
+    const std::string& window, const std::optional<std::string>& since) {
+    const auto cutoff = review_window_cutoff(window, since, cutoff_rfc3339);
+    std::lock_guard lock(storage_mutex_);
+    return storage_.recent_session_summaries(500, cutoff);
 }
 
 std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
@@ -1243,22 +1254,17 @@ void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
     commit_settings_unlocked(std::move(candidate), nullptr);
 }
 
-AnalyticsSummary AppState::analytics() const {
+AnalyticsSummary AppState::analytics(const std::string& window,
+                                     const std::optional<std::string>& since) const {
+    const auto cutoff = review_window_cutoff(window, since, cutoff_rfc3339);
     std::lock_guard lock(storage_mutex_);
     AnalyticsSummary summary;
-    // Roadmap 7.12. This used to read **every retained prediction** into a vector and fold it
-    // here — under the storage lock the engine tick needs to persist, so opening the analytics
-    // tab on a mature database could stall capture writes and, with a bounded ring buffer,
-    // drop events. Both numbers now come back final, from one query each.
-    const auto stats = const_cast<Storage&>(storage_).prediction_stats();
+    const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff);
     summary.sample_count = stats.sample_count;
     summary.avg_focus_score = stats.avg_focus_score;
-    summary.hourly = const_cast<Storage&>(storage_).hourly_focus_buckets();
+    summary.hourly = const_cast<Storage&>(storage_).hourly_focus_buckets(cutoff);
 
-    // Was recent_sessions(200) x list_context_snapshots(..., 200) — up to 40,000 fully
-    // materialized rows read under the storage lock to compute a group-by. Same caps, same
-    // answer, one query.
-    const auto app_counts = const_cast<Storage&>(storage_).context_app_counts(200, 200);
+    const auto app_counts = const_cast<Storage&>(storage_).context_app_counts(200, 200, cutoff);
     std::vector<AnalyticsApp> apps;
     apps.reserve(app_counts.size());
     for (const auto& [app, count] : app_counts) apps.push_back(AnalyticsApp{app, count});
@@ -1269,28 +1275,24 @@ AnalyticsSummary AppState::analytics() const {
     if (apps.size() > 5) apps.resize(5);
     summary.top_apps = std::move(apps);
 
-    // Roadmap 7.12. Was a recent_sessions(200) loop calling recap() — five queries — per
-    // completed session, to read one field from each. Same cap, same 70.0 bar, same
-    // skip-the-running-ones rule, one query.
     summary.productive_session_streak =
-        const_cast<Storage&>(storage_).productive_session_streak(200, 70.0);
+        const_cast<Storage&>(storage_).productive_session_streak(200, 70.0, cutoff);
     return summary;
 }
 
-SummaryReport AppState::summary_report(const std::string& window) const {
-    if (window != "day" && window != "week") {
-        throw std::runtime_error("summary window must be day or week");
+SummaryReport AppState::summary_report(const std::string& window,
+                                       const std::optional<std::string>& since) const {
+    if (window != "day" && window != "week" && window != "today" && window != "7d" &&
+        window != "30d" && window != "all" && window != "custom") {
+        throw std::runtime_error("summary window must be day, week, 7d, 30d, all, or custom");
     }
+    const auto cutoff_opt = review_window_cutoff(window, since, cutoff_rfc3339);
     std::lock_guard lock(storage_mutex_);
-    const auto cutoff = cutoff_rfc3339(window == "day" ? 1 : 7);
     SummaryReport report;
     report.window = window;
     report.generated_at = now_rfc3339();
 
-    // Roadmap 7.12. Every prediction in the window used to be materialized here to compute
-    // four numbers; the longest non-distracted run is now a gaps-and-islands query rather than
-    // a C++ loop over the rows.
-    const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff);
+    const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff_opt);
     report.sample_count = stats.sample_count;
     report.avg_focus_score = stats.avg_focus_score;
     report.longest_focus_secs = stats.longest_focus_secs;
@@ -1299,18 +1301,14 @@ SummaryReport AppState::summary_report(const std::string& window) const {
             static_cast<double>(stats.distracted_count) / static_cast<double>(report.sample_count);
     }
 
-    // Roadmap 7.12. Was `recent_session_summaries(500)` — three queries, but 500 fully built
-    // recaps — to read a count and one duration field. The cap still applies to recency
-    // *before* the window filter, which is what the loop it replaces did and what keeps the
-    // answer stable on a database with more than 500 sessions inside the window.
-    const auto totals = const_cast<Storage&>(storage_).session_window_totals(500, cutoff);
+    const std::string session_floor =
+        cutoff_opt ? *cutoff_opt : std::string("1970-01-01T00:00:00Z");
+    const auto totals = const_cast<Storage&>(storage_).session_window_totals(500, session_floor);
     report.session_count = totals.session_count;
     report.completed_session_count = totals.completed_session_count;
     report.focus_seconds = totals.focus_seconds;
-    // Same 500/200 caps as the loop above used, aggregated in SQL rather than by reading up
-    // to 100,000 snapshot rows into memory.
     const auto context_counts =
-        const_cast<Storage&>(storage_).context_app_counts(500, 200, cutoff);
+        const_cast<Storage&>(storage_).context_app_counts(500, 200, cutoff_opt);
     // Highest count wins, ties broken by the lexicographically smaller app name — same rule
     // as before, but tracking the running best directly instead of re-looking-it-up, since
     // the counts now arrive in a const map.
@@ -1326,8 +1324,9 @@ SummaryReport AppState::summary_report(const std::string& window) const {
 }
 
 SummaryExportResult AppState::export_summary_report(const std::filesystem::path& out_dir,
-                                                    const std::string& window) const {
-    const auto report = summary_report(window);
+                                                    const std::string& window,
+                                                    const std::optional<std::string>& since) const {
+    const auto report = summary_report(window, since);
     std::filesystem::create_directories(out_dir);
     const auto path = out_dir / ("summary_" + window + ".json");
     std::ofstream out(path, std::ios::binary | std::ios::trunc);

@@ -29,10 +29,13 @@ import { FocusFeedbackCard } from "./FocusFeedbackCard";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
-import { useFocusSummary } from "./useFocusSummary";
 import { useHealth } from "./useHealth";
-import { useInsights } from "./useInsights";
 import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
+import { useCockpitHistory } from "./useCockpitHistory";
+import { useAppearance } from "./useAppearance";
+import { ReviewRangeBar } from "./ReviewRangeBar";
+import { reviewRangeLabel } from "./reviewRange";
+import { useReviewWorkflow } from "./useReviewWorkflow";
 import { useAttendedTargets } from "./useAttendedTargets";
 import { useRecordingStatus } from "./useRecordingStatus";
 import { usePomodoro } from "./usePomodoro";
@@ -40,7 +43,6 @@ import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
 import { useAutostart } from "./useAutostart";
 import { useIdleThreshold } from "./useIdleThreshold";
-import { useAnalytics } from "./useAnalytics";
 import { usePrivacy } from "./usePrivacy";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
 import { SettingsNav } from "./SettingsNav";
@@ -109,11 +111,9 @@ export default function App() {
   const feedback = useFeedback();
   const autostart = useAutostart();
   const idleThreshold = useIdleThreshold();
-  const { analytics, refreshAnalytics } = useAnalytics();
+  const { mode: appearanceMode, setMode: setAppearanceMode } = useAppearance();
 
   const live = useLiveData();
-
-  const { focusSummary, refreshFocusSummary } = useFocusSummary();
 
   const {
     pomodoroStatus,
@@ -291,50 +291,57 @@ export default function App() {
   // predictions, and if it was the *running* session the native command already tore down the
   // live engine state, so the UI must stop showing a session that no longer exists.
   //
-  // `useInsights` is called here rather than at the top of the component because this callback
-  // closes over `useSession`/`useLiveData` state, and a hook argument has to be defined before
-  // the hook that receives it.
+  const { refreshCockpitHistory, sessionHistory: cockpitHistory } = useCockpitHistory();
+
   const handleSessionDeleted = useCallback(
     async (deletedSessionId: string) => {
       if (deletedSessionId === sessionId) {
         clearActivitySession();
         live.clearActivityData();
       }
-      await Promise.all([refreshFocusSummary(), refreshAnalytics(), refreshHealth()]);
+      await Promise.all([refreshCockpitHistory(), refreshHealth()]);
     },
     [
       clearActivitySession,
       live.clearActivityData,
-      refreshAnalytics,
-      refreshFocusSummary,
+      refreshCockpitHistory,
       refreshHealth,
       sessionId,
     ],
   );
 
   const {
+    analytics,
     deleteError: sessionDeleteError,
     deleteSession: handleDeleteSession,
     deleteStatus: sessionDeleteStatus,
     deletingSessionId,
-    refreshInsights,
+    error: reviewError,
+    exportStatus,
+    exportSummary,
+    focusSummary,
+    loading: reviewLoading,
+    range: reviewRange,
     reflectionStatus,
+    refreshReview,
+    report: summaryReport,
     saveReflection: handleEditReflection,
     sessionHistory,
-  } = useInsights(handleSessionDeleted);
+    setRange: setReviewRange,
+  } = useReviewWorkflow(handleSessionDeleted);
 
-  // Roadmap 2.11. The cockpit's "recent goals" and Repeat last come from history the app has
-  // already fetched for Insights, so offering them costs no extra query. Memoized because
-  // SessionControlCard is memo'd: a fresh array every render would defeat that boundary.
-  const cockpitRecentGoals = useMemo(() => recentGoals(sessionHistory), [sessionHistory]);
+  const reviewRangeLabelText = useMemo(() => reviewRangeLabel(reviewRange), [reviewRange]);
+
+  // Roadmap 2.11. The cockpit's "recent goals" and Repeat last come from unfiltered history,
+  // not the Review range — a user comparing last week should still be able to repeat yesterday.
+  const cockpitRecentGoals = useMemo(() => recentGoals(cockpitHistory), [cockpitHistory]);
 
   const handleActivityDataDeleted = useCallback(async () => {
     clearActivitySession();
     live.clearActivityData();
     await Promise.all([
-      refreshInsights(),
-      refreshFocusSummary(),
-      refreshAnalytics(),
+      refreshReview(),
+      refreshCockpitHistory(),
       refreshHealth(),
       refreshPomodoroStatus(),
       refreshAttendedProgress(),
@@ -343,10 +350,9 @@ export default function App() {
   }, [
     clearActivitySession,
     live.clearActivityData,
-    refreshAnalytics,
-    refreshFocusSummary,
+    refreshCockpitHistory,
     refreshHealth,
-    refreshInsights,
+    refreshReview,
     refreshAttendedProgress,
     refreshRecordingStatus,
     refreshPomodoroStatus,
@@ -409,9 +415,7 @@ export default function App() {
   useAppEffects({
     refreshHealth,
     captureRunning,
-    refreshInsights,
-    refreshFocusSummary,
-    refreshAnalytics,
+    refreshReview,
     refreshPomodoroStatus,
     refreshAttendedProgress,
     refreshRecordingStatus,
@@ -571,6 +575,14 @@ export default function App() {
 
         {surface === "review" && (
           <>
+        <ReviewRangeBar
+          disabled={reviewLoading}
+          loading={reviewLoading}
+          range={reviewRange}
+          onChange={setReviewRange}
+        />
+        {reviewError ? <p className="helper-text alert">{reviewError}</p> : null}
+
         <InsightsCard
           deleteError={sessionDeleteError}
           deleteStatus={sessionDeleteStatus}
@@ -578,14 +590,20 @@ export default function App() {
           onDeleteSession={handleDeleteSession}
           onSaveReflection={handleEditReflection}
           reflectionStatus={reflectionStatus}
+          rangeLabel={reviewRangeLabelText}
           sessionHistory={sessionHistory}
         />
 
-        <AnalyticsCard analytics={analytics} />
+        <AnalyticsCard analytics={analytics} rangeLabel={reviewRangeLabelText} />
 
-        <SummaryCard />
+        <SummaryCard
+          exportStatus={exportStatus}
+          onExport={() => void exportSummary()}
+          rangeLabel={reviewRangeLabelText}
+          report={summaryReport}
+        />
 
-        <FocusSummaryCard focusSummary={focusSummary} />
+        <FocusSummaryCard focusSummary={focusSummary} rangeLabel={reviewRangeLabelText} />
 
         <SessionReviewCards
           handleLabel={handleLabel}
@@ -649,6 +667,8 @@ export default function App() {
           </section>
 
           <SettingsCard
+            appearanceMode={appearanceMode}
+            onAppearanceChange={setAppearanceMode}
             busy={autostart.busy}
             error={autostart.error}
             onAutostartChange={autostart.setEnabled}

@@ -1,6 +1,7 @@
 import { memo } from "react";
 
 import type { AutostartStatus } from "./api";
+import type { AppearanceMode } from "./appearance";
 import {
   formatIdleThreshold,
   idleThresholdHelperText,
@@ -8,6 +9,8 @@ import {
 } from "./idleThreshold";
 
 type SettingsCardProps = {
+  appearanceMode: AppearanceMode;
+  onAppearanceChange: (mode: AppearanceMode) => void;
   busy: boolean;
   error: string | null;
   onAutostartChange: (enabled: boolean) => void;
@@ -20,6 +23,8 @@ type SettingsCardProps = {
 };
 
 export const SettingsCard = memo(function SettingsCard({
+  appearanceMode,
+  onAppearanceChange,
   busy,
   error,
   onAutostartChange,
@@ -45,6 +50,21 @@ export const SettingsCard = memo(function SettingsCard({
         <h2>Settings</h2>
         <span className="pill">{supported ? "available" : "platform default"}</span>
       </div>
+      <label className="toggle-row">
+        <span>
+          <strong>Appearance</strong>
+          <span className="helper-text">Match the system, or choose light or dark.</span>
+        </span>
+        <select
+          aria-label="Appearance"
+          value={appearanceMode}
+          onChange={(event) => onAppearanceChange(event.target.value as AppearanceMode)}
+        >
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
       <label className={`toggle-row${!supported ? " toggle-row-disabled" : ""}`}>
         <span>
           <strong>Start on login</strong>

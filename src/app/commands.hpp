@@ -78,6 +78,10 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(state.prediction_history(detail::clamp_limit(a, 8)));
     });
     bind_cmd("get_focus_summary", [&state](const json& a) {
+        if (a.contains("window")) {
+            return json(state.focus_summary_for_window(a.at("window").get<std::string>(),
+                                                        detail::opt_string(a, "since")));
+        }
         return json(state.focus_summary(detail::clamp_limit(a, 200)));
     });
 
@@ -104,6 +108,10 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(state.session_recap(a.at("sessionId").get<std::string>()));
     });
     bind_cmd("get_session_history", [&state](const json& a) {
+        if (a.contains("window")) {
+            return json(state.session_history_for_window(a.at("window").get<std::string>(),
+                                                         detail::opt_string(a, "since")));
+        }
         return json(state.session_history(detail::clamp_limit(a, 20)));
     });
     // Roadmap 2.14. Both answers are optional, and blank is not an answer:
@@ -200,13 +208,18 @@ inline void register_commands(webview::webview& w, AppState& state,
     bind_cmd("get_privacy_settings", [&state](const json&) {
         return json(state.privacy_settings());
     });
-    bind_cmd("get_analytics", [&state](const json&) { return json(state.analytics()); });
+    bind_cmd("get_analytics", [&state](const json& a) {
+        return json(state.analytics(a.value("window", std::string("all")),
+                                    detail::opt_string(a, "since")));
+    });
     bind_cmd("get_summary_report", [&state](const json& a) {
-        return json(state.summary_report(a.value("window", std::string("day"))));
+        return json(state.summary_report(a.value("window", std::string("day")),
+                                         detail::opt_string(a, "since")));
     });
     bind_cmd("export_summary_report", [&state, data_dir](const json& a) {
         return json(state.export_summary_report(data_dir / "exports" / "summaries",
-                                                 a.value("window", std::string("day"))));
+                                                 a.value("window", std::string("day")),
+                                                 detail::opt_string(a, "since")));
     });
     bind_cmd("set_private_mode", [&state](const json& a) {
         state.set_private_mode(a.at("enabled").get<bool>());

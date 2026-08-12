@@ -304,7 +304,7 @@ describe("Focus summary card", () => {
     renderApp("review");
 
     await waitFor(() =>
-      expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { limit: 200 }),
+      expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { window: "7d" }),
     );
 
     const card = focusSummaryCard();
@@ -324,20 +324,21 @@ describe("Focus summary card", () => {
 
     const card = focusSummaryCard();
     await waitFor(() =>
-      expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { limit: 200 }),
+      expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { window: "7d" }),
     );
     expect(within(card).getByText(/No predictions recorded yet/i)).toBeInTheDocument();
   });
 });
 
 describe("Review first-run states", () => {
-  it("labels summary choices as rolling windows", async () => {
+  it("offers one shared time-range control for every Review card", async () => {
     renderApp("review");
 
-    expect(await screen.findByRole("option", { name: "Last 24 hours" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Last 7 days" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "Today" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "This week" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Today" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "7 days" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "30 days" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "All time" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
   });
 
   it("explains all four empty analytics surfaces without presenting zeroes as insights", async () => {
@@ -356,7 +357,7 @@ describe("Review first-run states", () => {
 
     expect(await screen.findByText(/No completed sessions yet/i)).toBeInTheDocument();
     expect(screen.getByText(/No prediction data yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/No summary data yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/No summary data for this range yet/i)).toBeInTheDocument();
     expect(screen.getByText(/No predictions recorded yet/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export summary" })).toBeDisabled();
   });
@@ -376,6 +377,6 @@ describe("Review first-run states", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Export summary" })).toBeEnabled(),
     );
-    expect(within(summary as HTMLElement).queryByText(/No summary data yet/i)).toBeNull();
+    expect(within(summary as HTMLElement).queryByText(/No summary data for this range yet/i)).toBeNull();
   });
 });

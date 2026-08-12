@@ -1,4 +1,8 @@
-:root {
+/* Roadmap 10.10. Semantic tokens are the public API; palette tokens are the implementation.
+   Components should prefer --text, --border, and --card so light/dark can swap underneath. */
+
+:root,
+:root[data-appearance="light"] {
   color-scheme: light;
   --ink: #0e1116;
   --muted: #5f6b7a;
@@ -9,6 +13,47 @@
   --surface-alt: #fce8d9;
   --shadow: 0 18px 40px rgba(21, 22, 26, 0.12);
   --radius: 18px;
+  --text: var(--ink);
+  --text-muted: var(--muted);
+  --canvas: #f5efe8;
+  --canvas-stop-1: #f7e5d6;
+  --canvas-stop-2: #ffe8d2;
+  --canvas-stop-3: #fdf8f3;
+  --canvas-stop-4: #f1e3d4;
+  --border: rgba(14, 17, 22, 0.12);
+  --border-strong: rgba(14, 17, 22, 0.3);
+  --card: var(--surface-strong);
+  --control-bg: var(--surface-strong);
+  --control-border: rgba(14, 17, 22, 0.14);
+  --nav-shell: rgba(255, 255, 255, 0.55);
+  --settings-nav-shell: rgba(255, 255, 255, 0.4);
+  --glow-accent: rgba(240, 107, 76, 0.35);
+  --error-bg: #fff1ee;
+  --error-border: #f3b5a8;
+  --error-text: #8a2f1f;
+  --error-strong: #b42318;
+  --success-bg: #e3f6d5;
+  --success-text: #27653b;
+  --success: var(--success-text);
+  --warning-bg: #ffe4c7;
+  --warning-text: #7b4a00;
+  --danger-bg: #ffd2c5;
+  --danger-text: #7f2f1e;
+  --danger: var(--danger-text);
+  --neutral-bg: #e9edf2;
+  --neutral-text: #4b5563;
+  --focus-good: #2d9d68;
+  --focus-warn: #d58a24;
+  --focus-bad: #b54a3d;
+  --chart-bar: var(--accent);
+  --chart-bar-empty: rgba(14, 17, 22, 0.08);
+  --chart-baseline: rgba(14, 17, 22, 0.12);
+  --chart-midline: rgba(14, 17, 22, 0.08);
+  --chart-axis: var(--muted);
+  --log-bg: #15181d;
+  --log-text: #e6edf3;
+  --accent-tint: rgba(240, 107, 76, 0.1);
+  --accent-border: rgba(240, 107, 76, 0.35);
   /* Roadmap 8.10. System stacks, not webfonts. The named families are still listed first, so
      anyone who happens to have them installed keeps the intended look, but nothing is ever
      fetched: the app must render identically online and offline, and "Nothing leaves this
@@ -17,6 +62,92 @@
     "Helvetica Neue", Arial, sans-serif;
   --font-serif: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
     "Times New Roman", serif;
+}
+
+:root[data-appearance="dark"] {
+  color-scheme: dark;
+  --ink: #e8eaed;
+  --muted: #9aa3af;
+  --accent: #f58b72;
+  --accent-soft: #f7b07a;
+  --surface: #1c2028;
+  --surface-strong: #252a33;
+  --surface-alt: #3a2a24;
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  --canvas: #12151b;
+  --canvas-stop-1: #2a211c;
+  --canvas-stop-2: #2b241f;
+  --canvas-stop-3: #15181f;
+  --canvas-stop-4: #1a1512;
+  --border: rgba(232, 234, 237, 0.12);
+  --border-strong: rgba(232, 234, 237, 0.28);
+  --control-border: rgba(232, 234, 237, 0.18);
+  --nav-shell: rgba(37, 42, 51, 0.85);
+  --settings-nav-shell: rgba(37, 42, 51, 0.7);
+  --glow-accent: rgba(245, 139, 114, 0.28);
+  --error-bg: #3a1f1c;
+  --error-border: #7a3f36;
+  --error-text: #ffb4a8;
+  --error-strong: #ff8a78;
+  --success-bg: #1f3324;
+  --success-text: #9fe0b0;
+  --warning-bg: #3a2c14;
+  --warning-text: #f5c26b;
+  --danger-bg: #3a221c;
+  --danger-text: #ffb09a;
+  --neutral-bg: #2a3038;
+  --neutral-text: #c5cad3;
+  --chart-bar-empty: rgba(232, 234, 237, 0.08);
+  --chart-baseline: rgba(232, 234, 237, 0.16);
+  --chart-midline: rgba(232, 234, 237, 0.1);
+  --log-bg: #0d1014;
+  --log-text: #d8dee9;
+  --accent-tint: rgba(245, 139, 114, 0.14);
+  --accent-border: rgba(245, 139, 114, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-appearance="system"] {
+    color-scheme: dark;
+    --ink: #e8eaed;
+    --muted: #9aa3af;
+    --accent: #f58b72;
+    --accent-soft: #f7b07a;
+    --surface: #1c2028;
+    --surface-strong: #252a33;
+    --surface-alt: #3a2a24;
+    --shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+    --canvas: #12151b;
+    --canvas-stop-1: #2a211c;
+    --canvas-stop-2: #2b241f;
+    --canvas-stop-3: #15181f;
+    --canvas-stop-4: #1a1512;
+    --border: rgba(232, 234, 237, 0.12);
+    --border-strong: rgba(232, 234, 237, 0.28);
+    --control-border: rgba(232, 234, 237, 0.18);
+    --nav-shell: rgba(37, 42, 51, 0.85);
+    --settings-nav-shell: rgba(37, 42, 51, 0.7);
+    --glow-accent: rgba(245, 139, 114, 0.28);
+    --error-bg: #3a1f1c;
+    --error-border: #7a3f36;
+    --error-text: #ffb4a8;
+    --error-strong: #ff8a78;
+    --success-bg: #1f3324;
+    --success-text: #9fe0b0;
+    --warning-bg: #3a2c14;
+    --warning-text: #f5c26b;
+    --danger-bg: #3a221c;
+    --danger-text: #ffb09a;
+    --neutral-bg: #2a3038;
+    --neutral-text: #c5cad3;
+    --chart-bar-empty: rgba(232, 234, 237, 0.08);
+    --chart-baseline: rgba(232, 234, 237, 0.16);
+    --chart-midline: rgba(232, 234, 237, 0.1);
+    --log-bg: #0d1014;
+    --log-text: #d8dee9;
+    --accent-tint: rgba(245, 139, 114, 0.14);
+    --accent-border: rgba(245, 139, 114, 0.4);
+  }
 }
 
 *,
@@ -28,10 +159,10 @@
 body {
   margin: 0;
   font-family: var(--font-sans);
-  color: var(--ink);
-  background: radial-gradient(circle at top left, #f7e5d6, transparent 55%),
-    radial-gradient(circle at 70% 20%, #ffe8d2, transparent 60%),
-    linear-gradient(135deg, #f5efe8, #fdf8f3 60%, #f1e3d4);
+  color: var(--text);
+  background: radial-gradient(circle at top left, var(--canvas-stop-1), transparent 55%),
+    radial-gradient(circle at 70% 20%, var(--canvas-stop-2), transparent 60%),
+    linear-gradient(135deg, var(--canvas), var(--canvas-stop-3) 60%, var(--canvas-stop-4));
   min-height: 100vh;
 }
 
@@ -48,7 +179,7 @@ body {
   inset: 24px 16px auto auto;
   width: 220px;
   height: 220px;
-  background: radial-gradient(circle, rgba(240, 107, 76, 0.35), transparent 60%);
+  background: radial-gradient(circle, var(--glow-accent), transparent 60%);
   filter: blur(10px);
   z-index: 0;
 }
@@ -70,9 +201,9 @@ body {
   margin-top: 20px;
   padding: 12px 16px;
   border-radius: 12px;
-  background: #fff1ee;
-  border: 1px solid #f3b5a8;
-  color: #8a2f1f;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-text);
 }
 
 .action-error-banner p {
@@ -280,8 +411,11 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .verdict-vote,
   .verdict-option,
-  .surface-tab {
+  .surface-tab,
+  .card {
     transition: none;
+    animation: none;
+    opacity: 1;
   }
 }
 
@@ -298,7 +432,7 @@ h1 {
   display: inline-flex;
   gap: 4px;
   padding: 4px;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--nav-shell);
   border-radius: 999px;
   box-shadow: var(--shadow);
 }
@@ -377,13 +511,13 @@ h1 {
   background: var(--muted);
 }
 
-.health-dot-online { background: #2d9d68; }
-.health-dot-degraded { background: #d58a24; }
-.health-dot-offline { background: #b54a3d; }
+.health-dot-online { background: var(--focus-good); }
+.health-dot-degraded { background: var(--focus-warn); }
+.health-dot-offline { background: var(--focus-bad); }
 
 .diagnostics-error {
   margin: 0;
-  color: #8a2f1f;
+  color: var(--error-text);
   font-size: 0.9rem;
 }
 
@@ -394,8 +528,8 @@ h1 {
   max-height: 180px;
   overflow: auto;
   padding: 12px;
-  background: #15181d;
-  color: #e6edf3;
+  background: var(--log-bg);
+  color: var(--log-text);
   border-radius: 8px;
 }
 
@@ -1230,7 +1364,7 @@ h1 {
   flex-wrap: wrap;
   gap: 4px;
   padding: 3px;
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--settings-nav-shell);
   border-radius: 999px;
 }
 
@@ -1376,4 +1510,38 @@ h1 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.72rem;
   user-select: all;
+}
+
+/* Roadmap 10.11 — one shared range for every Review card. */
+
+.review-range-bar {
+  grid-column: 1 / -1;
+}
+
+.review-range-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.review-range-button-active {
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
+  color: var(--text);
+}
+
+.review-range-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-range-custom input[type="date"] {
+  font-family: var(--font-sans);
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--control-bg);
+  color: var(--text);
 }

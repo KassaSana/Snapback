@@ -10,9 +10,13 @@ import {
 
 type FocusSummaryCardProps = {
   focusSummary: FocusSummary;
+  rangeLabel: string;
 };
 
-export const FocusSummaryCard = memo(function FocusSummaryCard({ focusSummary }: FocusSummaryCardProps) {
+export const FocusSummaryCard = memo(function FocusSummaryCard({
+  focusSummary,
+  rangeLabel,
+}: FocusSummaryCardProps) {
   const { sampleCount, avgFocusScore, peakFocusScore, distractedFraction, longestFocusSecs } =
     focusSummary;
 
@@ -20,9 +24,7 @@ export const FocusSummaryCard = memo(function FocusSummaryCard({ focusSummary }:
     <section className="card insights-card">
       <div className="card-header">
         <h2>Recent Focus</h2>
-        <span className="pill">
-          last {sampleCount} sample{sampleCount === 1 ? "" : "s"}
-        </span>
+        <span className="pill">{rangeLabel}</span>
       </div>
 
       {sampleCount === 0 ? (

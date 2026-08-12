@@ -64,6 +64,7 @@ describe("prediction render boundaries", () => {
       autoStartNextPhase: true,
     };
     const onAutostartChange = vi.fn();
+    const onAppearanceChange = vi.fn();
     // Stable identity, like the memoized callback App passes: an inline arrow would be a new
     // prop on every parent render and would defeat the very boundary this test measures.
     const onIdleThresholdChange = vi.fn();
@@ -88,8 +89,10 @@ describe("prediction render boundaries", () => {
             onAcknowledge={onAcknowledge}
             onSaveConfig={onSaveConfig}
           />
-          <FocusSummaryCard focusSummary={focusSummary} />
+          <FocusSummaryCard focusSummary={focusSummary} rangeLabel="7 days" />
           <SettingsCard
+            appearanceMode="system"
+            onAppearanceChange={onAppearanceChange}
             busy={false}
             error={null}
             onAutostartChange={onAutostartChange}

@@ -15,9 +15,7 @@ import { TIMELINE_POLL_MS } from "./useLiveData";
 type UseAppEffectsArgs = {
   refreshHealth: () => void | Promise<void>;
   captureRunning: boolean;
-  refreshInsights: () => void | Promise<void>;
-  refreshFocusSummary: () => void | Promise<void>;
-  refreshAnalytics: () => void | Promise<void>;
+  refreshReview: () => void | Promise<void>;
   refreshPomodoroStatus: () => void | Promise<void>;
   // Roadmap 2.19. Refreshed alongside the timer: both describe the session that just changed.
   refreshAttendedProgress: () => void | Promise<void>;
@@ -53,9 +51,7 @@ type UseAppEffectsArgs = {
 export const useAppEffects = ({
   refreshHealth,
   captureRunning,
-  refreshInsights,
-  refreshFocusSummary,
-  refreshAnalytics,
+  refreshReview,
   refreshPomodoroStatus,
   refreshAttendedProgress,
   refreshRecordingStatus,
@@ -84,9 +80,7 @@ export const useAppEffects = ({
     void refreshLatest();
     void refreshAppRules();
     void refreshDeployStatus();
-    void refreshInsights();
-    void refreshFocusSummary();
-    void refreshAnalytics();
+    void refreshReview();
     void hydrateActiveSession();
   }, [
     hydrateActiveSession,
@@ -94,21 +88,14 @@ export const useAppEffects = ({
     refreshLatest,
     refreshAppRules,
     refreshDeployStatus,
-    refreshInsights,
-    refreshFocusSummary,
-    refreshAnalytics,
+    refreshReview,
   ]);
 
-  // A completed session adds a new row to history — refresh insights (and the
-  // rolling focus summary, which draws from the same predictions) so the chart
-  // and tiles pick it up without a manual reload.
   useEffect(() => {
     if (sessionStatus === "COMPLETED") {
-      void refreshInsights();
-      void refreshFocusSummary();
-      void refreshAnalytics();
+      void refreshReview();
     }
-  }, [sessionStatus, refreshInsights, refreshFocusSummary, refreshAnalytics]);
+  }, [sessionStatus, refreshReview]);
 
   // Starting or stopping a session resets the Pomodoro timer server-side
   // (AppState::start_session / stop_session both call pomodoro_.reset()), so

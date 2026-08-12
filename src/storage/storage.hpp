@@ -207,7 +207,8 @@ public:
     // takes to persist. Opening a history view could therefore stall capture writes, and a
     // bounded ring buffer turns a stall into dropped events. Results are identical to the
     // per-session path, which a test pins by comparing the two.
-    std::vector<SessionSummary> recent_session_summaries(std::size_t limit);
+    std::vector<SessionSummary> recent_session_summaries(
+        std::size_t limit, const std::optional<std::string>& started_after = std::nullopt);
 
     // --- Aggregates for the analytics and summary surfaces (Roadmap 7.12) ----------------
     //
@@ -253,7 +254,9 @@ public:
     //
     // Replaces a `recent_sessions(limit)` loop that called `recap()` — five queries — per
     // completed session, to read one field from each.
-    std::size_t productive_session_streak(std::size_t limit, double min_avg_focus);
+    std::size_t productive_session_streak(std::size_t limit, double min_avg_focus,
+                                          const std::optional<std::string>& started_after =
+                                              std::nullopt);
 
     struct SessionWindowTotals {
         std::size_t session_count{};
