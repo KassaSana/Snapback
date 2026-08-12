@@ -1287,6 +1287,16 @@ SummaryReport AppState::summary_report(const std::string& window,
         throw std::runtime_error("summary window must be day, week, 7d, 30d, all, or custom");
     }
     const auto cutoff_opt = review_window_cutoff(window, since, cutoff_rfc3339);
+
+    // Roadmap 2.19. Targets live with settings; spans live in storage. Same lock discipline as
+    // attended_progress(): copy settings, release, then read storage so a slow query does not
+    // hold the state lock.
+    AppSettings snapshot;
+    {
+        std::lock_guard lock(mutex_);
+        snapshot = settings_;
+    }
+
     std::lock_guard lock(storage_mutex_);
     SummaryReport report;
     report.window = window;
@@ -1319,6 +1329,24 @@ SummaryReport AppState::summary_report(const std::string& window,
             report.top_context_app = app;
             top_count = count;
         }
+    }
+
+    // Planned-versus-actual for the Review range. today/7d reuse the calendar day/week helpers
+    // so this card agrees with the Now surface; longer/custom ranges report attended only —
+    // there is no daily/weekly plan that matches those populations without inventing one.
+    const auto now = report.generated_at;
+    if (window == "day" || window == "today") {
+        report.attended_seconds =
+            const_cast<Storage&>(storage_).attended_secs_in_local_day(now);
+        report.planned_mins = snapshot.attended_target_daily_mins;
+    } else if (window == "week" || window == "7d") {
+        report.attended_seconds =
+            const_cast<Storage&>(storage_).attended_secs_in_local_week(now);
+        report.planned_mins = snapshot.attended_target_weekly_mins;
+    } else {
+        report.attended_seconds =
+            const_cast<Storage&>(storage_).attended_secs_since(now, cutoff_opt);
+        report.planned_mins = 0;
     }
     return report;
 }

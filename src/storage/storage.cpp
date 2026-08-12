@@ -1179,6 +1179,38 @@ std::uint64_t Storage::attended_secs_in_local_week(const std::string& now) {
         "datetime(?1, 'localtime', 'start of day', '-6 days', 'weekday 1', '+7 days')");
 }
 
+std::uint64_t Storage::attended_secs_since(const std::string& now,
+                                           const std::optional<std::string>& since) {
+    // Roadmap 2.19. Same clip arithmetic as the day/week helpers, but the lower bound is an
+    // RFC3339 instant from the Review range rather than a calendar expression. Open spans use
+    // `now` as their end, so a still-running session does not invent future attendance.
+    if (!since || since->empty()) {
+        return attended_in_window(db_, now, "'1970-01-01 00:00:00'",
+                                  "datetime(?1, 'localtime')");
+    }
+    // ?2 is the lower bound; the shared SQL template only knows ?1 (now) as a bind, so this
+    // path substitutes the since-expression and binds the second argument itself.
+    std::string sql = kAttendedInWindowSql;
+    const std::string window_end = "datetime(?1, 'localtime')";
+    const std::string window_start = "datetime(?2, 'localtime')";
+    for (auto at = sql.find(":window_end"); at != std::string::npos;
+         at = sql.find(":window_end", at)) {
+        sql.replace(at, std::string(":window_end").size(), window_end);
+        at += window_end.size();
+    }
+    for (auto at = sql.find(":window_start"); at != std::string::npos;
+         at = sql.find(":window_start", at)) {
+        sql.replace(at, std::string(":window_start").size(), window_start);
+        at += window_start.size();
+    }
+    Stmt stmt(db_, sql.c_str());
+    stmt.bind(1, now);
+    stmt.bind(2, *since);
+    if (!stmt.step_row()) return 0;
+    const auto secs = sqlite3_column_int64(stmt.get(), 0);
+    return secs > 0 ? static_cast<std::uint64_t>(secs) : 0;
+}
+
 std::optional<SessionRecord> Storage::save_session_reflection(
     const std::string& session_id, const std::optional<std::string>& done,
     const std::optional<std::string>& next_step) {

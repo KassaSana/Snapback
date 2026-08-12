@@ -525,6 +525,11 @@ struct SummaryReport {
     // quantity that is not time.
     std::uint64_t longest_focus_secs{};
     std::string top_context_app;
+    // Roadmap 2.19 Review half. Durable attended seconds in the comparison window, and the
+    // matching plan in minutes when one applies (daily for today, weekly for 7d). Zero planned
+    // means "no target for this range" — not "target of zero minutes".
+    std::uint64_t attended_seconds{};
+    std::uint32_t planned_mins{};
 };
 
 struct SummaryExportResult {

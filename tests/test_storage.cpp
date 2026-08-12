@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -2189,4 +2190,20 @@ TEST_CASE("attended minutes are whole and never rounded up") {
     seed_span(*storage, session.session_id, "2026-08-09T10:00:00Z", "2026-08-09T10:00:59Z");
     // 59 seconds of presence is not a minute of attendance.
     CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") / 60 == 0);
+}
+
+TEST_CASE("attended_secs_since clips to an arbitrary Review lower bound") {
+    // Roadmap 2.19 Review half. 30d / custom ranges are not calendar day/week windows; they
+    // still must count the same clipped spans, just against a caller-supplied floor.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("custom range", FocusMode::Normal);
+    seed_span(*storage, session.session_id, "2026-08-01T10:00:00Z", "2026-08-01T10:30:00Z");
+    seed_span(*storage, session.session_id, "2026-08-08T10:00:00Z", "2026-08-08T10:20:00Z");
+
+    // Floor after the first span: only the second twenty minutes remain.
+    CHECK(storage->attended_secs_since("2026-08-09T12:00:00Z",
+                                       std::string("2026-08-05T00:00:00Z")) == 20 * 60);
+    // No floor: both spans.
+    CHECK(storage->attended_secs_since("2026-08-09T12:00:00Z", std::nullopt) == 50 * 60);
 }

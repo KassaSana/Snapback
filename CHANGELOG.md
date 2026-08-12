@@ -17,6 +17,10 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **Planned-versus-actual attended time on Review (2.19).** The Summary card for the shared
+  Review range now leads with attended minutes from durable session spans, and — when a daily
+  or weekly target applies — the planned total and percentage. Longer ranges still show
+  attended time without inventing a prorated plan. Targets stay editable on Now.
 - **`snapback --purge` removes everything the app created (9.5).** The database of window
   titles, settings, logs and rotations, exports, the model, SQLite's side files, every
   pre-migration backup, and the start-on-login entry. The decision behind it: someone who

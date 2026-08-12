@@ -119,8 +119,12 @@ export function mapAnalyticsSummary(raw: Record<string, unknown>): AnalyticsSumm
 
 export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
   const window = String(raw.window ?? "day");
+  const allowed: SummaryWindow[] = ["day", "week", "7d", "30d", "all", "custom"];
+  const normalized = (allowed.includes(window as SummaryWindow)
+    ? window
+    : "day") as SummaryWindow;
   return {
-    window: (window === "week" ? "week" : "day") as SummaryWindow,
+    window: normalized,
     generatedAt: String(raw.generated_at ?? raw.generatedAt ?? ""),
     sessionCount: Number(raw.session_count ?? raw.sessionCount ?? 0),
     completedSessionCount: Number(
@@ -132,6 +136,8 @@ export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
     distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
     longestFocusSecs: Number(raw.longest_focus_secs ?? raw.longestFocusSecs ?? 0),
     topContextApp: String(raw.top_context_app ?? raw.topContextApp ?? ""),
+    attendedSeconds: Number(raw.attended_seconds ?? raw.attendedSeconds ?? 0),
+    plannedMins: Number(raw.planned_mins ?? raw.plannedMins ?? 0),
   };
 }
 

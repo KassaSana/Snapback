@@ -548,7 +548,9 @@ void to_json(json& j, const SummaryReport& v) {
              {"avgFocusScore", v.avg_focus_score},
              {"distractedFraction", v.distracted_fraction},
              {"longestFocusSecs", v.longest_focus_secs},
-             {"topContextApp", v.top_context_app}};
+             {"topContextApp", v.top_context_app},
+             {"attendedSeconds", v.attended_seconds},
+             {"plannedMins", v.planned_mins}};
 }
 void from_json(const json& j, SummaryReport& v) {
     v.window = get_or<std::string>(j, "window", "day");
@@ -561,6 +563,8 @@ void from_json(const json& j, SummaryReport& v) {
     v.distracted_fraction = get_or<double>(j, "distractedFraction", 0.0);
     v.longest_focus_secs = get_or<std::uint64_t>(j, "longestFocusSecs", 0);
     v.top_context_app = get_or<std::string>(j, "topContextApp", "");
+    v.attended_seconds = get_or<std::uint64_t>(j, "attendedSeconds", 0);
+    v.planned_mins = get_or<std::uint32_t>(j, "plannedMins", 0);
 }
 
 void to_json(json& j, const SummaryExportResult& v) {

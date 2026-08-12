@@ -165,10 +165,23 @@ const report = mapSummaryReport({
   distracted_fraction: 0.2,
   longest_focus_secs: 8,
   top_context_app: "Cursor",
+  attended_seconds: 1800,
+  planned_mins: 120,
 });
 assert.equal(report.window, "week");
 assert.equal(report.focusSeconds, 3600);
 assert.equal(report.completedSessionCount, 3);
+assert.equal(report.attendedSeconds, 1800);
+assert.equal(report.plannedMins, 120);
+
+const todayReport = mapSummaryReport({ window: "day", attendedSeconds: 600, plannedMins: 90 });
+assert.equal(todayReport.window, "day");
+assert.equal(todayReport.attendedSeconds, 600);
+assert.equal(todayReport.plannedMins, 90);
+
+const rangeReport = mapSummaryReport({ window: "30d", attended_seconds: 0, planned_mins: 0 });
+assert.equal(rangeReport.window, "30d");
+assert.equal(rangeReport.plannedMins, 0);
 
 const categories = mapGoalCategories([{ name: "coding", keywords: ["code", "bug"] }]);
 assert.deepEqual(categories, [{ name: "coding", keywords: ["code", "bug"] }]);

@@ -684,9 +684,14 @@ internals, and the benchmark harness.
   the replacement, without a transaction spanning both statements. If the insert fails, the
   old session is already closed and the requested new one does not exist.
 
-- **7.23 — Report attended time by pausing sessions across idle spans.** `M`
-  **DECIDED by [ADR-0005](adr/0005-a-session-is-declared-and-attended.md); PARTIAL
-  2026-08-05.** Elapsed `duration_secs` keeps its historical wall-clock meaning. The new
+- **7.23 — DONE 2026-08-06.** `M` Report attended time by pausing sessions across idle spans.
+  **DECIDED by [ADR-0005](adr/0005-a-session-is-declared-and-attended.md).**
+  *(Header corrected 2026-08-12: it still read "PARTIAL 2026-08-05" while its own body, the
+  sequence table, and the code all said done — `activeSecs` reaches the frontend through
+  storage, `recap()`, `recent_session_summaries()`, the mapper, and Review. This is the
+  file's own "check whether it is actually missing" rule catching a header that had drifted
+  from the body under it.)*
+  Elapsed `duration_secs` keeps its historical wall-clock meaning. The new
   headline is active duration: the sum of durable spans during which a manually declared
   session was attended. Idle pauses; activity resumes; auto-stop is optional cleanup rather
   than the correctness mechanism.
@@ -2358,7 +2363,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   capture (that is **8.11**). Depends on stable context identity in **7.27**, stable category
   identity in **7.28**, and title-parser policy in **4.11** for title-derived suggestions.
 
-- **2.19 — FIRST SLICE DONE 2026-08-09; Review comparison stays open.** `M`
+- **2.19 — DONE 2026-08-12.** `M`
   Opened 2026-08-05. Sessions have a free-text goal and Review has retrospective totals, but
   nothing records the user's intention for today or this week. A focus score is unsuitable as
   a target — it is a model opinion — while **7.23** now provides the honest quantity a user can
@@ -2387,9 +2392,13 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   timestamp, so a repeated or missing hour is handled by the conversion rather than by
   arithmetic on a fixed offset.
 
-  **Still open:** planned-versus-actual in Review, which the item says should compose with
-  **10.11**'s shared time range rather than introduce another hidden one; 10.11 does not exist
-  yet. Target *editing* lives on the Now card for now rather than in Settings.
+  **Review comparison (2026-08-12):** `SummaryReport` now carries `attendedSeconds` and
+  `plannedMins` for the shared 10.11 range. `today`/`day` and `7d`/`week` reuse the calendar
+  day/week helpers so Review cannot disagree with Now about the same plan; `30d` / `all` /
+  `custom` report clipped attended seconds via `attended_secs_since` with `plannedMins = 0`
+  rather than inventing a prorated target the user never set. The Summary card leads with an
+  Attended tile and flat planned copy — no guilt language. Target *editing* still lives on the
+  Now card rather than in Settings.
 
   Count durable active spans, never session-open duration, prediction rows, or classifier
   score. Define local-day/week boundaries after **7.16** and test idle/paused sessions,

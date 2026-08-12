@@ -390,6 +390,12 @@ export type SummaryReport = {
   /** Roadmap 10.13. Seconds, not a row count. See FocusSummary.longestFocusSecs. */
   longestFocusSecs: number;
   topContextApp: string;
+  /**
+   * Roadmap 2.19. Durable attended seconds for the Review comparison window — never wall-clock
+   * session-open time. `plannedMins` is 0 when no daily/weekly target applies to this range.
+   */
+  attendedSeconds: number;
+  plannedMins: number;
 };
 
 export type SummaryExportResult = {

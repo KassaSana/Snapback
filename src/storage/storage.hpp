@@ -190,6 +190,12 @@ public:
     // `now` is an RFC3339 UTC stamp; it bounds still-open spans and selects the window.
     std::uint64_t attended_secs_in_local_day(const std::string& now);
     std::uint64_t attended_secs_in_local_week(const std::string& now);
+    // Roadmap 2.19 Review half. Attended seconds in [since, now], clipped per span the same
+    // way the day/week helpers clip. `since` nullopt means "all retained spans" — there is no
+    // earlier bound other than the data itself. Used for 30d / all / custom Review ranges,
+    // where a daily or weekly *plan* does not apply.
+    std::uint64_t attended_secs_since(const std::string& now,
+                                      const std::optional<std::string>& since);
 
     // Roadmap 2.14. Writes (or clears) the session's optional reflection and returns the
     // updated row; nullopt when no such session exists, so a caller cannot mistake a typo'd id

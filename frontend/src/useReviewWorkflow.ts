@@ -42,6 +42,8 @@ const EMPTY_REPORT: SummaryReport = {
   distractedFraction: 0,
   longestFocusSecs: 0,
   topContextApp: "",
+  attendedSeconds: 0,
+  plannedMins: 0,
 };
 
 export const useReviewWorkflow = (

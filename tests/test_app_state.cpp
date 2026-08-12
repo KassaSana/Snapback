@@ -1491,12 +1491,37 @@ TEST_CASE("AppState creates and exports day or week summary reports") {
     CHECK(report.window == "day");
     CHECK(report.session_count == 1);
     CHECK(report.sample_count == 1);
+    // Roadmap 2.19: no target set yet, so planned is absent rather than a fake zero goal.
+    CHECK(report.planned_mins == 0);
     CHECK_THROWS_AS(state->summary_report("month"), std::runtime_error);
 
     const auto exported = state->export_summary_report(temp.path / "exports", "week");
     CHECK(exported.window == "week");
     CHECK(std::filesystem::exists(exported.output_path));
     CHECK(read_file(exported.output_path).find("\"window\": \"week\"") != std::string::npos);
+}
+
+TEST_CASE("summary report carries planned-versus-actual for today and omits a plan for 30d") {
+    // Roadmap 2.19 Review half. today/7d reuse the calendar windows the Now card already
+    // shows, so the two surfaces cannot disagree about the same plan. Longer ranges still
+    // report attended seconds, but planned stays 0 — inventing a prorated target would be a
+    // second plan the user never set.
+    TempDir temp;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage), temp.path);
+    state->set_attended_targets(120, 600);
+
+    const auto today = state->summary_report("today");
+    CHECK(today.planned_mins == 120);
+    CHECK(today.attended_seconds == 0);
+
+    const auto week = state->summary_report("7d");
+    CHECK(week.planned_mins == 600);
+
+    const auto month = state->summary_report("30d");
+    CHECK(month.planned_mins == 0);
+    CHECK(month.attended_seconds == 0);
 }
 
 TEST_CASE("AppState summary distinguishes active from completed sessions without predictions") {
