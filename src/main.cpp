@@ -33,7 +33,9 @@
 #include "app/state.hpp"
 #include "app/training_deploy.hpp"
 #include "app/tray.hpp"
+#include "app/window_lifecycle.hpp"
 #include "capture/permissions.hpp"
+
 #include "engine/onnx_model.hpp"
 #include "snapback/overlay.hpp"
 #include "storage/storage.hpp"
@@ -335,15 +337,20 @@ int main(int argc, char** argv) {
     // window forward; "Quit" ends the run loop. Both branches read the native window
     // handle out of the webview once, here on the UI thread, because that is the only
     // thread either platform's window APIs may be touched from.
+    // Close-to-tray (Roadmap 9.15): closing the window hides it instead of terminating the app.
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
+        enable_close_to_tray(main_hwnd);
         Tray::instance().install(
             [main_hwnd] {
                 ShowWindow(main_hwnd, SW_SHOW);
                 SetForegroundWindow(main_hwnd);
             },
-            [&w] { w.terminate(); },
+            [&w, main_hwnd] {
+                prepare_app_exit(main_hwnd);
+                w.terminate();
+            },
             [state = state.get(), &logger] { return tray_recording_status(*state, logger); },
             [state = state.get(), &logger] {
                 run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
@@ -359,8 +366,12 @@ int main(int argc, char** argv) {
     // it becomes AppKit again, so main.cpp stays plain C++ (see mac_ui.hpp).
     if (auto win = w.window(); win.ok()) {
         void* main_window = win.value();
+        enable_close_to_tray(main_window);
         Tray::instance().install([main_window] { mac::bring_window_to_front(main_window); },
-                                 [&w] { w.terminate(); },
+                                 [&w, main_window] {
+                                     prepare_app_exit(main_window);
+                                     w.terminate();
+                                 },
                                  [state = state.get(), &logger] {
                                      return tray_recording_status(*state, logger);
                                  },
@@ -376,6 +387,7 @@ int main(int argc, char** argv) {
                                  });
     }
 #endif
+
 
     // Host->frontend events: the engine tick runs off-thread, but webview.eval and the
     // Win32 overlay must run on the UI thread — so marshal via dispatch. Copy

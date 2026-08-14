@@ -172,8 +172,10 @@ target_link_libraries(snapback_app PUBLIC snapback_core snapback_capture)
 if(WIN32)
   target_sources(snapback_app PRIVATE
     src/snapback/focus_window_windows.cpp
-    src/app/file_dialog_windows.cpp)
+    src/app/file_dialog_windows.cpp
+    src/app/window_lifecycle_windows.cpp)
   target_link_libraries(snapback_app PUBLIC comdlg32)
+
 elseif(APPLE)
   # ROADMAP 7.6: the file-manager backend is AppKit, so macOS needs the Objective-C++ half.
   # It lives in the library (not the app target like the tray/overlay) because it has no
@@ -182,16 +184,19 @@ elseif(APPLE)
     src/app/open_url_macos.mm
     src/app/reveal_path_macos.mm
     src/snapback/focus_window_macos.mm
-    src/app/file_dialog_macos.mm)
+    src/app/file_dialog_macos.mm
+    src/app/window_lifecycle_macos.mm)
   set_source_files_properties(
-    src/app/open_url_macos.mm src/app/reveal_path_macos.mm src/snapback/focus_window_macos.mm src/app/file_dialog_macos.mm
+    src/app/open_url_macos.mm src/app/reveal_path_macos.mm src/snapback/focus_window_macos.mm src/app/file_dialog_macos.mm src/app/window_lifecycle_macos.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++")
   target_link_libraries(snapback_app PUBLIC "-framework AppKit")
 else()
   target_sources(snapback_app PRIVATE
     src/snapback/focus_window_stub.cpp
-    src/app/file_dialog_stub.cpp)
+    src/app/file_dialog_stub.cpp
+    src/app/window_lifecycle_stub.cpp)
 endif()
+
 target_compile_definitions(snapback_app PUBLIC SNAPBACK_VERSION=\"${PROJECT_VERSION}\")
 
 

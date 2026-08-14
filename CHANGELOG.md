@@ -17,7 +17,12 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **Close-to-tray desktop lifecycle (9.15).** Closing the main window (`X` or Alt+F4 on Windows,
+  `windowShouldClose:` on macOS) now hides the window to the system tray rather than killing the
+  process. Background input capture, focus tracking, active sessions, and tray controls remain
+  active. Clean termination occurs exclusively when selecting "Quit Snapback" from the tray menu.
 - **One-click contextual app rules from timeline and top apps (2.18).** Creating an Allow (Always
+
   productive) or Block (Always distracting) override rule no longer requires switching to Settings
   and typing process names into a text input. The Context Timeline on Now and the Top Apps breakdown
   on Review show one-click `+ Allow` and `+ Block` action buttons beside observed apps, and display
