@@ -17,7 +17,8 @@ const boundary = vi.hoisted(() => {
       case "refresh_permissions":
         return (state.health.permissions as Record<string, unknown>) ?? {};
       case "dismiss_snapback":
-        return null;
+      case "restore_snapback_target":
+        return { ok: true, message: "Window activated successfully" };
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -74,7 +75,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe("Snapback note dismiss", () => {
+describe("Snapback note dismiss and restore", () => {
   it("shows the note on a snapback event and clears it via dismiss_snapback", async () => {
     render(<App />);
     // ADR-0003 replaced the "Live Prediction" card with the state-first hero on Now.
@@ -93,4 +94,21 @@ describe("Snapback note dismiss", () => {
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("dismiss_snapback"));
     expect(screen.queryByText(/Snapback: Return to auth\.ts/)).not.toBeInTheDocument();
   });
+
+  it("activates target window and clears note via restore_snapback_target", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Focus state" });
+
+    act(() => {
+      boundary.emit("snapback", { summary: "Return to auth.ts" });
+    });
+
+    expect(await screen.findByText(/Snapback: Return to auth\.ts/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Take me back" }));
+
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("restore_snapback_target"));
+    expect(screen.queryByText(/Snapback: Return to auth\.ts/)).not.toBeInTheDocument();
+  });
 });
+

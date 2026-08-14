@@ -277,6 +277,11 @@ export type SnapbackPayload = {
   distractionDurationSecs: number;
 };
 
+export type FocusTargetResult = {
+  ok: boolean;
+  message: string;
+};
+
 export type ExportTrainingResult = {
   outputDir: string;
   featuresPath: string;
@@ -683,6 +688,7 @@ export const api = {
     return mapSettings(raw ?? {});
   },
   dismissSnapback: () => invoke("dismiss_snapback"),
+  restoreSnapbackTarget: () => invoke<FocusTargetResult>("restore_snapback_target"),
   dismissUntrackedNudge: (minutes = 60) => invoke("dismiss_untracked_nudge", { minutes }),
   reloadClassifierModel: async () => {
     const raw = await invoke<Record<string, unknown>>("reload_classifier_model");

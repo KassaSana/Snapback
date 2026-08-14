@@ -29,6 +29,7 @@ type Props = {
   onConfirmVerdict: () => void;
   onCorrectVerdict: (label: FocusLabel) => void;
   onDismissSnapback: () => void;
+  onRestoreSnapbackTarget?: () => void;
   prediction: PredictionRecord | null;
   sessionActive: boolean;
   snapbackNote: string | null;
@@ -45,6 +46,7 @@ export function FocusStateHero({
   onConfirmVerdict,
   onCorrectVerdict,
   onDismissSnapback,
+  onRestoreSnapbackTarget,
   prediction,
   sessionActive,
   snapbackNote,
@@ -106,11 +108,20 @@ export function FocusStateHero({
       {snapbackNote ? (
         <p className="helper-text snapback">
           {snapbackNote}{" "}
+          {onRestoreSnapbackTarget ? (
+            <>
+              <button className="link-button" onClick={onRestoreSnapbackTarget}>
+                Take me back
+              </button>{" "}
+              ·{" "}
+            </>
+          ) : null}
           <button className="link-button" onClick={onDismissSnapback}>
             Dismiss
           </button>
         </p>
       ) : null}
+
 
       {waiting ? null : (
         <VerdictFeedback

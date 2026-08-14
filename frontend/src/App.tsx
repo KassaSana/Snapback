@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppEffects } from "./useAppEffects";
 
@@ -523,11 +523,13 @@ export default function App() {
             void handleLabel(label, "manual", `corrected:${predicted}`);
           }}
           onDismissSnapback={live.handleDismissSnapback}
+          onRestoreSnapbackTarget={live.handleRestoreSnapbackTarget}
           prediction={live.prediction}
           verdictClass={live.verdictClass}
           sessionActive={sessionRecord?.status === "ACTIVE"}
           snapbackNote={live.snapbackNote}
         />
+
 
         <SessionControlCard
           focusMode={focusMode}

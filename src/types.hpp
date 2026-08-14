@@ -567,6 +567,12 @@ struct LabelHotkeyPayload {
     std::optional<std::string> session_id;
 };
 
+// FocusTargetResult — Roadmap 2.8 ("Take me back").
+struct FocusTargetResult {
+    bool ok{false};
+    std::string message;
+};
+
 // ---------------------------------------------------------------------------
 // JSON (de)serialization — camelCase keys. Defined in types.cpp.
 // ---------------------------------------------------------------------------
@@ -630,5 +636,7 @@ void to_json(json& j, const PersistenceFailurePayload& v);
 void from_json(const json& j, PersistenceFailurePayload& v);
 void to_json(json& j, const LabelHotkeyPayload& v);
 void from_json(const json& j, LabelHotkeyPayload& v);
+void to_json(json& j, const FocusTargetResult& v);
+void from_json(const json& j, FocusTargetResult& v);
 
 }  // namespace snapback

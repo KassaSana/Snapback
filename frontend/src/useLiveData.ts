@@ -112,6 +112,15 @@ export const useLiveData = () => {
     }
   }, []);
 
+  const handleRestoreSnapbackTarget = useCallback(async () => {
+    setSnapbackNote(null);
+    try {
+      await api.restoreSnapbackTarget();
+    } catch {
+      // Best-effort; window activation failure is non-fatal.
+    }
+  }, []);
+
   const handleHyperfocus = useCallback((payload: { message: string }) => {
     setHyperfocusNote(payload.message);
   }, []);
@@ -157,6 +166,7 @@ export const useLiveData = () => {
     contextTimeline,
     clearActivityData,
     handleDismissSnapback,
+    handleRestoreSnapbackTarget,
     handleHyperfocus,
     handlePrediction,
     handleSnapback,

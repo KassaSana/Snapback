@@ -10,7 +10,8 @@ namespace snapback {
 // query already understands. Rolling windows until 7.16 lands calendar-day semantics.
 inline std::optional<std::string> review_window_cutoff(const std::string& window,
                                                        const std::optional<std::string>& since,
-                                                       const std::string& (*cutoff_days)(int)) {
+                                                       std::string (*cutoff_days)(int)) {
+
     if (window == "all") return std::nullopt;
     if (window == "custom") {
         if (!since || since->empty()) {

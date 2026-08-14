@@ -90,7 +90,11 @@ public:
     std::optional<SnapbackPayload> latest_snapback() const;
     std::optional<SnapbackPayload> take_snapback();
     void dismiss_snapback();
+    // Roadmap 2.8 ("Take me back"): activates the target application/window of the latest snapback,
+    // then dismisses the snapback.
+    FocusTargetResult restore_snapback_target();
     SessionRecap session_recap(const std::string& session_id);
+
     // Roadmap 2.14. Saves the optional end-of-session reflection. nullopt result means no such
     // session. Either field may be nullopt to leave (or clear) that answer.
     std::optional<SessionRecord> save_session_reflection(

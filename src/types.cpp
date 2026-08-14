@@ -636,4 +636,15 @@ void from_json(const json& j, LabelHotkeyPayload& v) {
     v.session_id = opt_str(j, "sessionId");
 }
 
+// ---- FocusTargetResult -----------------------------------------------------
+
+void to_json(json& j, const FocusTargetResult& v) {
+    j = json{{"ok", v.ok}, {"message", v.message}};
+}
+void from_json(const json& j, FocusTargetResult& v) {
+    v.ok = get_or<bool>(j, "ok", false);
+    v.message = get_or<std::string>(j, "message", "");
+}
+
 }  // namespace snapback
+

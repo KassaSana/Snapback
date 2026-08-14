@@ -169,19 +169,25 @@ add_library(snapback_app STATIC
 )
 target_include_directories(snapback_app PUBLIC src)
 target_link_libraries(snapback_app PUBLIC snapback_core snapback_capture)
-if(APPLE)
+if(WIN32)
+  target_sources(snapback_app PRIVATE src/snapback/focus_window_windows.cpp)
+elseif(APPLE)
   # ROADMAP 7.6: the file-manager backend is AppKit, so macOS needs the Objective-C++ half.
   # It lives in the library (not the app target like the tray/overlay) because it has no
   # singleton and no window — the tests link it and exercise its refusal paths.
   target_sources(snapback_app PRIVATE
     src/app/open_url_macos.mm
-    src/app/reveal_path_macos.mm)
+    src/app/reveal_path_macos.mm
+    src/snapback/focus_window_macos.mm)
   set_source_files_properties(
-    src/app/open_url_macos.mm src/app/reveal_path_macos.mm
+    src/app/open_url_macos.mm src/app/reveal_path_macos.mm src/snapback/focus_window_macos.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++")
   target_link_libraries(snapback_app PUBLIC "-framework AppKit")
+else()
+  target_sources(snapback_app PRIVATE src/snapback/focus_window_stub.cpp)
 endif()
 target_compile_definitions(snapback_app PUBLIC SNAPBACK_VERSION=\"${PROJECT_VERSION}\")
+
 
 # --- tests (doctest) ---
 enable_testing()

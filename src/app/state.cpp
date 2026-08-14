@@ -20,6 +20,7 @@
 #include "engine/app_context.hpp"
 #include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
+#include "snapback/focus_window.hpp"
 
 namespace snapback {
 namespace {
@@ -828,6 +829,28 @@ void AppState::dismiss_snapback() {
     context_tracker_.dismiss_recovery(last_event_secs_);
     live_read_dirty_ = true;
     publish_live_read_unlocked();
+}
+
+FocusTargetResult AppState::restore_snapback_target() {
+    std::string app_name;
+    std::string window_title;
+    {
+        std::lock_guard lock(mutex_);
+        if (latest_snapback_) {
+            app_name = latest_snapback_->app_name;
+            window_title = latest_snapback_->window_title;
+        }
+        latest_snapback_.reset();
+        context_tracker_.dismiss_recovery(last_event_secs_);
+        live_read_dirty_ = true;
+        publish_live_read_unlocked();
+    }
+
+    if (app_name.empty() && window_title.empty()) {
+        return FocusTargetResult{false, "No active snapback context to restore"};
+    }
+
+    return focus_window(app_name, window_title);
 }
 
 SessionRecap AppState::session_recap(const std::string& session_id) {

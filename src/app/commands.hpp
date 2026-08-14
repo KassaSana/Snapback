@@ -303,6 +303,12 @@ inline void register_commands(webview::webview& w, AppState& state,
         Overlay::instance().dismiss();
         return json(nullptr);
     });
+    bind_cmd("restore_snapback_target", [&state](const json&) {
+        auto res = state.restore_snapback_target();
+        Overlay::instance().dismiss();
+        return json(res);
+    });
+
 
     // --- App rules (allow/block overrides) ---
     bind_cmd("get_app_rules", [&state](const json&) { return json(state.app_rules()); });
