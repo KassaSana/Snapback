@@ -101,11 +101,61 @@ export function lastSessionGoal(history: SessionSummary[]): RecentGoal | null {
   return recentGoals(history, 1)[0] ?? null;
 }
 
+export type GoalSuggestion = {
+  goal: string;
+  focusMode: FocusMode;
+  source: "pinned" | "recent";
+};
+
+/**
+ * Filters and ranks goal suggestions from pinned presets and recent history against a typed query.
+ * Pinned presets take precedence, followed by distinct recent goals.
+ */
+export function filterGoalSuggestions(
+  recent: RecentGoal[],
+  presets: SessionPreset[],
+  query = "",
+  limit = 6,
+): GoalSuggestion[] {
+  const q = query.trim().toLowerCase();
+  const seen = new Set<string>();
+  const out: GoalSuggestion[] = [];
+
+  // Pinned presets first
+  for (const preset of presets ?? []) {
+    const goal = preset.goal.trim();
+    if (!goal) continue;
+    const key = goal.toLowerCase();
+    if (seen.has(key)) continue;
+    if (!q || key.includes(q)) {
+      seen.add(key);
+      out.push({ goal, focusMode: preset.focusMode, source: "pinned" });
+      if (out.length >= limit) return out;
+    }
+  }
+
+  // Recent goals next
+  for (const item of recent ?? []) {
+    const goal = item.goal.trim();
+    if (!goal) continue;
+    const key = goal.toLowerCase();
+    if (seen.has(key)) continue;
+    if (!q || key.includes(q)) {
+      seen.add(key);
+      out.push({ goal, focusMode: item.focusMode, source: "recent" });
+      if (out.length >= limit) return out;
+    }
+  }
+
+  return out;
+}
+
 export type SessionPreset = {
   id: string;
   goal: string;
   focusMode: FocusMode;
 };
+
 
 export const SESSION_PRESETS_KEY = "snapback.sessionPresets";
 

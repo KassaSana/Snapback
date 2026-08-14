@@ -6,7 +6,9 @@ import {
   addSessionPreset,
   canStartSession,
   canStopSession,
+  filterGoalSuggestions,
   formatElapsed,
+
   lastSessionGoal,
   moveSessionPreset,
   normalizeFocusMode,
@@ -227,4 +229,57 @@ assert.equal(canStopSession(active, true), false, "pending request cannot re-sto
 assert.equal(canStopSession(done, false), false, "a finished session cannot be stopped again");
 assert.equal(canStopSession(null, false), false, "no session, nothing to stop");
 
+// ---------------------------------------------------------------------------
+// Goal suggestions (Roadmap 2.15).
+// ---------------------------------------------------------------------------
+
+{
+  const recent = [
+    { goal: "Review PRs", focusMode: "normal" as const },
+    { goal: "Debug auth service", focusMode: "deep" as const },
+    { goal: "Write documentation", focusMode: "recovery" as const },
+  ];
+  const presets: SessionPreset[] = [
+    { id: "p1", goal: "Ship the overlay", focusMode: "deep" as const },
+    { id: "p2", goal: "Review PRs", focusMode: "deep" as const },
+  ];
+
+  // Empty query returns pinned presets first, followed by distinct recent goals.
+  const allSuggestions = filterGoalSuggestions(recent, presets, "");
+  assert.equal(allSuggestions.length, 4);
+  assert.deepEqual(allSuggestions[0], {
+    goal: "Ship the overlay",
+    focusMode: "deep",
+    source: "pinned",
+  });
+  assert.deepEqual(allSuggestions[1], {
+    goal: "Review PRs",
+    focusMode: "deep",
+    source: "pinned",
+  });
+  assert.deepEqual(allSuggestions[2], {
+    goal: "Debug auth service",
+    focusMode: "deep",
+    source: "recent",
+  });
+  assert.deepEqual(allSuggestions[3], {
+    goal: "Write documentation",
+    focusMode: "recovery",
+    source: "recent",
+  });
+
+  // Query filter matches substring case-insensitively
+  const authMatches = filterGoalSuggestions(recent, presets, "auth");
+  assert.equal(authMatches.length, 1);
+  assert.equal(authMatches[0].goal, "Debug auth service");
+
+  const reviewMatches = filterGoalSuggestions(recent, presets, "review");
+  assert.equal(reviewMatches.length, 1);
+  assert.equal(reviewMatches[0].source, "pinned"); // Pinned deduplicates against recent
+
+  // Limit bounds result count
+  assert.equal(filterGoalSuggestions(recent, presets, "", 2).length, 2);
+}
+
 console.log("sessionCockpit.test.ts passed");
+

@@ -335,4 +335,41 @@ describe("session cockpit", () => {
       }),
     );
   });
+
+  it("navigates and selects goal suggestions via keyboard and mouse", async () => {
+    boundary.state.history = [
+      historyRow("Ship the overlay", "deep"),
+      historyRow("Answer email", "normal"),
+    ];
+
+    render(<App />);
+    const card = await sessionCard();
+    const input = goalField();
+
+    // Focusing the input opens suggestions
+    fireEvent.focus(input);
+    const dropdown = await within(card).findByRole("listbox", { name: "Suggested goals" });
+    expect(dropdown).toBeInTheDocument();
+
+    const options = within(dropdown).getAllByRole("option");
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveTextContent("Ship the overlay");
+
+    // Arrow down highlights the first suggestion
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+
+    // Enter applies the highlighted suggestion
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("Ship the overlay");
+    expect((screen.getByLabelText("Focus mode") as HTMLSelectElement).value).toBe("deep");
+
+    // Clicking a suggestion item directly
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "Ans" } });
+    const emailOption = await within(card).findByRole("option", { name: /Answer email/i });
+    fireEvent.mouseDown(emailOption);
+    expect(input).toHaveValue("Answer email");
+  });
 });
+

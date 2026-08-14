@@ -17,7 +17,12 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **Interactive goal history dropdown & auto-complete (2.15).** Starting focus sessions now provides
+  an interactive auto-complete suggestions dropdown anchored to the goal input with full keyboard
+  navigation (`↑`, `↓`, `Enter`, `Escape`) and click selection. Pinned presets and distinct recent
+  goals are ranked and filtered in real time, automatically preserving each goal's preferred focus mode.
 - **Close-to-tray desktop lifecycle (9.15).** Closing the main window (`X` or Alt+F4 on Windows,
+
   `windowShouldClose:` on macOS) now hides the window to the system tray rather than killing the
   process. Background input capture, focus tracking, active sessions, and tray controls remain
   active. Clean termination occurs exclusively when selecting "Quit Snapback" from the tray menu.

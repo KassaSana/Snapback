@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 import { formatTime, type SessionRecord } from "./api";
 import {
@@ -6,6 +6,7 @@ import {
   addSessionPreset,
   canStartSession,
   canStopSession,
+  filterGoalSuggestions,
   formatElapsed,
   moveSessionPreset,
   readSessionPresets,
@@ -16,6 +17,7 @@ import {
   type RecentGoal,
   type SessionPreset,
 } from "./sessionCockpit";
+
 
 type SessionControlCardProps = {
   focusMode: FocusMode;
@@ -64,6 +66,13 @@ export const SessionControlCard = memo(function SessionControlCard({
   const [pristine, setPristine] = useState(true);
   const [presets, setPresets] = useState<SessionPreset[]>(() => readSessionPresets());
   const [switching, setSwitching] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+
+  const suggestions = useMemo(
+    () => filterGoalSuggestions(recentGoals, presets, sessionGoal),
+    [recentGoals, presets, sessionGoal],
+  );
 
   const sessionActive = sessionRecord?.status === "ACTIVE";
   const validation = validateSessionGoal(sessionGoal, pristine);
@@ -95,6 +104,31 @@ export const SessionControlCard = memo(function SessionControlCard({
     setPristine(false);
     setSessionGoal(goal);
     handleFocusModeChange(mode);
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleGoalKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (suggestions.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setShowSuggestions(true);
+      setHighlightedIndex((prev) => (prev + 1) % suggestions.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setShowSuggestions(true);
+      setHighlightedIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+    } else if (event.key === "Enter" && showSuggestions && highlightedIndex >= 0) {
+      const selected = suggestions[highlightedIndex];
+      if (selected) {
+        event.preventDefault();
+        applyGoal(selected.goal, selected.focusMode);
+      }
+    } else if (event.key === "Escape") {
+      setShowSuggestions(false);
+      setHighlightedIndex(-1);
+    }
   };
 
   const onSubmit = (event: React.FormEvent) => {
@@ -102,12 +136,15 @@ export const SessionControlCard = memo(function SessionControlCard({
     // nothing and the user learns the form is inert.
     event.preventDefault();
     setPristine(false);
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
     if (switching) {
       if (switchable) handleSwitchSession();
       return;
     }
     if (startable) handleStartSession();
   };
+
 
   return (
     <section className="card session-card">
@@ -179,19 +216,63 @@ export const SessionControlCard = memo(function SessionControlCard({
         <form onSubmit={onSubmit}>
           <label className="field">
             <span>Focus goal</span>
-            <input
-              type="text"
-              placeholder="Ship the snapback overlay"
-              value={sessionGoal}
-              onChange={(event) => {
-                setPristine(false);
-                setSessionGoal(event.target.value);
-              }}
-              aria-invalid={Boolean(validation.message)}
-              aria-describedby={validation.message ? "session-goal-error" : undefined}
-              disabled={sessionPending}
-            />
+            <div className="goal-input-wrapper">
+              <input
+                type="text"
+                placeholder="Ship the snapback overlay"
+                value={sessionGoal}
+                onChange={(event) => {
+                  setPristine(false);
+                  setSessionGoal(event.target.value);
+                  setShowSuggestions(true);
+                  setHighlightedIndex(-1);
+                }}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestions(true);
+                }}
+                onBlur={(event) => {
+                  if (!event.currentTarget.parentElement?.contains(event.relatedTarget)) {
+                    setShowSuggestions(false);
+                    setHighlightedIndex(-1);
+                  }
+                }}
+                onKeyDown={handleGoalKeyDown}
+                aria-invalid={Boolean(validation.message)}
+                aria-describedby={validation.message ? "session-goal-error" : undefined}
+                aria-autocomplete="list"
+                aria-controls="goal-suggestions-list"
+                disabled={sessionPending}
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <ul
+                  id="goal-suggestions-list"
+                  className="goal-suggestions-dropdown"
+                  role="listbox"
+                  aria-label="Suggested goals"
+                >
+                  {suggestions.map((suggestion, index) => (
+                    <li
+                      key={`${suggestion.source}-${suggestion.goal}`}
+                      id={`goal-suggestion-${index}`}
+                      role="option"
+                      aria-selected={index === highlightedIndex}
+                      className={`goal-suggestion-item ${index === highlightedIndex ? "is-highlighted" : ""}`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyGoal(suggestion.goal, suggestion.focusMode);
+                      }}
+                    >
+                      <span className="suggestion-goal-text">{suggestion.goal}</span>
+                      <span className="suggestion-meta-badge">
+                        {suggestion.source === "pinned" ? "Pinned" : "Recent"} · {suggestion.focusMode}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </label>
+
           {validation.message && (
             <p className="helper-text helper-error" id="session-goal-error" role="alert">
               {validation.message}
