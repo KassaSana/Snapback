@@ -19,6 +19,7 @@ type Props = {
   status: string | null;
   warning: boolean;
   setPath: (value: string) => void;
+  onBrowse?: () => void;
   onInspect: () => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -33,6 +34,7 @@ export const DataImportCard = memo(function DataImportCard({
   status,
   warning,
   setPath,
+  onBrowse,
   onInspect,
   onConfirm,
   onCancel,
@@ -81,15 +83,28 @@ export const DataImportCard = memo(function DataImportCard({
           </label>
 
           {!candidate?.acceptable && (
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onInspect}
-              disabled={busy || path.trim().length === 0}
-            >
-              Check this file
-            </button>
+            <div className="button-row">
+              {onBrowse && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={onBrowse}
+                  disabled={busy}
+                >
+                  Browse...
+                </button>
+              )}
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={onInspect}
+                disabled={busy || path.trim().length === 0}
+              >
+                Check this file
+              </button>
+            </div>
           )}
+
 
           {candidate?.acceptable && (
             <div className="notice notice-untracked" role="status">

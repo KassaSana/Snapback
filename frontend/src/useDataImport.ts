@@ -100,7 +100,44 @@ export const useDataImport = () => {
     setWarning(false);
   }, []);
 
+  const browseAndInspect = useCallback(async () => {
+    if (busy) return;
+    try {
+      const picked = await api.pickOpenFile({
+        title: "Select Snapback Database to Import",
+        filters: [
+          { name: "SQLite Database (*.db)", pattern: "*.db" },
+          { name: "All Files (*.*)", pattern: "*.*" },
+        ],
+      });
+      if (picked && picked.ok && picked.path) {
+        setPath(picked.path);
+        setBusy(true);
+        setStatus(null);
+        try {
+          const result = await api.inspectDataImport(picked.path);
+          setCandidate(result);
+          if (!result.acceptable) {
+            setStatus(result.message);
+            setWarning(true);
+          } else {
+            setWarning(false);
+          }
+        } catch {
+          setCandidate(null);
+          setStatus("Could not read that file.");
+          setWarning(true);
+        } finally {
+          setBusy(false);
+        }
+      }
+    } catch {
+      // Best-effort; user cancellation or unhandled dialog error
+    }
+  }, [busy]);
+
   return {
+    browseAndInspect,
     busy,
     cancel,
     candidate,
@@ -115,3 +152,4 @@ export const useDataImport = () => {
     warning,
   };
 };
+

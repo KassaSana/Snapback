@@ -573,6 +573,27 @@ struct FocusTargetResult {
     std::string message;
 };
 
+// FileDialog types — Roadmap 10.14.
+struct FileDialogFilter {
+    std::string name;
+    std::string pattern;
+};
+
+struct FileDialogOptions {
+    std::string title;
+    std::string default_path;
+    std::string default_name;
+    std::vector<FileDialogFilter> filters;
+};
+
+struct FileDialogResult {
+    bool ok{false};
+    bool cancelled{false};
+    std::string path;
+    std::string message;
+};
+
+
 // ---------------------------------------------------------------------------
 // JSON (de)serialization — camelCase keys. Defined in types.cpp.
 // ---------------------------------------------------------------------------
@@ -638,5 +659,12 @@ void to_json(json& j, const LabelHotkeyPayload& v);
 void from_json(const json& j, LabelHotkeyPayload& v);
 void to_json(json& j, const FocusTargetResult& v);
 void from_json(const json& j, FocusTargetResult& v);
+void to_json(json& j, const FileDialogFilter& v);
+void from_json(const json& j, FileDialogFilter& v);
+void to_json(json& j, const FileDialogOptions& v);
+void from_json(const json& j, FileDialogOptions& v);
+void to_json(json& j, const FileDialogResult& v);
+void from_json(const json& j, FileDialogResult& v);
 
 }  // namespace snapback
+

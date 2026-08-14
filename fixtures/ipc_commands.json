@@ -28,7 +28,10 @@
   "delete_session",
   "open_data_folder",
   "open_external_url",
+  "pick_open_file",
+  "pick_save_file",
   "get_autostart",
+
   "set_autostart",
   "set_focus_mode",
   "set_idle_threshold",

@@ -30,7 +30,12 @@ const boundary = vi.hoisted(() => {
         return { private_mode: false, excluded_apps: [] };
       case "inspect_data_import":
         return state.inspect;
+      case "pick_open_file":
+        return { ok: true, cancelled: false, path: "C:/backups/focoflow.db", message: "" };
+      case "pick_save_file":
+        return { ok: true, cancelled: false, path: "C:/backups/export.md", message: "" };
       case "stage_data_import":
+
         if (state.stage.ok) state.pending = true;
         return state.stage;
       case "cancel_data_import":
@@ -230,4 +235,28 @@ describe("data import", () => {
     expect(await within(card).findByText(/nothing was changed/)).toBeInTheDocument();
     expect(within(card).queryByText(/An import is waiting/)).toBeNull();
   });
+
+  it("browses for database file and inspects it automatically", async () => {
+    renderApp("settings", "privacy");
+    const card = await importCard();
+
+    fireEvent.click(within(card).getByRole("button", { name: "Browse..." }));
+
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("pick_open_file", {
+      options: {
+        title: "Select Snapback Database to Import",
+        filters: [
+          { name: "SQLite Database (*.db)", pattern: "*.db" },
+          { name: "All Files (*.*)", pattern: "*.*" },
+        ],
+      },
+    }));
+
+    // The picked path is set into input and inspected automatically
+    expect(within(card).getByLabelText("Database file")).toHaveValue("C:/backups/focoflow.db");
+    const notice = await within(card).findByRole("status");
+    expect(notice).toHaveTextContent("42");
+  });
 });
+
+

@@ -741,11 +741,13 @@ export default function App() {
               status={dataImport.status}
               warning={dataImport.warning}
               setPath={dataImport.setPath}
+              onBrowse={dataImport.browseAndInspect}
               onInspect={dataImport.inspect}
               onConfirm={dataImport.confirm}
               onCancel={dataImport.cancel}
               onDismissCandidate={dataImport.dismissCandidate}
             />
+
 
             <PermissionsCard
               captureEventsDropped={captureEventsDropped}

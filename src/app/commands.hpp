@@ -16,6 +16,7 @@
 #include "app/autostart.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
 #include "app/data_import.hpp"
+#include "app/file_dialog.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/open_url.hpp"
 #include "app/reveal_path.hpp"
@@ -269,6 +270,21 @@ inline void register_commands(webview::webview& w, AppState& state,
         }
         return json{{"supported", open_external_url_supported()},
                     {"opened", open_external_url(url)}};
+    });
+    // Roadmap 10.14. Native OS file pickers for import and export.
+    bind_cmd("pick_open_file", [](const json& a) {
+        FileDialogOptions options{};
+        if (a.contains("options") && !a.at("options").is_null()) {
+            options = a.at("options").get<FileDialogOptions>();
+        }
+        return json(pick_open_file(options));
+    });
+    bind_cmd("pick_save_file", [](const json& a) {
+        FileDialogOptions options{};
+        if (a.contains("options") && !a.at("options").is_null()) {
+            options = a.at("options").get<FileDialogOptions>();
+        }
+        return json(pick_save_file(options));
     });
     bind_cmd("get_goal_categories", [&state](const json&) {
         return json(state.goal_categories());

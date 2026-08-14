@@ -646,5 +646,42 @@ void from_json(const json& j, FocusTargetResult& v) {
     v.message = get_or<std::string>(j, "message", "");
 }
 
+// ---- FileDialog ------------------------------------------------------------
+
+void to_json(json& j, const FileDialogFilter& v) {
+    j = json{{"name", v.name}, {"pattern", v.pattern}};
+}
+void from_json(const json& j, FileDialogFilter& v) {
+    v.name = get_or<std::string>(j, "name", "");
+    v.pattern = get_or<std::string>(j, "pattern", "");
+}
+
+void to_json(json& j, const FileDialogOptions& v) {
+    j = json{{"title", v.title},
+             {"defaultPath", v.default_path},
+             {"defaultName", v.default_name},
+             {"filters", v.filters}};
+}
+void from_json(const json& j, FileDialogOptions& v) {
+    v.title = get_or<std::string>(j, "title", "");
+    v.default_path = get_or<std::string>(j, "defaultPath", "");
+    v.default_name = get_or<std::string>(j, "defaultName", "");
+    v.filters = get_or<std::vector<FileDialogFilter>>(j, "filters", {});
+}
+
+void to_json(json& j, const FileDialogResult& v) {
+    j = json{{"ok", v.ok},
+             {"cancelled", v.cancelled},
+             {"path", v.path},
+             {"message", v.message}};
+}
+void from_json(const json& j, FileDialogResult& v) {
+    v.ok = get_or<bool>(j, "ok", false);
+    v.cancelled = get_or<bool>(j, "cancelled", false);
+    v.path = get_or<std::string>(j, "path", "");
+    v.message = get_or<std::string>(j, "message", "");
+}
+
 }  // namespace snapback
+
 

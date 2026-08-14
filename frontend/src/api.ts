@@ -282,6 +282,25 @@ export type FocusTargetResult = {
   message: string;
 };
 
+export type FileDialogFilter = {
+  name: string;
+  pattern: string;
+};
+
+export type FileDialogOptions = {
+  title?: string;
+  defaultPath?: string;
+  defaultName?: string;
+  filters?: FileDialogFilter[];
+};
+
+export type FileDialogResult = {
+  ok: boolean;
+  cancelled: boolean;
+  path: string;
+  message: string;
+};
+
 export type ExportTrainingResult = {
   outputDir: string;
   featuresPath: string;
@@ -621,6 +640,10 @@ export const api = {
   // rather than report a successful delete for a row that no longer existed.
   deleteSession: (sessionId: string) =>
     invoke<boolean>("delete_session", { sessionId }),
+  pickOpenFile: (options?: FileDialogOptions) =>
+    invoke<FileDialogResult>("pick_open_file", { options: options ?? null }),
+  pickSaveFile: (options?: FileDialogOptions) =>
+    invoke<FileDialogResult>("pick_save_file", { options: options ?? null }),
   exportMyData: async () => {
     const raw = await invoke<Record<string, unknown>>("export_my_data");
     return {
