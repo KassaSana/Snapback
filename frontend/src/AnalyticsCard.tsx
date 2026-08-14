@@ -1,6 +1,6 @@
 import { memo } from "react";
 
-import type { AnalyticsSummary } from "./api";
+import type { AnalyticsSummary, AppRuleKind, AppRuleRecord } from "./api";
 import {
   CHART,
   CHART_MAX_SCORE,
@@ -12,14 +12,19 @@ import {
   PRODUCTIVE_SESSIONS_LABEL,
   productiveSessionsHelperText,
 } from "./focusStreak";
+import { getAppRuleForName, ruleKindLabel } from "./useAppRules";
 
 type AnalyticsCardProps = {
   analytics: AnalyticsSummary;
+  appRules?: AppRuleRecord[];
+  onCreateAppRule?: (appName: string, kind: AppRuleKind) => void | Promise<void>;
   rangeLabel: string;
 };
 
 export const AnalyticsCard = memo(function AnalyticsCard({
   analytics,
+  appRules,
+  onCreateAppRule,
   rangeLabel,
 }: AnalyticsCardProps) {
   // Roadmap 10.8. Geometry lives in analyticsChart.ts so it can be tested without a DOM;
@@ -94,10 +99,49 @@ export const AnalyticsCard = memo(function AnalyticsCard({
             Average focus by hour of day, 0–100. Ticks below the line are hours with no data.
           </p>
           <ul className="history-list">
-            {analytics.topApps.length === 0 ? <li className="history-empty">No app context data yet.</li> : analytics.topApps.map((app) => (
-              <li key={app.appName} className="history-item"><span>{app.appName}</span><strong>{contextSampleLabel(app.windowCount)}</strong></li>
-            ))}
+            {analytics.topApps.length === 0 ? (
+              <li className="history-empty">No app context data yet.</li>
+            ) : (
+              analytics.topApps.map((app) => {
+                const rule = appRules ? getAppRuleForName(appRules, app.appName) : undefined;
+                return (
+                  <li key={app.appName} className="history-item top-app-item">
+                    <div className="top-app-info">
+                      <span className="top-app-name">{app.appName}</span>
+                      {rule ? (
+                        <span className={`rules-badge rules-badge-${rule.ruleType}`}>
+                          {ruleKindLabel(rule.ruleType)}
+                        </span>
+                      ) : (
+                        onCreateAppRule && (
+                          <div className="timeline-quick-rules">
+                            <button
+                              type="button"
+                              className="mini-action-button allow-btn"
+                              title={`Always treat "${app.appName}" as Productive`}
+                              onClick={() => void onCreateAppRule(app.appName, "allow")}
+                            >
+                              + Allow
+                            </button>
+                            <button
+                              type="button"
+                              className="mini-action-button block-btn"
+                              title={`Always treat "${app.appName}" as Distracting`}
+                              onClick={() => void onCreateAppRule(app.appName, "block")}
+                            >
+                              + Block
+                            </button>
+                          </div>
+                        )
+                      )}
+                    </div>
+                    <strong>{contextSampleLabel(app.windowCount)}</strong>
+                  </li>
+                );
+              })
+            )}
           </ul>
+
           <p className="insights-caption">
             Context samples are periodic observations of the focused window, not app switches.
           </p>

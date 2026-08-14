@@ -4,9 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock the native boundary with a stateful rules store so the list round-trips
 // through the real api.ts + useAppRules (add pushes, delete removes, get reads).
 const boundary = vi.hoisted(() => {
-  const state: { health: Record<string, unknown>; rules: Record<string, unknown>[] } = {
+  const state: {
+    activeSession: Record<string, unknown> | null;
+    analytics: Record<string, unknown>;
+    health: Record<string, unknown>;
+    rules: Record<string, unknown>[];
+    timeline: Record<string, unknown>[];
+  } = {
+    activeSession: null,
+    analytics: { avg_focus_score: 80, sample_count: 10, productive_session_streak: 2, hourly: [], top_apps: [] },
     health: {},
     rules: [],
+    timeline: [],
   };
   let nextId = 1;
 
@@ -14,6 +23,8 @@ const boundary = vi.hoisted(() => {
     switch (cmd) {
       case "get_health":
         return state.health;
+      case "get_active_session":
+        return state.activeSession;
       case "get_app_rules":
         return state.rules;
       case "upsert_app_rule": {
@@ -34,7 +45,32 @@ const boundary = vi.hoisted(() => {
         return null;
       }
       case "get_prediction_history":
+        return [];
       case "get_context_timeline":
+        return state.timeline;
+      case "get_analytics":
+        return state.analytics;
+      case "get_session_history":
+        return [];
+      case "get_summary_report":
+        return { total_attended_minutes: 0, session_count: 0 };
+      case "get_focus_summary":
+        return {};
+      case "get_settings":
+        return { default_focus_mode: "normal" };
+      case "get_privacy_settings":
+        return { private_mode: false, excluded_apps: [] };
+      case "get_recording_status":
+        return { state: "recording" };
+      case "get_pomodoro_status":
+        return { enabled: false };
+      case "get_attended_targets":
+        return { daily_target_minutes: null, weekly_target_minutes: null };
+      case "get_autostart_status":
+        return { enabled: false };
+      case "get_diagnostics_snapshot":
+        return { database_size_bytes: 0, log_size_bytes: 0, model_size_bytes: 0 };
+      case "get_goal_categories":
         return [];
       case "get_training_deploy_status":
         return {};
@@ -71,6 +107,9 @@ beforeEach(() => {
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
   boundary.state.rules = [];
+  boundary.state.timeline = [];
+  boundary.state.activeSession = null;
+  boundary.state.analytics = { avg_focus_score: 80, sample_count: 10, productive_session_streak: 2, hourly: [], top_apps: [] };
 });
 
 afterEach(() => {
@@ -127,4 +166,67 @@ describe("App rules add/delete flow", () => {
     );
     await waitFor(() => expect(screen.queryByText("notion")).not.toBeInTheDocument());
   });
+
+  it("creates an allow rule with one click from the context timeline", async () => {
+    boundary.state.activeSession = {
+      session_id: "session-123",
+      goal: "Code review",
+      status: "ACTIVE",
+      focus_mode: "normal",
+      started_at: "2026-08-14T00:00:00Z",
+    };
+    boundary.state.timeline = [
+      {
+        timestamp: "2026-08-14T00:05:00Z",
+        app_name: "Slack",
+        window_title: "team-general - Slack",
+        summary: "Chatting with team",
+      },
+    ];
+
+    renderApp("review");
+    expect(await screen.findByText("Slack")).toBeInTheDocument();
+
+
+    const allowBtn = screen.getByRole("button", { name: "+ Allow" });
+    fireEvent.click(allowBtn);
+
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("upsert_app_rule", {
+        request: {
+          pattern: "Slack",
+          ruleType: "allow",
+          note: "Created from timeline for Slack",
+        },
+      }),
+    );
+  });
+
+  it("creates a block rule with one click from top apps in review", async () => {
+    boundary.state.analytics = {
+      avg_focus_score: 80,
+      sample_count: 10,
+      productive_session_streak: 2,
+      hourly: [],
+      top_apps: [{ app_name: "Steam", window_count: 15 }],
+    };
+
+    renderApp("review");
+    expect(await screen.findByText("Steam")).toBeInTheDocument();
+
+    const blockBtn = screen.getByRole("button", { name: "+ Block" });
+    fireEvent.click(blockBtn);
+
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("upsert_app_rule", {
+        request: {
+          pattern: "Steam",
+          ruleType: "block",
+          note: "Created from timeline for Steam",
+        },
+      }),
+    );
+  });
 });
+
+

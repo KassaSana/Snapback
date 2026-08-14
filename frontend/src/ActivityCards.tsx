@@ -4,21 +4,28 @@ import {
   formatScore,
   formatTime,
   riskLevel,
+  type AppRuleKind,
+  type AppRuleRecord,
   type ContextSnapshot,
   type PredictionRecord,
 } from "./api";
+import { getAppRuleForName, ruleKindLabel } from "./useAppRules";
 
 type ActivityCardsProps = {
+  appRules?: AppRuleRecord[];
   contextTimeline: ContextSnapshot[];
   historyLimit: number;
+  onCreateAppRule?: (appName: string, kind: AppRuleKind) => void | Promise<void>;
   predictionHistory: PredictionRecord[];
   refreshContextTimeline: (sessionId: string) => void | Promise<void>;
   sessionId: string | null;
 };
 
 export function ActivityCards({
+  appRules,
   contextTimeline,
   historyLimit,
+  onCreateAppRule,
   predictionHistory,
   refreshContextTimeline,
   sessionId,
@@ -74,23 +81,55 @@ export function ActivityCards({
               {contextTimeline.length === 0 ? (
                 <li className="timeline-empty">No context snapshots yet.</li>
               ) : (
-                contextTimeline.map((entry, index) => (
-                  <li
-                    key={`${entry.timestamp}-${entry.appName}-${index}`}
-                    className="timeline-item"
-                  >
-                    <div className="timeline-marker" aria-hidden="true" />
-                    <div className="timeline-body">
-                      <p className="timeline-time">{formatTime(entry.timestamp)}</p>
-                      <p className="timeline-summary">{entry.summary || entry.windowTitle}</p>
-                      <p className="timeline-meta">
-                        {entry.appName}
-                        {entry.fileHint ? ` · ${entry.fileHint}` : ""}
-                        {entry.projectHint ? ` · ${entry.projectHint}` : ""}
-                      </p>
-                    </div>
-                  </li>
-                ))
+                contextTimeline.map((entry, index) => {
+                  const rule = appRules ? getAppRuleForName(appRules, entry.appName) : undefined;
+                  return (
+                    <li
+                      key={`${entry.timestamp}-${entry.appName}-${index}`}
+                      className="timeline-item"
+                    >
+                      <div className="timeline-marker" aria-hidden="true" />
+                      <div className="timeline-body">
+                        <div className="timeline-header-row">
+                          <p className="timeline-time">{formatTime(entry.timestamp)}</p>
+                          {rule && (
+                            <span className={`rules-badge rules-badge-${rule.ruleType}`}>
+                              {ruleKindLabel(rule.ruleType)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="timeline-summary">{entry.summary || entry.windowTitle}</p>
+                        <div className="timeline-meta-row">
+                          <p className="timeline-meta">
+                            {entry.appName}
+                            {entry.fileHint ? ` · ${entry.fileHint}` : ""}
+                            {entry.projectHint ? ` · ${entry.projectHint}` : ""}
+                          </p>
+                          {!rule && onCreateAppRule && entry.appName && (
+                            <div className="timeline-quick-rules">
+                              <button
+                                type="button"
+                                className="mini-action-button allow-btn"
+                                title={`Always treat "${entry.appName}" as Productive`}
+                                onClick={() => void onCreateAppRule(entry.appName, "allow")}
+                              >
+                                + Allow
+                              </button>
+                              <button
+                                type="button"
+                                className="mini-action-button block-btn"
+                                title={`Always treat "${entry.appName}" as Distracting`}
+                                onClick={() => void onCreateAppRule(entry.appName, "block")}
+                              >
+                                + Block
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })
               )}
             </ol>
           </>
@@ -99,3 +138,4 @@ export function ActivityCards({
     </>
   );
 }
+

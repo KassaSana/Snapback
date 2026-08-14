@@ -17,7 +17,17 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **One-click contextual app rules from timeline and top apps (2.18).** Creating an Allow (Always
+  productive) or Block (Always distracting) override rule no longer requires switching to Settings
+  and typing process names into a text input. The Context Timeline on Now and the Top Apps breakdown
+  on Review show one-click `+ Allow` and `+ Block` action buttons beside observed apps, and display
+  active status badges for apps that already match an established rule.
+- **Native OS file dialogs for export and import (10.14).** Restoring a `focoflow.db` database
+  now supports a native **Browse...** button using Win32 Common Dialogs on Windows and AppKit
+  panels on macOS, rather than requiring users to manually type raw filesystem paths. Non-throwing
+  cancellation semantics return a clean cancellation result when dismissed.
 - **Planned-versus-actual attended time on Review (2.19).** The Summary card for the shared
+
   Review range now leads with attended minutes from durable session spans, and — when a daily
   or weekly target applies — the planned total and percentage. Longer ranges still show
   attended time without inventing a prorated plan. Targets stay editable on Now.

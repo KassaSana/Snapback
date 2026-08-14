@@ -272,6 +272,7 @@ export default function App() {
   const {
     appRules,
     handleAddAppRule,
+    handleCreateQuickRule,
     handleDeleteAppRule,
     refreshAppRules,
     ruleKind,
@@ -285,6 +286,7 @@ export default function App() {
     setRuleNote,
     setRulePattern,
   } = useAppRules();
+
 
   // Deleting one session (Roadmap 7.6) invalidates less than deleting everything, but it is
   // not local to the Insights card: the aggregates on other surfaces counted that session's
@@ -596,7 +598,12 @@ export default function App() {
           sessionHistory={sessionHistory}
         />
 
-        <AnalyticsCard analytics={analytics} rangeLabel={reviewRangeLabelText} />
+        <AnalyticsCard
+          analytics={analytics}
+          appRules={appRules}
+          onCreateAppRule={handleCreateQuickRule}
+          rangeLabel={reviewRangeLabelText}
+        />
 
         <SummaryCard
           exportStatus={exportStatus}
@@ -619,12 +626,16 @@ export default function App() {
         />
 
         <ActivityCards
+          appRules={appRules}
           contextTimeline={live.contextTimeline}
           historyLimit={HISTORY_LIMIT}
+          onCreateAppRule={handleCreateQuickRule}
           predictionHistory={live.predictionHistory}
           refreshContextTimeline={live.refreshContextTimeline}
           sessionId={sessionId}
         />
+
+
           </>
         )}
 

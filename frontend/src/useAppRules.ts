@@ -7,6 +7,18 @@ export const APP_RULE_KINDS: AppRuleKind[] = ["allow", "block"];
 
 export const ruleKindLabel = (kind: AppRuleKind) => (kind === "allow" ? "Allow" : "Block");
 
+export const getAppRuleForName = (
+  appRules: AppRuleRecord[],
+  appName: string,
+): AppRuleRecord | undefined => {
+  const target = appName.trim().toLowerCase();
+  if (!target) return undefined;
+  return appRules.find((rule) => {
+    const pattern = rule.pattern.trim().toLowerCase();
+    return pattern && (target === pattern || target.includes(pattern));
+  });
+};
+
 export const useAppRules = () => {
   const [appRules, setAppRules] = useState<AppRuleRecord[]>([]);
   const [rulePattern, setRulePattern] = useState("");
@@ -41,6 +53,25 @@ export const useAppRules = () => {
     }
   }, [rulePattern, ruleKind, ruleNote, refreshAppRules]);
 
+  const handleCreateQuickRule = useCallback(
+    async (pattern: string, kind: AppRuleKind, note?: string) => {
+      const trimmed = pattern.trim();
+      if (!trimmed) return;
+      try {
+        const saved = await api.upsertAppRule(
+          trimmed,
+          kind,
+          note?.trim() || `Created from timeline for ${trimmed}`,
+        );
+        await refreshAppRules();
+        setRulesStatus(`Saved ${ruleKindLabel(saved.ruleType).toLowerCase()} rule for "${saved.pattern}".`);
+      } catch {
+        setRulesStatus("Could not save app rule.");
+      }
+    },
+    [refreshAppRules],
+  );
+
   const handleDeleteAppRule = useCallback(async (rule: AppRuleRecord) => {
     try {
       await api.deleteAppRule(rule.id);
@@ -59,6 +90,7 @@ export const useAppRules = () => {
   return {
     appRules,
     handleAddAppRule,
+    handleCreateQuickRule,
     handleDeleteAppRule,
     refreshAppRules,
     ruleKind,
@@ -73,3 +105,4 @@ export const useAppRules = () => {
     setRulePattern,
   };
 };
+
