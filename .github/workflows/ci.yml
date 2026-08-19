@@ -4,12 +4,13 @@ name: CI
 #   - portable core (core + capture + app-lib + tests) on Windows / macOS / Linux
 #   - the same core on Windows with MinGW-w64 GCC, the toolchain 11.8's bug lived in
 #   - AddressSanitizer + UBSan on the manual-memory paths (ring buffer, locks, RAII)
-#   - the ONNX inference backend (vendored runtime + fixture model)
+#   - the ONNX inference backend on Linux (vendored runtime + fixture model)
 #   - the benchmark harness (short smoke run)
 #   - frontend dependency vulnerability audit
 #   - the React frontend (typecheck + tests + build)
 #   - the Windows desktop app (no-launch integration smoke)
-#   - the desktop app link on macOS / Linux (build-only, never launched)
+#   - the desktop app link on Linux (build-only, never launched)
+#   - the desktop app on macOS, built *and launched*, by the GUI smoke job
 #   - docs invariants
 #
 # Anti-hang guarantees: every job has `timeout-minutes`, the riskiest steps have their
@@ -225,42 +226,6 @@ jobs:
   # ONNX backend: vendor the runtime, build with SNAPBACK_ONNX=ON, run tests. The
   # ONNX fixture test loads fixtures/model.onnx and asserts backend() == "onnx".
   # ---------------------------------------------------------------------------
-  onnx-windows:
-    name: ONNX backend / windows
-    runs-on: windows-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # Roadmap 8.9. The version, URL, and expected digest all come from the manifest so a
-      # bump cannot update one and forget another; scripts/check_onnx_pins.py enforces that.
-      - name: Vendor ONNX Runtime
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          $pins = Get-Content third_party/onnxruntime-pins.json -Raw | ConvertFrom-Json
-          $entry = $pins.archives.'win-x64'
-          Invoke-WebRequest -Uri "$($pins.release_url)/$($entry.file)" -OutFile $entry.file
-          # Verify before extracting. This archive is executable code that CMake links into
-          # the test binary, and extraction is what writes attacker-controlled paths to disk.
-          $actual = (Get-FileHash -Path $entry.file -Algorithm SHA256).Hash.ToLower()
-          if ($actual -ne $entry.sha256) {
-            throw "SHA-256 mismatch for $($entry.file): expected $($entry.sha256), got $actual"
-          }
-          Expand-Archive -Path $entry.file -DestinationPath third_party -Force
-          Move-Item "third_party/onnxruntime-win-x64-$($pins.version)" third_party/onnxruntime
-          if (-not (Test-Path third_party/onnxruntime/lib/onnxruntime.dll)) { throw "onnxruntime.dll missing" }
-
-      - name: Configure (ONNX on)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_ONNX=ON
-
-      - name: Build tests
-        run: cmake --build build --config Release --target snapback_tests
-
-      - name: Run CTest (incl. ONNX fixture)
-        run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
-
   onnx-linux:
     name: ONNX backend / linux
     runs-on: ubuntu-latest
@@ -425,14 +390,22 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      # macOS is deliberately absent. `macos-gui-smoke` below runs the identical configure
+      # and build (scripts/gui_smoke_macos.sh) and then launches the result — and a binary
+      # that launched must have linked, so a separate macOS link check proves nothing the
+      # smoke job has not already proved. It cost ~12 of the run's 84 billed minutes at the
+      # x10 macOS multiplier and turned one macOS build break into two red X's.
+      #
+      # Kept as a one-entry matrix rather than inlined so the check keeps the name
+      # "Desktop app build / ubuntu-latest" that branch protection may already require.
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [ubuntu-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       # webview picks webkit2gtk-4.1 first and falls back to 4.0; 4.1 is what
-      # ubuntu-latest ships. macOS uses the system WebKit and needs nothing.
+      # ubuntu-latest ships.
       - name: Install Linux webview dependencies
         if: runner.os == 'Linux'
         run: |
@@ -449,10 +422,12 @@ jobs:
   # ---------------------------------------------------------------------------
   # macOS GUI launch smoke — ADR-0002 release blocker.
   #
-  # desktop-app-build above proves the macOS binary links. It does not prove it
-  # starts, and the two ways it can fail to start are both invisible at link
-  # time: a webview that cannot create its window, and a frontend bundle that
-  # never got copied next to the executable (an empty window, not an error).
+  # This is now the *only* job that builds the macOS app, since it already ran
+  # the same configure and build that desktop-app-build's macOS entry did. It
+  # proves more than linking: the two ways the binary can fail to start are both
+  # invisible at link time — a webview that cannot create its window, and a
+  # frontend bundle that never got copied next to the executable (an empty
+  # window, not an error).
   # scripts/gui_smoke_macos.sh launches the real binary, drives a session
   # start/stop through AppState and SQLite from the UI thread, and requires the
   # run loop to exit on its own.

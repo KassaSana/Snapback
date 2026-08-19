@@ -52,7 +52,7 @@ Windows, macOS, and Linux.
 | `cpp-headless` | CMake + CTest on Windows, macOS, and Linux |
 | `sanitizers` | ASan + UBSan over memory/lifetime-sensitive paths |
 | `thread-sanitizer` | TSan over capture and engine concurrency |
-| `onnx-windows`, `onnx-linux` | Optional ONNX builds and fixture inference |
+| `onnx-linux` | Optional ONNX build and fixture inference. Linux only: the one ONNX-gated test case is a single case, and no shipped build sets `SNAPBACK_ONNX=ON` |
 | `benchmark-smoke` | The replay benchmark builds and runs; the hot-path benchmark and performance thresholds are not covered |
 | `frontend-mock` | Frontend install, typecheck, tests, coverage, and build |
 | `windows-desktop-integration` | Windows demo build and native tests without launching |

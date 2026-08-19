@@ -4390,7 +4390,7 @@ Completed work. Kept for history; further detail lives in the git log.
 - **5.2 — ONNX failure wrote an empty `focus_state`** (`7d4e6f3`) — `OnnxModel::run` returns
   `std::optional`; both `predict` overloads fall back to `predict_heuristic` on `nullopt`. The
   fix lives inside `#if defined(SNAPBACK_ONNX)`, **not compiled in the default build** — only
-  CI's `onnx-windows` job exercises it. The invariant test runs everywhere.
+  CI's `onnx-linux` job exercises it. The invariant test runs everywhere.
 - **5.7 — `Storage::open` swallowed every failure into `nullopt`** (`2bd03c7`) — outer handler
   logs at Error with path and `what()`; the `sqlite3_open` branch reports `sqlite3_errmsg`.
   Guarded by a test that forces a real failure and asserts the reason reaches the logger.

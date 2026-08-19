@@ -30,7 +30,7 @@ not a broken tree.**
 Why the ❌s, concretely:
 
 - **ONNX** expects a vendored runtime at `third_party/onnxruntime` (`CMakeLists.txt:84`).
-  **That directory is not in this repo** — CI's `onnx-windows` / `onnx-linux` jobs vendor
+  **That directory is not in this repo** — CI's `onnx-linux` job vendors
   it as a build step. Turning `SNAPBACK_ONNX=ON` without it is a `FATAL_ERROR` at configure
   time, not a slow build. It is **off by default**, so the normal build never touches it.
 
