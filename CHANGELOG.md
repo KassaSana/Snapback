@@ -252,6 +252,68 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Internal
 
+- **A repository audit for things that mislead a reader, and guards so they cannot come
+  back.** The theme is documentation confident enough to be trusted while being wrong in
+  load-bearing places — the failure mode where sparse docs make you read the code and these
+  docs made you not bother.
+
+  - **`CONTRIBUTING.md` now exists.** The commit-attribution rule was written down in exactly
+    one place, `.cursor/rules/commit-attribution.mdc`, so Cursor knew it and nothing else did.
+    Agent-guidance files are gitignored here by policy, which left a clone with no entry point
+    at all and a 4,555-line roadmap as the only orientation.
+  - **Code citations name a symbol, not a line number.** An audit found 84 line-number
+    citations, a large fraction already pointing at blank lines, a closing brace, or past the
+    end of a 20-line file — the file still exists, so the path guard stayed green while the
+    number drifted. All 84 are converted; `check_doc_symbols.py` fails the build on a bare
+    line number or a symbol that no longer exists. Quoted historical code says "as it stood
+    on `<date>`" instead of carrying a live-looking pointer.
+  - **ADR-0007 says it is not implemented yet.** It is `Accepted` and written in the present
+    tense — "a point in time **is** UTC milliseconds" — while the schema still stores ten TEXT
+    columns and one REAL. It now carries an `## Implementation status` section, and the ADR
+    template and index gained the `Applied:` distinction so an ADR settled ahead of its code
+    cannot read as a description of the tree again.
+  - **Three dead React hooks deleted** — `useInsights`, `useAnalytics`, `useFocusSummary`,
+    superseded by `useReviewWorkflow` and imported by nothing. `useInsights` carried three
+    pieces of design rationale the live file lacked; those comments were ported before it was
+    removed. Deleting them raised measured frontend coverage (79.9% statements against a 76%
+    floor) because the uncovered code left the denominator. Two roadmap items that described
+    them as live were corrected, one of which was scheduling future work on a dead file.
+  - **`VITE_API_BASE` and `frontend/.env.example` deleted.** Nothing read them, and they
+    described an HTTP backend on port 8080 that this project has never had, in the first file
+    a reader opens to learn how to configure the frontend.
+  - **New guards, all with a negative test:** `check_doc_symbols.py`,
+    `check_unit_test_wiring.py` (every `frontend/tests/*.test.ts` must appear in the
+    hand-chained `test:unit`, so a new test file cannot be silently unrun),
+    `check_no_bom.py`, and `check_scripts_documented.py`. `check_doc_paths.py` now walks
+    `docs/` recursively rather than listing two directories by hand — the hand-written version
+    had never opened `docs/scratch/`, which is where 27 of the worst citations were sitting.
+    It also covers `frontend/README.md` now, which immediately surfaced that the file used
+    `src/` to mean two different directories in adjacent sentences.
+  - **Documentation corrected against reality:** the CI job table was missing `windows-gcc`
+    and now matches `ci.yml` exactly; `scripts/README.md` was missing five scripts that CI
+    runs as gates; `docs/ARCHITECTURE.md` gained a glossary for the five different types
+    called a "summary" and a table for the two JSON boundaries, which do not share a casing
+    convention.
+  - **Version and count literals that rot are gone.** "361 commits ahead" had been wrong for
+    94 commits; the packaging and validation scripts no longer hardcode
+    `Snapback-0.2.0-win64.zip` and discover the built ZIP instead.
+  - **Removed:** UTF-8 BOMs from five files, two stray blank lines from
+    `fixtures/ipc_commands.json`, and the unused `event`/`id` fields from the host-to-frontend
+    event envelope — Tauri's envelope shape, carried across the IPC boundary long after the
+    port, read by nothing.
+  - `docs/scratch/decision-a.md` deleted: session notes that `docs/README.md`'s own rule
+    forbids, whose content was superseded by ADR-0004 and whose claims had gone stale.
+
+- **A formatter and a static-analysis config, without reformatting the tree (4.12).**
+  `.clang-format`, `.clang-tidy`, `frontend/eslint.config.js`, and
+  `frontend/prettier.config.js`, every value measured against the existing code rather than
+  chosen. CI enforces formatting on **added** files and reports it on pre-existing ones: "format
+  what you touch" collapses on a large legacy file, where a one-line edit to `App.tsx` would
+  demand a 606-line reflow or a red build. ESLint runs in CI and is error-clean; the eleven
+  genuinely unused imports it found were removed. `CMAKE_EXPORT_COMPILE_COMMANDS` is on so
+  clangd and clang-tidy read the same flags as the build. CI does not run `clang-tidy` yet,
+  and the file says so rather than implying otherwise.
+
 - **A `commit-msg` hook removes AI attribution before the commit exists.**
   `check_commit_attribution.py` already rejected those trailers, but only in CI — by which
   point fixing one means rewriting history and invalidating every downstream SHA. The hook
@@ -292,7 +354,10 @@ on `v0.2.0` at the bottom before cutting one.
 
 A `v0.2.0` tag exists and points at commit `ba4050f`, but **that commit is not reachable from
 `master` or any other branch** — history was rewritten underneath it, leaving the tag
-orphaned. `master` is 361 commits ahead of it and still declares version `0.2.0`.
+orphaned. `master` has moved hundreds of commits past it and still declares version
+`0.2.0`. (`git rev-list --count v0.2.0..master` gives the exact figure; it is deliberately
+not written down here, because a number that changes with every commit is wrong the moment
+it is committed -- this one sat at "361" for 94 commits.)
 
 It is recorded here so the gap is visible rather than mysterious, not because it describes
 shipped software. Before cutting a real release: bump `project(... VERSION …)`, then tag the
