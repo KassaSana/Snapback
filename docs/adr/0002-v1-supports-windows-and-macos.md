@@ -77,7 +77,7 @@ settling before 3.1 starts. Recorded here rather than assumed.
 
 > **Correction, 2026-07-25 — this sub-decision was stated on a false premise.** The
 > sentence "Toasts already work" was written into a macOS-scoped paragraph and is **not
-> true on macOS.** All three notification call sites (`src/main.cpp:213`, `:224`, `:249`)
+> true on macOS.** All three notification call sites (`src/main.cpp:main`)
 > go through `Tray::instance().show_notification()`, and on macOS that resolves to
 > `NoopTray::show_notification()`, which **returns `false` without ever calling the OS**
 > (`src/app/tray_stub.cpp`). Toasts work on Windows only. What exists cross-platform is the

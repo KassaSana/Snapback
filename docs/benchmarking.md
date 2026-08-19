@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_benchmarks.ps1 -Minutes 4
 
 The script configures CMake with `SNAPBACK_BUILD_BENCHMARKS=ON`, builds
 `snapback_benchmarks`, and runs it. It passes the trace length through the
-`SNAPBACK_BENCH_MINUTES` environment variable (`scripts/run_benchmarks.ps1:38`), so on a
+`SNAPBACK_BENCH_MINUTES` environment variable (`scripts/run_benchmarks.ps1:SNAPBACK_BENCH_MINUTES`), so on a
 non-Windows host you can skip the script entirely:
 
 ```sh

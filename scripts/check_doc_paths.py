@@ -8,7 +8,8 @@ mechanical.
 What it checks, for every `*.md` under `docs/` plus the tracked root/readme files:
 
   * inline-code paths -- `src/app/state.cpp`, `scripts/test_local.ps1`, `frontend/dist`
-  * the same with a `:123` line suffix, which we use a lot
+  * the same with a `:symbol` anchor -- `state.cpp:health`. That the *symbol* still exists
+    is `check_doc_symbols.py`'s job; this one only has to reach the file.
   * relative markdown links -- [text](adr/README.md)
 
 Deliberately NOT checked:
@@ -40,8 +41,14 @@ ROOTS = ("src/", "tests/", "docs/", "scripts/", "frontend/", "tools/", "benchmar
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCED_BLOCK = re.compile(r"```.*?```", re.S)
-# `src/app/state.cpp:161` or `state.hpp:161` -- strip the line number.
-LINE_SUFFIX = re.compile(r":\d+(-\d+)?$")
+# Strip the anchor off `src/app/state.cpp:health` or `storage.hpp:kSchemaVersion` so what is
+# left is a path this script can look for.
+#
+# Both forms are accepted here, but only one is legal in a doc. Line numbers rot silently --
+# the file keeps existing, so this guard stays quiet while the number drifts onto unrelated
+# code -- which is why citations name a symbol instead. `check_doc_symbols.py` is what rejects
+# a leftover line number and what proves the symbol is still there.
+LINE_SUFFIX = re.compile(r":(?:\d+(?:-\d+)?|[A-Za-z_][A-Za-z0-9_:~]*)$")
 # ADR filenames are written as a naming convention, not a claim that a file exists.
 PLACEHOLDER = re.compile(r"NNNN")
 
@@ -67,6 +74,9 @@ EXPECTED_ABSENT = {
     "third_party/onnxruntime/lib": "same -- the lib subdir docs tell you to populate",
     "third_party/sqlite/": "optional vendored SQLite override; docs say it is not checked in",
     "docs/TODO.md": "deleted 2026-07-20; ROADMAP.md names it to say so",
+    "docs/scratch/": "deleted 2026-08-19; a session-notes directory that went stale and "
+                     "contradicted the accepted ADR. CONTRIBUTING.md names it to say why "
+                     "notes like that do not belong in the tree",
     "frontend/public/snapback.html": "deleted 2026-08-05 by ROADMAP 8.10 — a pre-3.1 webview "
                                      "overlay nothing loaded, which shipped in every build "
                                      "and fetched webfonts; the item names it to say so",
@@ -176,12 +186,19 @@ def main() -> int:
             print(f"  {problem}")
         return 1
 
-    docs = [os.path.join("docs", f) for f in sorted(os.listdir(os.path.join(REPO, "docs")))
-            if f.endswith(".md")]
-    docs += [os.path.join("docs", "adr", f)
-             for f in sorted(os.listdir(os.path.join(REPO, "docs", "adr")))
-             if f.endswith(".md")]
-    docs += ["README.md", os.path.join("scripts", "README.md")]
+    # Walk docs/ rather than listing docs/ and docs/adr/ by hand. The hand-written version
+    # covered exactly the two directories that existed when it was written, so a third one
+    # was unguarded by construction: docs/scratch/ sat there carrying 27 citations that this
+    # script never opened. A guard whose coverage depends on somebody remembering to widen it
+    # is a guard with a hole in it.
+    docs = []
+    for current, _dirs, files in os.walk(os.path.join(REPO, "docs")):
+        for name in sorted(files):
+            if name.endswith(".md"):
+                docs.append(os.path.relpath(os.path.join(current, name), REPO)
+                            .replace(os.sep, "/"))
+    docs.sort()
+    docs += ["README.md", "CONTRIBUTING.md", "scripts/README.md", "frontend/README.md"]
 
     failures: list[tuple[str, str, str]] = []
     checked = 0
