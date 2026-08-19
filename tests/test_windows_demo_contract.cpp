@@ -29,6 +29,10 @@ namespace {
 // asserts what the script *does*, a property that has nothing to do with line endings, and
 // PowerShell scripts on Windows are conventionally CRLF. Pinning the checkout to LF would fix
 // the test by constraining the artifact, which is the wrong way round.
+//
+// The repo does now have a `.gitattributes`, but it deliberately covers only the sh scripts,
+// whose shebang genuinely cannot survive CRLF. `scripts/*.ps1` is excluded for the reason
+// above, so this normalisation is still what makes the assertions below portable.
 std::string read_windows_demo_script() {
     const auto path =
         std::filesystem::path(SNAPBACK_SOURCE_DIR) / "scripts/windows_demo.ps1";

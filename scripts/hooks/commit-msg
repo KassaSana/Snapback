@@ -1,0 +1,80 @@
+#!/bin/sh
+#
+# Remove AI attribution from a commit message before the commit exists.
+#
+# scripts/check_commit_attribution.py already rejects these trailers, across the full
+# history of every ref -- but it runs in CI, by which time the commit is written. Removing
+# it then means rewriting history, which changes every downstream SHA and breaks the
+# release tags and CI-conclusion checks that the release gate reads. This hook deletes the
+# trailers at the one moment they are still free to delete.
+#
+# Cursor's IDE and CLI agents append `Co-authored-by: Cursor <cursoragent@cursor.com>` to
+# the commits they make. Cloud and background agents are a different path: they commit
+# under that identity as the *author*, server-side, where no local hook exists. CI stays
+# the backstop for those, and for any machine that clones without enabling this.
+#
+# Enable once per clone, since hooks are not themselves version controlled:
+#
+#     git config core.hooksPath scripts/hooks
+
+set -eu
+
+message_file="${1:?commit-msg hook requires a message file}"
+patterns="${message_file}.attribution-patterns"
+stripped="${message_file}.attribution"
+
+cleanup() {
+    rm -f "$patterns" "$stripped" "$stripped.trimmed"
+}
+trap cleanup EXIT
+
+# Machine-generated boilerplate, deleted silently because no human typed it. Prose that
+# merely names a tool is left alone: naming a thing is not claiming it wrote the code.
+# Held in one file so the reporting pass and the stripping pass cannot disagree.
+cat > "$patterns" <<'PATTERNS'
+^[[:space:]]*co[-[:space:]]?authored[-[:space:]]?by[[:space:]]*:
+^[[:space:]]*co[-[:space:]]?committed[-[:space:]]?by[[:space:]]*:
+^[[:space:]]*(generated|made)[[:space:]]+with[[:space:]]
+^[[:space:]]*signed-off-by[[:space:]]*:.*(anthropic|openai|github copilot)
+cursoragent@cursor\.com
+PATTERNS
+
+if grep -q -i -E -f "$patterns" "$message_file"; then
+    echo "commit-msg: removed AI attribution from the commit message." >&2
+fi
+
+# grep exits 1 when it selects nothing, which is the ordinary case for a hand-written
+# message and not a failure.
+grep -v -i -E -f "$patterns" "$message_file" > "$stripped" || true
+
+# A trailer block sits at the end behind a blank line, so deleting it strands that blank
+# line. Hold blank lines back and emit them only once something follows.
+awk '
+    /^[[:space:]]*$/ { pending++; next }
+    { while (pending > 0) { print ""; pending-- } print }
+' "$stripped" > "$stripped.trimmed"
+
+mv "$stripped.trimmed" "$message_file"
+
+# Re-check what survived using the same patterns CI enforces, so the hook and the gate
+# cannot disagree about what counts as attribution. An authorship claim written into prose
+# is reported rather than silently edited: rewording it is the author's call, not a hook's.
+#
+# `command -v python3` is not enough on Windows, where it finds the Microsoft Store stub
+# that prints an advert and exits 49. Only an interpreter that actually runs counts.
+interpreter=""
+for candidate in python3 python py; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "" >/dev/null 2>&1; then
+        interpreter="$candidate"
+        break
+    fi
+done
+
+if [ -z "$interpreter" ]; then
+    echo "commit-msg: no working python on PATH, skipped the CI-equivalent check." >&2
+    exit 0
+fi
+
+# Called rather than exec'd so the EXIT trap still runs and clears the scratch files.
+"$interpreter" "$(git rev-parse --show-toplevel)/scripts/check_commit_attribution.py" \
+    --message-file "$message_file"

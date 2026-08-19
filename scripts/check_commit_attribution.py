@@ -18,7 +18,12 @@ What it checks, across the full history of every ref:
   * no author or committer address belongs to an AI vendor
   * every author identity is on the allowlist below
 
+There is also a single-message mode, `--message-file`, which checks one commit message
+that has not been written yet. `scripts/hooks/commit-msg` uses it so that the hook and this
+gate share one definition of a forbidden trailer instead of drifting apart.
+
 Usage:  python3 scripts/check_commit_attribution.py [--verbose] [--range <git-range>]
+        python3 scripts/check_commit_attribution.py --message-file <path>
 Exit 0 = every commit is attributed to Kassa (or to an explicitly allowed bot).
 """
 
@@ -97,9 +102,44 @@ def commits(rev_range: str | None) -> list[tuple[str, str, str, str, str, str]]:
     return out
 
 
+def check_message_file(path: str) -> int:
+    """Check one message that is about to become a commit, for the commit-msg hook."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            message = handle.read()
+    except OSError as error:
+        print(f"check_commit_attribution: cannot read {path}: {error}", file=sys.stderr)
+        return 1
+
+    # git discards comment lines after the hook runs, so a trailer that survives only
+    # inside a comment never reaches the commit and is not a claim about authorship.
+    comment_char = subprocess.run(["git", "config", "--get", "core.commentChar"],
+                                  capture_output=True, text=True, check=False).stdout.strip()
+    comment_char = comment_char or "#"
+    body = "\n".join(line for line in message.splitlines()
+                     if not line.startswith(comment_char))
+
+    found = [label for pattern, label in FORBIDDEN_MESSAGE if pattern.search(body)]
+    if found:
+        print(f"check_commit_attribution: this message contains {', '.join(found)}.",
+              file=sys.stderr)
+        print("Every commit here is Kassa's own work. Remove the line and commit again.",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
 def main() -> int:
+    if "--message-file" in sys.argv:
+        index = sys.argv.index("--message-file")
+        if index + 1 >= len(sys.argv):
+            print("--message-file needs a value", file=sys.stderr)
+            return 2
+        return check_message_file(sys.argv[index + 1])
+
     verbose = "--verbose" in sys.argv
     rev_range = None
+
     if "--range" in sys.argv:
         index = sys.argv.index("--range")
         if index + 1 >= len(sys.argv):

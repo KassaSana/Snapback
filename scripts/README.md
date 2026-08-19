@@ -34,3 +34,32 @@ ports rather than translations.
 
 If you skip the scripts entirely, [docs/running.md](../docs/running.md) has the raw
 `cmake`/`ctest` invocations per OS, plus what can and cannot be built on each host.
+
+## `hooks/commit-msg`
+
+`check_commit_attribution.py` rejects AI attribution trailers in CI, across every ref. That
+is the right place for a gate but the wrong place for a *fix*: by the time CI runs, the
+commit exists, and removing a trailer from it means rewriting history — which changes every
+downstream SHA and breaks the release tags and CI-conclusion checks the release gate reads.
+`hooks/commit-msg` deletes the trailers while they can still be deleted for free.
+
+Hooks are not version controlled, so enable it once per clone:
+
+```
+git config core.hooksPath scripts/hooks
+```
+
+On macOS and Linux the hook must also be executable; git records that bit, so
+`git update-index --chmod=+x scripts/hooks/commit-msg` fixes a clone that lost it.
+
+The hook strips trailer-shaped boilerplate silently — `Co-authored-by:`, `Generated with`,
+anything naming `cursoragent@cursor.com` — then re-checks what survived by calling
+`check_commit_attribution.py --message-file`, so the hook and the CI gate share one
+definition of attribution rather than drifting apart. An authorship claim written into
+ordinary prose is reported and the commit is refused, not silently reworded: that edit is
+the author's call. Prose that merely *names* a tool is left alone.
+
+Two things it cannot do. Cursor's cloud and background agents commit under
+`Cursor Agent <cursoragent@cursor.com>` as the **author**, server-side, where no local hook
+runs; and any clone that skips the `core.hooksPath` line above is unprotected. CI remains
+the backstop for both.

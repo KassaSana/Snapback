@@ -1,0 +1,11 @@
+# Git runs hooks through sh, and a CRLF shebang makes the file unrunnable on macOS and
+# Linux ("bad interpreter"). Checking out on Windows must not introduce one.
+scripts/hooks/* text eol=lf
+
+# Same reason, for the sh scripts CI invokes directly.
+scripts/*.sh text eol=lf
+
+# Deliberately not listed: scripts/*.ps1. PowerShell on Windows is conventionally CRLF, and
+# tests/test_windows_demo_contract.cpp already normalises line endings when it reads one --
+# it asserts what the script does, which has nothing to do with how it is stored. Pinning
+# those files here would constrain the artifact to suit a test, which is the wrong way round.

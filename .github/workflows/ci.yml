@@ -548,6 +548,14 @@ jobs:
       - name: Every commit must be attributed to Kassa
         run: python3 scripts/check_commit_attribution.py --verbose
 
+      # The gate above runs after the commit exists, which is too late to fix one without
+      # rewriting history. scripts/hooks/commit-msg removes the trailers while they are still
+      # free to remove. Nothing else exercises it -- a clone that never enables the hook is
+      # the normal case -- so a broken hook would sit undetected until the day it was needed.
+      # These cases run the real hook against real messages rather than reading it as text.
+      - name: The commit-msg hook must strip what CI rejects
+        run: sh scripts/test_commit_msg_hook.sh
+
       # Roadmap 8.10. The Privacy card promises "Nothing leaves this device" and the bundler
       # claims zero subresource requests. Both were false because the page fetched webfonts —
       # and invisibly so, since an offline launch just rendered fallback type and looked fine.

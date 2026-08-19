@@ -249,6 +249,14 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Internal
 
+- **A `commit-msg` hook removes AI attribution before the commit exists.**
+  `check_commit_attribution.py` already rejected those trailers, but only in CI — by which
+  point fixing one means rewriting history and invalidating every downstream SHA. The hook
+  strips trailer-shaped boilerplate silently, then re-checks what survived by calling that
+  same script's new `--message-file` mode, so the hook and the gate cannot drift apart on what
+  counts as attribution. Enable it per clone with `git config core.hooksPath scripts/hooks`.
+  CI runs `scripts/test_commit_msg_hook.sh`, which executes the real hook against real
+  messages; each forbidden pattern has a case that fails when only that pattern is removed.
 - CI builds and tests the portable core with MinGW-w64 GCC on Windows, the one toolchain
   combination that was previously never built — and the one a shipped file-replacement bug
   lived in.
