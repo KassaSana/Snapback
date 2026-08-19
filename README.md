@@ -73,6 +73,10 @@ npm test
 npm run typecheck
 ```
 
+Before your first change, read [CONTRIBUTING.md](CONTRIBUTING.md) — the conventions here are
+enforced by CI and several of them are not guessable (commit attribution, how code is cited
+in docs, and which of the hand-maintained lists your change has to appear in).
+
 See the [documentation index](docs/README.md) for architecture, platform, testing,
 benchmarking, packaging, and roadmap references.
 

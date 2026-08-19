@@ -8,6 +8,12 @@ alwaysApply: true
 Every commit in this repository is **Kassa's own work**. This is enforced in CI by
 `scripts/check_commit_attribution.py` and must never be violated by an agent.
 
+> This file is the Cursor-specific copy. The committed, tool-neutral version of these rules —
+> plus everything else a first change has to satisfy — is in `CONTRIBUTING.md` at the repo
+> root. Keep the two in agreement; `CONTRIBUTING.md` is the one every tool and every human
+> can read, and for a while it did not exist, so this file was the *only* place the rule
+> below was written down.
+
 ## Hard rules
 
 When creating commits (or PR bodies that accompany them):
