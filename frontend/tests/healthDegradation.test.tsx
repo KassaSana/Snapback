@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CAPTURE_STALL_RECHECK_MS, HEALTH_POLL_MS } from "../src/healthPoll";

@@ -31,14 +31,12 @@
   "pick_open_file",
   "pick_save_file",
   "get_autostart",
-
   "set_autostart",
   "set_focus_mode",
   "set_idle_threshold",
   "dismiss_snapback",
   "restore_snapback_target",
   "get_app_rules",
-
   "upsert_app_rule",
   "delete_app_rule",
   "get_context_timeline",

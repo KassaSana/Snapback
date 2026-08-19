@@ -135,7 +135,7 @@ std::string build_ipc_shim_script(const std::string& trusted_canonical_url,
       if (!ids) return;
       Object.keys(ids).forEach(function (id) {
         var cb = callbacks[id];
-        if (cb) cb({ event: event, id: Number(id), payload: payload });
+        if (cb) cb({ payload: payload });
       });
     },
   };
