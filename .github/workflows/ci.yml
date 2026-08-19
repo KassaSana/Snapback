@@ -419,24 +419,38 @@ jobs:
         timeout-minutes: 6
         env:
           DEBIAN_FRONTEND: noninteractive
-        # Retried for the same reason the ONNX download uses `curl --retry 3`: this is the
-        # other step that depends on a third-party network service, and it has now failed
-        # twice in a row on infrastructure rather than on anything in this repo. The packages
-        # themselves are fine — the same step succeeded in ~1 minute two runs earlier.
+        # The runner image ships a mirrorlist (/etc/apt/apt-mirrors.txt) whose first entry is
+        # azure.archive.ubuntu.com. When that host is unreachable — as it was on 2026-08-19 —
+        # apt spends its whole retry budget per index file before falling back, so `update`
+        # never finishes and the step dies on its timeout. The packages are not the problem:
+        # the same log shows archive.ubuntu.com answering `Hit`/`Get` immediately while every
+        # azure line reads `Ign`.
         #
-        # Retries are bounded and the step timeout still applies, so a genuinely missing
-        # package fails in minutes instead of being masked by an endless loop.
+        # So point apt at the host that answered, and bound the per-connection timeouts. A
+        # plain retry loop is not enough on its own and was actively counterproductive here:
+        # it repeated a five-minute hang three times rather than failing once.
         run: |
           set -eu
+          # Not fatal if a future image renames this file or drops the mirrorlist: apt still
+          # works, it just keeps whatever mirror the image chose. Say so rather than dying on
+          # something incidental to installing two packages.
+          sources=/etc/apt/sources.list.d/ubuntu.sources
+          if [ -f "$sources" ] && grep -q 'mirror+file:/etc/apt/apt-mirrors.txt' "$sources"; then
+            sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu|g' "$sources"
+            echo "apt: pinned to archive.ubuntu.com in $sources"
+          else
+            echo "apt: no mirrorlist entry found in $sources; leaving apt sources as the image set them" >&2
+          fi
+          apt_opts="-o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
           for attempt in 1 2 3; do
-            if sudo apt-get update && \
-               sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev; then
+            if sudo apt-get $apt_opts update && \
+               sudo apt-get $apt_opts install -y libgtk-3-dev libwebkit2gtk-4.1-dev; then
               exit 0
             fi
             echo "apt attempt ${attempt} failed; retrying in $((attempt * 10))s" >&2
             sleep $((attempt * 10))
           done
-          echo "apt failed three times; treating as a real failure" >&2
+          echo "apt failed three times against a reachable mirror; this is a real failure" >&2
           exit 1
 
       - name: Configure (app on)
