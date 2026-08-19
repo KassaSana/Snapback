@@ -4476,8 +4476,12 @@ Completed work. Kept for history; further detail lives in the git log.
   hidden-window status, and durable phase UX remain in 2.13.*
 - **4.1 — Structured logging** — leveled logger + rotating file sink, adopted in `storage.cpp`
   and `state.cpp`, real file sink with stderr fallback in `main.cpp`.
-- **4.6 — Dependabot** — `.github/dependabot.yml` for Actions + npm. *Doesn't cover C++ deps —
-  8.6.*
+- **4.6 — Dependabot** — **reverted 2026-08-18.** The config for Actions + npm was removed and
+  Dependabot no longer opens PRs here. It never covered the C++ deps anyway (8.6), which is why
+  `check_dependency_pins.py` and the weekly pin-freshness job (4.13) exist and stay. Its 29
+  historical commits keep it on the `ALLOWED_AUTHORS` list in
+  `scripts/check_commit_attribution.py`: that gate walks every ref, so dropping the entry would
+  fail CI on history rather than clean it up.
 - **4.7 — Security-audit CI job** — frontend `npm audit` gate.
 - **4.8 — Wired `dismiss_snapback`, and fixed a real bug it exposed** — not just an unused
   command: `ContextTracker::dismiss_recovery()` is the *only* exit from `Recovering`, and
