@@ -153,6 +153,20 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Fixed
 
+- **The test suite compiles on MSVC and libc++ again.** `focus_window_windows.cpp` called
+  `std::towlower` with only `<cctype>` included; the wide-character functions live in
+  `<cwctype>`. libstdc++ happens to pull it in transitively, so the one Windows job added to
+  catch toolchain divergence — `windows-gcc` — was the only Windows job that could not see
+  this, while `windows-latest` and every macOS job failed to build.
+- **`focus_window` refuses whitespace-only targets on every platform.** Its input validation
+  had been written three times, once per platform file, and the copies disagreed: Windows
+  trimmed before checking for emptiness, macOS and the stub did not. `focus_window("   ", "")`
+  was therefore refused on Windows and treated as a real search target everywhere else, which
+  failed CTest on Linux under the plain, sanitizer, and ONNX jobs. The shared half now lives
+  once in `snapback/focus_window.cpp`; the platform files implement only
+  `focus_window_supported()` and `detail::focus_window_native()`, which is the split
+  `focus_window.hpp` already described. Its test no longer asserts the Windows "could not
+  find" wording on platforms where no search ever runs.
 - **The desktop app compiles again.** Two unqualified names, in the only translation unit no
   test compiles: `main.cpp` used `DataDirChoice` / `choose_data_dir` from an anonymous
   namespace while both live in `namespace snapback`, and `commands.hpp` used `JsonHandler`

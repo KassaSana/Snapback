@@ -20,10 +20,18 @@ TEST_CASE("focus_window refuses whitespace-only targets") {
     CHECK(result.message == "No target application or window specified");
 }
 
+// Both halves of this are the same promise -- never claim success -- but the honest
+// *reason* differs by platform. Where activation is implemented, the search ran and found
+// nothing. Where it is not, saying "could not find" would imply a search that never
+// happened, so the stub reports the real reason instead.
 TEST_CASE("focus_window reports honest failure for nonexistent window") {
     const auto result = snapback::focus_window("NonExistentFakeProcess999999.exe", "NonExistentFakeTitle999999");
     CHECK_FALSE(result.ok);
+#if defined(_WIN32) || defined(__APPLE__)
     CHECK(result.message.find("Could not find") != std::string::npos);
+#else
+    CHECK(result.message == "Window activation is not supported on this platform");
+#endif
 }
 
 TEST_CASE("focus_window_supported reflects platform capabilities") {

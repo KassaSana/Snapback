@@ -166,6 +166,9 @@ add_library(snapback_app STATIC
   src/app/state.cpp
   src/app/support_bundle.cpp
   src/app/training_deploy.cpp
+  # Platform-independent half of focus_window: input validation shared by all three
+  # backends. Only focus_window_supported()/focus_window_native() are per-platform.
+  src/snapback/focus_window.cpp
 )
 target_include_directories(snapback_app PUBLIC src)
 target_link_libraries(snapback_app PUBLIC snapback_core snapback_capture)

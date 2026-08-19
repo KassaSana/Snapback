@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cwctype>
 #include <string>
 #include <vector>
 
@@ -36,13 +37,6 @@ std::wstring lower_copy(std::wstring value) {
         return static_cast<wchar_t>(std::towlower(c));
     });
     return value;
-}
-
-std::string trim_copy(std::string value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    const auto last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
 }
 
 struct WindowSearchContext {
@@ -116,17 +110,6 @@ BOOL CALLBACK enum_windows_callback(HWND hwnd, LPARAM lparam) {
 
 bool focus_window_supported() {
     return true;
-}
-
-FocusTargetResult focus_window(const std::string& app_name, const std::string& window_title) {
-    const std::string clean_app = trim_copy(app_name);
-    const std::string clean_title = trim_copy(window_title);
-
-    if (clean_app.empty() && clean_title.empty()) {
-        return FocusTargetResult{false, "No target application or window specified"};
-    }
-
-    return detail::focus_window_native(clean_app, clean_title);
 }
 
 namespace detail {

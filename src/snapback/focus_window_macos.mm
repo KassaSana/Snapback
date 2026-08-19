@@ -12,13 +12,6 @@ bool focus_window_supported() {
     return true;
 }
 
-FocusTargetResult focus_window(const std::string& app_name, const std::string& window_title) {
-    if (app_name.empty() && window_title.empty()) {
-        return FocusTargetResult{false, "No target application or window specified"};
-    }
-    return detail::focus_window_native(app_name, window_title);
-}
-
 namespace detail {
 
 FocusTargetResult focus_window_native(const std::string& app_name,
