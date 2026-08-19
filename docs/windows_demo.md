@@ -101,8 +101,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 `
   -SignCertificate "YOUR_CERT_THUMBPRINT"
 ```
 
-- `Snapback-0.2.0-win64.zip`
-- `Snapback-0.2.0-win64-installer.exe` when Windows IExpress is available
+- `Snapback-<version>-win64.zip`
+- `Snapback-<version>-win64-installer.exe` when Windows IExpress is available
+
+`<version>` is whatever `project(... VERSION x.y.z)` in `CMakeLists.txt` declares — that is
+the single source, and `scripts/check_release_tag.py` is what holds a release tag to it. The
+packaging and validation scripts derive the filename from the ZIP CPack actually produced
+rather than reconstructing it, so nothing here needs updating when the version bumps.
 
 Pass `-TryNsis` to also attempt an unsigned NSIS installer if NSIS is installed.
 

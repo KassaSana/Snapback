@@ -1,5 +1,12 @@
 param(
-    [string]$PackageZip = "Snapback-0.2.0-win64.zip",
+    # Empty means "find the one Snapback ZIP sitting beside this script". This used to
+    # default to a literal "Snapback-0.2.0-win64.zip", which is the project version written
+    # down a third time -- CMakeLists.txt declares it (9.2 says that is the single source),
+    # frontend/package.json repeats it, and this repeated it again where nothing would
+    # notice, because the failure is a confusing "not found" at install time rather than a
+    # build error. package_windows.ps1 already derives the name from the ZIP CPack actually
+    # produced; this now does the same thing for a standalone run.
+    [string]$PackageZip = "",
     [string]$InstallDir = "",
     [switch]$Launch,
     [switch]$NoShortcuts
@@ -9,10 +16,23 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ZipPath = if ([System.IO.Path]::IsPathRooted($PackageZip)) {
-    $PackageZip
+if ([string]::IsNullOrWhiteSpace($PackageZip)) {
+    $found = @(Get-ChildItem -LiteralPath $ScriptDir -Filter "Snapback-*-win64.zip" -File |
+        Sort-Object Name)
+    if ($found.Count -eq 0) {
+        throw ("No Snapback-*-win64.zip found in $ScriptDir. Build one with " +
+               "scripts\package_windows.ps1, or pass -PackageZip <path>.")
+    }
+    if ($found.Count -gt 1) {
+        $names = ($found | ForEach-Object { $_.Name }) -join ", "
+        throw ("Found more than one package ZIP in ${ScriptDir}: $names. " +
+               "Pass -PackageZip <path> to say which one.")
+    }
+    $ZipPath = $found[0].FullName
+} elseif ([System.IO.Path]::IsPathRooted($PackageZip)) {
+    $ZipPath = $PackageZip
 } else {
-    Join-Path $ScriptDir $PackageZip
+    $ZipPath = Join-Path $ScriptDir $PackageZip
 }
 
 if (-not (Test-Path $ZipPath)) {

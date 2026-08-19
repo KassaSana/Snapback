@@ -1,5 +1,9 @@
 param(
-    [string]$PackageZip = "build-windows-package\Snapback-0.2.0-win64.zip",
+    # Empty means "find the one ZIP under build-windows-package". See the note in
+    # install_windows_package.ps1: hardcoding a version here writes the project version down
+    # in a place nothing keeps in sync, and it fails as a puzzling "not found" rather than a
+    # build error.
+    [string]$PackageZip = "",
     [int]$TimeoutSeconds = 20
 )
 
@@ -7,10 +11,27 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$ZipPath = if ([System.IO.Path]::IsPathRooted($PackageZip)) {
-    $PackageZip
+if ([string]::IsNullOrWhiteSpace($PackageZip)) {
+    $PackageDir = Join-Path $RepoRoot "build-windows-package"
+    $found = @()
+    if (Test-Path -LiteralPath $PackageDir) {
+        $found = @(Get-ChildItem -LiteralPath $PackageDir -Filter "Snapback-*-win64.zip" -File |
+            Sort-Object Name)
+    }
+    if ($found.Count -eq 0) {
+        throw ("No Snapback-*-win64.zip found in $PackageDir. Build one with " +
+               "scripts\package_windows.ps1, or pass -PackageZip <path>.")
+    }
+    if ($found.Count -gt 1) {
+        $names = ($found | ForEach-Object { $_.Name }) -join ", "
+        throw ("Found more than one package ZIP in ${PackageDir}: $names. " +
+               "Pass -PackageZip <path> to say which one.")
+    }
+    $ZipPath = $found[0].FullName
+} elseif ([System.IO.Path]::IsPathRooted($PackageZip)) {
+    $ZipPath = $PackageZip
 } else {
-    Join-Path $RepoRoot $PackageZip
+    $ZipPath = Join-Path $RepoRoot $PackageZip
 }
 
 if (-not (Test-Path $ZipPath)) {
