@@ -190,8 +190,19 @@ elseif(APPLE)
     src/app/file_dialog_macos.mm
     src/app/window_lifecycle_macos.mm)
   set_source_files_properties(
-    src/app/open_url_macos.mm src/app/reveal_path_macos.mm src/snapback/focus_window_macos.mm src/app/file_dialog_macos.mm src/app/window_lifecycle_macos.mm
+    src/app/open_url_macos.mm src/app/reveal_path_macos.mm src/snapback/focus_window_macos.mm src/app/file_dialog_macos.mm
     PROPERTIES COMPILE_FLAGS "-x objective-c++")
+  # window_lifecycle_macos.mm is the one file here written against ARC: it uses `__bridge`
+  # casts and a `weak` delegate property, both of which are hard errors under manual
+  # retain/release rather than warnings. ARC is a per-translation-unit choice, so enabling it
+  # for this file alone is safe and leaves the other four exactly as they were -- none of them
+  # uses an ARC-only construct, and none does manual retain/release that ARC would reject.
+  #
+  # Without this the file cannot compile at all, which took every macOS job down from the
+  # commit that added it. Nothing outside macOS builds it, so no other job could report it.
+  set_source_files_properties(
+    src/app/window_lifecycle_macos.mm
+    PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc")
   target_link_libraries(snapback_app PUBLIC "-framework AppKit")
 else()
   target_sources(snapback_app PRIVATE
