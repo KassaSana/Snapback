@@ -1,9 +1,19 @@
 # ADR-NNNN — <short imperative title>
 
 - **Status:** Proposed | Accepted | Superseded by ADR-NNNN (link it) | Rejected
+- **Applied:** Yes | **No — see *Implementation status*** (omit this line only when the code
+  landed with the decision, which is the normal case)
 - **Date:** YYYY-MM-DD
 - **Roadmap item:** <e.g. 5.3, or "none">
 - **Decided by:** Kassa
+
+<!--
+If the code does NOT yet match this decision, add an `## Implementation status` section here
+saying what is true in the tree today and which roadmap item carries the rest. The rest of
+this document is present tense, so without that section it reads as a description of code
+that does not exist. ADR-0007 is the worked example.
+-->
+
 
 ## Question
 
