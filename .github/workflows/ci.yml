@@ -406,8 +406,19 @@ jobs:
 
       # webview picks webkit2gtk-4.1 first and falls back to 4.0; 4.1 is what
       # ubuntu-latest ships.
+      # This step normally takes seconds, and it had no timeout of its own while the build
+      # step below did — so when apt hung on 2026-08-19 it burned all 30 minutes of the job
+      # budget and reported nothing. That contradicted this file's own anti-hang promise that
+      # the riskiest steps carry a step timeout; fetching packages over the network is the
+      # riskiest step in this job. Five minutes is ~10x the normal duration: long enough for a
+      # slow mirror, short enough that a hang fails fast and reads as a hang.
+      #
+      # DEBIAN_FRONTEND=noninteractive so apt can never block on a prompt no one can answer.
       - name: Install Linux webview dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 5
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
