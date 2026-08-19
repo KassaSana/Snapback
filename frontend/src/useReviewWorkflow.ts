@@ -106,6 +106,11 @@ export const useReviewWorkflow = (
     }
   }, [range]);
 
+  // Roadmap 7.6. The native command is authoritative: once it returns, the row is gone from
+  // SQLite whether or not anything else here succeeds. So the local list is pruned first and
+  // unconditionally, before the refetch -- a failed `refreshReview` sets `error` and leaves
+  // the previous `sessionHistory` in place, which would otherwise keep a deleted session on
+  // screen after the delete succeeded.
   const deleteSession = useCallback(
     async (sessionId: string) => {
       if (!sessionId) return;
@@ -121,8 +126,13 @@ export const useReviewWorkflow = (
         try {
           await onSessionDeleted?.(sessionId);
         } catch {
-          // Row is already gone natively.
+          // The row is already deleted natively. A failed best-effort refresh of the other
+          // surfaces must not tell the user their session still exists (same rule as
+          // usePrivacy's deleteAllActivityData).
         }
+        // `delete_session` returns whether a row was actually removed, which distinguishes a
+        // real delete from a stale list entry. Both end with the row absent, so both prune --
+        // but calling the second one "deleted" would credit us with work SQLite didn't do.
         setDeleteStatus(removed ? "Session deleted." : "That session was already gone.");
       } catch {
         setDeleteError("Could not delete that session.");

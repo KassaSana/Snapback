@@ -155,7 +155,6 @@ export default function App() {
     classifierBackend,
     classifierModelId,
     classifierModelPath,
-    classifierOnnxRuntimeEnabled,
     developerToolsEnabled,
     handleRefreshPermissions,
     handleRequestPermissions,

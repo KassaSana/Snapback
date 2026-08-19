@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Roadmap 9.14. Drives the real card + useDataImport + api.ts against the mocked native
@@ -61,7 +61,6 @@ const boundary = vi.hoisted(() => {
 
 vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
-import App from "../src/App";
 import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({

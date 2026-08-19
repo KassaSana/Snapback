@@ -480,15 +480,15 @@ internals, and the benchmark harness.
   **7.1 — Analytics and summary reports silently cover only the last ~3 hours.** `S`
   **Highest user-visible impact in this file.**
 
-  `AppState::analytics()` (`state.cpp:364`) and `summary_report()` (`state.cpp:428`) both
+  `AppState::analytics()` (`state.cpp:analytics`) and `summary_report()` (`state.cpp:summary_report`) both
   begin with `recent_predictions(10000)`, then filter in C++. Predictions are throttled to at
-  most one per second (`state.cpp:713`), so **10,000 rows ≈ 2 h 46 min of active use.**
+  most one per second (`state.cpp:engine_tick`), so **10,000 rows ≈ 2 h 46 min of active use.**
 
   - The **weekly** report (7-day cutoff) can never see past the most recent ~2.8 hours. For
     any regular user it reports on this afternoon and labels it "week."
   - The **daily** report has the same ceiling — wrong for anyone using the app more than
     three hours a day, which is the target user.
-  - Hourly buckets (`state.cpp:378`) use the same truncated set, so the "when do you focus
+  - Hourly buckets (`storage.cpp:hourly_focus_buckets`) use the same truncated set, so the "when do you focus
     best" chart only has data for the hours you most recently used the app. It looks
     plausible and is wrong.
 
@@ -516,15 +516,15 @@ internals, and the benchmark harness.
 
   The original finding was:
 
-  `timestamp_hour()` (`state.cpp:51`) slices characters 11–12 out of strings built by
-  `now_rfc3339()` (`state.cpp:69`), which uses `gmtime_r`/`gmtime_s` and appends `Z` — UTC.
+  `timestamp_hour()` (since removed; see the correction above) sliced characters 11–12 out of strings built by
+  `now_rfc3339()` (`state.cpp:now_rfc3339`), which uses `gmtime_r`/`gmtime_s` and appends `Z` — UTC.
   So `AnalyticsHour::hour` is a UTC hour rendered as the user's hour. In US Pacific that is
   an 8-hour lie: "you focus best at 14:00" means 06:00 local.
 
   Storing UTC is correct; *presenting* it is the bug. Recommend converting in the frontend —
   timestamps are ISO-8601 with `Z`, and `new Date(ts).getHours()` is exactly right.
 
-  Related: `cutoff_rfc3339()` (`state.cpp:37`) computes "1 day ago" as "24 hours ago," so the
+  Related: `cutoff_rfc3339()` (`state.cpp:cutoff_rfc3339`) computes "1 day ago" as "24 hours ago," so the
   "daily" summary is a rolling 24 h window, not the user's calendar day. Possibly intended,
   nowhere written down, and users read "day" as "today."
 
@@ -545,7 +545,7 @@ internals, and the benchmark harness.
 
   > *Two claims in the original finding were false when checked, and are preserved here
   > because the lesson is the point.* It said "**no `ALTER TABLE` anywhere in the
-  > codebase**" — there was one, `ensure_prediction_model_id_column` at `storage.cpp:215`,
+  > codebase**" — there was one, `ensure_prediction_model_id_column` (`storage.cpp:ensure_prediction_model_id_column`),
   > which is now migration 2 rather than an ad-hoc special case. And it said "**we have never
   > once opened a real pre-existing `focoflow.db`**" — `tests/test_storage.cpp` already had a
   > case that built a legacy schema on disk and opened it. What was genuinely missing was the
@@ -571,18 +571,20 @@ internals, and the benchmark harness.
   **Do before 0.3.**
 
   Structural version of the macOS bug in 0.3 — and **not macOS-specific.**
-  `CaptureThread::start()` (`capture_thread.cpp:12`) spawns a thread whose body is one
+  `CaptureThread::start()` (`capture_thread.cpp:start`) spawns a thread whose body is one
   `hook_->run(...)` call. When `run()` returns — normally *or* because the OS tore the hook
   down — the lambda ends. Nothing clears `running_`, which only `stop()` ever clears
-  (`capture_thread.cpp:38`). So `capture_.running()` reports `true` for a hook dead for
+  (`capture_thread.cpp:start`). So `capture_.running()` reports `true` for a hook dead for
   hours. That is exactly the state the `CGEventTap` was in when it was silently disabled,
   and why the failure went unnoticed long enough to be filed as "unwritten."
 
   `AppState::health()` makes it unrecoverable rather than merely unreported:
 
   ```cpp
-  h.capture_failed = false;    // state.cpp:240
-  h.capture_stalled = false;   // state.cpp:242
+  // AppState::health(), as it stood on 2026-07-20. Both fields are measured now -- see the
+  // resolution above; this is quoted history, not a pointer into the current tree.
+  h.capture_failed = false;
+  h.capture_stalled = false;
   ```
 
   **Hardcoded literals.** The diagnostics panel has fields for exactly this failure, wired to
@@ -601,8 +603,8 @@ internals, and the benchmark harness.
 
   **Sessions stopped via the no-argument path never get an auto-label.** `S`
 
-  `stop_session(const std::string&)` (`state.cpp:210`) calls `save_auto_session_label()`.
-  `stop_session()` (`state.cpp:195`), used on shutdown and internal teardown, **does not.**
+  `stop_session(const std::string&)` (`state.cpp:stop_session`) calls `save_auto_session_label()`.
+  `stop_session()` (`state.cpp:stop_session`), used on shutdown and internal teardown, **does not.**
 
   Auto-labels are training data (2.3 consumes them). Every session ending by any path other
   than an explicit UI stop is silently dropped from the corpus — biasing the eventual model
@@ -619,13 +621,13 @@ internals, and the benchmark harness.
 
   **Privacy exclusions match by unanchored substring.** `S`
 
-  `is_private_event_unlocked()` (`state.cpp:581`) tests
+  `is_private_event_unlocked()` (`state.cpp:is_private_event_unlocked`) tests
   `app.find(lower_copy(exclusion)) != npos`. Excluding `Chrome` also excludes
   `chromedriver`. A single-character exclusion — a typo, or an entry that survived trimming —
   excludes effectively everything, and **fails silently**: capture keeps running,
   `capture_running` stays true, no events are ever recorded.
 
-  `normalize_privacy_exclusions()` (`state.cpp:566`) trims and dedupes but doesn't guard
+  `normalize_privacy_exclusions()` (`state.cpp:normalize_privacy_exclusions`) trims and dedupes but doesn't guard
   against over-broad patterns. Since over-exclusion looks identical to a dead capture hook
   (7.4), this needs at minimum a UI warning when a rule matches an implausible share of
   observed apps.
@@ -1122,7 +1124,7 @@ internals, and the benchmark harness.
 
 - **7.8 — `set_focus_mode` permanently rewrites the user's default.** `S` `decision`
 
-  `set_focus_mode()` (`state.cpp:324`) sets the live mode *and* writes
+  `set_focus_mode()` (`state.cpp:set_focus_mode`) sets the live mode *and* writes
   `settings_.default_focus_mode` to disk on every call. Switching to Recovery once for a
   rough afternoon makes Recovery the startup default forever — silently overwriting the
   answer the onboarding wizard (1.1) explicitly asked for.
@@ -1156,7 +1158,7 @@ internals, and the benchmark harness.
   - **7.1** — string `<` comparison against a cutoff, after a row-count cap.
   - **7.2** — UTC hour slicing presented as local.
   - **`now_rfc3339()` uses `std::time(nullptr)`** — whole-second resolution
-    (`state.cpp:69`). Throttling makes collisions rare but not impossible, and ordering
+    (`state.cpp:now_rfc3339`). Throttling makes collisions rare but not impossible, and ordering
     within a second is undefined for any `ORDER BY timestamp`.
 
   **Do not fix these separately.** Decide once — canonical format, storage type (text vs
@@ -1206,10 +1208,15 @@ internals, and the benchmark harness.
   **DONE 2026-07-30.** The three remaining slices landed together:
 
   - **Delete-session UI** — the Insights card lists each session with a two-step delete.
-    `useInsights` prunes the row locally *before* refetching, because `refreshInsights`
-    swallows its errors by design and would otherwise leave a deleted session on screen; a
+    The hook prunes the row locally *before* refetching, because a failed refetch leaves the
+    previous history in place and would otherwise keep a deleted session on screen; a
     regression test drives the failing-refetch path specifically. The `false` return is
     surfaced as "That session was already gone" rather than "deleted".
+
+    *Correction 2026-08-19:* this originally named `useInsights`, which the Review-surface
+    refactor superseded and left orphaned. The behaviour above now lives in
+    `useReviewWorkflow`, carrying the same rationale in its comments; `useInsights` was
+    deleted once it was confirmed unreferenced.
   - **Open the data folder** — `open_data_folder` in `commands.hpp`, backed by
     `src/app/reveal_path.hpp`. `NSWorkspace` on macOS and `ShellExecuteW` on Windows, so
     neither starts a shell or a child process; POSIX spawns `xdg-open` with an argv array. The
@@ -1402,7 +1409,7 @@ internals, and the benchmark harness.
   - `session_history()`: ~4 × limit queries.
 
   All holding `storage_mutex_`, synchronously, on the thread answering the UI. The engine
-  tick's persist phase takes the same lock (`state.cpp:655`), so **opening the analytics tab
+  tick's persist phase takes the same lock (`state.cpp:stop_session`), so **opening the analytics tab
   can stall the capture pipeline's writes** — which, with a bounded ring buffer, means
   dropped events.
 
@@ -1541,13 +1548,13 @@ normal use — these are defense-in-depth and fragility items.
 **What is already right**, recorded so a future review doesn't re-derive it: every SQL
 statement is parameterized (no string-built queries in `storage.cpp`); no `innerHTML`,
 `dangerouslySetInnerHTML`, or `eval()` in the frontend; the `popen`/`std::system` call site
-in `permissions.cpp:18` takes a compile-time literal;
+in `permissions.cpp:command_available` takes a compile-time literal;
 `training_deploy.cpp` quotes the user-supplied repo path; `npm audit --production` reports 0
 vulnerabilities and the `security-audit` job is green; and the hook callback correctly
-swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS callback is UB.
+swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding through an OS callback is UB.
 
 > **This list went stale in the unsafe direction on 2026-07-25, which is worth recording as
-> a pattern.** It used to say `active_window.cpp:32` also took a compile-time literal. It no
+> a pattern.** It used to say `active_window.cpp`'s `run_command()` also took a compile-time literal. It no
 > longer does: `626ad87` changed `run_command()` from `const char*` to `const std::string&`
 > so it could build a per-browser `osascript` command, and that command is chosen by the
 > foreground **app name, which comes from the OS**. The code is still safe — it interpolates
@@ -1572,7 +1579,9 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   **Highest-value reliability item in this tier.**
 
   ```cpp
-  engine_thread_ = std::thread([this] {           // state.cpp:161
+  // AppState's constructor, as it stood on 2026-07-20 -- quoted history; the tick is
+  // wrapped in the exception boundary described above now.
+  engine_thread_ = std::thread([this] {
       while (engine_running_.load(std::memory_order_relaxed)) {
           engine_tick();
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -1586,7 +1595,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
   `engine_tick()` reaches plenty that throws:
 
-  - `nlohmann::json(...).dump()` (`state.cpp:664`–`666`) defaults to
+  - `nlohmann::json(...).dump()` (`state.cpp:engine_tick`–`666`) defaults to
     `error_handler_t::strict`, which **throws `type_error.316` on invalid UTF-8**. Payloads
     embed `app_name` and `window_title`, which come from the OS. On Windows these arrive via
     `WideCharToMultiByte` and are well-formed; on Linux (X11 `WM_NAME` / evdev) a title is
@@ -1595,7 +1604,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
     disk full, database locked, permissions. All normal, recoverable conditions.
   - `classifier_.predict(...)` and `features_.extract(...)`, which allocate.
 
-  The author knew this mattered elsewhere: `main.cpp:161` wraps the snapback payload parse in
+  The author knew this mattered elsewhere: `main.cpp:main` wraps the snapback payload parse in
   `try { … } catch (...)` with the comment *"A malformed payload must never take down the UI
   thread."* The engine thread, which handles strictly more untrusted input, has no such guard.
 
@@ -1621,7 +1630,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   **No CSP, and the IPC shim exposes every command to any script in the page.** `M`
 
   There is **no Content-Security-Policy** anywhere — not in `frontend/index.html`, not set by
-  the host. The shim resolves commands by global lookup (`ipc_shim.hpp:70`):
+  the host. The shim resolves commands by global lookup (`ipc_shim.cpp:invoke`):
 
   ```js
   var bound = window[cmd];
@@ -1629,7 +1638,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
 
   So every `webview.bind()`-exposed command is reachable from any JavaScript in the page —
   including `set_training_repo_path` and `train_from_export`, which **terminate in
-  `std::system`** (`training_deploy.cpp:345`).
+  `std::system`** (`training_deploy.cpp:command_succeeds`).
 
   The chain: any script execution in the webview → full local command surface → arbitrary
   process launch. The only thing preventing step one is that React escapes everything and the
@@ -1651,7 +1660,7 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   ```cpp
   w.navigate(resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL")));
   ```
-  `main.cpp:195` — read unconditionally in **release** builds. Any process that can influence
+  `main.cpp:resolve_frontend_url` — read unconditionally in **release** builds. Any process that can influence
   the environment Snapback launches with can point the webview at arbitrary remote content,
   which then inherits the entire command surface from 8.3.
 
@@ -2594,7 +2603,7 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
 - **5.5 — Retention silently no-ops on unparseable timestamps.** `S`
   **Roll into the 7.16 timestamp decision — same root cause.**
 
-  `storage.cpp:1004`/`:1011` use `datetime(timestamp) < datetime(?1)`. If `datetime()` can't
+  `storage.cpp:prune_runtime_data` uses `datetime(timestamp) < datetime(?1)`. If `datetime()` can't
   parse a stored value it yields `NULL`, the comparison is `NULL`, and the row is **never
   deleted** — retention degrades with nothing surfaced. Wrapping the column also defeats
   `idx_predictions_ts`, forcing a scan on every startup prune.
@@ -2602,7 +2611,7 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
 - **5.6 — `longest_active_stretch_5min` reports 300s for brand-new sessions.** `M` `decision`
   — **do not "just fix" this; it will fail CI. Bundle into 2.3.**
 
-  `features.cpp:190` defaults to the whole 5-minute window when it holds no idle events, so
+  `features.cpp:extract` defaults to the whole 5-minute window when it holds no idle events, so
   ten seconds into a session the extractor claims a five-minute unbroken active stretch.
 
   1. It is long-standing, deliberate behaviour, not an accident.
@@ -2624,16 +2633,16 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
 
   1. **Separator case.** It splits on `" — "` / `" - "` and treats segment 0 as a filename
      with no check. `"Some Article - Google Chrome"` yields `file_hint = "Some Article"`, and
-     `tracker.cpp:104` turns that into **"Editing Some Article"**.
-  2. **No-separator case (worse).** `title_parser.cpp:26`:
+     `tracker.cpp:make_snapshot` turns that into **"Editing Some Article"**.
+  2. **No-separator case (worse).** `title_parser.cpp:parse_title`:
      `if (hints.file_hint.empty()) hints.file_hint = window_title;` — with no separator at
-     all, **the entire title becomes the file hint.** `build_snapback()` (`tracker.cpp:130`)
+     all, **the entire title becomes the file hint.** `build_snapback()` (`tracker.cpp:build_snapback`)
      then renders `"Return to " + file_hint`, so a fullscreen video titled
      `Top 10 Productivity Fails` produces the overlay **"Return to Top 10 Productivity
      Fails"** — the product's namesake feature telling you to go back to the distraction.
 
   **Needs a decision first:** this behaviour is long-standing, so changing it is a deliberate
-  break with how the app has always worked, not a bug fix. Cheapest fix is to consult `title_is_distracting`, which `app_context.cpp:125`
+  break with how the app has always worked, not a bug fix. Cheapest fix is to consult `title_is_distracting`, which `app_context.cpp:classify_app_context`
   already computes and `make_snapshot` ignores.
   *Note: the parser takes no `app_name`, so per-app title conventions are
   currently unimplementable. The decision should settle whether to add it.*
@@ -2642,7 +2651,7 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   libFuzzer targets for `title_parser`, the JSON IPC arg parsing, **and the Windows shell
   quoting in `training_deploy.cpp`** — `cmd.exe` metacharacter handling (`^`, `%VAR%`, `&`,
   embedded quotes) is a genuinely different escaping problem from POSIX `sh`, and the same
-  `quote()` serves both (`training_deploy.cpp:337`). `%` in particular is not neutralized by
+  `quote()` serves both (`training_deploy.cpp:quote`). `%` in particular is not neutralized by
   double-quoting in `cmd.exe`. Low severity (self-injection from a user-entered path), but
   it's the natural third target.
 
@@ -2756,8 +2765,9 @@ small; the tier is large because nobody has walked that path yet.
   The original finding was:
 
   **One version number, surfaced everywhere.** `S`
-  The version `0.2.0` is written in **two independent places** — `CMakeLists.txt:200`
-  (`CPACK_PACKAGE_VERSION`) and `frontend/package.json:4` — with nothing keeping them in
+  The version `0.2.0` is written in **two independent places** — `CMakeLists.txt`'s
+  `project(... VERSION)` (which feeds `CPACK_PACKAGE_VERSION`) and `frontend/package.json` —
+  with nothing keeping them in
   sync. There is **no `get_version` IPC command**, so the UI cannot display a version and
   `DiagnosticsSnapshot` cannot report one. A bug report today cannot say which build it came
   from, which makes 4.3 (crash reporting) far less useful when it lands. Single-source it in
@@ -2771,7 +2781,8 @@ small; the tier is large because nobody has walked that path yet.
   **Writing it surfaced something worse than a missing file.** The `v0.2.0` tag points at
   `ba4050f`, which is **not reachable from `master` or any other branch** — same root commit,
   so history was rewritten underneath the tag and left it orphaned. Meanwhile `master` is
-  **361 commits ahead** and `CMakeLists.txt` still declares `0.2.0`.
+  **hundreds of commits ahead** (`git rev-list --count v0.2.0..master`) and `CMakeLists.txt`
+  still declares `0.2.0`.
 
   Two consequences, both recorded in the changelog rather than silently fixed:
 
@@ -2903,7 +2914,7 @@ small; the tier is large because nobody has walked that path yet.
 - **9.13 — The `v0.2.0` tag is orphaned, so there is no release baseline.** `S` `decision`
   Found 2026-08-04 while writing [`CHANGELOG.md`](../CHANGELOG.md). The tag points at
   `ba4050f`, which shares this repository's root commit but is **reachable from no branch** —
-  history was rewritten underneath it. Meanwhile `master` is **361 commits ahead** and
+  history was rewritten underneath it. Meanwhile `master` is **hundreds of commits ahead** and
   `CMakeLists.txt` still declares `0.2.0`.
 
   Three things follow. Nothing can be diffed against "the last release", because the commit
@@ -3541,7 +3552,7 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
 
   The original finding was:
 
-  Time is read directly in at least three places (`state.cpp:69`, `:82`,
+  Time is read directly in at least three places (`state.cpp:now_rfc3339`,
   `storage.cpp`'s `CURRENT_TIMESTAMP`). This forces sleep-based tests, blocks testing
   idle/pomodoro/throttle interactions at real durations, and is the direct cause of the
   `_for_test` methods in 7.14. One injected clock seam fixes all of it. **Pairs naturally
@@ -3597,7 +3608,7 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
 
   1. **`CaptureThread never reports failed and running at the same time` fails almost always
      here — Debug 26/30 runs, Release 30/30.** The failing assertion is `REQUIRE(failed)`
-     (`tests/test_capture_thread.cpp:238`), **not** the `contradictions == 0` invariant the
+     (`tests/test_capture_thread.cpp:CaptureThread never reports failed and running at the same time`), **not** the `contradictions == 0` invariant the
      test exists to protect, so 11.1's ordering fix is intact and this is a defect in the
      test's own precondition wait. It spins a bounded 2,000,000 relaxed loads waiting for the
      hook thread to record failure, and on this machine that window can close before Windows
@@ -3620,7 +3631,7 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
      weakening what the test checks.
   2. **`rollback_model swaps the deployed model and quality metadata` throws
      `filesystem error: cannot copy file: File exists`.** `swap_file`
-     (`src/app/training_deploy.cpp:463`) passes `copy_options::overwrite_existing` on every
+     (`src/app/training_deploy.cpp:swap_file`) passes `copy_options::overwrite_existing` on every
      copy, which libstdc++ does not honour on MinGW.
 
   Neither blocks release. **They become blocking the moment anyone adds a MinGW job**, which
@@ -3777,7 +3788,7 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   The original finding was:
 
 - **11.7 (original finding) — The autostart test asserts against the real machine's registry.** `S`
-  `tests/test_autostart.cpp:26` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
+  `tests/test_autostart.cpp:autostart reports a Run-key backend on Windows` does a live round-trip through `HKCU\...\Run` and `REQUIRE`s
   that the write succeeds, so a passing suite depends on ambient machine state rather than on
   our code.
 
@@ -3819,9 +3830,9 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
 
   | Run | `ONNX backend / windows` | `C++ headless tests / windows-latest` |
   |-----|--------------------------|----------------------------------------|
-  | `30141403795` (PR #27) | ❌ `test_autostart.cpp:26` | ✅ |
+  | `30141403795` (PR #27) | ❌ `test_autostart.cpp:autostart reports a Run-key backend on Windows` | ✅ |
   | `30141852252` (master `18dcba0`) | ✅ | ✅ |
-  | `30143262631` (PR #28) | ✅ | ❌ `test_autostart.cpp:26` |
+  | `30143262631` (PR #28) | ✅ | ❌ `test_autostart.cpp:autostart reports a Run-key backend on Windows` |
 
   Neither `src/app/autostart.cpp` nor the test changed across those runs, and the failure
   moves between jobs — so it is environment coupling, not a regression. Most likely cause:
@@ -4033,7 +4044,7 @@ below still determine whether, where, and how the retraining loop should operate
 
 - **9.10 — Retention deletes the data analytics depends on, and the user has no say.** `S`
   `decision`
-  The 90-day prune is hardcoded (`storage.cpp:245`) with no setting exposed. Two tensions
+  The 90-day prune is hardcoded (`storage.hpp:kDefaultRetentionDays`) with no setting exposed. Two tensions
   nobody has resolved: a user who wants year-over-year trends silently can't have them, and
   a privacy-focused user who wants a 7-day window can't have that either. The value
   proposition ("see your focus patterns") and the privacy promise ("we don't keep it
@@ -4073,7 +4084,7 @@ below still determine whether, where, and how the retraining loop should operate
 
   The original finding was:
 
-  `state.hpp:161` states the invariant: *always acquire `mutex_` before `storage_mutex_`,
+  `state.hpp:storage_mutex_` states the invariant: *always acquire `mutex_` before `storage_mutex_`,
   never the reverse.* Nothing enforces it — no wrapper type, no runtime assertion, no test.
   It holds today because a careful author held it, and the codebase now has three mixed-lock
   methods plus every IPC command. TSan catches an *actual* inversion only if a test happens
@@ -4149,14 +4160,20 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   **Performance acceptance added 2026-08-05.** The default surface is Now, but mount currently
   fetches health, latest prediction, rules, training status, insights, focus summary,
-  analytics, and active session immediately; `useAnalytics` also performs its own duplicate
-  mount fetch. An active session polls context history even while Review is hidden. The new
+  analytics, and active session immediately. An active session polls context history even
+  while Review is hidden. The new
   workflows must make hydration surface-aware: initial Now renders with zero Review/Settings
   data calls, first surface entry fetches each dataset once, re-entry uses cached data until a
   real invalidation, and no timeline query runs while Review is hidden. Deduplicate in-flight
   requests and prevent an older response from overwriting newer state. Prefer a native
   "context snapshot persisted" invalidation to refreshing history on ordinary prediction
   events. Pin command counts in workflow tests.
+
+  *Correction 2026-08-19:* this paragraph also claimed `useAnalytics` performed a duplicate
+  mount fetch. That hook was already dead when the claim was written — nothing imported it —
+  and it has since been deleted, so the duplicate fetch it describes never ran. The rest of
+  the acceptance stands; `useReviewWorkflow` fetches analytics once inside its batched
+  `refreshReview`. Do not go looking for the duplicate.
 
 - **14.5 — Replace the fixed 10 Hz engine poll with deadline-aware, bounded work.** `M`
   `performance`
@@ -4225,7 +4242,7 @@ itself a backlog item below.
 - [ ] Open a **pre-existing** `focoflow.db` written by an earlier install and run a
       full session end-to-end. The 7.11 fixture corpus now makes this directly runnable.
 - [ ] Kill the process uncleanly mid-session, restart, confirm WAL recovery and that the
-      orphaned `ACTIVE` session resumes (`state.cpp:158` claims to handle this — verify it).
+      orphaned `ACTIVE` session resumes (`state.cpp:AppState` claims to handle this — verify it).
 - [ ] Run a session on each OS long enough to exceed the ring buffer under load, and confirm
       `capture_events_dropped` reflects reality; 7.4/7.17 expose the signal, this validates
       it under a real desktop workload.

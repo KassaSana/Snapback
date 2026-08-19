@@ -136,7 +136,7 @@ script CI runs, so a local failure is a real failure.
 Capture is the one part that cannot be verified headlessly.
 
 - **macOS** — needs **Accessibility** (System Settings → Privacy & Security →
-  Accessibility). `permissions.cpp:33` probes it with `AXIsProcessTrustedWithOptions`. The
+  Accessibility). `permissions.cpp:check_capture_permissions` probes it with `AXIsProcessTrustedWithOptions`. The
   `CGEventTap` is real, was silently dying under load until 2026-07-20, and **was verified
   on live hardware 2026-07-25** (Roadmap 0.3) — that run is also what found macOS capture
   stamping stale window titles onto events.
@@ -160,7 +160,7 @@ All optional. Read in `main.cpp`.
 | `SNAPBACK_BENCH_MINUTES` | Benchmark trace length |
 
 Default data directory: `%APPDATA%\snapback` on Windows, `~/.snapback` elsewhere
-(`main.cpp:51-61`). **The database file is named `focoflow.db`** and that is deliberate —
+(`main.cpp:app_data_dir`). **The database file is named `focoflow.db`** and that is deliberate —
 install compatibility across releases. Since Roadmap 7.3 the file also carries a schema
 version in `PRAGMA user_version`; a database written by a *newer* Snapback than the one you
 are running is refused rather than opened, and the log says so.

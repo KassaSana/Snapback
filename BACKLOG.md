@@ -1,0 +1,729 @@
+# BACKLOG.md — audit findings and direction tickets
+
+Generated 2026-08-19 from a full read of `src/`, `frontend/src/`, `tests/` (selectively),
+`scripts/`, and CI. Two parts:
+
+- **Part 1 — Audit findings (AUD-xx)**: what is wrong or fragile today. Each ticket carries a
+  **Confidence** field; where a finding rests on an assumption about how the code is used, the
+  assumption is stated and so is what would confirm or disprove it.
+- **Part 2 — Direction tickets (FWD-xx)**: where the project should go. These carry
+  **Value / Effort** instead of confidence, and a few are explicitly marked *not worth building*.
+
+Sizes: XS (< 1 hour), S (half a day), M (1–3 days), L (a week+).
+
+A general note first, because it frames everything below: this is an unusually disciplined
+codebase. Lock ordering is enforced by a ranked-mutex type, migrations are backed up and
+transactional, settings saves are atomic and fsynced, the IPC surface is token-gated, and the
+comments record *why* at a density most teams never reach. The findings below are mostly the
+gaps between subsystems — places where two correct components meet incorrectly — plus a small
+number of genuine dead paths.
+
+---
+
+## Part 1 — Audit findings
+
+### AUD-01 — "Take me back" can never find its payload: the tick drains it before the user can click
+
+**Problem.** `AppState::compute_event` latches a snapback into `latest_snapback_`
+(`src/app/state.cpp:compute_event`). On the very next engine tick — at most ~100 ms later —
+`engine_tick` moves it out to emit the `snapback` event and **resets the field**
+(`src/app/state.cpp:engine_tick`). But `restore_snapback_target()` (`src/app/state.cpp`),
+the handler behind the UI's "Take me back" button, reads `latest_snapback_` to learn which
+app/window to activate. By the time a human sees the card and clicks, the field has been empty
+for seconds, so it returns `{false, "No active snapback context to restore"}` — and the
+frontend swallows that as best-effort (`frontend/src/useLiveData.ts:useLiveData`). Net effect: the
+product's namesake restore action silently does nothing in production.
+
+**Evidence it's untested in the positive direction.** The only test of
+`restore_snapback_target` is the no-snapback negative case (`tests/test_focus_window.cpp:AppState restore_snapback_target returns not-ok when no snapback is active`).
+The snapback lifecycle tests drive `process_event` + `take_snapback()` directly and never run
+the real tick loop between fire and restore.
+
+**Proposed fix.** Separate "emitted once" from "still restorable": keep `latest_snapback_`
+populated until `dismiss_snapback()` / `restore_snapback_target()` / a new snapback replaces
+it, and add a `snapback_emitted_` dirty flag for the tick to emit exactly once (same pattern as
+`prediction_dirty_`). Add a test that runs the fire → tick-drain → restore sequence.
+
+**Size:** S. **Confidence:** High from code reading; confirm by running the Windows app with
+`SNAPBACK_OVERLAY_TEST=1` or a staged distraction and clicking "Take me back" — if the target
+window activates, I misread the drain path and this ticket is void.
+
+---
+
+### AUD-02 — `IdleStart`/`IdleEnd` capture events are never produced: three dead model features, a break clock that never resets, and a hyperfocus nudge that fires once per session
+
+**Problem.** Nothing in production ever constructs a `CaptureEvent` with
+`EventType::IdleStart/IdleEnd`. The only place those values are parsed is the fixture loader
+(`src/engine/feature_parity.cpp:parse_event_type`); no input hook and no engine path emits them (verified
+by grep across `src/`). The idle *detector* exists and works (`src/engine/idle_detector.hpp`),
+but its edges only drive session spans and a UI event — they are never fed back into the
+feature extractor as events. Consequences:
+
+1. `idle_time_30s`, `idle_event_count_5min` are **always 0** at inference
+   (`src/engine/features.cpp:extract`).
+2. `longest_active_stretch_5min` is **always 300** (the no-idle default,
+   `src/engine/features.cpp:extract`).
+3. `FeatureExtractor::update_break_state` (`src/engine/features.cpp:update_break_state`) requires an idle
+   event with `idle_duration_ms >= 300s` to reset `last_break_secs_` — so
+   `minutes_since_last_break` counts monotonically from session start forever. Real breaks are
+   invisible.
+4. The hyperfocus guardrail latches when `minutes_since_last_break` crosses the mode threshold
+   and is documented to clear "when a break resets minutes_since_last_break below the
+   threshold" (`src/app/state.cpp:compute_event`). Since that reset can never happen, the latch
+   stays set: **one hyperfocus nudge per session, ever**, even across a genuine hour-long
+   break. (The AFK freeze at `src/app/state.cpp:compute_event` also skips ingest while idle, so idle
+   time cannot leak into the windows by another route.)
+
+**Proposed fix.** In `engine_tick`, when `update_idle_unlocked` reports `WokeUp`, synthesize an
+`IdleEnd` `CaptureEvent` carrying `idle_duration_ms = idle_for_ms` and `ingest` it (and
+optionally an `IdleStart` on `WentIdle`), so the extractor's existing break/idle logic starts
+receiving what it was built for. Alternatively, reset `last_break_secs_` directly on the
+wake edge. Either way, decide the model-input question deliberately (see the skew warning in
+AUD-11): turning three constant features into live ones changes the input distribution a
+deployed ONNX model was trained against, so this fix should land **before** the next training
+corpus is collected, with a feature-parity fixture update.
+
+**Size:** M (small code, but fixture + parity + product-behavior decisions).
+**Confidence:** High that the events are never produced and that the four consequences follow;
+medium on how much the dead features hurt the heuristic (they mostly bias toward "long active
+stretch"). Disprove by finding any production `IdleStart`/`IdleEnd` producer I missed —
+`input_hook_macos.mm` was skimmed, not fully read, but a grep for the enum found nothing.
+
+---
+
+### AUD-03 — External links are dead: the shim's click interceptor calls `open_external_url` without the capability token
+
+**Problem.** Every native command rejects calls that don't carry the per-launch capability
+token (`src/app/command_dispatch.hpp:run_json_command`). The IPC shim's `invoke()` attaches it
+(`ipc_shim.cpp:build_ipc_shim_script`), but the document-level click interceptor calls the raw binding directly:
+`window.open_external_url({ url: anchor.href })` (`src/app/ipc_shim.cpp:build_ipc_shim_script`) — no token.
+So a click on an external `<a>` is `preventDefault()`ed and then the native call fails the
+token check; the rejection is returned into a promise nobody reads. Result: in a production
+build, external links in the dashboard do nothing.
+
+**Proposed fix.** In the interceptor, send the token the shim already holds:
+`window.open_external_url({ url: anchor.href, __snapbackToken: TOKEN })` — or route the call
+through the local `invoke()`. Add a shim test asserting the interceptor's payload carries the
+token (the existing `test_ipc_shim.cpp` does string-level checks; this fits that style).
+
+**Size:** XS. **Confidence:** High from code reading. Confirm in two minutes: click any
+external link in a built app and watch whether a browser opens. If links in the UI are only
+ever rendered as buttons that call `api.openExternalUrl(...)` via `invoke` (which does attach
+the token), the interceptor path may be currently unreachable — check whether any `<a href>`
+to an external site exists in the rendered UI before prioritizing.
+
+---
+
+### AUD-04 — The tick's deferred span-write can reopen an attendance span on a session that was just stopped, which then accrues attended time forever
+
+**Problem.** `engine_tick` decides span changes in phase 1 under `mutex_` and writes them in
+phase 2 under `storage_mutex_` (`src/app/state.cpp:engine_tick`, `1622-1640`). Between the two
+phases, no lock is held and only *deletion* bumps the activity epoch — `stop_session` does
+not. Interleaving:
+
+1. Phase 1: user just woke from idle → `pending_span_opens_ = true` for session A
+   (`src/app/state.cpp:update_idle_unlocked`).
+2. Between phases: user clicks Stop. `stop_session` (`src/app/state.cpp:stop_session`) closes A's
+   span and completes the session.
+3. Phase 2: the tick runs `begin_session_span_now(A)` — and
+   `Storage::begin_session_span` inserts a fresh open span **with no check of session
+   status** (`src/storage/storage.cpp:begin_session_span`).
+
+An open span on a completed session is counted as `COALESCE(ended_at, now)` by every
+attendance query (`kAttendedInWindowSql`, `src/storage/storage.cpp:recent_sessions`;
+`active_secs`, `1036-1052`), so daily/weekly attended minutes grow without bound. Nothing ever
+closes it: shutdown and hydration only touch the *active* session's spans
+(`src/app/state.cpp:close_open_span_on_shutdown`, `199-216`).
+
+**Proposed fix.** Belt and suspenders: (a) make `begin_session_span` a no-op (or throw) unless
+the session is `ACTIVE` — a one-line `WHERE`-guarded `INSERT ... SELECT`; (b) in phase 2,
+re-validate that the pending span's session is still the active one before writing (cheap:
+compare against a session id captured with the pending decision, and have
+`stop_session`/`start_session` clear `pending_span_*`). (a) alone closes the permanent-growth
+hole; (b) closes the stale write.
+
+**Size:** S. **Confidence:** Medium-high. The interleaving is real in the code and the storage
+layer demonstrably lacks the status check; what I could not confirm is how often the ~100 ms
+window is hit in practice — but the failure is permanent and compounding when it is, which is
+the worst shape. A test can force it deterministically via `AppStateTestAccess`: drive
+`update_idle_for_test` to stage an open, call `stop_session`, then run the persist phase.
+
+---
+
+### AUD-05 — `Logger` writes the sink from multiple threads with no lock
+
+**Problem.** `Logger::log` (`src/util/logger.hpp:pick_startup_log_sink`) guards the `recent_lines_` deque
+with `recent_mutex_` but writes `sink_ << line << '\n'` **outside any lock**. The sink is
+shared: the engine thread logs tick failures (`src/app/state.cpp:start_engine_impl`), the UI thread logs
+from every command path (settings, privacy, pomodoro persistence warnings), and tray callbacks
+log via `run_tray_action` (`src/main.cpp:run_tray_action`). For a `RotatingFileStream` this is a real
+data race on `RotatingFileBuffer::pending_` (a `std::string` appended from both threads,
+`src/util/logger.hpp:utc_timestamp`) — UB, not just interleaved lines. `set_level` is also
+unsynchronized against readers.
+
+**Proposed fix.** Move the sink write inside the existing mutex (rename it `mutex_`), and make
+`min_level_` atomic. The write is already line-buffered so the lock hold time is one
+formatted line.
+
+**Size:** XS-S. **Confidence:** High that the race exists as written. The one assumption worth
+checking: whether TSan CI has ever run a scenario that logs concurrently from two threads —
+absence of a TSan report here means the scenario wasn't driven, not that it's safe (the
+codebase's own `ranked_mutex.hpp` comment makes exactly this point).
+
+---
+
+### AUD-06 — `health()` reads `model_deployment_health_` with no lock while commands mutate it under `mutex_`
+
+**Problem.** `AppState::health()` is lock-free by design (it reads the immutable snapshot and
+atomics), but it also reads `model_deployment_health_` — a struct holding `std::string`s —
+directly (`src/app/state.cpp:health`, `794`). That field is *mutated* under `mutex_` by
+`reload_classifier_model()` and `retry_model_deployment_cleanup()`
+(`src/app/state.cpp:reload_classifier_model`). A torn `std::string` read is UB.
+
+**Assumption this rests on.** Today every caller of `health()` (IPC commands, diagnostics,
+support bundle) and both mutators appear to run on the webview UI thread, so the race may be
+unreachable *right now* — the code is safe by accident of call-site placement, not by design.
+The tray's status callback calls `recording_status()`, not `health()`, so it doesn't cross.
+
+**Proposed fix.** Move `model_deployment_health_` into `LiveReadSnapshot` (it already carries
+classifier status), so `health()` reads it through the published snapshot like everything
+else. That also removes the accident.
+
+**Size:** S. **Confidence:** High that the unlocked read exists; medium that it's currently
+exploitable. Confirm by listing `health()` callers: if any future caller runs off the UI
+thread (a watchdog, a second tray field), this becomes a live race with no code change here.
+
+---
+
+### AUD-07 — Retention pruning runs only at startup; a tray app that stays up for weeks grows without bound
+
+**Problem.** `Storage::open` is the only caller of `prune_runtime_data`
+(`src/storage/storage.cpp:open`). This is a close-to-tray app designed to run indefinitely
+(`src/main.cpp:main`). `feature_snapshots` gains ~1 row/sec of active session (31 REAL columns);
+a user who never restarts accumulates months past the 90-day window
+(`kDefaultRetentionDays`, `src/storage/storage.hpp:kDefaultRetentionDays`) until their next reboot, with the
+attendant query-time and disk cost — on the same `storage_mutex_` the tick's persist phase
+needs.
+
+**Proposed fix.** Run the prune periodically from the engine tick's storage phase — e.g. once
+per 24 h of uptime, tracked by a `last_prune_steady_ms_`, inside its own transaction. Skip the
+VACUUM while a session is active (it's the one genuinely slow part); leave startup VACUUM as
+is.
+
+**Size:** S. **Confidence:** High on the behavior (grep shows one call site); medium on
+severity — it depends on the assumption that real users keep the app running for weeks, which
+is what close-to-tray invites but I can't confirm from the repo.
+
+---
+
+### AUD-08 — "All time" review totals silently cap at the 500 newest sessions
+
+**Problem.** `summary_report` feeds `session_window_totals(500, floor)`
+(`src/app/state.cpp:summary_report`), whose CTE takes the **500 most recent sessions first** and filters
+by the window afterwards (`src/storage/storage.cpp:session_window_totals`). For bounded windows that's
+equivalent, but for `window == "all"` (floor 1970) the report claims all-time session counts
+and focus seconds while actually summing the newest 500. `analytics()` has the same shape with
+its own caps (`context_app_counts(200, 200, ...)`, `productive_session_streak(200, ...)`,
+`src/app/state.cpp:analytics`). Prediction-side stats (`prediction_stats`) are uncapped, so
+the same "All time" card can mix a true prediction total with a capped session total.
+
+**Proposed fix.** Either lift the session cap for aggregate-only queries (they're `SUM`s over
+an indexed scan; measure first — the benchmark harness exists), or surface the cap honestly in
+the DTO (`sessionCountCapped: true`) and the UI. Given the retention window already bounds
+data to ~90 days, the honest answer may simply be "the cap is unreachable for most users" —
+in which case document that on the query instead.
+
+**Size:** S. **Confidence:** High on the limit-then-filter behavior (it's in the SQL); low on
+user impact until someone has >500 sessions inside retention (~5.5/day) — state it, don't
+inflate it.
+
+---
+
+### AUD-09 — Windows capture: up to 500 ms of input is dropped after every focus switch, and focus-change events lag the same amount
+
+**Problem.** The Windows hook enriches events with a foreground context cache refreshed only
+by a 500 ms timer (`kContextRefreshMs`, `src/capture/input_hook_windows.cpp:mouse_proc`). Both
+hook procs drop events whenever the *actual* foreground window differs from the cached one
+(`context_matches_foreground`, lines 70-73 and 88-90). So after every alt-tab: (a) all
+keystrokes/clicks until the next timer tick are discarded — the first burst of typing in a
+newly-focused window is systematically invisible, which biases `keystroke_rate` and
+`time_in_current_app` right at the moment the classifier is most interested; (b) the
+`WindowFocusChange` event itself arrives up to 500 ms late.
+
+**Proposed fix.** Keep the timer as a fallback but add a `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`
+listener on the hook thread that calls `refresh_context(true)` immediately on foreground
+change. The refresh already runs on the message loop outside the low-level callbacks, so the
+latency-safety design is preserved.
+
+**Size:** M. **Confidence:** High on the mechanism (the gate is explicit); medium on model
+impact — the 30 s windows dilute a 500 ms hole, but context-switch-heavy behavior (thrash!) is
+exactly when the holes are most frequent.
+
+---
+
+### AUD-10 — Linux hook: a shell is forked per input event, mouse clicks are counted as key presses, and the polling fallback resurrects the uptime-as-calendar bug
+
+**Problem.** Three issues in `src/capture/input_hook_linux.cpp`:
+
+1. **Fork per event.** The device loop calls `query_active_window()` for *every* event read
+   (`input_hook_linux.cpp:open_input_devices`), and that function spawns `sh -c 'xdotool ...'` via `popen`
+   (`src/capture/active_window.cpp:query_active_window`). Mouse-move floods mean hundreds of
+   fork+exec per second.
+2. **Clicks are keys.** `EV_KEY` with `value == 1` maps to `KeyPress`
+   (`input_hook_linux.cpp:open_input_devices`), but mouse buttons (`BTN_LEFT` etc.) are also `EV_KEY`; there
+   is no `MouseClick` mapping at all, so `mouse_click_count` is always 0 on Linux and
+   keystroke features are inflated by clicks.
+3. **No wall clock on focus events.** Both loops set `wall_clock_secs` on input events but not
+   on the synthesized `WindowFocusChange`/`WindowTitleChange` events
+   (`input_hook_linux.cpp:open_input_devices`, `112-118`). In the polling fallback — the only mode for
+   users not in the `input` group — **no event ever carries a wall clock**, so
+   `fill_time_fields` falls back to the monotonic clock and `hour_of_day`/`day_of_week` are
+   derived from machine uptime: exactly the bug Roadmap 7.24 fixed elsewhere, still alive on
+   this path (`src/engine/features.cpp:extract`).
+
+**Proposed fix.** (3) is one line per site and should land regardless. (2) is a small mapping
+table on `ev.code` ranges. (1) needs the active-window query cached on a timer like Windows
+does (500 ms poll thread updating a shared_ptr), or a real X11/Wayland client instead of
+`xdotool` — that larger step belongs with the existing Roadmap 3.2 Linux work.
+
+**Size:** S for (2)+(3); M-L for (1). **Confidence:** High on all three from reading; Linux is
+explicitly a fallback platform (README marks tray/overlay stubbed), so priority is a product
+call, not a correctness one.
+
+---
+
+### AUD-11 — `is_pseudo_productive` is a model input pinned to 0.0 at inference: possible train/serve skew
+
+**Problem.** Feature 31 is hardcoded: `out.is_pseudo_productive() = 0.0`
+(`src/engine/features.cpp:extract`), yet it is exported in training CSVs
+(`src/storage/storage.cpp:export_training_csv`) — where it is also always 0, *because the export reads
+`feature_snapshots` rows that inference wrote*. So the column is constant everywhere the C++
+side can see. The risk: if the Python-side trainer (out of tree, ADR-0006) derives or
+backfills this column from labels — the name suggests it began life as a label — the deployed
+model was trained with a live input that inference always zeroes.
+
+**Assumption.** I cannot see the trainer repo. If the trainer drops constant columns or
+treats it as 0, this is dead weight, not skew.
+
+**Proposed fix.** Confirm with the trainer what column 31 does. If it's dead: keep it for
+wire-format stability, but document on `kFeatureColumns` and in the feature contract that it
+is reserved-constant. If it's trained-on: that's a model bug; retrain without it and bump the
+feature contract id.
+
+**Size:** XS (investigate) + unknown. **Confidence:** High that it's constant at inference;
+low on whether that harms the ONNX model — the trainer answer decides.
+
+---
+
+### AUD-12 — `unique_apps_5min` counts the empty app name as a distinct app
+
+**Problem.** `FeatureExtractor::ingest` interns every event's `app_name`, including `""`
+(events that arrive before any foreground context exists), and `extract` inserts every
+interned id into the `unique_apps` set (`src/engine/features.cpp:ingest`, `216`). One
+context-less event in the window inflates `unique_apps_5min` by 1, which feeds
+`thrash_score` (`src/engine/classifier.cpp:thrash_score`).
+
+**Proposed fix.** Skip the set-insert for the empty-name id (or don't intern `""`). Note this
+changes pinned golden vectors: regenerate `fixtures/feature_parity/golden.json` in the same
+change, and check whether the training corpus was collected with the old behavior (if so, the
+"fix" introduces skew — the honest sequencing is to batch it with AUD-02's feature-semantics
+change and one contract bump).
+
+**Size:** XS + fixture regen. **Confidence:** High on behavior; medium on whether fixing it
+alone is worth a contract change — batch it.
+
+---
+
+### AUD-13 — App-rule patterns are raw substrings with no floor: a one-letter rule reclassifies half the machine
+
+**Problem.** Rules match by lowercase substring against app name *and* title
+(`src/engine/app_context.cpp:matches_rule_pattern`, `129-134`). Validation only trims and caps length at 200
+(`src/app/commands.hpp:register_commands`). A user who saves pattern `"a"` (or a stray space plus one
+letter) silently makes nearly every window match; a Block rule then forces
+`is_entertainment = 1` and `DISTRACTED` verdicts everywhere. There is no minimum length, no
+warning, and the damage shows up as "the classifier went insane", not "your rule is broad".
+
+**Proposed fix.** Enforce a minimum pattern length (3 is reasonable) at the command layer, and
+surface the existing `appRulePreview` frontend logic (`frontend/src/appRulePreview.ts`) as a
+"this would match N of your recent windows" check before saving. No engine change.
+
+**Size:** S. **Confidence:** High on mechanics; this is a product sharp-edge ticket, not a
+bug — decide the floor deliberately.
+
+---
+
+### AUD-14 — Review-window cutoffs and storage timestamps bypass the injected Clock
+
+**Problem.** Roadmap 11.4 threaded a `Clock` seam through AppState, but two families still
+read real time directly: `cutoff_rfc3339` in `src/app/state.cpp:cutoff_rfc3339` (drives
+`analytics`/`summary_report`/`focus_summary_for_window` windows) and *all* of Storage's
+stamps (`utc_now_rfc3339`/`unix_now_secs`, `src/storage/storage.cpp:utc_now_rfc3339`). Consequence: a
+`ManualClock` test cannot exercise "7d" windows or retention math without
+`backdate_session_for_test`-style hacks, and the codebase now has three clocks (AppState's,
+Storage's, SQLite's `datetime('now')`) whose skew the span code already has to defend against
+(`src/app/state.cpp:update_idle_unlocked` documents exactly this).
+
+**Proposed fix.** Incremental: pass the cutoff-computation through `AppState::clock()` first
+(it's a lambda parameter already — `review_window_cutoff(window, since, cutoff_rfc3339)`), then
+consider giving Storage an optional clock at construction. Do not try to unseat SQLite's
+`datetime('now')` in the same change; the span code's offset design exists to cope with it.
+
+**Size:** S (AppState part), M (Storage part). **Confidence:** High — this is a testability
+gap the codebase's own comments acknowledge; nothing is broken today.
+
+---
+
+### AUD-15 — `const_cast<Storage&>` in the analytics read paths
+
+**Problem.** `AppState::analytics` and `summary_report` are `const` and cast constness away
+five times to call non-const Storage methods (`src/app/state.cpp:analytics`, `1328-1344`).
+Storage reads are non-const only because `cached_stmt` mutates the statement cache. The casts
+are safe today but erase the compiler's help exactly where a future writer might add a
+mutation to a "read" path.
+
+**Proposed fix.** Make `stmt_cache_` `mutable` and mark Storage's read methods `const` (they
+already serialize under the caller's `storage_mutex_`), then delete the casts.
+
+**Size:** S. **Confidence:** High; pure hygiene, no behavior change.
+
+---
+
+### AUD-16 — `rollback_classifier_model` is not developer-gated while every sibling training command is
+
+**Problem.** `get_training_deploy_status`, `set_training_repo_path`, and `train_from_export`
+all throw unless `developer_tools_enabled()` (`src/app/commands.hpp:register_commands`), but
+`rollback_classifier_model` (`commands.hpp:register_commands`) and `retry_model_deployment_cleanup`
+(`453-455`) are open. Rollback swaps `model.onnx` for `model.onnx.previous` — arguably a user
+recovery action, arguably developer tooling. Whichever it is, the asymmetry looks like an
+oversight to the next reader.
+
+**Proposed fix.** Decide and document: if rollback is a user-facing safety valve (my read —
+a bad deployed model should be escapable without env vars), add a comment saying so at the
+bind site; if not, gate it.
+
+**Size:** XS. **Confidence:** High that the asymmetry exists; the right answer is a product
+decision, not a code fact.
+
+---
+
+### AUD-17 — `CaptureThread::start`/`stop` assume a single controlling thread
+
+**Problem.** `start()` guards re-entry with `running_.exchange` but then assigns
+`hook_thread_` unguarded (`src/capture/capture_thread.cpp:start`); `stop()` joins and clears
+`hook_` concurrently-unsafely. If `start` and `stop` ever race from two threads, that's a data
+race on `std::thread` assignment.
+
+**Assumption.** Today both are called only from the main/UI thread
+(`start_engine_impl`/`stop_engine`), so this is a latent constraint, not a live bug — and the
+comment at `capture_thread.cpp:stop` shows the author knows the edges.
+
+**Proposed fix.** Cheapest honest fix: a comment on the class stating the single-controller
+contract (matching how it's used), or a small mutex around start/stop if the contract can't be
+promised.
+
+**Size:** XS. **Confidence:** High on the code, high on the current call sites; ticket exists
+so the constraint is written down before someone adds a watchdog thread that calls `stop()`.
+
+---
+
+### AUD-18 — `make_uuid_v4` constructs `std::random_device` per call; MinGW quality is a supported-toolchain question
+
+**Problem.** `src/storage/storage.cpp:make_uuid_v4` builds a fresh `std::random_device` for every
+session id. Older MinGW-w64 libstdc++ builds made `random_device` deterministic
+(mt19937-backed); this repo *deliberately supports* MinGW UCRT64 in CI (the `windows-gcc`
+job exists because of libstdc++-on-MinGW bug 11.8). Current MSYS2 UCRT64 uses a real entropy
+source, so this is likely fine — but a deterministic device would mean colliding session ids
+across processes, and session_id is a primary key.
+
+**Proposed fix.** One static thread-local `std::mt19937_64` seeded once from `random_device`
+plus a time/pid mix, or verify (and assert in the windows-gcc CI job) that
+`random_device::entropy() > 0`. Per-call construction is also mildly wasteful; sessions are
+rare, so that part is cosmetic.
+
+**Size:** XS. **Confidence:** Low that it's broken on the current toolchain; the ticket is
+"verify on the supported toolchain and pin the answer in CI", not "fix a known bug".
+
+---
+
+### AUD-19 — Predictions are still computed and emitted with no active session while health reports them suppressed
+
+**Problem.** `compute_event` classifies and publishes `latest_prediction_` even with no
+session (`record.session_id = ""`, `src/app/state.cpp:compute_event`) — it just skips persistence.
+Meanwhile `health()` reports `prediction_suppression_reason = "no_session"`
+(`src/app/state.cpp:health`), and focus momentum keeps evolving between sessions. Either the
+Now surface deliberately shows a live preview without a session (plausible — the untracked
+nudge needs the engine watching), or the suppression reason is lying.
+
+**Proposed fix.** Decide and document. If the live preview is intended, rename the health
+field's semantics (it currently reads as "predictions are suppressed") or scope it to
+persistence. If not, gate the classify path on `have_session` and save the CPU.
+
+**Size:** XS-S. **Confidence:** High on the code path; low on which behavior is intended —
+that's why the ticket is a decision, not a fix.
+
+---
+
+### AUD-20 — `App.tsx` is an 830-line wiring hub; every feature change flows through it
+
+**Problem.** `frontend/src/App.tsx` instantiates ~20 hooks and hand-threads dozens of values
+between them (`App.tsx:App`), plus a 26-argument `useAppEffects` contract
+(`frontend/src/useAppEffects.ts:UseAppEffectsArgs`). The hooks themselves are well-factored; the hub is
+the cost. A new contributor adding one card must read the whole file to find where their
+three values come from, and the `useAppEffects` re-subscription depends on
+`sessionId`/`sessionStatus`, so all ten event listeners unsubscribe/resubscribe on every
+session change (a brief window where a push event can be missed — minor, but a symptom of the
+same coupling).
+
+**Proposed fix.** Split by surface (ADR-0003 already defines three): a `NowSurface`,
+`ReviewSurface`, `SettingsSurface` component each owning its hooks, with a small shared
+context for the truly cross-cutting values (session identity, health, feedback). Split the
+event subscriptions so stable handlers subscribe once and read changing values through refs.
+Incremental — one surface at a time.
+
+**Size:** M-L (mechanical but wide). **Confidence:** High that the drag is real; this is
+maintainability, not correctness.
+
+---
+
+### AUD-21 — Oversized single files: `storage.cpp` (2,252), `api.ts` (854), `commands.hpp` (465-line inline header)
+
+**Problem.** Three navigation/compile-cost hotspots: `src/storage/storage.cpp` mixes schema,
+sessions, spans, analytics SQL, exports, and pruning in one TU; `frontend/src/api.ts` holds
+every DTO and call in one file; `src/app/commands.hpp` is fully inline and included by
+`main.cpp`, so every command edit recompiles the webview TU (and it pulls WebView2 headers
+into anything that includes it).
+
+**Proposed fix.** Split `storage.cpp` along its existing comment banners
+(storage_sessions.cpp, storage_analytics.cpp, storage_export.cpp — shared `Stmt` helpers to a
+detail header). Split `api.ts` by domain, keeping `apiMappers.ts` as the single casing
+boundary. Move `register_commands` to a .cpp with a thin header. None of this changes
+behavior; all of it is guarded by the existing tests.
+
+**Size:** M total (each piece S). **Confidence:** High; pure structure. Honest counterpoint:
+the files are internally well-organized, so this is the lowest-priority quality ticket —
+do it opportunistically, not as a campaign.
+
+---
+
+### AUD-22 — The `test:unit` chain in package.json is a 21-entry hand-maintained list
+
+**Problem.** `frontend/package.json` runs unit tests as a `&&`-chain of 21 explicit `tsx`
+invocations. There's a guard script (`scripts/check_unit_test_wiring.py`) that fails CI when a
+test isn't wired — which converts "silently skipped test" into "CI friction for every new
+test file": a contributor must create the test, edit package.json, and satisfy the checker.
+
+**Proposed fix.** Run the pure-unit tests under the vitest runner that already exists for
+components (a second vitest project with `environment: node` and a glob), then delete both the
+chain and the wiring checker. One glob replaces list + list-checker.
+
+**Size:** S. **Confidence:** High; the only risk is vitest startup overhead vs `tsx`, which is
+measurable before committing.
+
+---
+
+### AUD-23 — Minor items, batched
+
+Each of these is real but small; recorded so nothing is lost, sized together.
+
+1. **`ContextTracker` Recovering-without-payload is unguarded.** If
+   `build_snapback` ever returns nullopt at the Distracted→Recovering edge
+   (`src/snapback/tracker.cpp:observe_window_change`), the tracker latches `Recovering` with nothing for the
+   UI to dismiss — a stuck state whose only exits are dismiss/reset. I could **not** construct
+   a reachable path (the transition requires `was_on_task`, which implies
+   `last_focus_snapshot_` was just saved), so this is defensive: assert or fall back to
+   `Focused` when the payload is empty. *Confidence: high that it's unreachable today, which
+   is exactly when a cheap guard is worth writing down.*
+2. **`react`/`react-dom` live in `devDependencies`** (`frontend/package.json`). Works because
+   Vite bundles everything, but misleads readers and tooling about what ships. Move to
+   `dependencies`. *XS.*
+3. **`docs/ROADMAP.md` is 300 KB** with a large "Done archive" tail. Split the archive into
+   `docs/roadmap_archive.md` so the live document loads and diffs sanely.
+   *S; check `scripts/check_doc_paths.py` expectations first.*
+4. **macOS `.mm` files were skimmed, not audited** (this review ran on Windows). The
+   `osascript` popen in `active_window.cpp:query_active_window` runs per capture-context refresh — a
+   process spawn every poll, and a hang risk if AppleScript prompts. Worth its own pass on a
+   Mac. *Flagged as unexamined, not as clean.*
+5. **`upsert_app_rule` re-fetch uses `COLLATE NOCASE` on an already-NOCASE column**
+   (`src/storage/storage.cpp:upsert_app_rule`) — harmless, mildly confusing. *XS.*
+
+---
+
+## Part 2 — Direction tickets
+
+Context for value judgments: Snapback's differentiation is the **behavioral event pipeline** —
+per-second keystroke/mouse/window dynamics feeding a classifier, entirely local. A
+screenshot-based competitor (Rescuetime-style) sees *what* is on screen but samples coarsely
+and uploads; a timer-based one (Toggl-style) knows only what you claim. Snapback can know
+*how* you're working — cadence, churn, momentum — without the content ever leaving the
+machine. Features that cash in that difference are worth building; features any timer app has
+are mostly not.
+
+A second frame: **a lot is already built and waiting.** The training→quality-gate→deploy→
+rollback pipeline exists end-to-end (dev-gated). Snapback episodes have been persisted since
+2.15 and are barely surfaced. Attended spans, reflections, auto-labels, and goal categories
+are all in the schema. Several "new features" below are 80% storage-side done.
+
+---
+
+### FWD-01 — Cut the v1 Windows release that the repo is visibly ready for
+
+**What.** Everything upstream of a release exists: CI on three OSes with launch smokes,
+packaging and validation scripts, a changelog with an explicit "nothing has shipped" warning,
+a release workflow with a CI-green gate. The README itself says the `v0.2.0` tag is dangling.
+Ship a signed (or initially unsigned-with-caveat) Windows v0.3.0: tag, release notes from the
+changelog, `windows_demo.md` as the quickstart.
+
+**Why it's first.** Every other product idea is hypothetical until someone outside the repo
+runs the app. A release also forces the last honesty checks (the changelog note, 0.4b signing
+status) to resolve.
+
+**Value:** Very high. **Effort:** S-M (the existing docs/ROADMAP Tier 9 has the checklist;
+most items are marked done). The one real blocker to *frictionless* installs is code signing
+(existing Roadmap 0.4b) — decide whether v0.3.0 ships unsigned with a documented SmartScreen
+caveat rather than letting signing gate the tag forever.
+
+---
+
+### FWD-02 — A weekly "focus story" built from data nobody else has
+
+**What.** A locally-generated weekly digest on the Review surface: personal baseline focus
+curve by hour ("your deep-focus window is 9–11 am, reliably"), week-over-week deltas, the
+most expensive distraction (from snapback episodes: source app, count, total minutes), and
+attended-vs-planned against the targets that already exist. Nearly all queries exist
+(`hourly_focus_buckets`, `prediction_stats`, `list_snapback_episodes`, attended-window
+helpers); this is composition plus one new surface section.
+
+**Why.** This is the "open it daily/weekly" hook. The pipeline's unique data — momentum,
+thrash, per-episode interruption costs — is currently visible only as instantaneous readings.
+Trends are what change behavior, and trends are what a screenshot competitor can't compute at
+this granularity.
+
+**Value:** High. **Effort:** M. Depends on AUD-02 landing first if the digest mentions breaks
+(otherwise "time since break" is fiction), and on AUD-08's cap honesty for all-time claims.
+
+---
+
+### FWD-03 — Close the personalization loop: retrain from the user's own labels, on-device
+
+**What.** Auto-labels are saved for every session, manual verdict feedback exists, features
+are persisted per prediction, and the deploy side (quality gate, model identity, rollback) is
+already built. The missing piece is a trainer that doesn't require cloning a Python repo
+(ADR-0006 made the trainer developer tooling). Options, in ascending ambition: (a) ship a tiny
+gradient-boosted/logistic trainer in C++ over the exported CSV shape, gated by the existing
+quality gate; (b) bundle a frozen Python runtime; (c) keep training developer-only forever and
+call the loop closed for devs only.
+
+**Why.** "It learns *your* patterns" is the product claim the architecture was built for, and
+no competitor with server-side generic models can match locally. The label capture and deploy
+halves already exist — this is the middle third.
+
+**Value:** High, but honest caveat: only after FWD-02 proves people look at the output.
+**Effort:** L, and **flagged: option (a) is secretly a partial rewrite** — it re-implements
+the training contract in C++ and revises ADR-0006. Do not start it before AUD-02/AUD-11/AUD-12
+settle the feature semantics, or the first personalized model trains on features the fixed
+engine will never reproduce (train/serve skew by roadmap ordering).
+
+---
+
+### FWD-04 — Make the snapback moment actually restorative
+
+**What.** Today a snapback shows a summary and (post-AUD-01) can refocus one window. The
+tracker already stores file hints, project hints, and a timeline of context snapshots. Extend
+the recovery card: last three on-task contexts (not just one), the reflection "next step" from
+the previous session when relevant, and a one-keystroke "back to work" that restores the
+window *and* logs the episode outcome (did the user return within 60 s?) — which becomes a
+training signal for free.
+
+**Value:** High — it's the namesake interaction, and episode-outcome data feeds FWD-03.
+**Effort:** M. Hard dependency: AUD-01 (restore must work at all).
+
+---
+
+### FWD-05 — Notification budget and quiet hours
+
+**What.** One place that rate-limits everything that pops (snapback overlay, hyperfocus toast,
+untracked nudge): max N interruptions/hour, quiet hours, and per-channel toggles. The latches
+exist per-feature; the budget doesn't.
+
+**Why.** The realistic failure mode of this product category is uninstall-due-to-nagging. A
+budget is cheap insurance on retention, and it's a settings-surface feature with no engine
+risk.
+
+**Value:** Medium-high. **Effort:** S-M.
+
+---
+
+### FWD-06 — Auto-update check for Windows
+
+**What.** A startup (and daily) version check against GitHub releases, a header chip when an
+update exists, opening the release page via the external-URL path. No self-patching binary —
+just awareness.
+
+**Why.** Post-FWD-01, iteration speed only matters if users actually receive iterations.
+Effort is small because it's UI + one HTTPS fetch (note: the webview page can't fetch
+cross-origin — do it native-side in a thread, surfaced through health or a command).
+
+**Value:** High per unit effort. **Effort:** S-M. After FWD-01; pairs with a `winget`
+manifest (S) once signing (0.4b) lands.
+
+---
+
+### FWD-07 — Offline model evaluation harness (replay before deploy)
+
+**What.** A command (dev-gated) that replays the local `feature_snapshots` +
+labels through a *candidate* model file and reports agreement/confusion vs the deployed
+model and vs auto-labels, before `deploy` swaps anything. The quality gate today checks the
+model loads and its identity; it doesn't check the model is *better*.
+
+**Why.** Every ML-quality investment (FWD-03, retrains after AUD-02's feature fixes) is
+unsafe without a cheap way to say "the new model is not worse on this user's own history."
+This is the CI-of-models, and all the data is already on disk.
+
+**Value:** High for ML velocity (prerequisite-shaped). **Effort:** M.
+
+---
+
+### FWD-08 — Adaptive engine idle: stop burning 10 wakeups/sec around the clock
+
+**What.** The engine ticks every 100 ms unconditionally (`src/app/state.cpp:start_engine_impl`), including
+overnight with no session, private mode on, or the user idle. Back off to 500–1000 ms when the
+ring has been empty and no session is active; snap back to 100 ms on the first drained event.
+
+**Why.** A tray-resident app is judged on background cost. Honest sizing: the empty tick is
+already cheap (dirty-flag publish, no allocation), so this is battery/perception polish, not a
+rescue.
+
+**Value:** Low-medium. **Effort:** S.
+
+---
+
+### FWD-09 — Developer-experience consolidation: one command to a running dev loop
+
+**What.** A `scripts/dev.ps1`/`dev.sh` that builds the app in Debug, starts Vite, and launches
+with `SNAPBACK_FRONTEND_URL=http://localhost:5173` — the seam already exists in `main.cpp`.
+Plus a documented pre-commit hook that runs the fast checkers (`check_no_bom`, doc paths,
+prettier) so contributors stop discovering conventions via CI failure — CONTRIBUTING.md itself
+admits the conventions "are not guessable".
+
+**Value:** Medium (compounds across every future contributor). **Effort:** S.
+
+---
+
+### FWD-10 — Things deliberately *not* worth building now
+
+Called out so the list above stays honest rather than padded:
+
+- **Calendar integration** ("you have a meeting in 10 min"): third-party auth, privacy story
+  dilution, and every timer app has it — it spends the local-only differentiator to gain a
+  commodity feature. Revisit only if users ask.
+- **Streaks/gamification beyond the existing productive-session streak**: the product's brand
+  is honest measurement (ADR-0004's verdict/opinion split, the "quiet screen" caveat in
+  `utils.ts`). Badges would work against the thing that makes it credible.
+- **A browser extension for tab-level signals**: real signal value, but it doubles the
+  attack/privacy surface and the maintenance matrix before v1 has shipped. Sequence strictly
+  after FWD-01/02 prove demand.
+- **Cloud sync / multi-device**: negates the entire local-only architecture premium. A
+  file-based export/import already exists (9.14) and is the right answer at this scale.
+- **Linux tray/overlay parity now** (existing Roadmap 3.2): with capture quality on Linux at
+  AUD-10's level, UI parity polishes a platform whose data layer isn't competitive yet. Fix
+  AUD-10's cheap parts, defer the rest.

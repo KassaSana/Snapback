@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Roadmap 4.12. Emit compile_commands.json so clangd and clang-tidy see the same flags the
+# build uses, and so `.clang-tidy`'s check set applies in every editor rather than each
+# developer's defaults. It is a generator artifact, already gitignored, and costs nothing to
+# produce. Multi-config generators (MSVC) ignore this; Ninja and Make honour it.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 if(MSVC)
   # /utf-8: source + exec charset UTF-8 (our string literals contain UTF-8 bytes).
   # /W4: high warning level. /permissive-: standards-conformant mode.

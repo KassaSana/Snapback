@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import {
   api,
   type CaptureFailurePayload,
-  type LabelHotkeyPayload,
   type OverlayFailurePayload,
   type PomodoroStatus,
   type PredictionRecord,

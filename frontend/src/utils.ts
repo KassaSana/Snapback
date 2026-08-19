@@ -1,4 +1,4 @@
-﻿import type { PredictionRecord } from "./api";
+import type { PredictionRecord } from "./api";
 
 export type RiskLevel = "high" | "medium" | "low" | "unknown";
 
@@ -115,7 +115,7 @@ export type VerdictExplanation = {
 // we wish it measured. `thrash` is app switching. `drift` is title churn plus erratic
 // keystroke intervals. Neither can see what is on the screen.
 //
-// Hence the caveat: `deep_work_score` (classifier.cpp:44) is built from time-in-app,
+// Hence the caveat: `deep_work_score` (classifier.cpp:deep_work_score) is built from time-in-app,
 // low switching, and stability — all measures of *absence*. A quiet screen scores the
 // same whether you are reading a spec or watching a film. Saying so is more useful than
 // a confident label, and it is the honest reading of what this model can know.

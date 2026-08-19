@@ -26,6 +26,13 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 - **Status vocabulary:** `Proposed` (written, not agreed), `Accepted` (in force),
   `Superseded by ADR-NNNN`, `Rejected` (considered and declined — keep it, it stops the
   idea coming back).
+- **`Accepted` means agreed, not built.** ADRs are written in the present tense — "Scores are
+  `[0,1]` everywhere" — which reads as a description of the code, and usually is one, because
+  the code lands with the decision. When it does not, say so **in the header**, with an
+  `Applied:` line and an `## Implementation status` section naming what is actually true
+  today and which roadmap item carries the remaining work. ADR-0007 is the worked example.
+  Without that, the most authoritative document in the repository confidently describes a
+  system nobody has built, and the next reader writes code against it.
 - **No code before `Accepted`.** `decision`-tagged roadmap items must not be implemented
   until the ADR exists. This is the rule the reverted "fixes" broke.
 
@@ -39,7 +46,7 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | [0004](0004-verdict-and-opinion.md) | The state is the policy verdict, the scores are the model's opinion | Accepted | 7.7, 7.18, 5.3, 5.4, 1.2 |
 | [0005](0005-a-session-is-declared-and-attended.md) | A session is declared by the user and attended by the user | Accepted | 2.7, 7.23, 2.8 |
 | [0006](0006-trainer-is-developer-tooling.md) | Training tooling is developer-only | Accepted | 13.7 |
-| [0007](0007-time-is-integer-milliseconds-utc.md) | A point in time is UTC milliseconds since the epoch, stored as INTEGER | Accepted | 7.16 |
+| [0007](0007-time-is-integer-milliseconds-utc.md) | A point in time is UTC milliseconds since the epoch, stored as INTEGER | Accepted — **not yet applied** | 7.16 |
 
 ## Awaiting an ADR
 

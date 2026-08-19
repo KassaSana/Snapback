@@ -5,6 +5,8 @@ session notes and parallel TODO lists do not belong in the repository.
 
 ## Start here
 
+- [Contributing](../CONTRIBUTING.md) — the conventions CI enforces, and the ones you cannot
+  guess. Read it before a first change.
 - [Running Snapback](running.md) — build, test, launch, permissions, and troubleshooting by
   platform.
 - [Architecture](ARCHITECTURE.md) — current runtime shape, module boundaries, threading,

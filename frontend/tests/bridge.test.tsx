@@ -32,11 +32,11 @@ describe("native bridge adapter", () => {
     const handler = vi.fn();
 
     const off = await listen("snapback", handler);
-    registered?.({ event: "snapback", id: 1, payload: { summary: "return" } });
+    registered?.({ payload: { summary: "return" } });
     off();
 
     expect(nativeListen).toHaveBeenCalledWith("snapback", handler);
-    expect(handler).toHaveBeenCalledWith({ event: "snapback", id: 1, payload: { summary: "return" } });
+    expect(handler).toHaveBeenCalledWith({ payload: { summary: "return" } });
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
