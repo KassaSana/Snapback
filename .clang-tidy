@@ -1,0 +1,63 @@
+# Roadmap 4.12. Static-analysis configuration for editors and clangd.
+#
+# **Read this before assuming CI enforces it: CI does not run clang-tidy yet.** What this
+# file buys today is that every editor, and every `clangd` session, applies the same check
+# set instead of each developer's defaults. `CMAKE_EXPORT_COMPILE_COMMANDS` is ON in
+# CMakeLists.txt so a compilation database exists for it to read; `compile_commands.json` is
+# gitignored, and configuring any build produces one.
+#
+# Running it in CI needs a per-file invocation against that database, which is real build
+# time for a codebase this size, and it will surface a backlog on first run. That is a
+# separate piece of work, deliberately not bundled here -- saying "CI checks this" when it
+# does not would be the exact class of false claim the docs guards exist to prevent.
+#
+# The check set is chosen to be worth reading rather than exhaustive. Excluded on purpose:
+#
+#  * `modernize-use-trailing-return-type` -- churns every signature for a style this codebase
+#    does not use.
+#  * `readability-magic-number` -- the numbers that matter are already named in
+#    `classifier_tuning.hpp`; the rest are array bounds and test literals.
+#  * `readability-identifier-length` -- flags `db`, `id`, `w`, all of which are clearer short.
+#  * `google-readability-todo` -- TODOs are not the tracking mechanism here; ROADMAP.md is.
+#  * `fuchsia-*`, `llvmlibc-*`, `altera-*` -- vendor policies for other codebases.
+Checks: >
+  bugprone-*,
+  performance-*,
+  portability-*,
+  modernize-*,
+  readability-*,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-pro-type-member-init,
+  misc-unused-parameters,
+  misc-unused-using-decls,
+  -modernize-use-trailing-return-type,
+  -readability-magic-number,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -bugprone-easily-swappable-parameters
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '^.*/(src|tests|tools|benchmarks)/.*\.(hpp|h)$'
+FormatStyle: file
+
+CheckOptions:
+  # Match the names already in the tree: kCamelCase constants, snake_case functions and
+  # members with a trailing underscore, CamelCase types.
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: _
+  - key: readability-identifier-naming.GlobalConstantPrefix
+    value: k
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: CamelCase

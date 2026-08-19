@@ -1,0 +1,43 @@
+# Roadmap 4.12. Derived from the code that already exists, not imposed on it.
+#
+# Every value below was measured against the tree on 2026-08-19 rather than chosen:
+# 4-space indent (845 of 851 leading-indent widths in state.cpp), attached braces (169
+# `) {` line endings in that file alone), left-bound references (19 `std::string& ` and
+# zero `std::string &`), un-indented namespaces, and a 100-column limit that 15,699 of
+# 15,733 lines already respect.
+#
+# **Existing files were deliberately NOT reformatted.** Running this over the tree would
+# rewrite nearly every file and destroy `git blame` granularity on a codebase whose comments
+# carry most of its reasoning -- a bad trade for a cosmetic gain. Format what you touch.
+---
+Language: Cpp
+BasedOnStyle: Google
+
+ColumnLimit: 100
+IndentWidth: 4
+AccessModifierOffset: -4
+NamespaceIndentation: None
+# ReferenceAlignment is deliberately unset: it defaults to following PointerAlignment, which
+# is the behaviour we want, and setting it would add a clang-format>=13 requirement for no gain.
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+# The codebase attaches braces everywhere, including after a short `if` on its own line.
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+# `if (!closed_at) return;` and `if (secs <= 0) return now_rfc3339();` are idiomatic here.
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# Includes are grouped by hand and the grouping carries meaning -- `app/webview_compat.hpp`
+# must come before anything that could pull in webview.h, for one. Keep the blocks the author
+# wrote rather than resorting across them.
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+# Comments are the primary documentation in this codebase and are hand-wrapped to sit
+# just inside the column limit. Reflowing them churns lines that carry the reasoning.
+ReflowComments: false
+
+Standard: c++20
