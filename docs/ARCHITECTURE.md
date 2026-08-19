@@ -84,6 +84,41 @@ has 31 named values and a fixed training-column order. The scenarios in
 `fixtures/feature_parity/scenarios.json` exercise representative behavior, and
 `fixtures/feature_parity/golden.json` records exact expected vectors.
 
+**There are two JSON boundaries, and they do not share a convention.** Knowing which one you
+are looking at is the difference between a correct mapper and a silently empty field.
+
+| Boundary | Casing | Where | Why |
+| --- | --- | --- | --- |
+| IPC — everything the dashboard calls | **camelCase** keys, **snake_case** command *names* | `src/app/commands.hpp` ↔ `frontend/src/apiMappers.ts` | The keys are consumed by TypeScript, so they follow TypeScript's convention; the command names are native identifiers and follow C++'s. `get_session_recap({ sessionId })` is both conventions in one call, on purpose |
+| Training / fixture data — `CaptureEvent` | **snake_case** keys | `src/types.cpp`, the training export, `fixtures/` | These rows are consumed by the Python-side training tooling and pinned by fixtures, not by the dashboard. Renaming them to camelCase would invalidate exported corpora for no reader's benefit |
+
+`CaptureEvent` is the only type on the second boundary. If you are adding a field to anything
+the UI reads, camelCase is the answer.
+
+### The five things called a "summary"
+
+Five distinct types overlap in name and partly in content. They are not interchangeable, and
+picking the wrong one is the most common way to fetch the right numbers for the wrong window.
+
+| Type | Command | Scope | Answers |
+| --- | --- | --- | --- |
+| `SessionRecap` | `get_session_recap` | **One session** | How did *that* session go — duration, attended `active_secs`, avg focus, distraction spikes, deep-focus % |
+| `SessionSummary` | `get_session_history` | **One session, plus its record** | `SessionRecord` + `SessionRecap` — the shape one row of the history list needs |
+| `FocusSummary` | `get_focus_summary` | **A batch of predictions** | Pure aggregation over prediction rows: avg, peak, distracted fraction, longest unbroken focused stretch. No storage, no clock — `src/engine/focus_summary.hpp` is unit-testable on a vector |
+| `AnalyticsSummary` | `get_analytics` | **A time window, by shape** | The chart data — hourly buckets and top apps, plus a session streak |
+| `SummaryReport` | `get_summary_report` | **A time window, by total** | The Review headline — session counts, focus seconds, distracted fraction, attended vs planned |
+
+The last two both take a window and both start with `prediction_stats`; they differ in what
+they return, not in what they cover. `SessionRecap` and `SessionSummary` are per-session and
+never take a window at all.
+
+**One duplication to know about.** `Storage::recap` computes a single session's aggregate, and
+`Storage::recent_session_summaries` computes the same thing for many sessions in one query,
+with the aggregate expressions copied verbatim between them. They are held in agreement by a
+field-by-field parity test rather than by sharing code — so a change to one is a change to
+both, and the parity test is what tells you if you forgot. Roadmap 14.3 is where that seam
+gets a single owner.
+
 ## Platform boundaries
 
 Platform-specific code is isolated behind small interfaces:
