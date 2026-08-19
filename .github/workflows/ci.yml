@@ -416,12 +416,28 @@ jobs:
       # DEBIAN_FRONTEND=noninteractive so apt can never block on a prompt no one can answer.
       - name: Install Linux webview dependencies
         if: runner.os == 'Linux'
-        timeout-minutes: 5
+        timeout-minutes: 6
         env:
           DEBIAN_FRONTEND: noninteractive
+        # Retried for the same reason the ONNX download uses `curl --retry 3`: this is the
+        # other step that depends on a third-party network service, and it has now failed
+        # twice in a row on infrastructure rather than on anything in this repo. The packages
+        # themselves are fine — the same step succeeded in ~1 minute two runs earlier.
+        #
+        # Retries are bounded and the step timeout still applies, so a genuinely missing
+        # package fails in minutes instead of being masked by an endless loop.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          set -eu
+          for attempt in 1 2 3; do
+            if sudo apt-get update && \
+               sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev; then
+              exit 0
+            fi
+            echo "apt attempt ${attempt} failed; retrying in $((attempt * 10))s" >&2
+            sleep $((attempt * 10))
+          done
+          echo "apt failed three times; treating as a real failure" >&2
+          exit 1
 
       - name: Configure (app on)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=ON -DSNAPBACK_ONNX=OFF
