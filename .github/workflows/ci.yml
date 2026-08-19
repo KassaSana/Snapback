@@ -314,6 +314,14 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
+      # Roadmap 4.12. Correctness rules only -- Prettier owns layout, and the existing tree
+      # was deliberately not reformatted. The React Hooks rules are the reason this earns a
+      # job step: a dependency array that lies produces a stale closure, which is a real bug
+      # that renders fine and passes every assertion.
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
       - name: Unit tests and component coverage gate
         working-directory: frontend
         run: npm run test:ci
@@ -328,6 +336,109 @@ jobs:
       # here, after the build, is what checks the artifact the promise is about.
       - name: The built bundle must not fetch anything
         run: python3 scripts/check_no_remote_subresources.py --verbose
+
+  # ---------------------------------------------------------------------------
+  # Roadmap 4.12. Formatting: NEW files are enforced, EXISTING files are advisory.
+  #
+  # The tree was deliberately never reformatted -- doing so would rewrite nearly every file
+  # and destroy `git blame` granularity on a codebase whose comments carry most of its
+  # reasoning. The obvious compromise, "check whatever the PR touched", does not survive
+  # contact with a large legacy file: `src/App.tsx` is 830 lines and 606 of them move under
+  # Prettier, so a one-line edit there would demand a 606-line reformat or a red build. That
+  # is a rule people route around, not a rule people follow.
+  #
+  # So the split is by file age, not by whether the file was touched:
+  #
+  #   * A file ADDED in this change must be formatted. New code costs nothing to get right,
+  #     and this is the only moment it is free.
+  #   * A file that already existed is reported and does not fail. Converting one is a
+  #     deliberate, separate commit whose diff is all formatting -- reviewable as such,
+  #     instead of hidden inside a behaviour change.
+  #
+  # On a push to master there is no diff base, so the job says so and exits 0 rather than
+  # checking everything: a job that fails 100% of the time on master teaches everyone to
+  # ignore it.
+  # ---------------------------------------------------------------------------
+  format-check:
+    name: Formatting / changed files
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Need the base commit to diff against; the default single-commit clone has none.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        timeout-minutes: 8
+        run: npm ci
+
+      - name: Work out what changed
+        id: changed
+        run: |
+          emit() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "No diff base outside a pull request; nothing to check."
+            emit added_cpp ""; emit added_web ""; emit touched_cpp ""; emit touched_web ""
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          # ...HEAD compares against the merge base, so unrelated commits landing on master
+          # while the PR is open do not show up as this PR's changes.
+          # `-C` treats a copy as a copy; a copied file is new code and should be formatted.
+          added="$(git diff --name-only --diff-filter=AC "$base"...HEAD)"
+          touched="$(git diff --name-only --diff-filter=MR "$base"...HEAD)"
+          echo "Added:"; echo "$added"; echo "Modified:"; echo "$touched"
+          # Keep only paths that still exist -- a rename's old path is already gone.
+          pick() { { grep -E "$2" || true; } <<< "$1" | while read -r f; do
+                     [ -n "$f" ] && [ -f "$f" ] && echo "$f"; done | tr '\n' ' '; }
+          emit added_cpp   "$(pick "$added"   '\.(cpp|hpp|mm)$')"
+          emit added_web   "$(pick "$added"   '^frontend/.*\.(ts|tsx|js|mjs|css)$')"
+          emit touched_cpp "$(pick "$touched" '\.(cpp|hpp|mm)$')"
+          emit touched_web "$(pick "$touched" '^frontend/.*\.(ts|tsx|js|mjs|css)$')"
+
+      # A malformed .clang-format is otherwise a confusing per-file error on every file; this
+      # turns it into one clear failure carrying the parser's own message.
+      - name: The .clang-format config must be valid
+        run: clang-format --version && clang-format --dump-config > /dev/null
+
+      - name: New C++ must match .clang-format
+        if: steps.changed.outputs.added_cpp != ''
+        run: clang-format --dry-run --Werror ${{ steps.changed.outputs.added_cpp }}
+
+      - name: New frontend files must match Prettier
+        if: steps.changed.outputs.added_web != ''
+        working-directory: frontend
+        run: |
+          # Paths arrive repo-relative; prettier runs from frontend/, so strip the prefix.
+          rel=""; for f in ${{ steps.changed.outputs.added_web }}; do rel="$rel ${f#frontend/}"; done
+          npx prettier --check $rel
+
+      # Advisory. Never fails the build -- see the note at the top of this job for why
+      # converting a pre-existing file is its own commit rather than a condition of editing it.
+      - name: Pre-existing files you touched (advisory, never fails)
+        if: steps.changed.outputs.touched_cpp != '' || steps.changed.outputs.touched_web != ''
+        continue-on-error: true
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo "These already existed, so formatting is not enforced on them here."
+          echo "To convert one, do it in a commit of its own that contains nothing else."
+          if [ -n "${{ steps.changed.outputs.touched_cpp }}" ]; then
+            clang-format --dry-run ${{ steps.changed.outputs.touched_cpp }} || true
+          fi
+          if [ -n "${{ steps.changed.outputs.touched_web }}" ]; then
+            rel=""; for f in ${{ steps.changed.outputs.touched_web }}; do rel="$rel ${f#frontend/}"; done
+            ( cd frontend && npx prettier --list-different $rel || true )
+          fi
 
   # ---------------------------------------------------------------------------
   # Windows desktop app: build + no-launch integration smoke (never starts the
@@ -532,6 +643,15 @@ jobs:
       - name: Every path a doc names must exist
         run: python3 scripts/check_doc_paths.py
 
+      # Tier 12's own lesson was that the guard above "cannot check claims -- only paths."
+      # A `file.cpp:123` citation is the worst case of that: the file still exists, so the
+      # path guard stays green while the line number drifts onto unrelated code. An audit on
+      # 2026-08-19 found 84 such citations with a large fraction already pointing at blank
+      # lines, a closing brace, or past the end of a 20-line file. Citations now name a
+      # symbol, which moves with the code, and this fails when the symbol stops existing.
+      - name: Every code citation must name a symbol that still exists
+        run: python3 scripts/check_doc_symbols.py --verbose
+
       # Roadmap 8.6. Dependabot watches Actions and npm but not CMake FetchContent, so a
       # dependency pinned to a mutable tag is source we compile and ship with nothing
       # watching it. Cheap to check, and only a guard stops the policy from rotting.
@@ -584,3 +704,24 @@ jobs:
       # coverage number.
       - name: Every coverage exclusion must be tested somewhere else
         run: python3 scripts/check_coverage_exclusions.py --verbose
+
+      # The converse of the gate above. `test:unit` is a hand-chained list of `tsx
+      # tests/<name>.test.ts` calls, so a new pure-logic test file runs only if somebody
+      # remembered to add it. One that nobody added still typechecks, still looks like a
+      # test, and leaves the suite green -- the missing coverage is invisible exactly where
+      # it matters.
+      - name: Every pure-logic test file must actually be run
+        run: python3 scripts/check_unit_test_wiring.py --verbose
+
+      # A UTF-8 BOM is three invisible bytes that break `#!` lines, strict JSON parsers, and
+      # the first line of a diff. Five files had picked one up from a Windows editor, with no
+      # pattern beyond "something touched this file" -- which is why it is checked rather
+      # than agreed.
+      - name: No tracked file may start with a UTF-8 BOM
+        run: python3 scripts/check_no_bom.py
+
+      # scripts/README.md is the only place saying which of these CI runs and which are
+      # Windows-only. Five gates were missing from it, so it answered "what will CI check
+      # about my change?" confidently and wrongly.
+      - name: Every script must be documented in scripts/README.md
+        run: python3 scripts/check_scripts_documented.py
