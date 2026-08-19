@@ -39,6 +39,7 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | [0004](0004-verdict-and-opinion.md) | The state is the policy verdict, the scores are the model's opinion | Accepted | 7.7, 7.18, 5.3, 5.4, 1.2 |
 | [0005](0005-a-session-is-declared-and-attended.md) | A session is declared by the user and attended by the user | Accepted | 2.7, 7.23, 2.8 |
 | [0006](0006-trainer-is-developer-tooling.md) | Training tooling is developer-only | Accepted | 13.7 |
+| [0007](0007-time-is-integer-milliseconds-utc.md) | A point in time is UTC milliseconds since the epoch, stored as INTEGER | Accepted | 7.16 |
 
 ## Awaiting an ADR
 
@@ -47,7 +48,6 @@ should settle them — the roadmap's "Start here" table sets the order.
 
 | Session | Roadmap items | The question |
 |---------|---------------|--------------|
-| — | 7.16 | How does this app represent time? Scopes 7.3 and 7.11 |
 | — | 8.5 | Threat model — gates whether 4.5 encryption is required |
 | — | 5.6 | What should `longest_active_stretch_5min` report for a new session? |
 | — | 7.8 | Should `set_focus_mode` rewrite the user's default? |

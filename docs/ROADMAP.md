@@ -109,7 +109,7 @@ Struck rows are done; the numbers renumber as they close, so "next" is always ro
 | — | ~~**10.8** make Review charts truthful~~ | **Done 2026-08-06** — fixed 0–100 axis, distinct no-data state, sampled-context labels |
 | 2 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
 | 3 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
-| 4 | **7.16** timestamp representation | Unblocks retention, Review ranges, and time-window correctness work |
+| 4 | **7.16** timestamp representation | **Decision settled 2026-08-19 ([ADR-0007](adr/0007-time-is-integer-milliseconds-utc.md)); the migration is the open work.** Unblocks retention, Review ranges, and time-window correctness |
 | 5 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
 | 6 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
 | 7 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
@@ -1130,9 +1130,25 @@ internals, and the benchmark harness.
   Decide whether "current mode" and "default mode" are one setting or two. They're currently
   one; the wizard's existence implies two.
 
-- **7.16 — Settle how this app represents time.** `S` `decision` → then `M` to apply
+- **7.16 — DECISION SETTLED 2026-08-19 by [ADR-0007](adr/0007-time-is-integer-milliseconds-utc.md); the `M` application is open.** `M`
 
-  **Four separate findings share one root cause:** timestamps are free-form text compared
+  **A point in time is UTC milliseconds since the epoch, stored as `INTEGER`** — every table,
+  the IPC boundary, and C++. Local time is presentation only. Do not reopen the format
+  question; read the ADR, which records why `TEXT` lost and the one condition that flips it.
+
+  **One correction the ADR carries, verified against SQLite rather than assumed:** 5.5 below
+  says retention "silently never deletes". It does delete well-formed rows. What survives every
+  pass is any row whose timestamp does not parse, because `datetime()` returns `NULL` and
+  `NULL < x` is `NULL`. That was minor while every row came from `rfc3339_at`; **9.14's import
+  path changed it**, since foreign rows are exactly the ones likely not to parse.
+
+  **What remains is the application**, and it is one migration, not four patches: nine columns
+  change type behind a `user_version` bump, `now_rfc3339`/`rfc3339_at` collapse into
+  `now_unix_ms()`, the two retention `DELETE`s stop wrapping their indexed column, ~30 SQL
+  expressions convert only for local-time bucketing, and the IPC contract plus the frontend
+  formatting layer move together.
+
+  **Four separate findings shared one root cause:** timestamps were free-form text compared
   with SQL date functions.
 
   - **5.5** — `datetime(timestamp) < datetime(?1)` yields NULL on an unparseable value, so
