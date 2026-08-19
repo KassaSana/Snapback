@@ -10,6 +10,17 @@ sync — it tracked `2.4b` as a task while this file correctly tracked the same 
 decision in 5.3. It was **deleted** on 2026-07-20; its history is in git and its `[x]`
 entries duplicated the [Done archive](#done-archive) below. Don't reopen a parallel list.
 
+**Reconciled against the code: 2026-08-19.** Five features landed on 2026-08-14 without this
+file being touched, so for five days it described work that already existed. Checking them
+against the tree rather than against their commit messages changed the answer for four of the
+five: only **2.8** was actually complete. **2.18**, **9.15**, and **10.14** each shipped one
+half and are now marked as such, with the missing half named — in every case the half was the
+*harder* one (rule scoping, the activation channel, moving the three exports onto the new
+dialog seam), which is the failure mode worth expecting from a commit message that reads as a
+finished feature. **2.9 was not touched at all**: the goal-history dropdown belongs to
+**2.11**'s idle state, and CHANGELOG.md had it filed under 2.15 — a third item, whose own work
+was done on 2026-08-06. That label is corrected. Nothing in this pass re-ran the suites.
+
 **Last audited against the code: 2026-08-05.** The July 31 hardening pass added ranked lock
 ordering, immutable dependency pins, per-case CTest registration, classifier properties,
 the large storage fixture, injected clocks, and private test seams. The August 1 performance
@@ -140,13 +151,13 @@ successfully-committed migration a recovery path.
 
 | Item | `S`/`M` | The hole |
 |---|---|---|
-| **2.8** snapback has no "take me back" | `M` | It reconstructs exactly where you were, then offers only Dismiss |
+| ~~**2.8** snapback has no "take me back"~~ | `M` | **Done 2026-08-14** — a "Take me back" action beside Dismiss raises the recorded window |
 | **7.23** attended session time | `M` **decided / in progress** | ADR-0005 chose idle-driven spans; the schema/storage slice has landed, wiring and UI remain |
 
 **ADR-0005 answers the shared 2.7/7.23 question:** a session is declared by the user and real
 only while attended. The nudge preserves declaration; idle transitions open/close durable
-active-time spans; elapsed time keeps its old meaning. **2.8 remains independent** and acts
-only on the user's click. The `session_spans` migration/storage API has landed; engine wiring,
+active-time spans; elapsed time keeps its old meaning. **2.8 was independent** and acts
+only on the user's click; it closed on 2026-08-14. The `session_spans` migration/storage API has landed; engine wiring,
 reporting, and running/paused UI are still open until 7.23 closes.
 
 **The 2026-08-05 cross-cutting audit opened eighteen assignable items and corrected stale
@@ -2012,7 +2023,13 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   `goal_alignment` feeds the model, and window-title capture is consent-sensitive. Guessing a
   goal or writing untagged rows would weaken both the training corpus and the privacy promise.
 
-- **2.8 — The snapback knows exactly where you were and cannot take you there.** `M`
+- **2.8 — DONE 2026-08-14.** `M`
+  Shipped as `restore_snapback_target`, bound in `commands.hpp`, exposed as
+  `restoreSnapbackTarget` in `api.ts`, and surfaced as a "Take me back" action beside Dismiss
+  in `FocusStateHero.tsx`. Activation is `snapback/focus_window.*`: `SetForegroundWindow` with
+  the thread-input attach on Windows, `NSRunningApplication` on macOS, an honest refusal on
+  every other platform. No shell, per the `reveal_path.hpp` shape this item named.
+  Original statement of the gap, kept because it explains the design:
   Opened 2026-08-05. `SnapbackPayload` carries `app_name`, `window_title`, `file_hint`, and a
   rendered `summary` — "You were editing auth.ts in Cursor". The only command bound to it is
   `dismiss_snapback`. The user reads where they left off and then navigates back by hand.
@@ -2344,7 +2361,14 @@ swallows all exceptions (`capture_thread.cpp:17`) since unwinding through an OS 
   the audit trail. Tests must cover repeated clicks, auto→survey supersession, two corrections,
   undo, session deletion, and export. Coordinate lifecycle writes with **7.25**.
 
-- **2.18 — Teach Snapback from the context the user is already looking at.** `M`
+- **2.18 — PARTIALLY LANDED 2026-08-14; the scoping half stays open.** `M`
+  What landed: one-click `+ Allow` / `+ Block` beside observed apps in the Now context timeline
+  and the Review top-apps breakdown, with a badge where a rule already matches. That closes the
+  "navigate to Settings and type a substring from memory" complaint.
+  **What did not:** `AppRuleRecord` still carries only `pattern`, `rule_type`, and `note`, so
+  every rule created this way is still a global substring — the actual defect below. No explicit
+  scope, no match-count preview, no Undo, no conflict precedence. The goal-scoped variant cannot
+  be built until **7.28** supplies a stable goal-category id, and 7.28 is open.
   Opened 2026-08-05. Personal Rules currently asks the user to navigate to Settings and type a
   substring from memory. That substring matches both app name and title, and every rule is
   global. Meanwhile verdict feedback and the Review timeline already hold the exact app,
@@ -2946,7 +2970,15 @@ small; the tier is large because nobody has walked that path yet.
   check, and the `-wal` cleanup) were each deliberately broken to confirm a test fails. The IPC
   contract count moved 61 → 65, caught by its own guard rather than by remembering.
 
-- **9.15 — Define one coherent desktop instance and window lifecycle.** `M/L`
+- **9.15 — PARTIALLY LANDED 2026-08-14 (close behaviour only).** `M/L`
+  What landed: the close-window handler. `X` / Alt+F4 on Windows and `windowShouldClose:` on
+  macOS now hide to the tray and leave capture, sessions, and the tray running; only "Quit
+  Snapback" terminates. That fixes the half where clicking X silently stopped an always-on app.
+  **What did not:** the activation channel. A second launch still cannot ask the owner to
+  restore and focus its window — there is no such channel in `single_instance.*` or `main.cpp` —
+  so double-click on a hidden instance still looks broken, which is the *other* half of this
+  item and the one a tray-resident app needs most. The one-time "still running in the tray"
+  explanation is also absent.
   Opened 2026-08-05. **9.8** correctly prevents two processes from opening the same database,
   but a second GUI launch only prints “already running” to an invisible stderr stream and
   exits. The owner process also has no close-window handler: when `w.run()` returns the engine
@@ -3335,7 +3367,14 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   named DTO. **10.8** owns chart scaling and other misleading labels; it did not cover these
   streak definitions.
 
-- **10.14 — Use native Open/Save workflows for user-owned documents.** `M`
+- **10.14 — ADAPTER LANDED 2026-08-14; the export half stays open.** `M`
+  What landed: the owned native seam — `pick_open_file` / `pick_save_file` over Win32 Common
+  Dialogs and AppKit, cancellation as an ordinary result, dialog authority kept in native code.
+  **9.14**'s restore path uses it, which is what that item needed.
+  **What did not:** the documents this item is actually about. `export_my_data`,
+  `export_summary_report`, and `export_support_bundle` all still hardcode a folder under
+  `data_dir` and return a printed path — no Save As, no Reveal or Copy path after success. The
+  seam exists; the three exports have not been moved onto it.
   Opened 2026-08-05. Support, summary, and personal exports silently choose folders inside the
   app-data directory and then print a path. There is no file-dialog seam. That is tolerable for
   internal training artifacts, but poor desktop behavior for a document the user intends to

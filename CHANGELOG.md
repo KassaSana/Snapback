@@ -17,7 +17,7 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
-- **Interactive goal history dropdown & auto-complete (2.15).** Starting focus sessions now provides
+- **Interactive goal history dropdown & auto-complete (2.11).** Starting focus sessions now provides
   an interactive auto-complete suggestions dropdown anchored to the goal input with full keyboard
   navigation (`↑`, `↓`, `Enter`, `Escape`) and click selection. Pinned presets and distinct recent
   goals are ranked and filtered in real time, automatically preserving each goal's preferred focus mode.
@@ -32,10 +32,13 @@ on `v0.2.0` at the bottom before cutting one.
   and typing process names into a text input. The Context Timeline on Now and the Top Apps breakdown
   on Review show one-click `+ Allow` and `+ Block` action buttons beside observed apps, and display
   active status badges for apps that already match an established rule.
-- **Native OS file dialogs for export and import (10.14).** Restoring a `focoflow.db` database
-  now supports a native **Browse...** button using Win32 Common Dialogs on Windows and AppKit
-  panels on macOS, rather than requiring users to manually type raw filesystem paths. Non-throwing
-  cancellation semantics return a clean cancellation result when dismissed.
+- **A native file-dialog seam, used by database restore (10.14, partial).** Restoring a
+  `focoflow.db` database now supports a native **Browse...** button using Win32 Common Dialogs on
+  Windows and AppKit panels on macOS, rather than requiring users to manually type raw filesystem
+  paths. Non-throwing cancellation semantics return a clean cancellation result when dismissed.
+  This is the adapter and the **9.14** import half only: `export_my_data`, `export_summary_report`
+  and `export_support_bundle` still choose a folder under the app-data directory and print the
+  path, which is the behaviour 10.14 exists to replace. That item stays open.
 - **Planned-versus-actual attended time on Review (2.19).** The Summary card for the shared
 
   Review range now leads with attended minutes from durable session spans, and — when a daily
