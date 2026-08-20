@@ -123,6 +123,25 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Changed
 
+- **The planning documents collapsed from four to two, and the parallel backlogs are gone.**
+  `BACKLOG.md`, `ROADMAP.md`, and `TODO.md` had appeared at the repository root, each
+  restating the layer above it — `TODO.md`'s "Done when" text was verbatim `ROADMAP.md`'s
+  Phase 0 exit criterion. That is the arrangement `CONTRIBUTING.md` and `docs/ROADMAP.md`
+  both forbid in as many words, and the one that made `docs/TODO.md` drift out of sync before
+  it was deleted in July.
+
+  - The six-month phase sequence and its task breakdown are now a **The six-month sequence**
+    section inside [docs/ROADMAP.md](docs/ROADMAP.md), which stays the only backlog. Task ids
+    moved from `M1-xx` to `P0-xx` so they name the phase they belong to.
+  - The audit findings became [docs/audit-2026-08-19.md](docs/audit-2026-08-19.md) — a dated
+    point-in-time record rather than a competing list of open work.
+  - Completed items moved to [docs/roadmap_archive.md](docs/roadmap_archive.md).
+
+  The move also put those 60 KB **under `check_doc_paths.py` for the first time**: the guard
+  walks `docs/` plus four named READMEs, so root-level planning files were never opened by it.
+  It immediately found a broken citation to a `scripts/` helper that does not exist — exactly
+  the "guard with a hole in it" the script's own comment warns about.
+
 - **Training tooling is developer-only (ADR-0006 / 13.7).** Consumer Settings keeps Focus
   Feedback labels and no longer advertises repo-path / `ml/` train-from-export. Debug builds,
   or Release with `SNAPBACK_DEV_TRAINING`, still expose Model tooling; native train/repo

@@ -11,7 +11,8 @@ session notes and parallel TODO lists do not belong in the repository.
   platform.
 - [Architecture](ARCHITECTURE.md) — current runtime shape, module boundaries, threading,
   storage, IPC, and platform seams.
-- [Roadmap](ROADMAP.md) — ordered open work and release blockers.
+- [Roadmap](ROADMAP.md) — the six-month phase sequence, then ordered open work and release
+  blockers. The only backlog.
 
 ## Engineering references
 
@@ -21,6 +22,14 @@ session notes and parallel TODO lists do not belong in the repository.
 - [Packaging](PACKAGING.md) — Windows artifacts/signing and cross-platform packaging status.
 - [Windows demo](windows_demo.md) — the Windows end-to-end demo runbook.
 - [Architecture decisions](adr/README.md) — accepted decisions and questions awaiting ADRs.
+
+## Point-in-time records
+
+- [Audit 2026-08-19](audit-2026-08-19.md) — AUD/FWD findings from a full read of the tree.
+  A dated record, not a second backlog: open work it identifies is sequenced in
+  [`ROADMAP.md`](ROADMAP.md).
+- [Roadmap archive](roadmap_archive.md) — completed roadmap items, kept for history.
+  Deliberately stale as of each entry's completion date.
 
 The root [README](../README.md), [frontend README](../frontend/README.md), and
 [scripts README](../scripts/README.md) remain short entry points for their own audiences.
