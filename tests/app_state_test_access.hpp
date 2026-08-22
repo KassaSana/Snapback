@@ -70,6 +70,24 @@ struct AppStateTestAccess {
         return state.storage_.has_open_span(session_id);
     }
 
+    // Stages the span decision phase 1 of the tick records when the user comes back from
+    // idle, without having to drive a real idle cycle. The interleave AUD-04b describes --
+    // decision recorded, session stopped, decision drained -- is a race between two lock
+    // regions, so reproducing it by timing would be flaky by construction; staging the
+    // decision makes the same sequence deterministic.
+    static void stage_pending_span_open(AppState& state, const std::string& session_id) {
+        std::lock_guard lock(state.mutex_);
+        state.pending_span_session_ = session_id;
+        state.pending_span_opens_ = true;
+        state.pending_span_secs_ago_ = 0;
+    }
+
+    // The session a pending span decision names, if any.
+    static std::optional<std::string> pending_span_session(AppState& state) {
+        std::lock_guard lock(state.mutex_);
+        return state.pending_span_session_;
+    }
+
     // The *live* focus mode driving the classifier right now (Roadmap 7.25). Not the same
     // thing as `settings().default_focus_mode`, which is only what the next session starts
     // with — the difference is precisely the bug: a restarted Deep session used to come back

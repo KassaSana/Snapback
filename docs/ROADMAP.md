@@ -181,7 +181,7 @@ Task ids are permanent. Verify commands assume the local build directory; see
       *Depends on:* —
       *Verify:* new doctest case: `begin_session_span_now` on a COMPLETED session leaves
       `has_open_span` false; `ctest -R storage --output-on-failure`.
-- [ ] **P0-05** Invalidate the tick's pending span decision on session mutation (AUD-04b):
+- [x] **P0-05** Invalidate the tick's pending span decision on session mutation (AUD-04b):
       capture the session id with the pending decision and have stop/start/delete clear it.
       *Files:* `src/app/state.cpp`, `src/app/state.hpp`, `tests/test_app_state.cpp` —
       *Depends on:* P0-04

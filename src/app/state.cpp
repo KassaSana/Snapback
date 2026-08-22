@@ -590,6 +590,14 @@ void AppState::close_open_span_on_shutdown() noexcept {
     }
 }
 
+void AppState::discard_pending_span_unlocked(const std::optional<std::string>& session_id) {
+    if (!pending_span_session_) return;
+    if (session_id && *session_id != *pending_span_session_) return;
+    pending_span_session_.reset();
+    pending_span_opens_ = false;
+    pending_span_secs_ago_ = 0;
+}
+
 SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // Mixed (in-memory + storage): take both locks in the fixed order mutex_ -> storage_mutex_.
     std::lock_guard state_lock(mutex_);
@@ -636,6 +644,11 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
+    // Any span decision still pending belongs to the session this one replaces, and that
+    // session was just completed above. Draining it later would open a span on a COMPLETED
+    // row -- or, for a pause, back-date a close into a session that already has its own
+    // ending. The new session's attendance starts from the span opened with it.
+    discard_pending_span_unlocked();
     session_attended_ = true;
     // Pressing Start *is* input. Without this the detector can still be Idle from before the
     // session existed, and the next tick would read "should not be attended" and immediately
@@ -686,6 +699,13 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         record = storage_.stop_session(session_id);
         savepoint.release();
     }
+    // A decision recorded for this session before the Stop is now describing a session that
+    // no longer exists to attend. Dropped here rather than filtered at the write, so a
+    // stopped session cannot be re-attended by a tick that was already in flight. Stopping
+    // by id is allowed for a session that is not the active one, so this is keyed on the id
+    // rather than on the active-session branch below.
+    discard_pending_span_unlocked(session_id);
+
     // Idempotent at the storage layer (7.25): a second Stop on an already-completed session
     // returns the label already written rather than appending a second, contradictory one.
     save_auto_session_label_unlocked(session_id);
@@ -721,6 +741,9 @@ bool AppState::delete_session(const std::string& session_id) {
     if (!deleted) return false;
 
     activity_epoch_.fetch_add(1, std::memory_order_release);
+    // The epoch bump already fences a tick's off-lock persistence, but a decision recorded
+    // before this delete and drained after it names a row that is gone.
+    discard_pending_span_unlocked(session_id);
 
     // Deleting the session the engine is currently filling would otherwise leave the app
     // pointing at a row that no longer exists — the next tick would try to persist against
@@ -957,6 +980,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
 
     active_session_.reset();
     session_attended_ = false;  // every span was deleted with the rows above
+    discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
     latest_snapback_.reset();
     snapback_emitted_ = false;

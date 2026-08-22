@@ -260,6 +260,11 @@ private:
     IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
     std::optional<PomodoroStatus> update_pomodoro_for_test(std::int64_t now_ms);
 
+    // Drops a span decision phase 1 has recorded but no tick has drained yet. `session_id`
+    // nullopt drops whatever is pending. Requires mutex_.
+    void discard_pending_span_unlocked(
+        const std::optional<std::string>& session_id = std::nullopt);
+
     void start_engine_impl(InputHook* hook);
     // A tick's writes, computed under mutex_ (no storage I/O) and flushed later under
     // storage_mutex_. Keeping persistence out of the state lock is what stops a disk
@@ -298,6 +303,10 @@ private:
     // Last capture event's app. Excluded-app time resets the untracked stretch (2.7).
     std::string last_capture_app_;
 
+    // The session a pending span decision belongs to. Carried with the decision because the
+    // decision outlives the moment it was made: phase 1 records it, phase 2 writes it, and
+    // the session can be stopped, replaced, or deleted in between. Without the id there is
+    // nothing to invalidate against.
     std::optional<std::string> pending_span_session_;
     std::int64_t pending_span_secs_ago_ = 0;  // how far to back-date a pause
     bool pending_span_opens_ = false;  // true = the user came back, false = they went away

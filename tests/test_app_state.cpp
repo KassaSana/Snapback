@@ -1746,6 +1746,57 @@ TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker
     CHECK(second->app_name == "Cursor");
 }
 
+TEST_CASE("stopping a session discards a span decision the tick has not drained") {
+    // AUD-04b. The tick decides span changes under mutex_ and writes them under
+    // storage_mutex_, holding neither in between. A Stop landing in that gap used to leave
+    // the decision standing: the write went ahead and opened an attendance span on a
+    // session that had just completed, and since every attendance query measures an open
+    // span to `now` and nothing closes a stopped session's spans, its attended minutes then
+    // grew forever.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("attended", FocusMode::Normal);
+    REQUIRE(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    // The user woke from idle: phase 1 records "open a span for this session".
+    AppStateTestAccess::stage_pending_span_open(state, session.session_id);
+    REQUIRE(AppStateTestAccess::pending_span_session(state) == session.session_id);
+
+    // ... and then presses Stop before any tick drains that decision.
+    state.stop_session(session.session_id);
+    CHECK(AppStateTestAccess::pending_span_session(state) == std::nullopt);
+
+    // The drain that would have written it. The session ends with the span its Stop closed,
+    // and no new one.
+    AppStateTestAccess::engine_tick(state);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+}
+
+TEST_CASE("starting a session discards the replaced session's pending span decision") {
+    // Replacement completes the old session the same way Stop does, so a decision naming it
+    // is just as stale -- and this path is easier to hit, since Start is one click with no
+    // Stop in between.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto first = state.start_session("first", FocusMode::Normal);
+    AppStateTestAccess::stage_pending_span_open(state, first.session_id);
+
+    const auto second = state.start_session("second", FocusMode::Normal);
+    CHECK(AppStateTestAccess::pending_span_session(state) == std::nullopt);
+
+    AppStateTestAccess::engine_tick(state);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, first.session_id));
+    // The new session keeps the span that opened with it; the drain must not have disturbed
+    // it either.
+    CHECK(AppStateTestAccess::has_open_span(state, second.session_id));
+}
+
 TEST_CASE("the tick emits a snapback once and leaves it restorable") {
     // AUD-01. engine_tick used to move the payload out of latest_snapback_ as it emitted, so
     // the field behind "Take me back" was empty ~100 ms after the card appeared -- long
