@@ -873,6 +873,14 @@ sqlite3_stmt* Storage::cached_stmt(const char* sql) {
     return stmt;
 }
 
+bool Storage::session_is_active(const std::string& session_id) {
+    if (session_id.empty()) return false;
+    Stmt stmt(db_, cached_stmt(
+                       "SELECT COUNT(*) FROM sessions WHERE session_id = ?1 AND status = 'ACTIVE'"));
+    stmt.bind(1, session_id);
+    return stmt.step_row() && sqlite3_column_int64(stmt.get(), 0) > 0;
+}
+
 void Storage::ensure_active_session(const std::string& session_id) {
     if (session_id.empty()) {
         throw std::runtime_error("session_id is required");
@@ -960,23 +968,38 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
     return r;
 }
 
-void Storage::begin_session_span(const std::string& session_id, const std::string& started_at) {
+bool Storage::begin_session_span(const std::string& session_id,
+                                 const std::string& started_at) {
     // Close-then-open in one transaction. If a pause was missed (a crash, a dropped idle
     // edge), reopening without closing would leave two overlapping spans and double-count
     // the overlap forever — and no later code could tell which of the two was wrong.
     Savepoint savepoint(*this, "begin_session_span");
+    // Checked before the close, not only in the INSERT below, because the close is not
+    // harmless on a session that is not ACTIVE: it would stamp a dangling span with *this*
+    // call's timestamp, crediting every hour since the process died as attended. That is
+    // the exact answer close_dangling_session_span() exists to avoid giving.
+    if (!session_is_active(session_id)) return false;
+
     close_session_span(session_id, started_at);
 
+    // The INSERT re-states the guard as a SELECT so it also holds for a caller that read
+    // the status a moment ago and raced a stop. An open span on a COMPLETED session is
+    // unbounded damage rather than one wrong row — every attendance query measures an open
+    // span as COALESCE(ended_at, now), so it grows forever, and nothing ever closes it:
+    // shutdown and hydration only touch the *active* session.
     Stmt insert(db_,
-                "INSERT INTO session_spans (session_id, started_at) VALUES (?1, ?2)");
+                "INSERT INTO session_spans (session_id, started_at) "
+                "SELECT ?1, ?2 FROM sessions WHERE session_id = ?1 AND status = 'ACTIVE'");
     insert.bind(1, session_id);
     insert.bind(2, started_at);
     insert.step_done();
+    const bool inserted = sqlite3_changes(db_) > 0;
     savepoint.release();
+    return inserted;
 }
 
-void Storage::begin_session_span_now(const std::string& session_id) {
-    begin_session_span(session_id, utc_now_rfc3339());
+bool Storage::begin_session_span_now(const std::string& session_id) {
+    return begin_session_span(session_id, utc_now_rfc3339());
 }
 
 bool Storage::close_session_span_now(const std::string& session_id, std::int64_t secs_ago) {

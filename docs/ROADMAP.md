@@ -174,7 +174,7 @@ Task ids are permanent. Verify commands assume the local build directory; see
       *Files:* `src/app/ipc_shim.cpp`, `tests/test_ipc_shim.cpp` — *Depends on:* —
       *Verify:* `ctest -R ipc_shim --output-on-failure` with a new assertion that the
       interceptor's `open_external_url` payload carries `__snapbackToken`.
-- [ ] **P0-04** Refuse spans on non-ACTIVE sessions in storage (AUD-04a): make
+- [x] **P0-04** Refuse spans on non-ACTIVE sessions in storage (AUD-04a): make
       `begin_session_span` a guarded `INSERT ... SELECT` that no-ops when the session is not
       ACTIVE, and report whether it inserted.
       *Files:* `src/storage/storage.cpp`, `src/storage/storage.hpp`, `tests/test_storage.cpp` —
