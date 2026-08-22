@@ -1746,6 +1746,48 @@ TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker
     CHECK(second->app_name == "Cursor");
 }
 
+TEST_CASE("the tick emits a snapback once and leaves it restorable") {
+    // AUD-01. engine_tick used to move the payload out of latest_snapback_ as it emitted, so
+    // the field behind "Take me back" was empty ~100 ms after the card appeared -- long
+    // before a human could reach it, which made the product's namesake action a silent
+    // no-op. Emission and lifetime are separate now: emitted once, cleared only by dismiss,
+    // restore, or the next snapback replacing it.
+    //
+    // The existing snapback tests all drive process_event() + take_snapback() directly and
+    // never run a tick in between, which is exactly why they stayed green through the bug.
+    auto state = make_state();
+    state->start_session("implement the classifier", FocusMode::Normal);
+
+    int snapbacks_emitted = 0;
+    state->set_emit_hook([&snapbacks_emitted](const std::string& name, const std::string&,
+                                              std::uint64_t) {
+        if (name == "snapback") ++snapbacks_emitted;
+    });
+
+    drive_one_episode(*state, 100.0);
+    REQUIRE(state->latest_snapback().has_value());
+
+    // Several ticks: the engine runs at ~100 ms, so the user's click lands many ticks after
+    // the card appears. One tick would not catch a payload that re-emits every time.
+    for (int tick = 0; tick < 5; ++tick) AppStateTestAccess::engine_tick(*state);
+
+    CHECK(snapbacks_emitted == 1);
+    REQUIRE(state->latest_snapback().has_value());
+
+    // The restore path now finds its target. It cannot activate a real window from a test,
+    // so the assertion is that it got *past* the payload lookup -- "No active snapback
+    // context to restore" is the specific failure this item is about, and any other message
+    // means the lookup succeeded and focus_window() took over.
+    const auto result = state->restore_snapback_target();
+    CHECK(result.message != "No active snapback context to restore");
+
+    // Restore consumes the payload, and a consumed one does not re-emit on later ticks.
+    CHECK(state->latest_snapback() == std::nullopt);
+    for (int tick = 0; tick < 3; ++tick) AppStateTestAccess::engine_tick(*state);
+    CHECK(snapbacks_emitted == 1);
+    state->set_emit_hook(nullptr);
+}
+
 TEST_CASE("AppState app-rule CRUD upserts, updates in place, and deletes") {
     auto state = make_state();
 

@@ -163,7 +163,7 @@ Task ids are permanent. Verify commands assume the local build directory; see
       *Files:* `src/util/logger.hpp`, `tests/test_logger.cpp` — *Depends on:* —
       *Verify:* `ctest -R logger --output-on-failure` with a new concurrent-writers case, then
       the full suite.
-- [ ] **P0-02** Keep the snapback payload restorable (AUD-01): add a `snapback_emitted_` flag
+- [x] **P0-02** Keep the snapback payload restorable (AUD-01): add a `snapback_emitted_` flag
       so the tick emits once without clearing `latest_snapback_`; clear only on
       dismiss/restore/replace.
       *Files:* `src/app/state.hpp`, `src/app/state.cpp`, `tests/test_app_state.cpp` —

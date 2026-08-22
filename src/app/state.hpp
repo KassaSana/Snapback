@@ -84,9 +84,10 @@ public:
     std::optional<PredictionRecord> latest_prediction() const;
     std::optional<SessionRecord> active_session() const;
 
-    // Snapback context-recovery payload. The engine tick stores the latest one;
-    // latest_snapback() peeks, take_snapback() drains it (so each payload emits
-    // once), dismiss_snapback() clears it on the frontend's request.
+    // Snapback context-recovery payload. The engine tick stores the latest one and emits
+    // it once (see snapback_emitted_); latest_snapback() peeks, take_snapback() drains it,
+    // dismiss_snapback() clears it on the frontend's request. The payload outlives its
+    // emission so restore_snapback_target() still has a target when the user clicks.
     std::optional<SnapbackPayload> latest_snapback() const;
     std::optional<SnapbackPayload> take_snapback();
     void dismiss_snapback();
@@ -412,6 +413,10 @@ private:
     double last_prediction_secs_ = -1.0;
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event
     bool prediction_dirty_ = false;  // a new prediction awaits emission this tick
+    // Whether latest_snapback_ has already gone out as a `snapback` event. Emission and
+    // lifetime are separate here: the event fires once, but the payload has to survive
+    // until the user dismisses or restores it.
+    bool snapback_emitted_ = false;
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
     bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
     // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple

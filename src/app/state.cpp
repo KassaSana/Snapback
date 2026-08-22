@@ -737,6 +737,7 @@ bool AppState::delete_session(const std::string& session_id) {
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
         latest_snapback_.reset();
+        snapback_emitted_ = false;
         last_prediction_secs_ = -1.0;
         prediction_dirty_ = false;
         hyperfocus_latched_ = false;
@@ -816,6 +817,7 @@ std::optional<SnapbackPayload> AppState::take_snapback() {
     std::lock_guard lock(mutex_);
     auto out = std::move(latest_snapback_);
     latest_snapback_.reset();
+    snapback_emitted_ = false;
     if (out) live_read_dirty_ = true;
     publish_live_read_unlocked();
     return out;
@@ -826,6 +828,7 @@ void AppState::dismiss_snapback() {
     // Clear the pending payload and return the tracker from Recovering to Focused so it
     // doesn't keep the recovery state latched.
     latest_snapback_.reset();
+    snapback_emitted_ = false;
     context_tracker_.dismiss_recovery(last_event_secs_);
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -841,6 +844,7 @@ FocusTargetResult AppState::restore_snapback_target() {
             window_title = latest_snapback_->window_title;
         }
         latest_snapback_.reset();
+        snapback_emitted_ = false;
         context_tracker_.dismiss_recovery(last_event_secs_);
         live_read_dirty_ = true;
         publish_live_read_unlocked();
@@ -955,6 +959,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     session_attended_ = false;  // every span was deleted with the rows above
     latest_prediction_.reset();
     latest_snapback_.reset();
+    snapback_emitted_ = false;
     last_prediction_at_ms_.reset();
     last_prediction_secs_ = -1.0;
     last_event_secs_ = 0.0;
@@ -1603,10 +1608,13 @@ void AppState::engine_tick() {
             pred_to_emit = latest_prediction_;
             prediction_dirty_ = false;
         }
-        if (latest_snapback_) {
-            snap_to_emit = std::move(latest_snapback_);
-            latest_snapback_.reset();
-            live_read_dirty_ = true;
+        // Emit once, but keep the payload: "Take me back" reads it when the user clicks,
+        // which is seconds after this tick. Draining here is what made restore a no-op --
+        // the card stayed on screen long after the field behind it was empty. The payload
+        // is cleared by dismiss/restore, or replaced by the next snapback.
+        if (latest_snapback_ && !snapback_emitted_) {
+            snap_to_emit = *latest_snapback_;
+            snapback_emitted_ = true;
         }
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
@@ -1721,6 +1729,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
             job.snapback_episode = std::move(episode);
 
             latest_snapback_ = *snapback;
+            snapback_emitted_ = false;  // replaces any predecessor, restored or not
             live_read_dirty_ = true;
         }
     }
