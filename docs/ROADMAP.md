@@ -170,7 +170,7 @@ Task ids are permanent. Verify commands assume the local build directory; see
       *Depends on:* —
       *Verify:* new doctest case driving fire → engine-tick drain → `restore_snapback_target()`
       returns ok; `ctest -R app_state --output-on-failure`.
-- [ ] **P0-03** Attach the capability token in the shim's link interceptor (AUD-03).
+- [x] **P0-03** Attach the capability token in the shim's link interceptor (AUD-03).
       *Files:* `src/app/ipc_shim.cpp`, `tests/test_ipc_shim.cpp` — *Depends on:* —
       *Verify:* `ctest -R ipc_shim --output-on-failure` with a new assertion that the
       interceptor's `open_external_url` payload carries `__snapbackToken`.
