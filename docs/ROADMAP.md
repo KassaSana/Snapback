@@ -158,7 +158,7 @@ attended minutes that stop growing when the session stops.
 Task ids are permanent. Verify commands assume the local build directory; see
 [`running.md`](running.md).
 
-- [ ] **P0-01** Serialize Logger sink writes (AUD-05): move the `sink_ <<` write under the
+- [x] **P0-01** Serialize Logger sink writes (AUD-05): move the `sink_ <<` write under the
       existing mutex; make `min_level_` atomic.
       *Files:* `src/util/logger.hpp`, `tests/test_logger.cpp` — *Depends on:* —
       *Verify:* `ctest -R logger --output-on-failure` with a new concurrent-writers case, then

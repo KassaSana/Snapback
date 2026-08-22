@@ -4,6 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "util/logger.hpp"
 
@@ -175,4 +178,39 @@ TEST_CASE("RotatingFileStream keeps only the configured number of backups") {
     CHECK(read_file(path.string() + ".1") == "b\n");
     CHECK(read_file(path.string() + ".2") == "a\n");
     CHECK_FALSE(std::filesystem::exists(path.string() + ".3"));
+}
+
+TEST_CASE("Logger serializes concurrent writes into whole records") {
+    // Without the sink write under the mutex this interleaves mid-record: the formatted
+    // line and the newline are two separate << calls, so a torn line is the visible
+    // symptom rather than a crash. Assert on record shape, not just on the line count.
+    std::ostringstream out;
+    Logger log(out, LogLevel::Info, fixed_clock());
+
+    constexpr int kThreads = 8;
+    constexpr int kLinesPerThread = 200;
+    std::vector<std::thread> writers;
+    writers.reserve(kThreads);
+    for (int thread_index = 0; thread_index < kThreads; ++thread_index) {
+        writers.emplace_back([&log, thread_index] {
+            for (int line = 0; line < kLinesPerThread; ++line) {
+                log.info("writer " + std::to_string(thread_index));
+            }
+        });
+    }
+    for (auto& writer : writers) writer.join();
+
+    const std::string prefix = "2026-07-18T00:00:00Z [INFO] writer ";
+    std::istringstream lines(out.str());
+    std::string line;
+    int count = 0;
+    while (std::getline(lines, line)) {
+        REQUIRE(line.rfind(prefix, 0) == 0);
+        const std::string suffix = line.substr(prefix.size());
+        REQUIRE(suffix.size() == 1);
+        CHECK((suffix[0] >= '0' && suffix[0] < '0' + kThreads));
+        ++count;
+    }
+    CHECK(count == kThreads * kLinesPerThread);
+    CHECK(log.recent_lines().size() == 200);
 }
