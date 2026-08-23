@@ -244,6 +244,7 @@ private:
         std::optional<SnapbackPayload> latest_snapback;
         std::optional<std::int64_t> last_prediction_at_ms;
         ClassifierStatus classifier;
+        ModelDeploymentHealth model_deployment;
         bool private_mode{};
         bool idle{};
     };
@@ -417,6 +418,9 @@ private:
     std::optional<SnapbackPayload> latest_snapback_;
     std::optional<std::int64_t> last_prediction_at_ms_;
     AppSettings settings_;
+    // Mutated under mutex_ by reload_classifier_model() and retry_model_deployment_cleanup().
+    // Readers go through the snapshot's copy instead: this one holds std::strings, and
+    // health() is deliberately lock-free.
     ModelDeploymentHealth model_deployment_health_;
     FocusMode focus_mode_ = FocusMode::Normal;
     double last_prediction_secs_ = -1.0;

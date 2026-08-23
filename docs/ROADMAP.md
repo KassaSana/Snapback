@@ -187,7 +187,7 @@ Task ids are permanent. Verify commands assume the local build directory; see
       *Depends on:* P0-04
       *Verify:* deterministic interleave test via `AppStateTestAccess` (stage a span-open,
       `stop_session`, run the persist phase, assert no open span).
-- [ ] **P0-06** Serve `model_deployment_health_` from the live snapshot (AUD-06).
+- [x] **P0-06** Serve `model_deployment_health_` from the live snapshot (AUD-06).
       *Files:* `src/app/state.hpp`, `src/app/state.cpp` — *Depends on:* —
       *Verify:* full `ctest --output-on-failure` — behaviour-neutral refactor, so the suite is
       the check.

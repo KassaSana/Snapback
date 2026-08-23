@@ -272,6 +272,7 @@ void AppState::publish_live_read_unlocked() {
     snapshot->classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
     snapshot->classifier.model_path = OnnxModel::instance().model_path();
     snapshot->classifier.model_id = OnnxModel::instance().model_id();
+    snapshot->model_deployment = model_deployment_health_;
 
     std::shared_ptr<const LiveReadSnapshot> published = std::move(snapshot);
     std::atomic_store_explicit(&live_read_snapshot_, std::move(published),
@@ -788,7 +789,7 @@ HealthStatus AppState::health() const {
         h.status = "capture_failed";
     } else if (!engine_running) {
         h.status = "offline";
-    } else if (model_deployment_health_.state == "degraded") {
+    } else if (live->model_deployment.state == "degraded") {
         h.status = "degraded";
     } else {
         h.status = "online";
@@ -815,7 +816,7 @@ HealthStatus AppState::health() const {
     h.classifier.backend = live->classifier.backend;
     h.classifier.onnx_runtime_enabled = live->classifier.onnx_runtime_enabled;
     h.classifier.model_path = live->classifier.model_path;
-    h.model_deployment = model_deployment_health_;
+    h.model_deployment = live->model_deployment;
     h.developer_tools_enabled = developer_tools_enabled();
     return h;
 }
