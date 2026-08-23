@@ -177,6 +177,7 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     pomodoro_.restore(settings_.pomodoro_state, wall_now_ms(), steady_now_ms());
     hydrate_active_session_unlocked();
     hydrate_session_attendance_unlocked();
+    last_prune_steady_ms_ = steady_now_ms();  // Storage::open pruned on the way in
     publish_live_read_unlocked();
 }
 
@@ -272,6 +273,7 @@ void AppState::publish_live_read_unlocked() {
     snapshot->classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
     snapshot->classifier.model_path = OnnxModel::instance().model_path();
     snapshot->classifier.model_id = OnnxModel::instance().model_id();
+    snapshot->model_deployment = model_deployment_health_;
 
     std::shared_ptr<const LiveReadSnapshot> published = std::move(snapshot);
     std::atomic_store_explicit(&live_read_snapshot_, std::move(published),
@@ -590,6 +592,14 @@ void AppState::close_open_span_on_shutdown() noexcept {
     }
 }
 
+void AppState::discard_pending_span_unlocked(const std::optional<std::string>& session_id) {
+    if (!pending_span_session_) return;
+    if (session_id && *session_id != *pending_span_session_) return;
+    pending_span_session_.reset();
+    pending_span_opens_ = false;
+    pending_span_secs_ago_ = 0;
+}
+
 SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // Mixed (in-memory + storage): take both locks in the fixed order mutex_ -> storage_mutex_.
     std::lock_guard state_lock(mutex_);
@@ -636,6 +646,11 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
+    // Any span decision still pending belongs to the session this one replaces, and that
+    // session was just completed above. Draining it later would open a span on a COMPLETED
+    // row -- or, for a pause, back-date a close into a session that already has its own
+    // ending. The new session's attendance starts from the span opened with it.
+    discard_pending_span_unlocked();
     session_attended_ = true;
     // Pressing Start *is* input. Without this the detector can still be Idle from before the
     // session existed, and the next tick would read "should not be attended" and immediately
@@ -686,6 +701,13 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         record = storage_.stop_session(session_id);
         savepoint.release();
     }
+    // A decision recorded for this session before the Stop is now describing a session that
+    // no longer exists to attend. Dropped here rather than filtered at the write, so a
+    // stopped session cannot be re-attended by a tick that was already in flight. Stopping
+    // by id is allowed for a session that is not the active one, so this is keyed on the id
+    // rather than on the active-session branch below.
+    discard_pending_span_unlocked(session_id);
+
     // Idempotent at the storage layer (7.25): a second Stop on an already-completed session
     // returns the label already written rather than appending a second, contradictory one.
     save_auto_session_label_unlocked(session_id);
@@ -721,6 +743,9 @@ bool AppState::delete_session(const std::string& session_id) {
     if (!deleted) return false;
 
     activity_epoch_.fetch_add(1, std::memory_order_release);
+    // The epoch bump already fences a tick's off-lock persistence, but a decision recorded
+    // before this delete and drained after it names a row that is gone.
+    discard_pending_span_unlocked(session_id);
 
     // Deleting the session the engine is currently filling would otherwise leave the app
     // pointing at a row that no longer exists — the next tick would try to persist against
@@ -737,6 +762,7 @@ bool AppState::delete_session(const std::string& session_id) {
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
         latest_snapback_.reset();
+        snapback_emitted_ = false;
         last_prediction_secs_ = -1.0;
         prediction_dirty_ = false;
         hyperfocus_latched_ = false;
@@ -764,7 +790,7 @@ HealthStatus AppState::health() const {
         h.status = "capture_failed";
     } else if (!engine_running) {
         h.status = "offline";
-    } else if (model_deployment_health_.state == "degraded") {
+    } else if (live->model_deployment.state == "degraded") {
         h.status = "degraded";
     } else {
         h.status = "online";
@@ -791,7 +817,7 @@ HealthStatus AppState::health() const {
     h.classifier.backend = live->classifier.backend;
     h.classifier.onnx_runtime_enabled = live->classifier.onnx_runtime_enabled;
     h.classifier.model_path = live->classifier.model_path;
-    h.model_deployment = model_deployment_health_;
+    h.model_deployment = live->model_deployment;
     h.developer_tools_enabled = developer_tools_enabled();
     return h;
 }
@@ -816,6 +842,7 @@ std::optional<SnapbackPayload> AppState::take_snapback() {
     std::lock_guard lock(mutex_);
     auto out = std::move(latest_snapback_);
     latest_snapback_.reset();
+    snapback_emitted_ = false;
     if (out) live_read_dirty_ = true;
     publish_live_read_unlocked();
     return out;
@@ -826,6 +853,7 @@ void AppState::dismiss_snapback() {
     // Clear the pending payload and return the tracker from Recovering to Focused so it
     // doesn't keep the recovery state latched.
     latest_snapback_.reset();
+    snapback_emitted_ = false;
     context_tracker_.dismiss_recovery(last_event_secs_);
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -841,6 +869,7 @@ FocusTargetResult AppState::restore_snapback_target() {
             window_title = latest_snapback_->window_title;
         }
         latest_snapback_.reset();
+        snapback_emitted_ = false;
         context_tracker_.dismiss_recovery(last_event_secs_);
         live_read_dirty_ = true;
         publish_live_read_unlocked();
@@ -953,8 +982,10 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
 
     active_session_.reset();
     session_attended_ = false;  // every span was deleted with the rows above
+    discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
     latest_snapback_.reset();
+    snapback_emitted_ = false;
     last_prediction_at_ms_.reset();
     last_prediction_secs_ = -1.0;
     last_event_secs_ = 0.0;
@@ -1578,6 +1609,10 @@ void AppState::engine_tick() {
     std::optional<std::string> span_session_id;
     std::int64_t span_secs_ago = 0;
     bool span_opens = false;
+    // Roadmap P0-07 / AUD-07. Decided in phase 1 with the rest, run in phase 2 with the
+    // rest: the prune is a storage write and phase 1 is in-memory only.
+    bool prune_due = false;
+    bool prune_may_vacuum = false;
     std::uint64_t tick_activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
@@ -1597,16 +1632,31 @@ void AppState::engine_tick() {
         span_session_id = std::exchange(pending_span_session_, std::nullopt);
         span_secs_ago = pending_span_secs_ago_;
         span_opens = pending_span_opens_;
+        if (now_ms - last_prune_steady_ms_ >= kRetentionPruneIntervalMs) {
+            prune_due = true;
+            // VACUUM rewrites the whole file and takes storage_mutex_ for as long as that
+            // takes -- which is the mutex the tick's persist phase needs. Deferred to a
+            // prune that lands while no session is running rather than stalling one.
+            prune_may_vacuum = !active_session_.has_value();
+            // Stamped on the decision, not on the write. A prune skipped below (the
+            // activity epoch moved, i.e. the user just deleted data) has nothing left to
+            // collect anyway, and stamping here keeps this field under mutex_ where it
+            // belongs instead of reaching back for it from phase 2.
+            last_prune_steady_ms_ = now_ms;
+        }
         if (pomodoro_.poll(now_ms)) pomodoro_to_emit = pomodoro_.status(now_ms);
         hook = emit_hook_;
         if (prediction_dirty_) {
             pred_to_emit = latest_prediction_;
             prediction_dirty_ = false;
         }
-        if (latest_snapback_) {
-            snap_to_emit = std::move(latest_snapback_);
-            latest_snapback_.reset();
-            live_read_dirty_ = true;
+        // Emit once, but keep the payload: "Take me back" reads it when the user clicks,
+        // which is seconds after this tick. Draining here is what made restore a no-op --
+        // the card stayed on screen long after the field behind it was empty. The payload
+        // is cleared by dismiss/restore, or replaced by the next snapback.
+        if (latest_snapback_ && !snapback_emitted_) {
+            snap_to_emit = *latest_snapback_;
+            snapback_emitted_ = true;
         }
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
@@ -1639,6 +1689,34 @@ void AppState::engine_tick() {
         }
     }
 
+    if (prune_due) {
+        // Outside the activity-boundary block above: a prune is not activity-scoped work.
+        // It deletes rows that aged out, which is true regardless of which session the tick
+        // was filling or whether the user deleted one mid-tick.
+        std::lock_guard lock(storage_mutex_);
+        try {
+            const PruneSummary summary = storage_.prune_to_retention();
+            if (summary.total() > 0) {
+                std::ostringstream msg;
+                msg << "storage: pruned " << summary.total() << " rows older than "
+                    << kDefaultRetentionDays
+                    << "d (predictions=" << summary.predictions_deleted
+                    << ", context_snapshots=" << summary.context_snapshots_deleted
+                    << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
+                log().info(msg.str());
+                if (prune_may_vacuum && should_vacuum_after_prune(summary.total())) {
+                    storage_.vacuum();
+                }
+            }
+        } catch (const std::exception& err) {
+            // Same posture as the prune on open: retention is housekeeping, and a failed
+            // sweep must not take down the tick that records the user's session. The next
+            // one is a day away, which is soon enough for a condition that is usually
+            // transient (a locked database, a full disk).
+            log().warn(std::string("storage: retention prune failed: ") + err.what());
+        }
+    }
+
     if (!hook) return;
     if (idle_edge == IdleTransition::WentIdle) {
         hook("idle", "{\"idle\":true}", tick_activity_epoch);
@@ -1647,26 +1725,25 @@ void AppState::engine_tick() {
         hook("idle", "{\"idle\":false}", tick_activity_epoch);
     }
     if (pred_to_emit) {
-        hook("prediction", nlohmann::json(*pred_to_emit).dump(), tick_activity_epoch);
+        hook("prediction", dump_json(nlohmann::json(*pred_to_emit)), tick_activity_epoch);
     }
     if (snap_to_emit) {
-        hook("snapback", nlohmann::json(*snap_to_emit).dump(), tick_activity_epoch);
+        hook("snapback", dump_json(nlohmann::json(*snap_to_emit)), tick_activity_epoch);
     }
     if (pomodoro_to_emit) {
-        hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump(), tick_activity_epoch);
+        hook("pomodoro", dump_json(nlohmann::json(*pomodoro_to_emit)), tick_activity_epoch);
     }
     if (hyper_to_emit) {
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
-        hook("hyperfocus", nlohmann::json{{"message", note.body},
-                                          {"minutes", *hyper_to_emit}}
-                               .dump(),
+        hook("hyperfocus",
+             dump_json(nlohmann::json{{"message", note.body}, {"minutes", *hyper_to_emit}}),
              tick_activity_epoch);
     }
     if (untracked_to_emit) {
         const auto note = build_untracked_work_notification(*untracked_to_emit);
-        hook("untracked_work", nlohmann::json{{"message", note.body},
-                                              {"minutes", *untracked_to_emit}}
-                                   .dump(),
+        hook("untracked_work",
+             dump_json(nlohmann::json{{"message", note.body},
+                                      {"minutes", *untracked_to_emit}}),
              tick_activity_epoch);
     }
 }
@@ -1721,6 +1798,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
             job.snapback_episode = std::move(episode);
 
             latest_snapback_ = *snapback;
+            snapback_emitted_ = false;  // replaces any predecessor, restored or not
             live_read_dirty_ = true;
         }
     }

@@ -725,3 +725,10 @@ jobs:
       # about my change?" confidently and wrongly.
       - name: Every script must be documented in scripts/README.md
         run: python3 scripts/check_scripts_documented.py
+
+      # Automates the monthly dead-code sweep. A header only its own tests include compiles,
+      # has passing tests, and ships nothing -- every signal a reviewer reads says it is
+      # live. That is the shape 2.4 had, and it survived long enough to be reasoned about as
+      # if it worked.
+      - name: Every header in src/ must have a product caller
+        run: python3 scripts/check_dead_headers.py --verbose

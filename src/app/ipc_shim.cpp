@@ -152,7 +152,19 @@ std::string build_ipc_shim_script(const std::string& trusted_canonical_url,
       if (decision === "external") {
         event.preventDefault();
         if (typeof window.open_external_url === "function") {
-          window.open_external_url({ url: anchor.href });
+          // Through invoke(), not the raw binding: every native command rejects a call
+          // without the capability token, so calling window.open_external_url directly
+          // meant the click was preventDefault()ed and then the command refused --
+          // external links did nothing at all in a release build. invoke() attaches the
+          // token, and a raw call here would drift again the moment the key changes.
+          invoke("open_external_url", { url: anchor.href }).catch(function (err) {
+            // Nothing on screen initiated this, so there is no UI to show a failure in.
+            // The console is the only honest place for it; swallowing it silently is what
+            // hid the missing token for the whole life of the interceptor.
+            if (window.console && console.error) {
+              console.error("snapback: could not open external url", err);
+            }
+          });
         }
       } else if (decision === "block") {
         event.preventDefault();

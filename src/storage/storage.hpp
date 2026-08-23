@@ -126,7 +126,13 @@ public:
 
     // Opens a span at `started_at`. Closes any span still open for the session first, so a
     // missed pause cannot leave two overlapping spans double-counting the same minutes.
-    void begin_session_span(const std::string& session_id, const std::string& started_at);
+    //
+    // Refuses — returns false, changing nothing — unless the session is ACTIVE. A caller
+    // deciding to open a span and writing it are two separate moments (the engine tick
+    // decides under one lock and writes under another), and a stop in between would
+    // otherwise leave an open span on a completed session that every attendance query
+    // measures to `now` and nothing ever closes.
+    bool begin_session_span(const std::string& session_id, const std::string& started_at);
 
     // The same, stamped from Storage's own clock.
     //
@@ -136,7 +142,7 @@ public:
     // can come from different clocks entirely, which makes a span's arithmetic against its
     // own session meaningless. `secs_ago` expresses a back-dated pause as an offset so it
     // stays on this clock.
-    void begin_session_span_now(const std::string& session_id);
+    bool begin_session_span_now(const std::string& session_id);
     bool close_session_span_now(const std::string& session_id, std::int64_t secs_ago = 0);
 
     // Closes the session's open span at `ended_at`. Returns false when none was open, which
@@ -404,6 +410,13 @@ public:
     // is REAL Unix epoch seconds (see insert_feature_snapshot). Passing one and deriving
     // the other would mean parsing RFC3339 by hand; the caller already has both.
     PruneSummary prune_runtime_data(const std::string& cutoff_rfc3339, double cutoff_unix_secs);
+
+    // The same prune against the retention window, in one transaction, with the cutoffs
+    // computed here. The two cutoff forms exist because the tables store time differently
+    // (RFC3339 text vs REAL epoch seconds), and deriving them at the one call site that
+    // knows the window is what keeps the pair consistent -- passing one and forgetting the
+    // other prunes two tables out of three.
+    PruneSummary prune_to_retention(int retention_days = kDefaultRetentionDays);
     void vacuum();
 
     // Test seam: index names in the current schema, sorted. A dropped index is a silent
@@ -467,6 +480,9 @@ private:
     // statement owned by stmt_cache_; wrap it in the borrowed Stmt ctor to bind + step.
     sqlite3_stmt* cached_stmt(const char* sql);
     void ensure_active_session(const std::string& session_id);
+    // The same question without the throw, for callers whose honest answer to "not active"
+    // is to do nothing rather than to fail.
+    bool session_is_active(const std::string& session_id);
     void finalize_cache();
 
     sqlite3* db_ = nullptr;

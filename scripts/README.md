@@ -19,6 +19,7 @@ on Windows tooling, while the shell wrappers cover macOS and Linux.
 | `check_coverage_exclusions.py` | any OS | verifies every module excluded from the frontend coverage gate has a test that `npm run test:unit` actually runs |
 | `check_unit_test_wiring.py` | any OS | the converse: verifies every `frontend/tests/*.test.ts` appears in the hand-chained `test:unit` script, so a new test file cannot be silently unrun |
 | `check_no_bom.py` | any OS | verifies no tracked file starts with a UTF-8 byte-order mark |
+| `check_dead_headers.py` | any OS | verifies every `.hpp` in `src/` is included by product code — its own `.cpp` and its tests do not count as callers |
 | `check_no_remote_subresources.py` | any OS | verifies the built frontend bundle fetches nothing at runtime — no CDN, font, or remote script |
 | `check_release_tag.py` | any OS | verifies a release tag names exactly the `project(... VERSION x.y.z)` in `CMakeLists.txt` |
 | `check_scripts_documented.py` | any OS | verifies every script in this directory is named in this table — the guard that keeps it honest |

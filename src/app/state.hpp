@@ -36,6 +36,11 @@ namespace snapback {
 
 inline constexpr std::int64_t kCaptureStallThresholdMs = 30'000;
 
+// How much uptime passes between retention prunes. Snapback closes to the tray and is meant
+// to run for weeks, so "prune on open" -- which was the only prune -- meant a user who never
+// restarts kept every row past the retention window until their next reboot.
+inline constexpr std::int64_t kRetentionPruneIntervalMs = 24 * 60 * 60 * 1000;
+
 class AppState {
 public:
     // `logger` and `clock` are both optional (default null) so existing call sites keep
@@ -84,9 +89,10 @@ public:
     std::optional<PredictionRecord> latest_prediction() const;
     std::optional<SessionRecord> active_session() const;
 
-    // Snapback context-recovery payload. The engine tick stores the latest one;
-    // latest_snapback() peeks, take_snapback() drains it (so each payload emits
-    // once), dismiss_snapback() clears it on the frontend's request.
+    // Snapback context-recovery payload. The engine tick stores the latest one and emits
+    // it once (see snapback_emitted_); latest_snapback() peeks, take_snapback() drains it,
+    // dismiss_snapback() clears it on the frontend's request. The payload outlives its
+    // emission so restore_snapback_target() still has a target when the user clicks.
     std::optional<SnapbackPayload> latest_snapback() const;
     std::optional<SnapbackPayload> take_snapback();
     void dismiss_snapback();
@@ -243,6 +249,7 @@ private:
         std::optional<SnapbackPayload> latest_snapback;
         std::optional<std::int64_t> last_prediction_at_ms;
         ClassifierStatus classifier;
+        ModelDeploymentHealth model_deployment;
         bool private_mode{};
         bool idle{};
     };
@@ -258,6 +265,11 @@ private:
     // the last step) and return the edge.
     IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
     std::optional<PomodoroStatus> update_pomodoro_for_test(std::int64_t now_ms);
+
+    // Drops a span decision phase 1 has recorded but no tick has drained yet. `session_id`
+    // nullopt drops whatever is pending. Requires mutex_.
+    void discard_pending_span_unlocked(
+        const std::optional<std::string>& session_id = std::nullopt);
 
     void start_engine_impl(InputHook* hook);
     // A tick's writes, computed under mutex_ (no storage I/O) and flushed later under
@@ -297,6 +309,10 @@ private:
     // Last capture event's app. Excluded-app time resets the untracked stretch (2.7).
     std::string last_capture_app_;
 
+    // The session a pending span decision belongs to. Carried with the decision because the
+    // decision outlives the moment it was made: phase 1 records it, phase 2 writes it, and
+    // the session can be stopped, replaced, or deleted in between. Without the id there is
+    // nothing to invalidate against.
     std::optional<std::string> pending_span_session_;
     std::int64_t pending_span_secs_ago_ = 0;  // how far to back-date a pause
     bool pending_span_opens_ = false;  // true = the user came back, false = they went away
@@ -407,13 +423,24 @@ private:
     std::optional<SnapbackPayload> latest_snapback_;
     std::optional<std::int64_t> last_prediction_at_ms_;
     AppSettings settings_;
+    // Mutated under mutex_ by reload_classifier_model() and retry_model_deployment_cleanup().
+    // Readers go through the snapshot's copy instead: this one holds std::strings, and
+    // health() is deliberately lock-free.
     ModelDeploymentHealth model_deployment_health_;
     FocusMode focus_mode_ = FocusMode::Normal;
     double last_prediction_secs_ = -1.0;
     double last_event_secs_ = 0.0;  // timestamp of the most recent processed event
     bool prediction_dirty_ = false;  // a new prediction awaits emission this tick
+    // Whether latest_snapback_ has already gone out as a `snapback` event. Emission and
+    // lifetime are separate here: the event fires once, but the payload has to survive
+    // until the user dismisses or restores it.
+    bool snapback_emitted_ = false;
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
     bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
+    // Uptime at the last retention prune. Monotonic, not wall clock: this measures how long
+    // the process has been up, so a system clock jump cannot make a prune overdue or
+    // unreachable. Seeded at construction because Storage::open just pruned.
+    std::int64_t last_prune_steady_ms_ = 0;
     // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple
     // libc++ shipped with the supported command-line tools does not provide the C++20 class
     // specialization, while atomic_load/store(shared_ptr*) are available cross-platform.

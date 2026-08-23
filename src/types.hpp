@@ -24,6 +24,21 @@ namespace snapback {
 
 using json = nlohmann::json;
 
+// Serializes to JSON text without throwing on invalid UTF-8.
+//
+// App names and window titles come from the OS. On Windows they arrive through
+// WideCharToMultiByte and are well-formed; an X11 WM_NAME is arbitrary bytes. nlohmann's
+// default handler is error_handler_t::strict, which throws type_error.316 on the first
+// invalid byte -- so one program with a malformed title used to cost the user every event of
+// every tick while that window had focus. The engine thread's exception boundary keeps the
+// process alive through that, but it cannot deliver what the throw discarded.
+//
+// Replacing the offending bytes with U+FFFD degrades one title instead of dropping a tick.
+// Use this for anything whose strings originate outside the app.
+inline std::string dump_json(const json& value) {
+    return value.dump(-1, ' ', /*ensure_ascii=*/false, json::error_handler_t::replace);
+}
+
 // ---------------------------------------------------------------------------
 // Enums (+ string conversions used by command handling and tests)
 // ---------------------------------------------------------------------------

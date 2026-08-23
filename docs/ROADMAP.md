@@ -158,40 +158,40 @@ attended minutes that stop growing when the session stops.
 Task ids are permanent. Verify commands assume the local build directory; see
 [`running.md`](running.md).
 
-- [ ] **P0-01** Serialize Logger sink writes (AUD-05): move the `sink_ <<` write under the
+- [x] **P0-01** Serialize Logger sink writes (AUD-05): move the `sink_ <<` write under the
       existing mutex; make `min_level_` atomic.
       *Files:* `src/util/logger.hpp`, `tests/test_logger.cpp` — *Depends on:* —
       *Verify:* `ctest -R logger --output-on-failure` with a new concurrent-writers case, then
       the full suite.
-- [ ] **P0-02** Keep the snapback payload restorable (AUD-01): add a `snapback_emitted_` flag
+- [x] **P0-02** Keep the snapback payload restorable (AUD-01): add a `snapback_emitted_` flag
       so the tick emits once without clearing `latest_snapback_`; clear only on
       dismiss/restore/replace.
       *Files:* `src/app/state.hpp`, `src/app/state.cpp`, `tests/test_app_state.cpp` —
       *Depends on:* —
       *Verify:* new doctest case driving fire → engine-tick drain → `restore_snapback_target()`
       returns ok; `ctest -R app_state --output-on-failure`.
-- [ ] **P0-03** Attach the capability token in the shim's link interceptor (AUD-03).
+- [x] **P0-03** Attach the capability token in the shim's link interceptor (AUD-03).
       *Files:* `src/app/ipc_shim.cpp`, `tests/test_ipc_shim.cpp` — *Depends on:* —
       *Verify:* `ctest -R ipc_shim --output-on-failure` with a new assertion that the
       interceptor's `open_external_url` payload carries `__snapbackToken`.
-- [ ] **P0-04** Refuse spans on non-ACTIVE sessions in storage (AUD-04a): make
+- [x] **P0-04** Refuse spans on non-ACTIVE sessions in storage (AUD-04a): make
       `begin_session_span` a guarded `INSERT ... SELECT` that no-ops when the session is not
       ACTIVE, and report whether it inserted.
       *Files:* `src/storage/storage.cpp`, `src/storage/storage.hpp`, `tests/test_storage.cpp` —
       *Depends on:* —
       *Verify:* new doctest case: `begin_session_span_now` on a COMPLETED session leaves
       `has_open_span` false; `ctest -R storage --output-on-failure`.
-- [ ] **P0-05** Invalidate the tick's pending span decision on session mutation (AUD-04b):
+- [x] **P0-05** Invalidate the tick's pending span decision on session mutation (AUD-04b):
       capture the session id with the pending decision and have stop/start/delete clear it.
       *Files:* `src/app/state.cpp`, `src/app/state.hpp`, `tests/test_app_state.cpp` —
       *Depends on:* P0-04
       *Verify:* deterministic interleave test via `AppStateTestAccess` (stage a span-open,
       `stop_session`, run the persist phase, assert no open span).
-- [ ] **P0-06** Serve `model_deployment_health_` from the live snapshot (AUD-06).
+- [x] **P0-06** Serve `model_deployment_health_` from the live snapshot (AUD-06).
       *Files:* `src/app/state.hpp`, `src/app/state.cpp` — *Depends on:* —
       *Verify:* full `ctest --output-on-failure` — behaviour-neutral refactor, so the suite is
       the check.
-- [ ] **P0-07** Run the retention prune periodically, not only at startup (AUD-07): once per
+- [x] **P0-07** Run the retention prune periodically, not only at startup (AUD-07): once per
       24 h of uptime from the tick's storage phase, no VACUUM while a session is active.
       *Files:* `src/app/state.cpp`, `src/app/state.hpp`, `tests/test_app_state.cpp` —
       *Depends on:* —
@@ -4475,8 +4475,13 @@ itself a backlog item below.
       `master`, and carries the full CI result required by 9.11.
 - [ ] Extract every release artifact and verify the project license, dependency notices,
       frontend bundle, executable signature where required, and launchable binary are inside.
-- [ ] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
-      the full pipeline. Covers 8.1 and 8.2 in one test.
+- [x] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
+      the full pipeline. Covers 8.1 and 8.2 in one test. **Automated 2026-08-22** as
+      `tests/test_app_state.cpp:a hostile window title crosses the whole pipeline without dropping the tick`,
+      so it no longer needs running by hand. It found a live defect on its first run: the
+      emit dumps used nlohmann's strict handler and threw `type_error.316` on the invalid
+      bytes, costing every event of that tick. `dump_json` (`src/types.hpp:dump_json`) now
+      replaces malformed bytes with U+FFFD on every path carrying OS-derived strings.
 
 ### Monthly, or when a subsystem is touched
 
@@ -4513,10 +4518,14 @@ itself a backlog item below.
       persistence failure, no session) and assert `HealthStatus` reports something other than
       healthy. Capture/prediction fields are unblocked by 7.4 and 7.10; persistence waits on
       9.6. The point is that health fields must never be literals again.
-- [ ] **Stack-size assertion:** `static_assert(sizeof(AppState) < N)`. One line, permanently
-      prevents 6.1's class of regression.
-- [ ] **Dead-header job:** automate the dead-code sweep above. It's the check that would have
-      caught 2.4 for free.
+- [x] **Stack-size assertion:** `static_assert(sizeof(AppState) < N)`. One line, permanently
+      prevents 6.1's class of regression. **Done 2026-08-22** in `tests/test_app_state.cpp`,
+      beside the equivalent guard for `CaptureThread`; N is 16 KB against a current 3,392
+      bytes, and the assertion was verified to fire before being set to that bound.
+- [x] **Dead-header job:** automate the dead-code sweep above. It's the check that would have
+      caught 2.4 for free. **Done 2026-08-22** as `scripts/check_dead_headers.py`, run in the
+      CI guard job. A header's own `.cpp` and its tests do not count as callers, so a
+      `.hpp`/`.cpp` pair nothing else uses fails it, not just a header-only file.
 
 ---
 

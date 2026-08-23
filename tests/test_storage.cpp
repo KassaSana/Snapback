@@ -272,6 +272,38 @@ TEST_CASE("session spans accumulate only attended time") {
     CHECK_FALSE(storage->has_open_span(session.session_id));
 }
 
+TEST_CASE("a span cannot be opened on a session that is no longer ACTIVE") {
+    // AUD-04a. The engine tick decides to open a span under one lock and writes it under
+    // another; a Stop landing between the two used to insert a fresh open span on a
+    // COMPLETED session. Every attendance query measures an open span as
+    // COALESCE(ended_at, now), and nothing ever closes a stopped session's spans, so that
+    // one row makes daily and weekly attended minutes climb forever.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("stopped", FocusMode::Normal);
+
+    REQUIRE(storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z"));
+    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
+    storage->stop_session(session.session_id);
+
+    CHECK_FALSE(storage->begin_session_span(session.session_id, "2026-08-05T09:20:00Z"));
+    CHECK_FALSE(storage->begin_session_span_now(session.session_id));
+    CHECK_FALSE(storage->has_open_span(session.session_id));
+
+    // The refusal changes nothing at all -- in particular it does not re-stamp the closed
+    // span, so the session's attended time is exactly what it was before the stale write.
+    const auto active = storage->active_secs(session.session_id, "2026-08-05T11:00:00Z");
+    REQUIRE(active.has_value());
+    CHECK(*active == 10 * 60);
+}
+
+TEST_CASE("a refused span leaves an unknown session untouched") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    CHECK_FALSE(storage->begin_session_span("no-such-session", "2026-08-05T09:00:00Z"));
+    CHECK_FALSE(storage->has_open_span("no-such-session"));
+}
+
 TEST_CASE("an open span counts up to now") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());

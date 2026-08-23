@@ -10,6 +10,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <ctime>
 #include <deque>
@@ -261,15 +262,19 @@ public:
         : sink_(sink), min_level_(min_level), clock_(std::move(clock)) {}
 
     [[nodiscard]] bool enabled(LogLevel level) const {
-        return min_level_ != LogLevel::Off && level >= min_level_;
+        const LogLevel min_level = min_level_.load(std::memory_order_relaxed);
+        return min_level != LogLevel::Off && level >= min_level;
     }
 
     void log(LogLevel level, std::string_view message) {
         if (!enabled(level)) return;
         std::string line = clock_() + " [" + to_string(level) + "] " +
                            std::string(message);
+        // The sink write happens under the same mutex as the recent-lines buffer: two
+        // threads logging at once would otherwise interleave inside one record, since
+        // std::ostream gives no atomicity across the two << operations below.
+        std::lock_guard lock(mutex_);
         sink_ << line << '\n';
-        std::lock_guard lock(recent_mutex_);
         recent_lines_.push_back(std::move(line));
         while (recent_lines_.size() > kRecentLogLines) recent_lines_.pop_front();
     }
@@ -280,10 +285,12 @@ public:
     void warn(std::string_view m) { log(LogLevel::Warn, m); }
     void error(std::string_view m) { log(LogLevel::Error, m); }
 
-    void set_level(LogLevel level) { min_level_ = level; }
-    [[nodiscard]] LogLevel level() const noexcept { return min_level_; }
+    void set_level(LogLevel level) { min_level_.store(level, std::memory_order_relaxed); }
+    [[nodiscard]] LogLevel level() const noexcept {
+        return min_level_.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] std::vector<std::string> recent_lines(std::size_t limit = kRecentLogLines) const {
-        std::lock_guard lock(recent_mutex_);
+        std::lock_guard lock(mutex_);
         const auto count = std::min(limit, recent_lines_.size());
         std::vector<std::string> result;
         result.reserve(count);
@@ -297,9 +304,12 @@ public:
 private:
     static constexpr std::size_t kRecentLogLines = 200;
     std::ostream& sink_;
-    LogLevel min_level_;
+    // Atomic because set_level() can run on a different thread than the enabled()
+    // check that opens every log call, and that read stays outside the mutex so a
+    // filtered-out call costs nothing.
+    std::atomic<LogLevel> min_level_;
     Clock clock_;
-    mutable std::mutex recent_mutex_;
+    mutable std::mutex mutex_;
     std::deque<std::string> recent_lines_;
 };
 

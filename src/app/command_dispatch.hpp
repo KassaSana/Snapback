@@ -15,6 +15,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "types.hpp"
+
 namespace snapback::detail {
 
 // Limits and validation for command input (blank goals rejected, history capped, etc.).
@@ -153,7 +155,10 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
             args.erase(kCapabilityTokenKey);
         }
 
-        return handler(args).dump();
+        // Responses carry OS-derived strings too (window titles in snapback and recap
+        // payloads), so the same lossy dump applies -- a malformed title must degrade the
+        // one field, not fail the whole command.
+        return dump_json(handler(args));
     } catch (const std::exception& e) {
         return nlohmann::json{{"__snapback_error", e.what()}}.dump();
     }
@@ -165,10 +170,15 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
 // on engines that still treat those valid JSON characters as line terminators.
 inline std::string event_dispatch_script(std::string_view event,
                                          std::string_view json_payload) {
-    const auto js_event =
-        nlohmann::json(std::string(event)).dump(-1, ' ', /*ensure_ascii=*/true);
-    const auto js_payload =
-        nlohmann::json(std::string(json_payload)).dump(-1, ' ', /*ensure_ascii=*/true);
+    // ensure_ascii keeps U+2028/U+2029 out of the JavaScript source; replace keeps an
+    // invalid byte that reached this far from throwing where there is no longer anywhere to
+    // report it -- this runs on the way to the webview, past every handler.
+    const auto js_event = nlohmann::json(std::string(event))
+                              .dump(-1, ' ', /*ensure_ascii=*/true,
+                                    nlohmann::json::error_handler_t::replace);
+    const auto js_payload = nlohmann::json(std::string(json_payload))
+                                .dump(-1, ' ', /*ensure_ascii=*/true,
+                                      nlohmann::json::error_handler_t::replace);
     return "window.__snapback && window.__snapback.emit(" + js_event +
            ", JSON.parse(" + js_payload + "))";
 }
