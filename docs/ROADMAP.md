@@ -4518,8 +4518,10 @@ itself a backlog item below.
       persistence failure, no session) and assert `HealthStatus` reports something other than
       healthy. Capture/prediction fields are unblocked by 7.4 and 7.10; persistence waits on
       9.6. The point is that health fields must never be literals again.
-- [ ] **Stack-size assertion:** `static_assert(sizeof(AppState) < N)`. One line, permanently
-      prevents 6.1's class of regression.
+- [x] **Stack-size assertion:** `static_assert(sizeof(AppState) < N)`. One line, permanently
+      prevents 6.1's class of regression. **Done 2026-08-22** in `tests/test_app_state.cpp`,
+      beside the equivalent guard for `CaptureThread`; N is 16 KB against a current 3,392
+      bytes, and the assertion was verified to fire before being set to that bound.
 - [ ] **Dead-header job:** automate the dead-code sweep above. It's the check that would have
       caught 2.4 for free.
 

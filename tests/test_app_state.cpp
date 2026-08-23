@@ -1779,6 +1779,20 @@ std::string hostile_title() {
 const std::string kHostileTitle = hostile_title();
 }  // namespace
 
+// Regression guard for Roadmap 6.1, the AppState half of the assertion that already covers
+// CaptureThread (tests/test_capture_thread.cpp). 6.1 was a RingBuffer holding
+// std::array<CaptureEvent, 65536> inline: ~6 MB per CaptureThread, and AppState holds one by
+// value, so every instance overflowed Windows' 1 MB default thread stack while Linux and
+// macOS survived on 8 MB. A std::array member is C++ silently choosing automatic storage,
+// which is what made a sizing mistake present as a platform-specific SIGSEGV.
+//
+// 3,392 bytes here (MSVC x64, 2026-08-22). The bound is deliberately loose -- it is a trip
+// wire for a member that jumps by orders of magnitude, not a budget to tune against, and it
+// has to hold across standard libraries whose string and deque layouts differ. Anything
+// resembling 6.1 clears 16 KB immediately.
+static_assert(sizeof(AppState) < 16384,
+              "AppState must stay stack-friendly; bulk storage belongs on the heap");
+
 TEST_CASE("a hostile window title crosses the whole pipeline without dropping the tick") {
     // Verification-tier item: covers 8.1 (an exception on the engine thread) and 8.2 (the
     // host-to-webview encoding) in one pass, end to end rather than at either seam alone.
