@@ -1725,26 +1725,25 @@ void AppState::engine_tick() {
         hook("idle", "{\"idle\":false}", tick_activity_epoch);
     }
     if (pred_to_emit) {
-        hook("prediction", nlohmann::json(*pred_to_emit).dump(), tick_activity_epoch);
+        hook("prediction", dump_json(nlohmann::json(*pred_to_emit)), tick_activity_epoch);
     }
     if (snap_to_emit) {
-        hook("snapback", nlohmann::json(*snap_to_emit).dump(), tick_activity_epoch);
+        hook("snapback", dump_json(nlohmann::json(*snap_to_emit)), tick_activity_epoch);
     }
     if (pomodoro_to_emit) {
-        hook("pomodoro", nlohmann::json(*pomodoro_to_emit).dump(), tick_activity_epoch);
+        hook("pomodoro", dump_json(nlohmann::json(*pomodoro_to_emit)), tick_activity_epoch);
     }
     if (hyper_to_emit) {
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
-        hook("hyperfocus", nlohmann::json{{"message", note.body},
-                                          {"minutes", *hyper_to_emit}}
-                               .dump(),
+        hook("hyperfocus",
+             dump_json(nlohmann::json{{"message", note.body}, {"minutes", *hyper_to_emit}}),
              tick_activity_epoch);
     }
     if (untracked_to_emit) {
         const auto note = build_untracked_work_notification(*untracked_to_emit);
-        hook("untracked_work", nlohmann::json{{"message", note.body},
-                                              {"minutes", *untracked_to_emit}}
-                                   .dump(),
+        hook("untracked_work",
+             dump_json(nlohmann::json{{"message", note.body},
+                                      {"minutes", *untracked_to_emit}}),
              tick_activity_epoch);
     }
 }

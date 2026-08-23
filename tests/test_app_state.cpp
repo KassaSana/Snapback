@@ -15,8 +15,12 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
+#include "app/command_dispatch.hpp"
 #include "app/settings.hpp"
 #include "app/state.hpp"
 #include "capture/permissions.hpp"
@@ -1744,6 +1748,106 @@ TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker
     auto second = state->take_snapback();
     REQUIRE(second.has_value());
     CHECK(second->app_name == "Cursor");
+}
+
+namespace {
+// A window title as hostile as the OS can hand us one: a lone 0x80 continuation byte and a
+// bare 0xFF (neither is legal UTF-8 anywhere), U+2028 (valid JSON, historically a JavaScript
+// line terminator), a double quote, and a backslash. On Windows titles arrive through
+// WideCharToMultiByte and are well-formed, but on X11 a WM_NAME is arbitrary bytes -- so
+// this is a real input, not a contrived one.
+std::string hostile_title() {
+    // Built byte by byte rather than with escapes, so what the compiler sees cannot drift
+    // from what this comment claims.
+    std::string title = "plan";
+    title.push_back(static_cast<char>(0x80));  // continuation byte with no lead byte
+    title += ".md ";
+    title.push_back(static_cast<char>(0xFF));  // never legal anywhere in UTF-8
+    title += " ";
+    title.push_back(static_cast<char>(0xE2));  // U+2028 LINE SEPARATOR, in UTF-8
+    title.push_back(static_cast<char>(0x80));
+    title.push_back(static_cast<char>(0xA8));
+    title += " ";
+    title.push_back('"');
+    title += "quoted";
+    title.push_back('"');
+    title += " back";
+    title.push_back(static_cast<char>(0x5C));  // backslash
+    title += "slash";
+    return title;
+}
+const std::string kHostileTitle = hostile_title();
+}  // namespace
+
+TEST_CASE("a hostile window title crosses the whole pipeline without dropping the tick") {
+    // Verification-tier item: covers 8.1 (an exception on the engine thread) and 8.2 (the
+    // host-to-webview encoding) in one pass, end to end rather than at either seam alone.
+    //
+    // nlohmann's dump() defaults to error_handler_t::strict, which throws type_error.316 on
+    // invalid UTF-8. The engine thread catches and logs, so a malformed title cannot kill
+    // the process -- but a throw in the emit phase still costs the user every event that
+    // tick, silently, for as long as that window has focus.
+    auto state = make_state();
+    state->start_session("hostile input", FocusMode::Normal);
+
+    std::vector<std::pair<std::string, std::string>> emitted;
+    state->set_emit_hook(
+        [&emitted](const std::string& name, const std::string& payload, std::uint64_t) {
+            emitted.emplace_back(name, payload);
+        });
+
+    // The remembered good context carries the hostile title, so it reaches the snapback
+    // payload -- the one event that embeds app_name and window_title verbatim.
+    AppStateTestAccess::process_event(
+        *state, ev(EventType::WindowFocusChange, 100.0, "Cursor", kHostileTitle.c_str()));
+    AppStateTestAccess::process_event(
+        *state, ev(EventType::WindowFocusChange, 101.0, "Google Chrome",
+                   "YouTube - Recommended"));
+    AppStateTestAccess::process_event(
+        *state, ev(EventType::WindowFocusChange, 141.0, "Cursor", kHostileTitle.c_str()));
+    REQUIRE(state->latest_snapback().has_value());
+
+    AppStateTestAccess::engine_tick(*state);
+    state->set_emit_hook(nullptr);
+
+    const auto snapback = std::find_if(emitted.begin(), emitted.end(),
+                                       [](const auto& e) { return e.first == "snapback"; });
+    REQUIRE(snapback != emitted.end());
+
+    // 8.2: whatever the payload became, it is JSON, and the script the host evaluates is
+    // pure ASCII -- no raw U+2028 in JavaScript source, nothing that reads as executable.
+    const auto parsed = nlohmann::json::parse(snapback->second);
+    REQUIRE(parsed.contains("windowTitle"));
+    const auto title = parsed["windowTitle"].get<std::string>();
+
+    // The title that comes out is valid UTF-8. Asserted by re-dumping it under the strict
+    // handler -- the one that threw on the way in -- rather than by scanning for the two
+    // bytes that were fed in: 0x80 is also the second byte of U+2028, so a byte scan would
+    // fail on a title that is perfectly well formed.
+    CHECK_NOTHROW((void)nlohmann::json(title).dump());
+    // 0xFF, which cannot appear in valid UTF-8 at all, is gone outright.
+    CHECK(title.find(static_cast<char>(0xFF)) == std::string::npos);
+    // And it degraded rather than vanished: U+FFFD stands where the bad bytes were.
+    const std::string replacement_char = {static_cast<char>(0xEF), static_cast<char>(0xBF),
+                                          static_cast<char>(0xBD)};
+    CHECK(title.find(replacement_char) != std::string::npos);
+    // Everything legal survives intact -- degrading the malformed bytes must not cost the
+    // readable part of the title, which is the whole point of showing it to the user.
+    CHECK(title.find("plan") != std::string::npos);
+    CHECK(title.find(".md") != std::string::npos);
+    CHECK(title.find(std::string(1, '"') + "quoted" + std::string(1, '"')) !=
+          std::string::npos);
+    CHECK(title.find(std::string("back") + static_cast<char>(0x5C) + "slash") !=
+          std::string::npos);
+
+    // 8.2: the script the host evaluates is pure ASCII, so the surviving U+2028 cannot act
+    // as a line terminator in JavaScript source, and nothing in the title reads as code.
+    const auto script = detail::event_dispatch_script("snapback", snapback->second);
+    for (unsigned char c : script) {
+        REQUIRE(c < 0x80);
+    }
+    CHECK(script.find(std::string(1, static_cast<char>(0x5C)) + "u2028") !=
+          std::string::npos);
 }
 
 TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {

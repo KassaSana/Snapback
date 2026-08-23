@@ -4475,8 +4475,13 @@ itself a backlog item below.
       `master`, and carries the full CI result required by 9.11.
 - [ ] Extract every release artifact and verify the project license, dependency notices,
       frontend bundle, executable signature where required, and launchable binary are inside.
-- [ ] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
-      the full pipeline. Covers 8.1 and 8.2 in one test.
+- [x] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
+      the full pipeline. Covers 8.1 and 8.2 in one test. **Automated 2026-08-22** as
+      `tests/test_app_state.cpp:a hostile window title crosses the whole pipeline without dropping the tick`,
+      so it no longer needs running by hand. It found a live defect on its first run: the
+      emit dumps used nlohmann's strict handler and threw `type_error.316` on the invalid
+      bytes, costing every event of that tick. `dump_json` (`src/types.hpp:dump_json`) now
+      replaces malformed bytes with U+FFFD on every path carrying OS-derived strings.
 
 ### Monthly, or when a subsystem is touched
 
