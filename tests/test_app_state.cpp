@@ -1746,6 +1746,37 @@ TEST_CASE("AppState dismiss_snapback clears the payload and unsticks the tracker
     CHECK(second->app_name == "Cursor");
 }
 
+TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {
+    // AUD-07. Storage::open was the only caller of the prune, and Snapback closes to the
+    // tray: a user who never restarts kept every row past the 90-day window until their
+    // next reboot -- on the same storage_mutex_ the tick's persist phase needs.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("aged", FocusMode::Normal);
+    AppStateTestAccess::insert_prediction_at(state, session.session_id,
+                                             "2000-01-01T00:00:00Z");
+    REQUIRE(state.prediction_history(10).size() == 1);
+
+    // Ticking is not enough on its own -- otherwise this would be a prune every 100 ms.
+    AppStateTestAccess::engine_tick(state);
+    CHECK(state.prediction_history(10).size() == 1);
+
+    // A day of uptime later, the same tick collects it. The clock is the injected one, so
+    // this is a real 24 hours as the code measures it rather than a shortened threshold.
+    clock.advance_minutes(24 * 60);
+    AppStateTestAccess::engine_tick(state);
+    CHECK(state.prediction_history(10).empty());
+
+    // ... and it is once per day, not once and then every tick after.
+    AppStateTestAccess::insert_prediction_at(state, session.session_id,
+                                             "2000-01-02T00:00:00Z");
+    AppStateTestAccess::engine_tick(state);
+    CHECK(state.prediction_history(10).size() == 1);
+}
+
 TEST_CASE("stopping a session discards a span decision the tick has not drained") {
     // AUD-04b. The tick decides span changes under mutex_ and writes them under
     // storage_mutex_, holding neither in between. A Stop landing in that gap used to leave

@@ -367,9 +367,7 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         exec(storage.db_, "PRAGMA mmap_size = 268435456;");
         storage.migrate(db_path, &log);
         try {
-            const auto cutoff = retention_cutoff_rfc3339(kDefaultRetentionDays);
-            const PruneSummary summary = storage.prune_runtime_data(
-                cutoff, retention_cutoff_unix_secs(kDefaultRetentionDays));
+            const PruneSummary summary = storage.prune_to_retention(kDefaultRetentionDays);
             if (summary.total() > 0) {
                 std::ostringstream msg;
                 msg << "storage: pruned " << summary.total() << " rows older than "
@@ -2248,6 +2246,15 @@ PruneSummary Storage::prune_runtime_data(const std::string& cutoff_rfc3339,
         stmt.step_done();
         summary.feature_snapshots_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
     }
+    return summary;
+}
+
+PruneSummary Storage::prune_to_retention(int retention_days) {
+    Savepoint savepoint(*this, "prune_to_retention");
+    const PruneSummary summary =
+        prune_runtime_data(retention_cutoff_rfc3339(retention_days),
+                           retention_cutoff_unix_secs(retention_days));
+    savepoint.release();
     return summary;
 }
 

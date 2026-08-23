@@ -177,6 +177,7 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     pomodoro_.restore(settings_.pomodoro_state, wall_now_ms(), steady_now_ms());
     hydrate_active_session_unlocked();
     hydrate_session_attendance_unlocked();
+    last_prune_steady_ms_ = steady_now_ms();  // Storage::open pruned on the way in
     publish_live_read_unlocked();
 }
 
@@ -1608,6 +1609,10 @@ void AppState::engine_tick() {
     std::optional<std::string> span_session_id;
     std::int64_t span_secs_ago = 0;
     bool span_opens = false;
+    // Roadmap P0-07 / AUD-07. Decided in phase 1 with the rest, run in phase 2 with the
+    // rest: the prune is a storage write and phase 1 is in-memory only.
+    bool prune_due = false;
+    bool prune_may_vacuum = false;
     std::uint64_t tick_activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
@@ -1627,6 +1632,18 @@ void AppState::engine_tick() {
         span_session_id = std::exchange(pending_span_session_, std::nullopt);
         span_secs_ago = pending_span_secs_ago_;
         span_opens = pending_span_opens_;
+        if (now_ms - last_prune_steady_ms_ >= kRetentionPruneIntervalMs) {
+            prune_due = true;
+            // VACUUM rewrites the whole file and takes storage_mutex_ for as long as that
+            // takes -- which is the mutex the tick's persist phase needs. Deferred to a
+            // prune that lands while no session is running rather than stalling one.
+            prune_may_vacuum = !active_session_.has_value();
+            // Stamped on the decision, not on the write. A prune skipped below (the
+            // activity epoch moved, i.e. the user just deleted data) has nothing left to
+            // collect anyway, and stamping here keeps this field under mutex_ where it
+            // belongs instead of reaching back for it from phase 2.
+            last_prune_steady_ms_ = now_ms;
+        }
         if (pomodoro_.poll(now_ms)) pomodoro_to_emit = pomodoro_.status(now_ms);
         hook = emit_hook_;
         if (prediction_dirty_) {
@@ -1669,6 +1686,34 @@ void AppState::engine_tick() {
                 }
             }
             txn.commit();
+        }
+    }
+
+    if (prune_due) {
+        // Outside the activity-boundary block above: a prune is not activity-scoped work.
+        // It deletes rows that aged out, which is true regardless of which session the tick
+        // was filling or whether the user deleted one mid-tick.
+        std::lock_guard lock(storage_mutex_);
+        try {
+            const PruneSummary summary = storage_.prune_to_retention();
+            if (summary.total() > 0) {
+                std::ostringstream msg;
+                msg << "storage: pruned " << summary.total() << " rows older than "
+                    << kDefaultRetentionDays
+                    << "d (predictions=" << summary.predictions_deleted
+                    << ", context_snapshots=" << summary.context_snapshots_deleted
+                    << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
+                log().info(msg.str());
+                if (prune_may_vacuum && should_vacuum_after_prune(summary.total())) {
+                    storage_.vacuum();
+                }
+            }
+        } catch (const std::exception& err) {
+            // Same posture as the prune on open: retention is housekeeping, and a failed
+            // sweep must not take down the tick that records the user's session. The next
+            // one is a day away, which is soon enough for a condition that is usually
+            // transient (a locked database, a full disk).
+            log().warn(std::string("storage: retention prune failed: ") + err.what());
         }
     }
 

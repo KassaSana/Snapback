@@ -36,6 +36,11 @@ namespace snapback {
 
 inline constexpr std::int64_t kCaptureStallThresholdMs = 30'000;
 
+// How much uptime passes between retention prunes. Snapback closes to the tray and is meant
+// to run for weeks, so "prune on open" -- which was the only prune -- meant a user who never
+// restarts kept every row past the retention window until their next reboot.
+inline constexpr std::int64_t kRetentionPruneIntervalMs = 24 * 60 * 60 * 1000;
+
 class AppState {
 public:
     // `logger` and `clock` are both optional (default null) so existing call sites keep
@@ -432,6 +437,10 @@ private:
     bool snapback_emitted_ = false;
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
     bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
+    // Uptime at the last retention prune. Monotonic, not wall clock: this measures how long
+    // the process has been up, so a system clock jump cannot make a prune overdue or
+    // unreachable. Seeded at construction because Storage::open just pruned.
+    std::int64_t last_prune_steady_ms_ = 0;
     // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple
     // libc++ shipped with the supported command-line tools does not provide the C++20 class
     // specialization, while atomic_load/store(shared_ptr*) are available cross-platform.

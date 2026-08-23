@@ -410,6 +410,13 @@ public:
     // is REAL Unix epoch seconds (see insert_feature_snapshot). Passing one and deriving
     // the other would mean parsing RFC3339 by hand; the caller already has both.
     PruneSummary prune_runtime_data(const std::string& cutoff_rfc3339, double cutoff_unix_secs);
+
+    // The same prune against the retention window, in one transaction, with the cutoffs
+    // computed here. The two cutoff forms exist because the tables store time differently
+    // (RFC3339 text vs REAL epoch seconds), and deriving them at the one call site that
+    // knows the window is what keeps the pair consistent -- passing one and forgetting the
+    // other prunes two tables out of three.
+    PruneSummary prune_to_retention(int retention_days = kDefaultRetentionDays);
     void vacuum();
 
     // Test seam: index names in the current schema, sorted. A dropped index is a silent

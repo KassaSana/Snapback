@@ -191,7 +191,7 @@ Task ids are permanent. Verify commands assume the local build directory; see
       *Files:* `src/app/state.hpp`, `src/app/state.cpp` — *Depends on:* —
       *Verify:* full `ctest --output-on-failure` — behaviour-neutral refactor, so the suite is
       the check.
-- [ ] **P0-07** Run the retention prune periodically, not only at startup (AUD-07): once per
+- [x] **P0-07** Run the retention prune periodically, not only at startup (AUD-07): once per
       24 h of uptime from the tick's storage phase, no VACUUM while a session is active.
       *Files:* `src/app/state.cpp`, `src/app/state.hpp`, `tests/test_app_state.cpp` —
       *Depends on:* —
