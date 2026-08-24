@@ -243,12 +243,15 @@ std::string AppState::rfc3339_secs_ago(std::int64_t secs) const {
     return rfc3339_at(clock().wall_time() - static_cast<std::time_t>(secs));
 }
 
-// Roadmap 2.13. The wall clock this app carries has second resolution, so a restored phase can
-// be up to a second off the one that was written. Against a 25-minute phase that is noise, and
-// the alternative — a monotonic deadline — is not off by a second but meaningless, because the
-// monotonic timeline restarts with the process.
+// Roadmap 2.13. A restored Pomodoro phase is resumed against wall time rather than a
+// monotonic deadline, because the monotonic timeline restarts with the process and a deadline
+// on it would mean nothing after a relaunch.
+//
+// This used to scale a whole-second reading by 1000 and carry a note that a restored phase
+// could therefore land up to a second off. ADR-0007 removed the rounding at its source: the
+// clock seam reads milliseconds, so there is nothing here to widen.
 std::int64_t AppState::wall_now_ms() const {
-    return static_cast<std::int64_t>(clock().wall_time()) * 1000;
+    return clock().wall_ms();
 }
 
 std::int64_t AppState::steady_now_ms() const {
