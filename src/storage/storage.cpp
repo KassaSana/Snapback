@@ -160,6 +160,38 @@ std::optional<std::string> column_opt_text(sqlite3_stmt* stmt, int column) {
     return column_text(stmt, column);
 }
 
+// ADR-0007's boundary, in the two directions a timestamp crosses it.
+//
+// Every time column is `INTEGER` epoch milliseconds as of schema v7. The DTOs above this layer
+// still carry RFC3339 strings, and will until the IPC contract and the frontend move together
+// -- so this is where the representation changes, and the only place it may. Reading a raw
+// timestamp out of a row without going through here is what the ADR forecloses.
+//
+// `column_ts` rather than `column_text` on a time column is therefore not a style preference:
+// `column_text` on an INTEGER silently yields the *decimal digits* of the millisecond value,
+// which is a string, compares as a string, and looks entirely plausible in a log.
+std::string column_ts(sqlite3_stmt* stmt, int column) {
+    return rfc3339_from_unix_ms(sqlite3_column_int64(stmt, column));
+}
+
+std::optional<std::string> column_opt_ts(sqlite3_stmt* stmt, int column) {
+    if (sqlite3_column_type(stmt, column) == SQLITE_NULL) return std::nullopt;
+    return column_ts(stmt, column);
+}
+
+// The other direction. Throws rather than substituting a value, because every caller is
+// writing a timestamp this app itself produced: an unparseable one means a corrupted DTO, not
+// user input, and the honest response is to fail the write rather than store an instant nobody
+// chose. (Rows that arrive already-malformed are the migration's problem, and it maps them to
+// the epoch so retention can finally collect them.)
+std::int64_t ts_to_unix_ms(const std::string& rfc3339) {
+    const auto ms = unix_ms_from_rfc3339(rfc3339);
+    if (!ms) {
+        throw std::runtime_error("not an RFC3339 UTC timestamp: '" + rfc3339 + "'");
+    }
+    return *ms;
+}
+
 // The column list every `sessions` read shares, and the count `read_session` consumes.
 //
 // Named rather than spelled out per query because it was spelled out six times, and 2.14 had
@@ -177,8 +209,8 @@ SessionRecord read_session(sqlite3_stmt* stmt) {
     r.goal = column_text(stmt, 1);
     r.status = column_text(stmt, 2);
     r.focus_mode = column_text(stmt, 3);
-    r.started_at = column_opt_text(stmt, 4);
-    r.ended_at = column_opt_text(stmt, 5);
+    r.started_at = column_opt_ts(stmt, 4);
+    r.ended_at = column_opt_ts(stmt, 5);
     r.reflection_done = column_opt_text(stmt, 6);
     r.reflection_next_step = column_opt_text(stmt, 7);
     return r;
@@ -192,8 +224,8 @@ AppRuleRecord read_app_rule(sqlite3_stmt* stmt) {
     // an unexpected value ever appears rather than throwing on read.
     r.rule_type = app_rule_kind_from_string(column_text(stmt, 2)).value_or(AppRuleKind::Allow);
     r.note = column_opt_text(stmt, 3);
-    r.created_at = column_text(stmt, 4);
-    r.updated_at = column_text(stmt, 5);
+    r.created_at = column_ts(stmt, 4);
+    r.updated_at = column_ts(stmt, 5);
     return r;
 }
 
@@ -204,7 +236,7 @@ ContextSnapshotDto read_context_snapshot(sqlite3_stmt* stmt) {
     s.file_hint = column_text(stmt, 2);
     s.project_hint = column_text(stmt, 3);
     s.summary = column_text(stmt, 4);
-    s.timestamp = column_text(stmt, 5);
+    s.timestamp = column_ts(stmt, 5);
     return s;
 }
 
@@ -217,7 +249,7 @@ PredictionRecord read_prediction(sqlite3_stmt* stmt) {
     p.thrash_score = sqlite3_column_double(stmt, 4);
     p.drift_score = sqlite3_column_double(stmt, 5);
     p.goal_alignment = sqlite3_column_double(stmt, 6);
-    p.timestamp = column_text(stmt, 7);
+    p.timestamp = column_ts(stmt, 7);
     p.model_id = column_text(stmt, 8);
     p.state_source = column_opt_text(stmt, 9);
     return p;
@@ -257,10 +289,14 @@ std::string utc_now_rfc3339() {
     return out.str();
 }
 
-double unix_now_secs() {
+// ADR-0007. The one wall-clock reading, in the one representation. `unix_now_secs` returned a
+// double of seconds and existed solely because `feature_snapshots.timestamp` was REAL; that
+// column is INTEGER milliseconds as of schema v7, so the exception it served is gone.
+std::int64_t unix_now_ms() {
     using clock = std::chrono::system_clock;
-    const auto now = clock::now().time_since_epoch();
-    return std::chrono::duration<double>(now).count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               clock::now().time_since_epoch())
+        .count();
 }
 
 std::string make_uuid_v4() {
@@ -279,9 +315,12 @@ std::string make_uuid_v4() {
     return out.str();
 }
 
-// Same instant as retention_cutoff_rfc3339, expressed the way feature_snapshots stores it.
-double retention_cutoff_unix_secs(int retention_days) {
-    return unix_now_secs() - 60.0 * 60.0 * 24.0 * static_cast<double>(retention_days);
+// ADR-0007 collapsed the matched pair this used to be. `retention_cutoff_rfc3339` and
+// `retention_cutoff_unix_secs` existed only to express one instant in the two formats the
+// tables disagreed on; the tables agree now, so one function answers for all three.
+std::int64_t retention_cutoff_unix_ms(int retention_days) {
+    return unix_now_ms() -
+           static_cast<std::int64_t>(retention_days) * 24 * 60 * 60 * 1000;
 }
 
 std::string retention_cutoff_rfc3339(int retention_days) {
@@ -743,6 +782,277 @@ void migrate_session_reflection(sqlite3* db) {
     }
 }
 
+
+// ADR-0007 / Roadmap 7.16. Every point in time becomes UTC milliseconds since the epoch,
+// stored as INTEGER, in one migration rather than one per table.
+//
+// **Why all twelve columns move together.** `close_dangling_session_span` takes MAX over a
+// UNION ALL of `predictions`, `context_snapshots`, and `snapback_events`. SQLite orders
+// storage classes before values -- every INTEGER sorts below every TEXT -- so a half-migrated
+// schema would make that MAX silently return the unmigrated table's value every time,
+// regardless of which is actually later. A migration split by table would therefore pass its
+// own tests and corrupt attended time in exactly the quiet way this ADR exists to end.
+//
+// **Why the tables are rebuilt rather than patched.** SQLite has no ALTER COLUMN TYPE, and
+// the obvious shortcut -- UPDATE the values in place and leave the column declared TEXT -- is
+// worse than doing nothing: a TEXT-affinity column converts an integer back to text on the way
+// in, so every subsequent write would silently re-introduce the representation this migration
+// exists to remove. Affinity is the whole point of the change, so the declared type has to
+// move. `Storage::migrate` turns foreign keys off around the whole upgrade and runs
+// `foreign_key_check` before committing -- see the reasoning there, which this migration is
+// what made necessary.
+//
+// **What happens to a value that does not parse.** `strftime` yields NULL for one, and the
+// rule is uniform: a genuine NULL stays NULL, and an unparseable value becomes 0 -- the epoch.
+// Neither dropping the row nor failing the migration is right. Dropping destroys user data
+// during an upgrade, and failing turns a corrupt import into an app that will not open.
+// Mapping to 0 keeps the row, and 0 is older than any retention window, so the next prune
+// collects it under the ordinary policy. That is the honest end state for a row whose time is
+// unknown, and it is a strict improvement: these are precisely the rows that used to outlive
+// every retention pass forever, because `datetime()` returned NULL and `NULL < x` is NULL.
+//
+// A genuine NULL must be preserved rather than folded into 0, because NULL is load-bearing in
+// three places: `sessions.ended_at` and `session_spans.ended_at` mean "still open", and
+// `snapback_events.started_at` means "recorded before episodes carried a start". Mapping a bad
+// value to NULL instead would resurrect a completed session as a running one.
+void migrate_time_to_epoch_ms(sqlite3* db) {
+    // TEXT -> epoch ms. NULL in, NULL out; unparseable in, 0 out.
+    const auto ms = [](const std::string& col) {
+        return "CASE WHEN " + col + " IS NULL THEN NULL ELSE COALESCE(CAST(strftime('%s', " +
+               col + ") AS INTEGER) * 1000, 0) END";
+    };
+    // The same, for a column the schema declares NOT NULL: there is no NULL to preserve, so
+    // the CASE would be dead weight.
+    const auto ms_required = [](const std::string& col) {
+        return "COALESCE(CAST(strftime('%s', " + col + ") AS INTEGER) * 1000, 0)";
+    };
+
+    exec(db, R"sql(
+        CREATE TABLE sessions_v7 (
+            session_id TEXT PRIMARY KEY,
+            goal TEXT NOT NULL,
+            status TEXT NOT NULL,
+            focus_mode TEXT NOT NULL DEFAULT 'normal',
+            started_at INTEGER NOT NULL,
+            ended_at INTEGER,
+            reflection_done TEXT,
+            reflection_next_step TEXT
+        );
+    )sql");
+    exec(db, ("INSERT INTO sessions_v7 (session_id, goal, status, focus_mode, started_at,"
+              " ended_at, reflection_done, reflection_next_step) "
+              "SELECT session_id, goal, status, focus_mode, " +
+              ms_required("started_at") + ", " + ms("ended_at") +
+              ", reflection_done, reflection_next_step FROM sessions")
+                 .c_str());
+    exec(db, "DROP TABLE sessions");
+    exec(db, "ALTER TABLE sessions_v7 RENAME TO sessions");
+
+    exec(db, R"sql(
+        CREATE TABLE predictions_v7 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            focus_score REAL NOT NULL,
+            distraction_risk REAL NOT NULL,
+            focus_state TEXT NOT NULL,
+            thrash_score REAL NOT NULL DEFAULT 0.0,
+            drift_score REAL NOT NULL DEFAULT 0.0,
+            goal_alignment REAL NOT NULL DEFAULT 0.5,
+            timestamp INTEGER NOT NULL,
+            model_id TEXT NOT NULL DEFAULT 'heuristic:snapback-features-v1-31',
+            state_source TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+        );
+    )sql");
+    exec(db, ("INSERT INTO predictions_v7 (id, session_id, focus_score, distraction_risk,"
+              " focus_state, thrash_score, drift_score, goal_alignment, timestamp, model_id,"
+              " state_source) "
+              "SELECT id, session_id, focus_score, distraction_risk, focus_state,"
+              " thrash_score, drift_score, goal_alignment, " +
+              ms_required("timestamp") + ", model_id, state_source FROM predictions")
+                 .c_str());
+    exec(db, "DROP TABLE predictions");
+    exec(db, "ALTER TABLE predictions_v7 RENAME TO predictions");
+
+    exec(db, R"sql(
+        CREATE TABLE labels_v7 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            label INTEGER NOT NULL,
+            source TEXT NOT NULL DEFAULT 'manual',
+            notes TEXT,
+            timestamp INTEGER NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+        );
+    )sql");
+    exec(db, ("INSERT INTO labels_v7 (id, session_id, label, source, notes, timestamp) "
+              "SELECT id, session_id, label, source, notes, " +
+              ms_required("timestamp") + " FROM labels")
+                 .c_str());
+    exec(db, "DROP TABLE labels");
+    exec(db, "ALTER TABLE labels_v7 RENAME TO labels");
+
+    exec(db, R"sql(
+        CREATE TABLE snapback_events_v7 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            started_at INTEGER,
+            duration_secs INTEGER,
+            app_name TEXT,
+            file_hint TEXT,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+        );
+    )sql");
+    exec(db, ("INSERT INTO snapback_events_v7 (id, session_id, summary, timestamp, started_at,"
+              " duration_secs, app_name, file_hint) "
+              "SELECT id, session_id, summary, " +
+              ms_required("timestamp") + ", " + ms("started_at") +
+              ", duration_secs, app_name, file_hint FROM snapback_events")
+                 .c_str());
+    exec(db, "DROP TABLE snapback_events");
+    exec(db, "ALTER TABLE snapback_events_v7 RENAME TO snapback_events");
+
+    exec(db, R"sql(
+        CREATE TABLE context_snapshots_v7 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            app_name TEXT NOT NULL,
+            window_title TEXT NOT NULL,
+            file_hint TEXT NOT NULL,
+            project_hint TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+        );
+    )sql");
+    exec(db, ("INSERT INTO context_snapshots_v7 (id, session_id, app_name, window_title,"
+              " file_hint, project_hint, summary, timestamp) "
+              "SELECT id, session_id, app_name, window_title, file_hint, project_hint,"
+              " summary, " +
+              ms_required("timestamp") + " FROM context_snapshots")
+                 .c_str());
+    exec(db, "DROP TABLE context_snapshots");
+    exec(db, "ALTER TABLE context_snapshots_v7 RENAME TO context_snapshots");
+
+    exec(db, R"sql(
+        CREATE TABLE app_rules_v7 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pattern TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            rule_type TEXT NOT NULL CHECK (rule_type IN ('allow', 'block')),
+            note TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+    )sql");
+    exec(db, ("INSERT INTO app_rules_v7 (id, pattern, rule_type, note, created_at, updated_at) "
+              "SELECT id, pattern, rule_type, note, " +
+              ms_required("created_at") + ", " + ms_required("updated_at") + " FROM app_rules")
+                 .c_str());
+    exec(db, "DROP TABLE app_rules");
+    exec(db, "ALTER TABLE app_rules_v7 RENAME TO app_rules");
+
+    exec(db, R"sql(
+        CREATE TABLE session_spans_v7 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            started_at INTEGER NOT NULL,
+            ended_at INTEGER,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+        );
+    )sql");
+    exec(db, ("INSERT INTO session_spans_v7 (id, session_id, started_at, ended_at) "
+              "SELECT id, session_id, " +
+              ms_required("started_at") + ", " + ms("ended_at") + " FROM session_spans")
+                 .c_str());
+    exec(db, "DROP TABLE session_spans");
+    exec(db, "ALTER TABLE session_spans_v7 RENAME TO session_spans");
+
+    // feature_snapshots is the one column that was never TEXT: REAL Unix *seconds*, which is
+    // why `prune_runtime_data` had to take its cutoff twice. It converts arithmetically rather
+    // than through strftime, and stops being the schema's documented exception.
+    exec(db, R"sql(
+        CREATE TABLE feature_snapshots_v7 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            seconds_since_session_start REAL NOT NULL,
+            hour_of_day REAL NOT NULL,
+            day_of_week REAL NOT NULL,
+            minutes_since_last_break REAL NOT NULL,
+            keystroke_count REAL NOT NULL,
+            keystroke_rate REAL NOT NULL,
+            keystroke_interval_mean REAL NOT NULL,
+            keystroke_interval_std REAL NOT NULL,
+            keystroke_interval_trend REAL NOT NULL,
+            mouse_move_count REAL NOT NULL,
+            mouse_distance_pixels REAL NOT NULL,
+            mouse_speed_mean REAL NOT NULL,
+            mouse_speed_std REAL NOT NULL,
+            mouse_acceleration_mean REAL NOT NULL,
+            mouse_click_count REAL NOT NULL,
+            context_switches_30s REAL NOT NULL,
+            context_switches_5min REAL NOT NULL,
+            time_in_current_app REAL NOT NULL,
+            unique_apps_5min REAL NOT NULL,
+            idle_time_30s REAL NOT NULL,
+            idle_event_count_5min REAL NOT NULL,
+            longest_active_stretch_5min REAL NOT NULL,
+            window_title_length REAL NOT NULL,
+            window_title_changed_30s REAL NOT NULL,
+            is_browser REAL NOT NULL,
+            is_ide REAL NOT NULL,
+            is_communication REAL NOT NULL,
+            is_entertainment REAL NOT NULL,
+            is_productivity REAL NOT NULL,
+            focus_momentum REAL NOT NULL,
+            is_pseudo_productive REAL NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+        );
+    )sql");
+    exec(db,
+         "INSERT INTO feature_snapshots_v7 SELECT id, session_id,"
+         " CAST(ROUND(timestamp * 1000) AS INTEGER),"
+         " seconds_since_session_start, hour_of_day, day_of_week, minutes_since_last_break,"
+         " keystroke_count, keystroke_rate, keystroke_interval_mean, keystroke_interval_std,"
+         " keystroke_interval_trend, mouse_move_count, mouse_distance_pixels,"
+         " mouse_speed_mean, mouse_speed_std, mouse_acceleration_mean, mouse_click_count,"
+         " context_switches_30s, context_switches_5min, time_in_current_app,"
+         " unique_apps_5min, idle_time_30s, idle_event_count_5min,"
+         " longest_active_stretch_5min, window_title_length, window_title_changed_30s,"
+         " is_browser, is_ide, is_communication, is_entertainment, is_productivity,"
+         " focus_momentum, is_pseudo_productive FROM feature_snapshots");
+    exec(db, "DROP TABLE feature_snapshots");
+    exec(db, "ALTER TABLE feature_snapshots_v7 RENAME TO feature_snapshots");
+
+    // Every index lived on a table that has just been dropped, so they are recreated here
+    // rather than left to the baseline migration -- which does not run for an existing
+    // database. Same names and same column order as migrate_baseline_schema, deliberately:
+    // `index_names()` is asserted against in the suite precisely so that a dropped index
+    // cannot become a silent full scan.
+    exec(db, R"sql(
+        CREATE INDEX IF NOT EXISTS idx_predictions_session_ts
+            ON predictions(session_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_predictions_ts
+            ON predictions(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_labels_session
+            ON labels(session_id);
+        CREATE INDEX IF NOT EXISTS idx_snapback_events_session
+            ON snapback_events(session_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_snapback_events_episode
+            ON snapback_events(session_id, started_at);
+        CREATE INDEX IF NOT EXISTS idx_feature_snapshots_session_ts
+            ON feature_snapshots(session_id, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_sessions_status_started
+            ON sessions(status, started_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_context_snapshots_session_ts
+            ON context_snapshots(session_id, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_session_spans_session
+            ON session_spans(session_id);
+    )sql");
+}
+
 constexpr Migration kMigrations[] = {
     {1, "baseline schema", migrate_baseline_schema},
     {2, "predictions.model_id", migrate_prediction_model_id},
@@ -750,6 +1060,7 @@ constexpr Migration kMigrations[] = {
     {4, "session_spans", migrate_session_spans},
     {5, "snapback_events episode detail", migrate_snapback_episodes},
     {6, "sessions reflection", migrate_session_reflection},
+    {7, "time is epoch milliseconds", migrate_time_to_epoch_ms},
 };
 
 static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
@@ -840,6 +1151,31 @@ void Storage::migrate(const std::filesystem::path& db_path, Logger* logger) {
         }
     }
 
+    // Foreign keys off for the duration, which is SQLite's documented procedure for any
+    // migration that rebuilds a table (7.16 does; see `migrate_time_to_epoch_ms`).
+    //
+    // The reason is not squeamishness about constraints. `DROP TABLE` on a parent performs an
+    // implicit `DELETE FROM` when foreign keys are on, so dropping `sessions` registers one
+    // violation per child row -- and recreating the table under the same name does not clear
+    // them, because the counter tracks row operations rather than the schema. `PRAGMA
+    // defer_foreign_keys` only postpones that verdict to COMMIT, so it converts an immediate
+    // failure into a failure at the end; it does not avoid it. This has to be set *before*
+    // BEGIN, because `PRAGMA foreign_keys` is a silent no-op inside a transaction.
+    //
+    // What replaces the enforcement is `foreign_key_check` below, run while the transaction is
+    // still open. That is strictly stronger here: it audits the whole database rather than only
+    // the rows this migration happened to touch.
+    struct ForeignKeyGuard {
+        sqlite3* db;
+        ~ForeignKeyGuard() {
+            // A destructor must not throw, and this runs on the failure path too -- where the
+            // transaction has already rolled back and leaving enforcement off would be the
+            // worse outcome.
+            sqlite3_exec(db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr);
+        }
+    } foreign_key_guard{db_};
+    exec(db_, "PRAGMA foreign_keys = OFF;");
+
     // One transaction for the whole upgrade. SQLite makes DDL transactional, so a failure
     // half-way through rolls back to the version we started at rather than leaving a
     // database that is neither the old shape nor the new one.
@@ -849,6 +1185,20 @@ void Storage::migrate(const std::filesystem::path& db_path, Logger* logger) {
         migration.apply(db_);
     }
     write_user_version(db_, kSchemaVersion);
+
+    // Inside the transaction on purpose: a rebuild that dropped a row's parent, or a copy that
+    // lost a key, must roll the whole upgrade back rather than commit a database whose
+    // references no longer resolve. Reported with the offending table named, because "foreign
+    // key constraint failed" with no subject is the least actionable error SQLite produces.
+    {
+        Stmt check(db_, "PRAGMA foreign_key_check");
+        if (check.step_row()) {
+            throw std::runtime_error(
+                "migration to schema v" + std::to_string(kSchemaVersion) +
+                " left an unresolved foreign key in table '" + column_text(check.get(), 0) +
+                "'; the database was left at v" + std::to_string(from));
+        }
+    }
     tx.commit();
 }
 
@@ -943,7 +1293,7 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
         Stmt close_active(db_,
                           "UPDATE sessions SET status = 'COMPLETED', ended_at = ?1 "
                           "WHERE status = 'ACTIVE'");
-        close_active.bind(1, ended_at);
+        close_active.bind(1, ts_to_unix_ms(ended_at));
         close_active.step_done();
     }
 
@@ -960,7 +1310,7 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
     insert.bind(1, r.session_id);
     insert.bind(2, r.goal);
     insert.bind(3, r.focus_mode);
-    insert.bind(4, *r.started_at);
+    insert.bind(4, ts_to_unix_ms(*r.started_at));
     insert.step_done();
     savepoint.release();
     return r;
@@ -989,7 +1339,7 @@ bool Storage::begin_session_span(const std::string& session_id,
                 "INSERT INTO session_spans (session_id, started_at) "
                 "SELECT ?1, ?2 FROM sessions WHERE session_id = ?1 AND status = 'ACTIVE'");
     insert.bind(1, session_id);
-    insert.bind(2, started_at);
+    insert.bind(2, ts_to_unix_ms(started_at));
     insert.step_done();
     const bool inserted = sqlite3_changes(db_) > 0;
     savepoint.release();
@@ -1016,7 +1366,7 @@ bool Storage::close_session_span(const std::string& session_id, const std::strin
     Stmt update(db_,
                 "UPDATE session_spans SET ended_at = MAX(started_at, ?1) "
                 "WHERE session_id = ?2 AND ended_at IS NULL");
-    update.bind(1, ended_at);
+    update.bind(1, ts_to_unix_ms(ended_at));
     update.bind(2, session_id);
     update.step_done();
     return sqlite3_changes(db_) > 0;
@@ -1035,7 +1385,7 @@ std::optional<std::string> Storage::close_dangling_session_span(const std::strin
     evidence.bind(1, session_id);
     std::optional<std::string> last_seen;
     if (evidence.step_row() && sqlite3_column_type(evidence.get(), 0) != SQLITE_NULL) {
-        last_seen = column_text(evidence.get(), 0);
+        last_seen = column_ts(evidence.get(), 0);
     }
 
     Savepoint savepoint(*this, "close_dangling_session_span");
@@ -1046,7 +1396,7 @@ std::optional<std::string> Storage::close_dangling_session_span(const std::strin
                    "WHERE session_id = ?1 AND ended_at IS NULL ORDER BY id DESC LIMIT 1");
     open_span.bind(1, session_id);
     if (!open_span.step_row()) return std::nullopt;
-    const std::string started_at = column_text(open_span.get(), 0);
+    const std::string started_at = column_ts(open_span.get(), 0);
 
     const std::string ended_at = last_seen && *last_seen > started_at ? *last_seen : started_at;
     close_session_span(session_id, ended_at);
@@ -1062,11 +1412,11 @@ std::optional<std::uint64_t> Storage::active_secs(const std::string& session_id,
     // seconds, so each is rounded before being summed.
     Stmt stmt(db_,
               "SELECT COUNT(*), CAST(COALESCE(SUM(ROUND(MAX(0, "
-              "  (julianday(COALESCE(ended_at, MAX(started_at, ?2))) - julianday(started_at))"
-              "  * 86400))), 0) AS INTEGER) "
+              "  (COALESCE(ended_at, MAX(started_at, ?2)) - started_at) / 1000.0"
+              "  ))), 0) AS INTEGER) "
               "FROM session_spans WHERE session_id = ?1");
     stmt.bind(1, session_id);
-    stmt.bind(2, now);
+    stmt.bind(2, ts_to_unix_ms(now));
     if (!stmt.step_row()) return std::nullopt;
     if (sqlite3_column_int64(stmt.get(), 0) == 0) return std::nullopt;  // never measured
     return static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 1));
@@ -1074,7 +1424,7 @@ std::optional<std::uint64_t> Storage::active_secs(const std::string& session_id,
 
 std::optional<std::int64_t> Storage::session_elapsed_secs(const std::string& session_id) {
     Stmt stmt(db_,
-              "SELECT CAST(ROUND(MAX(0, (julianday('now') - julianday(started_at)) * 86400)) "
+              "SELECT CAST(ROUND(MAX(0, ((strftime('%s','now') * 1000) - started_at) / 1000.0)) "
               "AS INTEGER) FROM sessions WHERE session_id = ?1");
     stmt.bind(1, session_id);
     if (!stmt.step_row()) return std::nullopt;
@@ -1093,7 +1443,7 @@ void Storage::end_session(const std::string& session_id) {
     Stmt update(db_,
                 "UPDATE sessions SET status = 'COMPLETED', ended_at = ?1 "
                 "WHERE session_id = ?2 AND status = 'ACTIVE'");
-    update.bind(1, ended_at);
+    update.bind(1, ts_to_unix_ms(ended_at));
     update.bind(2, session_id);
     update.step_done();
     if (sqlite3_changes(db_) == 0) {
@@ -1116,7 +1466,7 @@ SessionRecord Storage::stop_session(const std::string& session_id) {
     Stmt update(db_,
                 "UPDATE sessions SET status = 'COMPLETED', ended_at = ?1 "
                 "WHERE session_id = ?2 AND status = 'ACTIVE'");
-    update.bind(1, ended_at);
+    update.bind(1, ts_to_unix_ms(ended_at));
     update.bind(2, session_id);
     update.step_done();
     if (sqlite3_changes(db_) == 0) {
@@ -1148,23 +1498,38 @@ namespace {
 
 // Roadmap 2.19. Attended seconds inside one local-time window, clipped per span.
 //
-// Everything is converted to local time first — the same `datetime(col, 'localtime')` the
-// hourly analytics buckets use — so the window boundaries and the spans are compared on one
-// clock. Doing the arithmetic in UTC and shifting afterwards is what puts a session on the
-// wrong side of midnight for anyone not on UTC, and it is why DST is not special-cased here:
-// SQLite resolves 'localtime' per timestamp, so an hour that repeats or never happens is
-// already accounted for by the conversion rather than by arithmetic on an offset.
+// ADR-0007 simplified this rather than merely retyping it. Every value used to be converted to
+// local time *before* being compared -- `julianday(MIN(datetime(COALESCE(ended_at, ?1),
+// 'localtime'), :window_end))` -- because the columns were text and a text comparison is only
+// meaningful between two strings on the same clock. Integers are absolute instants, so the
+// comparison is now direct and local time survives in exactly one place: computing where the
+// window's calendar boundaries fall. That is the ADR's rule stated as code -- local time is
+// applied when a value is bucketed for a report, never when it is filtered or compared.
 //
-// MIN/MAX with two arguments are the scalar forms; the comparison is lexicographic over
-// 'YYYY-MM-DD HH:MM:SS', which orders identically to time. ROUND before CAST for the reason
-// active_secs documents: a truncating CAST loses a second per span.
+// DST still needs no special case, for the same reason as before: the boundary expressions
+// resolve 'localtime' per instant, so an hour that repeats or never happens is handled by the
+// conversion rather than by arithmetic on a fixed offset.
+//
+// ROUND before CAST for the reason active_secs documents: a truncating CAST loses a second per
+// span. The sum is in milliseconds and is divided once at the end, so the rounding happens on
+// the total rather than per span.
 constexpr const char* kAttendedInWindowSql =
-    "SELECT CAST(ROUND(COALESCE(SUM(MAX(0, ("
-    "  julianday(MIN(datetime(COALESCE(ended_at, ?1), 'localtime'), :window_end))"
-    "  - julianday(MAX(datetime(started_at, 'localtime'), :window_start))"
-    ") * 86400)), 0)) AS INTEGER) FROM session_spans";
+    "SELECT CAST(ROUND(COALESCE(SUM(MAX(0,"
+    "  MIN(COALESCE(ended_at, ?1), :window_end)"
+    "  - MAX(started_at, :window_start)"
+    ")), 0) / 1000.0) AS INTEGER) FROM session_spans";
 
-std::uint64_t attended_in_window(sqlite3* db, const std::string& now,
+// A local calendar boundary, as epoch milliseconds. `unixepoch` reads the bound instant,
+// `localtime` moves it onto the user's clock, the caller's modifiers land on the boundary, and
+// `utc` converts the result back to an absolute instant -- without that last step the value
+// would be a local wall-clock reading compared against UTC instants, which is the off-by-one-
+// timezone bug this whole conversion exists to avoid.
+std::string local_boundary_ms(const std::string& modifiers) {
+    return "(strftime('%s', ?1 / 1000.0, 'unixepoch', 'localtime'" + modifiers +
+           ", 'utc') * 1000)";
+}
+
+std::uint64_t attended_in_window(sqlite3* db, std::int64_t now_ms,
                                  const std::string& window_start_expr,
                                  const std::string& window_end_expr) {
     std::string sql = kAttendedInWindowSql;
@@ -1178,7 +1543,7 @@ std::uint64_t attended_in_window(sqlite3* db, const std::string& now,
     replace_all(":window_start", window_start_expr);
 
     Stmt stmt(db, sql.c_str());
-    stmt.bind(1, now);
+    stmt.bind(1, now_ms);
     if (!stmt.step_row()) return 0;
     const auto secs = sqlite3_column_int64(stmt.get(), 0);
     return secs > 0 ? static_cast<std::uint64_t>(secs) : 0;
@@ -1187,46 +1552,48 @@ std::uint64_t attended_in_window(sqlite3* db, const std::string& now,
 }  // namespace
 
 std::uint64_t Storage::attended_secs_in_local_day(const std::string& now) {
-    return attended_in_window(db_, now, "datetime(?1, 'localtime', 'start of day')",
-                              "datetime(?1, 'localtime', 'start of day', '+1 day')");
+    return attended_in_window(db_, ts_to_unix_ms(now), local_boundary_ms(", 'start of day'"),
+                              local_boundary_ms(", 'start of day', '+1 day'"));
 }
 
 std::uint64_t Storage::attended_secs_in_local_week(const std::string& now) {
     // ISO weeks: Monday to Sunday. `weekday 1` moves *forward* to the next Monday, so stepping
-    // back six days first lands on the Monday on or before today — including when today is
+    // back six days first lands on the Monday on or before today -- including when today is
     // itself Monday, which is the case a naive `weekday 1` gets wrong by a whole week.
     return attended_in_window(
-        db_, now, "datetime(?1, 'localtime', 'start of day', '-6 days', 'weekday 1')",
-        "datetime(?1, 'localtime', 'start of day', '-6 days', 'weekday 1', '+7 days')");
+        db_, ts_to_unix_ms(now),
+        local_boundary_ms(", 'start of day', '-6 days', 'weekday 1'"),
+        local_boundary_ms(", 'start of day', '-6 days', 'weekday 1', '+7 days'"));
 }
 
 std::uint64_t Storage::attended_secs_since(const std::string& now,
                                            const std::optional<std::string>& since) {
     // Roadmap 2.19. Same clip arithmetic as the day/week helpers, but the lower bound is an
-    // RFC3339 instant from the Review range rather than a calendar expression. Open spans use
-    // `now` as their end, so a still-running session does not invent future attendance.
+    // instant from the Review range rather than a calendar expression. Open spans use `now` as
+    // their end, so a still-running session does not invent future attendance.
+    //
+    // Neither bound goes through `local_boundary_ms`: both are absolute instants already, and
+    // this is the case that shows why the old code's blanket local conversion was the wrong
+    // shape. "Since this moment" has no calendar boundary to find.
+    const std::int64_t now_ms = ts_to_unix_ms(now);
     if (!since || since->empty()) {
-        return attended_in_window(db_, now, "'1970-01-01 00:00:00'",
-                                  "datetime(?1, 'localtime')");
+        // 0 is the epoch, which is before any span this app could have recorded.
+        return attended_in_window(db_, now_ms, "0", "?1");
     }
     // ?2 is the lower bound; the shared SQL template only knows ?1 (now) as a bind, so this
     // path substitutes the since-expression and binds the second argument itself.
     std::string sql = kAttendedInWindowSql;
-    const std::string window_end = "datetime(?1, 'localtime')";
-    const std::string window_start = "datetime(?2, 'localtime')";
-    for (auto at = sql.find(":window_end"); at != std::string::npos;
-         at = sql.find(":window_end", at)) {
-        sql.replace(at, std::string(":window_end").size(), window_end);
-        at += window_end.size();
-    }
-    for (auto at = sql.find(":window_start"); at != std::string::npos;
-         at = sql.find(":window_start", at)) {
-        sql.replace(at, std::string(":window_start").size(), window_start);
-        at += window_start.size();
-    }
+    const auto replace_all = [&sql](const std::string& token, const std::string& value) {
+        for (auto at = sql.find(token); at != std::string::npos; at = sql.find(token, at)) {
+            sql.replace(at, token.size(), value);
+            at += value.size();
+        }
+    };
+    replace_all(":window_end", "?1");
+    replace_all(":window_start", "?2");
     Stmt stmt(db_, sql.c_str());
-    stmt.bind(1, now);
-    stmt.bind(2, *since);
+    stmt.bind(1, now_ms);
+    stmt.bind(2, ts_to_unix_ms(*since));
     if (!stmt.step_row()) return 0;
     const auto secs = sqlite3_column_int64(stmt.get(), 0);
     return secs > 0 ? static_cast<std::uint64_t>(secs) : 0;
@@ -1288,15 +1655,15 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
         // kSessionColumnCount, so growing that list cannot silently move it.
         const std::string sql =
             "SELECT " + std::string(kSessionColumns) + ", " +
-            "CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
-            "julianday(started_at)) * 86400)) AS INTEGER) "
+            "CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000)) - started_at)"
+            " / 1000.0)) AS INTEGER) "
             "FROM sessions "
             "WHERE (?2 IS NULL OR (started_at IS NOT NULL AND started_at >= ?2)) "
             "ORDER BY started_at DESC, session_id DESC LIMIT ?1";
         Stmt stmt(db_, sql.c_str());
         stmt.bind(1, static_cast<std::int64_t>(limit));
         if (started_after) {
-            stmt.bind(2, *started_after);
+            stmt.bind(2, ts_to_unix_ms(*started_after));
         } else {
             stmt.bind_null(2);
         }
@@ -1332,7 +1699,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
                   "GROUP BY p.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
         if (started_after) {
-            stmt.bind(2, *started_after);
+            stmt.bind(2, ts_to_unix_ms(*started_after));
         } else {
             stmt.bind_null(2);
         }
@@ -1359,7 +1726,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
                   "GROUP BY e.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
         if (started_after) {
-            stmt.bind(2, *started_after);
+            stmt.bind(2, ts_to_unix_ms(*started_after));
         } else {
             stmt.bind_null(2);
         }
@@ -1384,14 +1751,14 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
                   "                WHERE (?3 IS NULL OR (started_at IS NOT NULL AND started_at >= ?3)) "
                   "                ORDER BY started_at DESC, session_id DESC LIMIT ?1) "
                   "SELECT s.session_id, CAST(COALESCE(SUM(ROUND(MAX(0, "
-                  "  (julianday(COALESCE(s.ended_at, MAX(s.started_at, ?2))) "
-                  "   - julianday(s.started_at)) * 86400))), 0) AS INTEGER) "
+                  "  (COALESCE(s.ended_at, MAX(s.started_at, ?2)) "
+                  "   - s.started_at) / 1000.0))), 0) AS INTEGER) "
                   "FROM session_spans s JOIN recent r ON s.session_id = r.session_id "
                   "GROUP BY s.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
-        stmt.bind(2, now);
+        stmt.bind(2, ts_to_unix_ms(now));
         if (started_after) {
-            stmt.bind(3, *started_after);
+            stmt.bind(3, ts_to_unix_ms(*started_after));
         } else {
             stmt.bind_null(3);
         }
@@ -1410,7 +1777,7 @@ void Storage::backdate_session_for_test(const std::string& session_id,
                                         const std::string& started_at) {
     Stmt stmt(db_, "UPDATE sessions SET started_at = ?2 WHERE session_id = ?1");
     stmt.bind(1, session_id);
-    stmt.bind(2, started_at);
+    stmt.bind(2, ts_to_unix_ms(started_at));
     stmt.step_done();
 }
 
@@ -1448,7 +1815,7 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::stri
                   "COALESCE(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END), 0) "
                   "FROM predictions WHERE (?1 IS NULL OR timestamp >= ?1)");
         if (cutoff) {
-            stmt.bind(1, *cutoff);
+            stmt.bind(1, ts_to_unix_ms(*cutoff));
         } else {
             stmt.bind_null(1);
         }
@@ -1491,8 +1858,8 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::stri
                   "  SELECT session_id, ROW_NUMBER() OVER w AS rn,"
                   "         (focus_state = 'DISTRACTED') AS distracted,"
                   "         LAG(focus_state = 'DISTRACTED') OVER w AS prev_distracted,"
-                  "         CAST(ROUND((julianday(timestamp) -"
-                  "              julianday(LAG(timestamp) OVER w)) * 86400) AS INTEGER) AS gap"
+                  "         CAST(ROUND((timestamp -"
+                  "              LAG(timestamp) OVER w) / 1000.0) AS INTEGER) AS gap"
                   "  FROM predictions WHERE (?1 IS NULL OR timestamp >= ?1)"
                   "  WINDOW w AS (PARTITION BY session_id ORDER BY timestamp ASC, id ASC)"
                   "), marked AS ("
@@ -1512,7 +1879,7 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::stri
                   "  SELECT SUM(CASE WHEN is_break = 1 THEN 0 ELSE gap END) AS total"
                   "  FROM grouped WHERE distracted = 0 GROUP BY session_id, run_id)");
         if (cutoff) {
-            stmt.bind(1, *cutoff);
+            stmt.bind(1, ts_to_unix_ms(*cutoff));
         } else {
             stmt.bind_null(1);
         }
@@ -1533,16 +1900,18 @@ std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
     // the two agree including across a DST boundary. A timestamp SQLite cannot parse yields
     // NULL and is dropped, which is what the C++ loop's `hour < 0 || hour >= 24` did.
     Stmt stmt(db_,
-              "SELECT CAST(strftime('%H', datetime(timestamp, 'localtime')) AS INTEGER) AS hour,"
+              "SELECT CAST(strftime('%H', timestamp / 1000.0, 'unixepoch', 'localtime')"
+              "            AS INTEGER) AS hour,"
               "       COUNT(*), AVG(focus_score),"
               "       CAST(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END) AS REAL)"
               "         / COUNT(*) "
               "FROM predictions "
               "WHERE (?1 IS NULL OR timestamp >= ?1) "
-              "  AND strftime('%H', datetime(timestamp, 'localtime')) IS NOT NULL "
+              "  AND strftime('%H', timestamp / 1000.0, 'unixepoch', 'localtime')"
+              "      IS NOT NULL "
               "GROUP BY hour ORDER BY hour ASC");
     if (cutoff) {
-        stmt.bind(1, *cutoff);
+        stmt.bind(1, ts_to_unix_ms(*cutoff));
     } else {
         stmt.bind_null(1);
     }
@@ -1579,7 +1948,7 @@ std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg
     stmt.bind(1, static_cast<std::int64_t>(limit));
     stmt.bind(2, min_avg_focus);
     if (started_after) {
-        stmt.bind(3, *started_after);
+        stmt.bind(3, ts_to_unix_ms(*started_after));
     } else {
         stmt.bind_null(3);
     }
@@ -1599,12 +1968,12 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
               "SELECT COUNT(*),"
               "       COALESCE(SUM(status = 'COMPLETED'), 0),"
               "       COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN"
-              "         CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP))"
-              "              - julianday(started_at)) * 86400)) AS INTEGER)"
+              "         CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000))"
+              "              - started_at) / 1000.0)) AS INTEGER)"
               "         ELSE 0 END), 0) "
               "FROM recent WHERE started_at IS NOT NULL AND started_at >= ?2");
     stmt.bind(1, static_cast<std::int64_t>(limit));
-    stmt.bind(2, started_after);
+    stmt.bind(2, ts_to_unix_ms(started_after));
     SessionWindowTotals out;
     if (stmt.step_row()) {
         out.session_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
@@ -1637,7 +2006,7 @@ std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
     stmt.bind(1, static_cast<std::int64_t>(session_limit));
     stmt.bind(2, static_cast<std::int64_t>(per_session_limit));
     if (started_after) {
-        stmt.bind(3, *started_after);
+        stmt.bind(3, ts_to_unix_ms(*started_after));
     } else {
         stmt.bind_null(3);  // the wrapper checks the return code; the raw call does not
     }
@@ -1717,8 +2086,8 @@ SessionRecap Storage::recap(const std::string& session_id) {
     {
         Stmt stmt(db_,
                   // ROUND before CAST — same reason as the batched query above.
-                  "SELECT CAST(ROUND(MAX(0, (julianday(COALESCE(ended_at, CURRENT_TIMESTAMP)) - "
-                  "julianday(started_at)) * 86400)) AS INTEGER) "
+                  "SELECT CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000)) - "
+                  "started_at) / 1000.0)) AS INTEGER) "
                   "FROM sessions WHERE session_id = ?1");
         stmt.bind(1, session_id);
         if (stmt.step_row()) out.duration_secs = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 0));
@@ -1822,7 +2191,7 @@ void Storage::insert_prediction(const PredictionRecord& p) {
     stmt.bind(5, p.thrash_score);
     stmt.bind(6, p.drift_score);
     stmt.bind(7, p.goal_alignment);
-    stmt.bind(8, p.timestamp);
+    stmt.bind(8, ts_to_unix_ms(p.timestamp));
     stmt.bind(9, p.model_id);
     if (p.state_source) {
         stmt.bind(10, *p.state_source);
@@ -1865,7 +2234,7 @@ std::vector<PredictionRecord> Storage::predictions_since(
                             "state_source "
                             "FROM predictions ORDER BY timestamp DESC";
     Stmt stmt(db_, sql);
-    if (cutoff) stmt.bind(1, *cutoff);
+    if (cutoff) stmt.bind(1, ts_to_unix_ms(*cutoff));
     std::vector<PredictionRecord> rows;
     while (stmt.step_row()) rows.push_back(read_prediction(stmt.get()));
     return rows;
@@ -1888,7 +2257,7 @@ void Storage::insert_feature_snapshot(const std::string& session_id, const Featu
               "?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, "
               "?29, ?30, ?31, ?32, ?33)"));
     stmt.bind(1, session_id);
-    stmt.bind(2, unix_now_secs());
+    stmt.bind(2, unix_now_ms());
     for (std::size_t i = 0; i < f.values.size(); ++i) {
         stmt.bind(static_cast<int>(i) + 3, f.values[i]);
     }
@@ -1906,7 +2275,7 @@ void Storage::insert_label(const std::string& session_id, FocusLabel label,
     stmt.bind(3, source);
     if (notes) stmt.bind(4, *notes);
     else stmt.bind_null(4);
-    stmt.bind(5, utc_now_rfc3339());
+    stmt.bind(5, ts_to_unix_ms(utc_now_rfc3339()));
     stmt.step_done();
 }
 
@@ -1935,7 +2304,7 @@ AppRuleRecord Storage::upsert_app_rule(const std::string& pattern, AppRuleKind r
     stmt.bind(2, std::string(app_rule_kind_to_string(rule_type)));
     if (note) stmt.bind(3, *note);
     else stmt.bind_null(3);
-    stmt.bind(4, now);
+    stmt.bind(4, ts_to_unix_ms(now));
     stmt.step_done();
 
     Stmt fetch(db_,
@@ -1965,8 +2334,17 @@ bool Storage::insert_snapback_episode(const SnapbackEpisode& episode) {
                        "file_hint) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"));
     stmt.bind(1, episode.session_id);
     stmt.bind(2, episode.summary);
-    stmt.bind(3, episode.ended_at);
-    stmt.bind(4, episode.started_at);
+    stmt.bind(3, ts_to_unix_ms(episode.ended_at));
+    // An empty start is the pre-2.15 row's "nobody recorded when this began", and it has to
+    // reach the column as NULL rather than as some stand-in instant. The UNIQUE index over
+    // (session_id, started_at) treats NULLs as distinct, which is what lets those rows coexist
+    // without colliding; a shared sentinel would make the second one silently vanish into
+    // INSERT OR IGNORE.
+    if (episode.started_at.empty()) {
+        stmt.bind_null(4);
+    } else {
+        stmt.bind(4, ts_to_unix_ms(episode.started_at));
+    }
     stmt.bind(5, static_cast<std::int64_t>(episode.duration_secs));
     stmt.bind(6, episode.app_name);
     stmt.bind(7, episode.file_hint);
@@ -1989,8 +2367,8 @@ std::vector<SnapbackEpisode> Storage::list_snapback_episodes(const std::string& 
         SnapbackEpisode episode;
         episode.session_id = column_text(stmt.get(), 0);
         episode.summary = column_text(stmt.get(), 1);
-        episode.ended_at = column_text(stmt.get(), 2);
-        episode.started_at = column_text(stmt.get(), 3);
+        episode.ended_at = column_ts(stmt.get(), 2);
+        episode.started_at = column_opt_ts(stmt.get(), 3).value_or("");
         episode.duration_secs =
             static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
         episode.app_name = column_text(stmt.get(), 5);
@@ -2012,7 +2390,7 @@ void Storage::save_context_snapshot(const std::string& session_id,
     stmt.bind(4, snap.file_hint);
     stmt.bind(5, snap.project_hint);
     stmt.bind(6, snap.summary);
-    stmt.bind(7, snap.timestamp);
+    stmt.bind(7, ts_to_unix_ms(snap.timestamp));
     stmt.step_done();
 }
 
@@ -2028,7 +2406,7 @@ std::vector<SessionRecord> Storage::sessions_after(const std::optional<SessionCu
     Stmt stmt(db_, sql.c_str());
     stmt.bind(1, static_cast<std::int64_t>(limit));
     if (after) {
-        stmt.bind(2, after->started_at);
+        stmt.bind(2, ts_to_unix_ms(after->started_at));
         stmt.bind(3, after->session_id);
     }
     std::vector<SessionRecord> rows;
@@ -2050,13 +2428,13 @@ Storage::ContextPage Storage::context_snapshots_after(const std::string& session
     stmt.bind(1, session_id);
     stmt.bind(2, static_cast<std::int64_t>(limit));
     if (after) {
-        stmt.bind(3, after->timestamp);
+        stmt.bind(3, ts_to_unix_ms(after->timestamp));
         stmt.bind(4, after->id);
     }
     ContextPage page;
     while (stmt.step_row()) {
         page.rows.push_back(read_context_snapshot(stmt.get()));
-        page.next.timestamp = column_text(stmt.get(), 5);
+        page.next.timestamp = column_ts(stmt.get(), 5);
         page.next.id = sqlite3_column_int64(stmt.get(), 6);
     }
     return page;
@@ -2103,7 +2481,12 @@ ExportTrainingResult Storage::export_training_csv(
         "fs.focus_momentum, fs.is_pseudo_productive, fs.session_id, s.goal, s.focus_mode "
         "FROM feature_snapshots fs "
         "LEFT JOIN sessions s ON s.session_id = fs.session_id "
-        "WHERE fs.session_id = ?1 ORDER BY fs.timestamp ASC";
+        // `fs.id` breaks the tie, and it has to: the timestamp is whole milliseconds, and
+        // several feature rows can land in one. Under the old REAL seconds column that was
+        // rare enough to go unnoticed -- which is exactly why it needs stating rather than
+        // rediscovering. `id` is the AUTOINCREMENT insertion order, so equal timestamps come
+        // back in the order they were written.
+        "WHERE fs.session_id = ?1 ORDER BY fs.timestamp ASC, fs.id ASC";
 
     const char* feature_select_all =
         "SELECT fs.timestamp, "
@@ -2122,7 +2505,7 @@ ExportTrainingResult Storage::export_training_csv(
         "LEFT JOIN sessions s ON s.session_id = fs.session_id "
         "WHERE fs.session_id IS NOT NULL AND fs.session_id != '' "
         "AND fs.session_id != 'idle' "
-        "ORDER BY fs.timestamp ASC";
+        "ORDER BY fs.timestamp ASC, fs.id ASC";
 
     {
         const auto features_path = out_dir / "features.csv";
@@ -2219,30 +2602,41 @@ ExportTrainingResult Storage::export_training_csv(
     return result;
 }
 
-PruneSummary Storage::prune_runtime_data(const std::string& cutoff_rfc3339,
-                                         double cutoff_unix_secs) {
+PruneSummary Storage::prune_runtime_data(std::int64_t cutoff_unix_ms) {
+    // Roadmap 5.5, closed by ADR-0007 rather than patched.
+    //
+    // These two DELETEs used to read `WHERE datetime(timestamp) < datetime(?1)`, which was
+    // wrong twice over. `datetime()` returns NULL for a value it cannot parse and `NULL < x`
+    // is NULL, so any row with a malformed timestamp survived every retention pass forever,
+    // silently and with nothing surfaced -- and wrapping the column defeated
+    // `idx_predictions_ts`, so the prune full-scanned the largest tables in the database on
+    // every startup.
+    //
+    // Both are gone, and neither is *fixed* so much as made unexpressible: the column is
+    // INTEGER, the cutoff is an integer, and a plain `<` between them is a sargable predicate
+    // that cannot return NULL. That is the whole argument for ADR-0007's Option A over the
+    // one-sitting patch -- the class of defect leaves with the representation.
     PruneSummary summary;
     {
-        Stmt stmt(db_,
-                  "DELETE FROM predictions WHERE datetime(timestamp) < datetime(?1)");
-        stmt.bind(1, cutoff_rfc3339);
+        Stmt stmt(db_, kPrunePredictionsSql);
+        stmt.bind(1, cutoff_unix_ms);
         stmt.step_done();
         summary.predictions_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
     }
     {
-        Stmt stmt(db_,
-                  "DELETE FROM context_snapshots WHERE datetime(timestamp) < datetime(?1)");
-        stmt.bind(1, cutoff_rfc3339);
+        Stmt stmt(db_, kPruneContextSnapshotsSql);
+        stmt.bind(1, cutoff_unix_ms);
         stmt.step_done();
         summary.context_snapshots_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
     }
     {
-        // feature_snapshots is the highest-volume table in the schema — one row per
-        // prediction tick (~1/sec while active) with 31 REAL columns — and until now it
-        // was never pruned at all, so it grew without bound while the other two stayed
-        // flat. Numeric comparison, not datetime(): this column is REAL epoch seconds.
+        // feature_snapshots is the highest-volume table in the schema -- one row per
+        // prediction tick (~1/sec while active) with 31 REAL columns -- and for most of the
+        // project's life it was never pruned at all, so it grew without bound while the other
+        // two stayed flat. It used to need its own REAL seconds cutoff; as of schema v7 it
+        // takes the same integer as the other two.
         Stmt stmt(db_, "DELETE FROM feature_snapshots WHERE timestamp < ?1");
-        stmt.bind(1, cutoff_unix_secs);
+        stmt.bind(1, cutoff_unix_ms);
         stmt.step_done();
         summary.feature_snapshots_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
     }
@@ -2251,9 +2645,7 @@ PruneSummary Storage::prune_runtime_data(const std::string& cutoff_rfc3339,
 
 PruneSummary Storage::prune_to_retention(int retention_days) {
     Savepoint savepoint(*this, "prune_to_retention");
-    const PruneSummary summary =
-        prune_runtime_data(retention_cutoff_rfc3339(retention_days),
-                           retention_cutoff_unix_secs(retention_days));
+    const PruneSummary summary = prune_runtime_data(retention_cutoff_unix_ms(retention_days));
     savepoint.release();
     return summary;
 }

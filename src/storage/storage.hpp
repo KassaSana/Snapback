@@ -41,7 +41,20 @@ std::string pre_migration_backup_name(int from_version);
 //   2. **Never edit a released migration.** Append a new one. Editing one changes what an
 //      already-upgraded database was built from, which is precisely the drift versioning
 //      exists to prevent.
-inline constexpr int kSchemaVersion = 6;
+inline constexpr int kSchemaVersion = 7;
+
+// The two retention DELETEs, named so a test can plan the statement production actually runs.
+//
+// Roadmap 5.5's second half is a performance claim -- that the prune uses `idx_predictions_ts`
+// rather than scanning the largest table in the database on every startup -- and a query plan
+// is the only place that claim is visible: the wrapped and unwrapped forms return identical
+// rows. A test that planned its own copy of the SQL would assert only that *some* indexable
+// statement exists, and would keep passing if this one regressed, which is the mistake these
+// constants exist to prevent.
+inline constexpr const char* kPrunePredictionsSql =
+    "DELETE FROM predictions WHERE timestamp < ?1";
+inline constexpr const char* kPruneContextSnapshotsSql =
+    "DELETE FROM context_snapshots WHERE timestamp < ?1";
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
@@ -405,17 +418,14 @@ public:
 
     // Deletes old runtime rows on open.
     //
-    // Takes the cutoff twice because the tables don't agree on a time format:
-    // predictions/context_snapshots store RFC3339 TEXT, while feature_snapshots.timestamp
-    // is REAL Unix epoch seconds (see insert_feature_snapshot). Passing one and deriving
-    // the other would mean parsing RFC3339 by hand; the caller already has both.
-    PruneSummary prune_runtime_data(const std::string& cutoff_rfc3339, double cutoff_unix_secs);
+    // One cutoff, in UTC epoch milliseconds. It used to take two, because the tables did not
+    // agree on a time format -- predictions/context_snapshots held RFC3339 TEXT while
+    // feature_snapshots.timestamp held REAL epoch seconds. ADR-0007 ended that disagreement,
+    // and the doubled parameter went with it.
+    PruneSummary prune_runtime_data(std::int64_t cutoff_unix_ms);
 
-    // The same prune against the retention window, in one transaction, with the cutoffs
-    // computed here. The two cutoff forms exist because the tables store time differently
-    // (RFC3339 text vs REAL epoch seconds), and deriving them at the one call site that
-    // knows the window is what keeps the pair consistent -- passing one and forgetting the
-    // other prunes two tables out of three.
+    // The same prune against the retention window, in one transaction, with the cutoff
+    // computed here.
     PruneSummary prune_to_retention(int retention_days = kDefaultRetentionDays);
     void vacuum();
 

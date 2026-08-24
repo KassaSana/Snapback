@@ -37,6 +37,20 @@ struct TempDir {
     }
 };
 
+// An RFC3339 instant as the epoch-millisecond literal the schema stores, for the fixtures that
+// write rows through raw SQL instead of through Storage.
+//
+// Raw SQL bypasses the layer that would otherwise convert, and writing the literal text into an
+// INTEGER column does not fail: SQLite keeps it as TEXT, because it is not a well-formed
+// integer literal. Every later comparison is then between storage classes rather than between
+// instants -- TEXT always sorts above INTEGER -- so the row silently never matches a cutoff.
+// That is the ADR-0007 defect exactly, and a fixture gets no exemption from it.
+std::string ms_literal(const std::string& rfc3339) {
+    const auto ms = unix_ms_from_rfc3339(rfc3339);
+    REQUIRE(ms.has_value());
+    return std::to_string(*ms);
+}
+
 std::string read_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     std::ostringstream out;
@@ -940,7 +954,8 @@ TEST_CASE("an aged database is pruned on open") {
     REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
     const auto insert =
         "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, "
-        "timestamp) VALUES ('" + session_id + "', 40.0, 0.4, 'PRODUCTIVE', '2020-01-01T00:00:00Z');";
+        "timestamp) VALUES ('" + session_id + "', 40.0, 0.4, 'PRODUCTIVE', " +
+        ms_literal("2020-01-01T00:00:00Z") + ");";
     REQUIRE(sqlite3_exec(db, insert.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
     sqlite3_close(db);
 
@@ -1433,11 +1448,10 @@ TEST_CASE("storage prune_runtime_data removes old rows from all three runtime ta
     f.seconds_since_session_start() = 10.0;
     storage->insert_feature_snapshot(session.session_id, f);
 
-    // 2024-01-01 as RFC3339 and as Unix epoch seconds — the same instant in the two
-    // formats the tables use.
-    constexpr double kCutoffUnix = 1704067200.0;
-    const PruneSummary summary =
-        storage->prune_runtime_data("2024-01-01T00:00:00Z", kCutoffUnix);
+    // 2024-01-01T00:00:00Z. One cutoff for all three tables now: ADR-0007 ended the format
+    // disagreement that made this take two.
+    constexpr std::int64_t kCutoffMs = 1704067200000;
+    const PruneSummary summary = storage->prune_runtime_data(kCutoffMs);
     CHECK(summary.predictions_deleted == 1);
     CHECK(summary.context_snapshots_deleted == 1);
     CHECK(summary.feature_snapshots_deleted == 0);  // stamped now, newer than the cutoff
@@ -1462,9 +1476,8 @@ TEST_CASE("storage prune_runtime_data deletes feature snapshots past the cutoff"
     storage->insert_feature_snapshot(session.session_id, f);
 
     // A cutoff far in the future makes the just-written row "old".
-    constexpr double kFarFuture = 4102444800.0;  // 2100-01-01
-    const PruneSummary summary =
-        storage->prune_runtime_data("2100-01-01T00:00:00Z", kFarFuture);
+    constexpr std::int64_t kFarFutureMs = 4102444800000;  // 2100-01-01
+    const PruneSummary summary = storage->prune_runtime_data(kFarFutureMs);
     CHECK(summary.feature_snapshots_deleted == 1);
 
     TempDir temp;
@@ -2145,11 +2158,18 @@ namespace {
 
 // Writes a closed span directly. The production path opens and closes spans through idle
 // transitions; these tests are about the window arithmetic, so the spans are given.
+//
+// The boundaries stay readable RFC3339 in the cases below and are converted here, because raw
+// SQL bypasses the storage layer that would otherwise do it. Writing the literal text into an
+// INTEGER column would not fail -- SQLite stores it as TEXT, since it is not a well-formed
+// integer literal -- and every comparison against a real timestamp would then be a
+// storage-class comparison that silently answers the wrong question. That is the same trap
+// ADR-0007 closed in production, and a fixture is entitled to no exemption from it.
 void seed_span(Storage& storage, const std::string& session_id, const std::string& started_at,
                const std::string& ended_at) {
     storage.execute_for_test("INSERT INTO session_spans (session_id, started_at, ended_at) "
-                             "VALUES ('" + session_id + "', '" + started_at + "', '" +
-                             ended_at + "')");
+                             "VALUES ('" + session_id + "', " + ms_literal(started_at) + ", " +
+                             ms_literal(ended_at) + ")");
 }
 
 }  // namespace
@@ -2188,7 +2208,8 @@ TEST_CASE("an open span is counted only up to now, not to the end of time") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("still going", FocusMode::Normal);
     storage->execute_for_test("INSERT INTO session_spans (session_id, started_at) VALUES ('" +
-                              session.session_id + "', '2026-08-09T10:00:00Z')");
+                              session.session_id + "', " +
+                              ms_literal("2026-08-09T10:00:00Z") + ")");
     CHECK(storage->attended_secs_in_local_day("2026-08-09T10:20:00Z") == 20 * 60);
 }
 
@@ -2238,4 +2259,254 @@ TEST_CASE("attended_secs_since clips to an arbitrary Review lower bound") {
                                        std::string("2026-08-05T00:00:00Z")) == 20 * 60);
     // No floor: both spans.
     CHECK(storage->attended_secs_since("2026-08-09T12:00:00Z", std::nullopt) == 50 * 60);
+}
+
+// --- ADR-0007 / Roadmap 7.16: time is INTEGER epoch milliseconds ---------------------------
+
+namespace {
+
+// The storage class SQLite actually used for one cell, as `typeof()` reports it.
+//
+// Read straight from the file rather than through Storage, so it needs no test-only API on the
+// shipping class (7.14) and cannot be satisfied by the layer under test. It has to be asserted
+// directly because nothing else in the suite can see it: SQLite is dynamically typed, so
+// writing "2026-08-09T10:00:00Z" into an INTEGER column succeeds and keeps it as TEXT, and
+// every read, every ORDER BY, and every round trip through the DTOs then behaves exactly as it
+// did before the migration. A suite that only checks values stays green against a schema that
+// never really moved -- which is the state this tree was briefly in, between the migration
+// landing and the writers being converted.
+std::string cell_type(const std::filesystem::path& dir, const std::string& table,
+                      const std::string& column) {
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((dir / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const std::string sql = "SELECT typeof(" + column + ") FROM " + table + " LIMIT 1";
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK);
+    std::string out;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* text = sqlite3_column_text(stmt, 0);
+        if (text) out = reinterpret_cast<const char*>(text);
+    }
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("every time column stores an integer after an ordinary write") {
+    // The assertion that pins the migration. Every row here is written through the normal
+    // production path rather than seeded, so this fails if any writer still binds RFC3339
+    // text -- which is precisely the half-finished state a value-only test cannot see.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        const auto session = storage->create_session("typed", FocusMode::Normal);
+        session_id = session.session_id;
+
+        storage->insert_prediction(prediction(session_id, 50.0, 0.2, "PRODUCTIVE"));
+
+        ContextSnapshotDto snap;
+        snap.app_name = "Cursor";
+        snap.window_title = "storage.cpp";
+        snap.file_hint = "storage.cpp";
+        snap.project_hint = "Snapback";
+        snap.summary = "editing";
+        snap.timestamp = "2026-08-09T10:00:00Z";
+        storage->save_context_snapshot(session_id, snap);
+
+        storage->insert_label(session_id, FocusLabel::Productive, "manual", std::nullopt);
+        storage->upsert_app_rule("youtube", AppRuleKind::Block, std::nullopt);
+
+        FeatureVector f;
+        f.seconds_since_session_start() = 10.0;
+        storage->insert_feature_snapshot(session_id, f);
+        storage->begin_session_span_now(session_id);
+
+        SnapbackEpisode episode;
+        episode.session_id = session_id;
+        episode.summary = "back to storage.cpp";
+        episode.started_at = "2026-08-09T10:05:00Z";
+        episode.ended_at = "2026-08-09T10:09:00Z";
+        episode.duration_secs = 240;
+        REQUIRE(storage->insert_snapback_episode(episode));
+    }
+
+    CHECK(cell_type(temp.path, "sessions", "started_at") == "integer");
+    CHECK(cell_type(temp.path, "predictions", "timestamp") == "integer");
+    CHECK(cell_type(temp.path, "context_snapshots", "timestamp") == "integer");
+    CHECK(cell_type(temp.path, "labels", "timestamp") == "integer");
+    CHECK(cell_type(temp.path, "app_rules", "created_at") == "integer");
+    CHECK(cell_type(temp.path, "app_rules", "updated_at") == "integer");
+    CHECK(cell_type(temp.path, "feature_snapshots", "timestamp") == "integer");
+    CHECK(cell_type(temp.path, "session_spans", "started_at") == "integer");
+    CHECK(cell_type(temp.path, "snapback_events", "timestamp") == "integer");
+    CHECK(cell_type(temp.path, "snapback_events", "started_at") == "integer");
+
+    // And the value survives the round trip, so "integer" is not merely a well-typed zero.
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    const auto rows = reopened->list_context_snapshots(session_id, 10);
+    REQUIRE(rows.size() == 1);
+    CHECK(rows[0].timestamp == "2026-08-09T10:00:00Z");
+}
+
+TEST_CASE("migrating a v6 database converts its timestamps rather than reinterpreting them") {
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("older install", FocusMode::Normal).session_id;
+    }
+
+    // Rewrite the rows the way v6 held them -- RFC3339 text -- and rewind the stamp so the
+    // runner replays migration 7 over them. This is what every existing install looks like.
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const std::string seed =
+        "UPDATE sessions SET started_at = '2026-08-09T10:00:00Z', "
+        "  ended_at = '2026-08-09T11:00:00Z';"
+        "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, "
+        "  timestamp) VALUES ('" + session_id + "', 40.0, 0.4, 'PRODUCTIVE', "
+        "  '2026-08-09T10:30:00Z');"
+        "PRAGMA user_version = 6;";
+    REQUIRE(sqlite3_exec(db, seed.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    {
+        auto reopened = Storage::open(temp.path);
+        REQUIRE(reopened.has_value());
+        CHECK(reopened->schema_version() == kSchemaVersion);
+
+        // The same instants, in a new representation -- not reinterpreted, and not lost.
+        const auto session = reopened->get_session(session_id);
+        REQUIRE(session.has_value());
+        CHECK(session->started_at == "2026-08-09T10:00:00Z");
+        REQUIRE(session->ended_at.has_value());
+        CHECK(*session->ended_at == "2026-08-09T11:00:00Z");
+
+        const auto predictions = reopened->recent_predictions(10);
+        REQUIRE(predictions.size() == 1);
+        CHECK(predictions[0].timestamp == "2026-08-09T10:30:00Z");
+    }
+    CHECK(cell_type(temp.path, "sessions", "started_at") == "integer");
+}
+
+TEST_CASE("a timestamp that never parsed stops outliving retention") {
+    // Roadmap 5.5, and the reason ADR-0007 rejected the one-sitting patch.
+    //
+    // `datetime(timestamp) < datetime(?1)` yielded NULL for a value it could not parse, and
+    // `NULL < x` is NULL, so such a row survived every retention pass forever with nothing
+    // surfaced. The migration maps it to the epoch, which is older than any retention window,
+    // so the very next prune collects it under the ordinary policy.
+    TempDir temp;
+    std::string session_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        session_id = storage->create_session("corrupted", FocusMode::Normal).session_id;
+    }
+
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const std::string seed =
+        "INSERT INTO predictions (session_id, focus_score, distraction_risk, focus_state, "
+        "  timestamp) VALUES ('" + session_id + "', 40.0, 0.4, 'PRODUCTIVE', 'not a date');"
+        "PRAGMA user_version = 6;";
+    REQUIRE(sqlite3_exec(db, seed.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    // Storage::open migrates, then prunes, so the row is gone by the time it returns. Under
+    // the old comparison it would still be here -- and would have been on every open after
+    // this one, for the life of the install.
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+    CHECK(reopened->recent_predictions(10).empty());
+    // The session is untouched: retention collects telemetry, not the user's history.
+    CHECK(reopened->get_session(session_id).has_value());
+}
+
+TEST_CASE("the retention delete can use the timestamp index") {
+    // The second half of 5.5. Wrapping the column in `datetime()` made it unusable as an index
+    // key, so the prune full-scanned the two largest tables in the database on every startup.
+    // A bare integer comparison is sargable. This needs its own assertion because the query
+    // returns the same rows either way -- a regression here costs only time, which is exactly
+    // the kind of defect that survives a value-based suite.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("planned", FocusMode::Normal);
+    for (int i = 0; i < 50; ++i) {
+        storage->insert_prediction(prediction(session.session_id, 50.0, 0.2, "PRODUCTIVE"));
+    }
+    storage->analyze_for_test();
+
+    // Planned from the same constant production runs, so reintroducing the `datetime()`
+    // wrapper fails here. Planning a copy of the SQL would assert only that some indexable
+    // statement is possible, and would sail through the exact regression this guards.
+    const auto uses_index = [&](const char* sql) {
+        for (const auto& step : storage->query_plan(sql)) {
+            if (step.find("USING INDEX") != std::string::npos ||
+                step.find("USING COVERING INDEX") != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    };
+    CHECK(uses_index(kPrunePredictionsSql));
+
+    // `context_snapshots` still scans, and that is recorded rather than asserted away.
+    // 5.5 named only `idx_predictions_ts`, and it was right to: the sole index on this table is
+    // `idx_context_snapshots_session_ts(session_id, timestamp)`, whose leading column is the
+    // session, so a bare `timestamp <` cannot use it however the predicate is written.
+    // Unwrapping the column was still necessary here -- it is what stops the NULL comparison
+    // silently keeping rows -- but it does not make this one indexed.
+    //
+    // Deliberately not fixed by adding `context_snapshots(timestamp)`. That index would be
+    // paid on every window change to save a scan that happens once per day of uptime, and
+    // that trade belongs to the Tier 14 performance work with a measurement behind it, not to
+    // a migration. Asserted as false so the day someone adds the index, this fails and they
+    // are sent here to delete the paragraph.
+    CHECK_FALSE(uses_index(kPruneContextSnapshotsSql));
+}
+
+TEST_CASE("migration keeps a genuine NULL and floors an unparseable value to the epoch") {
+    // The two halves of the conversion rule, which are deliberately different. NULL is
+    // load-bearing -- on sessions.ended_at it means "still running" -- so folding a bad value
+    // into NULL would resurrect a completed session as an active one. An unparseable value
+    // becomes 0 instead, which is prunable rather than immortal.
+    TempDir temp;
+    std::string running_id;
+    std::string broken_id;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        running_id = storage->create_session("still going", FocusMode::Normal).session_id;
+        broken_id = storage->create_session("bad end", FocusMode::Normal).session_id;
+    }
+
+    sqlite3* db = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &db) == SQLITE_OK);
+    const std::string seed =
+        "UPDATE sessions SET ended_at = NULL, status = 'ACTIVE' WHERE session_id = '" +
+        running_id + "';"
+        "UPDATE sessions SET ended_at = 'garbage', status = 'COMPLETED' WHERE session_id = '" +
+        broken_id + "';"
+        "PRAGMA user_version = 6;";
+    REQUIRE(sqlite3_exec(db, seed.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+
+    auto reopened = Storage::open(temp.path);
+    REQUIRE(reopened.has_value());
+
+    const auto running = reopened->get_session(running_id);
+    REQUIRE(running.has_value());
+    CHECK_FALSE(running->ended_at.has_value());  // still open, not stamped with an invented end
+
+    const auto broken = reopened->get_session(broken_id);
+    REQUIRE(broken.has_value());
+    REQUIRE(broken->ended_at.has_value());  // still completed, rather than resurrected
+    CHECK(*broken->ended_at == "1970-01-01T00:00:00Z");
 }
