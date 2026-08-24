@@ -160,7 +160,15 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
         // one field, not fail the whole command.
         return dump_json(handler(args));
     } catch (const std::exception& e) {
-        return nlohmann::json{{"__snapback_error", e.what()}}.dump();
+        // `dump_json` here for the same reason as above, and more urgently: a strict dump
+        // throws type_error.316 on the first invalid byte *from inside this catch block*, so
+        // it escapes `run_json_command` into the webview binding rather than becoming an
+        // error the caller can read. An exception message is the likeliest place for an
+        // invalid byte to appear, not the least -- these messages concatenate filesystem
+        // paths and OS-derived strings, and `nlohmann::json::parse` quotes the offending
+        // input straight back. The path that runs when something has already gone wrong is
+        // the last one that should be able to fail.
+        return dump_json(nlohmann::json{{"__snapback_error", e.what()}});
     }
 }
 
