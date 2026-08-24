@@ -1924,6 +1924,33 @@ TEST_CASE("stopping a session discards a span decision the tick has not drained"
     CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
 }
 
+TEST_CASE("stopping the active session by the no-arg overload discards a pending span too") {
+    // The same AUD-04b interleave, through the other Stop. The two overloads share no
+    // implementation, and only the by-id one was given the drop -- so the no-arg one, which
+    // is the documented "stop the active session" entry point, still wrote the stale
+    // decision. Nothing in product code reaches it today (main.cpp and commands.hpp both
+    // stop by id), which is exactly why it needs a test rather than a note: the next caller
+    // would inherit a bug the by-id path was already fixed for.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("attended", FocusMode::Normal);
+    AppStateTestAccess::stage_pending_span_open(state, session.session_id);
+    REQUIRE(AppStateTestAccess::pending_span_session(state) == session.session_id);
+
+    state.stop_session();
+    // The assertion that fails without the drop. Storage's own ACTIVE guard means the drain
+    // below cannot reopen a span on a completed session either way, so the damage is latent
+    // rather than observable today -- the point is that the decision is gone before anything
+    // downstream has to be relied on to ignore it.
+    CHECK(AppStateTestAccess::pending_span_session(state) == std::nullopt);
+
+    AppStateTestAccess::engine_tick(state);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+}
+
 TEST_CASE("starting a session discards the replaced session's pending span decision") {
     // Replacement completes the old session the same way Stop does, so a decision naming it
     // is just as stale -- and this path is easier to hit, since Start is one click with no

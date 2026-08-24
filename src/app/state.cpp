@@ -693,6 +693,12 @@ void AppState::stop_session() {
             storage_.end_session(session_id);
             savepoint.release();
         }
+        // Same drop the by-id overload makes, for the same AUD-04b reason: a span decision
+        // recorded before this Stop now names a session that has ended. Keyed on the id
+        // rather than dropped outright so the two overloads state the same rule -- here the
+        // session is the active one by construction, so the two forms agree, and stating it
+        // by id is what keeps them from drifting again.
+        discard_pending_span_unlocked(session_id);
         save_auto_session_label_unlocked(session_id);
         session_attended_ = false;
         pomodoro_.reset();
