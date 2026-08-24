@@ -1657,9 +1657,15 @@ void AppState::engine_tick() {
         span_opens = pending_span_opens_;
         if (now_ms - last_prune_steady_ms_ >= kRetentionPruneIntervalMs) {
             prune_due = true;
-            // VACUUM rewrites the whole file and takes storage_mutex_ for as long as that
-            // takes -- which is the mutex the tick's persist phase needs. Deferred to a
-            // prune that lands while no session is running rather than stalling one.
+            // VACUUM rewrites the whole file, and it runs on this thread, inside this tick,
+            // holding storage_mutex_ for however long that takes. So it is not a stall the
+            // tick can be kept clear of -- the tick is what performs it, and every read that
+            // needs the same mutex (recap, history, timeline, export) waits behind it. On a
+            // 90-day database that is seconds.
+            //
+            // What the gate buys is *when* the stall lands, not whether. No session running
+            // is the cheapest moment this thread can identify on its own: nothing is being
+            // recorded that the pause delays, and no live session view is waiting on a read.
             prune_may_vacuum = !active_session_.has_value();
             // Stamped on the decision, not on the write. A prune skipped below (the
             // activity epoch moved, i.e. the user just deleted data) has nothing left to
@@ -1715,7 +1721,17 @@ void AppState::engine_tick() {
                     << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
                 log().info(msg.str());
                 if (prune_may_vacuum && should_vacuum_after_prune(summary.total())) {
-                    storage_.vacuum();
+                    // Caught separately, as Storage::open catches it: by here the prune has
+                    // committed, so letting a VACUUM failure fall through to the handler
+                    // below would report "retention prune failed" for a sweep that
+                    // succeeded -- a wrong answer in the log someone is reading precisely
+                    // because something went wrong.
+                    try {
+                        storage_.vacuum();
+                    } catch (const std::exception& err) {
+                        log().warn(std::string("storage: VACUUM after prune failed: ") +
+                                   err.what());
+                    }
                 }
             }
         } catch (const std::exception& err) {

@@ -145,6 +145,13 @@ struct AppStateTestAccess {
         state.activity_epoch_.fetch_add(1, std::memory_order_release);
     }
 
+    // The owned Storage, unlocked. Deliberately not wrapped in a storage_mutex_ guard the
+    // way the helpers above are: its one use is to hold a Storage::Transaction open *across*
+    // a synchronous engine_tick, and a guard here would deadlock the tick that has to run
+    // inside it. Safe only because these tests drive the tick by hand, with no engine thread
+    // started -- nothing else touches the connection.
+    static Storage& storage(AppState& state) { return state.storage_; }
+
     static bool insert_episode(AppState& state, const SnapbackEpisode& episode) {
         std::lock_guard lock(state.storage_mutex_);
         return state.storage_.insert_snapback_episode(episode);

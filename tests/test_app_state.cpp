@@ -1967,6 +1967,45 @@ TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") 
     CHECK(state.prediction_history(10).empty());
 }
 
+TEST_CASE("a VACUUM that fails after a successful prune is reported as its own failure") {
+    // The prune and the VACUUM that may follow it are separate operations with separate
+    // failure modes, and the tick wrapped both in one catch. So a VACUUM that failed on a
+    // prune that had already committed was logged as "retention prune failed" -- telling
+    // whoever reads that line that rows were not collected, when they were. Storage::open
+    // has caught the VACUUM separately since it gained one; the tick's copy of that path
+    // did not.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    AppState state(std::move(*storage), std::filesystem::path{}, &logger, &clock);
+
+    // Enough expired rows to clear kVacuumMinDeletedRows, so the VACUUM is actually reached.
+    const auto session = state.start_session("aged", FocusMode::Normal);
+    for (std::size_t i = 0; i < kVacuumMinDeletedRows; ++i) {
+        AppStateTestAccess::insert_prediction_at(state, session.session_id,
+                                                 "2000-01-01T00:00:00Z");
+    }
+    // No active session, which is the condition the tick defers the VACUUM on.
+    state.stop_session(session.session_id);
+
+    clock.advance_minutes(24 * 60);
+    // SQLite refuses to VACUUM from inside a transaction, which is the one way to fail the
+    // VACUUM without touching the prune: savepoints nest inside an open transaction, so the
+    // prune still does its work and releases normally.
+    Storage::Transaction txn(AppStateTestAccess::storage(state));
+    AppStateTestAccess::engine_tick(state);
+
+    const std::string logged = log_out.str();
+    // The prune reported success, because it succeeded.
+    CHECK(logged.find("storage: pruned 500 rows") != std::string::npos);
+    // ... and the VACUUM reported its own failure, in its own words.
+    CHECK(logged.find("storage: VACUUM after prune failed") != std::string::npos);
+    // The line that was wrong is gone: nothing claims the sweep did not happen.
+    CHECK(logged.find("storage: retention prune failed") == std::string::npos);
+}
+
 TEST_CASE("stopping a session discards a span decision the tick has not drained") {
     // AUD-04b. The tick decides span changes under mutex_ and writes them under
     // storage_mutex_, holding neither in between. A Stop landing in that gap used to leave
