@@ -600,6 +600,11 @@ void AppState::discard_pending_span_unlocked(const std::optional<std::string>& s
     pending_span_secs_ago_ = 0;
 }
 
+void AppState::clear_snapback_unlocked() {
+    latest_snapback_.reset();
+    snapback_emitted_ = false;
+}
+
 SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // Mixed (in-memory + storage): take both locks in the fixed order mutex_ -> storage_mutex_.
     std::lock_guard state_lock(mutex_);
@@ -646,6 +651,16 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
+    // A snapback names a window from the session that just ended, so it cannot survive into
+    // this one. The tracker is reset one line above, which is precisely what makes a surviving
+    // payload dangerous rather than merely stale: "Take me back" would raise the *previous*
+    // session's window and then run dismiss_recovery() against a tracker that never saw it.
+    //
+    // This could not happen while the tick drained the payload as it emitted; keeping it alive
+    // until the user acts is what made an unacted-on card outlive its session. The card is not
+    // reliably dismissed for us either -- the frontend does not clear it on a session change,
+    // and on Linux the stub overlay never fires the auto-dismiss callback at all.
+    clear_snapback_unlocked();
     // Any span decision still pending belongs to the session this one replaces, and that
     // session was just completed above. Draining it later would open a span on a COMPLETED
     // row -- or, for a pause, back-date a close into a session that already has its own
@@ -684,6 +699,9 @@ void AppState::stop_session() {
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
+        // Same reason as start_session: the payload names a window from the session being
+        // closed, and there is no session left for "Take me back" to be about.
+        clear_snapback_unlocked();
     }
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -717,6 +735,10 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
+        // Inside the active-session branch on purpose, unlike the pending-span drop above.
+        // Stopping *some other* session by id must not clear a payload that belongs to the
+        // session still running -- that would silently cancel a live snapback card.
+        clear_snapback_unlocked();
         live_read_dirty_ = true;
     }
     publish_live_read_unlocked();
@@ -761,8 +783,7 @@ bool AppState::delete_session(const std::string& session_id) {
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
-        latest_snapback_.reset();
-        snapback_emitted_ = false;
+        clear_snapback_unlocked();
         last_prediction_secs_ = -1.0;
         prediction_dirty_ = false;
         hyperfocus_latched_ = false;
@@ -841,8 +862,7 @@ std::optional<SnapbackPayload> AppState::latest_snapback() const {
 std::optional<SnapbackPayload> AppState::take_snapback() {
     std::lock_guard lock(mutex_);
     auto out = std::move(latest_snapback_);
-    latest_snapback_.reset();
-    snapback_emitted_ = false;
+    clear_snapback_unlocked();
     if (out) live_read_dirty_ = true;
     publish_live_read_unlocked();
     return out;
@@ -852,8 +872,7 @@ void AppState::dismiss_snapback() {
     std::lock_guard lock(mutex_);
     // Clear the pending payload and return the tracker from Recovering to Focused so it
     // doesn't keep the recovery state latched.
-    latest_snapback_.reset();
-    snapback_emitted_ = false;
+    clear_snapback_unlocked();
     context_tracker_.dismiss_recovery(last_event_secs_);
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -868,8 +887,7 @@ FocusTargetResult AppState::restore_snapback_target() {
             app_name = latest_snapback_->app_name;
             window_title = latest_snapback_->window_title;
         }
-        latest_snapback_.reset();
-        snapback_emitted_ = false;
+        clear_snapback_unlocked();
         context_tracker_.dismiss_recovery(last_event_secs_);
         live_read_dirty_ = true;
         publish_live_read_unlocked();
@@ -984,8 +1002,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     session_attended_ = false;  // every span was deleted with the rows above
     discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
-    latest_snapback_.reset();
-    snapback_emitted_ = false;
+    clear_snapback_unlocked();
     last_prediction_at_ms_.reset();
     last_prediction_secs_ = -1.0;
     last_event_secs_ = 0.0;

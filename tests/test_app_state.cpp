@@ -1988,6 +1988,93 @@ TEST_CASE("the tick emits a snapback once and leaves it restorable") {
     state->set_emit_hook(nullptr);
 }
 
+// AUD-01 made the snapback payload outlive the tick that emits it, so "Take me back" is still
+// there when the user reaches for it. These four cases pin the other end of that lifetime: it
+// must not outlive the *session* it describes. The payload names a window, and the only thing
+// that makes that window meaningful is the session it was recorded during.
+
+namespace {
+
+SnapbackPayload staged_payload() {
+    SnapbackPayload payload;
+    payload.summary = "you were editing the classifier";
+    payload.app_name = "Cursor";
+    payload.window_title = "classifier.cpp";
+    payload.distraction_duration_secs = 90;
+    return payload;
+}
+
+}  // namespace
+
+TEST_CASE("starting a session clears the previous session's pending snapback") {
+    // The regression: a card the user never acted on used to survive into the next session,
+    // because start_session resets the context tracker but nothing dropped the payload.
+    // "Take me back" then raised the *previous* session's window and ran dismiss_recovery()
+    // against a tracker that had never seen it.
+    //
+    // Reachable without anything unusual happening: the frontend does not clear the card on a
+    // session change, and on Linux the stub overlay never fires the auto-dismiss callback, so
+    // ignoring the card and pressing Start is enough.
+    auto state = make_state();
+    state->start_session("implement the classifier", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    state->start_session("write the migration", FocusMode::Normal);
+
+    CHECK(state->latest_snapback() == std::nullopt);
+    // The user-visible half. "No active snapback context to restore" is the *correct* answer
+    // now -- any other message means the lookup found a target and focus_window() took over,
+    // which is the bug: focusing a window from a session that is over.
+    const auto result = state->restore_snapback_target();
+    CHECK(result.message == "No active snapback context to restore");
+}
+
+TEST_CASE("stopping the active session clears its pending snapback") {
+    auto state = make_state();
+    const auto session = state->start_session("implement the classifier", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    state->stop_session(session.session_id);
+
+    CHECK(state->latest_snapback() == std::nullopt);
+}
+
+TEST_CASE("stopping the active session by the no-arg overload clears its pending snapback") {
+    // Both overloads, asserted separately. They do not share an implementation, and the two
+    // drifting apart is how this class of omission happens -- the by-id overload gained a
+    // pending-span drop that the no-arg one still lacks.
+    auto state = make_state();
+    state->start_session("implement the classifier", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    state->stop_session();
+
+    CHECK(state->latest_snapback() == std::nullopt);
+}
+
+TEST_CASE("stopping some other session leaves the active session's snapback alone") {
+    // The bound on the fix. stop_session(id) accepts a session that is not the active one, so
+    // clearing unconditionally would silently cancel a live card belonging to the session
+    // still running -- trading a stale-payload bug for a disappearing-payload one.
+    auto state = make_state();
+    const auto earlier = state->start_session("earlier work", FocusMode::Normal);
+    state->stop_session(earlier.session_id);
+
+    state->start_session("current work", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    // Stopping an already-completed, non-active session is idempotent at the storage layer
+    // and must be inert here too.
+    state->stop_session(earlier.session_id);
+
+    REQUIRE(state->latest_snapback().has_value());
+    CHECK(state->latest_snapback()->window_title == "classifier.cpp");
+}
+
 TEST_CASE("AppState app-rule CRUD upserts, updates in place, and deletes") {
     auto state = make_state();
 

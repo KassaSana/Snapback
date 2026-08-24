@@ -122,6 +122,20 @@ struct AppStateTestAccess {
         return state.storage_.list_snapback_episodes(session_id, 100);
     }
 
+    // Stages a pending snapback payload without driving a real drift-and-recover cycle.
+    //
+    // Production sets this from the context tracker inside the tick, which needs a sequence of
+    // events across a focus transition to reach. The lifecycle question -- does this payload
+    // survive a session change -- is independent of how it got there, so staging it directly
+    // tests the thing that was actually broken instead of re-testing the tracker.
+    static void stage_snapback(AppState& state, const SnapbackPayload& payload) {
+        std::lock_guard lock(state.mutex_);
+        state.latest_snapback_ = payload;
+        state.snapback_emitted_ = true;  // as it stands after the tick has emitted the event
+        state.live_read_dirty_ = true;
+        state.publish_live_read_unlocked();
+    }
+
     static bool insert_episode(AppState& state, const SnapbackEpisode& episode) {
         std::lock_guard lock(state.storage_mutex_);
         return state.storage_.insert_snapback_episode(episode);
