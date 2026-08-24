@@ -176,7 +176,7 @@ export const SessionControlCard = memo(function SessionControlCard({
             <div className="metric">
               <p className="metric-label">Elapsed</p>
               <p className="metric-value" aria-label="Elapsed session time">
-                {formatElapsed(sessionRecord?.startedAt, nowMs)}
+                {formatElapsed(sessionRecord?.startedAtMs, nowMs)}
               </p>
             </div>
             <div className="metric">
@@ -419,11 +419,11 @@ export const SessionControlCard = memo(function SessionControlCard({
           </div>
           <div>
             <p className="meta-label">Started</p>
-            <p className="meta-value">{formatTime(sessionRecord?.startedAt ?? null)}</p>
+            <p className="meta-value">{formatTime(sessionRecord?.startedAtMs ?? null)}</p>
           </div>
           <div>
             <p className="meta-label">Ended</p>
-            <p className="meta-value">{formatTime(sessionRecord?.endedAt ?? null)}</p>
+            <p className="meta-value">{formatTime(sessionRecord?.endedAtMs ?? null)}</p>
           </div>
         </div>
       </details>

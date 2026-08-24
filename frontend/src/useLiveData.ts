@@ -54,7 +54,7 @@ export const useLiveData = () => {
       const last = current[0];
       const isDuplicate =
         last &&
-        last.timestamp === record.timestamp &&
+        last.timestampMs === record.timestampMs &&
         last.focusScore === record.focusScore &&
         last.distractionRisk === record.distractionRisk;
       const next = isDuplicate ? current : [record, ...current];

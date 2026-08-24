@@ -25,6 +25,9 @@ assert.deepEqual(toReviewWindowRequest({ preset: "today" }), { window: "day" });
 assert.deepEqual(toReviewWindowRequest({ preset: "7d" }), { window: "7d" });
 assert.deepEqual(toReviewWindowRequest({ preset: "custom", since: "2026-08-01" }), {
   window: "custom",
+  // Still a string, deliberately. `since` is the one instant that crosses the bridge as text:
+  // it is the range the user picked, and ADR-0007 parses it once at the C++ edge in
+  // review_window_cutoff rather than making the UI compute epoch milliseconds.
   since: "2026-08-01T00:00:00Z",
 });
 

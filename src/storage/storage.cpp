@@ -160,36 +160,17 @@ std::optional<std::string> column_opt_text(sqlite3_stmt* stmt, int column) {
     return column_text(stmt, column);
 }
 
-// ADR-0007's boundary, in the two directions a timestamp crosses it.
+// ADR-0007. An optional instant: NULL in the column means the fact that there is no such
+// moment -- a session still running, an episode whose start nobody recorded -- and that has to
+// survive the read rather than collapse into a stand-in value.
 //
-// Every time column is `INTEGER` epoch milliseconds as of schema v7. The DTOs above this layer
-// still carry RFC3339 strings, and will until the IPC contract and the frontend move together
-// -- so this is where the representation changes, and the only place it may. Reading a raw
-// timestamp out of a row without going through here is what the ADR forecloses.
-//
-// `column_ts` rather than `column_text` on a time column is therefore not a style preference:
-// `column_text` on an INTEGER silently yields the *decimal digits* of the millisecond value,
-// which is a string, compares as a string, and looks entirely plausible in a log.
-std::string column_ts(sqlite3_stmt* stmt, int column) {
-    return rfc3339_from_unix_ms(sqlite3_column_int64(stmt, column));
-}
-
-std::optional<std::string> column_opt_ts(sqlite3_stmt* stmt, int column) {
+// There is no conversion left in this file. The columns are INTEGER epoch milliseconds and the
+// DTOs carry the same, so a timestamp is read and written as itself; RFC3339 is produced at the
+// edges that show one to a person. That is the decision's whole point, and it is why nothing
+// here calls `rfc3339_from_unix_ms`.
+std::optional<std::int64_t> column_opt_ms(sqlite3_stmt* stmt, int column) {
     if (sqlite3_column_type(stmt, column) == SQLITE_NULL) return std::nullopt;
-    return column_ts(stmt, column);
-}
-
-// The other direction. Throws rather than substituting a value, because every caller is
-// writing a timestamp this app itself produced: an unparseable one means a corrupted DTO, not
-// user input, and the honest response is to fail the write rather than store an instant nobody
-// chose. (Rows that arrive already-malformed are the migration's problem, and it maps them to
-// the epoch so retention can finally collect them.)
-std::int64_t ts_to_unix_ms(const std::string& rfc3339) {
-    const auto ms = unix_ms_from_rfc3339(rfc3339);
-    if (!ms) {
-        throw std::runtime_error("not an RFC3339 UTC timestamp: '" + rfc3339 + "'");
-    }
-    return *ms;
+    return sqlite3_column_int64(stmt, column);
 }
 
 // The column list every `sessions` read shares, and the count `read_session` consumes.
@@ -209,8 +190,8 @@ SessionRecord read_session(sqlite3_stmt* stmt) {
     r.goal = column_text(stmt, 1);
     r.status = column_text(stmt, 2);
     r.focus_mode = column_text(stmt, 3);
-    r.started_at = column_opt_ts(stmt, 4);
-    r.ended_at = column_opt_ts(stmt, 5);
+    r.started_at_ms = column_opt_ms(stmt, 4);
+    r.ended_at_ms = column_opt_ms(stmt, 5);
     r.reflection_done = column_opt_text(stmt, 6);
     r.reflection_next_step = column_opt_text(stmt, 7);
     return r;
@@ -224,8 +205,8 @@ AppRuleRecord read_app_rule(sqlite3_stmt* stmt) {
     // an unexpected value ever appears rather than throwing on read.
     r.rule_type = app_rule_kind_from_string(column_text(stmt, 2)).value_or(AppRuleKind::Allow);
     r.note = column_opt_text(stmt, 3);
-    r.created_at = column_ts(stmt, 4);
-    r.updated_at = column_ts(stmt, 5);
+    r.created_at_ms = sqlite3_column_int64(stmt, 4);
+    r.updated_at_ms = sqlite3_column_int64(stmt, 5);
     return r;
 }
 
@@ -236,7 +217,7 @@ ContextSnapshotDto read_context_snapshot(sqlite3_stmt* stmt) {
     s.file_hint = column_text(stmt, 2);
     s.project_hint = column_text(stmt, 3);
     s.summary = column_text(stmt, 4);
-    s.timestamp = column_ts(stmt, 5);
+    s.timestamp_ms = sqlite3_column_int64(stmt, 5);
     return s;
 }
 
@@ -249,7 +230,7 @@ PredictionRecord read_prediction(sqlite3_stmt* stmt) {
     p.thrash_score = sqlite3_column_double(stmt, 4);
     p.drift_score = sqlite3_column_double(stmt, 5);
     p.goal_alignment = sqlite3_column_double(stmt, 6);
-    p.timestamp = column_ts(stmt, 7);
+    p.timestamp_ms = sqlite3_column_int64(stmt, 7);
     p.model_id = column_text(stmt, 8);
     p.state_source = column_opt_text(stmt, 9);
     return p;
@@ -276,18 +257,6 @@ void write_user_version(sqlite3* db, int version) {
     exec(db, ("PRAGMA user_version = " + std::to_string(version)).c_str());
 }
 
-std::string utc_now_rfc3339() {
-    const std::time_t now = std::time(nullptr);
-    std::tm tm{};
-#if defined(_WIN32)
-    gmtime_s(&tm, &now);
-#else
-    gmtime_r(&now, &tm);
-#endif
-    std::ostringstream out;
-    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    return out.str();
-}
 
 // ADR-0007. The one wall-clock reading, in the one representation. `unix_now_secs` returned a
 // double of seconds and existed solely because `feature_snapshots.timestamp` was REAL; that
@@ -317,27 +286,14 @@ std::string make_uuid_v4() {
 
 // ADR-0007 collapsed the matched pair this used to be. `retention_cutoff_rfc3339` and
 // `retention_cutoff_unix_secs` existed only to express one instant in the two formats the
-// tables disagreed on; the tables agree now, so one function answers for all three.
+// tables disagreed on; the tables agree now, so one function answers for all three. Both are
+// deleted rather than left for a caller who might reasonably assume they were still the way to
+// ask -- an unused second representation is what this decision exists to prevent.
 std::int64_t retention_cutoff_unix_ms(int retention_days) {
     return unix_now_ms() -
            static_cast<std::int64_t>(retention_days) * 24 * 60 * 60 * 1000;
 }
 
-std::string retention_cutoff_rfc3339(int retention_days) {
-    using namespace std::chrono;
-    const auto now = system_clock::now();
-    const auto cutoff = now - hours(24) * retention_days;
-    const std::time_t tt = system_clock::to_time_t(cutoff);
-    std::tm tm{};
-#if defined(_WIN32)
-    gmtime_s(&tm, &tt);
-#else
-    gmtime_r(&tt, &tm);
-#endif
-    std::ostringstream out;
-    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    return out.str();
-}
 
 std::string csv_escape(std::string_view cell) {
     const bool quote = cell.find_first_of(",\"\n\r") != std::string_view::npos;
@@ -1288,12 +1244,12 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
     // would throw. See Savepoint's comment in storage.hpp.
     Savepoint savepoint(*this, "create_session");
 
-    const std::string ended_at = utc_now_rfc3339();
+    const std::int64_t ended_at_ms = unix_now_ms();
     {
         Stmt close_active(db_,
                           "UPDATE sessions SET status = 'COMPLETED', ended_at = ?1 "
                           "WHERE status = 'ACTIVE'");
-        close_active.bind(1, ts_to_unix_ms(ended_at));
+        close_active.bind(1, ended_at_ms);
         close_active.step_done();
     }
 
@@ -1302,7 +1258,7 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
     r.goal = goal;
     r.status = "ACTIVE";
     r.focus_mode = focus_mode_to_string(mode);
-    r.started_at = utc_now_rfc3339();
+    r.started_at_ms = unix_now_ms();
 
     Stmt insert(db_,
                 "INSERT INTO sessions (session_id, goal, status, focus_mode, started_at) "
@@ -1310,14 +1266,13 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
     insert.bind(1, r.session_id);
     insert.bind(2, r.goal);
     insert.bind(3, r.focus_mode);
-    insert.bind(4, ts_to_unix_ms(*r.started_at));
+    insert.bind(4, *r.started_at_ms);
     insert.step_done();
     savepoint.release();
     return r;
 }
 
-bool Storage::begin_session_span(const std::string& session_id,
-                                 const std::string& started_at) {
+bool Storage::begin_session_span(const std::string& session_id, std::int64_t started_at_ms) {
     // Close-then-open in one transaction. If a pause was missed (a crash, a dropped idle
     // edge), reopening without closing would leave two overlapping spans and double-count
     // the overlap forever — and no later code could tell which of the two was wrong.
@@ -1328,7 +1283,7 @@ bool Storage::begin_session_span(const std::string& session_id,
     // the exact answer close_dangling_session_span() exists to avoid giving.
     if (!session_is_active(session_id)) return false;
 
-    close_session_span(session_id, started_at);
+    close_session_span(session_id, started_at_ms);
 
     // The INSERT re-states the guard as a SELECT so it also holds for a caller that read
     // the status a moment ago and raced a stop. An open span on a COMPLETED session is
@@ -1339,7 +1294,7 @@ bool Storage::begin_session_span(const std::string& session_id,
                 "INSERT INTO session_spans (session_id, started_at) "
                 "SELECT ?1, ?2 FROM sessions WHERE session_id = ?1 AND status = 'ACTIVE'");
     insert.bind(1, session_id);
-    insert.bind(2, ts_to_unix_ms(started_at));
+    insert.bind(2, started_at_ms);
     insert.step_done();
     const bool inserted = sqlite3_changes(db_) > 0;
     savepoint.release();
@@ -1347,32 +1302,31 @@ bool Storage::begin_session_span(const std::string& session_id,
 }
 
 bool Storage::begin_session_span_now(const std::string& session_id) {
-    return begin_session_span(session_id, utc_now_rfc3339());
+    return begin_session_span(session_id, unix_now_ms());
 }
 
 bool Storage::close_session_span_now(const std::string& session_id, std::int64_t secs_ago) {
-    // Computed in SQL off the same clock the rest of this file stamps with, rather than in
-    // C++ off a caller's clock. datetime() yields "YYYY-MM-DD HH:MM:SS", so it is reformatted
-    // to the RFC3339 shape every other timestamp column uses.
-    Stmt now(db_, "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', datetime('now', ?1))");
-    now.bind(1, "-" + std::to_string(std::max<std::int64_t>(0, secs_ago)) + " seconds");
-    if (!now.step_row()) return false;
-    return close_session_span(session_id, column_text(now.get(), 0));
+    // Off the same clock the rest of this file stamps with. This used to round-trip through
+    // SQL and RFC3339 text purely to express "now minus N seconds" in the stored format;
+    // milliseconds are arithmetic, so the detour is gone along with the whole-second rounding
+    // it silently imposed on a value 7.23 cares about to the second.
+    return close_session_span(
+        session_id, unix_now_ms() - std::max<std::int64_t>(0, secs_ago) * 1000);
 }
 
-bool Storage::close_session_span(const std::string& session_id, const std::string& ended_at) {
+bool Storage::close_session_span(const std::string& session_id, std::int64_t ended_at_ms) {
     // MAX(started_at, ?1): a clock that jumped backwards (DST, NTP) must not produce a span
     // that ends before it began, because SUM over such a span would subtract time.
     Stmt update(db_,
                 "UPDATE session_spans SET ended_at = MAX(started_at, ?1) "
                 "WHERE session_id = ?2 AND ended_at IS NULL");
-    update.bind(1, ts_to_unix_ms(ended_at));
+    update.bind(1, ended_at_ms);
     update.bind(2, session_id);
     update.step_done();
     return sqlite3_changes(db_) > 0;
 }
 
-std::optional<std::string> Storage::close_dangling_session_span(const std::string& session_id) {
+std::optional<std::int64_t> Storage::close_dangling_session_span(const std::string& session_id) {
     // The last wall-clock evidence the user was present during this session. MAX over a
     // UNION ALL of per-table maxima rather than a UNION of rows: each subquery is answered by
     // that table's session index, so this stays three index probes no matter how many rows
@@ -1383,10 +1337,8 @@ std::optional<std::string> Storage::close_dangling_session_span(const std::strin
                   "  UNION ALL SELECT MAX(timestamp) FROM context_snapshots WHERE session_id = ?1"
                   "  UNION ALL SELECT MAX(timestamp) FROM snapback_events WHERE session_id = ?1)");
     evidence.bind(1, session_id);
-    std::optional<std::string> last_seen;
-    if (evidence.step_row() && sqlite3_column_type(evidence.get(), 0) != SQLITE_NULL) {
-        last_seen = column_ts(evidence.get(), 0);
-    }
+    const auto last_seen = evidence.step_row() ? column_opt_ms(evidence.get(), 0)
+                                              : std::optional<std::int64_t>{};
 
     Savepoint savepoint(*this, "close_dangling_session_span");
     // Read the span's own start before closing, so the caller can be told what it settled on
@@ -1396,16 +1348,19 @@ std::optional<std::string> Storage::close_dangling_session_span(const std::strin
                    "WHERE session_id = ?1 AND ended_at IS NULL ORDER BY id DESC LIMIT 1");
     open_span.bind(1, session_id);
     if (!open_span.step_row()) return std::nullopt;
-    const std::string started_at = column_ts(open_span.get(), 0);
+    const std::int64_t started_at_ms = sqlite3_column_int64(open_span.get(), 0);
 
-    const std::string ended_at = last_seen && *last_seen > started_at ? *last_seen : started_at;
-    close_session_span(session_id, ended_at);
+    // Integers compare as instants. This used to lean on RFC3339 sorting lexicographically,
+    // which is true only for a fixed-width UTC format and quietly false for anything else.
+    const std::int64_t ended_at_ms =
+        last_seen && *last_seen > started_at_ms ? *last_seen : started_at_ms;
+    close_session_span(session_id, ended_at_ms);
     savepoint.release();
-    return ended_at;
+    return ended_at_ms;
 }
 
 std::optional<std::uint64_t> Storage::active_secs(const std::string& session_id,
-                                                  const std::string& now) {
+                                                  std::int64_t now_ms) {
     // ROUND per span, not a truncating CAST over the sum. julianday returns a double, so a
     // 30-minute span computes as 1799.9999... and CAST truncates it to 1799; two of them lost
     // a second and turned an exact hour into 3599. Each span is a measurement in whole
@@ -1416,7 +1371,7 @@ std::optional<std::uint64_t> Storage::active_secs(const std::string& session_id,
               "  ))), 0) AS INTEGER) "
               "FROM session_spans WHERE session_id = ?1");
     stmt.bind(1, session_id);
-    stmt.bind(2, ts_to_unix_ms(now));
+    stmt.bind(2, now_ms);
     if (!stmt.step_row()) return std::nullopt;
     if (sqlite3_column_int64(stmt.get(), 0) == 0) return std::nullopt;  // never measured
     return static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 1));
@@ -1439,11 +1394,11 @@ bool Storage::has_open_span(const std::string& session_id) {
 }
 
 void Storage::end_session(const std::string& session_id) {
-    const std::string ended_at = utc_now_rfc3339();
+    const std::int64_t ended_at_ms = unix_now_ms();
     Stmt update(db_,
                 "UPDATE sessions SET status = 'COMPLETED', ended_at = ?1 "
                 "WHERE session_id = ?2 AND status = 'ACTIVE'");
-    update.bind(1, ts_to_unix_ms(ended_at));
+    update.bind(1, ended_at_ms);
     update.bind(2, session_id);
     update.step_done();
     if (sqlite3_changes(db_) == 0) {
@@ -1462,11 +1417,11 @@ SessionRecord Storage::stop_session(const std::string& session_id) {
         return *existing;
     }
 
-    const std::string ended_at = utc_now_rfc3339();
+    const std::int64_t ended_at_ms = unix_now_ms();
     Stmt update(db_,
                 "UPDATE sessions SET status = 'COMPLETED', ended_at = ?1 "
                 "WHERE session_id = ?2 AND status = 'ACTIVE'");
-    update.bind(1, ts_to_unix_ms(ended_at));
+    update.bind(1, ended_at_ms);
     update.bind(2, session_id);
     update.step_done();
     if (sqlite3_changes(db_) == 0) {
@@ -1551,23 +1506,23 @@ std::uint64_t attended_in_window(sqlite3* db, std::int64_t now_ms,
 
 }  // namespace
 
-std::uint64_t Storage::attended_secs_in_local_day(const std::string& now) {
-    return attended_in_window(db_, ts_to_unix_ms(now), local_boundary_ms(", 'start of day'"),
+std::uint64_t Storage::attended_secs_in_local_day(std::int64_t now_ms) {
+    return attended_in_window(db_, now_ms, local_boundary_ms(", 'start of day'"),
                               local_boundary_ms(", 'start of day', '+1 day'"));
 }
 
-std::uint64_t Storage::attended_secs_in_local_week(const std::string& now) {
+std::uint64_t Storage::attended_secs_in_local_week(std::int64_t now_ms) {
     // ISO weeks: Monday to Sunday. `weekday 1` moves *forward* to the next Monday, so stepping
     // back six days first lands on the Monday on or before today -- including when today is
     // itself Monday, which is the case a naive `weekday 1` gets wrong by a whole week.
     return attended_in_window(
-        db_, ts_to_unix_ms(now),
+        db_, now_ms,
         local_boundary_ms(", 'start of day', '-6 days', 'weekday 1'"),
         local_boundary_ms(", 'start of day', '-6 days', 'weekday 1', '+7 days'"));
 }
 
-std::uint64_t Storage::attended_secs_since(const std::string& now,
-                                           const std::optional<std::string>& since) {
+std::uint64_t Storage::attended_secs_since(std::int64_t now_ms,
+                                           const std::optional<std::int64_t>& since_ms) {
     // Roadmap 2.19. Same clip arithmetic as the day/week helpers, but the lower bound is an
     // instant from the Review range rather than a calendar expression. Open spans use `now` as
     // their end, so a still-running session does not invent future attendance.
@@ -1575,8 +1530,7 @@ std::uint64_t Storage::attended_secs_since(const std::string& now,
     // Neither bound goes through `local_boundary_ms`: both are absolute instants already, and
     // this is the case that shows why the old code's blanket local conversion was the wrong
     // shape. "Since this moment" has no calendar boundary to find.
-    const std::int64_t now_ms = ts_to_unix_ms(now);
-    if (!since || since->empty()) {
+    if (!since_ms) {
         // 0 is the epoch, which is before any span this app could have recorded.
         return attended_in_window(db_, now_ms, "0", "?1");
     }
@@ -1593,7 +1547,7 @@ std::uint64_t Storage::attended_secs_since(const std::string& now,
     replace_all(":window_start", "?2");
     Stmt stmt(db_, sql.c_str());
     stmt.bind(1, now_ms);
-    stmt.bind(2, ts_to_unix_ms(*since));
+    stmt.bind(2, *since_ms);
     if (!stmt.step_row()) return 0;
     const auto secs = sqlite3_column_int64(stmt.get(), 0);
     return secs > 0 ? static_cast<std::uint64_t>(secs) : 0;
@@ -1633,12 +1587,14 @@ std::optional<SessionRecord> Storage::save_session_reflection(
 }
 
 std::vector<SessionSummary> Storage::recent_session_summaries(
-    std::size_t limit, const std::optional<std::string>& started_after) {
+    std::size_t limit, const std::optional<std::int64_t>& started_after_ms) {
+    const std::int64_t now_ms = unix_now_ms();
     // All three queries below re-derive "the most recent `limit` sessions" independently,
-    // so they must agree on *which* sessions those are. `started_at` has only second
-    // resolution (ROADMAP 7.16), which makes ties common rather than exotic, and SQLite does
-    // not promise that two differently-shaped queries break a tie the same way. If they
-    // disagreed, a session present in the result would miss its aggregates and silently
+    // so they must agree on *which* sessions those are. `started_at` is milliseconds since
+    // ADR-0007, which makes ties rarer than the whole seconds this comment used to describe
+    // but not impossible, and SQLite does not promise that two differently-shaped queries
+    // break a tie the same way. If they disagreed, a session present in the result would miss
+    // its aggregates and silently
     // report zeros. `session_id` is the primary key, so adding it to the ORDER BY gives a
     // total order and removes the ambiguity.
     //
@@ -1662,8 +1618,8 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
             "ORDER BY started_at DESC, session_id DESC LIMIT ?1";
         Stmt stmt(db_, sql.c_str());
         stmt.bind(1, static_cast<std::int64_t>(limit));
-        if (started_after) {
-            stmt.bind(2, ts_to_unix_ms(*started_after));
+        if (started_after_ms) {
+            stmt.bind(2, *started_after_ms);
         } else {
             stmt.bind_null(2);
         }
@@ -1698,8 +1654,8 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
                   "FROM predictions p JOIN recent r ON p.session_id = r.session_id "
                   "GROUP BY p.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
-        if (started_after) {
-            stmt.bind(2, ts_to_unix_ms(*started_after));
+        if (started_after_ms) {
+            stmt.bind(2, *started_after_ms);
         } else {
             stmt.bind_null(2);
         }
@@ -1725,8 +1681,8 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
                   "FROM snapback_events e JOIN recent r ON e.session_id = r.session_id "
                   "GROUP BY e.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
-        if (started_after) {
-            stmt.bind(2, ts_to_unix_ms(*started_after));
+        if (started_after_ms) {
+            stmt.bind(2, *started_after_ms);
         } else {
             stmt.bind_null(2);
         }
@@ -1745,7 +1701,6 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
     // A session with no spans does not appear here, so its recap keeps `active_secs` empty:
     // "never measured", which is exactly right for sessions predating the table.
     {
-        const auto now = utc_now_rfc3339();
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
                   "                WHERE (?3 IS NULL OR (started_at IS NOT NULL AND started_at >= ?3)) "
@@ -1756,9 +1711,9 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
                   "FROM session_spans s JOIN recent r ON s.session_id = r.session_id "
                   "GROUP BY s.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
-        stmt.bind(2, ts_to_unix_ms(now));
-        if (started_after) {
-            stmt.bind(3, ts_to_unix_ms(*started_after));
+        stmt.bind(2, now_ms);
+        if (started_after_ms) {
+            stmt.bind(3, *started_after_ms);
         } else {
             stmt.bind_null(3);
         }
@@ -1774,10 +1729,10 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
 }
 
 void Storage::backdate_session_for_test(const std::string& session_id,
-                                        const std::string& started_at) {
+                                        std::int64_t started_at_ms) {
     Stmt stmt(db_, "UPDATE sessions SET started_at = ?2 WHERE session_id = ?1");
     stmt.bind(1, session_id);
-    stmt.bind(2, ts_to_unix_ms(started_at));
+    stmt.bind(2, started_at_ms);
     stmt.step_done();
 }
 
@@ -1807,15 +1762,15 @@ std::size_t Storage::count_statements_for_test(const std::function<void()>& body
     return count;
 }
 
-Storage::PredictionStats Storage::prediction_stats(const std::optional<std::string>& cutoff) {
+Storage::PredictionStats Storage::prediction_stats(const std::optional<std::int64_t>& cutoff_ms) {
     PredictionStats out;
     {
         Stmt stmt(db_,
                   "SELECT COUNT(*), COALESCE(AVG(focus_score), 0), "
                   "COALESCE(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END), 0) "
                   "FROM predictions WHERE (?1 IS NULL OR timestamp >= ?1)");
-        if (cutoff) {
-            stmt.bind(1, ts_to_unix_ms(*cutoff));
+        if (cutoff_ms) {
+            stmt.bind(1, *cutoff_ms);
         } else {
             stmt.bind_null(1);
         }
@@ -1878,8 +1833,8 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::stri
                   "SELECT COALESCE(MAX(total), 0) FROM ("
                   "  SELECT SUM(CASE WHEN is_break = 1 THEN 0 ELSE gap END) AS total"
                   "  FROM grouped WHERE distracted = 0 GROUP BY session_id, run_id)");
-        if (cutoff) {
-            stmt.bind(1, ts_to_unix_ms(*cutoff));
+        if (cutoff_ms) {
+            stmt.bind(1, *cutoff_ms);
         } else {
             stmt.bind_null(1);
         }
@@ -1894,7 +1849,7 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::stri
 }
 
 std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
-    const std::optional<std::string>& cutoff) {
+    const std::optional<std::int64_t>& cutoff_ms) {
     // `datetime(timestamp, 'localtime')` reads the stored UTC and converts to this machine's
     // local time through the same C library `localtime` that local_hour_from_rfc3339 calls, so
     // the two agree including across a DST boundary. A timestamp SQLite cannot parse yields
@@ -1910,8 +1865,8 @@ std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
               "  AND strftime('%H', timestamp / 1000.0, 'unixepoch', 'localtime')"
               "      IS NOT NULL "
               "GROUP BY hour ORDER BY hour ASC");
-    if (cutoff) {
-        stmt.bind(1, ts_to_unix_ms(*cutoff));
+    if (cutoff_ms) {
+        stmt.bind(1, *cutoff_ms);
     } else {
         stmt.bind_null(1);
     }
@@ -1928,7 +1883,7 @@ std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
 }
 
 std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg_focus,
-                                               const std::optional<std::string>& started_after) {
+                                               const std::optional<std::int64_t>& started_after_ms) {
     Stmt stmt(db_,
               "WITH recent AS ("
               "  SELECT session_id, status, started_at FROM sessions"
@@ -1947,8 +1902,8 @@ std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg
               "                (SELECT COUNT(*) FROM scored))");
     stmt.bind(1, static_cast<std::int64_t>(limit));
     stmt.bind(2, min_avg_focus);
-    if (started_after) {
-        stmt.bind(3, ts_to_unix_ms(*started_after));
+    if (started_after_ms) {
+        stmt.bind(3, *started_after_ms);
     } else {
         stmt.bind_null(3);
     }
@@ -1957,7 +1912,7 @@ std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg
 }
 
 Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
-                                                            const std::string& started_after) {
+                                                            std::int64_t started_after_ms) {
     // ROUND before CAST, the same way recap() computes duration_secs — a truncating CAST on
     // julianday's double turns an exact hour into 3599 seconds.
     Stmt stmt(db_,
@@ -1973,7 +1928,7 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
               "         ELSE 0 END), 0) "
               "FROM recent WHERE started_at IS NOT NULL AND started_at >= ?2");
     stmt.bind(1, static_cast<std::int64_t>(limit));
-    stmt.bind(2, ts_to_unix_ms(started_after));
+    stmt.bind(2, started_after_ms);
     SessionWindowTotals out;
     if (stmt.step_row()) {
         out.session_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
@@ -1986,7 +1941,7 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
 
 std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
     std::size_t session_limit, std::size_t per_session_limit,
-    const std::optional<std::string>& started_after) {
+    const std::optional<std::int64_t>& started_after_ms) {
     // ROW_NUMBER reproduces list_context_snapshots' "ORDER BY timestamp ASC LIMIT n" per
     // session, so the per-session cap survives the move into SQL. Without it this would
     // count every snapshot and quietly change which app ranks first.
@@ -2005,8 +1960,8 @@ std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
     Stmt stmt(db_, sql);
     stmt.bind(1, static_cast<std::int64_t>(session_limit));
     stmt.bind(2, static_cast<std::int64_t>(per_session_limit));
-    if (started_after) {
-        stmt.bind(3, ts_to_unix_ms(*started_after));
+    if (started_after_ms) {
+        stmt.bind(3, *started_after_ms);
     } else {
         stmt.bind_null(3);  // the wrapper checks the return code; the raw call does not
     }
@@ -2093,7 +2048,7 @@ SessionRecap Storage::recap(const std::string& session_id) {
         if (stmt.step_row()) out.duration_secs = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 0));
     }
 
-    out.active_secs = active_secs(session_id, utc_now_rfc3339());
+    out.active_secs = active_secs(session_id, unix_now_ms());
 
     {
         Stmt stmt(db_,
@@ -2191,7 +2146,7 @@ void Storage::insert_prediction(const PredictionRecord& p) {
     stmt.bind(5, p.thrash_score);
     stmt.bind(6, p.drift_score);
     stmt.bind(7, p.goal_alignment);
-    stmt.bind(8, ts_to_unix_ms(p.timestamp));
+    stmt.bind(8, p.timestamp_ms);
     stmt.bind(9, p.model_id);
     if (p.state_source) {
         stmt.bind(10, *p.state_source);
@@ -2222,8 +2177,8 @@ std::vector<PredictionRecord> Storage::recent_predictions(std::size_t limit) {
 }
 
 std::vector<PredictionRecord> Storage::predictions_since(
-    const std::optional<std::string>& cutoff) {
-    const char* sql = cutoff
+    const std::optional<std::int64_t>& cutoff_ms) {
+    const char* sql = cutoff_ms
                           ? "SELECT session_id, focus_score, distraction_risk, focus_state, "
                             "thrash_score, drift_score, goal_alignment, timestamp, model_id, "
                             "state_source "
@@ -2234,7 +2189,7 @@ std::vector<PredictionRecord> Storage::predictions_since(
                             "state_source "
                             "FROM predictions ORDER BY timestamp DESC";
     Stmt stmt(db_, sql);
-    if (cutoff) stmt.bind(1, ts_to_unix_ms(*cutoff));
+    if (cutoff_ms) stmt.bind(1, *cutoff_ms);
     std::vector<PredictionRecord> rows;
     while (stmt.step_row()) rows.push_back(read_prediction(stmt.get()));
     return rows;
@@ -2275,7 +2230,7 @@ void Storage::insert_label(const std::string& session_id, FocusLabel label,
     stmt.bind(3, source);
     if (notes) stmt.bind(4, *notes);
     else stmt.bind_null(4);
-    stmt.bind(5, ts_to_unix_ms(utc_now_rfc3339()));
+    stmt.bind(5, unix_now_ms());
     stmt.step_done();
 }
 
@@ -2290,7 +2245,7 @@ std::vector<AppRuleRecord> Storage::list_app_rules() {
 
 AppRuleRecord Storage::upsert_app_rule(const std::string& pattern, AppRuleKind rule_type,
                                        std::optional<std::string> note) {
-    const std::string now = utc_now_rfc3339();
+    const std::int64_t now_ms = unix_now_ms();
     // UPSERT on the UNIQUE pattern: insert, or update rule_type/note/updated_at if the
     // pattern already exists. ?4 is bound once but used for both created_at and updated_at.
     Stmt stmt(db_,
@@ -2304,7 +2259,7 @@ AppRuleRecord Storage::upsert_app_rule(const std::string& pattern, AppRuleKind r
     stmt.bind(2, std::string(app_rule_kind_to_string(rule_type)));
     if (note) stmt.bind(3, *note);
     else stmt.bind_null(3);
-    stmt.bind(4, ts_to_unix_ms(now));
+    stmt.bind(4, now_ms);
     stmt.step_done();
 
     Stmt fetch(db_,
@@ -2334,16 +2289,16 @@ bool Storage::insert_snapback_episode(const SnapbackEpisode& episode) {
                        "file_hint) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"));
     stmt.bind(1, episode.session_id);
     stmt.bind(2, episode.summary);
-    stmt.bind(3, ts_to_unix_ms(episode.ended_at));
+    stmt.bind(3, episode.ended_at_ms);
     // An empty start is the pre-2.15 row's "nobody recorded when this began", and it has to
     // reach the column as NULL rather than as some stand-in instant. The UNIQUE index over
     // (session_id, started_at) treats NULLs as distinct, which is what lets those rows coexist
     // without colliding; a shared sentinel would make the second one silently vanish into
     // INSERT OR IGNORE.
-    if (episode.started_at.empty()) {
-        stmt.bind_null(4);
+    if (episode.started_at_ms) {
+        stmt.bind(4, *episode.started_at_ms);
     } else {
-        stmt.bind(4, ts_to_unix_ms(episode.started_at));
+        stmt.bind_null(4);
     }
     stmt.bind(5, static_cast<std::int64_t>(episode.duration_secs));
     stmt.bind(6, episode.app_name);
@@ -2367,8 +2322,8 @@ std::vector<SnapbackEpisode> Storage::list_snapback_episodes(const std::string& 
         SnapbackEpisode episode;
         episode.session_id = column_text(stmt.get(), 0);
         episode.summary = column_text(stmt.get(), 1);
-        episode.ended_at = column_ts(stmt.get(), 2);
-        episode.started_at = column_opt_ts(stmt.get(), 3).value_or("");
+        episode.ended_at_ms = sqlite3_column_int64(stmt.get(), 2);
+        episode.started_at_ms = column_opt_ms(stmt.get(), 3);
         episode.duration_secs =
             static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
         episode.app_name = column_text(stmt.get(), 5);
@@ -2390,7 +2345,7 @@ void Storage::save_context_snapshot(const std::string& session_id,
     stmt.bind(4, snap.file_hint);
     stmt.bind(5, snap.project_hint);
     stmt.bind(6, snap.summary);
-    stmt.bind(7, ts_to_unix_ms(snap.timestamp));
+    stmt.bind(7, snap.timestamp_ms);
     stmt.step_done();
 }
 
@@ -2406,7 +2361,7 @@ std::vector<SessionRecord> Storage::sessions_after(const std::optional<SessionCu
     Stmt stmt(db_, sql.c_str());
     stmt.bind(1, static_cast<std::int64_t>(limit));
     if (after) {
-        stmt.bind(2, ts_to_unix_ms(after->started_at));
+        stmt.bind(2, after->started_at_ms);
         stmt.bind(3, after->session_id);
     }
     std::vector<SessionRecord> rows;
@@ -2428,13 +2383,13 @@ Storage::ContextPage Storage::context_snapshots_after(const std::string& session
     stmt.bind(1, session_id);
     stmt.bind(2, static_cast<std::int64_t>(limit));
     if (after) {
-        stmt.bind(3, ts_to_unix_ms(after->timestamp));
+        stmt.bind(3, after->timestamp_ms);
         stmt.bind(4, after->id);
     }
     ContextPage page;
     while (stmt.step_row()) {
         page.rows.push_back(read_context_snapshot(stmt.get()));
-        page.next.timestamp = column_ts(stmt.get(), 5);
+        page.next.timestamp_ms = sqlite3_column_int64(stmt.get(), 5);
         page.next.id = sqlite3_column_int64(stmt.get(), 6);
     }
     return page;

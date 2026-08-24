@@ -47,9 +47,12 @@ assert.equal(formatScore(NaN), "--");
 // is timezone/locale-dependent and would make this test flaky in CI.
 assert.equal(formatTime(null), "--");
 assert.equal(formatTime(undefined), "--");
-assert.equal(formatTime(""), "--");
-assert.equal(formatTime("not-a-date"), "--");
-assert.notEqual(formatTime("2026-07-08T00:00:00Z"), "--");
+assert.equal(formatTime(Number.NaN), "--");
+// 0 is the epoch, not an absence. Migration 7 stamps a timestamp it could not convert with
+// exactly that value, and it must render as 1970 rather than as "--": a row whose time is
+// unknown should look wrong, not look empty.
+assert.notEqual(formatTime(0), "--");
+assert.notEqual(formatTime(Date.parse("2026-07-08T00:00:00Z")), "--");
 
 assert.equal(riskLevel(0.8), "high");
 assert.equal(riskLevel(0.5), "medium");
@@ -96,7 +99,7 @@ const base = {
   thrashScore: 0.05,
   driftScore: 0.1,
   goalAlignment: 0.9,
-  timestamp: "2026-07-08T00:00:00Z",
+  timestampMs: Date.parse("2026-07-08T00:00:00Z"),
 };
 const sigs = buildSignals(base as any);
 assert.ok(sigs.some((s) => s.includes("Focus state")));

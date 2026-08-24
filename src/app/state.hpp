@@ -359,11 +359,13 @@ private:
     // every duration it measures. Non-static as a consequence, which is the point — reading
     // the time is now something an *instance* does, not something anyone can do from
     // anywhere.
-    std::string rfc3339_at(std::time_t when) const;
-    std::string now_rfc3339() const;
-    // Wall-clock timestamp `secs` in the past. Used to stamp a pause at the moment the user
+    // ADR-0007. One wall reading, in UTC epoch milliseconds. `rfc3339_at`, `now_rfc3339`, and
+    // `wall_now_ms` were three names for two representations of the same thing; formatting now
+    // happens at the edges that display a time, in `util/time.hpp`.
+    std::int64_t now_unix_ms() const;
+    // Wall-clock instant `secs` in the past. Used to stamp a pause at the moment the user
     // actually stopped rather than when the idle threshold noticed (Roadmap 7.23).
-    std::string rfc3339_secs_ago(std::int64_t secs) const;
+    std::int64_t unix_ms_secs_ago(std::int64_t secs) const;
     std::int64_t steady_now_ms() const;  // monotonic clock for idle timing
     static bool is_input_event(EventType type);  // key/mouse = real user activity
     // Advance the idle state machine one step. Requires mutex_. Returns the transition
@@ -374,7 +376,6 @@ private:
     // save costs the relaunch-resume but never the running phase.
     void persist_pomodoro_unlocked();
     PomodoroStatus mutate_pomodoro(const std::function<void(std::int64_t)>& apply);
-    std::int64_t wall_now_ms() const;
     // Injected logger if one was passed in, otherwise the stderr fallback below.
     Logger& log() { return logger_ ? *logger_ : local_logger_; }
     const Logger& log() const { return logger_ ? *logger_ : local_logger_; }

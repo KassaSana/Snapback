@@ -42,7 +42,7 @@ export type PredictionRecord = {
   thrashScore: number;
   driftScore: number;
   goalAlignment: number;
-  timestamp: string;
+  timestampMs: number;
   modelId: string;
   // Which rule decided focusState (ADR-0004): "model" when the classifier's argmax stood,
   // else "risk" | "thrash" | "block" | "drift". null on rows from before verdicts carried
@@ -55,8 +55,8 @@ export type SessionRecord = {
   goal: string;
   status: string;
   focusMode: string;
-  startedAt: string | null;
-  endedAt: string | null;
+  startedAtMs: number | null;
+  endedAtMs: number | null;
   // Roadmap 2.14. null means the question was never answered, which is what Skip leaves
   // behind — deliberately not "" so the UI can tell "skipped" from "answered with nothing".
   reflectionDone: string | null;
@@ -256,8 +256,8 @@ export type AppRuleRecord = {
   pattern: string;
   ruleType: AppRuleKind;
   note: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAtMs: number;
+  updatedAtMs: number;
 };
 
 export type ContextSnapshot = {
@@ -266,7 +266,7 @@ export type ContextSnapshot = {
   fileHint: string;
   projectHint: string;
   summary: string;
-  timestamp: string;
+  timestampMs: number;
 };
 
 export type SnapbackPayload = {
@@ -404,7 +404,7 @@ export type ReviewWindowRequest = {
 
 export type SummaryReport = {
   window: SummaryWindow;
-  generatedAt: string;
+  generatedAtMs: number;
   sessionCount: number;
   completedSessionCount: number;
   focusSeconds: number;

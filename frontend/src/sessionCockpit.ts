@@ -280,9 +280,9 @@ export function moveSessionPreset(
  * This is *elapsed* time, deliberately not attended time: 7.23's spans are the source for the
  * latter, and inventing a second answer here is how two numbers that must agree stop agreeing.
  */
-export function formatElapsed(startedAt: string | null | undefined, nowMs: number): string {
-  if (!startedAt) return "--";
-  const started = new Date(startedAt).getTime();
+export function formatElapsed(startedAtMs: number | null | undefined, nowMs: number): string {
+  if (startedAtMs === null || startedAtMs === undefined) return "--";
+  const started = startedAtMs;
   if (Number.isNaN(started) || !Number.isFinite(nowMs)) return "--";
   const seconds = Math.floor((nowMs - started) / 1000);
   // A clock that disagrees with the backend by a second must not render "-1s".

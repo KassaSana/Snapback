@@ -21,8 +21,8 @@ const summary = (
     focusMode: "normal",
     reflectionDone: null,
     reflectionNextStep: null,
-    startedAt: null,
-    endedAt: null,
+    startedAtMs: null,
+    endedAtMs: null,
   },
   recap: {
     sessionId: id,

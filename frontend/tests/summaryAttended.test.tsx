@@ -9,7 +9,7 @@ import type { SummaryReport } from "../src/api";
 
 const baseReport = (overrides: Partial<SummaryReport> = {}): SummaryReport => ({
   window: "day",
-  generatedAt: "2026-08-12T12:00:00Z",
+  generatedAtMs: Date.parse("2026-08-12T12:00:00Z"),
   sessionCount: 1,
   completedSessionCount: 1,
   focusSeconds: 3600,

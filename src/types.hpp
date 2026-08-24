@@ -185,7 +185,12 @@ struct PredictionRecord {
     double thrash_score{};
     double drift_score{};
     double goal_alignment{0.5};
-    std::string timestamp;
+    // ADR-0007: UTC milliseconds since the epoch. The `_ms` suffix is not decoration -- the
+    // rename is what makes a missed call site fail loudly. Keeping the name `timestamp` while
+    // changing string to number would compile in C++ and, worse, keep *working* in JavaScript,
+    // because `new Date(1785402000000)` is perfectly valid. A field that no longer exists is a
+    // reliable error; a field that silently means something else is not.
+    std::int64_t timestamp_ms{};
     std::string model_id{"heuristic:snapback-features-v1-31"};
     // Which rule decided focus_state (ADR-0004): 'model', 'risk', 'thrash', 'block', or
     // 'drift'. nullopt on rows written before verdicts carried provenance; nothing can
@@ -199,8 +204,10 @@ struct SessionRecord {
     std::string goal;
     std::string status;
     std::string focus_mode;
-    std::optional<std::string> started_at;
-    std::optional<std::string> ended_at;
+    // nullopt on ended_at_ms means the session is still running -- the same load-bearing NULL
+    // the schema keeps.
+    std::optional<std::int64_t> started_at_ms;
+    std::optional<std::int64_t> ended_at_ms;
     // Roadmap 2.14. The user's own account of the session, kept deliberately apart from the
     // focus label: a label is a training signal, this is a note to their future self. nullopt
     // means the question was never answered — Skip is one click and must stay indistinguishable
@@ -298,8 +305,11 @@ struct SnapbackEpisode {
     // half would make an interruption log into a browsing history.
     std::string app_name;
     std::string file_hint;
-    std::string started_at;  // when the distraction began
-    std::string ended_at;    // when they returned; the pre-existing `timestamp` column
+    // nullopt where a pre-2.15 row never recorded a start. Optional rather than a sentinel
+    // instant, because the UNIQUE index over (session_id, started_at) relies on those rows
+    // being distinct from one another, which a shared stand-in value would break.
+    std::optional<std::int64_t> started_at_ms;  // when the distraction began
+    std::int64_t ended_at_ms{};  // when they returned; the pre-existing `timestamp` column
     std::uint32_t duration_secs{};
 };
 
@@ -319,7 +329,7 @@ struct ContextSnapshotDto {
     std::string file_hint;
     std::string project_hint;
     std::string summary;
-    std::string timestamp;
+    std::int64_t timestamp_ms{};
 };
 
 // AppRuleRecord.
@@ -328,8 +338,8 @@ struct AppRuleRecord {
     std::string pattern;
     AppRuleKind rule_type{AppRuleKind::Allow};
     std::optional<std::string> note;
-    std::string created_at;
-    std::string updated_at;
+    std::int64_t created_at_ms{};
+    std::int64_t updated_at_ms{};
 };
 
 // UpsertAppRuleRequest.
@@ -528,7 +538,7 @@ struct AnalyticsSummary {
 
 struct SummaryReport {
     std::string window;
-    std::string generated_at;
+    std::int64_t generated_at_ms{};
     std::size_t session_count{};
     std::size_t completed_session_count{};
     std::uint64_t focus_seconds{};

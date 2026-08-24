@@ -1,5 +1,7 @@
 #include "doctest_wrapper.hpp"
 
+#include "time_literals.hpp"
+
 #include <string>
 
 #include "engine/focus_summary.hpp"
@@ -14,7 +16,7 @@ PredictionRecord pred(double score, const char* state, const char* timestamp = n
     PredictionRecord p;
     p.focus_score = score;
     p.focus_state = state;
-    if (timestamp) p.timestamp = timestamp;
+    if (timestamp) p.timestamp_ms = ms(timestamp);
     return p;
 }
 
@@ -150,13 +152,22 @@ TEST_CASE("a backwards clock cannot lengthen a focused stretch") {
     CHECK(s.longest_focus_secs == 30);
 }
 
-TEST_CASE("an unparseable timestamp ends the stretch rather than being invented into it") {
-    // Rows written before timestamps were reliable, or a corrupted value: it cannot be
-    // measured against its neighbours, so it breaks the run instead of joining it at a guess.
+TEST_CASE("a row stamped at the epoch ends the stretch rather than being folded into it") {
+    // This case used to feed the literal string "not a timestamp", which ADR-0007 made
+    // unrepresentable: the field is an integer, so there is no longer a value that fails to
+    // parse. The behaviour it guarded still matters, because the row it described still
+    // exists -- migration 7 maps a value it cannot convert to 0 rather than dropping the row.
+    //
+    // So the input changes and the assertion does not. A 1970 stamp among 2026 ones is a gap
+    // of decades, which is past kFocusRunGapSecs and therefore breaks the run, exactly as an
+    // unparseable value did. The old mechanism was "we could not measure this"; the new one is
+    // "we measured it and it is absurd". Both refuse to invent a distance.
+    auto unknown = pred(70, "PRODUCTIVE");
+    unknown.timestamp_ms = 0;
     std::vector<PredictionRecord> preds{
         pred(70, "PRODUCTIVE", at(0, 0).c_str()),
         pred(70, "PRODUCTIVE", at(0, 40).c_str()),
-        pred(70, "PRODUCTIVE", "not a timestamp"),
+        unknown,
         pred(70, "PRODUCTIVE", at(1, 0).c_str()),
         pred(70, "PRODUCTIVE", at(1, 10).c_str()),
     };

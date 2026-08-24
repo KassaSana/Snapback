@@ -97,7 +97,7 @@ export function FocusStateHero({
             <span className="hero-sep" aria-hidden="true">
               ·
             </span>
-            {formatTime(prediction?.timestamp ?? null)}
+            {formatTime(prediction?.timestampMs ?? null)}
           </p>
 
           {caveat ? <p className="hero-caveat">{caveat}</p> : null}

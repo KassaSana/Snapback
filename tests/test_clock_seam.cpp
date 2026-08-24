@@ -13,6 +13,8 @@
 // exists.
 #include "doctest_wrapper.hpp"
 
+#include "time_literals.hpp"
+
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -52,7 +54,7 @@ TEST_CASE("an injected clock supplies the timestamps AppState stamps") {
     Harness harness;
 
     const auto report = harness.state->summary_report("day");
-    CHECK(report.generated_at.rfind("2023-11-14T22:13:20", 0) == 0);
+    CHECK(rfc3339_from_unix_ms(report.generated_at_ms) == "2023-11-14T22:13:20Z");
 }
 
 TEST_CASE("advancing the injected clock moves the timestamps AppState writes") {
@@ -60,12 +62,12 @@ TEST_CASE("advancing the injected clock moves the timestamps AppState writes") {
     // and seeing the next stamp move is what proves the read is live rather than memoised.
     Harness harness;
 
-    const auto before = harness.state->summary_report("day").generated_at;
+    const auto before = harness.state->summary_report("day").generated_at_ms;
     harness.clock.advance_minutes(90);
-    const auto after = harness.state->summary_report("day").generated_at;
+    const auto after = harness.state->summary_report("day").generated_at_ms;
 
-    CHECK(before.rfind("2023-11-14T22:13:20", 0) == 0);
-    CHECK(after.rfind("2023-11-14T23:43:20", 0) == 0);  // 22:13:20 + 90 min
+    CHECK(rfc3339_from_unix_ms(before) == "2023-11-14T22:13:20Z");
+    CHECK(rfc3339_from_unix_ms(after) == "2023-11-14T23:43:20Z");  // 22:13:20 + 90 min
     CHECK(after > before);
 }
 
@@ -117,12 +119,13 @@ TEST_CASE("AppState still uses the real clock when none is injected") {
     REQUIRE(storage.has_value());
     AppState state(std::move(*storage));
 
-    const auto generated_at = state.summary_report("day").generated_at;
-    // Anything but the fake's frozen 2023 stamp. Asserting the shape rather than an exact
-    // value keeps this from becoming a test that expires.
-    CHECK(generated_at.rfind("2023-11-14T22:13:20", 0) != 0);
-    CHECK(generated_at.size() == 20);
-    CHECK(generated_at.back() == 'Z');
+    const auto generated_at_ms = state.summary_report("day").generated_at_ms;
+    // Anything but the fake's frozen 2023 stamp. Asserting a lower bound rather than an exact
+    // value keeps this from becoming a test that expires -- and it is now an integer
+    // comparison rather than a prefix match, which is the readability ADR-0007 trades away at
+    // the storage layer and buys back at every comparison.
+    CHECK(generated_at_ms != ms("2023-11-14T22:13:20Z"));
+    CHECK(generated_at_ms > ms("2026-01-01T00:00:00Z"));
 }
 
 // ADR-0007. The wall clock reads milliseconds; `wall_time()` is a derived convenience for the

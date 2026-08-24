@@ -31,8 +31,8 @@ const boundary = vi.hoisted(() => {
     goal: "Write tests",
     status: "ACTIVE",
     focus_mode: "normal",
-    started_at: "2026-07-11T00:00:00Z",
-    ended_at: null,
+    started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+    ended_at_ms: null,
     ...overrides,
   });
 
@@ -53,7 +53,7 @@ const boundary = vi.hoisted(() => {
           focus_mode: String(args?.focusMode ?? "normal"),
         });
       case "stop_session":
-        return session({ status: "COMPLETED", ended_at: "2026-07-11T00:30:00Z" });
+        return session({ status: "COMPLETED", ended_at_ms: Date.parse("2026-07-11T00:30:00Z") });
       case "get_session_recap":
         return { session_id: "sess-42", goal: "Write tests", duration_secs: 1800 };
       case "get_prediction_history":
@@ -97,8 +97,8 @@ const historyRow = (goal: string, focusMode: string) => ({
     goal,
     status: "COMPLETED",
     focus_mode: focusMode,
-    started_at: "2026-07-10T09:00:00Z",
-    ended_at: "2026-07-10T10:00:00Z",
+    started_at_ms: Date.parse("2026-07-10T09:00:00Z"),
+    ended_at_ms: Date.parse("2026-07-10T10:00:00Z"),
   },
   recap: {},
 });
@@ -289,7 +289,7 @@ describe("session cockpit", () => {
 
   it("leads with elapsed time and keeps the session id as technical detail", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-07-11T00:12:34Z"));
+    vi.setSystemTime(new Date(Date.parse("2026-07-11T00:12:34Z")));
 
     render(<App />);
     const card = await sessionCard();

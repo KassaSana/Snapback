@@ -42,7 +42,7 @@ struct PersonalArchiveSession {
 };
 
 struct PersonalArchive {
-    std::string generated_at;
+    std::int64_t generated_at_ms{};
     std::string app_version;
     std::vector<PersonalArchiveSession> sessions;
     // True when older sessions exist beyond the export's session cap.

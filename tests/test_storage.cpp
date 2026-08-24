@@ -1,5 +1,7 @@
 #include "doctest_wrapper.hpp"
 
+#include "time_literals.hpp"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -68,7 +70,7 @@ PredictionRecord prediction(const std::string& session_id, double focus, double 
     p.thrash_score = risk >= 0.7 ? 1.0 : 0.0;
     p.drift_score = 0.1;
     p.goal_alignment = 0.6;
-    p.timestamp = "2026-07-11T19:00:00Z";
+    p.timestamp_ms = ms("2026-07-11T19:00:00Z");
     p.model_id = "test:model-v1";
     return p;
 }
@@ -104,8 +106,8 @@ TEST_CASE("storage session lifecycle keeps only one active session") {
     auto first = storage->create_session("First goal", FocusMode::Normal);
     CHECK(first.status == "ACTIVE");
     CHECK(first.focus_mode == "normal");
-    CHECK(first.started_at.has_value());
-    CHECK(first.ended_at == std::nullopt);
+    CHECK(first.started_at_ms.has_value());
+    CHECK(first.ended_at_ms == std::nullopt);
 
     auto second = storage->create_session("Second goal", FocusMode::Deep);
     auto active = storage->active_session();
@@ -151,7 +153,7 @@ TEST_CASE("storage keeps the previous session active when the replacement insert
     CHECK(active->session_id == first.session_id);
     CHECK(active->goal == "First goal");
     CHECK(active->status == "ACTIVE");
-    CHECK(active->ended_at == std::nullopt);
+    CHECK(active->ended_at_ms == std::nullopt);
 
     // And nothing half-written survived: no COMPLETED first session, no orphan replacement.
     CHECK(storage->recent_sessions(10).size() == 1);
@@ -234,7 +236,7 @@ TEST_CASE("delete all activity data preserves user configuration") {
     ContextSnapshotDto context;
     context.app_name = "Editor";
     context.window_title = "private.txt";
-    context.timestamp = "2026-07-11T19:00:00Z";
+    context.timestamp_ms = ms("2026-07-11T19:00:00Z");
     storage->save_context_snapshot(session.session_id, context);
     storage->upsert_app_rule("Editor", AppRuleKind::Allow, std::nullopt);
 
@@ -275,12 +277,12 @@ TEST_CASE("session spans accumulate only attended time") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("attended", FocusMode::Normal);
 
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
-    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
-    storage->begin_session_span(session.session_id, "2026-08-05T10:00:00Z");
-    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T10:10:00Z"));
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
+    REQUIRE(storage->close_session_span(session.session_id, ms("2026-08-05T09:10:00Z")));
+    storage->begin_session_span(session.session_id, ms("2026-08-05T10:00:00Z"));
+    REQUIRE(storage->close_session_span(session.session_id, ms("2026-08-05T10:10:00Z")));
 
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T11:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T11:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 20 * 60);
     CHECK_FALSE(storage->has_open_span(session.session_id));
@@ -296,17 +298,17 @@ TEST_CASE("a span cannot be opened on a session that is no longer ACTIVE") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("stopped", FocusMode::Normal);
 
-    REQUIRE(storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z"));
-    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
+    REQUIRE(storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z")));
+    REQUIRE(storage->close_session_span(session.session_id, ms("2026-08-05T09:10:00Z")));
     storage->stop_session(session.session_id);
 
-    CHECK_FALSE(storage->begin_session_span(session.session_id, "2026-08-05T09:20:00Z"));
+    CHECK_FALSE(storage->begin_session_span(session.session_id, ms("2026-08-05T09:20:00Z")));
     CHECK_FALSE(storage->begin_session_span_now(session.session_id));
     CHECK_FALSE(storage->has_open_span(session.session_id));
 
     // The refusal changes nothing at all -- in particular it does not re-stamp the closed
     // span, so the session's attended time is exactly what it was before the stale write.
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T11:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T11:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 10 * 60);
 }
@@ -314,7 +316,7 @@ TEST_CASE("a span cannot be opened on a session that is no longer ACTIVE") {
 TEST_CASE("a refused span leaves an unknown session untouched") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
-    CHECK_FALSE(storage->begin_session_span("no-such-session", "2026-08-05T09:00:00Z"));
+    CHECK_FALSE(storage->begin_session_span("no-such-session", ms("2026-08-05T09:00:00Z")));
     CHECK_FALSE(storage->has_open_span("no-such-session"));
 }
 
@@ -323,10 +325,10 @@ TEST_CASE("an open span counts up to now") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("in progress", FocusMode::Normal);
 
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
     CHECK(storage->has_open_span(session.session_id));
 
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T09:30:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T09:30:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 30 * 60);
 }
@@ -339,7 +341,7 @@ TEST_CASE("a session with no spans reports no active time, not zero") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("unmeasured", FocusMode::Normal);
 
-    CHECK_FALSE(storage->active_secs(session.session_id, "2026-08-05T09:00:00Z").has_value());
+    CHECK_FALSE(storage->active_secs(session.session_id, ms("2026-08-05T09:00:00Z")).has_value());
     CHECK_FALSE(storage->has_open_span(session.session_id));
 }
 
@@ -350,10 +352,10 @@ TEST_CASE("reopening a span closes the previous one instead of overlapping it") 
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("overlap", FocusMode::Normal);
 
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
-    storage->begin_session_span(session.session_id, "2026-08-05T09:30:00Z");  // no close between
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:30:00Z"));  // no close between
 
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T10:00:00Z"));
     REQUIRE(active.has_value());
     // 09:00-09:30 closed by the reopen, plus 09:30-10:00 still open. Sixty minutes, not
     // ninety -- which is what overlapping spans would have produced.
@@ -365,12 +367,12 @@ TEST_CASE("closing a span twice is not an error and does not extend it") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("idempotent", FocusMode::Normal);
 
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
-    CHECK(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
+    CHECK(storage->close_session_span(session.session_id, ms("2026-08-05T09:10:00Z")));
     // Already paused: nothing open, so nothing to close. An ordinary outcome.
-    CHECK_FALSE(storage->close_session_span(session.session_id, "2026-08-05T09:20:00Z"));
+    CHECK_FALSE(storage->close_session_span(session.session_id, ms("2026-08-05T09:20:00Z")));
 
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T10:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 10 * 60);
 }
@@ -382,10 +384,10 @@ TEST_CASE("a backwards clock cannot make a span subtract time") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("time travel", FocusMode::Normal);
 
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
-    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T08:00:00Z"));
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
+    REQUIRE(storage->close_session_span(session.session_id, ms("2026-08-05T08:00:00Z")));
 
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T10:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 0);
 }
@@ -400,26 +402,26 @@ TEST_CASE("a dangling span closes at the newest evidence across every source") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("crashed", FocusMode::Normal);
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
 
     ContextSnapshotDto snapshot;
     snapshot.app_name = "Cursor";
     snapshot.window_title = "storage.cpp";
     snapshot.summary = "editing";
-    snapshot.timestamp = "2026-08-05T09:45:00Z";  // the newest, and deliberately written first
+    snapshot.timestamp_ms = ms("2026-08-05T09:45:00Z");  // the newest, and deliberately written first
     storage->save_context_snapshot(session.session_id, snapshot);
 
     PredictionRecord prediction;
     prediction.session_id = session.session_id;
-    prediction.timestamp = "2026-08-05T09:20:00Z";
+    prediction.timestamp_ms = ms("2026-08-05T09:20:00Z");
     storage->insert_prediction(prediction);
 
     const auto closed_at = storage->close_dangling_session_span(session.session_id);
     REQUIRE(closed_at.has_value());
-    CHECK(*closed_at == "2026-08-05T09:45:00Z");
+    CHECK(*closed_at == ms("2026-08-05T09:45:00Z"));
     CHECK_FALSE(storage->has_open_span(session.session_id));
 
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T18:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T18:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 45 * 60);  // not the nine hours since
 }
@@ -428,13 +430,13 @@ TEST_CASE("a dangling span with no evidence closes where it started") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("silent", FocusMode::Normal);
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
 
     const auto closed_at = storage->close_dangling_session_span(session.session_id);
     REQUIRE(closed_at.has_value());
-    CHECK(*closed_at == "2026-08-05T09:00:00Z");
+    CHECK(*closed_at == ms("2026-08-05T09:00:00Z"));
 
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T18:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T18:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 0);
 }
@@ -449,14 +451,14 @@ TEST_CASE("evidence older than the span does not shorten it") {
 
     PredictionRecord prediction;
     prediction.session_id = session.session_id;
-    prediction.timestamp = "2026-08-05T08:00:00Z";
+    prediction.timestamp_ms = ms("2026-08-05T08:00:00Z");
     storage->insert_prediction(prediction);
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
 
     const auto closed_at = storage->close_dangling_session_span(session.session_id);
     REQUIRE(closed_at.has_value());
-    CHECK(*closed_at == "2026-08-05T09:00:00Z");
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T18:00:00Z");
+    CHECK(*closed_at == ms("2026-08-05T09:00:00Z"));
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T18:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 0);
 }
@@ -467,13 +469,13 @@ TEST_CASE("closing a dangling span reports nothing when none is open") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("clean", FocusMode::Normal);
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
-    REQUIRE(storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z"));
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
+    REQUIRE(storage->close_session_span(session.session_id, ms("2026-08-05T09:10:00Z")));
 
     CHECK_FALSE(storage->close_dangling_session_span(session.session_id).has_value());
     CHECK_FALSE(storage->close_dangling_session_span("no-such-session").has_value());
     // The already-closed span is untouched.
-    const auto active = storage->active_secs(session.session_id, "2026-08-05T10:00:00Z");
+    const auto active = storage->active_secs(session.session_id, ms("2026-08-05T10:00:00Z"));
     REQUIRE(active.has_value());
     CHECK(*active == 10 * 60);
 }
@@ -485,21 +487,21 @@ TEST_CASE("deleting a session deletes its spans") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("doomed", FocusMode::Normal);
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
-    storage->close_session_span(session.session_id, "2026-08-05T09:10:00Z");
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
+    storage->close_session_span(session.session_id, ms("2026-08-05T09:10:00Z"));
 
     REQUIRE(storage->delete_session(session.session_id));
-    CHECK_FALSE(storage->active_secs(session.session_id, "2026-08-05T10:00:00Z").has_value());
+    CHECK_FALSE(storage->active_secs(session.session_id, ms("2026-08-05T10:00:00Z")).has_value());
 }
 
 TEST_CASE("deleting all activity deletes spans too") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("wiped", FocusMode::Normal);
-    storage->begin_session_span(session.session_id, "2026-08-05T09:00:00Z");
+    storage->begin_session_span(session.session_id, ms("2026-08-05T09:00:00Z"));
 
     storage->delete_all_activity_data();
-    CHECK_FALSE(storage->active_secs(session.session_id, "2026-08-05T10:00:00Z").has_value());
+    CHECK_FALSE(storage->active_secs(session.session_id, ms("2026-08-05T10:00:00Z")).has_value());
 }
 
 TEST_CASE("migrating an existing database backs it up first") {
@@ -631,7 +633,7 @@ TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
 
     // A row written by this build carries its provenance through the migrated file.
     auto stamped = prediction("legacy", 60.0, 0.3, "DISTRACTED");
-    stamped.timestamp = "2026-07-11T20:00:00Z";
+    stamped.timestamp_ms = ms("2026-07-11T20:00:00Z");
     stamped.state_source = "risk";
     storage->insert_prediction(stamped);
     const auto newest = storage->latest_prediction();
@@ -720,8 +722,10 @@ TEST_CASE("a pre-2.15 snapback row survives the episode migration with no invent
     const auto episodes = reopened->list_snapback_episodes(session_id, 10);
     REQUIRE(episodes.size() == 1);
     CHECK(episodes[0].summary == "Return to old.cpp");
-    CHECK(episodes[0].ended_at == "2026-07-30T09:00:00Z");
-    CHECK(episodes[0].started_at.empty());  // unknowable, and left that way
+    CHECK(episodes[0].ended_at_ms == ms("2026-07-30T09:00:00Z"));
+    // nullopt rather than an empty string now: the column is NULL, and ADR-0007 kept that
+    // distinct from an instant precisely so "nobody recorded this" stays sayable.
+    CHECK_FALSE(episodes[0].started_at_ms.has_value());  // unknowable, and left that way
     CHECK(episodes[0].duration_secs == 0);
 
     // And the new UNIQUE index tolerates it: a NULL started_at is distinct from every other
@@ -747,8 +751,8 @@ TEST_CASE("an episode is written once, however many times it is offered") {
     episode.summary = "Return to state.cpp";
     episode.app_name = "Cursor";
     episode.file_hint = "state.cpp";
-    episode.started_at = "2026-07-30T09:10:00Z";
-    episode.ended_at = "2026-07-30T09:12:00Z";
+    episode.started_at_ms = ms("2026-07-30T09:10:00Z");
+    episode.ended_at_ms = ms("2026-07-30T09:12:00Z");
     episode.duration_secs = 120;
 
     CHECK(storage->insert_snapback_episode(episode));
@@ -769,7 +773,7 @@ TEST_CASE("an episode is written once, however many times it is offered") {
 
     // A later interruption is a different episode.
     auto later = episode;
-    later.started_at = "2026-07-30T11:00:00Z";
+    later.started_at_ms = ms("2026-07-30T11:00:00Z");
     CHECK(storage->insert_snapback_episode(later));
     CHECK(storage->recap(session.session_id).snapback_count == 2);
 }
@@ -1031,7 +1035,7 @@ ContextSnapshotDto snapshot(const std::string& app, const std::string& timestamp
     snap.app_name = app;
     snap.window_title = app + " window";
     snap.summary = "in " + app;
-    snap.timestamp = timestamp;
+    snap.timestamp_ms = ms(timestamp);
     return snap;
 }
 
@@ -1112,7 +1116,7 @@ TEST_CASE("recent_session_summaries keeps aggregates attached under same-second 
         const auto session = storage->create_session("tie" + std::to_string(i), FocusMode::Normal);
         const double focus = 10.0 * (i + 1);
         storage->insert_prediction(prediction(session.session_id, focus, 0.2, "PRODUCTIVE"));
-        storage->backdate_session_for_test(session.session_id, "2026-07-11T19:00:00Z");
+        storage->backdate_session_for_test(session.session_id, ms("2026-07-11T19:00:00Z"));
         expected_focus[session.session_id] = focus;
     }
 
@@ -1205,7 +1209,7 @@ TEST_CASE("context_app_counts honours the session limit and skips blank app name
     // Backdate the older session explicitly. Both were created in the same wall-clock
     // second, and started_at has only second resolution (ROADMAP 7.16), so without this the
     // LIMIT 1 below would pick between two tied rows arbitrarily and the test would flake.
-    storage->backdate_session_for_test(older.session_id, "2020-01-01T00:00:00Z");
+    storage->backdate_session_for_test(older.session_id, ms("2020-01-01T00:00:00Z"));
 
     const auto one_session = storage->context_app_counts(1, 100);
     CHECK(one_session.count("Newer") == 1);
@@ -1221,9 +1225,9 @@ TEST_CASE("context_app_counts filters by session start when given a cutoff") {
 
     // The session was created moments ago, so a far-future cutoff excludes it and a past
     // one keeps it.
-    CHECK(storage->context_app_counts(10, 100, std::string("2099-01-01T00:00:00Z")).empty());
+    CHECK(storage->context_app_counts(10, 100, ms("2099-01-01T00:00:00Z")).empty());
     const auto included =
-        storage->context_app_counts(10, 100, std::string("2000-01-01T00:00:00Z"));
+        storage->context_app_counts(10, 100, ms("2000-01-01T00:00:00Z"));
     CHECK(included.at("Cursor") == 1);
 }
 
@@ -1432,14 +1436,14 @@ TEST_CASE("storage prune_runtime_data removes old rows from all three runtime ta
     const auto session = storage->create_session("Retention", FocusMode::Normal);
 
     PredictionRecord old_pred = prediction(session.session_id, 50.0, 0.2, "PRODUCTIVE");
-    old_pred.timestamp = "2020-01-01T00:00:00Z";
+    old_pred.timestamp_ms = ms("2020-01-01T00:00:00Z");
     storage->insert_prediction(old_pred);
 
     ContextSnapshotDto old_ctx;
     old_ctx.app_name = "Cursor";
     old_ctx.window_title = "old.cpp";
     old_ctx.summary = "old context";
-    old_ctx.timestamp = "2020-01-01T00:00:00Z";
+    old_ctx.timestamp_ms = ms("2020-01-01T00:00:00Z");
     storage->save_context_snapshot(session.session_id, old_ctx);
 
     // insert_feature_snapshot stamps rows with unix_now_secs(), so this row is "now" and
@@ -1502,7 +1506,7 @@ TEST_CASE("Storage::open routes the startup prune message through an injected lo
         REQUIRE(storage.has_value());
         const auto session = storage->create_session("Retention", FocusMode::Normal);
         PredictionRecord old_pred = prediction(session.session_id, 50.0, 0.2, "PRODUCTIVE");
-        old_pred.timestamp = "2000-01-01T00:00:00Z";
+        old_pred.timestamp_ms = ms("2000-01-01T00:00:00Z");
         storage->insert_prediction(old_pred);
     }
 
@@ -1572,13 +1576,13 @@ TEST_CASE("storage prediction windows stay in SQL and preserve the cutoff") {
 
     const auto session = storage->create_session("Prediction window", FocusMode::Normal);
     auto before = prediction(session.session_id, 40.0, 0.8, "DISTRACTED");
-    before.timestamp = "2026-07-09T00:00:00Z";
+    before.timestamp_ms = ms("2026-07-09T00:00:00Z");
     auto after = prediction(session.session_id, 80.0, 0.2, "PRODUCTIVE");
-    after.timestamp = "2026-07-11T00:00:00Z";
+    after.timestamp_ms = ms("2026-07-11T00:00:00Z");
     storage->insert_prediction(before);
     storage->insert_prediction(after);
 
-    const auto rows = storage->predictions_since("2026-07-10T00:00:00Z");
+    const auto rows = storage->predictions_since(ms("2026-07-10T00:00:00Z"));
     REQUIRE(rows.size() == 1);
     CHECK(rows.front().focus_score == 80.0);
 }
@@ -1676,7 +1680,7 @@ struct LargeFixture {
             const int day = 20 - static_cast<int>(s % 20);
             char started[32];
             std::snprintf(started, sizeof(started), "2026-07-%02dT08:00:00Z", day);
-            storage.backdate_session_for_test(session.session_id, started);
+            storage.backdate_session_for_test(session.session_id, ms(started));
 
             for (std::size_t p = 0; p < kPredictionsPerSession; ++p) {
                 auto record = prediction(session.session_id, 40.0 + (p % 60),
@@ -1686,7 +1690,7 @@ struct LargeFixture {
                 std::snprintf(stamp, sizeof(stamp), "2026-07-%02dT%02d:%02d:%02dZ", day,
                               8 + static_cast<int>(p / 60) % 12,
                               static_cast<int>(p % 60), static_cast<int>(p % 60));
-                record.timestamp = stamp;
+                record.timestamp_ms = ms(stamp);
                 storage.insert_prediction(record);
                 if (day == 20) ++recent_predictions;
             }
@@ -1697,7 +1701,7 @@ struct LargeFixture {
                 snap.window_title = "file" + std::to_string(c) + ".cpp";
                 std::snprintf(started, sizeof(started), "2026-07-%02dT09:%02d:00Z", day,
                               static_cast<int>(c));
-                snap.timestamp = started;
+                snap.timestamp_ms = ms(started);
                 storage.save_context_snapshot(session.session_id, snap);
             }
             storage.end_session(session.session_id);
@@ -1731,12 +1735,12 @@ TEST_CASE("a large database answers window queries past the old row cap") {
 
     // A window that excludes most of the corpus must still be computed in SQL over the whole
     // table, not over a truncated prefix of it.
-    const auto windowed = storage->predictions_since("2026-07-20T00:00:00Z");
+    const auto windowed = storage->predictions_since(ms("2026-07-20T00:00:00Z"));
     CHECK(windowed.size() == fixture.recent_predictions);
     CHECK(windowed.size() > 0);
     CHECK(windowed.size() < all.size());
     for (const auto& row : windowed) {
-        CHECK(row.timestamp >= "2026-07-20T00:00:00Z");
+        CHECK(row.timestamp_ms >= ms("2026-07-20T00:00:00Z"));
     }
 }
 
@@ -1855,7 +1859,7 @@ ReferenceStats fold_in_cpp(const std::vector<PredictionRecord>& predictions) {
         if (prediction.focus_state == "DISTRACTED") {
             ++out.distracted_count;
         }
-        const int hour = local_hour_from_rfc3339(prediction.timestamp);
+        const int hour = local_hour_from_rfc3339(rfc3339_from_unix_ms(prediction.timestamp_ms));
         if (hour < 0 || hour >= 24) continue;
         auto& bucket = buckets[static_cast<std::size_t>(hour)];
         ++bucket.count;
@@ -1886,9 +1890,9 @@ TEST_CASE("SQL prediction aggregates match the C++ fold they replaced, at 12,000
     LargeFixture fixture;
     fixture.seed(*storage);
 
-    for (const std::optional<std::string> cutoff :
-         {std::optional<std::string>{}, std::optional<std::string>{"2026-07-20T00:00:00Z"}}) {
-        CAPTURE(cutoff.value_or("(none)"));
+    for (const std::optional<std::int64_t> cutoff :
+         {std::optional<std::int64_t>{}, std::optional<std::int64_t>{ms("2026-07-20T00:00:00Z")}}) {
+        CAPTURE(cutoff.value_or(0));
         const auto expected = fold_in_cpp(storage->predictions_since(cutoff));
         const auto actual = storage->prediction_stats(cutoff);
 
@@ -1962,12 +1966,12 @@ TEST_CASE("SQL session-window totals match the summary loop they replaced") {
     LargeFixture fixture;
     fixture.seed(*storage);
 
-    const std::string cutoff = "2026-07-20T00:00:00Z";
+    const std::int64_t cutoff = ms("2026-07-20T00:00:00Z");
     const auto reference = [&](std::size_t limit) {
         Storage::SessionWindowTotals totals;
         for (const auto& summary : storage->recent_session_summaries(limit)) {
             const auto& session = summary.record;
-            if (!session.started_at || *session.started_at < cutoff) continue;
+            if (!session.started_at_ms || *session.started_at_ms < cutoff) continue;
             ++totals.session_count;
             if (session.status == "COMPLETED") {
                 ++totals.completed_session_count;
@@ -2009,7 +2013,7 @@ TEST_CASE("the analytics aggregates run in a bounded number of queries") {
     CHECK(storage->count_statements_for_test(
               [&] { (void)storage->productive_session_streak(200, 70.0); }) == 1);
     CHECK(storage->count_statements_for_test([&] {
-              (void)storage->session_window_totals(500, "2026-07-20T00:00:00Z");
+              (void)storage->session_window_totals(500, ms("2026-07-20T00:00:00Z"));
           }) == 1);
 
     // What it replaced, for contrast: five statements per completed session. Without this the
@@ -2181,7 +2185,7 @@ TEST_CASE("attended time counts durable spans and nothing else") {
 
     // A session that is open for an hour but attended for thirty minutes reports thirty.
     seed_span(*storage, session.session_id, "2026-08-09T10:00:00Z", "2026-08-09T10:30:00Z");
-    const auto day = storage->attended_secs_in_local_day("2026-08-09T12:00:00Z");
+    const auto day = storage->attended_secs_in_local_day(ms("2026-08-09T12:00:00Z"));
     CHECK(day == 30 * 60);
 }
 
@@ -2191,8 +2195,8 @@ TEST_CASE("a session with no spans contributes nothing rather than its open dura
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     storage->create_session("legacy, never measured", FocusMode::Normal);
-    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") == 0);
-    CHECK(storage->attended_secs_in_local_week("2026-08-09T12:00:00Z") == 0);
+    CHECK(storage->attended_secs_in_local_day(ms("2026-08-09T12:00:00Z")) == 0);
+    CHECK(storage->attended_secs_in_local_week(ms("2026-08-09T12:00:00Z")) == 0);
 }
 
 TEST_CASE("a span outside the window does not leak into it") {
@@ -2200,7 +2204,7 @@ TEST_CASE("a span outside the window does not leak into it") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("yesterday", FocusMode::Normal);
     seed_span(*storage, session.session_id, "2026-08-01T10:00:00Z", "2026-08-01T11:00:00Z");
-    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") == 0);
+    CHECK(storage->attended_secs_in_local_day(ms("2026-08-09T12:00:00Z")) == 0);
 }
 
 TEST_CASE("an open span is counted only up to now, not to the end of time") {
@@ -2210,7 +2214,7 @@ TEST_CASE("an open span is counted only up to now, not to the end of time") {
     storage->execute_for_test("INSERT INTO session_spans (session_id, started_at) VALUES ('" +
                               session.session_id + "', " +
                               ms_literal("2026-08-09T10:00:00Z") + ")");
-    CHECK(storage->attended_secs_in_local_day("2026-08-09T10:20:00Z") == 20 * 60);
+    CHECK(storage->attended_secs_in_local_day(ms("2026-08-09T10:20:00Z")) == 20 * 60);
 }
 
 TEST_CASE("the week window holds a day the daily window does not") {
@@ -2219,11 +2223,11 @@ TEST_CASE("the week window holds a day the daily window does not") {
     const auto session = storage->create_session("earlier this week", FocusMode::Normal);
     // 2026-08-09 is a Sunday; the ISO week containing it began Monday 2026-08-03.
     seed_span(*storage, session.session_id, "2026-08-05T10:00:00Z", "2026-08-05T10:45:00Z");
-    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") == 0);
-    CHECK(storage->attended_secs_in_local_week("2026-08-09T12:00:00Z") == 45 * 60);
+    CHECK(storage->attended_secs_in_local_day(ms("2026-08-09T12:00:00Z")) == 0);
+    CHECK(storage->attended_secs_in_local_week(ms("2026-08-09T12:00:00Z")) == 45 * 60);
 
     // ...and not into the week before it.
-    CHECK(storage->attended_secs_in_local_week("2026-08-02T12:00:00Z") == 0);
+    CHECK(storage->attended_secs_in_local_week(ms("2026-08-02T12:00:00Z")) == 0);
 }
 
 TEST_CASE("a Monday sees its own week rather than the one that just ended") {
@@ -2233,7 +2237,7 @@ TEST_CASE("a Monday sees its own week rather than the one that just ended") {
     REQUIRE(storage.has_value());
     const auto session = storage->create_session("monday morning", FocusMode::Normal);
     seed_span(*storage, session.session_id, "2026-08-03T09:00:00Z", "2026-08-03T09:30:00Z");
-    CHECK(storage->attended_secs_in_local_week("2026-08-03T12:00:00Z") == 30 * 60);
+    CHECK(storage->attended_secs_in_local_week(ms("2026-08-03T12:00:00Z")) == 30 * 60);
 }
 
 TEST_CASE("attended minutes are whole and never rounded up") {
@@ -2242,7 +2246,7 @@ TEST_CASE("attended minutes are whole and never rounded up") {
     const auto session = storage->create_session("partial", FocusMode::Normal);
     seed_span(*storage, session.session_id, "2026-08-09T10:00:00Z", "2026-08-09T10:00:59Z");
     // 59 seconds of presence is not a minute of attendance.
-    CHECK(storage->attended_secs_in_local_day("2026-08-09T12:00:00Z") / 60 == 0);
+    CHECK(storage->attended_secs_in_local_day(ms("2026-08-09T12:00:00Z")) / 60 == 0);
 }
 
 TEST_CASE("attended_secs_since clips to an arbitrary Review lower bound") {
@@ -2255,10 +2259,10 @@ TEST_CASE("attended_secs_since clips to an arbitrary Review lower bound") {
     seed_span(*storage, session.session_id, "2026-08-08T10:00:00Z", "2026-08-08T10:20:00Z");
 
     // Floor after the first span: only the second twenty minutes remain.
-    CHECK(storage->attended_secs_since("2026-08-09T12:00:00Z",
-                                       std::string("2026-08-05T00:00:00Z")) == 20 * 60);
+    CHECK(storage->attended_secs_since(ms("2026-08-09T12:00:00Z"),
+                                       ms("2026-08-05T00:00:00Z")) == 20 * 60);
     // No floor: both spans.
-    CHECK(storage->attended_secs_since("2026-08-09T12:00:00Z", std::nullopt) == 50 * 60);
+    CHECK(storage->attended_secs_since(ms("2026-08-09T12:00:00Z"), std::nullopt) == 50 * 60);
 }
 
 // --- ADR-0007 / Roadmap 7.16: time is INTEGER epoch milliseconds ---------------------------
@@ -2314,7 +2318,7 @@ TEST_CASE("every time column stores an integer after an ordinary write") {
         snap.file_hint = "storage.cpp";
         snap.project_hint = "Snapback";
         snap.summary = "editing";
-        snap.timestamp = "2026-08-09T10:00:00Z";
+        snap.timestamp_ms = ms("2026-08-09T10:00:00Z");
         storage->save_context_snapshot(session_id, snap);
 
         storage->insert_label(session_id, FocusLabel::Productive, "manual", std::nullopt);
@@ -2328,8 +2332,8 @@ TEST_CASE("every time column stores an integer after an ordinary write") {
         SnapbackEpisode episode;
         episode.session_id = session_id;
         episode.summary = "back to storage.cpp";
-        episode.started_at = "2026-08-09T10:05:00Z";
-        episode.ended_at = "2026-08-09T10:09:00Z";
+        episode.started_at_ms = ms("2026-08-09T10:05:00Z");
+        episode.ended_at_ms = ms("2026-08-09T10:09:00Z");
         episode.duration_secs = 240;
         REQUIRE(storage->insert_snapback_episode(episode));
     }
@@ -2350,7 +2354,7 @@ TEST_CASE("every time column stores an integer after an ordinary write") {
     REQUIRE(reopened.has_value());
     const auto rows = reopened->list_context_snapshots(session_id, 10);
     REQUIRE(rows.size() == 1);
-    CHECK(rows[0].timestamp == "2026-08-09T10:00:00Z");
+    CHECK(rows[0].timestamp_ms == ms("2026-08-09T10:00:00Z"));
 }
 
 TEST_CASE("migrating a v6 database converts its timestamps rather than reinterpreting them") {
@@ -2384,13 +2388,13 @@ TEST_CASE("migrating a v6 database converts its timestamps rather than reinterpr
         // The same instants, in a new representation -- not reinterpreted, and not lost.
         const auto session = reopened->get_session(session_id);
         REQUIRE(session.has_value());
-        CHECK(session->started_at == "2026-08-09T10:00:00Z");
-        REQUIRE(session->ended_at.has_value());
-        CHECK(*session->ended_at == "2026-08-09T11:00:00Z");
+        CHECK(session->started_at_ms == ms("2026-08-09T10:00:00Z"));
+        REQUIRE(session->ended_at_ms.has_value());
+        CHECK(*session->ended_at_ms == ms("2026-08-09T11:00:00Z"));
 
         const auto predictions = reopened->recent_predictions(10);
         REQUIRE(predictions.size() == 1);
-        CHECK(predictions[0].timestamp == "2026-08-09T10:30:00Z");
+        CHECK(predictions[0].timestamp_ms == ms("2026-08-09T10:30:00Z"));
     }
     CHECK(cell_type(temp.path, "sessions", "started_at") == "integer");
 }
@@ -2474,7 +2478,7 @@ TEST_CASE("the retention delete can use the timestamp index") {
 
 TEST_CASE("migration keeps a genuine NULL and floors an unparseable value to the epoch") {
     // The two halves of the conversion rule, which are deliberately different. NULL is
-    // load-bearing -- on sessions.ended_at it means "still running" -- so folding a bad value
+    // load-bearing -- on sessions.ended_at_ms it means "still running" -- so folding a bad value
     // into NULL would resurrect a completed session as an active one. An unparseable value
     // becomes 0 instead, which is prunable rather than immortal.
     TempDir temp;
@@ -2503,10 +2507,10 @@ TEST_CASE("migration keeps a genuine NULL and floors an unparseable value to the
 
     const auto running = reopened->get_session(running_id);
     REQUIRE(running.has_value());
-    CHECK_FALSE(running->ended_at.has_value());  // still open, not stamped with an invented end
+    CHECK_FALSE(running->ended_at_ms.has_value());  // still open, not stamped with an invented end
 
     const auto broken = reopened->get_session(broken_id);
     REQUIRE(broken.has_value());
-    REQUIRE(broken->ended_at.has_value());  // still completed, rather than resurrected
-    CHECK(*broken->ended_at == "1970-01-01T00:00:00Z");
+    REQUIRE(broken->ended_at_ms.has_value());  // still completed, rather than resurrected
+    CHECK(*broken->ended_at_ms == ms("1970-01-01T00:00:00Z"));
 }

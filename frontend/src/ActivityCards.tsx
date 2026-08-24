@@ -43,11 +43,11 @@ export function ActivityCards({
           ) : (
             predictionHistory.map((entry) => (
               <li
-                key={`${entry.timestamp}-${entry.sessionId}-${entry.focusScore}`}
+                key={`${entry.timestampMs}-${entry.sessionId}-${entry.focusScore}`}
                 className="history-item"
               >
                 <div>
-                  <p className="history-time">{formatTime(entry.timestamp)}</p>
+                  <p className="history-time">{formatTime(entry.timestampMs)}</p>
                   <p className="history-session">{focusStateLabel(entry.focusState)}</p>
                 </div>
                 <div className="history-metrics">
@@ -85,13 +85,13 @@ export function ActivityCards({
                   const rule = appRules ? getAppRuleForName(appRules, entry.appName) : undefined;
                   return (
                     <li
-                      key={`${entry.timestamp}-${entry.appName}-${index}`}
+                      key={`${entry.timestampMs}-${entry.appName}-${index}`}
                       className="timeline-item"
                     >
                       <div className="timeline-marker" aria-hidden="true" />
                       <div className="timeline-body">
                         <div className="timeline-header-row">
-                          <p className="timeline-time">{formatTime(entry.timestamp)}</p>
+                          <p className="timeline-time">{formatTime(entry.timestampMs)}</p>
                           {rule && (
                             <span className={`rules-badge rules-badge-${rule.ruleType}`}>
                               {ruleKindLabel(rule.ruleType)}

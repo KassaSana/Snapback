@@ -22,7 +22,7 @@ std::optional<ContextSnapshotDto> ContextTracker::observe_window_change(
     const std::string& window_title,
     const std::vector<AppRuleRecord>& app_rules,
     double now_secs,
-    const std::string& timestamp) {
+    std::int64_t timestamp_ms) {
     const bool was_on_task = is_on_task(current_.app_name, current_.window_title, app_rules);
     const bool now_on_task = is_on_task(app_name, window_title, app_rules);
 
@@ -46,7 +46,7 @@ std::optional<ContextSnapshotDto> ContextTracker::observe_window_change(
         }
     }
 
-    current_ = make_snapshot(app_name, window_title, timestamp);
+    current_ = make_snapshot(app_name, window_title, timestamp_ms);
 
     if (!current_.meaningful() || !now_on_task) return std::nullopt;
     last_focus_snapshot_ = current_;
@@ -57,14 +57,15 @@ std::optional<ContextSnapshotDto> ContextTracker::observe_window_change(
 std::optional<ContextSnapshotDto> ContextTracker::maybe_checkpoint_snapshot(
     const std::vector<AppRuleRecord>& app_rules,
     double now_secs,
-    const std::string& timestamp) {
-    return maybe_checkpoint_snapshot(app_rules, now_secs, [&timestamp] { return timestamp; });
+    std::int64_t timestamp_ms) {
+    return maybe_checkpoint_snapshot(app_rules, now_secs,
+                                     [timestamp_ms] { return timestamp_ms; });
 }
 
 std::optional<ContextSnapshotDto> ContextTracker::maybe_checkpoint_snapshot(
     const std::vector<AppRuleRecord>& app_rules,
     double now_secs,
-    const std::function<std::string()>& timestamp_factory) {
+    const std::function<std::int64_t()>& timestamp_factory) {
     if (state_ != DistractionState::Focused) return std::nullopt;
     if (now_secs - last_snapshot_secs_ < snapshot_interval_secs_) return std::nullopt;
     if (!current_.meaningful() ||
@@ -73,7 +74,7 @@ std::optional<ContextSnapshotDto> ContextTracker::maybe_checkpoint_snapshot(
         return std::nullopt;
     }
 
-    current_.timestamp = timestamp_factory();
+    current_.timestamp_ms = timestamp_factory();
     last_focus_snapshot_ = current_;
     last_snapshot_secs_ = now_secs;
     return to_dto(current_);
@@ -94,7 +95,7 @@ void ContextTracker::dismiss_recovery(double now_secs) {
 
 ContextTracker::Snapshot ContextTracker::make_snapshot(const std::string& app_name,
                                                        const std::string& window_title,
-                                                       const std::string& timestamp) {
+                                                       std::int64_t timestamp_ms) {
     const auto hints = parse_title(window_title);
     Snapshot snapshot;
     snapshot.app_name = app_name;
@@ -103,7 +104,7 @@ ContextTracker::Snapshot ContextTracker::make_snapshot(const std::string& app_na
     snapshot.project_hint = hints.project_hint;
     snapshot.summary = hints.file_hint.empty() ? "Working in " + app_name
                                                : "Editing " + hints.file_hint;
-    snapshot.timestamp = timestamp;
+    snapshot.timestamp_ms = timestamp_ms;
     return snapshot;
 }
 
@@ -114,7 +115,7 @@ ContextSnapshotDto ContextTracker::to_dto(const Snapshot& snapshot) {
     dto.file_hint = snapshot.file_hint;
     dto.project_hint = snapshot.project_hint;
     dto.summary = snapshot.summary;
-    dto.timestamp = snapshot.timestamp;
+    dto.timestamp_ms = snapshot.timestamp_ms;
     return dto;
 }
 

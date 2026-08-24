@@ -38,16 +38,16 @@ public:
         const std::string& window_title,
         const std::vector<AppRuleRecord>& app_rules,
         double now_secs,
-        const std::string& timestamp);
+        std::int64_t timestamp_ms);
 
     std::optional<ContextSnapshotDto> maybe_checkpoint_snapshot(
         const std::vector<AppRuleRecord>& app_rules,
         double now_secs,
-        const std::string& timestamp);
+        std::int64_t timestamp_ms);
     std::optional<ContextSnapshotDto> maybe_checkpoint_snapshot(
         const std::vector<AppRuleRecord>& app_rules,
         double now_secs,
-        const std::function<std::string()>& timestamp_factory);
+        const std::function<std::int64_t()>& timestamp_factory);
 
     std::optional<SnapbackPayload> take_pending_snapback();
     void dismiss_recovery(double now_secs);
@@ -59,14 +59,14 @@ private:
         std::string file_hint;
         std::string project_hint;
         std::string summary;
-        std::string timestamp;
+        std::int64_t timestamp_ms{};
 
         bool meaningful() const { return !app_name.empty() || !window_title.empty(); }
     };
 
     static Snapshot make_snapshot(const std::string& app_name,
                                   const std::string& window_title,
-                                  const std::string& timestamp);
+                                  std::int64_t timestamp_ms);
     static ContextSnapshotDto to_dto(const Snapshot& snapshot);
     bool is_on_task(const std::string& app_name,
                     const std::string& window_title,

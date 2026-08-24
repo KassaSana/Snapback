@@ -34,8 +34,8 @@ const boundary = vi.hoisted(() => {
           pattern: String(request.pattern ?? ""),
           rule_type: String(request.ruleType ?? "allow"),
           note: request.note ?? null,
-          created_at: "2026-07-11T00:00:00Z",
-          updated_at: "2026-07-11T00:00:00Z",
+          created_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+          updated_at_ms: Date.parse("2026-07-11T00:00:00Z"),
         };
         state.rules = [...state.rules, rule];
         return rule;
@@ -152,8 +152,8 @@ describe("App rules add/delete flow", () => {
         pattern: "notion",
         rule_type: "block",
         note: null,
-        created_at: "2026-07-11T00:00:00Z",
-        updated_at: "2026-07-11T00:00:00Z",
+        created_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+        updated_at_ms: Date.parse("2026-07-11T00:00:00Z"),
       },
     ];
     renderApp("settings", "focus");
@@ -173,11 +173,11 @@ describe("App rules add/delete flow", () => {
       goal: "Code review",
       status: "ACTIVE",
       focus_mode: "normal",
-      started_at: "2026-08-14T00:00:00Z",
+      started_at_ms: Date.parse("2026-08-14T00:00:00Z"),
     };
     boundary.state.timeline = [
       {
-        timestamp: "2026-08-14T00:05:00Z",
+        timestampMs: Date.parse("2026-08-14T00:05:00Z"),
         app_name: "Slack",
         window_title: "team-general - Slack",
         summary: "Chatting with team",

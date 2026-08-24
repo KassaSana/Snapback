@@ -22,8 +22,8 @@ const boundary = vi.hoisted(() => {
           goal: String(args?.goal ?? ""),
           status: "ACTIVE",
           focus_mode: String(args?.focusMode ?? "normal"),
-          started_at: "2026-07-11T00:00:00Z",
-          ended_at: null,
+          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+          ended_at_ms: null,
         };
       case "stop_session":
         return {
@@ -31,8 +31,8 @@ const boundary = vi.hoisted(() => {
           goal: "Write tests",
           status: "COMPLETED",
           focus_mode: "normal",
-          started_at: "2026-07-11T00:00:00Z",
-          ended_at: "2026-07-11T00:30:00Z",
+          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+          ended_at_ms: Date.parse("2026-07-11T00:30:00Z"),
         };
       case "get_session_recap":
         return { session_id: "sess-42", goal: "Write tests", duration_secs: 1800 };

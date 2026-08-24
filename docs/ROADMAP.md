@@ -330,7 +330,7 @@ Struck rows are done; the numbers renumber as they close, so "next" is always ro
 | — | ~~**10.8** make Review charts truthful~~ | **Done 2026-08-06** — fixed 0–100 axis, distinct no-data state, sampled-context labels |
 | 2 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
 | 3 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
-| 4 | **7.16** timestamp representation | **Decision settled 2026-08-19 ([ADR-0007](adr/0007-time-is-integer-milliseconds-utc.md)); the migration is the open work.** Unblocks retention, Review ranges, and time-window correctness |
+| — | ~~**7.16** timestamp representation~~ | **Done 2026-08-24** — schema v7, the IPC contract, and the frontend; 5.5/7.1/7.2 close with it |
 | 5 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
 | 6 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
 | 7 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
@@ -730,7 +730,7 @@ internals, and the benchmark harness.
   this text describes. Found while picking work off this file — the third time an item here has
   described a gap that the code had already closed (see 0.3 and the note on trusting this file).
 
-  **Still open** is the second half below: `cutoff_rfc3339()` treats "1 day" as a rolling
+  **Still open** is the second half below: `cutoff_unix_ms()` treats "1 day" as a rolling
   24 hours rather than the user's calendar day. The Review surface now *labels* its windows
   "Last 24 hours" / "Last 7 days" (9.7), so the UI is honest about it; whether the underlying
   window should change is a product decision, not a bug.
@@ -745,7 +745,7 @@ internals, and the benchmark harness.
   Storing UTC is correct; *presenting* it is the bug. Recommend converting in the frontend —
   timestamps are ISO-8601 with `Z`, and `new Date(ts).getHours()` is exactly right.
 
-  Related: `cutoff_rfc3339()` (`state.cpp:cutoff_rfc3339`) computes "1 day ago" as "24 hours ago," so the
+  Related: `cutoff_unix_ms()` (`state.cpp:cutoff_unix_ms`) computes "1 day ago" as "24 hours ago," so the
   "daily" summary is a rolling 24 h window, not the user's calendar day. Possibly intended,
   nowhere written down, and users read "day" as "today."
 
@@ -1353,7 +1353,33 @@ internals, and the benchmark harness.
   Decide whether "current mode" and "default mode" are one setting or two. They're currently
   one; the wizard's existence implies two.
 
-- **7.16 — DECISION SETTLED 2026-08-19 by [ADR-0007](adr/0007-time-is-integer-milliseconds-utc.md); the `M` application is open.** `M`
+- **7.16 — DONE 2026-08-24.** `M` Settled by
+  [ADR-0007](adr/0007-time-is-integer-milliseconds-utc.md) on 2026-08-19 and applied in three
+  slices: the clock seam, then schema v7, then the DTO/IPC/frontend boundary. A point in time is
+  UTC milliseconds since the epoch, stored as `INTEGER`, in every table, across the bridge, and
+  in C++. **5.5, 7.1 and 7.2 close with it**, and the sub-second ordering the history list
+  needed comes with it rather than being a separate fix.
+
+  **Three things worth keeping, because each was found by a test rather than by reading.**
+  The suite went green while every writer still wrote text -- SQLite keeps a non-integer literal
+  as TEXT in an INTEGER column, so values, `ORDER BY`, and DTO round trips all behaved exactly
+  as before; a `typeof()` assertion is the only thing that can see that, and it is now in the
+  suite. Rebuilding tables surfaced that `DROP TABLE` on a parent runs an implicit `DELETE FROM`
+  under foreign keys, registering one violation per child row that recreating the table does not
+  clear, so `migrate()` now disables foreign keys around the upgrade and runs `foreign_key_check`
+  before committing. And the first draft of the index assertion planned its own copy of the SQL,
+  so it passed with the `datetime()` wrapper reinstated -- the two DELETEs are named constants
+  now and the test plans what production runs.
+
+  **Left open deliberately:** `context_snapshots` still scans on prune. Its only index leads
+  with `session_id`, so no phrasing of a bare `timestamp <` predicate can use it; adding
+  `context_snapshots(timestamp)` would be paid on every window change to save a scan that runs
+  once a day of uptime. That trade belongs to Tier 14 with a measurement behind it, and the test
+  asserts the scan so whoever adds the index is sent to the paragraph explaining why.
+
+  **The original finding follows, as history.**
+
+- **7.16 (original finding) — DECISION SETTLED 2026-08-19; the `M` application was open.** `M`
 
   **A point in time is UTC milliseconds since the epoch, stored as `INTEGER`** — every table,
   the IPC boundary, and C++. Local time is presentation only. Do not reopen the format
@@ -2821,13 +2847,26 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   in the training corpus, not drift. The Review tile now reads **"Distraction spikes"**; the
   wire name stays `thrash_spikes`.
 
-- **5.5 — Retention silently no-ops on unparseable timestamps.** `S`
-  **Roll into the 7.16 timestamp decision — same root cause.**
+- **5.5 — DONE 2026-08-24 as part of 7.16.** `S` Both halves are closed, and neither is
+  *fixed* so much as made unexpressible: the column is `INTEGER`, the cutoff is an integer, and
+  `storage.cpp:prune_runtime_data` compares them with a bare `<`. There is no `datetime()` left
+  to return `NULL`, and nothing wraps the indexed column. That is the whole argument for
+  ADR-0007's Option A over the one-sitting patch this item originally proposed.
 
-  `storage.cpp:prune_runtime_data` uses `datetime(timestamp) < datetime(?1)`. If `datetime()` can't
-  parse a stored value it yields `NULL`, the comparison is `NULL`, and the row is **never
-  deleted** — retention degrades with nothing surfaced. Wrapping the column also defeats
-  `idx_predictions_ts`, forcing a scan on every startup prune.
+  Note the correction the ADR carries: retention did delete well-formed rows. What outlived
+  every pass was a row whose timestamp did not parse. Migration 7 maps those to the epoch, so
+  the next prune collects them under the ordinary policy.
+
+  One half of the original finding turned out to be narrower than written --
+  `idx_predictions_ts` was the only index involved. `context_snapshots` has no index a bare
+  timestamp predicate can use, and deliberately still scans; see 7.16.
+
+  The original finding was:
+
+  > `prune_runtime_data` uses `datetime(timestamp) < datetime(?1)`. If `datetime()` can't
+  > parse a stored value it yields `NULL`, the comparison is `NULL`, and the row is **never
+  > deleted** — retention degrades with nothing surfaced. Wrapping the column also defeats
+  > `idx_predictions_ts`, forcing a scan on every startup prune.
 
 - **5.6 — `longest_active_stretch_5min` reports 300s for brand-new sessions.** `M` `decision`
   — **do not "just fix" this; it will fail CI. Bundle into 2.3.**
