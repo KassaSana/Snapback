@@ -1895,6 +1895,78 @@ TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {
     CHECK(state.prediction_history(10).size() == 1);
 }
 
+namespace {
+
+// A clock that fires one side effect at the moment the tick reads it.
+//
+// The tick latches the activity epoch as the first thing it does under mutex_, then reads
+// the monotonic clock a few lines later. Bumping the epoch from inside that read reproduces
+// exactly what a concurrent delete does -- the tick's latched epoch is now stale -- without
+// a second thread, so the interleave is a fact of the test rather than a race it hopes to
+// win.
+class DeleteRacingClock final : public Clock {
+public:
+    std::int64_t steady_ms() const override {
+        if (armed_ && state_ != nullptr) {
+            armed_ = false;
+            AppStateTestAccess::bump_activity_epoch(*state_);
+        }
+        return steady_ms_;
+    }
+
+    std::time_t wall_time() const override { return wall_; }
+
+    // Armed immediately before the tick under test, so no earlier clock read consumes it.
+    void arm(AppState& state) {
+        state_ = &state;
+        armed_ = true;
+    }
+
+    void advance_minutes(std::int64_t minutes) {
+        steady_ms_ += minutes * 60 * 1000;
+        wall_ += static_cast<std::time_t>(minutes * 60);
+    }
+
+private:
+    mutable bool armed_ = false;
+    mutable AppState* state_ = nullptr;
+    std::int64_t steady_ms_ = 1'000'000;
+    std::time_t wall_ = 1'700'000'000;
+};
+
+}  // namespace
+
+TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") {
+    // The prune is due once per day of uptime, and the tick stamps that day as spent when it
+    // *decides* to prune. The decision and the prune were separated by the activity-boundary
+    // check, whose early return abandons the whole rest of the tick -- so a delete winning
+    // that boundary spent the day without collecting anything, and retention slipped by
+    // another 24 h of uptime.
+    //
+    // The comment on the boundary block only justifies dropping *buffered* rows: they belong
+    // to activity the user just deleted. A prune is not that. It deletes rows that aged out
+    // of the 90-day window, which stays true no matter which session was deleted -- and
+    // deleting one session leaves every other session's aged-out rows exactly where they
+    // were.
+    DeleteRacingClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("aged", FocusMode::Normal);
+    AppStateTestAccess::insert_prediction_at(state, session.session_id,
+                                             "2000-01-01T00:00:00Z");
+    REQUIRE(state.prediction_history(10).size() == 1);
+
+    // A day of uptime has passed, so this tick prunes -- and a delete lands in the window
+    // between it latching the epoch and reaching the boundary check.
+    clock.advance_minutes(24 * 60);
+    clock.arm(state);
+    AppStateTestAccess::engine_tick(state);
+
+    CHECK(state.prediction_history(10).empty());
+}
+
 TEST_CASE("stopping a session discards a span decision the tick has not drained") {
     // AUD-04b. The tick decides span changes under mutex_ and writes them under
     // storage_mutex_, holding neither in between. A Stop landing in that gap used to leave

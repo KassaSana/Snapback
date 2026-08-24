@@ -1692,30 +1692,17 @@ void AppState::engine_tick() {
         publish_live_read_unlocked();
     }
 
-    {
-        // If deletion won the boundary after phase 1, discard every buffered row and
-        // event. If this tick won, deletion waits until persistence has completed.
-        std::lock_guard activity_lock(activity_boundary_mutex_);
-        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
-        if (!jobs.empty() || span_session_id) {
-            std::lock_guard lock(storage_mutex_);
-            Storage::Transaction txn(storage_);  // one commit for the whole drain
-            for (const auto& job : jobs) persist(job);
-            if (span_session_id) {
-                if (span_opens) {
-                    storage_.begin_session_span_now(*span_session_id);
-                } else {
-                    storage_.close_session_span_now(*span_session_id, span_secs_ago);
-                }
-            }
-            txn.commit();
-        }
-    }
-
     if (prune_due) {
-        // Outside the activity-boundary block above: a prune is not activity-scoped work.
-        // It deletes rows that aged out, which is true regardless of which session the tick
-        // was filling or whether the user deleted one mid-tick.
+        // Ahead of the activity-boundary block below, not after it: a prune is not
+        // activity-scoped work. It deletes rows that aged out of the retention window, which
+        // stays true regardless of which session the tick was filling or whether the user
+        // deleted one mid-tick -- deleting one session leaves every other session's expired
+        // rows exactly where they were.
+        //
+        // It used to sit after that block, whose early return abandons the rest of the tick.
+        // Since the day of uptime is stamped as spent when the prune is *decided*, in phase
+        // 1, a delete winning the boundary spent the day and collected nothing: retention
+        // slipped by another full 24 h. Running first is what makes the stamp honest.
         std::lock_guard lock(storage_mutex_);
         try {
             const PruneSummary summary = storage_.prune_to_retention();
@@ -1737,6 +1724,26 @@ void AppState::engine_tick() {
             // one is a day away, which is soon enough for a condition that is usually
             // transient (a locked database, a full disk).
             log().warn(std::string("storage: retention prune failed: ") + err.what());
+        }
+    }
+
+    {
+        // If deletion won the boundary after phase 1, discard every buffered row and
+        // event. If this tick won, deletion waits until persistence has completed.
+        std::lock_guard activity_lock(activity_boundary_mutex_);
+        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
+        if (!jobs.empty() || span_session_id) {
+            std::lock_guard lock(storage_mutex_);
+            Storage::Transaction txn(storage_);  // one commit for the whole drain
+            for (const auto& job : jobs) persist(job);
+            if (span_session_id) {
+                if (span_opens) {
+                    storage_.begin_session_span_now(*span_session_id);
+                } else {
+                    storage_.close_session_span_now(*span_session_id, span_secs_ago);
+                }
+            }
+            txn.commit();
         }
     }
 

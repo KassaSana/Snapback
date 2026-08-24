@@ -136,6 +136,15 @@ struct AppStateTestAccess {
         state.publish_live_read_unlocked();
     }
 
+    // Moves the activity boundary the way a delete does, and nothing else. AUD-07's failure
+    // needs the epoch to change *between* the tick latching it and the tick checking it --
+    // a window with no lock held, which is why reproducing it with a second thread would be
+    // a race dressed as a test. Called from a clock the tick reads inside that window, this
+    // makes the same interleave deterministic.
+    static void bump_activity_epoch(AppState& state) {
+        state.activity_epoch_.fetch_add(1, std::memory_order_release);
+    }
+
     static bool insert_episode(AppState& state, const SnapbackEpisode& episode) {
         std::lock_guard lock(state.storage_mutex_);
         return state.storage_.insert_snapback_episode(episode);
