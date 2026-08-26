@@ -1916,7 +1916,7 @@ public:
         return steady_ms_;
     }
 
-    std::time_t wall_time() const override { return wall_; }
+    std::int64_t wall_ms() const override { return wall_; }
 
     // Armed immediately before the tick under test, so no earlier clock read consumes it.
     void arm(AppState& state) {
@@ -1926,14 +1926,14 @@ public:
 
     void advance_minutes(std::int64_t minutes) {
         steady_ms_ += minutes * 60 * 1000;
-        wall_ += static_cast<std::time_t>(minutes * 60);
+        wall_ += minutes * 60 * 1000;
     }
 
 private:
     mutable bool armed_ = false;
     mutable AppState* state_ = nullptr;
     std::int64_t steady_ms_ = 1'000'000;
-    std::time_t wall_ = 1'700'000'000;
+    std::int64_t wall_ = 1'700'000'000'000;
 };
 
 }  // namespace
@@ -1957,7 +1957,7 @@ TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") 
 
     const auto session = state.start_session("aged", FocusMode::Normal);
     AppStateTestAccess::insert_prediction_at(state, session.session_id,
-                                             "2000-01-01T00:00:00Z");
+                                             ms("2000-01-01T00:00:00Z"));
     REQUIRE(state.prediction_history(10).size() == 1);
 
     // A day of uptime has passed, so this tick prunes -- and a delete lands in the window
@@ -1987,7 +1987,7 @@ TEST_CASE("a VACUUM that fails after a successful prune is reported as its own f
     const auto session = state.start_session("aged", FocusMode::Normal);
     for (std::size_t i = 0; i < kVacuumMinDeletedRows; ++i) {
         AppStateTestAccess::insert_prediction_at(state, session.session_id,
-                                                 "2000-01-01T00:00:00Z");
+                                                 ms("2000-01-01T00:00:00Z"));
     }
     // No active session, which is the condition the tick defers the VACUUM on.
     state.stop_session(session.session_id);
