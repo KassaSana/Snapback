@@ -1,5 +1,7 @@
 #include "doctest_wrapper.hpp"
 
+#include "time_literals.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -532,14 +534,14 @@ TEST_CASE("reopening after a crash closes the dangling span at the last recorded
         // explicit rather than at the mercy of how fast the test runs.
         auto session = storage->create_session("crashed", FocusMode::Normal);
         session_id = session.session_id;
-        storage->begin_session_span(session_id, "2026-08-05T09:00:00Z");
-        REQUIRE(storage->close_session_span(session_id, "2026-08-05T09:10:00Z"));
-        storage->begin_session_span(session_id, "2026-08-05T09:20:00Z");
+        storage->begin_session_span(session_id, ms("2026-08-05T09:00:00Z"));
+        REQUIRE(storage->close_session_span(session_id, ms("2026-08-05T09:10:00Z")));
+        storage->begin_session_span(session_id, ms("2026-08-05T09:20:00Z"));
 
         // The last thing the session managed to record before dying.
         PredictionRecord prediction;
         prediction.session_id = session_id;
-        prediction.timestamp = "2026-08-05T09:30:00Z";
+        prediction.timestamp_ms = ms("2026-08-05T09:30:00Z");
         storage->insert_prediction(prediction);
     }
 
@@ -568,7 +570,7 @@ TEST_CASE("a dangling span with nothing recorded collapses instead of guessing")
         auto storage = Storage::open(temp.path);
         REQUIRE(storage.has_value());
         session_id = storage->create_session("no evidence", FocusMode::Normal).session_id;
-        storage->begin_session_span(session_id, "2026-08-05T09:00:00Z");
+        storage->begin_session_span(session_id, ms("2026-08-05T09:00:00Z"));
     }
     {
         auto storage = Storage::open(temp.path);
@@ -592,7 +594,7 @@ TEST_CASE("attendance resumes after hydration without waiting for an idle round 
         auto storage = Storage::open(temp.path);
         REQUIRE(storage.has_value());
         session_id = storage->create_session("resume me", FocusMode::Normal).session_id;
-        storage->begin_session_span(session_id, "2026-08-05T09:00:00Z");
+        storage->begin_session_span(session_id, ms("2026-08-05T09:00:00Z"));
     }
     {
         auto storage = Storage::open(temp.path);
@@ -736,7 +738,7 @@ TEST_CASE("a failed start leaves the previous session exactly as it was") {
     const auto stored = state.get_session(first.session_id);
     REQUIRE(stored.has_value());
     CHECK(stored->status == "ACTIVE");
-    CHECK_FALSE(stored->ended_at.has_value());
+    CHECK_FALSE(stored->ended_at_ms.has_value());
 }
 
 TEST_CASE("replacing a session writes the same automatic label a stop would") {
@@ -898,9 +900,9 @@ TEST_CASE("AppState freezes prediction generation while idle") {
     AppStateTestAccess::update_idle(*state, 0, true);
     AppStateTestAccess::update_idle(*state, kDefaultIdleThresholdMs, false);
     REQUIRE(state->is_idle());
-    const auto before = state->latest_prediction()->timestamp;
+    const auto before = state->latest_prediction()->timestamp_ms;
     AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 100.0));
-    CHECK(state->latest_prediction()->timestamp == before);  // unchanged: no new prediction
+    CHECK(state->latest_prediction()->timestamp_ms == before);  // unchanged: no new prediction
 }
 
 TEST_CASE("AppState starts and stops sessions through storage") {
@@ -1454,7 +1456,7 @@ TEST_CASE("AppState analytics includes predictions older than the former row cap
         prediction.focus_score = 80.0;
         prediction.distraction_risk = 0.2;
         prediction.focus_state = "PRODUCTIVE";
-        prediction.timestamp = timestamp;
+        prediction.timestamp_ms = ms(timestamp);
         storage->insert_prediction(prediction);
     }
     transaction.commit();
@@ -1649,11 +1651,11 @@ TEST_CASE("a recorded episode carries when it began, how long it lasted, and the
     CHECK(episodes[0].duration_secs == 40);
     CHECK(episodes[0].app_name == "Cursor");  // where they were, not where they went
     CHECK(episodes[0].summary.find("Return to") != std::string::npos);
-    CHECK_FALSE(episodes[0].started_at.empty());
-    CHECK_FALSE(episodes[0].ended_at.empty());
+    CHECK(episodes[0].started_at_ms.has_value());
+    CHECK(episodes[0].ended_at_ms > 0);
     // The start is derived from the duration on the same clock as the end, so the two are
     // comparable to each other -- and to the session's attended spans.
-    CHECK(episodes[0].started_at <= episodes[0].ended_at);
+    CHECK(*episodes[0].started_at_ms <= episodes[0].ended_at_ms);
 
     // The distracting window is deliberately absent: this table answers "what was I doing",
     // and recording the other half would turn an interruption log into a browsing history.
@@ -1875,7 +1877,7 @@ TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {
 
     const auto session = state.start_session("aged", FocusMode::Normal);
     AppStateTestAccess::insert_prediction_at(state, session.session_id,
-                                             "2000-01-01T00:00:00Z");
+                                             ms("2000-01-01T00:00:00Z"));
     REQUIRE(state.prediction_history(10).size() == 1);
 
     // Ticking is not enough on its own -- otherwise this would be a prune every 100 ms.
@@ -1890,7 +1892,7 @@ TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {
 
     // ... and it is once per day, not once and then every tick after.
     AppStateTestAccess::insert_prediction_at(state, session.session_id,
-                                             "2000-01-02T00:00:00Z");
+                                             ms("2000-01-02T00:00:00Z"));
     AppStateTestAccess::engine_tick(state);
     CHECK(state.prediction_history(10).size() == 1);
 }
@@ -1914,7 +1916,7 @@ public:
         return steady_ms_;
     }
 
-    std::time_t wall_time() const override { return wall_; }
+    std::int64_t wall_ms() const override { return wall_; }
 
     // Armed immediately before the tick under test, so no earlier clock read consumes it.
     void arm(AppState& state) {
@@ -1924,14 +1926,14 @@ public:
 
     void advance_minutes(std::int64_t minutes) {
         steady_ms_ += minutes * 60 * 1000;
-        wall_ += static_cast<std::time_t>(minutes * 60);
+        wall_ += minutes * 60 * 1000;
     }
 
 private:
     mutable bool armed_ = false;
     mutable AppState* state_ = nullptr;
     std::int64_t steady_ms_ = 1'000'000;
-    std::time_t wall_ = 1'700'000'000;
+    std::int64_t wall_ = 1'700'000'000'000;
 };
 
 }  // namespace
@@ -1955,7 +1957,7 @@ TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") 
 
     const auto session = state.start_session("aged", FocusMode::Normal);
     AppStateTestAccess::insert_prediction_at(state, session.session_id,
-                                             "2000-01-01T00:00:00Z");
+                                             ms("2000-01-01T00:00:00Z"));
     REQUIRE(state.prediction_history(10).size() == 1);
 
     // A day of uptime has passed, so this tick prunes -- and a delete lands in the window
@@ -1985,7 +1987,7 @@ TEST_CASE("a VACUUM that fails after a successful prune is reported as its own f
     const auto session = state.start_session("aged", FocusMode::Normal);
     for (std::size_t i = 0; i < kVacuumMinDeletedRows; ++i) {
         AppStateTestAccess::insert_prediction_at(state, session.session_id,
-                                                 "2000-01-01T00:00:00Z");
+                                                 ms("2000-01-01T00:00:00Z"));
     }
     // No active session, which is the condition the tick defers the VACUUM on.
     state.stop_session(session.session_id);
@@ -2402,7 +2404,7 @@ TEST_CASE("AppState hydrates persisted live values before publishing its first s
     prediction.distraction_risk = 0.1;
     prediction.focus_state = "PRODUCTIVE";
     prediction.goal_alignment = 0.9;
-    prediction.timestamp = "2026-08-01T12:00:00Z";
+    prediction.timestamp_ms = ms("2026-08-01T12:00:00Z");
     storage->insert_prediction(prediction);
 
     AppState state(std::move(*storage));
@@ -2682,7 +2684,7 @@ TEST_CASE("the ownership export contains every session and window, past the old 
             char started[32];
             std::snprintf(started, sizeof(started), "2026-07-%02dT%02d:00:00Z",
                           1 + static_cast<int>(i % 28), static_cast<int>(i % 24));
-            storage->backdate_session_for_test(record.session_id, started);
+            storage->backdate_session_for_test(record.session_id, ms(started));
             session_ids.push_back(record.session_id);
         }
         for (std::size_t w = 0; w < kWindows; ++w) {
@@ -2693,7 +2695,7 @@ TEST_CASE("the ownership export contains every session and window, past the old 
             std::snprintf(stamp, sizeof(stamp), "2026-07-01T%02d:%02d:%02dZ",
                           static_cast<int>(w / 3600), static_cast<int>((w / 60) % 60),
                           static_cast<int>(w % 60));
-            snapshot.timestamp = stamp;
+            snapshot.timestamp_ms = ms(stamp);
             storage->save_context_snapshot(session_ids.front(), snapshot);
         }
         txn.commit();

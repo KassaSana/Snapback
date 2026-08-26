@@ -49,6 +49,15 @@ function normalizePomodoroPhase(value: unknown): PomodoroPhase {
     : "work";
 }
 
+// ADR-0007. `null` means "no such moment" and must survive as null -- a session with no
+// `endedAtMs` is still running, and coercing that to 0 would date it to 1970 and report it as
+// finished. Number(null) is 0, so the null check cannot be folded into the conversion.
+function toMsOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const ms = Number(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
 export function mapSettings(raw: Record<string, unknown>): AppSettings {
   const pomodoro = (raw.pomodoro ?? {}) as Record<string, unknown>;
   return {
@@ -125,7 +134,7 @@ export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
     : "day") as SummaryWindow;
   return {
     window: normalized,
-    generatedAt: String(raw.generated_at ?? raw.generatedAt ?? ""),
+    generatedAtMs: Number(raw.generated_at_ms ?? raw.generatedAtMs ?? 0),
     sessionCount: Number(raw.session_count ?? raw.sessionCount ?? 0),
     completedSessionCount: Number(
       raw.completed_session_count ?? raw.completedSessionCount ?? 0,
@@ -166,7 +175,7 @@ export function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapsho
     fileHint: String(raw.file_hint ?? raw.fileHint ?? ""),
     projectHint: String(raw.project_hint ?? raw.projectHint ?? ""),
     summary: String(raw.summary ?? ""),
-    timestamp: String(raw.timestamp ?? ""),
+    timestampMs: Number(raw.timestamp_ms ?? raw.timestampMs ?? 0),
   };
 }
 
@@ -269,8 +278,8 @@ export function mapAppRule(raw: Record<string, unknown>): AppRuleRecord {
     pattern: String(raw.pattern ?? ""),
     ruleType: String(raw.rule_type ?? raw.ruleType ?? "allow") as AppRuleKind,
     note: (raw.note ?? null) as string | null,
-    createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
-    updatedAt: String(raw.updated_at ?? raw.updatedAt ?? ""),
+    createdAtMs: Number(raw.created_at_ms ?? raw.createdAtMs ?? 0),
+    updatedAtMs: Number(raw.updated_at_ms ?? raw.updatedAtMs ?? 0),
   };
 }
 
@@ -283,7 +292,7 @@ export function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
     thrashScore: Number(raw.thrash_score ?? raw.thrashScore ?? 0),
     driftScore: Number(raw.drift_score ?? raw.driftScore ?? 0),
     goalAlignment: Number(raw.goal_alignment ?? raw.goalAlignment ?? 0.5),
-    timestamp: String(raw.timestamp ?? ""),
+    timestampMs: Number(raw.timestamp_ms ?? raw.timestampMs ?? 0),
     modelId: String(raw.model_id ?? raw.modelId ?? "heuristic:snapback-features-v1-31"),
     stateSource: (raw.state_source ?? raw.stateSource ?? null) as string | null,
   };
@@ -295,8 +304,8 @@ export function mapSession(raw: Record<string, unknown>): SessionRecord {
     goal: String(raw.goal ?? ""),
     status: String(raw.status ?? ""),
     focusMode: String(raw.focus_mode ?? raw.focusMode ?? "normal"),
-    startedAt: (raw.started_at ?? raw.startedAt ?? null) as string | null,
-    endedAt: (raw.ended_at ?? raw.endedAt ?? null) as string | null,
+    startedAtMs: toMsOrNull(raw.started_at_ms ?? raw.startedAtMs),
+    endedAtMs: toMsOrNull(raw.ended_at_ms ?? raw.endedAtMs),
     reflectionDone: (raw.reflection_done ?? raw.reflectionDone ?? null) as string | null,
     reflectionNextStep: (raw.reflection_next_step ?? raw.reflectionNextStep ?? null) as
       | string

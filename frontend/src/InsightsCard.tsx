@@ -105,7 +105,7 @@ function SessionDeleteList({
             <div className="session-row-detail">
               <span className="rules-pattern">{label}</span>
               <p className="rules-note">
-                {formatTime(summary.record.startedAt)} ·{" "}
+                {formatTime(summary.record.startedAtMs)} ·{" "}
                 {Math.round(summary.recap.durationSecs / 60)} min · focus{" "}
                 {formatScore(summary.recap.avgFocusScore)}
               </p>
@@ -176,7 +176,7 @@ function SessionReflectionList({
             <div className="session-row-detail">
               <span className="rules-pattern">{label}</span>
               <p className="rules-note">
-                {formatTime(summary.record.startedAt)} ·{" "}
+                {formatTime(summary.record.startedAtMs)} ·{" "}
                 {Math.round(summary.recap.durationSecs / 60)} min · focus{" "}
                 {formatScore(summary.recap.avgFocusScore)}
               </p>

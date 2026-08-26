@@ -17,7 +17,7 @@ const prediction = (overrides: Partial<PredictionRecord> = {}): PredictionRecord
     thrashScore: 0.05,
     driftScore: 0.02,
     goalAlignment: 0.5,
-    timestamp: "2026-07-25T04:55:24Z",
+    timestampMs: Date.parse("2026-07-25T04:55:24Z"),
     modelId: "heuristic:snapback-features-v1-31",
     stateSource: "model",
     ...overrides,

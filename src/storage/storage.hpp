@@ -41,7 +41,20 @@ std::string pre_migration_backup_name(int from_version);
 //   2. **Never edit a released migration.** Append a new one. Editing one changes what an
 //      already-upgraded database was built from, which is precisely the drift versioning
 //      exists to prevent.
-inline constexpr int kSchemaVersion = 6;
+inline constexpr int kSchemaVersion = 7;
+
+// The two retention DELETEs, named so a test can plan the statement production actually runs.
+//
+// Roadmap 5.5's second half is a performance claim -- that the prune uses `idx_predictions_ts`
+// rather than scanning the largest table in the database on every startup -- and a query plan
+// is the only place that claim is visible: the wrapped and unwrapped forms return identical
+// rows. A test that planned its own copy of the SQL would assert only that *some* indexable
+// statement exists, and would keep passing if this one regressed, which is the mistake these
+// constants exist to prevent.
+inline constexpr const char* kPrunePredictionsSql =
+    "DELETE FROM predictions WHERE timestamp < ?1";
+inline constexpr const char* kPruneContextSnapshotsSql =
+    "DELETE FROM context_snapshots WHERE timestamp < ?1";
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
@@ -132,7 +145,7 @@ public:
     // decides under one lock and writes under another), and a stop in between would
     // otherwise leave an open span on a completed session that every attendance query
     // measures to `now` and nothing ever closes.
-    bool begin_session_span(const std::string& session_id, const std::string& started_at);
+    bool begin_session_span(const std::string& session_id, std::int64_t started_at_ms);
 
     // The same, stamped from Storage's own clock.
     //
@@ -148,7 +161,7 @@ public:
     // Closes the session's open span at `ended_at`. Returns false when none was open, which
     // is an ordinary outcome (already paused, or a session that predates this table) rather
     // than an error. A span is never closed earlier than it started.
-    bool close_session_span(const std::string& session_id, const std::string& ended_at);
+    bool close_session_span(const std::string& session_id, std::int64_t ended_at_ms);
 
     // Closes a span that a previous process left open — a crash, a kill, a power loss.
     //
@@ -163,13 +176,13 @@ public:
     // uptime seconds (Roadmap 7.24), not wall clock, so it cannot be compared with a span.
     //
     // Returns the timestamp it closed at, or nullopt when no span was open.
-    std::optional<std::string> close_dangling_session_span(const std::string& session_id);
+    std::optional<std::int64_t> close_dangling_session_span(const std::string& session_id);
 
     // Sum of closed spans, plus the open one measured to `now`. Returns nullopt when the
     // session has no spans at all — meaning "never measured", not "zero" — so callers can
     // fall back to elapsed instead of reporting a fabricated 0.
     std::optional<std::uint64_t> active_secs(const std::string& session_id,
-                                             const std::string& now);
+                                             std::int64_t now_ms);
 
     // True if the session has a span open, i.e. the user is currently attending it.
     bool has_open_span(const std::string& session_id);
@@ -194,14 +207,14 @@ public:
     // zero, which is the honest answer: their attendance was never measured.
     //
     // `now` is an RFC3339 UTC stamp; it bounds still-open spans and selects the window.
-    std::uint64_t attended_secs_in_local_day(const std::string& now);
-    std::uint64_t attended_secs_in_local_week(const std::string& now);
+    std::uint64_t attended_secs_in_local_day(std::int64_t now_ms);
+    std::uint64_t attended_secs_in_local_week(std::int64_t now_ms);
     // Roadmap 2.19 Review half. Attended seconds in [since, now], clipped per span the same
     // way the day/week helpers clip. `since` nullopt means "all retained spans" — there is no
     // earlier bound other than the data itself. Used for 30d / all / custom Review ranges,
     // where a daily or weekly *plan* does not apply.
-    std::uint64_t attended_secs_since(const std::string& now,
-                                      const std::optional<std::string>& since);
+    std::uint64_t attended_secs_since(std::int64_t now_ms,
+                                      const std::optional<std::int64_t>& since_ms);
 
     // Roadmap 2.14. Writes (or clears) the session's optional reflection and returns the
     // updated row; nullopt when no such session exists, so a caller cannot mistake a typo'd id
@@ -220,7 +233,7 @@ public:
     // bounded ring buffer turns a stall into dropped events. Results are identical to the
     // per-session path, which a test pins by comparing the two.
     std::vector<SessionSummary> recent_session_summaries(
-        std::size_t limit, const std::optional<std::string>& started_after = std::nullopt);
+        std::size_t limit, const std::optional<std::int64_t>& started_after_ms = std::nullopt);
 
     // --- Aggregates for the analytics and summary surfaces (Roadmap 7.12) ----------------
     //
@@ -247,7 +260,7 @@ public:
     };
 
     // Stats over every retained prediction, or only those at/after `cutoff`.
-    PredictionStats prediction_stats(const std::optional<std::string>& cutoff = std::nullopt);
+    PredictionStats prediction_stats(const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
 
     // Per-local-hour focus buckets, ascending by hour, omitting hours with no samples.
     //
@@ -257,7 +270,7 @@ public:
     // Roadmap 7.16 may change how a timestamp is represented; until it does, local hour is
     // what the UI has always shown and this preserves it.
     std::vector<AnalyticsHour> hourly_focus_buckets(
-        const std::optional<std::string>& cutoff = std::nullopt);
+        const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
 
     // How many of the most recently *completed* sessions, counting back from the newest, have
     // an average focus score at or above `min_avg_focus`. Stops at the first one that does
@@ -267,7 +280,7 @@ public:
     // Replaces a `recent_sessions(limit)` loop that called `recap()` — five queries — per
     // completed session, to read one field from each.
     std::size_t productive_session_streak(std::size_t limit, double min_avg_focus,
-                                          const std::optional<std::string>& started_after =
+                                          const std::optional<std::int64_t>& started_after_ms =
                                               std::nullopt);
 
     struct SessionWindowTotals {
@@ -281,7 +294,7 @@ public:
     // replaces did — the two orders give different answers on a database with more than
     // `limit` sessions newer than the window.
     SessionWindowTotals session_window_totals(std::size_t limit,
-                                              const std::string& started_after);
+                                              std::int64_t started_after_ms);
 
     // Counts context snapshots per app across the most recent `session_limit` sessions,
     // taking at most `per_session_limit` snapshots from each (the oldest ones, matching
@@ -294,7 +307,7 @@ public:
     // up to session_limit x per_session_limit full rows to compute a group-by.
     std::unordered_map<std::string, std::size_t> context_app_counts(
         std::size_t session_limit, std::size_t per_session_limit,
-        const std::optional<std::string>& started_after = std::nullopt);
+        const std::optional<std::int64_t>& started_after_ms = std::nullopt);
     // Atomically removes every session and its collected activity while preserving
     // user configuration such as app rules.
     void delete_all_activity_data();
@@ -320,7 +333,7 @@ public:
     // absent. The timestamp range stays in SQL so idx_predictions_ts can serve analytics
     // windows without silently dropping older rows.
     std::vector<PredictionRecord> predictions_since(
-        const std::optional<std::string>& cutoff = std::nullopt);
+        const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
     void insert_feature_snapshot(const std::string& session_id, const FeatureVector& f);
 
     // Labels (one-tap feedback)
@@ -372,18 +385,19 @@ public:
     // Sessions newest-first, strictly after `after` in `(started_at DESC, session_id DESC)`
     // order. Pass nullopt for the first page. The pair is the previous page's last row.
     struct SessionCursor {
-        std::string started_at;
+        std::int64_t started_at_ms{};
         std::string session_id;
     };
     std::vector<SessionRecord> sessions_after(const std::optional<SessionCursor>& after,
                                               std::size_t limit);
 
     // Context snapshots for one session, oldest-first, strictly after `after` in
-    // `(timestamp ASC, id ASC)` order. `id` is in the key because timestamps have
-    // whole-second resolution (7.16) and are not unique — ordering on time alone is not a
-    // total order, and a page boundary inside a tied group would drop or repeat rows.
+    // `(timestamp ASC, id ASC)` order. `id` stays in the key: milliseconds are finer than
+    // the whole seconds 7.16 inherited, but a busy tick still writes several rows inside one,
+    // so time alone is not a total order and a page boundary inside a tied group would drop or
+    // repeat rows.
     struct ContextCursor {
-        std::string timestamp;
+        std::int64_t timestamp_ms{};
         std::int64_t id{};
     };
     struct ContextPage {
@@ -405,17 +419,14 @@ public:
 
     // Deletes old runtime rows on open.
     //
-    // Takes the cutoff twice because the tables don't agree on a time format:
-    // predictions/context_snapshots store RFC3339 TEXT, while feature_snapshots.timestamp
-    // is REAL Unix epoch seconds (see insert_feature_snapshot). Passing one and deriving
-    // the other would mean parsing RFC3339 by hand; the caller already has both.
-    PruneSummary prune_runtime_data(const std::string& cutoff_rfc3339, double cutoff_unix_secs);
+    // One cutoff, in UTC epoch milliseconds. It used to take two, because the tables did not
+    // agree on a time format -- predictions/context_snapshots held RFC3339 TEXT while
+    // feature_snapshots.timestamp held REAL epoch seconds. ADR-0007 ended that disagreement,
+    // and the doubled parameter went with it.
+    PruneSummary prune_runtime_data(std::int64_t cutoff_unix_ms);
 
-    // The same prune against the retention window, in one transaction, with the cutoffs
-    // computed here. The two cutoff forms exist because the tables store time differently
-    // (RFC3339 text vs REAL epoch seconds), and deriving them at the one call site that
-    // knows the window is what keeps the pair consistent -- passing one and forgetting the
-    // other prunes two tables out of three.
+    // The same prune against the retention window, in one transaction, with the cutoff
+    // computed here.
     PruneSummary prune_to_retention(int retention_days = kDefaultRetentionDays);
     void vacuum();
 
@@ -436,7 +447,8 @@ public:
     // the same wall-clock second — now_rfc3339() has whole-second resolution — so anything
     // asserting on `ORDER BY started_at` ordering needs a way to separate them or it flakes
     // on tied rows. See ROADMAP 7.16, which is about fixing the representation itself.
-    void backdate_session_for_test(const std::string& session_id, const std::string& started_at);
+    void backdate_session_for_test(const std::string& session_id,
+                                   std::int64_t started_at_ms);
 
     // Test seam: run ANALYZE, so the query planner has real row statistics instead of its
     // structural defaults. Snapback never runs this in production, and that is exactly why a

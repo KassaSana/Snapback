@@ -1,6 +1,8 @@
 // Wire-format assertions for the data model and the React boundary.
 #include "doctest_wrapper.hpp"
 
+#include "time_literals.hpp"
+
 #include "types.hpp"
 
 using namespace snapback;
@@ -101,7 +103,7 @@ TEST_CASE("PredictionRecord serializes with camelCase keys and round-trips") {
     p.thrash_score = 0.1;
     p.drift_score = 0.2;
     p.goal_alignment = 0.8;
-    p.timestamp = "2026-07-11T00:00:00Z";
+    p.timestamp_ms = ms("2026-07-11T00:00:00Z");
     p.state_source = "block";
 
     json j = p;
@@ -186,7 +188,7 @@ TEST_CASE("SessionRecord optional timestamps round-trip as null when absent") {
     CHECK(j["endedAt"].is_null());
 
     auto back = j.get<SessionRecord>();
-    CHECK(back.started_at == std::nullopt);
+    CHECK(back.started_at_ms == std::nullopt);
     CHECK(back.focus_mode == "deep");
 }
 

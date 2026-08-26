@@ -30,8 +30,8 @@ const boundary = vi.hoisted(() => {
           goal: String(args?.goal ?? ""),
           status: "ACTIVE",
           focus_mode: String(args?.focusMode ?? "normal"),
-          started_at: "2026-07-11T00:00:00Z",
-          ended_at: null,
+          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+          ended_at_ms: null,
         };
       case "get_pomodoro_status":
         return state.pomodoro;

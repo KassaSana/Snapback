@@ -74,14 +74,14 @@ struct AppStateTestAccess {
     // normally get their timestamp from the clock that wrote them, so there is no ordinary
     // way to make one *old* -- which is exactly what a retention test needs.
     static void insert_prediction_at(AppState& state, const std::string& session_id,
-                                     const std::string& timestamp) {
+                                     std::int64_t timestamp_ms) {
         std::lock_guard lock(state.storage_mutex_);
         PredictionRecord record;
         record.session_id = session_id;
         record.focus_score = 50.0;
         record.distraction_risk = 0.2;
         record.focus_state = "PRODUCTIVE";
-        record.timestamp = timestamp;
+        record.timestamp_ms = timestamp_ms;
         state.storage_.insert_prediction(record);
     }
 

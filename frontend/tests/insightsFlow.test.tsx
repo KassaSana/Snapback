@@ -95,8 +95,8 @@ const rawSummary = (id: string, focus: number, deep: number, snap: number) => ({
     goal: "g",
     status: "COMPLETED",
     focusMode: "normal",
-    startedAt: null,
-    endedAt: null,
+    startedAtMs: null,
+    endedAtMs: null,
   },
   recap: {
     sessionId: id,

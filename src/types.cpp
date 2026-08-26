@@ -25,6 +25,19 @@ std::optional<std::string> opt_str(const json& j, const char* key) {
     return it->get<std::string>();
 }
 
+// ADR-0007's optional instants. Null on the wire stays null in C++, because for these fields
+// it is a fact rather than an absence of data: a session with no `endedAtMs` is still running.
+void put_opt_ms(json& j, const char* key, const std::optional<std::int64_t>& v) {
+    if (v) j[key] = *v;
+    else j[key] = nullptr;
+}
+
+std::optional<std::int64_t> opt_ms(const json& j, const char* key) {
+    auto it = j.find(key);
+    if (it == j.end() || it->is_null()) return std::nullopt;
+    return it->get<std::int64_t>();
+}
+
 // Tolerant getter: missing/null -> default. Keeps from_json robust to schema drift.
 template <class T>
 T get_or(const json& j, const char* key, T def) {
@@ -105,7 +118,7 @@ void to_json(json& j, const PredictionRecord& v) {
              {"thrashScore", v.thrash_score},
              {"driftScore", v.drift_score},
              {"goalAlignment", v.goal_alignment},
-             {"timestamp", v.timestamp},
+             {"timestampMs", v.timestamp_ms},
              {"modelId", v.model_id}};
     put_opt(j, "stateSource", v.state_source);
 }
@@ -117,7 +130,7 @@ void from_json(const json& j, PredictionRecord& v) {
     v.thrash_score = get_or<double>(j, "thrashScore", 0.0);
     v.drift_score = get_or<double>(j, "driftScore", 0.0);
     v.goal_alignment = get_or<double>(j, "goalAlignment", 0.5);
-    v.timestamp = get_or<std::string>(j, "timestamp", "");
+    v.timestamp_ms = get_or<std::int64_t>(j, "timestampMs", 0);
     v.model_id = get_or<std::string>(j, "modelId", "heuristic:snapback-features-v1-31");
     v.state_source = opt_str(j, "stateSource");
 }
@@ -129,8 +142,8 @@ void to_json(json& j, const SessionRecord& v) {
              {"goal", v.goal},
              {"status", v.status},
              {"focusMode", v.focus_mode}};
-    put_opt(j, "startedAt", v.started_at);
-    put_opt(j, "endedAt", v.ended_at);
+    put_opt_ms(j, "startedAtMs", v.started_at_ms);
+    put_opt_ms(j, "endedAtMs", v.ended_at_ms);
     put_opt(j, "reflectionDone", v.reflection_done);
     put_opt(j, "reflectionNextStep", v.reflection_next_step);
 }
@@ -139,8 +152,8 @@ void from_json(const json& j, SessionRecord& v) {
     v.goal = get_or<std::string>(j, "goal", "");
     v.status = get_or<std::string>(j, "status", "");
     v.focus_mode = get_or<std::string>(j, "focusMode", "normal");
-    v.started_at = opt_str(j, "startedAt");
-    v.ended_at = opt_str(j, "endedAt");
+    v.started_at_ms = opt_ms(j, "startedAtMs");
+    v.ended_at_ms = opt_ms(j, "endedAtMs");
     v.reflection_done = opt_str(j, "reflectionDone");
     v.reflection_next_step = opt_str(j, "reflectionNextStep");
 }
@@ -304,7 +317,7 @@ void to_json(json& j, const ContextSnapshotDto& v) {
              {"fileHint", v.file_hint},
              {"projectHint", v.project_hint},
              {"summary", v.summary},
-             {"timestamp", v.timestamp}};
+             {"timestampMs", v.timestamp_ms}};
 }
 void from_json(const json& j, ContextSnapshotDto& v) {
     v.app_name = get_or<std::string>(j, "appName", "");
@@ -312,7 +325,7 @@ void from_json(const json& j, ContextSnapshotDto& v) {
     v.file_hint = get_or<std::string>(j, "fileHint", "");
     v.project_hint = get_or<std::string>(j, "projectHint", "");
     v.summary = get_or<std::string>(j, "summary", "");
-    v.timestamp = get_or<std::string>(j, "timestamp", "");
+    v.timestamp_ms = get_or<std::int64_t>(j, "timestampMs", 0);
 }
 
 // ---- AppRuleRecord ---------------------------------------------------------
@@ -321,8 +334,8 @@ void to_json(json& j, const AppRuleRecord& v) {
     j = json{{"id", v.id},
              {"pattern", v.pattern},
              {"ruleType", v.rule_type},
-             {"createdAt", v.created_at},
-             {"updatedAt", v.updated_at}};
+             {"createdAtMs", v.created_at_ms},
+             {"updatedAtMs", v.updated_at_ms}};
     put_opt(j, "note", v.note);
 }
 void from_json(const json& j, AppRuleRecord& v) {
@@ -330,8 +343,8 @@ void from_json(const json& j, AppRuleRecord& v) {
     v.pattern = get_or<std::string>(j, "pattern", "");
     v.rule_type = get_or<AppRuleKind>(j, "ruleType", AppRuleKind::Allow);
     v.note = opt_str(j, "note");
-    v.created_at = get_or<std::string>(j, "createdAt", "");
-    v.updated_at = get_or<std::string>(j, "updatedAt", "");
+    v.created_at_ms = get_or<std::int64_t>(j, "createdAtMs", 0);
+    v.updated_at_ms = get_or<std::int64_t>(j, "updatedAtMs", 0);
 }
 
 // ---- UpsertAppRuleRequest --------------------------------------------------
@@ -540,7 +553,7 @@ void from_json(const json& j, AnalyticsSummary& v) {
 
 void to_json(json& j, const SummaryReport& v) {
     j = json{{"window", v.window},
-             {"generatedAt", v.generated_at},
+             {"generatedAtMs", v.generated_at_ms},
              {"sessionCount", v.session_count},
              {"completedSessionCount", v.completed_session_count},
              {"focusSeconds", v.focus_seconds},
@@ -554,7 +567,7 @@ void to_json(json& j, const SummaryReport& v) {
 }
 void from_json(const json& j, SummaryReport& v) {
     v.window = get_or<std::string>(j, "window", "day");
-    v.generated_at = get_or<std::string>(j, "generatedAt", "");
+    v.generated_at_ms = get_or<std::int64_t>(j, "generatedAtMs", 0);
     v.session_count = get_or<std::size_t>(j, "sessionCount", 0);
     v.completed_session_count = get_or<std::size_t>(j, "completedSessionCount", 0);
     v.focus_seconds = get_or<std::uint64_t>(j, "focusSeconds", 0);

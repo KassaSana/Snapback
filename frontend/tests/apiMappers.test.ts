@@ -101,7 +101,7 @@ const prediction = mapPrediction({
   thrash_score: 0.1,
   drift_score: 0.2,
   goal_alignment: 0.8,
-  timestamp: "2026-07-07T12:00:00Z",
+  timestampMs: Date.parse("2026-07-07T12:00:00Z"),
   state_source: "drift",
 });
 
@@ -120,13 +120,13 @@ const session = mapSession({
   goal: "Ship overlay",
   status: "ACTIVE",
   focusMode: "deep",
-  startedAt: "2026-07-07T10:00:00Z",
-  endedAt: null,
+  startedAtMs: Date.parse("2026-07-07T10:00:00Z"),
+  endedAtMs: null,
 });
 
 assert.equal(session.sessionId, "sess-2");
 assert.equal(session.focusMode, "deep");
-assert.equal(session.endedAt, null);
+assert.equal(session.endedAtMs, null);
 
 const settingsSnake = mapSettings({ default_focus_mode: "deep" });
 assert.equal(settingsSnake.defaultFocusMode, "deep");
@@ -364,8 +364,8 @@ const appRuleSnake = mapAppRule({
   pattern: "youtube.com",
   rule_type: "block",
   note: "distracting",
-  created_at: "2026-07-01T00:00:00Z",
-  updated_at: "2026-07-02T00:00:00Z",
+  created_at_ms: Date.parse("2026-07-01T00:00:00Z"),
+  updated_at_ms: Date.parse("2026-07-02T00:00:00Z"),
 });
 assert.equal(appRuleSnake.id, 7);
 assert.equal(appRuleSnake.ruleType, "block");
@@ -376,8 +376,8 @@ const appRuleCamel = mapAppRule({
   pattern: "github.com",
   ruleType: "allow",
   note: null,
-  createdAt: "2026-07-03T00:00:00Z",
-  updatedAt: "2026-07-04T00:00:00Z",
+  createdAtMs: Date.parse("2026-07-03T00:00:00Z"),
+  updatedAtMs: Date.parse("2026-07-04T00:00:00Z"),
 });
 assert.equal(appRuleCamel.ruleType, "allow");
 assert.equal(appRuleCamel.note, null);
@@ -394,7 +394,7 @@ const contextSnake = mapContextSnapshot({
   file_hint: "auth.ts",
   project_hint: "Snapback",
   summary: "Editing auth.ts",
-  timestamp: "2026-07-08T00:00:00Z",
+  timestampMs: Date.parse("2026-07-08T00:00:00Z"),
 });
 assert.equal(contextSnake.appName, "Code");
 assert.equal(contextSnake.projectHint, "Snapback");
@@ -405,7 +405,7 @@ const contextCamel = mapContextSnapshot({
   fileHint: "",
   projectHint: "",
   summary: "Idle",
-  timestamp: "2026-07-08T00:01:00Z",
+  timestampMs: Date.parse("2026-07-08T00:01:00Z"),
 });
 assert.equal(contextCamel.appName, "Terminal");
 

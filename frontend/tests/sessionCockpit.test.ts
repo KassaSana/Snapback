@@ -29,8 +29,8 @@ const summary = (goal: string, focusMode = "normal", status = "COMPLETED"): Sess
       goal,
       status,
       focusMode,
-      startedAt: "2026-08-10T09:00:00Z",
-      endedAt: "2026-08-10T10:00:00Z",
+      startedAtMs: Date.parse("2026-08-10T09:00:00Z"),
+      endedAtMs: Date.parse("2026-08-10T10:00:00Z"),
       reflectionDone: null,
       reflectionNextStep: null,
     },
@@ -191,8 +191,8 @@ writeSessionPresets([], null);
 // ---------------------------------------------------------------------------
 
 {
-  const started = "2026-08-10T09:00:00Z";
-  const at = (ms: number) => formatElapsed(started, Date.parse(started) + ms);
+  const started = Date.parse("2026-08-10T09:00:00Z");
+  const at = (ms: number) => formatElapsed(started, started + ms);
 
   assert.equal(at(0), "0m 00s");
   assert.equal(at(45_000), "0m 45s");
@@ -204,9 +204,11 @@ writeSessionPresets([], null);
   assert.equal(at(3_660_000), "1h 01m");
   assert.equal(at(7_845_000), "2h 10m");
 
-  // A missing or unparseable start renders the same "--" as every other absent timestamp.
+  // A missing start renders the same "--" as every other absent timestamp. There is no
+  // longer an "unparseable" case to check alongside it: ADR-0007 made the argument a number,
+  // so the only way to say "no such moment" is null or undefined.
   assert.equal(formatElapsed(null, Date.now()), "--");
-  assert.equal(formatElapsed("not a date", Date.now()), "--");
+  assert.equal(formatElapsed(undefined, Date.now()), "--");
   assert.equal(formatElapsed(started, Number.NaN), "--");
   // A browser clock a second behind the backend must not render a negative duration.
   assert.equal(at(-1000), "0m 00s");

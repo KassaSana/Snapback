@@ -59,7 +59,9 @@ inline FocusSummary summarize_predictions(const std::vector<PredictionRecord>& p
         sum += p.focus_score;
         if (p.focus_score > s.peak_focus_score) s.peak_focus_score = p.focus_score;
 
-        const auto now_secs = epoch_secs_from_rfc3339(p.timestamp);
+        // ADR-0007: already an instant, so there is nothing to parse and nothing that can
+        // fail to. The `!now_secs` branch below went with the parse it guarded.
+        const std::int64_t now_secs = p.timestamp_ms / 1000;
         const bool new_session = p.session_id != previous_session;
         previous_session = p.session_id;
         if (p.focus_state == "DISTRACTED") {
@@ -73,15 +75,8 @@ inline FocusSummary summarize_predictions(const std::vector<PredictionRecord>& p
             previous_secs.reset();
         }
 
-        // An unparseable timestamp cannot be measured against its neighbours, so it ends the
-        // run rather than being folded in at an invented distance.
-        if (!now_secs) {
-            run_secs = 0;
-            previous_secs.reset();
-            continue;
-        }
         if (previous_secs) {
-            const auto gap = *now_secs - *previous_secs;
+            const auto gap = now_secs - *previous_secs;
             // A backwards clock (DST, NTP) is not a negative amount of focus, and a gap past
             // the bound is a pause in the *user*, not in the data. Both start a fresh run.
             run_secs = (gap >= 0 && gap <= kFocusRunGapSecs) ? run_secs + gap : 0;

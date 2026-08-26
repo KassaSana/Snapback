@@ -10,8 +10,8 @@ const session = (status: string): SessionRecord => ({
   focusMode: "normal",
   reflectionDone: null,
   reflectionNextStep: null,
-  startedAt: null,
-  endedAt: null,
+  startedAtMs: null,
+  endedAtMs: null,
 });
 
 // No session and "the user is away" are independent states, so the empty case must not

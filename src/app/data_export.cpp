@@ -1,5 +1,7 @@
 #include "app/data_export.hpp"
 
+#include "util/time.hpp"
+
 #include <cstdint>
 #include <iomanip>
 #include <optional>
@@ -10,6 +12,16 @@ namespace {
 
 std::string or_unknown(const std::optional<std::string>& value) {
     return value && !value->empty() ? *value : "unknown";
+}
+
+// ADR-0007. This file is an edge that shows a person a time, so this is where a stored instant
+// becomes a readable one. The conversion lives here rather than in the DTO precisely so the
+// value stays comparable everywhere else -- a Markdown table is the last place a timestamp is
+// any use as a number.
+std::string ts_text(std::int64_t unix_ms) { return rfc3339_from_unix_ms(unix_ms); }
+
+std::string ts_text_or_unknown(const std::optional<std::int64_t>& unix_ms) {
+    return unix_ms ? rfc3339_from_unix_ms(*unix_ms) : "unknown";
 }
 
 std::string or_placeholder(std::string_view value, std::string_view placeholder) {
@@ -77,7 +89,7 @@ std::string archive_checksum(std::string_view body) {
 std::string render_archive_header(const PersonalArchive& archive) {
     std::ostringstream out;
     out << "# Your Snapback data\n\n";
-    out << "Exported " << or_placeholder(archive.generated_at, "at an unknown time");
+    out << "Exported " << ts_text(archive.generated_at_ms);
     if (!archive.app_version.empty()) out << " by Snapback " << archive.app_version;
     out << ".\n\n";
 
@@ -105,8 +117,8 @@ std::string render_archive_session_header(const PersonalArchiveSession& session,
     out << "### " << index_from_one << ". "
         << or_placeholder(record.goal, "Untitled session") << "\n\n";
     out << "- Session id: `" << record.session_id << "`\n";
-    out << "- Started: " << or_unknown(record.started_at) << "\n";
-    out << "- Ended: " << or_unknown(record.ended_at) << "\n";
+    out << "- Started: " << ts_text_or_unknown(record.started_at_ms) << "\n";
+    out << "- Ended: " << ts_text_or_unknown(record.ended_at_ms) << "\n";
     out << "- Status: " << or_placeholder(record.status, "unknown") << "\n";
     out << "- Focus mode: " << or_placeholder(record.focus_mode, "unknown") << "\n";
     out << "- Duration: " << duration_minutes(recap.duration_secs) << "\n";
@@ -140,8 +152,8 @@ std::string render_archive_episodes(const std::vector<SnapbackEpisode>& episodes
     out << "| Left at | Came back | Away for | Returned to |\n";
     out << "| --- | --- | --- | --- |\n";
     for (const auto& episode : episodes) {
-        out << "| " << escape_table_cell(or_placeholder(episode.started_at, "unknown"))
-            << " | " << escape_table_cell(or_placeholder(episode.ended_at, "unknown"))
+        out << "| " << escape_table_cell(ts_text_or_unknown(episode.started_at_ms))
+            << " | " << escape_table_cell(ts_text(episode.ended_at_ms))
             << " | " << duration_seconds(episode.duration_secs)
             << " | "
             << escape_table_cell(or_placeholder(
@@ -158,7 +170,7 @@ std::string render_archive_window_table_header() {
 
 std::string render_archive_window_row(const ContextSnapshotDto& snapshot) {
     std::ostringstream out;
-    out << "| " << escape_table_cell(snapshot.timestamp)
+    out << "| " << escape_table_cell(ts_text(snapshot.timestamp_ms))
         << " | " << escape_table_cell(snapshot.app_name)
         << " | " << escape_table_cell(snapshot.window_title) << " |\n";
     return out.str();

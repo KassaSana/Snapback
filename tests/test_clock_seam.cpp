@@ -13,6 +13,8 @@
 // exists.
 #include "doctest_wrapper.hpp"
 
+#include "time_literals.hpp"
+
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -52,7 +54,7 @@ TEST_CASE("an injected clock supplies the timestamps AppState stamps") {
     Harness harness;
 
     const auto report = harness.state->summary_report("day");
-    CHECK(report.generated_at.rfind("2023-11-14T22:13:20", 0) == 0);
+    CHECK(rfc3339_from_unix_ms(report.generated_at_ms) == "2023-11-14T22:13:20Z");
 }
 
 TEST_CASE("advancing the injected clock moves the timestamps AppState writes") {
@@ -60,12 +62,12 @@ TEST_CASE("advancing the injected clock moves the timestamps AppState writes") {
     // and seeing the next stamp move is what proves the read is live rather than memoised.
     Harness harness;
 
-    const auto before = harness.state->summary_report("day").generated_at;
+    const auto before = harness.state->summary_report("day").generated_at_ms;
     harness.clock.advance_minutes(90);
-    const auto after = harness.state->summary_report("day").generated_at;
+    const auto after = harness.state->summary_report("day").generated_at_ms;
 
-    CHECK(before.rfind("2023-11-14T22:13:20", 0) == 0);
-    CHECK(after.rfind("2023-11-14T23:43:20", 0) == 0);  // 22:13:20 + 90 min
+    CHECK(rfc3339_from_unix_ms(before) == "2023-11-14T22:13:20Z");
+    CHECK(rfc3339_from_unix_ms(after) == "2023-11-14T23:43:20Z");  // 22:13:20 + 90 min
     CHECK(after > before);
 }
 
@@ -117,10 +119,74 @@ TEST_CASE("AppState still uses the real clock when none is injected") {
     REQUIRE(storage.has_value());
     AppState state(std::move(*storage));
 
-    const auto generated_at = state.summary_report("day").generated_at;
-    // Anything but the fake's frozen 2023 stamp. Asserting the shape rather than an exact
-    // value keeps this from becoming a test that expires.
-    CHECK(generated_at.rfind("2023-11-14T22:13:20", 0) != 0);
-    CHECK(generated_at.size() == 20);
-    CHECK(generated_at.back() == 'Z');
+    const auto generated_at_ms = state.summary_report("day").generated_at_ms;
+    // Anything but the fake's frozen 2023 stamp. Asserting a lower bound rather than an exact
+    // value keeps this from becoming a test that expires -- and it is now an integer
+    // comparison rather than a prefix match, which is the readability ADR-0007 trades away at
+    // the storage layer and buys back at every comparison.
+    CHECK(generated_at_ms != ms("2023-11-14T22:13:20Z"));
+    CHECK(generated_at_ms > ms("2026-01-01T00:00:00Z"));
+}
+
+// ADR-0007. The wall clock reads milliseconds; `wall_time()` is a derived convenience for the
+// callers that have not moved yet. These cases pin the relationship between the two, because
+// the reason `wall_time()` is non-virtual is precisely that an implementation must not be able
+// to let them disagree.
+
+TEST_CASE("wall_time is the containing second of wall_ms") {
+    ManualClock clock;
+    clock.set_wall_ms(1'700'000'000'750);
+    CHECK(clock.wall_ms() == 1'700'000'000'750);
+    CHECK(clock.wall_time() == static_cast<std::time_t>(1'700'000'000));
+
+    // Floor, not truncate, on the far side of the epoch -- the same rounding rule
+    // `rfc3339_from_unix_ms` uses, so a value cannot land in one second here and another there.
+    clock.set_wall_ms(-1'500);
+    CHECK(clock.wall_time() == static_cast<std::time_t>(-2));
+}
+
+TEST_CASE("set_wall_time still names a whole second") {
+    // Every pre-existing caller passes a second-resolution constant. A unit change that
+    // compiled silently would move each of them by a factor of a thousand, so this pins the
+    // seconds-in/seconds-out contract rather than leaving it to the reader.
+    ManualClock clock;
+    clock.set_wall_time(1'700'000'000);
+    CHECK(clock.wall_ms() == 1'700'000'000'000);
+    CHECK(clock.wall_time() == static_cast<std::time_t>(1'700'000'000));
+}
+
+TEST_CASE("advancing by less than a second still moves wall time") {
+    // The regression this closes: advance_ms used to add `delta / 1000` seconds to the wall
+    // clock, so any advance under a second rounded away to nothing and a test could hold the
+    // wall clock still while believing it had moved.
+    ManualClock clock;
+    const auto before = clock.wall_ms();
+    clock.advance_ms(250);
+    CHECK(clock.wall_ms() == before + 250);
+}
+
+TEST_CASE("SystemClock reports wall time with sub-second resolution") {
+    // Not an assertion about *precision* -- a CI box may tick coarsely -- but about units:
+    // a reading scaled up from whole seconds is always an exact multiple of 1000, and the
+    // ordering ADR-0007 is buying depends on it not being one.
+    SystemClock clock;
+    const std::int64_t ms = clock.wall_ms();
+    // Sanity: milliseconds, not seconds. 2020-01-01 in ms is far past any plausible
+    // seconds-valued reading, so a unit slip fails here rather than decades from now.
+    CHECK(ms > 1'577'836'800'000);
+    CHECK(clock.wall_time() == static_cast<std::time_t>(ms / 1000));
+}
+
+TEST_CASE("a wall-clock deadline AppState stores keeps its sub-second offset") {
+    // Roadmap 2.13's note said a stored deadline could land up to a second off the instant it
+    // was computed from, because the wall reading was whole seconds scaled by 1000. It no
+    // longer can, and this is the case that would fail if the scaling came back.
+    //
+    // Asserted through the privacy pause rather than through `wall_now_ms` directly: that
+    // method is private, and the deadline it computes is the thing a user actually feels --
+    // a pause that ends at the wrong moment.
+    Harness harness;
+    harness.clock.set_wall_ms(1'700'000'000'750);
+    harness.state->pause_privately_for(1);
+    CHECK(harness.state->settings().private_until_wall_ms == 1'700'000'000'750 + 60'000);
 }

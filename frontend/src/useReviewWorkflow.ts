@@ -33,7 +33,7 @@ const EMPTY_FOCUS: FocusSummary = {
 
 const EMPTY_REPORT: SummaryReport = {
   window: "7d",
-  generatedAt: "",
+  generatedAtMs: 0,
   sessionCount: 0,
   completedSessionCount: 0,
   focusSeconds: 0,

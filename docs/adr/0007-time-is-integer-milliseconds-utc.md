@@ -1,42 +1,10 @@
 # ADR-0007 — A point in time is UTC milliseconds since the epoch, stored as INTEGER
 
 - **Status:** Accepted
-- **Applied:** **No — not yet implemented.** See *Implementation status* below before writing
-  any code against this.
+- **Applied:** Yes — schema v7 and the IPC contract, 2026-08-24.
 - **Date:** 2026-08-19
 - **Roadmap item:** 7.16 (scopes 5.5, 7.1, 7.2)
 - **Decided by:** Kassa
-
-## Implementation status
-
-**The decision is in force. The code does not implement it yet.** Everything below the
-*Decision* heading is written in the present tense, as ADRs here are; read it as *what the
-system is being moved towards*, not as a description of the tree you are looking at.
-
-As of 2026-08-19 the schema still stores time the way this ADR argues against:
-
-- ten `TEXT` RFC3339 columns and one `REAL` Unix-seconds column
-  (`storage.cpp:migrate_baseline_schema`, and `session_spans` added later);
-- `kSchemaVersion` is 6, and no migration converts any of them;
-- roughly fifteen SQL statements still do `datetime`/`julianday`/`strftime` arithmetic;
-- `utc_now_rfc3339`, `AppState::rfc3339_at`, `AppState::now_rfc3339`, and the
-  `retention_cutoff_rfc3339` / `retention_cutoff_unix_secs` pair are all still there —
-  `now_unix_ms()` does not exist;
-- timestamps cross the IPC boundary as strings, and the frontend types them as `string`.
-
-**What this means in practice.** New code should not invent a *third* representation, and
-anything genuinely new can be written in epoch milliseconds. But do not write code that
-assumes the database or the IPC contract already speaks milliseconds — it does not, and it
-will not until roadmap 7.16's migration lands. That migration is the open work; it is item 4
-in the roadmap's *Start here* sequence.
-
-This section exists because an `Accepted` status combined with the ADR house style —
-present-tense, "Scores are `[0,1]` everywhere" — reads as a description of the code. For
-every other ADR here it is one, because the code landed with the decision. This one was
-settled ahead of its implementation, which is allowed (`decision` items exist precisely so
-the question is answered before anyone writes code) but leaves a window where the most
-authoritative document in the repository describes a system that does not exist. Delete this
-section when the migration lands.
 
 ## Question
 

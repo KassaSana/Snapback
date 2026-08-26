@@ -57,18 +57,10 @@ bool contains_whole_app_name_phrase(const std::string& app, const std::string& p
     return false;
 }
 
-std::string cutoff_rfc3339(int days_ago) {
-    const auto now = std::chrono::system_clock::now() - std::chrono::hours(24 * days_ago);
-    const std::time_t time = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-#if defined(_WIN32)
-    gmtime_s(&tm, &time);
-#else
-    gmtime_r(&time, &tm);
-#endif
-    std::ostringstream out;
-    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    return out.str();
+std::int64_t cutoff_unix_ms(int days_ago) {
+    using namespace std::chrono;
+    const auto cutoff = system_clock::now() - hours(24 * days_ago);
+    return duration_cast<milliseconds>(cutoff.time_since_epoch()).count();
 }
 
 // Roadmap 8.12. The artifact/privacy matrix, written down in one place because it was
@@ -174,7 +166,7 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     // in the future resumes; one that passed while the app was closed waits for the user
     // rather than chaining through phases nobody was present for — see PomodoroTimer::restore.
     pomodoro_ = PomodoroTimer(settings_.pomodoro);
-    pomodoro_.restore(settings_.pomodoro_state, wall_now_ms(), steady_now_ms());
+    pomodoro_.restore(settings_.pomodoro_state, now_unix_ms(), steady_now_ms());
     hydrate_active_session_unlocked();
     hydrate_session_attendance_unlocked();
     last_prune_steady_ms_ = steady_now_ms();  // Storage::open pruned on the way in
@@ -221,34 +213,18 @@ AppState::~AppState() noexcept {
     stop_engine();
 }
 
-std::string AppState::rfc3339_at(std::time_t when) const {
-    std::tm tm{};
-#if defined(_WIN32)
-    gmtime_s(&tm, &when);
-#else
-    gmtime_r(&when, &tm);
-#endif
-    std::ostringstream out;
-    out << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-    return out.str();
-}
+// ADR-0007. `rfc3339_at` and `now_rfc3339` collapse into this: one reading, in the one
+// representation. Formatting moved to `util/time.hpp`, where it belongs -- producing an
+// RFC3339 string is what you do at an edge that shows a person a time, not something a state
+// object does on the way to the database.
+std::int64_t AppState::now_unix_ms() const { return clock().wall_ms(); }
 
-std::string AppState::now_rfc3339() const { return rfc3339_at(clock().wall_time()); }
-
-std::string AppState::rfc3339_secs_ago(std::int64_t secs) const {
-    // Roadmap 7.23. A pause must be stamped when the user *stopped*, not when we noticed —
+std::int64_t AppState::unix_ms_secs_ago(std::int64_t secs) const {
+    // Roadmap 7.23. A pause must be stamped when the user *stopped*, not when we noticed --
     // the idle threshold means we notice five minutes late, and stamping "now" would credit
     // those five minutes as attended on every single pause.
-    if (secs <= 0) return now_rfc3339();
-    return rfc3339_at(clock().wall_time() - static_cast<std::time_t>(secs));
-}
-
-// Roadmap 2.13. The wall clock this app carries has second resolution, so a restored phase can
-// be up to a second off the one that was written. Against a 25-minute phase that is noise, and
-// the alternative — a monotonic deadline — is not off by a second but meaningless, because the
-// monotonic timeline restarts with the process.
-std::int64_t AppState::wall_now_ms() const {
-    return static_cast<std::int64_t>(clock().wall_time()) * 1000;
+    if (secs <= 0) return now_unix_ms();
+    return now_unix_ms() - secs * 1000;
 }
 
 std::int64_t AppState::steady_now_ms() const {
@@ -340,7 +316,7 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     } else {
         if (!untracked_since_ms_) untracked_since_ms_ = now_ms;
         const auto minutes = (now_ms - *untracked_since_ms_) / (60 * 1000);
-        const bool dismissal_active = wall_now_ms() < settings_.untracked_nudge_until_wall_ms;
+        const bool dismissal_active = now_unix_ms() < settings_.untracked_nudge_until_wall_ms;
         if (!dismissal_active && !untracked_latched_ && minutes >= kUntrackedNudgeMinutes) {
             untracked_latched_ = true;
             untracked_minutes_ = static_cast<std::uint64_t>(minutes);
@@ -383,7 +359,7 @@ PomodoroStatus AppState::start_pomodoro() {
 void AppState::persist_pomodoro_unlocked() {
     if (app_data_dir_.empty()) return;
     AppSettings candidate = settings_;
-    candidate.pomodoro_state = pomodoro_.snapshot(wall_now_ms(), steady_now_ms());
+    candidate.pomodoro_state = pomodoro_.snapshot(now_unix_ms(), steady_now_ms());
     try {
         save_app_settings(app_data_dir_, candidate);
         settings_ = std::move(candidate);
@@ -463,7 +439,7 @@ AttendedProgress AppState::attended_progress() {
         std::lock_guard lock(mutex_);
         snapshot = settings_;
     }
-    const auto now = now_rfc3339();
+    const auto now = now_unix_ms();
     std::lock_guard store_lock(storage_mutex_);
     AttendedProgress out;
     out.daily_target_mins = snapshot.attended_target_daily_mins;
@@ -947,7 +923,7 @@ FocusSummary AppState::focus_summary(std::size_t limit) {
 
 FocusSummary AppState::focus_summary_for_window(const std::string& window,
                                                 const std::optional<std::string>& since) {
-    const auto cutoff = review_window_cutoff(window, since, cutoff_rfc3339);
+    const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
     std::lock_guard lock(storage_mutex_);
     auto rows = storage_.predictions_since(cutoff);
     return summarize_predictions(rows);
@@ -955,7 +931,7 @@ FocusSummary AppState::focus_summary_for_window(const std::string& window,
 
 std::vector<SessionSummary> AppState::session_history_for_window(
     const std::string& window, const std::optional<std::string>& since) {
-    const auto cutoff = review_window_cutoff(window, since, cutoff_rfc3339);
+    const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
     std::lock_guard lock(storage_mutex_);
     return storage_.recent_session_summaries(500, cutoff);
 }
@@ -1056,7 +1032,7 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
     if (page_size == 0) page_size = 1;
 
     PersonalArchive archive;
-    archive.generated_at = now_rfc3339();
+    archive.generated_at_ms = now_unix_ms();
     archive.app_version = SNAPBACK_VERSION;
 
     std::filesystem::create_directories(out_dir);
@@ -1083,7 +1059,7 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
             std::lock_guard lock(storage_mutex_);
             const auto records = storage_.sessions_after(session_cursor, page_size);
             if (records.empty()) break;
-            session_cursor = Storage::SessionCursor{records.back().started_at.value_or(""),
+            session_cursor = Storage::SessionCursor{records.back().started_at_ms.value_or(0),
                                                     records.back().session_id};
             page.reserve(records.size());
             for (const auto& record : records) {
@@ -1221,7 +1197,7 @@ void AppState::set_idle_threshold_secs(std::int64_t seconds) {
 // Requires mutex_.
 bool AppState::lapse_private_pause_unlocked() {
     if (!settings_.private_mode || settings_.private_until_wall_ms == 0) return false;
-    if (wall_now_ms() < settings_.private_until_wall_ms) return false;
+    if (now_unix_ms() < settings_.private_until_wall_ms) return false;
     // The deadline is the promise: when it passes, recording resumes and the setting must say
     // so. Leaving private_mode true with a stale deadline would keep the app paused forever
     // after one timed pause; clearing the deadline but not the mode would do the opposite.
@@ -1262,7 +1238,7 @@ RecordingStatus AppState::recording_status() {
     // branch never ran even though the deadline was real and still approaching. The user would
     // fix their permissions and find the countdown had apparently restarted.
     if (settings_.private_mode && settings_.private_until_wall_ms > 0) {
-        const auto left = settings_.private_until_wall_ms - wall_now_ms();
+        const auto left = settings_.private_until_wall_ms - now_unix_ms();
         status.private_pause_remaining_ms = left > 0 ? left : 0;
     }
     return status;
@@ -1277,7 +1253,7 @@ RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
         // 0 means indefinite, which is what the Settings toggle has always done. A timed pause
         // stores the instant it ends rather than a duration, so closing the window does not
         // restart the clock.
-        candidate.private_until_wall_ms = minutes > 0 ? wall_now_ms() + minutes * 60 * 1000 : 0;
+        candidate.private_until_wall_ms = minutes > 0 ? now_unix_ms() + minutes * 60 * 1000 : 0;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
     return recording_status();
@@ -1300,7 +1276,7 @@ void AppState::dismiss_untracked_nudge(std::int64_t minutes) {
     }
     std::lock_guard lock(mutex_);
     AppSettings candidate = settings_;
-    candidate.untracked_nudge_until_wall_ms = wall_now_ms() + minutes * 60 * 1000;
+    candidate.untracked_nudge_until_wall_ms = now_unix_ms() + minutes * 60 * 1000;
     commit_settings_unlocked(std::move(candidate), [this] {
         untracked_minutes_.reset();
         // The deadline is the latch. Keeping the ordinary per-stretch latch set would make
@@ -1333,7 +1309,7 @@ void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
 
 AnalyticsSummary AppState::analytics(const std::string& window,
                                      const std::optional<std::string>& since) const {
-    const auto cutoff = review_window_cutoff(window, since, cutoff_rfc3339);
+    const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
     std::lock_guard lock(storage_mutex_);
     AnalyticsSummary summary;
     const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff);
@@ -1363,7 +1339,7 @@ SummaryReport AppState::summary_report(const std::string& window,
         window != "30d" && window != "all" && window != "custom") {
         throw std::runtime_error("summary window must be day, week, 7d, 30d, all, or custom");
     }
-    const auto cutoff_opt = review_window_cutoff(window, since, cutoff_rfc3339);
+    const auto cutoff_opt = review_window_cutoff(window, since, cutoff_unix_ms);
 
     // Roadmap 2.19. Targets live with settings; spans live in storage. Same lock discipline as
     // attended_progress(): copy settings, release, then read storage so a slow query does not
@@ -1377,7 +1353,7 @@ SummaryReport AppState::summary_report(const std::string& window,
     std::lock_guard lock(storage_mutex_);
     SummaryReport report;
     report.window = window;
-    report.generated_at = now_rfc3339();
+    report.generated_at_ms = now_unix_ms();
 
     const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff_opt);
     report.sample_count = stats.sample_count;
@@ -1388,9 +1364,10 @@ SummaryReport AppState::summary_report(const std::string& window,
             static_cast<double>(stats.distracted_count) / static_cast<double>(report.sample_count);
     }
 
-    const std::string session_floor =
-        cutoff_opt ? *cutoff_opt : std::string("1970-01-01T00:00:00Z");
-    const auto totals = const_cast<Storage&>(storage_).session_window_totals(500, session_floor);
+    // 0 is the epoch, which is before any session this app could have recorded. It used to be
+    // spelled "1970-01-01T00:00:00Z" for the same reason.
+    const std::int64_t session_floor_ms = cutoff_opt.value_or(0);
+    const auto totals = const_cast<Storage&>(storage_).session_window_totals(500, session_floor_ms);
     report.session_count = totals.session_count;
     report.completed_session_count = totals.completed_session_count;
     report.focus_seconds = totals.focus_seconds;
@@ -1411,7 +1388,7 @@ SummaryReport AppState::summary_report(const std::string& window,
     // Planned-versus-actual for the Review range. today/7d reuse the calendar day/week helpers
     // so this card agrees with the Now surface; longer/custom ranges report attended only —
     // there is no daily/weekly plan that matches those populations without inventing one.
-    const auto now = report.generated_at;
+    const auto now = report.generated_at_ms;
     if (window == "day" || window == "today") {
         report.attended_seconds =
             const_cast<Storage&>(storage_).attended_secs_in_local_day(now);
@@ -1814,12 +1791,12 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
             // Window changes drive the distraction state machine; eager timestamp is fine
             // here since these events are infrequent.
             job.context_snapshot = context_tracker_.observe_window_change(
-                event.app_name, event.window_title, app_rules_, event.timestamp_secs, now_rfc3339());
+                event.app_name, event.window_title, app_rules_, event.timestamp_secs, now_unix_ms());
         } else {
             // Defer the RFC3339 formatting until the tracker actually checkpoints (rare),
             // so the ~99% of key/mouse events don't pay for a timestamp they won't use.
             job.context_snapshot = context_tracker_.maybe_checkpoint_snapshot(
-                app_rules_, event.timestamp_secs, [this] { return now_rfc3339(); });
+                app_rules_, event.timestamp_secs, [this] { return now_unix_ms(); });
         }
         // The tracker latches a snapback payload on the return-from-distraction edge;
         // drain it into the field the tick loop emits.
@@ -1838,9 +1815,9 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
             episode.app_name = snapback->app_name;
             episode.file_hint = snapback->file_hint;
             episode.duration_secs = snapback->distraction_duration_secs;
-            episode.ended_at = now_rfc3339();
-            episode.started_at =
-                rfc3339_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
+            episode.ended_at_ms = now_unix_ms();
+            episode.started_at_ms =
+                unix_ms_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
             job.snapback_episode = std::move(episode);
 
             latest_snapback_ = *snapback;
@@ -1906,7 +1883,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     record.thrash_score = scores.thrash_score;
     record.drift_score = scores.drift_score;
     record.goal_alignment = scores.goal_alignment;
-    record.timestamp = now_rfc3339();
+    record.timestamp_ms = now_unix_ms();
     record.model_id = classifier_.model_id();
     record.state_source = scores.state_source;
     latest_prediction_ = record;

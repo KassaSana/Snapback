@@ -1,5 +1,7 @@
 #include "doctest_wrapper.hpp"
 
+#include "time_literals.hpp"
+
 #include <string>
 
 #include "app/data_export.hpp"
@@ -18,8 +20,8 @@ PersonalArchiveSession make_session(const std::string& id, const std::string& go
     session.record.goal = goal;
     session.record.status = "COMPLETED";
     session.record.focus_mode = "normal";
-    session.record.started_at = "2026-07-30T09:00:00Z";
-    session.record.ended_at = "2026-07-30T09:45:00Z";
+    session.record.started_at_ms = ms("2026-07-30T09:00:00Z");
+    session.record.ended_at_ms = ms("2026-07-30T09:45:00Z");
     session.recap.session_id = id;
     session.recap.goal = goal;
     session.recap.duration_secs = 2700;
@@ -35,7 +37,7 @@ ContextSnapshotDto make_window(const std::string& app, const std::string& title)
     ContextSnapshotDto snapshot;
     snapshot.app_name = app;
     snapshot.window_title = title;
-    snapshot.timestamp = "2026-07-30T09:05:00Z";
+    snapshot.timestamp_ms = ms("2026-07-30T09:05:00Z");
     return snapshot;
 }
 
@@ -46,8 +48,8 @@ SnapbackEpisode make_episode(const std::string& id, std::uint32_t duration_secs,
     episode.summary = file_hint.empty() ? "Return to " + app : "Return to " + file_hint;
     episode.app_name = app;
     episode.file_hint = file_hint;
-    episode.started_at = "2026-07-30T09:10:00Z";
-    episode.ended_at = "2026-07-30T09:12:00Z";
+    episode.started_at_ms = ms("2026-07-30T09:10:00Z");
+    episode.ended_at_ms = ms("2026-07-30T09:12:00Z");
     episode.duration_secs = duration_secs;
     return episode;
 }
@@ -60,7 +62,7 @@ SnapbackEpisode make_episode(const std::string& id, std::uint32_t duration_secs,
 // have on me".
 TEST_CASE("render_personal_archive lists the interruptions behind the count") {
     PersonalArchive archive;
-    archive.generated_at = "2026-08-06T10:00:00Z";
+    archive.generated_at_ms = ms("2026-08-06T10:00:00Z");
     auto session = make_session("s1", "ship the export");
     session.episodes.push_back(make_episode("s1", 95, "Cursor", "state.cpp"));
     session.episodes.push_back(make_episode("s1", 240, "Cursor", ""));
@@ -82,7 +84,7 @@ TEST_CASE("render_personal_archive lists the interruptions behind the count") {
 TEST_CASE("render_personal_archive omits the interruptions table when there were none") {
     // An empty table with a heading reads as a missing section rather than a quiet session.
     PersonalArchive archive;
-    archive.generated_at = "2026-08-06T10:00:00Z";
+    archive.generated_at_ms = ms("2026-08-06T10:00:00Z");
     archive.sessions.push_back(make_session("s1", "uninterrupted"));
 
     CHECK(render_personal_archive(archive).find("#### Interruptions") == std::string::npos);
@@ -92,7 +94,7 @@ TEST_CASE("render_personal_archive escapes an interruption's untrusted text") {
     // The file hint comes from a window title, so it is the same untrusted input the window
     // table escapes — a fact easy to forget when adding a second table.
     PersonalArchive archive;
-    archive.generated_at = "2026-08-06T10:00:00Z";
+    archive.generated_at_ms = ms("2026-08-06T10:00:00Z");
     auto session = make_session("s1", "escaping");
     session.episodes.push_back(make_episode("s1", 60, "Cursor", "a | b"));
     archive.sessions.push_back(std::move(session));
@@ -122,7 +124,7 @@ TEST_CASE("escape_table_cell leaves ordinary titles untouched") {
 // failed write, and this is the first thing a privacy-minded user clicks.
 TEST_CASE("render_personal_archive documents an empty history instead of writing nothing") {
     PersonalArchive archive;
-    archive.generated_at = "2026-07-30T10:00:00Z";
+    archive.generated_at_ms = ms("2026-07-30T10:00:00Z");
     archive.app_version = "0.2.0";
 
     const auto markdown = render_personal_archive(archive);
@@ -134,7 +136,7 @@ TEST_CASE("render_personal_archive documents an empty history instead of writing
 
 TEST_CASE("render_personal_archive reports each session and the windows it captured") {
     PersonalArchive archive;
-    archive.generated_at = "2026-07-30T10:00:00Z";
+    archive.generated_at_ms = ms("2026-07-30T10:00:00Z");
     archive.app_version = "0.2.0";
     auto session = make_session("s-1", "refactor the parser");
     session.context.push_back(make_window("Code", "title_parser.cpp"));

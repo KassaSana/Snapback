@@ -31,9 +31,15 @@ export const formatPercentCoarse = (value: number | null | undefined) => {
   return `${Math.round(clamp(value, 0, 1) * 100)}%`;
 };
 
-export const formatTime = (isoString: string | null | undefined) => {
-  if (!isoString) return "--";
-  const date = new Date(isoString);
+// ADR-0007: an instant crosses the bridge as epoch milliseconds, and becomes readable here.
+//
+// `null` and `undefined` still mean "no such moment" -- a session that has not ended. 0 is a
+// real instant (the epoch) and is deliberately *not* treated as absent: migration 7 stamps a
+// timestamp it could not convert with exactly that value, and rendering it as 1970 rather than
+// as "--" is the honest answer. A row whose time is unknown should look wrong, not look empty.
+export const formatTime = (unixMs: number | null | undefined) => {
+  if (unixMs === null || unixMs === undefined) return "--";
+  const date = new Date(unixMs);
   if (Number.isNaN(date.getTime())) return "--";
   return date.toLocaleTimeString([], {
     hour: "2-digit",
