@@ -122,6 +122,36 @@ struct AppStateTestAccess {
         return state.storage_.list_snapback_episodes(session_id, 100);
     }
 
+    // Stages a pending snapback payload without driving a real drift-and-recover cycle.
+    //
+    // Production sets this from the context tracker inside the tick, which needs a sequence of
+    // events across a focus transition to reach. The lifecycle question -- does this payload
+    // survive a session change -- is independent of how it got there, so staging it directly
+    // tests the thing that was actually broken instead of re-testing the tracker.
+    static void stage_snapback(AppState& state, const SnapbackPayload& payload) {
+        std::lock_guard lock(state.mutex_);
+        state.latest_snapback_ = payload;
+        state.snapback_emitted_ = true;  // as it stands after the tick has emitted the event
+        state.live_read_dirty_ = true;
+        state.publish_live_read_unlocked();
+    }
+
+    // Moves the activity boundary the way a delete does, and nothing else. AUD-07's failure
+    // needs the epoch to change *between* the tick latching it and the tick checking it --
+    // a window with no lock held, which is why reproducing it with a second thread would be
+    // a race dressed as a test. Called from a clock the tick reads inside that window, this
+    // makes the same interleave deterministic.
+    static void bump_activity_epoch(AppState& state) {
+        state.activity_epoch_.fetch_add(1, std::memory_order_release);
+    }
+
+    // The owned Storage, unlocked. Deliberately not wrapped in a storage_mutex_ guard the
+    // way the helpers above are: its one use is to hold a Storage::Transaction open *across*
+    // a synchronous engine_tick, and a guard here would deadlock the tick that has to run
+    // inside it. Safe only because these tests drive the tick by hand, with no engine thread
+    // started -- nothing else touches the connection.
+    static Storage& storage(AppState& state) { return state.storage_; }
+
     static bool insert_episode(AppState& state, const SnapbackEpisode& episode) {
         std::lock_guard lock(state.storage_mutex_);
         return state.storage_.insert_snapback_episode(episode);

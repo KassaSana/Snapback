@@ -49,6 +49,41 @@ TEST_CASE("run_json_command converts a thrown exception into the error envelope"
     CHECK(parsed.at("__snapback_error") == "boom");
 }
 
+TEST_CASE("run_json_command keeps the error envelope serializable on invalid UTF-8") {
+    // The escape this closes. The success path one line above uses `dump_json` (lossy,
+    // error_handler_t::replace) precisely because responses carry OS-derived strings; the
+    // error envelope was still using strict `.dump()`, which throws type_error.316 on the
+    // first invalid byte -- *from inside the catch block*, so it escapes `run_json_command`
+    // entirely and lands in the webview binding. That is the exact failure mode the lossy
+    // dump was introduced to remove, surviving in the one path that runs when something has
+    // already gone wrong.
+    //
+    // Not hypothetical: exception messages here concatenate filesystem paths and OS strings,
+    // and `nlohmann::json::parse` failures quote the offending input back verbatim.
+    const std::string invalid_utf8 = "bad path: \xff\xfe";
+    std::string out;
+    CHECK_NOTHROW(out = detail::run_json_command(
+                      [&](const json&) -> json { throw std::runtime_error(invalid_utf8); },
+                      "[{}]"));
+
+    // Degraded, not dropped: the envelope still parses and still carries the readable part of
+    // the message, so the user is told what failed instead of nothing reaching them at all.
+    auto parsed = json::parse(out);
+    REQUIRE(parsed.contains("__snapback_error"));
+    const auto message = parsed.at("__snapback_error").get<std::string>();
+    CHECK(message.rfind("bad path: ", 0) == 0);
+    CHECK(message.find("\xef\xbf\xbd") != std::string::npos);  // U+FFFD replaced the bad bytes
+}
+
+TEST_CASE("run_json_command reports malformed request JSON without throwing") {
+    // The other reachable path to the same escape: nlohmann's parse error message quotes the
+    // raw token it choked on, so invalid bytes in `req` reach `e.what()` directly.
+    std::string out;
+    CHECK_NOTHROW(out = detail::run_json_command(
+                      [](const json&) -> json { return json::object(); }, "[{\"a\": \xff}]"));
+    CHECK_NOTHROW(json::parse(out).at("__snapback_error"));
+}
+
 TEST_CASE("run_json_command requires the capability token when one is configured") {
     const std::string token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     detail::JsonHandler handler = [](const json& a) { return json{{"ok", a.size()}}; };

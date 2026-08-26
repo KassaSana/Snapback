@@ -349,6 +349,13 @@ private:
     // Roadmap 2.10. Ends a timed privacy pause whose deadline has passed. Requires mutex_.
     bool lapse_private_pause_unlocked();
     void save_auto_session_label_unlocked(const std::string& session_id);
+    // Drops the pending snapback payload and its emitted flag together. Requires mutex_.
+    //
+    // One helper rather than the two-line pair repeated at each site, because the pair being
+    // hand-written is what let three session-lifecycle paths forget it. The flag is not
+    // independent state — a payload that is gone cannot meaningfully have been emitted — so
+    // clearing one without the other has no correct meaning to express.
+    void clear_snapback_unlocked();
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
     static std::vector<std::string> normalize_privacy_exclusions(
         std::vector<std::string> exclusions);
