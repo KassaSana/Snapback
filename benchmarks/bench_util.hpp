@@ -5,13 +5,29 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <numeric>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "util/time.hpp"
+
 namespace snapback::bench {
+
+// The benchmarks feed the code under test the epoch milliseconds ADR-0007 stores, but a
+// fixture reads better as an instant than as a 13-digit number. Deriving the value from the
+// literal keeps both: a typo fails loudly here instead of silently shifting the fixture.
+//
+// Deliberately not `tests/time_literals.hpp`'s `ms()` -- that one reports through doctest's
+// REQUIRE_MESSAGE, and the benchmark binaries do not link doctest.
+inline std::int64_t bench_ms(const std::string& rfc3339) {
+    const auto value = unix_ms_from_rfc3339(rfc3339);
+    if (!value) throw std::runtime_error("not an RFC3339 UTC literal: " + rfc3339);
+    return *value;
+}
 
 using Clock = std::chrono::steady_clock;
 

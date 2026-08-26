@@ -26,6 +26,7 @@ namespace {
 double g_score_sink = 0.0;
 std::size_t g_snapshot_sink = 0;
 
+using snapback::bench::bench_ms;
 using snapback::bench::print_stats;
 using snapback::bench::Stats;
 using snapback::bench::summarize;
@@ -137,6 +138,7 @@ Stats time_context_tracker(const std::vector<CaptureEvent>& trace) {
     std::vector<double> samples;
     samples.reserve(trace.size());
     std::size_t snapshots = 0;
+    const std::int64_t timestamp_ms = bench_ms("2026-07-12T00:00:00Z");
 
     Timer total;
     for (const auto& ev : trace) {
@@ -145,10 +147,10 @@ Stats time_context_tracker(const std::vector<CaptureEvent>& trace) {
         if (ev.event_type == EventType::WindowFocusChange ||
             ev.event_type == EventType::WindowTitleChange) {
             snap = tracker.observe_window_change(ev.app_name, ev.window_title, rules,
-                                                 ev.timestamp_secs, "2026-07-12T00:00:00Z");
+                                                 ev.timestamp_secs, timestamp_ms);
         } else {
             snap = tracker.maybe_checkpoint_snapshot(
-                rules, ev.timestamp_secs, [] { return std::string("2026-07-12T00:00:00Z"); });
+                rules, ev.timestamp_secs, [timestamp_ms] { return timestamp_ms; });
         }
         if (snap) ++snapshots;
         samples.push_back(per_event.elapsed_ms() * 1000.0);
@@ -166,6 +168,7 @@ Stats time_storage_write_read(const std::vector<CaptureEvent>& trace) {
     Classifier classifier;
     std::vector<double> samples;
     samples.reserve(trace.size());
+    const std::int64_t timestamp_ms = bench_ms("2026-07-12T00:00:00Z");
 
     Timer total;
     for (const auto& ev : trace) {
@@ -181,7 +184,7 @@ Stats time_storage_write_read(const std::vector<CaptureEvent>& trace) {
             record.thrash_score = scores.thrash_score;
             record.drift_score = scores.drift_score;
             record.goal_alignment = scores.goal_alignment;
-            record.timestamp = "2026-07-12T00:00:00Z";
+            record.timestamp_ms = timestamp_ms;
             storage->insert_prediction(record);
             storage->insert_feature_snapshot(session.session_id, vector);
         }

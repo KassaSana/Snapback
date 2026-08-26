@@ -28,6 +28,7 @@
 #include "types.hpp"
 
 using namespace snapback;
+using snapback::bench::bench_ms;
 using snapback::bench::print_stats;
 using snapback::bench::Stats;
 using snapback::bench::summarize;
@@ -212,6 +213,7 @@ Stats persist_ticks(Storage& storage, std::size_t ticks) {
     FeatureVector features;  // 31 zeros is fine for the write-path timing
     std::vector<double> samples;
     samples.reserve(ticks);
+    const std::int64_t timestamp_ms = bench_ms("2026-07-12T00:00:00Z");
     Timer total;
     for (std::size_t i = 0; i < ticks; ++i) {
         PredictionRecord record;
@@ -220,7 +222,7 @@ Stats persist_ticks(Storage& storage, std::size_t ticks) {
         record.distraction_risk = 0.2;
         record.focus_state = "PRODUCTIVE";
         record.goal_alignment = 0.5;
-        record.timestamp = "2026-07-12T00:00:00Z";
+        record.timestamp_ms = timestamp_ms;
         Timer t;
         // One transaction per tick, matching AppState::process_event_unlocked.
         Storage::Transaction txn(storage);
