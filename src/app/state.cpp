@@ -576,6 +576,11 @@ void AppState::discard_pending_span_unlocked(const std::optional<std::string>& s
     pending_span_secs_ago_ = 0;
 }
 
+void AppState::clear_snapback_unlocked() {
+    latest_snapback_.reset();
+    snapback_emitted_ = false;
+}
+
 SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // Mixed (in-memory + storage): take both locks in the fixed order mutex_ -> storage_mutex_.
     std::lock_guard state_lock(mutex_);
@@ -622,6 +627,16 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
+    // A snapback names a window from the session that just ended, so it cannot survive into
+    // this one. The tracker is reset one line above, which is precisely what makes a surviving
+    // payload dangerous rather than merely stale: "Take me back" would raise the *previous*
+    // session's window and then run dismiss_recovery() against a tracker that never saw it.
+    //
+    // This could not happen while the tick drained the payload as it emitted; keeping it alive
+    // until the user acts is what made an unacted-on card outlive its session. The card is not
+    // reliably dismissed for us either -- the frontend does not clear it on a session change,
+    // and on Linux the stub overlay never fires the auto-dismiss callback at all.
+    clear_snapback_unlocked();
     // Any span decision still pending belongs to the session this one replaces, and that
     // session was just completed above. Draining it later would open a span on a COMPLETED
     // row -- or, for a pause, back-date a close into a session that already has its own
@@ -654,12 +669,21 @@ void AppState::stop_session() {
             storage_.end_session(session_id);
             savepoint.release();
         }
+        // Same drop the by-id overload makes, for the same AUD-04b reason: a span decision
+        // recorded before this Stop now names a session that has ended. Keyed on the id
+        // rather than dropped outright so the two overloads state the same rule -- here the
+        // session is the active one by construction, so the two forms agree, and stating it
+        // by id is what keeps them from drifting again.
+        discard_pending_span_unlocked(session_id);
         save_auto_session_label_unlocked(session_id);
         session_attended_ = false;
         pomodoro_.reset();
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
+        // Same reason as start_session: the payload names a window from the session being
+        // closed, and there is no session left for "Take me back" to be about.
+        clear_snapback_unlocked();
     }
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -693,6 +717,10 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         active_session_.reset();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
+        // Inside the active-session branch on purpose, unlike the pending-span drop above.
+        // Stopping *some other* session by id must not clear a payload that belongs to the
+        // session still running -- that would silently cancel a live snapback card.
+        clear_snapback_unlocked();
         live_read_dirty_ = true;
     }
     publish_live_read_unlocked();
@@ -737,8 +765,7 @@ bool AppState::delete_session(const std::string& session_id) {
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
-        latest_snapback_.reset();
-        snapback_emitted_ = false;
+        clear_snapback_unlocked();
         last_prediction_secs_ = -1.0;
         prediction_dirty_ = false;
         hyperfocus_latched_ = false;
@@ -817,8 +844,7 @@ std::optional<SnapbackPayload> AppState::latest_snapback() const {
 std::optional<SnapbackPayload> AppState::take_snapback() {
     std::lock_guard lock(mutex_);
     auto out = std::move(latest_snapback_);
-    latest_snapback_.reset();
-    snapback_emitted_ = false;
+    clear_snapback_unlocked();
     if (out) live_read_dirty_ = true;
     publish_live_read_unlocked();
     return out;
@@ -828,8 +854,7 @@ void AppState::dismiss_snapback() {
     std::lock_guard lock(mutex_);
     // Clear the pending payload and return the tracker from Recovering to Focused so it
     // doesn't keep the recovery state latched.
-    latest_snapback_.reset();
-    snapback_emitted_ = false;
+    clear_snapback_unlocked();
     context_tracker_.dismiss_recovery(last_event_secs_);
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -844,8 +869,7 @@ FocusTargetResult AppState::restore_snapback_target() {
             app_name = latest_snapback_->app_name;
             window_title = latest_snapback_->window_title;
         }
-        latest_snapback_.reset();
-        snapback_emitted_ = false;
+        clear_snapback_unlocked();
         context_tracker_.dismiss_recovery(last_event_secs_);
         live_read_dirty_ = true;
         publish_live_read_unlocked();
@@ -960,8 +984,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     session_attended_ = false;  // every span was deleted with the rows above
     discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
-    latest_snapback_.reset();
-    snapback_emitted_ = false;
+    clear_snapback_unlocked();
     last_prediction_at_ms_.reset();
     last_prediction_secs_ = -1.0;
     last_event_secs_ = 0.0;
@@ -1611,9 +1634,15 @@ void AppState::engine_tick() {
         span_opens = pending_span_opens_;
         if (now_ms - last_prune_steady_ms_ >= kRetentionPruneIntervalMs) {
             prune_due = true;
-            // VACUUM rewrites the whole file and takes storage_mutex_ for as long as that
-            // takes -- which is the mutex the tick's persist phase needs. Deferred to a
-            // prune that lands while no session is running rather than stalling one.
+            // VACUUM rewrites the whole file, and it runs on this thread, inside this tick,
+            // holding storage_mutex_ for however long that takes. So it is not a stall the
+            // tick can be kept clear of -- the tick is what performs it, and every read that
+            // needs the same mutex (recap, history, timeline, export) waits behind it. On a
+            // 90-day database that is seconds.
+            //
+            // What the gate buys is *when* the stall lands, not whether. No session running
+            // is the cheapest moment this thread can identify on its own: nothing is being
+            // recorded that the pause delays, and no live session view is waiting on a read.
             prune_may_vacuum = !active_session_.has_value();
             // Stamped on the decision, not on the write. A prune skipped below (the
             // activity epoch moved, i.e. the user just deleted data) has nothing left to
@@ -1646,6 +1675,51 @@ void AppState::engine_tick() {
         publish_live_read_unlocked();
     }
 
+    if (prune_due) {
+        // Ahead of the activity-boundary block below, not after it: a prune is not
+        // activity-scoped work. It deletes rows that aged out of the retention window, which
+        // stays true regardless of which session the tick was filling or whether the user
+        // deleted one mid-tick -- deleting one session leaves every other session's expired
+        // rows exactly where they were.
+        //
+        // It used to sit after that block, whose early return abandons the rest of the tick.
+        // Since the day of uptime is stamped as spent when the prune is *decided*, in phase
+        // 1, a delete winning the boundary spent the day and collected nothing: retention
+        // slipped by another full 24 h. Running first is what makes the stamp honest.
+        std::lock_guard lock(storage_mutex_);
+        try {
+            const PruneSummary summary = storage_.prune_to_retention();
+            if (summary.total() > 0) {
+                std::ostringstream msg;
+                msg << "storage: pruned " << summary.total() << " rows older than "
+                    << kDefaultRetentionDays
+                    << "d (predictions=" << summary.predictions_deleted
+                    << ", context_snapshots=" << summary.context_snapshots_deleted
+                    << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
+                log().info(msg.str());
+                if (prune_may_vacuum && should_vacuum_after_prune(summary.total())) {
+                    // Caught separately, as Storage::open catches it: by here the prune has
+                    // committed, so letting a VACUUM failure fall through to the handler
+                    // below would report "retention prune failed" for a sweep that
+                    // succeeded -- a wrong answer in the log someone is reading precisely
+                    // because something went wrong.
+                    try {
+                        storage_.vacuum();
+                    } catch (const std::exception& err) {
+                        log().warn(std::string("storage: VACUUM after prune failed: ") +
+                                   err.what());
+                    }
+                }
+            }
+        } catch (const std::exception& err) {
+            // Same posture as the prune on open: retention is housekeeping, and a failed
+            // sweep must not take down the tick that records the user's session. The next
+            // one is a day away, which is soon enough for a condition that is usually
+            // transient (a locked database, a full disk).
+            log().warn(std::string("storage: retention prune failed: ") + err.what());
+        }
+    }
+
     {
         // If deletion won the boundary after phase 1, discard every buffered row and
         // event. If this tick won, deletion waits until persistence has completed.
@@ -1663,34 +1737,6 @@ void AppState::engine_tick() {
                 }
             }
             txn.commit();
-        }
-    }
-
-    if (prune_due) {
-        // Outside the activity-boundary block above: a prune is not activity-scoped work.
-        // It deletes rows that aged out, which is true regardless of which session the tick
-        // was filling or whether the user deleted one mid-tick.
-        std::lock_guard lock(storage_mutex_);
-        try {
-            const PruneSummary summary = storage_.prune_to_retention();
-            if (summary.total() > 0) {
-                std::ostringstream msg;
-                msg << "storage: pruned " << summary.total() << " rows older than "
-                    << kDefaultRetentionDays
-                    << "d (predictions=" << summary.predictions_deleted
-                    << ", context_snapshots=" << summary.context_snapshots_deleted
-                    << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
-                log().info(msg.str());
-                if (prune_may_vacuum && should_vacuum_after_prune(summary.total())) {
-                    storage_.vacuum();
-                }
-            }
-        } catch (const std::exception& err) {
-            // Same posture as the prune on open: retention is housekeeping, and a failed
-            // sweep must not take down the tick that records the user's session. The next
-            // one is a day away, which is soon enough for a condition that is usually
-            // transient (a locked database, a full disk).
-            log().warn(std::string("storage: retention prune failed: ") + err.what());
         }
     }
 

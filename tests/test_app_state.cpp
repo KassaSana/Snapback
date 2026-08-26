@@ -1897,6 +1897,117 @@ TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {
     CHECK(state.prediction_history(10).size() == 1);
 }
 
+namespace {
+
+// A clock that fires one side effect at the moment the tick reads it.
+//
+// The tick latches the activity epoch as the first thing it does under mutex_, then reads
+// the monotonic clock a few lines later. Bumping the epoch from inside that read reproduces
+// exactly what a concurrent delete does -- the tick's latched epoch is now stale -- without
+// a second thread, so the interleave is a fact of the test rather than a race it hopes to
+// win.
+class DeleteRacingClock final : public Clock {
+public:
+    std::int64_t steady_ms() const override {
+        if (armed_ && state_ != nullptr) {
+            armed_ = false;
+            AppStateTestAccess::bump_activity_epoch(*state_);
+        }
+        return steady_ms_;
+    }
+
+    std::time_t wall_time() const override { return wall_; }
+
+    // Armed immediately before the tick under test, so no earlier clock read consumes it.
+    void arm(AppState& state) {
+        state_ = &state;
+        armed_ = true;
+    }
+
+    void advance_minutes(std::int64_t minutes) {
+        steady_ms_ += minutes * 60 * 1000;
+        wall_ += static_cast<std::time_t>(minutes * 60);
+    }
+
+private:
+    mutable bool armed_ = false;
+    mutable AppState* state_ = nullptr;
+    std::int64_t steady_ms_ = 1'000'000;
+    std::time_t wall_ = 1'700'000'000;
+};
+
+}  // namespace
+
+TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") {
+    // The prune is due once per day of uptime, and the tick stamps that day as spent when it
+    // *decides* to prune. The decision and the prune were separated by the activity-boundary
+    // check, whose early return abandons the whole rest of the tick -- so a delete winning
+    // that boundary spent the day without collecting anything, and retention slipped by
+    // another 24 h of uptime.
+    //
+    // The comment on the boundary block only justifies dropping *buffered* rows: they belong
+    // to activity the user just deleted. A prune is not that. It deletes rows that aged out
+    // of the 90-day window, which stays true no matter which session was deleted -- and
+    // deleting one session leaves every other session's aged-out rows exactly where they
+    // were.
+    DeleteRacingClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("aged", FocusMode::Normal);
+    AppStateTestAccess::insert_prediction_at(state, session.session_id,
+                                             "2000-01-01T00:00:00Z");
+    REQUIRE(state.prediction_history(10).size() == 1);
+
+    // A day of uptime has passed, so this tick prunes -- and a delete lands in the window
+    // between it latching the epoch and reaching the boundary check.
+    clock.advance_minutes(24 * 60);
+    clock.arm(state);
+    AppStateTestAccess::engine_tick(state);
+
+    CHECK(state.prediction_history(10).empty());
+}
+
+TEST_CASE("a VACUUM that fails after a successful prune is reported as its own failure") {
+    // The prune and the VACUUM that may follow it are separate operations with separate
+    // failure modes, and the tick wrapped both in one catch. So a VACUUM that failed on a
+    // prune that had already committed was logged as "retention prune failed" -- telling
+    // whoever reads that line that rows were not collected, when they were. Storage::open
+    // has caught the VACUUM separately since it gained one; the tick's copy of that path
+    // did not.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    std::ostringstream log_out;
+    Logger logger(log_out, LogLevel::Info);
+    AppState state(std::move(*storage), std::filesystem::path{}, &logger, &clock);
+
+    // Enough expired rows to clear kVacuumMinDeletedRows, so the VACUUM is actually reached.
+    const auto session = state.start_session("aged", FocusMode::Normal);
+    for (std::size_t i = 0; i < kVacuumMinDeletedRows; ++i) {
+        AppStateTestAccess::insert_prediction_at(state, session.session_id,
+                                                 "2000-01-01T00:00:00Z");
+    }
+    // No active session, which is the condition the tick defers the VACUUM on.
+    state.stop_session(session.session_id);
+
+    clock.advance_minutes(24 * 60);
+    // SQLite refuses to VACUUM from inside a transaction, which is the one way to fail the
+    // VACUUM without touching the prune: savepoints nest inside an open transaction, so the
+    // prune still does its work and releases normally.
+    Storage::Transaction txn(AppStateTestAccess::storage(state));
+    AppStateTestAccess::engine_tick(state);
+
+    const std::string logged = log_out.str();
+    // The prune reported success, because it succeeded.
+    CHECK(logged.find("storage: pruned 500 rows") != std::string::npos);
+    // ... and the VACUUM reported its own failure, in its own words.
+    CHECK(logged.find("storage: VACUUM after prune failed") != std::string::npos);
+    // The line that was wrong is gone: nothing claims the sweep did not happen.
+    CHECK(logged.find("storage: retention prune failed") == std::string::npos);
+}
+
 TEST_CASE("stopping a session discards a span decision the tick has not drained") {
     // AUD-04b. The tick decides span changes under mutex_ and writes them under
     // storage_mutex_, holding neither in between. A Stop landing in that gap used to leave
@@ -1922,6 +2033,33 @@ TEST_CASE("stopping a session discards a span decision the tick has not drained"
 
     // The drain that would have written it. The session ends with the span its Stop closed,
     // and no new one.
+    AppStateTestAccess::engine_tick(state);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+}
+
+TEST_CASE("stopping the active session by the no-arg overload discards a pending span too") {
+    // The same AUD-04b interleave, through the other Stop. The two overloads share no
+    // implementation, and only the by-id one was given the drop -- so the no-arg one, which
+    // is the documented "stop the active session" entry point, still wrote the stale
+    // decision. Nothing in product code reaches it today (main.cpp and commands.hpp both
+    // stop by id), which is exactly why it needs a test rather than a note: the next caller
+    // would inherit a bug the by-id path was already fixed for.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("attended", FocusMode::Normal);
+    AppStateTestAccess::stage_pending_span_open(state, session.session_id);
+    REQUIRE(AppStateTestAccess::pending_span_session(state) == session.session_id);
+
+    state.stop_session();
+    // The assertion that fails without the drop. Storage's own ACTIVE guard means the drain
+    // below cannot reopen a span on a completed session either way, so the damage is latent
+    // rather than observable today -- the point is that the decision is gone before anything
+    // downstream has to be relied on to ignore it.
+    CHECK(AppStateTestAccess::pending_span_session(state) == std::nullopt);
+
     AppStateTestAccess::engine_tick(state);
     CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
 }
@@ -1988,6 +2126,93 @@ TEST_CASE("the tick emits a snapback once and leaves it restorable") {
     for (int tick = 0; tick < 3; ++tick) AppStateTestAccess::engine_tick(*state);
     CHECK(snapbacks_emitted == 1);
     state->set_emit_hook(nullptr);
+}
+
+// AUD-01 made the snapback payload outlive the tick that emits it, so "Take me back" is still
+// there when the user reaches for it. These four cases pin the other end of that lifetime: it
+// must not outlive the *session* it describes. The payload names a window, and the only thing
+// that makes that window meaningful is the session it was recorded during.
+
+namespace {
+
+SnapbackPayload staged_payload() {
+    SnapbackPayload payload;
+    payload.summary = "you were editing the classifier";
+    payload.app_name = "Cursor";
+    payload.window_title = "classifier.cpp";
+    payload.distraction_duration_secs = 90;
+    return payload;
+}
+
+}  // namespace
+
+TEST_CASE("starting a session clears the previous session's pending snapback") {
+    // The regression: a card the user never acted on used to survive into the next session,
+    // because start_session resets the context tracker but nothing dropped the payload.
+    // "Take me back" then raised the *previous* session's window and ran dismiss_recovery()
+    // against a tracker that had never seen it.
+    //
+    // Reachable without anything unusual happening: the frontend does not clear the card on a
+    // session change, and on Linux the stub overlay never fires the auto-dismiss callback, so
+    // ignoring the card and pressing Start is enough.
+    auto state = make_state();
+    state->start_session("implement the classifier", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    state->start_session("write the migration", FocusMode::Normal);
+
+    CHECK(state->latest_snapback() == std::nullopt);
+    // The user-visible half. "No active snapback context to restore" is the *correct* answer
+    // now -- any other message means the lookup found a target and focus_window() took over,
+    // which is the bug: focusing a window from a session that is over.
+    const auto result = state->restore_snapback_target();
+    CHECK(result.message == "No active snapback context to restore");
+}
+
+TEST_CASE("stopping the active session clears its pending snapback") {
+    auto state = make_state();
+    const auto session = state->start_session("implement the classifier", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    state->stop_session(session.session_id);
+
+    CHECK(state->latest_snapback() == std::nullopt);
+}
+
+TEST_CASE("stopping the active session by the no-arg overload clears its pending snapback") {
+    // Both overloads, asserted separately. They do not share an implementation, and the two
+    // drifting apart is how this class of omission happens -- the by-id overload gained a
+    // pending-span drop that the no-arg one still lacks.
+    auto state = make_state();
+    state->start_session("implement the classifier", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    state->stop_session();
+
+    CHECK(state->latest_snapback() == std::nullopt);
+}
+
+TEST_CASE("stopping some other session leaves the active session's snapback alone") {
+    // The bound on the fix. stop_session(id) accepts a session that is not the active one, so
+    // clearing unconditionally would silently cancel a live card belonging to the session
+    // still running -- trading a stale-payload bug for a disappearing-payload one.
+    auto state = make_state();
+    const auto earlier = state->start_session("earlier work", FocusMode::Normal);
+    state->stop_session(earlier.session_id);
+
+    state->start_session("current work", FocusMode::Normal);
+    AppStateTestAccess::stage_snapback(*state, staged_payload());
+    REQUIRE(state->latest_snapback().has_value());
+
+    // Stopping an already-completed, non-active session is idempotent at the storage layer
+    // and must be inert here too.
+    state->stop_session(earlier.session_id);
+
+    REQUIRE(state->latest_snapback().has_value());
+    CHECK(state->latest_snapback()->window_title == "classifier.cpp");
 }
 
 TEST_CASE("AppState app-rule CRUD upserts, updates in place, and deletes") {
