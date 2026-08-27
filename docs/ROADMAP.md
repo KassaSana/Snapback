@@ -4224,6 +4224,54 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   macOS host (see [running.md](running.md)) — write it carefully, because the feedback loop
   is a full CI run.*
 
+- **11.12 — DONE 2026-08-27.** `S` `wait_for_count` waited on the wrong variable, and the
+  activation cases raced. Two CI runs a half-hour apart failed the ThreadSanitizer job on two
+  *different* cases in `tests/test_activation_channel.cpp` — first *a socket file left by a
+  crash does not block the next owner*, then *a request naming a different channel is refused
+  and raises nothing* — while all fifteen other jobs passed both times. The second of those
+  PRs touched nothing but this roadmap, which rules out the code under test.
+
+  **The failure is fully diagnosed and it is a test defect, not a channel defect.** The
+  captured assertion is `CHECK( raised.load() == 1 )` reading `0 == 1`, on the line *after*
+  `REQUIRE(wait_for_count(*listener, 1))` had already passed. The two are not the same
+  condition. `activation_channel.cpp:ActivationListener::activation_count` reads `activations`,
+  and the handler does `activations.fetch_add(1)` **before** `on_activate()` — so the counter
+  reaches 1 while the callback that raises `raised` has not run yet. Waiting on the counter
+  proves the request was honoured, not that the callback finished.
+
+  `wait_for_count`'s own comment is what makes this worth writing down. It says the helper
+  polls "rather than sleeping a fixed amount" to keep the case "fast and non-flaky" — and it
+  is a correct description of a helper that is watching the wrong variable. The comment
+  documents the race it does not close.
+
+  Ordinarily the window is a few instructions and nobody sees it. TSan instruments every
+  memory access, which stretches the gap between the `fetch_add` and the callback body far
+  enough to lose the race regularly — which is why this is TSan-only and why it moves between
+  cases rather than sticking to one.
+
+  **Fixed by waiting on the variable the assertion reads.** `wait_for_count` is now
+  `wait_for_raised`, taking the test's own `raised` counter instead of the listener, so all
+  five call sites — every one of which paired it with a `raised.load()` check — are bounded by
+  the callback rather than by the acknowledgement. It is also the stronger wait: the increment
+  happens first, so a callback that has run implies a count that has moved, and the reverse is
+  precisely what raced.
+
+  The poll budget was left alone deliberately. It was already 500 × 10 ms; the wait was never
+  short, it was watching the wrong thing, and no budget closes that.
+
+  One consequence worth noting: `activation_channel.cpp:ActivationListener::activation_count`
+  had no caller except that helper, so the fix would have left it dead. It is now asserted
+  outright in *the owner acknowledges a request and runs the handler exactly once* — which the
+  new wait makes deterministic rather than racy, so pinning the ordering costs nothing and
+  keeps the accessor meaningful.
+
+  Verified 300 case-executions clean locally, but the honest proof is the tsan job: this could
+  never fail on the dev machine, since MSVC has no ThreadSanitizer and the window stays a few
+  instructions wide without instrumentation.
+
+  Note for the next flake: the first run's log was lost because the job was re-run before it
+  was read, and GitHub does not keep the superseded attempt. Read the log first, then re-run.
+
 ---
 
 ## Tier 12 — Documentation truth
