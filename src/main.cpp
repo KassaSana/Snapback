@@ -22,6 +22,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "app/activation_channel.hpp"
 #include "app/commands.hpp"
 #include "app/data_import.hpp"
 #include "app/frontend_assets.hpp"
@@ -215,8 +216,25 @@ int main(int argc, char** argv) {
     // handle, so crashes release it automatically and a stale lock file is harmless.
     auto instance_guard = SingleInstanceGuard::acquire(data_dir / "snapback.lock");
     if (!instance_guard.acquired()) {
+        // Roadmap 9.15. Losing the lock is not the end of this launch's job: the user asked to
+        // see Snapback, and the running instance may be hidden in the tray with no window on
+        // screen. Ask it to come forward before saying anything.
+        //
+        // This stays above `Storage::open` deliberately. A process that has opened no database,
+        // started no capture and installed no tray is one whose only remaining act is to exit,
+        // so blocking its only thread on the ack is the simplest correct thing it can do — and
+        // the ordering is what keeps 9.8's "one database owner" true while it does.
+        if (instance_guard.status() == SingleInstanceStatus::AlreadyRunning) {
+            const auto activation = request_activation(data_dir);
+            // Silence on success. The window is now in front of the user, and a console line
+            // nothing owns is not an improvement on that.
+            if (activation == ActivationResult::Activated) return 0;
+            std::cerr << instance_guard.message() << " (could not raise its window: "
+                      << activation_result_as_str(activation) << ")\n";
+            return 0;
+        }
         std::cerr << instance_guard.message() << '\n';
-        return instance_guard.status() == SingleInstanceStatus::AlreadyRunning ? 0 : 1;
+        return 1;
     }
 
     // One leveled logger for the process, writing to a rotating file next to
@@ -338,15 +356,21 @@ int main(int argc, char** argv) {
     // handle out of the webview once, here on the UI thread, because that is the only
     // thread either platform's window APIs may be touched from.
     // Close-to-tray (Roadmap 9.15): closing the window hides it instead of terminating the app.
+    //
+    // How the window comes forward is written once per platform and shared by everything that
+    // needs it: the tray's Show item, and 9.15's activation channel below. Two copies would
+    // drift, and only one of them would be the one anybody actually clicks.
+    std::function<void()> raise_window;
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
         enable_close_to_tray(main_hwnd);
-        TrayCallbacks callbacks;
-        callbacks.on_show = [main_hwnd] {
+        raise_window = [main_hwnd] {
             ShowWindow(main_hwnd, SW_SHOW);
             SetForegroundWindow(main_hwnd);
         };
+        TrayCallbacks callbacks;
+        callbacks.on_show = raise_window;
         callbacks.on_quit = [&w, main_hwnd] {
             prepare_app_exit(main_hwnd);
             w.terminate();
@@ -376,8 +400,9 @@ int main(int argc, char** argv) {
     if (auto win = w.window(); win.ok()) {
         void* main_window = win.value();
         enable_close_to_tray(main_window);
+        raise_window = [main_window] { mac::bring_window_to_front(main_window); };
         TrayCallbacks callbacks;
-        callbacks.on_show = [main_window] { mac::bring_window_to_front(main_window); };
+        callbacks.on_show = raise_window;
         callbacks.on_quit = [&w, main_window] {
             prepare_app_exit(main_window);
             w.terminate();
@@ -403,6 +428,30 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    // Roadmap 9.15. The owner's half of the activation channel, started once the window exists
+    // and kept alive by this scope until `w.run()` returns.
+    //
+    // `on_activate` arrives on the listener's own thread, so it does nothing but hand the work
+    // to the UI thread — the same rule the emit hook below follows, and for the same reason:
+    // both platforms' window APIs may only be touched from the thread that owns the run loop.
+    // Raising the window directly from here would be the ordinary cross-thread UI bug, arriving
+    // only on a second launch and therefore almost never on a developer's machine.
+    std::optional<ActivationListener> activation_listener;
+    if (raise_window) {
+        activation_listener = ActivationListener::start(data_dir, [&w, raise_window, &logger] {
+            logger.info("activation: a second launch asked for the window");
+            w.dispatch([raise_window] { raise_window(); });
+        });
+        if (!activation_listener) {
+            // Not fatal, and deliberately not silent. Refusing to start because a convenience
+            // channel failed would trade a small annoyance for a total outage; saying nothing
+            // would leave "double-click does nothing" with no evidence anywhere.
+            logger.warn("activation channel unavailable — a second launch cannot raise this "
+                        "window and will report that it could not");
+        } else {
+            logger.info("activation channel listening on " + activation_listener->endpoint());
+        }
+    }
 
     // Host->frontend events: the engine tick runs off-thread, but webview.eval and the
     // Win32 overlay must run on the UI thread — so marshal via dispatch. Copy
