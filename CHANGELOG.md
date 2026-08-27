@@ -17,6 +17,15 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **Alerts you can click (2.16).** A snapback card now offers **Take me back** beside its
+  click-to-dismiss, and system notifications respond to a click instead of being something you
+  could only read. Whatever you click, the window comes forward first — then a snapback returns
+  you to the window it recorded, a "start a session" nudge takes you to where you start one, and
+  a Pomodoro or break alert takes you to the timer. Clicking the same alert twice does the thing
+  once, and clicking one the system kept around from an hour ago brings the app forward without
+  acting on a moment that has passed. Alerts silenced by quiet hours or a snooze are not
+  clickable at all.
+
 - **A second launch brings the running window back (9.15).** Double-clicking Snapback while it
   is hidden in the tray now raises the window it already has, instead of printing "already
   running" to a stream a desktop app does not own. The second process asks over a per-user,

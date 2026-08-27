@@ -400,7 +400,7 @@ machine, deleting private history, and starting against a mature database.
 
 | Area | Items | What the second pass found |
 |---|---|---|
-| Product truth & control | ~~**2.15**~~, **2.16–2.17** | ~~Snapback episodes are never persisted~~ (**done 2026-08-06**), interventions have no delivery policy, and append-only labels cannot express an authoritative correction |
+| Product truth & control | ~~**2.15**~~, ~~**2.16**~~, **2.17** | ~~Snapback episodes are never persisted~~ (**done 2026-08-06**), ~~interventions have no delivery policy~~ (**done 2026-08-27**), and append-only labels cannot express an authoritative correction |
 | Correctness & lifecycle | **7.28–7.29**, ~~**9.15**~~ | Editable goal-category names secretly change semantics, OS lock/sleep is treated as ordinary idle, and ~~the single-instance tray app has no activation/close contract~~ (**done 2026-08-27**) |
 | Privacy completeness | **8.11**, ~~**8.12**~~ | App-only exclusions cannot redact one sensitive browser context; ~~“delete all” leaves personal exports plus full migration backups behind~~ (**done 2026-08-06**) |
 | Desktop quality | **10.12** | Windows overlay placement ignores the tested multi-monitor geometry and fixed pixels ignore per-monitor DPI |
@@ -2585,7 +2585,8 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   prove that the recap count and episode rollup describe exactly the same population. Land
   calendar grouping after **7.16**.
 
-- **2.16 — DONE 2026-08-27 (delivery half).** `M` Per-event channel preferences for snapback,
+- **2.16 — DONE 2026-08-27.** `M` Delivery half in the morning, action-routing half in the
+  afternoon; both are described below. Per-event channel preferences for snapback,
   hyperfocus and Pomodoro; quiet hours; a tray **Snooze alerts for 30 minutes**; and
   Detailed/Generic lock-screen copy. `route_alert` in `src/app/alert_routing.hpp` is the whole
   policy as one pure function, so no delivery site decides anything -- each reads a flag.
@@ -2613,13 +2614,47 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   claimed; `RecordingStatus` gains `alert_snooze_remaining_ms` beside `state` rather than a new
   `RecordingState`, because silencing an intervention is not privacy mode.
 
-  **Not done — the action-routing half below.** Click-to-open-the-composer, click-to-Return,
-  stable event identity across a click, and duplicate-click idempotence all need **9.15**'s
-  activation channel; a click that "works" but leaves the window behind another app is worse
-  than no handler. **That blocker cleared on 2026-08-27** — 9.15 is done, and `main.cpp` now
-  holds a `raise_window` the action handler can call. `AlertRoute` deliberately carries no
-  destination, so that work adds a field rather than reinterpreting one. macOS native delivery
-  stays downstream of **3.3** (`tray_macos.mm` still returns false from `show_notification`).
+  **The action-routing half (afternoon).** `AlertRoute` gained the `action` field the delivery
+  half had deliberately left room for, chosen in `route_alert` from the event alone — a channel
+  answers how much a person wants to be interrupted, this answers what the interruption *is*,
+  and a snapback that opened the Pomodoro timer would not be a preference but a bug somebody
+  configured. A **silenced** alert loses its destination along with its channels, which is what
+  stops a toast still in Windows' notification history from before a quiet hour began from
+  acting when the user finally notices it.
+
+  **Identity is claimed, not compared.** A Win32 balloon click arrives with no payload at all,
+  so the tray writes down which alert it is raising at the moment it raises it. `AppState` keeps
+  one claimable id per event kind and `claim_alert_action` consumes it, so both hard clauses
+  fall out rather than being checked for: a **duplicate** click finds nothing left, and a
+  **stale** one finds an id a newer alert already replaced. Ids are issued where an alert is
+  *emitted*, not where its route is computed — a route can be computed and then not emitted, and
+  burning an id there would retire a click the user never had the chance to make.
+
+  **The overlay was the surface that mattered, not the toast.** The delivery half made the
+  snapback default overlay-only, so wiring only the balloon would have left this item's headline
+  destination unreachable on default settings. The card grew a **Take me back** region beside its
+  existing click-to-dismiss, hit-tested by a pure function in `overlay_common.cpp` next to the
+  placement math — same file, same reason: a region that does not line up with the text drawn
+  over it is a button that misses and nothing crashes. It is DPI-scaled and sized from the card
+  it is actually in, because `overlay_rect` shrinks the whole card on a cramped panel at 200%
+  and a button wider than its window is dead.
+
+  **Raise first, then decide.** The click handler raises the window unconditionally and only
+  then consults the claim. A click that appears to do nothing at all is worse than one that
+  brings the app forward and stops there. `ReturnToWork` reuses **2.8**'s
+  `restore_snapback_target`; the other two destinations cross to the frontend as an
+  `alert_action` event, because `main.cpp` does not know what a React surface is and teaching it
+  would put one decision in two places that cannot both stay right.
+
+  **Verified by posting the real messages, not by reading.** A `WM_LBUTTONUP` inside the
+  overlay's action region routes and one in the text area still dismisses; the tray's
+  `NIN_BALLOONUSERCLICK` arm routes too — which also confirms the `NIM_SETVERSION` call, without
+  which NIN_* callbacks are never delivered and the handler is silently unreachable.
+
+  **Still downstream of 3.3:** macOS native delivery (`tray_macos.mm` returns false from
+  `show_notification`, so there is no toast to click) and the macOS overlay's own region — that
+  panel draws one attributed string with no hit areas, so it is a layout change rather than a
+  callback change. The callback is stored and waiting on both.
 
 - **2.16 — Let the user control when and how Snapback interrupts.** `M`
   Opened 2026-08-05. A snapback currently triggers both the native overlay and a native
