@@ -17,11 +17,7 @@ import type { Surface } from "./SurfaceNav";
  * The destinations the native side can name. These strings are the wire format — they match
  * `alert_action_as_str` in src/app/alert_routing.hpp exactly, spaces included.
  */
-export const ALERT_ACTIONS = [
-  "return to work",
-  "open session composer",
-  "open pomodoro",
-] as const;
+export const ALERT_ACTIONS = ["return to work", "open session composer", "open pomodoro"] as const;
 export type AlertAction = (typeof ALERT_ACTIONS)[number];
 
 /**
