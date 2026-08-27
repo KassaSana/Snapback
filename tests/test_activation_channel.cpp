@@ -98,13 +98,20 @@ TEST_CASE("a unix socket path falls back to the temp directory when sun_path is 
     const auto inside = detail::unix_socket_path(data_dir, "abc123", temp_dir, 512);
     CHECK(inside == (data_dir / "activate.sock").string());
 
-    // Cramped: it moves, and takes the channel id with it — two data directories sharing /tmp
-    // must not share one endpoint.
+    // Cramped: it moves, and takes the channel id with it — two data directories sharing one
+    // temp directory must not collide on a single endpoint.
     const auto moved = detail::unix_socket_path(data_dir, "abc123", temp_dir, 32);
-    CHECK(moved.find("/tmp") == 0);
+    CHECK(moved != inside);
+    CHECK(moved.find(temp_dir.string()) == 0);
     CHECK(moved.find("abc123") != std::string::npos);
-    CHECK(moved.size() < 32);
     CHECK(detail::unix_socket_path(data_dir, "def456", temp_dir, 32) != moved);
+
+    // The boundary is what `bind` cares about. sun_path must hold the path *and* its
+    // terminator, so a path of exactly max_path_len does not fit and has to move.
+    const std::filesystem::path snug("/a");
+    const auto exact = (snug / "activate.sock").string();
+    CHECK(detail::unix_socket_path(snug, "abc123", temp_dir, exact.size() + 1) == exact);
+    CHECK(detail::unix_socket_path(snug, "abc123", temp_dir, exact.size()) != exact);
 }
 
 TEST_CASE("an activation request with no owner reports NoOwner without burning the budget") {
