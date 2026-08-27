@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "types.hpp"
+#include "util/text.hpp"
 
 namespace snapback::detail {
 
@@ -32,14 +33,6 @@ constexpr std::size_t kMaxRepoPathLen = 4096;
 // entry. Capped well below label notes because these render into the readable personal
 // export for *every* session, where an unbounded paste would drown the file it belongs to.
 constexpr std::size_t kMaxReflectionLen = 1000;
-
-inline std::string trim(const std::string& s) {
-    const char* ws = " \t\n\r\f\v";
-    const auto begin = s.find_first_not_of(ws);
-    if (begin == std::string::npos) return "";
-    const auto end = s.find_last_not_of(ws);
-    return s.substr(begin, end - begin + 1);
-}
 
 inline std::size_t utf8_scalar_count(std::string_view s) {
     std::size_t count = 0;

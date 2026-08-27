@@ -22,6 +22,7 @@
 #include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
 #include "snapback/focus_window.hpp"
+#include "util/text.hpp"
 #include "util/time.hpp"
 
 namespace snapback {
@@ -32,13 +33,6 @@ std::string lower_copy(std::string value) {
         return static_cast<char>(std::tolower(c));
     });
     return value;
-}
-
-std::string trim_copy(std::string value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    const auto last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
 }
 
 bool is_app_name_word_char(unsigned char c) {
@@ -1457,10 +1451,6 @@ AnalyticsSummary AppState::analytics(const std::string& window,
 
 SummaryReport AppState::summary_report(const std::string& window,
                                        const std::optional<std::string>& since) const {
-    if (window != "day" && window != "week" && window != "today" && window != "7d" &&
-        window != "30d" && window != "all" && window != "custom") {
-        throw std::runtime_error("summary window must be day, week, 7d, 30d, all, or custom");
-    }
     const auto cutoff_opt = review_window_cutoff(window, since, cutoff_unix_ms);
 
     // Roadmap 2.19. Targets live with settings; spans live in storage. Same lock discipline as
@@ -1548,11 +1538,11 @@ std::vector<GoalCategory> AppState::goal_categories() const {
 void AppState::set_goal_categories(std::vector<GoalCategory> categories) {
     std::vector<GoalCategory> normalized;
     for (auto& category : categories) {
-        category.name = trim_copy(std::move(category.name));
+        category.name = trim(category.name);
         if (category.name.empty()) continue;
         std::vector<std::string> keywords;
         for (auto& keyword : category.keywords) {
-            keyword = trim_copy(std::move(keyword));
+            keyword = trim(keyword);
             if (!keyword.empty()) keywords.push_back(std::move(keyword));
         }
         if (!keywords.empty()) normalized.push_back(GoalCategory{std::move(category.name), std::move(keywords)});
@@ -1655,7 +1645,7 @@ std::vector<std::string> AppState::normalize_privacy_exclusions(
     std::vector<std::string> exclusions) {
     std::vector<std::string> out;
     for (auto& exclusion : exclusions) {
-        exclusion = trim_copy(std::move(exclusion));
+        exclusion = trim(exclusion);
         if (exclusion.empty()) continue;
         const auto lowered = lower_copy(exclusion);
         const bool duplicate = std::any_of(out.begin(), out.end(), [&](const auto& existing) {
