@@ -255,3 +255,79 @@ TEST_CASE("overlay_rect stays on screen for a degenerate work area") {
         CHECK(r.y >= 0);
     }
 }
+
+TEST_CASE("the Take me back region sits inside the card at every scale") {
+    // Roadmap 2.16. A hit region that falls outside its window receives no clicks at all, and
+    // one that does not line up with the text drawn over it is a button that misses. Neither
+    // crashes, which is why this is pinned rather than eyeballed.
+    for (const int dpi : {96, 120, 144, 192}) {
+        const ScreenPoint card{scale_for_dpi(kOverlayWidth, dpi),
+                               scale_for_dpi(kOverlayHeight, dpi)};
+        const auto action = overlay_action_rect(card, dpi);
+
+        CAPTURE(dpi);
+        CHECK(action.x >= 0);
+        CHECK(action.y >= 0);
+        CHECK(action.width > 0);
+        CHECK(action.height > 0);
+        CHECK(action.x + action.width <= card.x);
+        CHECK(action.y + action.height <= card.y);
+    }
+}
+
+TEST_CASE("the Take me back region scales with the display") {
+    // The 10.12 property, one level down: fixed pixels over DPI-scaled text is a button that
+    // is correct at 100% and wrong everywhere else.
+    const ScreenPoint card_96{scale_for_dpi(kOverlayWidth, 96), scale_for_dpi(kOverlayHeight, 96)};
+    const ScreenPoint card_192{scale_for_dpi(kOverlayWidth, 192),
+                               scale_for_dpi(kOverlayHeight, 192)};
+
+    const auto small = overlay_action_rect(card_96, 96);
+    const auto large = overlay_action_rect(card_192, 192);
+
+    CHECK(large.width == small.width * 2);
+    CHECK(large.height == small.height * 2);
+}
+
+TEST_CASE("a click inside the region acts and a click anywhere else dismisses") {
+    // Dismiss stays the default for the rest of the card: that is what a click on it has always
+    // meant, and the action is an addition rather than a replacement.
+    const int dpi = 96;
+    const ScreenPoint card{scale_for_dpi(kOverlayWidth, dpi), scale_for_dpi(kOverlayHeight, dpi)};
+    const auto action = overlay_action_rect(card, dpi);
+
+    CHECK(overlay_action_hit(card, dpi, {action.x + action.width / 2,
+                                         action.y + action.height / 2}));
+    CHECK(overlay_action_hit(card, dpi, {action.x, action.y}));  // inclusive top-left
+
+    // Half-open on the far edges, the same convention minute_in_quiet_range uses, so the
+    // action area and the dismiss area around it cannot both claim one pixel.
+    CHECK_FALSE(overlay_action_hit(card, dpi, {action.x + action.width, action.y}));
+    CHECK_FALSE(overlay_action_hit(card, dpi, {action.x, action.y + action.height}));
+
+    CHECK_FALSE(overlay_action_hit(card, dpi, {card.x / 2, 10}));      // the text area
+    CHECK_FALSE(overlay_action_hit(card, dpi, {card.x - 5, card.y - 5}));  // bottom-right
+    CHECK_FALSE(overlay_action_hit(card, dpi, {-1, -1}));
+}
+
+TEST_CASE("the region still fits when a small panel shrank the card") {
+    // overlay_rect shrinks the whole card to fit a cramped work area at high DPI, so the button
+    // has to be sized from the card it is actually in rather than from the constants. A button
+    // wider than its window is a dead button.
+    const auto squeezed = overlay_rect({0, 0}, {300, 200}, 192);
+    const ScreenPoint card{squeezed.width, squeezed.height};
+    const auto action = overlay_action_rect(card, 192);
+
+    CHECK(action.width > 0);
+    CHECK(action.height > 0);
+    CHECK(action.x + action.width <= card.x);
+    CHECK(action.y + action.height <= card.y);
+    CHECK(overlay_action_hit(card, 192, {action.x + action.width / 2,
+                                         action.y + action.height / 2}));
+}
+
+TEST_CASE("the button label is one definition") {
+    // Shared by the painter and the hit region's own documentation, so a platform cannot draw
+    // one word and another platform draw a different one.
+    CHECK(std::string(overlay_action_label()) == "Take me back");
+}
