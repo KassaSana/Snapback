@@ -17,7 +17,9 @@ AlertDeliverySettings with_quiet_hours() {
     return s;
 }
 
-int at(int hour, int minute = 0) { return hour * 60 + minute; }
+int at(int hour, int minute = 0) {
+    return hour * 60 + minute;
+}
 
 }  // namespace
 

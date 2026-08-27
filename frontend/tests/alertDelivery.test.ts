@@ -12,7 +12,9 @@ import {
 } from "../src/alertDelivery";
 
 // A route the engine actually emits: overlay only, detailed copy.
-const overlayOnly = { delivery: { inApp: false, overlay: true, native: false, preview: "detailed" } };
+const overlayOnly = {
+  delivery: { inApp: false, overlay: true, native: false, preview: "detailed" },
+};
 
 {
   const route = parseAlertRoute(overlayOnly);

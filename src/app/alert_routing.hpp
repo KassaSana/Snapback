@@ -44,11 +44,17 @@ enum class AlertSuppression {
 
 inline const char* alert_suppression_as_str(AlertSuppression s) noexcept {
     switch (s) {
-        case AlertSuppression::Snoozed: return "snoozed";
-        case AlertSuppression::QuietHours: return "quiet hours";
-        case AlertSuppression::ChannelsOff: return "channels off";
-        case AlertSuppression::ConversionFailed: return "local time unavailable";
-        case AlertSuppression::None: default: return "none";
+        case AlertSuppression::Snoozed:
+            return "snoozed";
+        case AlertSuppression::QuietHours:
+            return "quiet hours";
+        case AlertSuppression::ChannelsOff:
+            return "channels off";
+        case AlertSuppression::ConversionFailed:
+            return "local time unavailable";
+        case AlertSuppression::None:
+        default:
+            return "none";
     }
 }
 
@@ -98,19 +104,25 @@ inline bool minute_in_quiet_range(int minute, int start, int end) {
 // Precedence is snooze, then quiet hours, then channels. Snooze first because it is the user's
 // most recent explicit act: when a snooze and a quiet hour both apply, "snoozed" is the more
 // useful thing to be told.
-inline AlertRoute route_alert(AlertEvent event,
-                              const AlertDeliverySettings& settings,
-                              std::int64_t now_wall_ms,
-                              std::optional<int> local_minute_of_day) {
+inline AlertRoute route_alert(AlertEvent event, const AlertDeliverySettings& settings,
+                              std::int64_t now_wall_ms, std::optional<int> local_minute_of_day) {
     AlertRoute route;
     route.preview = settings.preview;
 
     switch (event) {
-        case AlertEvent::Snapback: route.channels = settings.snapback; break;
-        case AlertEvent::Hyperfocus: route.channels = settings.hyperfocus; break;
-        case AlertEvent::Pomodoro: route.channels = settings.pomodoro; break;
+        case AlertEvent::Snapback:
+            route.channels = settings.snapback;
+            break;
+        case AlertEvent::Hyperfocus:
+            route.channels = settings.hyperfocus;
+            break;
+        case AlertEvent::Pomodoro:
+            route.channels = settings.pomodoro;
+            break;
         // Fixed, per the note on AlertEvent. In-app matches what this nudge does today.
-        case AlertEvent::UntrackedWork: route.channels = AlertChannels{true, false, false}; break;
+        case AlertEvent::UntrackedWork:
+            route.channels = AlertChannels{true, false, false};
+            break;
     }
 
     const auto silence = [&route](AlertSuppression why) {

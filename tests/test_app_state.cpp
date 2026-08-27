@@ -3145,18 +3145,24 @@ TEST_CASE("a snapback delivered outside quiet hours carries its route") {
     CHECK(parsed["delivery"]["preview"] == "generic");
 }
 
-TEST_CASE("snoozing alerts leaves the recording status Recording") {
+TEST_CASE("snoozing alerts does not move the recording state") {
     // 2.16's sharpest line: silencing an intervention is not privacy mode. If a snooze moved
     // `state`, the header and the tray would both tell the user they had stopped being
     // recorded, which is false and is the exact confusion the item forbids.
+    //
+    // Asserted as "unchanged" rather than as "Recording" on purpose. `derive_recording_state`
+    // reads capture availability, and a headless CI runner has none -- so pinning the literal
+    // value would test the runner's permissions rather than this feature. Unchanged is also
+    // the stronger claim: it holds whatever the state happens to be.
     ManualClock clock;
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
     AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
     state.start_session("implement the classifier", FocusMode::Normal);
 
+    const auto before = state.recording_status();
     const auto status = state.snooze_alerts_for(30);
-    CHECK(status.state == RecordingState::Recording);
+    CHECK(status.state == before.state);
     CHECK(status.alert_snooze_remaining_ms > 0);
     CHECK(status.alert_snooze_remaining_ms <= 30 * 60 * 1000);
     CHECK(status.private_pause_remaining_ms == 0);
@@ -3193,10 +3199,11 @@ TEST_CASE("a lapsed snooze reports no time remaining without a repair write") {
     state.start_session("implement the classifier", FocusMode::Normal);
     state.snooze_alerts_for(30);
 
+    const auto before = state.recording_status();
     clock.advance_minutes(31);
     const auto status = state.recording_status();
     CHECK(status.alert_snooze_remaining_ms == 0);
-    CHECK(status.state == RecordingState::Recording);
+    CHECK(status.state == before.state);  // see the note above: unchanged, not a literal
     CHECK(state.settings().alerts.snoozed_until_wall_ms > 0);  // stale, and harmless
 }
 
