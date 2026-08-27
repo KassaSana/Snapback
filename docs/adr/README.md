@@ -47,6 +47,7 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | [0005](0005-a-session-is-declared-and-attended.md) | A session is declared by the user and attended by the user | Accepted | 2.7, 7.23, 2.8 |
 | [0006](0006-trainer-is-developer-tooling.md) | Training tooling is developer-only | Accepted | 13.7 |
 | [0007](0007-time-is-integer-milliseconds-utc.md) | A point in time is UTC milliseconds since the epoch, stored as INTEGER | Accepted — **not yet applied** | 7.16 |
+| [0008](0008-protect-master-from-red-ci.md) | Protect `master` from red CI | Accepted | 6.2 |
 
 ## Awaiting an ADR
 
