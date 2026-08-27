@@ -45,6 +45,7 @@ import { useAutostart } from "./useAutostart";
 import { useAlertDelivery } from "./useAlertDelivery";
 import { useIdleThreshold } from "./useIdleThreshold";
 import { usePrivacy } from "./usePrivacy";
+import type { AlertDestination } from "./alertDestination";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
 import { SettingsNav } from "./SettingsNav";
 import { OnboardingGuide } from "./OnboardingGuide";
@@ -92,6 +93,29 @@ export default function App() {
   const openSettingsSection = useCallback((section: SettingsSection) => {
     setSurface("settings");
     setSettingsSection(section);
+  }, []);
+
+  // Roadmap 2.16. Where a clicked native alert lands. The native side already raised the
+  // window and already decided *which* destination (src/app/alert_routing.hpp); this turns
+  // that into a screen, which is the half it deliberately does not know about.
+  //
+  // `focus` names a region rather than an element id, so a destination that outlived the card
+  // it meant cannot reach for a component that has since been renamed.
+  const applyAlertDestination = useCallback((destination: AlertDestination) => {
+    setSurface(destination.surface);
+    if (destination.focus === null) return;
+    // One frame later, because the surface above has not rendered yet: on a click that
+    // switched surfaces, the region being scrolled to is not in the DOM at this point.
+    //
+    // Looked up by data attribute rather than by ref, so a destination cannot hold a component
+    // that has since been renamed or unmounted. This runs inside a host event listener, where
+    // a thrown exception has no user-visible failure mode — the click would just silently do
+    // nothing — so every step here is optional-chained rather than assumed.
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-alert-region="${destination.focus}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   }, []);
 
   // Roadmap 2.12. Skipping and finishing are the same durable state: the guide is done.
@@ -438,6 +462,7 @@ export default function App() {
     handleHyperfocus: live.handleHyperfocus,
     handleUntrackedWork: live.handleUntrackedWork,
     handleIdle: live.handleIdle,
+    applyAlertDestination,
     handlePomodoroEvent,
     refreshTimelineFromEvent: live.refreshTimelineFromEvent,
     setLabelStatus: feedback.setLabelStatus,
@@ -535,6 +560,7 @@ export default function App() {
         />
 
 
+        <div data-alert-region="session">
         <SessionControlCard
           focusMode={focusMode}
           handleFocusModeChange={handleFocusModeChange}
@@ -551,6 +577,7 @@ export default function App() {
           untrackedNote={live.untrackedNote}
           dismissUntrackedNote={live.clearUntrackedNote}
         />
+        </div>
 
         <RecordingStatusCard
           status={recordingStatus}
@@ -564,6 +591,7 @@ export default function App() {
           onSave={handleSaveAttendedTargets}
         />
 
+        <div data-alert-region="pomodoro">
         <PomodoroCard
           pomodoroStatus={pomodoroStatus}
           pomodoroConfig={pomodoroConfig}
@@ -577,6 +605,7 @@ export default function App() {
           onAcknowledge={handleAcknowledgePomodoroPhase}
           onSaveConfig={handleSavePomodoroConfig}
         />
+        </div>
           </>
         )}
 

@@ -8,6 +8,7 @@ import {
   type PredictionRecord,
   type SnapbackPayload,
 } from "./api";
+import type { AlertDestination } from "./alertDestination";
 import { CAPTURE_STALL_RECHECK_MS, HEALTH_POLL_MS, shouldPollHealth } from "./healthPoll";
 import { TIMELINE_POLL_MS } from "./useLiveData";
 
@@ -40,6 +41,12 @@ type UseAppEffectsArgs = {
   handleHyperfocus: (payload: { message: string }) => void;
   handleUntrackedWork: (payload: { message: string }) => void;
   handleIdle: (payload: { idle: boolean }) => void;
+  /**
+   * Roadmap 2.16. A native alert was clicked and named a destination this side owns. The
+   * window has already been raised natively by the time this runs — all that is left is to
+   * put the right thing in front of the user.
+   */
+  applyAlertDestination: (destination: AlertDestination) => void;
   handlePomodoroEvent: (status: PomodoroStatus) => void;
   refreshTimelineFromEvent: (sid?: string | null) => void;
 
@@ -69,6 +76,7 @@ export const useAppEffects = ({
   handleHyperfocus,
   handleUntrackedWork,
   handleIdle,
+  applyAlertDestination,
   handlePomodoroEvent,
   refreshTimelineFromEvent,
   setLabelStatus,
@@ -201,6 +209,11 @@ export const useAppEffects = ({
       }),
     );
     unsubs.push(
+      api.onAlertAction((destination) => {
+        applyAlertDestination(destination);
+      }),
+    );
+    unsubs.push(
       api.onPomodoro((status) => {
         handlePomodoroEvent(status);
       }),
@@ -222,6 +235,7 @@ export const useAppEffects = ({
     handleHyperfocus,
     handleUntrackedWork,
     handleIdle,
+    applyAlertDestination,
     handlePomodoroEvent,
     handlePrediction,
     handleSnapback,

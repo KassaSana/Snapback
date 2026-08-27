@@ -1,4 +1,5 @@
 import { deliversInApp } from "./alertDelivery";
+import { alertDestination, type AlertDestination } from "./alertDestination";
 import type { AlertDeliverySettings } from "./alertDelivery";
 import { invoke, listen } from "./bridge";
 import { mapActivityDeletionResult } from "./activityDeletion";
@@ -861,6 +862,18 @@ export const api = {
    * emitted this since idle detection landed; nothing consumed it, so an active session that
    * was actually paused still displayed as running.
    */
+  /**
+   * Roadmap 2.16. A native alert was clicked and the destination is one this side owns.
+   *
+   * Only fires for destinations the app has to navigate for. "return to work" never arrives
+   * here: it is handled natively by restore_snapback_target, which raises another
+   * application's window — navigating for it would pull the user back to Snapback at the
+   * moment the native side was sending them away from it.
+   */
+  onAlertAction: (handler: (destination: AlertDestination) => void) =>
+    listen<Record<string, unknown>>("alert_action", (event) => {
+      handler(alertDestination(event.payload));
+    }),
   onIdle: (handler: (payload: { idle: boolean }) => void) =>
     listen<{ idle: boolean }>("idle", (event) => handler(event.payload)),
   onLabelHotkey: (handler: (payload: LabelHotkeyPayload) => void) =>
