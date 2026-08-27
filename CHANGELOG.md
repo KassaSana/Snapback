@@ -12,10 +12,15 @@ and [docs/PACKAGING.md](docs/PACKAGING.md) documents the order to cut a release 
 
 ## [Unreleased]
 
-Everything below has landed on `master` and is **not in any published release**. See the note
-on `v0.2.0` at the bottom before cutting one.
+Everything below has landed on `master` and is **not in any published release**. The first
+release tag will be **`v0.3.0`** (9.13): the orphaned `v0.2.0` git tag is left in place; see
+the note at the bottom.
 
 ### Added
+
+- **Version baseline for the first release (9.13).** `project(... VERSION 0.3.0)` in
+  `CMakeLists.txt` and the frontend package version now match the tag the first GitHub Release
+  will use. The dangling `v0.2.0` tag is not retagged or deleted.
 
 - **MIT license and third-party notices (9.12).** The repository now ships a root `LICENSE`
   (MIT) and `THIRD_PARTY_NOTICES.md` inventory. Release packages install both beside

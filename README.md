@@ -38,8 +38,8 @@ The desktop app is gated behind `SNAPBACK_BUILD_APP=ON`; the headless core build
 and tests without it.
 
 What has changed, and what is not in a release yet, is in [CHANGELOG.md](CHANGELOG.md).
-**Nothing has shipped as a published release**; the existing `v0.2.0` tag points at a commit
-that is no longer on any branch. See the note at the end of the changelog before cutting one.
+**Nothing has shipped as a published release yet.** The first tag will be **`v0.3.0`**; an
+older `v0.2.0` tag points at a commit no longer on any branch and is not the release baseline.
 
 ## Layout
 
