@@ -75,4 +75,63 @@ inline NotificationPayload build_snapback_notification(const SnapbackPayload& pa
     return n;
 }
 
+// Roadmap 2.16. The same events, said in a way a stranger may read.
+//
+// A native notification is not only shown once: the OS copies it into a notification history
+// and renders it on a lock screen that a colleague, a partner, or a person behind you on a
+// train may be looking at. `payload.summary` is "Return to auth.ts" — a filename, sometimes a
+// client's project name — and the hyperfocus and untracked copy carry a duration that says how
+// long someone has been at their desk. None of that is the app's to broadcast.
+//
+// These are **fixed strings** with nothing interpolated, which is the property the tests
+// assert. A generic builder that formatted anything from the payload would be one refactor
+// away from leaking again, and the leak would be invisible until someone saw it on a lock
+// screen. The count is left out too: "locked in for 214 minutes" is itself a disclosure.
+//
+// Only the native channel has this mode. The overlay draws on the user's own unlocked screen
+// and the in-app card is inside the app, so both keep the detailed copy above.
+inline NotificationPayload build_generic_snapback_notification() {
+    NotificationPayload n;
+    n.title = "Snapback";
+    n.body = "You're back on task.";
+    return n;
+}
+
+inline NotificationPayload build_generic_hyperfocus_notification() {
+    NotificationPayload n;
+    n.title = "Snapback";
+    n.body = "Time for a break.";
+    return n;
+}
+
+inline NotificationPayload build_generic_untracked_work_notification() {
+    NotificationPayload n;
+    n.title = "Snapback";
+    n.body = "You may want to start a session.";
+    return n;
+}
+
+// The two above, chosen by mode, so a delivery site reads its preference once and never
+// branches on it again. A call site that picked the builder itself is a call site that can
+// forget to.
+inline NotificationPayload build_snapback_notification(const SnapbackPayload& payload,
+                                                       AlertPreviewMode preview) {
+    return preview == AlertPreviewMode::Generic ? build_generic_snapback_notification()
+                                                : build_snapback_notification(payload);
+}
+
+inline NotificationPayload build_hyperfocus_notification(std::uint64_t continuous_minutes,
+                                                         AlertPreviewMode preview) {
+    return preview == AlertPreviewMode::Generic
+               ? build_generic_hyperfocus_notification()
+               : build_hyperfocus_notification(continuous_minutes);
+}
+
+inline NotificationPayload build_untracked_work_notification(std::uint64_t active_minutes,
+                                                             AlertPreviewMode preview) {
+    return preview == AlertPreviewMode::Generic
+               ? build_generic_untracked_work_notification()
+               : build_untracked_work_notification(active_minutes);
+}
+
 }  // namespace snapback

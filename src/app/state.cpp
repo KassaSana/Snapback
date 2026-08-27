@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include "capture/permissions.hpp"
+#include "app/alert_routing.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/version.hpp"
 #include "app/notification.hpp"
@@ -21,6 +22,7 @@
 #include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
 #include "snapback/focus_window.hpp"
+#include "util/time.hpp"
 
 namespace snapback {
 namespace {
@@ -219,6 +221,11 @@ AppState::~AppState() noexcept {
 // object does on the way to the database.
 std::int64_t AppState::now_unix_ms() const { return clock().wall_ms(); }
 
+AlertRoute AppState::alert_route_unlocked(AlertEvent event) const {
+    const auto now = now_unix_ms();
+    return route_alert(event, settings_.alerts, now, local_minute_of_day_from_unix_ms(now));
+}
+
 std::int64_t AppState::unix_ms_secs_ago(std::int64_t secs) const {
     // Roadmap 7.23. A pause must be stamped when the user *stopped*, not when we noticed --
     // the idle threshold means we notice five minutes late, and stamping "now" would credit
@@ -318,8 +325,15 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
         const auto minutes = (now_ms - *untracked_since_ms_) / (60 * 1000);
         const bool dismissal_active = now_unix_ms() < settings_.untracked_nudge_until_wall_ms;
         if (!dismissal_active && !untracked_latched_ && minutes >= kUntrackedNudgeMinutes) {
+            // Roadmap 2.16. Latched either way, for the same reason as the hyperfocus nudge:
+            // one stretch earns one prompt, and a quiet hour must not queue one up to fire the
+            // moment it ends. This nudge has no channel preference of its own -- see
+            // AlertEvent in app/alert_routing.hpp -- but exempting it from quiet hours and the
+            // snooze would make both of those a lie.
             untracked_latched_ = true;
-            untracked_minutes_ = static_cast<std::uint64_t>(minutes);
+            if (alert_route_unlocked(AlertEvent::UntrackedWork).visible()) {
+                untracked_minutes_ = static_cast<std::uint64_t>(minutes);
+            }
         }
     }
 
@@ -1241,6 +1255,12 @@ RecordingStatus AppState::recording_status() {
         const auto left = settings_.private_until_wall_ms - now_unix_ms();
         status.private_pause_remaining_ms = left > 0 ? left : 0;
     }
+    // Roadmap 2.16. Reported alongside `state`, never instead of it: a snooze is a fact about
+    // delivery, and the state it sits beside still says Recording.
+    if (settings_.alerts.snoozed_until_wall_ms > 0) {
+        const auto left = settings_.alerts.snoozed_until_wall_ms - now_unix_ms();
+        status.alert_snooze_remaining_ms = left > 0 ? left : 0;
+    }
     return status;
 }
 
@@ -1254,6 +1274,60 @@ RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
         // stores the instant it ends rather than a duration, so closing the window does not
         // restart the clock.
         candidate.private_until_wall_ms = minutes > 0 ? now_unix_ms() + minutes * 60 * 1000 : 0;
+        commit_settings_unlocked(std::move(candidate), [] {});
+    }
+    return recording_status();
+}
+
+// Roadmap 2.16. The tray's "Snooze alerts for 30 minutes", and its undo.
+//
+// Deliberately *not* modelled on lapse_private_pause_unlocked: an expired snooze needs no
+// repair write. route_alert already reads a passed deadline as lapsed, so a stale nonzero
+// value is inert, and rewriting settings.json from the engine tick to tidy a field nobody
+// reads would be churn on the user's disk for no observable difference.
+RecordingStatus AppState::snooze_alerts_for(std::int64_t minutes) {
+    if (minutes < 0) throw std::runtime_error("an alert snooze cannot be negative");
+    if (minutes > kMaxAlertSnoozeMins) {
+        throw std::runtime_error("an alert snooze cannot exceed " +
+                                 std::to_string(kMaxAlertSnoozeMins) + " minutes");
+    }
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        const auto span = minutes > 0 ? minutes : kDefaultAlertSnoozeMins;
+        // An instant, not a duration -- the same reasoning as the privacy pause above. A
+        // duration would restart every time the window was hidden and reopened.
+        candidate.alerts.snoozed_until_wall_ms = now_unix_ms() + span * 60 * 1000;
+        commit_settings_unlocked(std::move(candidate), [] {});
+    }
+    return recording_status();
+}
+
+AppSettings AppState::set_alert_delivery(AlertDeliverySettings alerts) {
+    const auto in_day = [](std::int32_t minute) {
+        return minute >= 0 && minute < kMinutesPerDay;
+    };
+    // Rejected rather than clamped, matching set_idle_threshold_secs: a rejected setting is
+    // visible to the user, a clamped one is a value they never chose quietly taking effect.
+    if (!in_day(alerts.quiet_hours_start_min) || !in_day(alerts.quiet_hours_end_min)) {
+        throw std::runtime_error("quiet hours must be minutes of the day (0-1439)");
+    }
+    std::lock_guard lock(mutex_);
+    AppSettings candidate = settings_;
+    // The deadline is carried over from the live settings, not taken from the caller. A
+    // Settings save is about preferences; the snooze belongs to the tray action that started
+    // it, and letting a form post overwrite it would make "Resume alerts" mean two things.
+    alerts.snoozed_until_wall_ms = settings_.alerts.snoozed_until_wall_ms;
+    candidate.alerts = std::move(alerts);
+    commit_settings_unlocked(std::move(candidate), [] {});
+    return settings_;
+}
+
+RecordingStatus AppState::resume_alerts() {
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        candidate.alerts.snoozed_until_wall_ms = 0;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
     return recording_status();
@@ -1598,6 +1672,10 @@ void AppState::engine_tick() {
     EmitHook hook;
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
+    AlertRoute snap_route;
+    AlertRoute pomodoro_route;
+    AlertRoute hyper_route;
+    AlertRoute untracked_route;
     std::optional<PomodoroStatus> pomodoro_to_emit;
     std::optional<std::uint64_t> hyper_to_emit;
     std::optional<std::uint64_t> untracked_to_emit;
@@ -1650,7 +1728,12 @@ void AppState::engine_tick() {
             // belongs instead of reaching back for it from phase 2.
             last_prune_steady_ms_ = now_ms;
         }
-        if (pomodoro_.poll(now_ms)) pomodoro_to_emit = pomodoro_.status(now_ms);
+        if (pomodoro_.poll(now_ms)) {
+            pomodoro_to_emit = pomodoro_.status(now_ms);
+            // Roadmap 2.16. Computed here, under mutex_, because settings_ is guarded by it
+            // and phase 3 below holds no lock.
+            pomodoro_route = alert_route_unlocked(AlertEvent::Pomodoro);
+        }
         hook = emit_hook_;
         if (prediction_dirty_) {
             pred_to_emit = latest_prediction_;
@@ -1662,15 +1745,22 @@ void AppState::engine_tick() {
         // is cleared by dismiss/restore, or replaced by the next snapback.
         if (latest_snapback_ && !snapback_emitted_) {
             snap_to_emit = *latest_snapback_;
+            snap_route = latest_snapback_route_;
             snapback_emitted_ = true;
         }
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
             hyperfocus_minutes_.reset();
+            // Roadmap 2.16. Computed under mutex_, like the Pomodoro route above. The latch
+            // already refused to set the minutes at all when the route was suppressed, so this
+            // is always visible() -- what it carries that matters here is *which* channel and
+            // which preview mode.
+            hyper_route = alert_route_unlocked(AlertEvent::Hyperfocus);
         }
         if (untracked_minutes_) {
             untracked_to_emit = untracked_minutes_;
             untracked_minutes_.reset();
+            untracked_route = alert_route_unlocked(AlertEvent::UntrackedWork);
         }
         publish_live_read_unlocked();
     }
@@ -1751,22 +1841,39 @@ void AppState::engine_tick() {
         hook("prediction", dump_json(nlohmann::json(*pred_to_emit)), tick_activity_epoch);
     }
     if (snap_to_emit) {
-        hook("snapback", dump_json(nlohmann::json(*snap_to_emit)), tick_activity_epoch);
+        // Roadmap 2.16. The route rides on the payload so the delivery layer reads a flag
+        // instead of re-deriving policy. Always visible() here -- a suppressed snapback never
+        // reaches this block, it is dropped at the latch where it can also be acknowledged.
+        auto payload = nlohmann::json(*snap_to_emit);
+        payload["delivery"] = nlohmann::json(snap_route);
+        hook("snapback", dump_json(payload), tick_activity_epoch);
     }
     if (pomodoro_to_emit) {
-        hook("pomodoro", dump_json(nlohmann::json(*pomodoro_to_emit)), tick_activity_epoch);
+        // Roadmap 2.16. Annotated, never suppressed. This event is dual-purpose: it is also
+        // how the frontend's timer card learns the phase changed, so gating the emit on a
+        // delivery preference would freeze the card at 25:00 for anyone who turned Pomodoro
+        // alerts off. The alert is what the preference governs, not the state update.
+        auto payload = nlohmann::json(*pomodoro_to_emit);
+        payload["delivery"] = nlohmann::json(pomodoro_route);
+        hook("pomodoro", dump_json(payload), tick_activity_epoch);
     }
     if (hyper_to_emit) {
+        // The in-app copy stays detailed: the preview mode governs what a *lock screen* may
+        // say, and this string is rendered inside the app. main.cpp picks the native wording
+        // from the route when it raises a toast.
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
         hook("hyperfocus",
-             dump_json(nlohmann::json{{"message", note.body}, {"minutes", *hyper_to_emit}}),
+             dump_json(nlohmann::json{{"message", note.body},
+                                      {"minutes", *hyper_to_emit},
+                                      {"delivery", nlohmann::json(hyper_route)}}),
              tick_activity_epoch);
     }
     if (untracked_to_emit) {
         const auto note = build_untracked_work_notification(*untracked_to_emit);
         hook("untracked_work",
              dump_json(nlohmann::json{{"message", note.body},
-                                      {"minutes", *untracked_to_emit}}),
+                                      {"minutes", *untracked_to_emit},
+                                      {"delivery", nlohmann::json(untracked_route)}}),
              tick_activity_epoch);
     }
 }
@@ -1820,9 +1927,36 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
                 unix_ms_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
             job.snapback_episode = std::move(episode);
 
-            latest_snapback_ = *snapback;
-            snapback_emitted_ = false;  // replaces any predecessor, restored or not
-            live_read_dirty_ = true;
+            // Roadmap 2.16. Whether this interruption is allowed to reach the user is decided
+            // here, at the latch, rather than at the emit block below -- because this is the
+            // only place that can also acknowledge it on the user's behalf.
+            const auto route = alert_route_unlocked(AlertEvent::Snapback);
+            if (route.visible()) {
+                latest_snapback_ = *snapback;
+                latest_snapback_route_ = route;
+                snapback_emitted_ = false;  // replaces any predecessor, restored or not
+                live_read_dirty_ = true;
+            } else {
+                // The card will never be shown, so nobody can dismiss it -- and
+                // `dismiss_recovery` is the tracker's *only* exit from Recovering. Its two
+                // production callers are dismiss_snapback() and restore_snapback_target(),
+                // both of which are clicks on that card. Skip this and the tracker stays
+                // latched forever: the user's first quiet-hour snapback silently disables
+                // every snapback after it, including the ones next morning that nothing is
+                // suppressing. That failure is invisible to any test which only checks that
+                // the quiet-hour alert did not appear, so tests/test_app_state.cpp drives two
+                // cycles and asserts the second one still fires.
+                //
+                // The episode built above is still persisted. What was suppressed is the
+                // *alert*, not the recording -- silencing an intervention is not privacy mode.
+                //
+                // Dropping the payload also drops this snapback's "Take me back" target, since
+                // that is what restore_snapback_target() reads. Deliberate: a return target
+                // offered eight hours later points at work the user has long since left.
+                context_tracker_.dismiss_recovery(event.timestamp_secs);
+                log().info(std::string("alerts: snapback suppressed (") +
+                           alert_suppression_as_str(route.suppressed_by) + ")");
+            }
         }
     }
 
@@ -1860,8 +1994,17 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
         const auto minutes = static_cast<std::uint64_t>(features.minutes_since_last_break());
         if (evaluate_hyperfocus(focus_mode_, minutes)) {
             if (!hyperfocus_latched_) {
+                // Roadmap 2.16. The latch is set whether or not the nudge is delivered: one
+                // stretch earns one nudge, and a suppressed one is still that stretch's nudge.
+                // Latching only on delivery would make a quiet hour queue up a nudge to fire
+                // the moment it ended, which is the opposite of what the user asked for.
+                //
+                // No re-arm concern here, unlike the snapback path: this latch clears itself
+                // when a break drops minutes_since_last_break below the threshold.
                 hyperfocus_latched_ = true;
-                hyperfocus_minutes_ = minutes;
+                if (alert_route_unlocked(AlertEvent::Hyperfocus).visible()) {
+                    hyperfocus_minutes_ = minutes;
+                }
             }
         } else {
             hyperfocus_latched_ = false;

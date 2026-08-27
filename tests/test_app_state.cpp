@@ -3007,3 +3007,248 @@ TEST_CASE("an indefinite privacy pause never lapses by itself") {
     CHECK(state.resume_from_private_pause().state != RecordingState::PausedPrivate);
     CHECK_FALSE(state.privacy_settings().private_mode);
 }
+
+// Roadmap 2.16. Alert delivery, and the one failure the item singles out.
+//
+// The quiet-hours cases below position the range relative to *this machine's* local offset
+// rather than naming a wall-clock hour: CI runs them in whatever timezone the runner has, and
+// a case that assumed one would pass here and fail there.
+
+namespace {
+
+// A state whose clock the case drives, plus quiet hours covering the hour that starts now.
+struct QuietHoursFixture {
+    ManualClock clock;
+    std::unique_ptr<AppState> state;
+
+    QuietHoursFixture() {
+        auto storage = Storage::open_memory();
+        if (!storage) throw std::runtime_error("failed to open in-memory storage");
+        state = std::make_unique<AppState>(std::move(*storage), std::filesystem::path{}, nullptr,
+                                           &clock);
+
+        const auto now_local = local_minute_of_day_from_unix_ms(clock.wall_ms());
+        if (!now_local) throw std::runtime_error("no local reading on this machine");
+        AlertDeliverySettings alerts;
+        alerts.quiet_hours_enabled = true;
+        alerts.quiet_hours_start_min = static_cast<std::int32_t>(*now_local);
+        alerts.quiet_hours_end_min = static_cast<std::int32_t>((*now_local + 60) % kMinutesPerDay);
+        AppStateTestAccess::set_alert_settings(*state, alerts);
+    }
+};
+
+// Drift away and come back, which is the edge ContextTracker latches a snapback on.
+void drift_and_return(AppState& state, double away_at, double back_at) {
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, away_at, "Google Chrome", "YouTube - Recommended"));
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, back_at, "Cursor", "classifier.cpp - Snapback"));
+}
+
+}  // namespace
+
+TEST_CASE("AppState re-arms the tracker when quiet hours suppress a snapback") {
+    // The load-bearing case for 2.16. Step 4 is the whole point: remove the dismiss_recovery
+    // call from the suppression branch and step 2 still passes while step 4 fails, because the
+    // tracker stays latched in Recovering and never produces another payload. That is the
+    // failure the item warns about -- one quiet-hour event silently disabling every snapback
+    // afterwards -- and it is invisible to a test that only checks the quiet-hour alert was
+    // suppressed.
+    QuietHoursFixture fixture;
+    auto& state = *fixture.state;
+    const auto session = state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    CHECK(state.latest_snapback() == std::nullopt);  // suppressed: we are inside quiet hours
+
+    // Out of the quiet range; the next return-from-distraction must fire.
+    fixture.clock.advance_minutes(120);
+    drift_and_return(state, 200.0, 240.0);
+
+    const auto second = state.take_snapback();
+    REQUIRE(second.has_value());
+    CHECK(second->app_name == "Cursor");
+}
+
+TEST_CASE("a suppressed snapback still records its episode") {
+    // Silencing an intervention is not privacy mode. The alert is what quiet hours withhold;
+    // the recording continues, and Review must still be able to count the episode.
+    QuietHoursFixture fixture;
+    auto& state = *fixture.state;
+    const auto session = state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+
+    REQUIRE(state.latest_snapback() == std::nullopt);
+    CHECK(AppStateTestAccess::snapback_episodes(state, session.session_id).size() == 1);
+}
+
+TEST_CASE("alert channels turned off suppress a snapback and still re-arm") {
+    // Same re-arm obligation by a different lever: an empty channel set is a suppression the
+    // user chose, and it must not strand the tracker either.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AlertDeliverySettings alerts;
+    alerts.snapback = AlertChannels{};  // "this event does not interrupt me"
+    AppStateTestAccess::set_alert_settings(state, alerts);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    CHECK(state.latest_snapback() == std::nullopt);
+
+    // Turn the overlay back on: the tracker must not have been left latched by the silence.
+    AppStateTestAccess::set_alert_settings(state, AlertDeliverySettings{});
+    drift_and_return(state, 200.0, 240.0);
+    CHECK(state.take_snapback().has_value());
+}
+
+TEST_CASE("a snapback delivered outside quiet hours carries its route") {
+    // The delivery layer reads flags off the payload rather than re-deriving policy, so the
+    // route has to survive the trip through the emit hook.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AlertDeliverySettings alerts;
+    alerts.snapback = AlertChannels{false, true, true};  // the explicit "both"
+    alerts.preview = AlertPreviewMode::Generic;
+    AppStateTestAccess::set_alert_settings(state, alerts);
+
+    std::string captured;
+    state.set_emit_hook([&captured](const std::string& name, const std::string& payload,
+                                    std::uint64_t) {
+        if (name == "snapback") captured = payload;
+    });
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    AppStateTestAccess::engine_tick(state);
+
+    REQUIRE_FALSE(captured.empty());
+    const auto parsed = nlohmann::json::parse(captured);
+    REQUIRE(parsed.contains("delivery"));
+    CHECK(parsed["delivery"]["overlay"] == true);
+    CHECK(parsed["delivery"]["native"] == true);
+    CHECK(parsed["delivery"]["inApp"] == false);
+    CHECK(parsed["delivery"]["preview"] == "generic");
+}
+
+TEST_CASE("snoozing alerts does not move the recording state") {
+    // 2.16's sharpest line: silencing an intervention is not privacy mode. If a snooze moved
+    // `state`, the header and the tray would both tell the user they had stopped being
+    // recorded, which is false and is the exact confusion the item forbids.
+    //
+    // Asserted as "unchanged" rather than as "Recording" on purpose. `derive_recording_state`
+    // reads capture availability, and a headless CI runner has none -- so pinning the literal
+    // value would test the runner's permissions rather than this feature. Unchanged is also
+    // the stronger claim: it holds whatever the state happens to be.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    const auto before = state.recording_status();
+    const auto status = state.snooze_alerts_for(30);
+    CHECK(status.state == before.state);
+    CHECK(status.alert_snooze_remaining_ms > 0);
+    CHECK(status.alert_snooze_remaining_ms <= 30 * 60 * 1000);
+    CHECK(status.private_pause_remaining_ms == 0);
+}
+
+TEST_CASE("a snooze suppresses a snapback and still re-arms the tracker") {
+    // The snooze lever, held to the same obligation as quiet hours.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+    state.snooze_alerts_for(30);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    CHECK(state.latest_snapback() == std::nullopt);
+
+    // Past the deadline: the next return-from-distraction must fire.
+    clock.advance_minutes(31);
+    drift_and_return(state, 200.0, 240.0);
+    CHECK(state.take_snapback().has_value());
+}
+
+TEST_CASE("a lapsed snooze reports no time remaining without a repair write") {
+    // The deadline is the promise, and a passed one is inert. Nothing rewrites settings.json
+    // when it expires -- route_alert already reads it as lapsed, so tidying the field from the
+    // tick would be disk churn with no observable difference.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+    state.snooze_alerts_for(30);
+
+    const auto before = state.recording_status();
+    clock.advance_minutes(31);
+    const auto status = state.recording_status();
+    CHECK(status.alert_snooze_remaining_ms == 0);
+    CHECK(status.state == before.state);  // see the note above: unchanged, not a literal
+    CHECK(state.settings().alerts.snoozed_until_wall_ms > 0);  // stale, and harmless
+}
+
+TEST_CASE("resume_alerts clears the snooze immediately") {
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+    state.snooze_alerts_for(30);
+    REQUIRE(state.recording_status().alert_snooze_remaining_ms > 0);
+
+    const auto status = state.resume_alerts();
+    CHECK(status.alert_snooze_remaining_ms == 0);
+    CHECK(state.settings().alerts.snoozed_until_wall_ms == 0);
+}
+
+TEST_CASE("an alert snooze rejects a span longer than a day") {
+    auto state = make_state();
+    CHECK_THROWS(state->snooze_alerts_for(kMaxAlertSnoozeMins + 1));
+    CHECK_THROWS(state->snooze_alerts_for(-1));
+}
+
+TEST_CASE("an alert snooze survives a rebuilt AppState") {
+    // The hidden-window/reopen case. The deadline lives in settings.json and the decision is
+    // taken on the engine thread, so nothing about it depends on a frontend being alive --
+    // but that is only true if the value is actually written and read back.
+    TempDir temp;
+    ManualClock clock;
+    {
+        auto storage = Storage::open_memory();
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path, nullptr, &clock);
+        state.snooze_alerts_for(30);
+        REQUIRE(state.recording_status().alert_snooze_remaining_ms > 0);
+    }
+
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState reopened(std::move(*storage), temp.path, nullptr, &clock);
+    reopened.start_session("implement the classifier", FocusMode::Normal);
+
+    CHECK(reopened.recording_status().alert_snooze_remaining_ms > 0);
+    AppStateTestAccess::process_event(
+        reopened, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(reopened, 101.0, 140.0);
+    CHECK(reopened.latest_snapback() == std::nullopt);  // still snoozed after the restart
+}

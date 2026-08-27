@@ -380,6 +380,85 @@ inline constexpr std::int64_t kDefaultIdleThresholdSecs = 300;
 inline constexpr std::int64_t kMinIdleThresholdSecs = 30;
 inline constexpr std::int64_t kMaxIdleThresholdSecs = 3600;
 
+// Roadmap 2.16. How long a tray snooze silences delivery, and the bound on any value that
+// reaches the setter. Thirty minutes is the item's own figure: long enough to finish the thing
+// that made you reach for the menu, short enough that forgetting about it costs you one
+// stretch rather than a day.
+inline constexpr std::int64_t kDefaultAlertSnoozeMins = 30;
+inline constexpr std::int64_t kMaxAlertSnoozeMins = 24 * 60;
+inline constexpr int kMinutesPerDay = 1440;
+
+// Roadmap 2.16. Which channels one kind of interruption is allowed to use.
+//
+// Three independent flags rather than an enum over the eight combinations, because the item
+// requires "both" to be *expressible* while defaulting to one. An enum would have to either
+// spell out every pairing or quietly forbid the ones nobody thought of, and adding a fourth
+// channel later would multiply it again. `any() == false` is the honest spelling of "this
+// event does not interrupt me", which is a setting a user is entitled to choose.
+struct AlertChannels {
+    bool in_app{};
+    bool overlay{};
+    bool native{};
+
+    bool any() const { return in_app || overlay || native; }
+};
+
+// Roadmap 2.16. How much a *native* notification is allowed to say.
+//
+// Only the native channel carries this axis, and that asymmetry is the point: the overlay is
+// drawn on the user's own unlocked screen and the in-app card is inside the app, but a native
+// toast is copied into OS notification history and rendered on a lock screen that someone
+// else may be reading over. Generic mode is what makes the app safe to run in a shared room.
+enum class AlertPreviewMode { Detailed, Generic };
+
+// Detailed is listed first so an unknown string falls back to it, matching FocusMode above.
+// The fallback direction is deliberate here too: an unreadable preference should leave the
+// product working as it always has, and a user who asked for Generic will notice it was not
+// honoured far sooner than one who silently stopped being told what they were distracted by.
+NLOHMANN_JSON_SERIALIZE_ENUM(AlertPreviewMode, {
+    {AlertPreviewMode::Detailed, "detailed"},
+    {AlertPreviewMode::Generic, "generic"},
+})
+
+// Roadmap 2.16. When and how Snapback is allowed to interrupt.
+struct AlertDeliverySettings {
+    // One visible intervention per logical event, which is the item's rule. A snapback used to
+    // fire the overlay *and* a toast for the same moment; the overlay is a topmost,
+    // non-activating window, so it already reaches the user whether or not the app has focus,
+    // and the toast was duplication that additionally copied the summary -- which may name a
+    // file or a project -- into OS notification history. "Both" remains one checkbox away.
+    AlertChannels snapback{false, true, false};
+    // Native only, preserving today's behaviour. An overlay here would interrupt exactly the
+    // deep work the hyperfocus guardrail exists to protect.
+    AlertChannels hyperfocus{false, false, true};
+    // In-app only, preserving today's behaviour: the Pomodoro card is on screen when a
+    // Pomodoro is running, so it is already where the user is looking.
+    AlertChannels pomodoro{true, false, false};
+
+    AlertPreviewMode preview{AlertPreviewMode::Detailed};
+
+    // Local minutes since midnight, 0..1439 -- a reading, never an instant. See
+    // `local_minute_of_day_from_unix_ms` in util/time.hpp for why that distinction is
+    // load-bearing rather than pedantic.
+    //
+    // Off by default. A focus tool that ships with an opinion about when its user sleeps has
+    // decided something it was never asked to decide; the start and end below are only the
+    // values the toggle reveals, not a schedule anyone is being held to.
+    bool quiet_hours_enabled{};
+    std::int32_t quiet_hours_start_min{22 * 60};
+    std::int32_t quiet_hours_end_min{7 * 60};
+
+    // Roadmap 2.16. Unix ms at which a tray snooze lapses; 0 when not snoozed. The same shape
+    // and the same reasoning as `private_until_wall_ms` below: the deadline is the promise, and
+    // storing a duration instead would restart the snooze every time the window closed.
+    //
+    // **This is not privacy mode.** Recording, prediction, and snapback-episode persistence all
+    // continue through a snooze; only delivery is silenced. 2.10's status model has to say both
+    // of those things at once, which is why this surfaces as its own field on RecordingStatus
+    // rather than as another RecordingState.
+    std::int64_t snoozed_until_wall_ms{};
+};
+
 // New C++ settings DTO. Persisted in app-data/settings.json and exposed to the
 // frontend with camelCase keys.
 struct AppSettings {
@@ -411,6 +490,8 @@ struct AppSettings {
     std::int64_t private_until_wall_ms{};
     // Roadmap 2.7. A dismissed missed-session prompt stays dismissed across a restart.
     std::int64_t untracked_nudge_until_wall_ms{};
+    // Roadmap 2.16. When and how an intervention is allowed to reach the user.
+    AlertDeliverySettings alerts{};
 };
 
 // Roadmap 2.19. A plan and what actually happened, side by side.
@@ -487,6 +568,14 @@ struct RecordingStatus {
     // state is not PausedPrivate. The UI shows this rather than counting down on its own, so a
     // closed and reopened window cannot drift from the real deadline.
     std::int64_t private_pause_remaining_ms{};
+    // Roadmap 2.16. Remaining milliseconds of an alert snooze; 0 when not snoozed.
+    //
+    // Its own field rather than another RecordingState, and that is the point 2.16 insists on:
+    // a snooze silences interventions while recording, prediction, and episode persistence all
+    // continue. A state value would force the two facts into one slot and make "silenced" read
+    // as "not recording" -- exactly the confusion between an alert preference and privacy mode
+    // that the item forbids. `state` is untouched by a snooze.
+    std::int64_t alert_snooze_remaining_ms{};
 };
 
 // The inputs the state is derived from, gathered so the rule itself is a pure function of
@@ -654,6 +743,10 @@ void to_json(json& j, const ExportTrainingResult& v);
 void from_json(const json& j, ExportTrainingResult& v);
 void to_json(json& j, const RecordingStatus& v);
 void to_json(json& j, const AttendedProgress& v);
+void to_json(json& j, const AlertChannels& v);
+void from_json(const json& j, AlertChannels& v);
+void to_json(json& j, const AlertDeliverySettings& v);
+void from_json(const json& j, AlertDeliverySettings& v);
 void to_json(json& j, const AppSettings& v);
 void from_json(const json& j, AppSettings& v);
 void to_json(json& j, const PrivacySettings& v);

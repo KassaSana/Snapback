@@ -77,6 +77,19 @@ each command as a browser function. `src/app/ipc_shim.hpp` injects
 Command failures cross the synchronous binding boundary as a JSON error
 envelope; the bridge turns that envelope into a rejected promise.
 
+Alert events (`snapback`, `hyperfocus`, `pomodoro`, `untracked_work`) carry a
+`delivery` object — the routing decision `src/app/alert_routing.hpp` already
+took, as `{inApp, overlay, native, preview}`. Delivery sites read those flags
+and decide nothing (Roadmap 2.16). `pomodoro` is annotated but **never
+suppressed**: it is also how the frontend timer card learns the phase changed,
+so gating it would freeze the card for anyone who turned Pomodoro alerts off.
+
+`settings.json` carries the preferences behind that decision under `alerts`:
+per-event channel arrays, `preview`, the quiet-hours range as **local minutes
+since midnight**, and `snoozedUntilWallMs` as a UTC epoch-millisecond deadline.
+The two units differ on purpose — a snooze is an instant, a quiet range is a
+recurring reading of the local clock.
+
 ## Data and model contracts
 
 Frontend DTOs use camelCase. Internal records use snake_case. The feature vector

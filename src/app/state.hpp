@@ -24,6 +24,7 @@
 #include "engine/idle_detector.hpp"
 #include "engine/pomodoro.hpp"
 #include "snapback/tracker.hpp"
+#include "app/alert_routing.hpp"
 #include "app/data_export.hpp"
 #include "app/settings.hpp"
 #include "storage/storage.hpp"
@@ -147,6 +148,15 @@ public:
     // Turns private mode on for a fixed stretch. 0 minutes means indefinite (the old
     // behaviour). Returns the resulting status so the caller renders what was accepted.
     RecordingStatus pause_privately_for(std::int64_t minutes);
+    // Roadmap 2.16. Silences alert *delivery* for a stretch, leaving recording alone. 0
+    // minutes means the default 30. Returns the resulting status so the caller renders what
+    // was accepted rather than what it asked for.
+    RecordingStatus snooze_alerts_for(std::int64_t minutes);
+    RecordingStatus resume_alerts();
+    // Roadmap 2.16. Replaces the delivery preferences wholesale. The snooze deadline is not
+    // one of them: it is set by the tray action and cleared by resume_alerts, so a Settings
+    // save cannot silently extend or cancel a snooze the user started somewhere else.
+    AppSettings set_alert_delivery(AlertDeliverySettings alerts);
     RecordingStatus resume_from_private_pause();
     // Suppress the missed-session nudge for a deliberate interval (60 minutes by default).
     void dismiss_untracked_nudge(std::int64_t minutes = 60);
@@ -374,6 +384,10 @@ private:
     // actually stopped rather than when the idle threshold noticed (Roadmap 7.23).
     std::int64_t unix_ms_secs_ago(std::int64_t secs) const;
     std::int64_t steady_now_ms() const;  // monotonic clock for idle timing
+    // Roadmap 2.16. The delivery decision for one interruption, taken here so the policy in
+    // app/alert_routing.hpp stays clock-free and the local-time conversion happens exactly
+    // once per alert. Requires mutex_: it reads settings_.
+    AlertRoute alert_route_unlocked(AlertEvent event) const;
     static bool is_input_event(EventType type);  // key/mouse = real user activity
     // Advance the idle state machine one step. Requires mutex_. Returns the transition
     // edge so the tick loop can emit it. Sets idle_ from the resulting state.
@@ -429,6 +443,11 @@ private:
     std::vector<AppRuleRecord> app_rules_;  // cached; passed to the live classifier
     std::optional<PredictionRecord> latest_prediction_;
     std::optional<SnapbackPayload> latest_snapback_;
+    // Roadmap 2.16. The delivery decision taken when this payload was latched, carried to the
+    // emit block so main.cpp can act on it. Decided once, at the latch, rather than recomputed
+    // at emit: a route that flipped to suppressed in between would skip delivery *without*
+    // going through the re-arm branch, which is the one path that must never be reachable.
+    AlertRoute latest_snapback_route_;
     std::optional<std::int64_t> last_prediction_at_ms_;
     AppSettings settings_;
     // Mutated under mutex_ by reload_classifier_model() and retry_model_deployment_cleanup().

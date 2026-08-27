@@ -50,15 +50,8 @@ public:
         if (hwnd_) DestroyWindow(hwnd_);
     }
 
-    void install(std::function<void()> on_show, std::function<void()> on_quit,
-                 std::function<RecordingStatus()> recording_status,
-                 std::function<void()> on_pause_recording,
-                 std::function<void()> on_resume_recording) override {
-        on_show_ = std::move(on_show);
-        on_quit_ = std::move(on_quit);
-        recording_status_ = std::move(recording_status);
-        on_pause_recording_ = std::move(on_pause_recording);
-        on_resume_recording_ = std::move(on_resume_recording);
+    void install(TrayCallbacks callbacks) override {
+        callbacks_ = std::move(callbacks);
 
         HINSTANCE inst = GetModuleHandleW(nullptr);
         WNDCLASSEXW wc{};
@@ -116,10 +109,16 @@ private:
     }
 
     void fire(TrayAction action) {
-        if (action == TrayAction::Show && on_show_) on_show_();
-        else if (action == TrayAction::Quit && on_quit_) on_quit_();
-        else if (action == TrayAction::PauseRecording && on_pause_recording_) on_pause_recording_();
-        else if (action == TrayAction::ResumeRecording && on_resume_recording_) on_resume_recording_();
+        if (action == TrayAction::Show && callbacks_.on_show) callbacks_.on_show();
+        else if (action == TrayAction::Quit && callbacks_.on_quit) callbacks_.on_quit();
+        else if (action == TrayAction::PauseRecording && callbacks_.on_pause_recording)
+            callbacks_.on_pause_recording();
+        else if (action == TrayAction::ResumeRecording && callbacks_.on_resume_recording)
+            callbacks_.on_resume_recording();
+        else if (action == TrayAction::SnoozeAlerts && callbacks_.on_snooze_alerts)
+            callbacks_.on_snooze_alerts();
+        else if (action == TrayAction::ResumeAlerts && callbacks_.on_resume_alerts)
+            callbacks_.on_resume_alerts();
     }
 
     void show_menu() {
@@ -130,7 +129,8 @@ private:
         // here cannot silently go missing from the macOS menu (tray_macos.mm) or vice
         // versa. The labels are ASCII today; utf8_to_wide keeps that from being a
         // constraint.
-        const auto status = recording_status_ ? recording_status_() : RecordingStatus{};
+        const auto status =
+            callbacks_.recording_status ? callbacks_.recording_status() : RecordingStatus{};
         for (const TrayMenuEntry& entry : tray_menu_entries(status)) {
             if (tray_menu_entry_is_separator(entry)) {
                 AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -144,11 +144,7 @@ private:
         DestroyMenu(menu);
     }
 
-    std::function<void()> on_show_;
-    std::function<void()> on_quit_;
-    std::function<RecordingStatus()> recording_status_;
-    std::function<void()> on_pause_recording_;
-    std::function<void()> on_resume_recording_;
+    TrayCallbacks callbacks_;
     HWND hwnd_ = nullptr;
     NOTIFYICONDATAW nid_{};
     bool installed_ = false;

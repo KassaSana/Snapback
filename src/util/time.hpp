@@ -135,4 +135,48 @@ inline int local_hour_from_rfc3339(const std::string& timestamp) {
     return local.tm_hour;
 }
 
+// Roadmap 2.16. Local minutes since midnight for a UTC instant, or nullopt if the platform's
+// local-time conversion fails.
+//
+// A sibling of `local_hour_from_rfc3339` rather than a caller of it, for two reasons that are
+// both correctness rather than taste. It takes epoch milliseconds, so asking "what time is it
+// locally" does not have to round-trip an instant through a display format and reparse it --
+// the crossing ADR-0007 exists to make impossible to write by accident. And it answers in
+// minutes, because 22:30 is an ordinary bedtime and an hour-granularity answer cannot say it.
+//
+// This is the *only* place a quiet-hours range touches local time, and it is deliberately not
+// cached anywhere. A quiet range is not an instant: it is a predicate over the local reading,
+// re-evaluated every time. Storing "quiet ends at 07:00 local" as a UTC instant would be the
+// tempting shortcut and the bug -- a DST change or a flight moves the offset, the stored
+// instant now means 06:00 or 08:00, and the user's quiet hours have silently shifted with
+// nothing anywhere saying so. Recomputing costs a `localtime` call and can never drift.
+//
+// The honest consequences of that choice, stated so nobody later "fixes" them: on a fall-back
+// day a range covering 01:00-02:00 is quiet twice, and on a spring-forward day a range wholly
+// inside the skipped hour never fires at all. Both are what "quiet between 1 and 2 AM local"
+// actually means.
+//
+// nullopt rather than -1, for the same reason the parsers above return nullopt: a sentinel
+// that compares as a real reading is how a failed conversion quietly becomes "it is midnight,
+// everything is quiet".
+//
+// One platform difference the callers must not assume away: the Windows CRT's `localtime_s`
+// rejects a negative `time_t`, so a pre-epoch instant answers nullopt there while POSIX
+// converts it. No caller in this app can reach that -- a quiet-hours check reads the clock,
+// not history -- but it is why the nullopt path is a real branch rather than a formality, and
+// why the callers fail *open* on it.
+inline std::optional<int> local_minute_of_day_from_unix_ms(std::int64_t unix_ms) {
+    // Floor, not truncate -- same reasoning as `rfc3339_from_unix_ms` above.
+    const std::int64_t secs = unix_ms >= 0 ? unix_ms / 1000 : (unix_ms - 999) / 1000;
+    const std::time_t when = static_cast<std::time_t>(secs);
+
+    std::tm local{};
+#if defined(_WIN32)
+    if (localtime_s(&local, &when) != 0) return std::nullopt;
+#else
+    if (localtime_r(&when, &local) == nullptr) return std::nullopt;
+#endif
+    return local.tm_hour * 60 + local.tm_min;
+}
+
 }  // namespace snapback

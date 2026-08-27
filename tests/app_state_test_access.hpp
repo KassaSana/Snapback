@@ -136,6 +136,17 @@ struct AppStateTestAccess {
         state.publish_live_read_unlocked();
     }
 
+    // Sets the alert delivery preferences directly. Roadmap 2.16.
+    //
+    // The production path for these is a settings command plus a settings.json write, and
+    // neither is what a delivery case is about: driving them would put a filesystem in the way
+    // of a question about whether an interruption fires. The snooze deadline has its own
+    // public API (`snooze_alerts_for`) and the case for *that* uses it.
+    static void set_alert_settings(AppState& state, const AlertDeliverySettings& alerts) {
+        std::lock_guard lock(state.mutex_);
+        state.settings_.alerts = alerts;
+    }
+
     // Moves the activity boundary the way a delete does, and nothing else. AUD-07's failure
     // needs the epoch to change *between* the tick latching it and the tick checking it --
     // a window with no lock held, which is why reproducing it with a second thread would be

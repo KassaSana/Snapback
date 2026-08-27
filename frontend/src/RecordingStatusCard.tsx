@@ -1,6 +1,7 @@
 import { memo } from "react";
 
 import type { RecordingStatus } from "./api";
+import { snoozeRemainingLabel } from "./alertDelivery";
 
 // Roadmap 2.10. For software that reads window titles, "am I recording right now?" should
 // never require navigation — so this states the answer plainly and offers the pause beside it.
@@ -12,6 +13,8 @@ type RecordingStatusCardProps = {
   status: RecordingStatus;
   onPause: (minutes: number) => void | Promise<void>;
   onResume: () => void | Promise<void>;
+  /** Roadmap 2.16. Ends an alert snooze started from the tray. */
+  onResumeAlerts: () => void | Promise<void>;
 };
 
 const LABELS: Record<RecordingStatus["state"], string> = {
@@ -45,8 +48,10 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
   status,
   onPause,
   onResume,
+  onResumeAlerts,
 }: RecordingStatusCardProps) {
   const paused = status.state === "pausedPrivate";
+  const snoozed = status.alertSnoozeRemainingMs > 0;
 
   return (
     <section className="card recording-status-card">
@@ -60,6 +65,22 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
       {paused && status.privatePauseRemainingMs > 0 ? (
         <p className="meta-sub">
           {formatRemaining(status.privatePauseRemainingMs)} — recording resumes on its own.
+        </p>
+      ) : null}
+
+      {/*
+        Roadmap 2.16. Stated as its own line, under a status that still says Recording. A
+        snooze silences interventions; it does not stop capture, and the one place a user
+        checks "am I being recorded?" must not blur the two. The countdown lives here rather
+        than in the tray menu because this is a number that changes.
+      */}
+      {snoozed ? (
+        <p className="meta-sub">
+          Alerts snoozed — {snoozeRemainingLabel(status.alertSnoozeRemainingMs)}. Recording
+          continues.{" "}
+          <button type="button" className="link-button" onClick={() => void onResumeAlerts()}>
+            Resume alerts
+          </button>
         </p>
       ) : null}
 
