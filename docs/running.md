@@ -99,6 +99,15 @@ cd frontend && npm ci && npm run typecheck && npm run test && npm run build
 
 Or use the wrapper that does both: `./scripts/test_local.sh` (`.ps1` on Windows).
 
+The wrapper also **compiles** the benchmarks every run, because `SNAPBACK_BUILD_BENCHMARKS`
+defaults to `OFF` and nothing else local builds `benchmarks/` — so a type change in `src/`
+used to break them where only CI would notice. Compiling is seconds; *running* them is not,
+so the run is opt-in:
+
+```sh
+./scripts/test_local.sh --include-benchmark-smoke        # .ps1: -IncludeBenchmarkSmoke
+```
+
 ## 4. Run the desktop app
 
 The app target is **off by default**. Turning it on also pulls `webview/webview`:
