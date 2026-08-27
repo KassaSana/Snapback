@@ -361,6 +361,13 @@ int main(int argc, char** argv) {
             run_tray_action(logger, "resume recording",
                             [state] { state->resume_from_private_pause(); });
         };
+        callbacks.on_snooze_alerts = [state = state.get(), &logger] {
+            run_tray_action(logger, "snooze alerts",
+                            [state] { state->snooze_alerts_for(kDefaultAlertSnoozeMins); });
+        };
+        callbacks.on_resume_alerts = [state = state.get(), &logger] {
+            run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
+        };
         Tray::instance().install(std::move(callbacks));
     }
 #elif defined(__APPLE__)
@@ -384,6 +391,13 @@ int main(int argc, char** argv) {
         callbacks.on_resume_recording = [state = state.get(), &logger] {
             run_tray_action(logger, "resume recording",
                             [state] { state->resume_from_private_pause(); });
+        };
+        callbacks.on_snooze_alerts = [state = state.get(), &logger] {
+            run_tray_action(logger, "snooze alerts",
+                            [state] { state->snooze_alerts_for(kDefaultAlertSnoozeMins); });
+        };
+        callbacks.on_resume_alerts = [state = state.get(), &logger] {
+            run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
         };
         Tray::instance().install(std::move(callbacks));
     }

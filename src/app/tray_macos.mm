@@ -56,6 +56,12 @@
         case snapback::TrayAction::ResumeRecording:
             if (callbacks_.on_resume_recording) callbacks_.on_resume_recording();
             break;
+        case snapback::TrayAction::SnoozeAlerts:
+            if (callbacks_.on_snooze_alerts) callbacks_.on_snooze_alerts();
+            break;
+        case snapback::TrayAction::ResumeAlerts:
+            if (callbacks_.on_resume_alerts) callbacks_.on_resume_alerts();
+            break;
         case snapback::TrayAction::None:
             break;
     }

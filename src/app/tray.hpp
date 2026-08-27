@@ -16,7 +16,8 @@
 namespace snapback {
 
 // What a clicked tray menu item means.
-enum class TrayAction { None, Show, PauseRecording, ResumeRecording, Quit };
+enum class TrayAction { None, Show, PauseRecording, ResumeRecording, SnoozeAlerts,
+                        ResumeAlerts, Quit };
 
 // Popup-menu command IDs (also the WM_COMMAND ids the Win32 menu posts and the NSMenuItem
 // tags the Cocoa menu carries). Zero is reserved for "not a command" — see kTrayCmdNone.
@@ -25,6 +26,10 @@ constexpr unsigned int kTrayCmdShow = 1001;
 constexpr unsigned int kTrayCmdQuit = 1002;
 constexpr unsigned int kTrayCmdPauseRecording = 1003;
 constexpr unsigned int kTrayCmdResumeRecording = 1004;
+// Roadmap 2.16. Silencing alerts, which is not the same as pausing recording -- the menu
+// keeps them as separate rows for exactly that reason.
+constexpr unsigned int kTrayCmdSnoozeAlerts = 1005;
+constexpr unsigned int kTrayCmdResumeAlerts = 1006;
 
 TrayAction tray_action_for(unsigned int menu_id);
 
@@ -64,6 +69,9 @@ struct TrayCallbacks {
     std::function<RecordingStatus()> recording_status;
     std::function<void()> on_pause_recording;
     std::function<void()> on_resume_recording;
+    // Roadmap 2.16. Silence delivery for kDefaultAlertSnoozeMins, and undo it.
+    std::function<void()> on_snooze_alerts;
+    std::function<void()> on_resume_alerts;
 };
 
 // The tray icon. install() must be called on the UI thread (its hidden window is pumped

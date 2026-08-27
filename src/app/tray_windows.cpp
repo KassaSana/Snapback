@@ -115,6 +115,10 @@ private:
             callbacks_.on_pause_recording();
         else if (action == TrayAction::ResumeRecording && callbacks_.on_resume_recording)
             callbacks_.on_resume_recording();
+        else if (action == TrayAction::SnoozeAlerts && callbacks_.on_snooze_alerts)
+            callbacks_.on_snooze_alerts();
+        else if (action == TrayAction::ResumeAlerts && callbacks_.on_resume_alerts)
+            callbacks_.on_resume_alerts();
     }
 
     void show_menu() {
