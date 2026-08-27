@@ -3252,3 +3252,38 @@ TEST_CASE("an alert snooze survives a rebuilt AppState") {
     drift_and_return(reopened, 101.0, 140.0);
     CHECK(reopened.latest_snapback() == std::nullopt);  // still snoozed after the restart
 }
+
+TEST_CASE("the close-to-tray explanation is claimed once and stays claimed across a restart") {
+    // Roadmap 9.15. Closing a window is the universal "I am done with this program", and
+    // close-to-tray quietly makes it mean something else -- so the app says so, once. Twice is
+    // the failure that turns a helpful notice into the thing a user hunts for a setting to
+    // switch off, and a process-lifetime bool would deliver exactly that on every launch.
+    TempDir temp;
+    {
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path);
+        CHECK(state.claim_tray_close_notice());
+        CHECK_FALSE(state.claim_tray_close_notice());
+        CHECK_FALSE(state.claim_tray_close_notice());
+        CHECK(state.settings().tray_close_notice_shown);
+    }
+    {
+        // A different process, reading the file the first one wrote.
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path);
+        CHECK_FALSE(state.claim_tray_close_notice());
+    }
+}
+
+TEST_CASE("the close-to-tray notice is unclaimed on a fresh install") {
+    // The absent key means "not yet shown", which is also the right answer for a settings.json
+    // written before 9.15: close-to-tray is new behaviour for someone upgrading too.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path);
+    CHECK_FALSE(state.settings().tray_close_notice_shown);
+    CHECK(state.claim_tray_close_notice());
+}

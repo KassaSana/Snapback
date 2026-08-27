@@ -492,6 +492,11 @@ struct AppSettings {
     std::int64_t untracked_nudge_until_wall_ms{};
     // Roadmap 2.16. When and how an intervention is allowed to reach the user.
     AlertDeliverySettings alerts{};
+    // Roadmap 9.15. Whether the "closing left Snapback in the tray" explanation has been
+    // shown. The item asks for it **once**, so the fact has to survive a restart -- a
+    // process-lifetime bool would explain it again every launch, which is how a helpful
+    // one-time notice becomes the thing a user goes looking for a setting to turn off.
+    bool tray_close_notice_shown{};
 };
 
 // Roadmap 2.19. A plan and what actually happened, side by side.

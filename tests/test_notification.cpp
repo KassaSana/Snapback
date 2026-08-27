@@ -112,3 +112,18 @@ TEST_CASE("a detailed preview is the copy this app already sent") {
     CHECK(build_untracked_work_notification(20, AlertPreviewMode::Detailed).body ==
           build_untracked_work_notification(20).body);
 }
+
+TEST_CASE("the close-to-tray notice names nothing about the user's work") {
+    // Roadmap 9.15. It rides the same OS notification history and lock screen as everything
+    // else here, so it holds to 2.16's rule even though it has no preview mode: the whole
+    // content is that Snapback is still running. It also has to say where to stop it, or the
+    // user who wanted to quit is left with a process and no instruction.
+    const auto notice = build_close_to_tray_notification();
+
+    CHECK(notification_payload_is_valid(notice));
+    CHECK(notice.body.find("tray") != std::string::npos);
+    CHECK(notice.body.find("Quit") != std::string::npos);
+    // Fixed copy, nothing interpolated: there is no payload to leak from and no count to
+    // disclose, which is what keeps it safe to show on a locked screen.
+    CHECK(notice.body == build_close_to_tray_notification().body);
+}

@@ -360,6 +360,19 @@ int main(int argc, char** argv) {
     // How the window comes forward is written once per platform and shared by everything that
     // needs it: the tray's Show item, and 9.15's activation channel below. Two copies would
     // drift, and only one of them would be the one anybody actually clicks.
+    // Roadmap 9.15. Closing a window is the universal "I am done with this program", and
+    // close-to-tray quietly makes it mean something else; the honest reading of what happened,
+    // left unexplained, is "it crashed". Said once and then never again -- `claim_...` returns
+    // true exactly once and persists that, so the caller cannot notify twice or forget to
+    // record that it notified. Fired on the UI thread by the platform close handler.
+    const auto explain_close_to_tray = [state = state.get(), &logger] {
+        run_tray_action(logger, "close-to-tray notice", [state] {
+            if (state->claim_tray_close_notice()) {
+                Tray::instance().show_notification(build_close_to_tray_notification());
+            }
+        });
+    };
+
     std::function<void()> raise_window;
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
@@ -396,7 +409,7 @@ int main(int argc, char** argv) {
         // the user with a running process and no way to reach it -- which is worse than the
         // behaviour close-to-tray replaced, and invisible until the day the shell is busy at
         // login and Shell_NotifyIcon returns false.
-        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_hwnd);
+        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_hwnd, explain_close_to_tray);
     }
 #elif defined(__APPLE__)
     // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
@@ -432,7 +445,7 @@ int main(int argc, char** argv) {
         // the user with a running process and no way to reach it -- which is worse than the
         // behaviour close-to-tray replaced, and invisible until the day the shell is busy at
         // login and Shell_NotifyIcon returns false.
-        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_window);
+        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_window, explain_close_to_tray);
     }
 #endif
 
