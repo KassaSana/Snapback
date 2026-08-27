@@ -4224,38 +4224,42 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   macOS host (see [running.md](running.md)) — write it carefully, because the feedback loop
   is a full CI run.*
 
-- **11.12 — A TSan-only activation case failed once and passed on re-run.** `S` Opened
-  2026-08-27. On PR #49's first CI run the ThreadSanitizer job failed on test #10, *a socket
-  file left by a crash does not block the next owner*, in
-  `tests/test_activation_channel.cpp`. Re-running the job with no code change turned it green,
-  and the other fifteen jobs — including `asan+ubsan` and all four headless matrix entries —
-  passed on both attempts. The PR touched JSON serialization, a `trim` helper, and one
-  redundant guard; nothing on the activation path, and the case is compiled only on POSIX, so
-  it cannot be the change.
+- **11.12 — `wait_for_count` waits on the wrong variable, and the activation cases race.** `S`
+  Opened 2026-08-27. Two CI runs a half-hour apart failed the ThreadSanitizer job on two
+  *different* cases in `tests/test_activation_channel.cpp` — first *a socket file left by a
+  crash does not block the next owner*, then *a request naming a different channel is refused
+  and raises nothing* — while all fifteen other jobs passed both times. The second of those
+  PRs touched nothing but this roadmap, which rules out the code under test.
 
-  **The failing assertion was not captured, and that is the first thing to fix here.**
-  Re-running replaced the attempt-1 log before it was read, and GitHub does not keep the
-  superseded copy. So this item currently records that the case is flaky and nothing about
-  *how* — which is the weakest possible bug report and exactly what 11.1 argued per-case
-  registration was supposed to end. Reproduce it under the tsan preset in a loop and keep the
-  output; do not re-run CI to green before reading the log.
+  **The failure is fully diagnosed and it is a test defect, not a channel defect.** The
+  captured assertion is `CHECK( raised.load() == 1 )` reading `0 == 1`, on the line *after*
+  `REQUIRE(wait_for_count(*listener, 1))` had already passed. The two are not the same
+  condition. `activation_channel.cpp:ActivationListener::activation_count` reads `activations`,
+  and the handler does `activations.fetch_add(1)` **before** `on_activate()` — so the counter
+  reaches 1 while the callback that raises `raised` has not run yet. Waiting on the counter
+  proves the request was honoured, not that the callback finished.
 
-  Three assertions can fail, and they mean different things. `request_activation` returning
-  anything but `Activated` is the channel refusing a rebind. `wait_for_count` giving up is a
-  timing budget — it polls 500 × 10 ms, generous in wall-clock terms but TSan slows a process
-  by roughly an order of magnitude and the runner is shared. A wrong `raised` count is the
-  callback firing twice or not at all.
+  `wait_for_count`'s own comment is what makes this worth writing down. It says the helper
+  polls "rather than sleeping a fixed amount" to keep the case "fast and non-flaky" — and it
+  is a correct description of a helper that is watching the wrong variable. The comment
+  documents the race it does not close.
 
-  What makes this case different from its neighbours in the same file is worth stating,
-  because it is the likeliest home for a real defect: it is the only one that leaves a socket
-  node nothing is bound to and expects `ActivationListener::start` to unlink and rebind over
-  it. Every other case starts from a clean endpoint. If the unlink/rebind window is genuinely
-  racy, this is a production bug in `activation_channel.cpp:activation_endpoint_for`'s owner
-  and the flaky assertion is the honest one — the same shape as 11.1, where splitting the
-  suite turned a dismissed flake into a named `CaptureThread` defect.
+  Ordinarily the window is a few instructions and nobody sees it. TSan instruments every
+  memory access, which stretches the gap between the `fetch_add` and the callback body far
+  enough to lose the race regularly — which is why this is TSan-only and why it moves between
+  cases rather than sticking to one.
 
-  Fix the diagnosis before the symptom. Widening the poll budget without knowing which
-  assertion fired would hide a rebind race rather than close it.
+  Fix by waiting on the variable the assertion reads, not on a proxy for it: give the helper
+  the predicate (or poll `raised` directly) so every case that pairs `wait_for_count` with a
+  `raised.load()` check is bounded by the callback, not by the acknowledgement. Every such
+  pairing in the file has the same bug; fix them together.
+
+  **Do not widen the poll budget.** It is already 500 × 10 ms, and the wait is not short — it
+  is watching the wrong thing, so no budget closes it.
+
+  Note for the next flake: the first run's log was lost because the job was re-run before it
+  was read, and GitHub does not keep the superseded attempt. Read the log first, then re-run.
+
 ---
 
 ## Tier 12 — Documentation truth
