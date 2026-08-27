@@ -4224,8 +4224,8 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   macOS host (see [running.md](running.md)) — write it carefully, because the feedback loop
   is a full CI run.*
 
-- **11.12 — `wait_for_count` waits on the wrong variable, and the activation cases race.** `S`
-  Opened 2026-08-27. Two CI runs a half-hour apart failed the ThreadSanitizer job on two
+- **11.12 — DONE 2026-08-27.** `S` `wait_for_count` waited on the wrong variable, and the
+  activation cases raced. Two CI runs a half-hour apart failed the ThreadSanitizer job on two
   *different* cases in `tests/test_activation_channel.cpp` — first *a socket file left by a
   crash does not block the next owner*, then *a request naming a different channel is refused
   and raises nothing* — while all fifteen other jobs passed both times. The second of those
@@ -4249,13 +4249,25 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   enough to lose the race regularly — which is why this is TSan-only and why it moves between
   cases rather than sticking to one.
 
-  Fix by waiting on the variable the assertion reads, not on a proxy for it: give the helper
-  the predicate (or poll `raised` directly) so every case that pairs `wait_for_count` with a
-  `raised.load()` check is bounded by the callback, not by the acknowledgement. Every such
-  pairing in the file has the same bug; fix them together.
+  **Fixed by waiting on the variable the assertion reads.** `wait_for_count` is now
+  `wait_for_raised`, taking the test's own `raised` counter instead of the listener, so all
+  five call sites — every one of which paired it with a `raised.load()` check — are bounded by
+  the callback rather than by the acknowledgement. It is also the stronger wait: the increment
+  happens first, so a callback that has run implies a count that has moved, and the reverse is
+  precisely what raced.
 
-  **Do not widen the poll budget.** It is already 500 × 10 ms, and the wait is not short — it
-  is watching the wrong thing, so no budget closes it.
+  The poll budget was left alone deliberately. It was already 500 × 10 ms; the wait was never
+  short, it was watching the wrong thing, and no budget closes that.
+
+  One consequence worth noting: `activation_channel.cpp:ActivationListener::activation_count`
+  had no caller except that helper, so the fix would have left it dead. It is now asserted
+  outright in *the owner acknowledges a request and runs the handler exactly once* — which the
+  new wait makes deterministic rather than racy, so pinning the ordering costs nothing and
+  keeps the accessor meaningful.
+
+  Verified 300 case-executions clean locally, but the honest proof is the tsan job: this could
+  never fail on the dev machine, since MSVC has no ThreadSanitizer and the window stays a few
+  instructions wide without instrumentation.
 
   Note for the next flake: the first run's log was lost because the job was re-run before it
   was read, and GitHub does not keep the superseded attempt. Read the log first, then re-run.

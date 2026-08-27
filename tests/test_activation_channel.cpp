@@ -38,12 +38,21 @@ struct ChannelTempDir {
     }
 };
 
-// Wait for a counter to reach `want`, or give up. The listener acknowledges *before* it runs
-// the callback, so a request can return Activated a few microseconds before the count moves;
-// polling here rather than sleeping a fixed amount keeps the case fast and non-flaky.
-bool wait_for_count(const ActivationListener& listener, std::uint64_t want) {
+// Wait for the callback to have run `want` times, or give up.
+//
+// Watch the counter the assertions read, not the listener's own. The handler does
+// `activations.fetch_add(1)` *before* it invokes `on_activate`, so waiting on
+// `activation_count()` proves the request was honoured while the callback may not have run
+// yet -- and the `CHECK(raised.load() == N)` on the very next line then reads a stale 0.
+// Ordinarily that window is a few instructions and nobody sees it; ThreadSanitizer
+// instruments every access and stretches it wide enough to lose regularly. See 11.12, which
+// caught it on two different cases in two runs and never outside the tsan job.
+//
+// Waiting on `raised` is also strictly the stronger wait: the increment happens first, so a
+// callback that has run implies a count that has moved, and the reverse is what raced.
+bool wait_for_raised(const std::atomic<int>& raised, int want) {
     for (int attempt = 0; attempt < 500; ++attempt) {
-        if (listener.activation_count() >= want) return true;
+        if (raised.load() >= want) return true;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     return false;
@@ -137,15 +146,20 @@ TEST_CASE("the owner acknowledges a request and runs the handler exactly once") 
     REQUIRE(listener.has_value());
 
     CHECK(request_activation(temp.path, kActivationTimeoutMs) == ActivationResult::Activated);
-    REQUIRE(wait_for_count(*listener, 1));
+    REQUIRE(wait_for_raised(raised, 1));
     CHECK(raised.load() == 1);
+    // The callback has run, so the count it is incremented ahead of must have moved too.
+    // Pinning the ordering here is what keeps activation_count() honest now that no helper
+    // polls it.
+    CHECK(listener->activation_count() == 1);
 
     // A second click on a dock icon is an ordinary thing to do. The listener accepts serially,
     // so this also proves it went back to accepting rather than servicing one caller and
     // wedging — the failure that would look like "activation works" in a single-request test.
     CHECK(request_activation(temp.path, kActivationTimeoutMs) == ActivationResult::Activated);
-    REQUIRE(wait_for_count(*listener, 2));
+    REQUIRE(wait_for_raised(raised, 2));
     CHECK(raised.load() == 2);
+    CHECK(listener->activation_count() == 2);
 }
 
 TEST_CASE("a request naming a different channel is refused and raises nothing") {
@@ -167,7 +181,7 @@ TEST_CASE("a request naming a different channel is refused and raises nothing") 
 
     // Still answering afterwards: a refusal is not a reason to stop listening.
     CHECK(request_activation(owner_dir.path, kActivationTimeoutMs) == ActivationResult::Activated);
-    REQUIRE(wait_for_count(*listener, 1));
+    REQUIRE(wait_for_raised(raised, 1));
     CHECK(raised.load() == 1);
 }
 
@@ -212,7 +226,7 @@ TEST_CASE("a second process can activate the owner") {
     REQUIRE(listener.has_value());
 
     CHECK(run_activation_probe(temp.path, "activated"));
-    REQUIRE(wait_for_count(*listener, 1));
+    REQUIRE(wait_for_raised(raised, 1));
     CHECK(raised.load() == 1);
 }
 
@@ -241,7 +255,7 @@ TEST_CASE("a socket file left by a crash does not block the next owner") {
     auto listener = ActivationListener::start(temp.path, [&raised] { raised.fetch_add(1); });
     REQUIRE(listener.has_value());
     CHECK(request_activation(temp.path, kActivationTimeoutMs) == ActivationResult::Activated);
-    REQUIRE(wait_for_count(*listener, 1));
+    REQUIRE(wait_for_raised(raised, 1));
     CHECK(raised.load() == 1);
 }
 
