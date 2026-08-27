@@ -94,19 +94,6 @@ void to_json(json& j, const CaptureEvent& v) {
              {"mouse_speed", v.mouse_speed},
              {"idle_duration_ms", v.idle_duration_ms}};
 }
-void from_json(const json& j, CaptureEvent& v) {
-    v.event_type = j.at("event_type").get<EventType>();
-    v.timestamp_secs = j.at("timestamp_secs").get<double>();
-    // Tolerant: replayed fixtures and older payloads carry no wall clock, and 0 means
-    // "fall back to timestamp_secs" rather than "1970".
-    v.wall_clock_secs = get_or<double>(j, "wall_clock_secs", 0.0);
-    v.app_name = get_or<std::string>(j, "app_name", "");
-    v.window_title = get_or<std::string>(j, "window_title", "");
-    v.mouse_x = get_or<std::int32_t>(j, "mouse_x", 0);
-    v.mouse_y = get_or<std::int32_t>(j, "mouse_y", 0);
-    v.mouse_speed = get_or<std::uint32_t>(j, "mouse_speed", 0);
-    v.idle_duration_ms = get_or<std::uint32_t>(j, "idle_duration_ms", 0);
-}
 
 // ---- PredictionRecord ------------------------------------------------------
 
@@ -173,32 +160,11 @@ void to_json(json& j, const SessionRecap& v) {
              {"thrashSpikes", v.thrash_spikes},
              {"deepFocusPct", v.deep_focus_pct}};
 }
-void from_json(const json& j, SessionRecap& v) {
-    v.session_id = get_or<std::string>(j, "sessionId", "");
-    v.goal = get_or<std::string>(j, "goal", "");
-    v.duration_secs = get_or<std::uint64_t>(j, "durationSecs", 0);
-    // get_or maps missing *and* null to the default, which is exactly right here: both mean
-    // "not measured", and nullopt is how that is spelled.
-    if (const auto it = j.find("activeSecs"); it != j.end() && !it->is_null()) {
-        v.active_secs = it->get<std::uint64_t>();
-    } else {
-        v.active_secs.reset();
-    }
-    v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
-    v.avg_distraction_risk = get_or<double>(j, "avgDistractionRisk", 0.0);
-    v.snapback_count = get_or<std::uint32_t>(j, "snapbackCount", 0);
-    v.thrash_spikes = get_or<std::uint32_t>(j, "thrashSpikes", 0);
-    v.deep_focus_pct = get_or<double>(j, "deepFocusPct", 0.0);
-}
 
 // ---- SessionSummary --------------------------------------------------------
 
 void to_json(json& j, const SessionSummary& v) {
     j = json{{"record", v.record}, {"recap", v.recap}};
-}
-void from_json(const json& j, SessionSummary& v) {
-    v.record = j.at("record").get<SessionRecord>();
-    v.recap = j.at("recap").get<SessionRecap>();
 }
 
 // ---- PermissionStatus ------------------------------------------------------
@@ -319,14 +285,6 @@ void to_json(json& j, const ContextSnapshotDto& v) {
              {"summary", v.summary},
              {"timestampMs", v.timestamp_ms}};
 }
-void from_json(const json& j, ContextSnapshotDto& v) {
-    v.app_name = get_or<std::string>(j, "appName", "");
-    v.window_title = get_or<std::string>(j, "windowTitle", "");
-    v.file_hint = get_or<std::string>(j, "fileHint", "");
-    v.project_hint = get_or<std::string>(j, "projectHint", "");
-    v.summary = get_or<std::string>(j, "summary", "");
-    v.timestamp_ms = get_or<std::int64_t>(j, "timestampMs", 0);
-}
 
 // ---- AppRuleRecord ---------------------------------------------------------
 
@@ -337,14 +295,6 @@ void to_json(json& j, const AppRuleRecord& v) {
              {"createdAtMs", v.created_at_ms},
              {"updatedAtMs", v.updated_at_ms}};
     put_opt(j, "note", v.note);
-}
-void from_json(const json& j, AppRuleRecord& v) {
-    v.id = get_or<std::int64_t>(j, "id", 0);
-    v.pattern = get_or<std::string>(j, "pattern", "");
-    v.rule_type = get_or<AppRuleKind>(j, "ruleType", AppRuleKind::Allow);
-    v.note = opt_str(j, "note");
-    v.created_at_ms = get_or<std::int64_t>(j, "createdAtMs", 0);
-    v.updated_at_ms = get_or<std::int64_t>(j, "updatedAtMs", 0);
 }
 
 // ---- UpsertAppRuleRequest --------------------------------------------------
@@ -381,13 +331,6 @@ void to_json(json& j, const ExportTrainingResult& v) {
              {"labelsPath", v.labels_path},
              {"featureCount", v.feature_count},
              {"labelCount", v.label_count}};
-}
-void from_json(const json& j, ExportTrainingResult& v) {
-    v.output_dir = get_or<std::string>(j, "outputDir", "");
-    v.features_path = get_or<std::string>(j, "featuresPath", "");
-    v.labels_path = get_or<std::string>(j, "labelsPath", "");
-    v.feature_count = get_or<std::uint64_t>(j, "featureCount", 0);
-    v.label_count = get_or<std::uint64_t>(j, "labelCount", 0);
 }
 
 // ---- AppSettings -----------------------------------------------------------
@@ -572,17 +515,6 @@ void to_json(json& j, const ActivityDeletionResult& v) {
              {"retained", v.retained},
              {"complete", v.complete()}};
 }
-void from_json(const json& j, ActivityDeletionResult& v) {
-    v.deleted = get_or<std::vector<std::string>>(j, "deleted", {});
-    v.failed = get_or<std::vector<std::string>>(j, "failed", {});
-    v.retained = get_or<std::vector<std::string>>(j, "retained", {});
-}
-void from_json(const json& j, PrivacySettings& v) {
-    v.private_mode = get_or<bool>(j, "privateMode", false);
-    v.excluded_apps = get_or<std::vector<std::string>>(j, "excludedApps", {});
-    v.local_only = get_or<bool>(j, "localOnly", true);
-    v.private_until_wall_ms = get_or<std::int64_t>(j, "privateUntilWallMs", 0);
-}
 
 void to_json(json& j, const AnalyticsHour& v) {
     j = json{{"hour", v.hour},
@@ -590,19 +522,9 @@ void to_json(json& j, const AnalyticsHour& v) {
              {"avgFocusScore", v.avg_focus_score},
              {"distractedFraction", v.distracted_fraction}};
 }
-void from_json(const json& j, AnalyticsHour& v) {
-    v.hour = get_or<int>(j, "hour", 0);
-    v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
-    v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
-    v.distracted_fraction = get_or<double>(j, "distractedFraction", 0.0);
-}
 
 void to_json(json& j, const AnalyticsApp& v) {
     j = json{{"appName", v.app_name}, {"windowCount", v.window_count}};
-}
-void from_json(const json& j, AnalyticsApp& v) {
-    v.app_name = get_or<std::string>(j, "appName", "");
-    v.window_count = get_or<std::size_t>(j, "windowCount", 0);
 }
 
 void to_json(json& j, const AnalyticsSummary& v) {
@@ -611,13 +533,6 @@ void to_json(json& j, const AnalyticsSummary& v) {
              {"productiveSessionStreak", v.productive_session_streak},
              {"hourly", v.hourly},
              {"topApps", v.top_apps}};
-}
-void from_json(const json& j, AnalyticsSummary& v) {
-    v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
-    v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
-    v.productive_session_streak = get_or<std::size_t>(j, "productiveSessionStreak", 0);
-    v.hourly = get_or<std::vector<AnalyticsHour>>(j, "hourly", {});
-    v.top_apps = get_or<std::vector<AnalyticsApp>>(j, "topApps", {});
 }
 
 void to_json(json& j, const SummaryReport& v) {
@@ -634,36 +549,13 @@ void to_json(json& j, const SummaryReport& v) {
              {"attendedSeconds", v.attended_seconds},
              {"plannedMins", v.planned_mins}};
 }
-void from_json(const json& j, SummaryReport& v) {
-    v.window = get_or<std::string>(j, "window", "day");
-    v.generated_at_ms = get_or<std::int64_t>(j, "generatedAtMs", 0);
-    v.session_count = get_or<std::size_t>(j, "sessionCount", 0);
-    v.completed_session_count = get_or<std::size_t>(j, "completedSessionCount", 0);
-    v.focus_seconds = get_or<std::uint64_t>(j, "focusSeconds", 0);
-    v.sample_count = get_or<std::size_t>(j, "sampleCount", 0);
-    v.avg_focus_score = get_or<double>(j, "avgFocusScore", 0.0);
-    v.distracted_fraction = get_or<double>(j, "distractedFraction", 0.0);
-    v.longest_focus_secs = get_or<std::uint64_t>(j, "longestFocusSecs", 0);
-    v.top_context_app = get_or<std::string>(j, "topContextApp", "");
-    v.attended_seconds = get_or<std::uint64_t>(j, "attendedSeconds", 0);
-    v.planned_mins = get_or<std::uint32_t>(j, "plannedMins", 0);
-}
 
 void to_json(json& j, const SummaryExportResult& v) {
     j = json{{"window", v.window}, {"outputPath", v.output_path}};
 }
-void from_json(const json& j, SummaryExportResult& v) {
-    v.window = get_or<std::string>(j, "window", "day");
-    v.output_path = get_or<std::string>(j, "outputPath", "");
-}
 
 void to_json(json& j, const DiagnosticsSnapshot& v) {
     j = json{{"version", v.version}, {"health", v.health}, {"recentLogs", v.recent_logs}};
-}
-void from_json(const json& j, DiagnosticsSnapshot& v) {
-    v.version = get_or<std::string>(j, "version", "0.0.0-dev");
-    v.health = get_or<HealthStatus>(j, "health", {});
-    v.recent_logs = get_or<std::vector<std::string>>(j, "recentLogs", {});
 }
 
 void to_json(json& j, const GoalCategory& v) {
@@ -679,26 +571,13 @@ void from_json(const json& j, GoalCategory& v) {
 void to_json(json& j, const CaptureFailurePayload& v) {
     j = json{{"reason", v.reason}, {"message", v.message}, {"setupSteps", v.setup_steps}};
 }
-void from_json(const json& j, CaptureFailurePayload& v) {
-    v.reason = get_or<std::string>(j, "reason", "");
-    v.message = get_or<std::string>(j, "message", "");
-    v.setup_steps = get_or<std::vector<std::string>>(j, "setupSteps", {});
-}
 
 void to_json(json& j, const OverlayFailurePayload& v) {
     j = json{{"reason", v.reason}, {"message", v.message}};
 }
-void from_json(const json& j, OverlayFailurePayload& v) {
-    v.reason = get_or<std::string>(j, "reason", "");
-    v.message = get_or<std::string>(j, "message", "");
-}
 
 void to_json(json& j, const PersistenceFailurePayload& v) {
     j = json{{"reason", v.reason}, {"message", v.message}};
-}
-void from_json(const json& j, PersistenceFailurePayload& v) {
-    v.reason = get_or<std::string>(j, "reason", "");
-    v.message = get_or<std::string>(j, "message", "");
 }
 
 // ---- LabelHotkeyPayload ----------------------------------------------------
@@ -709,23 +588,11 @@ void to_json(json& j, const LabelHotkeyPayload& v) {
     else j["label"] = nullptr;
     put_opt(j, "sessionId", v.session_id);
 }
-void from_json(const json& j, LabelHotkeyPayload& v) {
-    v.ok = get_or<bool>(j, "ok", false);
-    v.message = get_or<std::string>(j, "message", "");
-    auto it = j.find("label");
-    if (it != j.end() && !it->is_null()) v.label = it->get<FocusLabel>();
-    else v.label = std::nullopt;
-    v.session_id = opt_str(j, "sessionId");
-}
 
 // ---- FocusTargetResult -----------------------------------------------------
 
 void to_json(json& j, const FocusTargetResult& v) {
     j = json{{"ok", v.ok}, {"message", v.message}};
-}
-void from_json(const json& j, FocusTargetResult& v) {
-    v.ok = get_or<bool>(j, "ok", false);
-    v.message = get_or<std::string>(j, "message", "");
 }
 
 // ---- FileDialog ------------------------------------------------------------
@@ -756,12 +623,6 @@ void to_json(json& j, const FileDialogResult& v) {
              {"cancelled", v.cancelled},
              {"path", v.path},
              {"message", v.message}};
-}
-void from_json(const json& j, FileDialogResult& v) {
-    v.ok = get_or<bool>(j, "ok", false);
-    v.cancelled = get_or<bool>(j, "cancelled", false);
-    v.path = get_or<std::string>(j, "path", "");
-    v.message = get_or<std::string>(j, "message", "");
 }
 
 }  // namespace snapback
