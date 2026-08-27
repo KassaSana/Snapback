@@ -417,25 +417,61 @@ int main(int argc, char** argv) {
             // immediately before every user-visible side effect.
             if (!state->activity_epoch_is_current(activity_epoch)) return;
             emit(w, ev.c_str(), payload);
-            // On the return-from-distraction edge, also pop the native overlay card and a
-            // toast — the toast is the one that reaches the user when the
-            // app window isn't focused, which is exactly when the overlay alone can't.
+            // Roadmap 2.16. Which channels fire is decided in app/alert_routing.hpp and
+            // arrives on the payload; this reads flags and decides nothing.
+            //
+            // The previous comment here claimed the toast was needed because "the overlay
+            // alone can't" reach a user whose app window is not focused. That was wrong:
+            // the overlay is created WS_EX_TOPMOST | WS_EX_NOACTIVATE and shown with
+            // SW_SHOWNOACTIVATE on the foreground window's monitor (snapback/
+            // overlay_windows.cpp), so it is always-on-top and never steals focus -- it
+            // reaches the user regardless. The toast was duplication that additionally
+            // copied the summary, which may name a file or a project, into OS notification
+            // history. Hence the default is now the overlay alone, with "both" one
+            // preference away.
             if (ev == "snapback") {
                 try {
-                    const auto snap = nlohmann::json::parse(payload).get<SnapbackPayload>();
-                    Overlay::instance().show(snap);
-                    Tray::instance().show_notification(build_snapback_notification(snap));
+                    const auto parsed = nlohmann::json::parse(payload);
+                    const auto snap = parsed.get<SnapbackPayload>();
+                    // A missing delivery block means a bug, not an old payload -- the tick
+                    // that emits it is in this same binary. Falling back to the shipped
+                    // defaults keeps the app audible while that bug is found; an all-false
+                    // route would silently stop interrupting and look like working software.
+                    const auto route =
+                        parsed.contains("delivery")
+                            ? parsed["delivery"].get<AlertRoute>()
+                            : route_alert(AlertEvent::Snapback, AlertDeliverySettings{}, 0,
+                                          std::nullopt);
+                    if (route.channels.overlay) Overlay::instance().show(snap);
+                    if (route.channels.native) {
+                        Tray::instance().show_notification(
+                            build_snapback_notification(snap, route.preview));
+                    }
                 } catch (...) {
                     // A malformed payload must never take down the UI thread.
                 }
             }
-            // The hyperfocus nudge is a toast only — no overlay. An overlay here would
-            // interrupt exactly the deep work the guardrail is trying to protect.
+            // The hyperfocus nudge defaults to a toast and no overlay: an overlay here would
+            // interrupt exactly the deep work the guardrail is trying to protect. Roadmap
+            // 2.16 makes that a preference rather than a rule, so it is read, not assumed.
             if (ev == "hyperfocus") {
                 try {
-                    const auto minutes =
-                        nlohmann::json::parse(payload).at("minutes").get<std::uint64_t>();
-                    Tray::instance().show_notification(build_hyperfocus_notification(minutes));
+                    const auto parsed = nlohmann::json::parse(payload);
+                    const auto minutes = parsed.at("minutes").get<std::uint64_t>();
+                    const auto route =
+                        parsed.contains("delivery")
+                            ? parsed["delivery"].get<AlertRoute>()
+                            : route_alert(AlertEvent::Hyperfocus, AlertDeliverySettings{}, 0,
+                                          std::nullopt);
+                    if (route.channels.native) {
+                        Tray::instance().show_notification(
+                            build_hyperfocus_notification(minutes, route.preview));
+                    }
+                    if (route.channels.overlay) {
+                        SnapbackPayload nudge;
+                        nudge.summary = build_hyperfocus_notification(minutes).body;
+                        Overlay::instance().show(nudge);
+                    }
                 } catch (...) {
                 }
             }

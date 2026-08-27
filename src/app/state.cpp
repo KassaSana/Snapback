@@ -1654,6 +1654,8 @@ void AppState::engine_tick() {
     std::optional<SnapbackPayload> snap_to_emit;
     AlertRoute snap_route;
     AlertRoute pomodoro_route;
+    AlertRoute hyper_route;
+    AlertRoute untracked_route;
     std::optional<PomodoroStatus> pomodoro_to_emit;
     std::optional<std::uint64_t> hyper_to_emit;
     std::optional<std::uint64_t> untracked_to_emit;
@@ -1729,10 +1731,16 @@ void AppState::engine_tick() {
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
             hyperfocus_minutes_.reset();
+            // Roadmap 2.16. Computed under mutex_, like the Pomodoro route above. The latch
+            // already refused to set the minutes at all when the route was suppressed, so this
+            // is always visible() -- what it carries that matters here is *which* channel and
+            // which preview mode.
+            hyper_route = alert_route_unlocked(AlertEvent::Hyperfocus);
         }
         if (untracked_minutes_) {
             untracked_to_emit = untracked_minutes_;
             untracked_minutes_.reset();
+            untracked_route = alert_route_unlocked(AlertEvent::UntrackedWork);
         }
         publish_live_read_unlocked();
     }
@@ -1830,16 +1838,22 @@ void AppState::engine_tick() {
         hook("pomodoro", dump_json(payload), tick_activity_epoch);
     }
     if (hyper_to_emit) {
+        // The in-app copy stays detailed: the preview mode governs what a *lock screen* may
+        // say, and this string is rendered inside the app. main.cpp picks the native wording
+        // from the route when it raises a toast.
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
         hook("hyperfocus",
-             dump_json(nlohmann::json{{"message", note.body}, {"minutes", *hyper_to_emit}}),
+             dump_json(nlohmann::json{{"message", note.body},
+                                      {"minutes", *hyper_to_emit},
+                                      {"delivery", nlohmann::json(hyper_route)}}),
              tick_activity_epoch);
     }
     if (untracked_to_emit) {
         const auto note = build_untracked_work_notification(*untracked_to_emit);
         hook("untracked_work",
              dump_json(nlohmann::json{{"message", note.body},
-                                      {"minutes", *untracked_to_emit}}),
+                                      {"minutes", *untracked_to_emit},
+                                      {"delivery", nlohmann::json(untracked_route)}}),
              tick_activity_epoch);
     }
 }

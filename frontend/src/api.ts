@@ -1,3 +1,4 @@
+import { deliversInApp } from "./alertDelivery";
 import { invoke, listen } from "./bridge";
 import { mapActivityDeletionResult } from "./activityDeletion";
 
@@ -798,23 +799,36 @@ export const api = {
     listen<Record<string, unknown>>("prediction", (event) => {
       handler(mapPrediction(event.payload));
     }),
-  onSnapback: (handler: (payload: SnapbackPayload) => void) =>
+  /**
+   * Roadmap 2.16. `inApp` says whether this event may raise an in-app alert. It is passed
+   * alongside the payload rather than used to drop the event, because a snapback also
+   * refreshes the timeline: silencing the alert must not silence the state update.
+   */
+  onSnapback: (handler: (payload: SnapbackPayload, inApp: boolean) => void) =>
     listen<Record<string, unknown>>("snapback", (event) => {
-      handler(mapSnapbackPayload(event.payload));
+      handler(mapSnapbackPayload(event.payload), deliversInApp(event.payload));
     }),
+  /**
+   * Never gated. This event is also how the timer card learns the phase changed, so a user who
+   * turned Pomodoro alerts off would otherwise watch their timer freeze at 25:00.
+   */
   onPomodoro: (handler: (status: PomodoroStatus) => void) =>
     listen<Record<string, unknown>>("pomodoro", (event) => {
       handler(mapPomodoroStatus(event.payload));
     }),
-  onHyperfocus: (handler: (payload: { message: string }) => void) =>
-    listen<{ message: string }>("hyperfocus", (event) => handler(event.payload)),
+  onHyperfocus: (handler: (payload: { message: string }, inApp: boolean) => void) =>
+    listen<{ message: string }>("hyperfocus", (event) =>
+      handler(event.payload, deliversInApp(event.payload)),
+    ),
   /**
    * Sustained work with no session running (Roadmap 2.7 / ADR-0005). Nothing is recorded
    * without a session, so this is the only signal a user gets that their work is going
    * unmeasured. It asks; it never starts a session on their behalf.
    */
-  onUntrackedWork: (handler: (payload: { message: string }) => void) =>
-    listen<{ message: string }>("untracked_work", (event) => handler(event.payload)),
+  onUntrackedWork: (handler: (payload: { message: string }, inApp: boolean) => void) =>
+    listen<{ message: string }>("untracked_work", (event) =>
+      handler(event.payload, deliversInApp(event.payload)),
+    ),
   /**
    * Whether the user has gone away or come back (Roadmap 7.23 / ADR-0005). The engine has
    * emitted this since idle detection landed; nothing consumed it, so an active session that

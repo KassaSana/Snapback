@@ -170,21 +170,29 @@ export const useAppEffects = ({
       }),
     );
     unsubs.push(
-      api.onSnapback((payload) => {
-        handleSnapback(payload);
+      api.onSnapback((payload, inApp) => {
+        // Roadmap 2.16. The alert is gated; the timeline refresh is not. Quiet hours silence
+        // an interruption, they do not stop the app knowing what happened.
+        if (inApp) {
+          handleSnapback(payload);
+        }
         if (sessionStatus === "ACTIVE") {
           refreshTimelineFromEvent(sessionId);
         }
       }),
     );
     unsubs.push(
-      api.onHyperfocus((payload) => {
-        handleHyperfocus(payload);
+      api.onHyperfocus((payload, inApp) => {
+        if (inApp) {
+          handleHyperfocus(payload);
+        }
       }),
     );
     unsubs.push(
-      api.onUntrackedWork((payload) => {
-        handleUntrackedWork(payload);
+      api.onUntrackedWork((payload, inApp) => {
+        if (inApp) {
+          handleUntrackedWork(payload);
+        }
       }),
     );
     unsubs.push(
