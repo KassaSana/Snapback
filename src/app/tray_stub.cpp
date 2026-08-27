@@ -26,12 +26,7 @@ class NoopTray final : public Tray {
 public:
     // Callbacks are stored, not wired: there is no menu to fire them. main.cpp keeps
     // working because quitting and showing the window are both reachable from the UI.
-    void install(std::function<void()> on_show, std::function<void()> on_quit,
-                 std::function<RecordingStatus()>, std::function<void()>,
-                 std::function<void()>) override {
-        on_show_ = std::move(on_show);
-        on_quit_ = std::move(on_quit);
-    }
+    void install(TrayCallbacks callbacks) override { callbacks_ = std::move(callbacks); }
 
     // false = "the OS did not accept this", which is accurate: there is no tray icon to
     // hang a notification off. Do not return true here — callers may later start trusting
@@ -39,8 +34,7 @@ public:
     bool show_notification(const NotificationPayload&) override { return false; }
 
 private:
-    std::function<void()> on_show_;
-    std::function<void()> on_quit_;
+    TrayCallbacks callbacks_;
 };
 
 }  // namespace

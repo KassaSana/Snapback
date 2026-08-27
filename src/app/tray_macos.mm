@@ -28,30 +28,16 @@
 // passes plain -x objective-c++), so std::function ivars are constructed and destroyed
 // normally and manual retain/release rules apply to the Cocoa objects below.
 @interface SnapbackTrayTarget : NSObject <NSMenuDelegate> {
-    std::function<void()> onShow_;
-    std::function<void()> onQuit_;
-    std::function<snapback::RecordingStatus()> recordingStatus_;
-    std::function<void()> onPauseRecording_;
-    std::function<void()> onResumeRecording_;
+    snapback::TrayCallbacks callbacks_;
 }
-- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit
- recordingStatus:(std::function<snapback::RecordingStatus()>)recordingStatus
- onPauseRecording:(std::function<void()>)onPauseRecording
- onResumeRecording:(std::function<void()>)onResumeRecording;
+- (void)setCallbacks:(snapback::TrayCallbacks)callbacks;
 - (void)menuItemClicked:(NSMenuItem*)sender;
 @end
 
 @implementation SnapbackTrayTarget
 
-- (void)setOnShow:(std::function<void()>)onShow onQuit:(std::function<void()>)onQuit
- recordingStatus:(std::function<snapback::RecordingStatus()>)recordingStatus
- onPauseRecording:(std::function<void()>)onPauseRecording
- onResumeRecording:(std::function<void()>)onResumeRecording {
-    onShow_ = std::move(onShow);
-    onQuit_ = std::move(onQuit);
-    recordingStatus_ = std::move(recordingStatus);
-    onPauseRecording_ = std::move(onPauseRecording);
-    onResumeRecording_ = std::move(onResumeRecording);
+- (void)setCallbacks:(snapback::TrayCallbacks)callbacks {
+    callbacks_ = std::move(callbacks);
 }
 
 - (void)menuItemClicked:(NSMenuItem*)sender {
@@ -59,16 +45,16 @@
     // tested mapping the Win32 WM_COMMAND path uses instead of switching on the title.
     switch (snapback::tray_action_for(static_cast<unsigned int>(sender.tag))) {
         case snapback::TrayAction::Show:
-            if (onShow_) onShow_();
+            if (callbacks_.on_show) callbacks_.on_show();
             break;
         case snapback::TrayAction::Quit:
-            if (onQuit_) onQuit_();
+            if (callbacks_.on_quit) callbacks_.on_quit();
             break;
         case snapback::TrayAction::PauseRecording:
-            if (onPauseRecording_) onPauseRecording_();
+            if (callbacks_.on_pause_recording) callbacks_.on_pause_recording();
             break;
         case snapback::TrayAction::ResumeRecording:
-            if (onResumeRecording_) onResumeRecording_();
+            if (callbacks_.on_resume_recording) callbacks_.on_resume_recording();
             break;
         case snapback::TrayAction::None:
             break;
@@ -77,7 +63,8 @@
 
 - (void)menuNeedsUpdate:(NSMenu*)menu {
     [menu removeAllItems];
-    const auto status = recordingStatus_ ? recordingStatus_() : snapback::RecordingStatus{};
+    const auto status =
+        callbacks_.recording_status ? callbacks_.recording_status() : snapback::RecordingStatus{};
     for (const snapback::TrayMenuEntry& entry : snapback::tray_menu_entries(status)) {
         if (snapback::tray_menu_entry_is_separator(entry)) {
             [menu addItem:[NSMenuItem separatorItem]];
@@ -107,20 +94,14 @@ public:
         [target_ release];
     }
 
-    void install(std::function<void()> on_show, std::function<void()> on_quit,
-                 std::function<RecordingStatus()> recording_status,
-                 std::function<void()> on_pause_recording,
-                 std::function<void()> on_resume_recording) override {
+    void install(TrayCallbacks callbacks) override {
         // AppKit is main-thread-only. Returning instead of asserting keeps a mis-wired
         // caller from taking the process down, and the missing menu bar item is a loud
         // enough symptom on its own.
         if (![NSThread isMainThread]) return;
 
         if (!target_) target_ = [[SnapbackTrayTarget alloc] init];
-        [target_ setOnShow:std::move(on_show) onQuit:std::move(on_quit)
-            recordingStatus:std::move(recording_status)
-            onPauseRecording:std::move(on_pause_recording)
-            onResumeRecording:std::move(on_resume_recording)];
+        [target_ setCallbacks:std::move(callbacks)];
 
         if (!status_item_) {
             // systemStatusBar owns the item, so retain it to keep our pointer valid for

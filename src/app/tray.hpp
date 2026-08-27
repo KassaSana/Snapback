@@ -48,6 +48,24 @@ inline bool tray_menu_entry_is_separator(const TrayMenuEntry& entry) {
     return entry.command_id == kTrayCmdNone;
 }
 
+// What the tray can ask the app to do.
+//
+// A struct rather than a positional parameter list. The list had already reached five
+// std::functions across four platform implementations, three of which take the same
+// `void()` type -- so a transposition would compile everywhere and only show up as the wrong
+// menu item doing the wrong thing on one OS. Named fields make that mistake unspellable, and
+// adding an action stops being a five-file signature change.
+//
+// Every field is optional: a platform fires what is set and ignores what is not, which is
+// what lets the stub store two of them and drop the rest.
+struct TrayCallbacks {
+    std::function<void()> on_show;              // bring the main window forward
+    std::function<void()> on_quit;              // end the app's run loop
+    std::function<RecordingStatus()> recording_status;
+    std::function<void()> on_pause_recording;
+    std::function<void()> on_resume_recording;
+};
+
 // The tray icon. install() must be called on the UI thread (its hidden window is pumped
 // by the main webview run loop). instance() returns the per-platform implementation
 // (a no-op where unimplemented, so the build stays green cross-platform).
@@ -55,11 +73,7 @@ class Tray {
 public:
     virtual ~Tray() = default;
 
-    // on_show: bring the main window forward. on_quit: end the app's run loop.
-    virtual void install(std::function<void()> on_show, std::function<void()> on_quit,
-                         std::function<RecordingStatus()> recording_status,
-                         std::function<void()> on_pause_recording,
-                         std::function<void()> on_resume_recording) = 0;
+    virtual void install(TrayCallbacks callbacks) = 0;
 
     // Show a native notification using the icon registered by install(). The return value
     // reports whether the OS accepted the request; callers can safely ignore it when a

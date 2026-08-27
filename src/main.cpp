@@ -342,24 +342,26 @@ int main(int argc, char** argv) {
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
         enable_close_to_tray(main_hwnd);
-        Tray::instance().install(
-            [main_hwnd] {
-                ShowWindow(main_hwnd, SW_SHOW);
-                SetForegroundWindow(main_hwnd);
-            },
-            [&w, main_hwnd] {
-                prepare_app_exit(main_hwnd);
-                w.terminate();
-            },
-            [state = state.get(), &logger] { return tray_recording_status(*state, logger); },
-            [state = state.get(), &logger] {
-                run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
-            },
-            [state = state.get(), &logger] {
-                run_tray_action(logger, "resume recording", [state] {
-                    state->resume_from_private_pause();
-                });
-            });
+        TrayCallbacks callbacks;
+        callbacks.on_show = [main_hwnd] {
+            ShowWindow(main_hwnd, SW_SHOW);
+            SetForegroundWindow(main_hwnd);
+        };
+        callbacks.on_quit = [&w, main_hwnd] {
+            prepare_app_exit(main_hwnd);
+            w.terminate();
+        };
+        callbacks.recording_status = [state = state.get(), &logger] {
+            return tray_recording_status(*state, logger);
+        };
+        callbacks.on_pause_recording = [state = state.get(), &logger] {
+            run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
+        };
+        callbacks.on_resume_recording = [state = state.get(), &logger] {
+            run_tray_action(logger, "resume recording",
+                            [state] { state->resume_from_private_pause(); });
+        };
+        Tray::instance().install(std::move(callbacks));
     }
 #elif defined(__APPLE__)
     // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
@@ -367,24 +369,23 @@ int main(int argc, char** argv) {
     if (auto win = w.window(); win.ok()) {
         void* main_window = win.value();
         enable_close_to_tray(main_window);
-        Tray::instance().install([main_window] { mac::bring_window_to_front(main_window); },
-                                 [&w, main_window] {
-                                     prepare_app_exit(main_window);
-                                     w.terminate();
-                                 },
-                                 [state = state.get(), &logger] {
-                                     return tray_recording_status(*state, logger);
-                                 },
-                                 [state = state.get(), &logger] {
-                                     run_tray_action(logger, "pause recording", [state] {
-                                         state->pause_privately_for(0);
-                                     });
-                                 },
-                                 [state = state.get(), &logger] {
-                                     run_tray_action(logger, "resume recording", [state] {
-                                         state->resume_from_private_pause();
-                                     });
-                                 });
+        TrayCallbacks callbacks;
+        callbacks.on_show = [main_window] { mac::bring_window_to_front(main_window); };
+        callbacks.on_quit = [&w, main_window] {
+            prepare_app_exit(main_window);
+            w.terminate();
+        };
+        callbacks.recording_status = [state = state.get(), &logger] {
+            return tray_recording_status(*state, logger);
+        };
+        callbacks.on_pause_recording = [state = state.get(), &logger] {
+            run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
+        };
+        callbacks.on_resume_recording = [state = state.get(), &logger] {
+            run_tray_action(logger, "resume recording",
+                            [state] { state->resume_from_private_pause(); });
+        };
+        Tray::instance().install(std::move(callbacks));
     }
 #endif
 
