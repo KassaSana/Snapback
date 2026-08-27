@@ -234,9 +234,7 @@ TEST_CASE("a socket file left by a crash does not block the next owner") {
     auto lock = SingleInstanceGuard::acquire(temp.path / "snapback.lock");
     REQUIRE(lock.acquired());
     const auto endpoint = activation_endpoint_for(temp.path);
-    {
-        std::ofstream stale(endpoint);
-    }
+    std::ofstream(endpoint) << "";
     REQUIRE(std::filesystem::exists(endpoint));
 
     std::atomic<int> raised{0};

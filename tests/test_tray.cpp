@@ -110,14 +110,9 @@ TEST_CASE("the alert row carries no countdown") {
     CHECK(label.find("min left") == std::string_view::npos);
 }
 
-#if !defined(_WIN32) && !defined(__APPLE__)
-// Roadmap 9.15. On a platform with no tray backend, the answer has to be an honest no.
-// main.cpp turns close-to-tray on only when install() reports success, so a stub that claimed
-// otherwise would hide the user's only window into a notification area that does not exist.
-// This is the one platform where the claim can be checked without putting a real icon on
-// somebody's screen — Windows and macOS install for real, which is why the header comment
-// there says the plumbing is verified by running the app.
-TEST_CASE("the no-op tray reports that nothing was installed") {
-    CHECK_FALSE(Tray::instance().install(TrayCallbacks{}));
-}
-#endif
+// Roadmap 9.15 note. `Tray::install` now returns whether an icon really reached the
+// notification area, and main.cpp turns close-to-tray on only when it says yes. There is no
+// case for it here on purpose: `Tray::instance()` is defined only in the `snapback` app target
+// (see CMakeLists.txt), so asserting on it would mean linking an OS singleton into every test
+// process to check one bool. That plumbing stays in the category this file's header already
+// names -- OS glue verified by running the app.

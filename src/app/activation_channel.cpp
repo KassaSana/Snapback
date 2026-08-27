@@ -50,9 +50,15 @@ std::int64_t clamp_timeout(std::int64_t timeout_ms) {
 // exist yet on the losing side of a first-run race, and `canonical` throws on a missing path --
 // which would turn "the app is already running" into a crash.
 std::string canonical_key(const std::filesystem::path& data_dir) {
+    // Lexically first, then physically. `weakly_canonical` resolves only the part of the path
+    // that exists, so a `..` hop through a directory that was never created is left for the
+    // platform to interpret -- and macOS and Windows do not interpret it the same way, which
+    // made two spellings of one directory two channels on exactly one OS. Collapsing `..` and
+    // `.` before the call removes the disagreement instead of documenting it.
     std::error_code ignored;
-    auto resolved = std::filesystem::weakly_canonical(data_dir, ignored);
-    auto key = (ignored ? data_dir : resolved).lexically_normal().string();
+    const auto normalized = data_dir.lexically_normal();
+    auto resolved = std::filesystem::weakly_canonical(normalized, ignored);
+    auto key = (ignored ? normalized : resolved).lexically_normal().string();
 #if defined(_WIN32)
     // Windows paths are case-insensitive, so `C:\Data` and `c:\data` are one directory and
     // must be one channel. Folding here rather than at compare time keeps the id itself the
