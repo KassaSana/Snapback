@@ -2585,6 +2585,41 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   prove that the recap count and episode rollup describe exactly the same population. Land
   calendar grouping after **7.16**.
 
+- **2.16 — DONE 2026-08-27 (delivery half).** `M` Per-event channel preferences for snapback,
+  hyperfocus and Pomodoro; quiet hours; a tray **Snooze alerts for 30 minutes**; and
+  Detailed/Generic lock-screen copy. `route_alert` in `src/app/alert_routing.hpp` is the whole
+  policy as one pure function, so no delivery site decides anything -- each reads a flag.
+
+  **The re-arm is the part that had teeth.** Suppressing a snapback has to acknowledge it on
+  the user's behalf: `ContextTracker::dismiss_recovery` is the only exit from `Recovering`, and
+  its two production callers are both clicks on a card a suppressed snapback never shows.
+  Without it the first quiet-hour snapback silently disables every snapback afterwards. The
+  case drives two cycles and asserts the second still fires; **verified by mutation** —
+  deleting the `dismiss_recovery` call fails it and the channels-off case beside it, while a
+  test that only checked "the quiet-hour alert did not appear" stays green.
+
+  **Quiet hours are a reading, not an instant.** ADR-0007 stores UTC epoch milliseconds; a
+  quiet range is a predicate over the *local* clock, re-evaluated every time.
+  `local_minute_of_day_from_unix_ms` is the one conversion, and nothing caches it — resolving
+  "quiet ends 07:00 local" into a stored instant is the bug this shape prevents, because a DST
+  change or a flight would move it by an hour with nothing saying so.
+
+  **Behaviour change:** a snapback no longer raises a native toast by default, only the
+  overlay. The comment in `main.cpp` that justified the duplicate ("the overlay alone can't"
+  reach an unfocused user) was wrong — the overlay is `WS_EX_TOPMOST | WS_EX_NOACTIVATE` — and
+  is corrected in place. "Both" remains one preference away.
+
+  Recording continues through a snooze, asserted against 2.15's persisted episodes rather than
+  claimed; `RecordingStatus` gains `alert_snooze_remaining_ms` beside `state` rather than a new
+  `RecordingState`, because silencing an intervention is not privacy mode.
+
+  **Not done — the action-routing half below.** Click-to-open-the-composer, click-to-Return,
+  stable event identity across a click, and duplicate-click idempotence all need **9.15**'s
+  activation channel, which is only partially landed; a click that "works" but leaves the
+  window behind another app is worse than no handler. `AlertRoute` deliberately carries no
+  destination, so that work adds a field rather than reinterpreting one. macOS native delivery
+  stays downstream of **3.3** (`tray_macos.mm` still returns false from `show_notification`).
+
 - **2.16 — Let the user control when and how Snapback interrupts.** `M`
   Opened 2026-08-05. A snapback currently triggers both the native overlay and a native
   notification unconditionally; hyperfocus has its own unconditional toast, while Settings

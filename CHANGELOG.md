@@ -17,6 +17,16 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **Control over when and how Snapback interrupts (2.16).** Settings > General now chooses,
+  per event, whether coming back from a distraction, a break reminder, or a Pomodoro phase
+  change shows up in the app, as an overlay card, as a system notification, or not at all.
+  Quiet hours silence alerts between two local times and may cross midnight. The tray gains
+  **Snooze alerts for 30 minutes**, with the remaining time and a Resume control on the
+  recording card. A "Hide details on the lock screen" toggle makes system notifications say
+  only that something happened, keeping filenames and project names out of OS notification
+  history. **Recording continues throughout** — silencing an alert is not privacy mode, and
+  the status keeps saying Recording.
+
 - **Interactive goal history dropdown & auto-complete (2.11).** Starting focus sessions now provides
   an interactive auto-complete suggestions dropdown anchored to the goal input with full keyboard
   navigation (`↑`, `↓`, `Enter`, `Escape`) and click selection. Pinned presets and distinct recent
@@ -122,6 +132,13 @@ on `v0.2.0` at the bottom before cutting one.
   interruptions behind it.
 
 ### Changed
+
+- **A snapback now shows the overlay only, not the overlay *and* a system notification
+  (2.16).** The two fired together for the same moment; the overlay is always-on-top and
+  reaches you whether or not the app window has focus, while the notification additionally
+  copied what you were working on into OS notification history. Set the snapback event to both
+  channels in Settings > General to restore the old behaviour.
+
 
 - **The planning documents collapsed from four to two, and the parallel backlogs are gone.**
   `BACKLOG.md`, `ROADMAP.md`, and `TODO.md` had appeared at the repository root, each
