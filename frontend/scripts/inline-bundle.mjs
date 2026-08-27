@@ -17,12 +17,20 @@
 // the policy stays as strict as before — notably we do NOT add 'unsafe-inline'.
 
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const distDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
-const indexPath = join(distDir, "index.html");
+// Usage: inline-bundle.mjs [distDir] [htmlFile] [outputName]
+//
+// Defaults reproduce the desktop build exactly (`dist/index.html`, inlined in place). The
+// arguments exist for the hosted demo, which builds `demo.html` into `dist-demo/` and needs it
+// published as `index.html` so a static host serves it as the directory index.
+const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const distDir = join(frontendDir, process.argv[2] ?? "dist");
+const htmlFile = process.argv[3] ?? "index.html";
+const outputName = process.argv[4] ?? htmlFile;
+const indexPath = join(distDir, htmlFile);
 
 if (!existsSync(indexPath)) {
   console.error(`inline-bundle: ${indexPath} not found — run \`vite build\` first`);
@@ -33,14 +41,11 @@ let html = readFileSync(indexPath, "utf8");
 const inlinedScripts = [];
 
 // <script type="module" crossorigin src="./assets/index-XXXX.js"></script>
-html = html.replace(
-  /<script\b[^>]*\bsrc="\.\/([^"]+)"[^>]*><\/script>/g,
-  (_match, assetPath) => {
-    const code = readFileSync(join(distDir, assetPath), "utf8");
-    inlinedScripts.push(code);
-    return `<script type="module">${code}</script>`;
-  },
-);
+html = html.replace(/<script\b[^>]*\bsrc="\.\/([^"]+)"[^>]*><\/script>/g, (_match, assetPath) => {
+  const code = readFileSync(join(distDir, assetPath), "utf8");
+  inlinedScripts.push(code);
+  return `<script type="module">${code}</script>`;
+});
 
 // <link rel="stylesheet" crossorigin href="./assets/index-XXXX.css">
 html = html.replace(
@@ -61,9 +66,7 @@ html = html.replace("script-src 'self'", `script-src 'self' ${hashes}`);
 
 // Fail the build rather than shipping a page that silently cannot load itself. Any
 // remaining local src/href is a subresource the desktop webview will be denied.
-const leftovers = [...html.matchAll(/\b(?:src|href)="(\.\/[^"]+|\/[^"/][^"]*)"/g)].map(
-  (m) => m[1],
-);
+const leftovers = [...html.matchAll(/\b(?:src|href)="(\.\/[^"]+|\/[^"/][^"]*)"/g)].map((m) => m[1]);
 if (leftovers.length > 0) {
   console.error(`inline-bundle: unresolved local references remain: ${leftovers.join(", ")}`);
   process.exit(1);
@@ -73,8 +76,14 @@ if (!html.includes("sha256-")) {
   process.exit(1);
 }
 
-writeFileSync(indexPath, html);
+const outputPath = join(distDir, outputName);
+writeFileSync(outputPath, html);
+if (outputPath !== indexPath) {
+  // The source page is now a duplicate that no longer matches its own inlined hash if it were
+  // edited. Removing it leaves exactly one page to publish.
+  rmSync(indexPath);
+}
 console.log(
-  `inline-bundle: index.html is self-contained ` +
+  `inline-bundle: ${outputName} is self-contained ` +
     `(${inlinedScripts.length} script(s), ${(html.length / 1024).toFixed(0)} kB, CSP hash-pinned)`,
 );

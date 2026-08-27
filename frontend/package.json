@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/inline-bundle.mjs",
+    "build:demo": "vite build --config vite.demo.config.ts && node scripts/inline-bundle.mjs dist-demo demo.html index.html",
+    "preview:demo": "vite preview --config vite.demo.config.ts --outDir dist-demo",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
