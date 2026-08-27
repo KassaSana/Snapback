@@ -10,12 +10,14 @@
 #
 # Usage:
 #   scripts/test_local.sh [--build-dir DIR] [--config CFG] [--skip-frontend] [--skip-npm-install]
+#                         [--include-benchmark-smoke]
 set -euo pipefail
 
 BUILD_DIR="build"
 CONFIG="Release"
 SKIP_FRONTEND=0
 SKIP_NPM_INSTALL=0
+INCLUDE_BENCHMARK_SMOKE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -23,6 +25,7 @@ while [ $# -gt 0 ]; do
         --config) CONFIG="$2"; shift 2 ;;
         --skip-frontend) SKIP_FRONTEND=1; shift ;;
         --skip-npm-install) SKIP_NPM_INSTALL=1; shift ;;
+        --include-benchmark-smoke) INCLUDE_BENCHMARK_SMOKE=1; shift ;;
         # Print the header comment block, not a hardcoded line range that drifts.
         -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -46,9 +49,33 @@ echo "== C++ mock/headless tests =="
 cmake -S "$REPO_ROOT" -B "$BUILD_PATH" \
     -DCMAKE_BUILD_TYPE="$CONFIG" \
     -DSNAPBACK_BUILD_APP=OFF \
-    -DSNAPBACK_ONNX=OFF
+    -DSNAPBACK_ONNX=OFF \n    -DSNAPBACK_BUILD_BENCHMARKS=ON
 cmake --build "$BUILD_PATH" --config "$CONFIG" --target snapback_tests --parallel
 ctest --test-dir "$BUILD_PATH" -C "$CONFIG" --output-on-failure
+
+# Compiled every run, deliberately, even though the smoke run below is opt-in.
+#
+# benchmarks/ drives the same private seams the tests do, so a type change in src/ breaks it
+# the same way -- but SNAPBACK_BUILD_BENCHMARKS defaults OFF, so nothing here used to compile
+# these files and CI's benchmark job was the first thing that did. ADR-0007's timestamp_ms
+# rename landed on a green local run and turned master red for exactly that reason. Building
+# is seconds; it is the running that costs minutes.
+#
+# Both targets, unlike CI: the benchmark-smoke job builds only snapback_benchmarks, so
+# bench_hotpaths.cpp has no build coverage anywhere else.
+echo "== Benchmark build (compile-only unless --include-benchmark-smoke) =="
+cmake --build "$BUILD_PATH" --config "$CONFIG"     --target snapback_benchmarks snapback_hotpath_benchmarks --parallel
+
+if [ "$INCLUDE_BENCHMARK_SMOKE" -eq 1 ]; then
+    echo "== Benchmark smoke =="
+    # Multi-config generators nest the binary under a per-config directory; single-config
+    # ones put it straight in the build root. See the header note.
+    BENCH="$BUILD_PATH/$CONFIG/snapback_benchmarks"
+    [ -x "$BENCH" ] || BENCH="$BUILD_PATH/snapback_benchmarks"
+    [ -x "$BENCH" ] || { echo "benchmark binary not found under $BUILD_PATH" >&2; exit 1; }
+    # One simulated minute: enough to exercise every replay path, short enough to sit through.
+    SNAPBACK_BENCH_MINUTES=1 "$BENCH"
+fi
 
 if [ "$SKIP_FRONTEND" -eq 0 ]; then
     require npm
