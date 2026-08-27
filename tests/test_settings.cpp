@@ -236,3 +236,86 @@ TEST_CASE("settings.json is never left truncated by a partial write") {
     CHECK_FALSE(std::filesystem::exists(temp.path / kSettingsTempFileName));
     CHECK_FALSE(read_file(temp.path / kSettingsFileName).empty());
 }
+
+// Roadmap 2.16. Alert delivery is the first nested settings object with a wire form that is
+// not a mirror of its struct, so these pin the crossing rather than the struct.
+
+TEST_CASE("alert delivery settings round-trip through save and load") {
+    TempDir temp;
+    AppSettings settings;
+    settings.alerts.snapback = AlertChannels{false, true, true};  // the explicit "both"
+    settings.alerts.hyperfocus = AlertChannels{};                 // "do not interrupt me"
+    settings.alerts.preview = AlertPreviewMode::Generic;
+    settings.alerts.quiet_hours_enabled = true;
+    settings.alerts.quiet_hours_start_min = 22 * 60 + 30;
+    settings.alerts.quiet_hours_end_min = 7 * 60;
+    settings.alerts.snoozed_until_wall_ms = 1'700'000'000'000;
+    save_app_settings(temp.path, settings);
+
+    const auto loaded = load_app_settings(temp.path);
+    CHECK(loaded.alerts.snapback.overlay == true);
+    CHECK(loaded.alerts.snapback.native == true);
+    CHECK(loaded.alerts.snapback.in_app == false);
+    CHECK(loaded.alerts.hyperfocus.any() == false);
+    CHECK(loaded.alerts.preview == AlertPreviewMode::Generic);
+    CHECK(loaded.alerts.quiet_hours_enabled == true);
+    CHECK(loaded.alerts.quiet_hours_start_min == 22 * 60 + 30);
+    CHECK(loaded.alerts.snoozed_until_wall_ms == 1'700'000'000'000);
+}
+
+TEST_CASE("a settings file written before 2.16 loads with alert defaults") {
+    // The upgrade path. Every other preference in the file must survive, and the alert block
+    // must arrive as its defaults rather than as an all-off object that would silently stop
+    // the app interrupting at all.
+    TempDir temp;
+    write_file(temp.path / kSettingsFileName,
+               R"({"privateMode": true, "idleThresholdSecs": 600})");
+
+    std::ostringstream sink;
+    Logger logger(sink, LogLevel::Trace);
+    const auto loaded = load_app_settings(temp.path, &logger);
+
+    CHECK(loaded.private_mode == true);
+    CHECK(loaded.idle_threshold_secs == 600);
+    CHECK(loaded.alerts.snapback.overlay == true);
+    CHECK(loaded.alerts.hyperfocus.native == true);
+    CHECK(loaded.alerts.pomodoro.in_app == true);
+    CHECK(loaded.alerts.quiet_hours_enabled == false);
+    CHECK(loaded.alerts.snoozed_until_wall_ms == 0);
+    CHECK(sink.str().empty());  // an absent key is not a complaint
+}
+
+TEST_CASE("an out-of-range quiet-hours minute falls back to its default") {
+    // Rejected, not clamped -- the same call idleThresholdSecs makes. A clamped 1500 would
+    // become 23:59 and look like a range the user chose.
+    TempDir temp;
+    write_file(temp.path / kSettingsFileName,
+               R"({"alerts": {"quietHoursStartMin": 1500, "quietHoursEndMin": -1}})");
+
+    const auto loaded = load_app_settings(temp.path);
+    CHECK(loaded.alerts.quiet_hours_start_min == 22 * 60);
+    CHECK(loaded.alerts.quiet_hours_end_min == 7 * 60);
+}
+
+TEST_CASE("an unknown alert channel name is dropped, not fatal") {
+    // A file written by a newer build degrades to the channels this one understands. The
+    // alternative -- rejecting the object -- would revert every delivery preference at once.
+    TempDir temp;
+    write_file(temp.path / kSettingsFileName,
+               R"({"alerts": {"snapback": ["overlay", "holograph"]}})");
+
+    const auto loaded = load_app_settings(temp.path);
+    CHECK(loaded.alerts.snapback.overlay == true);
+    CHECK(loaded.alerts.snapback.native == false);
+    CHECK(loaded.alerts.snapback.in_app == false);
+}
+
+TEST_CASE("an empty channel array means this event does not interrupt me") {
+    // Distinct from the key being absent, which yields the default. `[]` is a choice.
+    TempDir temp;
+    write_file(temp.path / kSettingsFileName, R"({"alerts": {"snapback": []}})");
+
+    const auto loaded = load_app_settings(temp.path);
+    CHECK(loaded.alerts.snapback.any() == false);
+    CHECK(loaded.alerts.hyperfocus.native == true);  // untouched sibling keeps its default
+}

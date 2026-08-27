@@ -452,6 +452,64 @@ void to_json(json& j, const AttendedProgress& v) {
              {"weeklyActualMins", v.weekly_actual_mins}};
 }
 
+// Roadmap 2.16. An array of channel names, not three booleans.
+//
+// The wire form then has no unrepresentable state and no combination to keep in sync by hand:
+// off is `[]`, one channel is `["overlay"]`, both is `["overlay","native"]`. A reader that
+// meets a channel it does not know drops it rather than failing, so a settings file written by
+// a newer build degrades to the channels this one understands instead of reverting the whole
+// object to defaults.
+void to_json(json& j, const AlertChannels& v) {
+    j = json::array();
+    if (v.in_app) j.push_back("inApp");
+    if (v.overlay) j.push_back("overlay");
+    if (v.native) j.push_back("native");
+}
+void from_json(const json& j, AlertChannels& v) {
+    v = AlertChannels{};
+    if (!j.is_array()) return;
+    for (const auto& entry : j) {
+        if (!entry.is_string()) continue;
+        const auto name = entry.get<std::string>();
+        if (name == "inApp") v.in_app = true;
+        else if (name == "overlay") v.overlay = true;
+        else if (name == "native") v.native = true;
+    }
+}
+
+void to_json(json& j, const AlertDeliverySettings& v) {
+    j = json{{"snapback", v.snapback},
+             {"hyperfocus", v.hyperfocus},
+             {"pomodoro", v.pomodoro},
+             {"preview", v.preview},
+             {"quietHoursEnabled", v.quiet_hours_enabled},
+             {"quietHoursStartMin", v.quiet_hours_start_min},
+             {"quietHoursEndMin", v.quiet_hours_end_min},
+             {"snoozedUntilWallMs", v.snoozed_until_wall_ms}};
+}
+void from_json(const json& j, AlertDeliverySettings& v) {
+    const AlertDeliverySettings defaults;
+    v.snapback = get_or<AlertChannels>(j, "snapback", defaults.snapback);
+    v.hyperfocus = get_or<AlertChannels>(j, "hyperfocus", defaults.hyperfocus);
+    v.pomodoro = get_or<AlertChannels>(j, "pomodoro", defaults.pomodoro);
+    v.preview = get_or<AlertPreviewMode>(j, "preview", defaults.preview);
+    v.quiet_hours_enabled = get_or<bool>(j, "quietHoursEnabled", false);
+
+    // Rejected rather than clamped, the same call `idleThresholdSecs` makes below: a minute
+    // outside the day is a hand-edit or a bug, and a clamped value silently becomes a quiet
+    // range the user never chose. A rejected one shows up as the default they can see.
+    const auto in_day = [](std::int32_t minute) {
+        return minute >= 0 && minute < kMinutesPerDay;
+    };
+    const auto start = get_or<std::int32_t>(j, "quietHoursStartMin", defaults.quiet_hours_start_min);
+    const auto end = get_or<std::int32_t>(j, "quietHoursEndMin", defaults.quiet_hours_end_min);
+    v.quiet_hours_start_min = in_day(start) ? start : defaults.quiet_hours_start_min;
+    v.quiet_hours_end_min = in_day(end) ? end : defaults.quiet_hours_end_min;
+
+    v.snoozed_until_wall_ms =
+        std::max<std::int64_t>(0, get_or<std::int64_t>(j, "snoozedUntilWallMs", 0));
+}
+
 void to_json(json& j, const AppSettings& v) {
     j = json{{"defaultFocusMode", v.default_focus_mode},
              {"privateMode", v.private_mode},
@@ -463,7 +521,8 @@ void to_json(json& j, const AppSettings& v) {
              {"attendedTargetDailyMins", v.attended_target_daily_mins},
              {"attendedTargetWeeklyMins", v.attended_target_weekly_mins},
              {"privateUntilWallMs", v.private_until_wall_ms},
-             {"untrackedNudgeUntilWallMs", v.untracked_nudge_until_wall_ms}};
+             {"untrackedNudgeUntilWallMs", v.untracked_nudge_until_wall_ms},
+             {"alerts", v.alerts}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
@@ -485,6 +544,10 @@ void from_json(const json& j, AppSettings& v) {
     v.private_until_wall_ms = get_or<std::int64_t>(j, "privateUntilWallMs", 0);
     v.untracked_nudge_until_wall_ms =
         std::max<std::int64_t>(0, get_or<std::int64_t>(j, "untrackedNudgeUntilWallMs", 0));
+    // A settings.json written before 2.16 has no "alerts" key at all, and must keep loading
+    // with every other preference intact -- so this is a defaulted read like the rest, not a
+    // required one.
+    v.alerts = get_or<AlertDeliverySettings>(j, "alerts", AlertDeliverySettings{});
 }
 
 void to_json(json& j, const PrivacySettings& v) {
