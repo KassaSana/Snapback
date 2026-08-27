@@ -1158,6 +1158,37 @@ h1 {
   margin: 0;
 }
 
+/* Roadmap 2.16. The interruption settings group inside Settings > General. */
+.settings-subheading {
+  margin: 24px 0 4px;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.channel-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.channel-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.quiet-hours-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .toggle-row {
   display: flex;
   align-items: center;

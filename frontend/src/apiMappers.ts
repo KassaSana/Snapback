@@ -1,3 +1,5 @@
+import { ALERT_CHANNELS } from "./alertDelivery";
+import type { AlertChannel, AlertDeliverySettings } from "./alertDelivery";
 import type {
   AppSettings,
   AnalyticsSummary,
@@ -58,9 +60,32 @@ function toMsOrNull(value: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+// Roadmap 2.16. Channels arrive as an array of names, so an unknown one from a newer build is
+// dropped rather than taking the whole object down with it -- the same tolerance the native
+// from_json has, for the same reason.
+function mapAlertChannels(raw: unknown, fallback: AlertChannel[]): AlertChannel[] {
+  if (!Array.isArray(raw)) return fallback;
+  return ALERT_CHANNELS.filter((channel) => raw.includes(channel));
+}
+
+export function mapAlertDelivery(raw: unknown): AlertDeliverySettings {
+  const source = (raw ?? {}) as Record<string, unknown>;
+  return {
+    snapback: mapAlertChannels(source.snapback, ["overlay"]),
+    hyperfocus: mapAlertChannels(source.hyperfocus, ["native"]),
+    pomodoro: mapAlertChannels(source.pomodoro, ["inApp"]),
+    preview: source.preview === "generic" ? "generic" : "detailed",
+    quietHoursEnabled: source.quietHoursEnabled === true,
+    quietHoursStartMin: Number(source.quietHoursStartMin ?? 22 * 60),
+    quietHoursEndMin: Number(source.quietHoursEndMin ?? 7 * 60),
+    snoozedUntilWallMs: Number(source.snoozedUntilWallMs ?? 0),
+  };
+}
+
 export function mapSettings(raw: Record<string, unknown>): AppSettings {
   const pomodoro = (raw.pomodoro ?? {}) as Record<string, unknown>;
   return {
+    alerts: mapAlertDelivery(raw.alerts),
     defaultFocusMode: normalizeFocusMode(
       raw.default_focus_mode ?? raw.defaultFocusMode,
     ),
@@ -365,6 +390,9 @@ export function mapRecordingStatus(raw: Record<string, unknown>): RecordingStatu
       : "blocked",
     privatePauseRemainingMs: Number(
       raw.private_pause_remaining_ms ?? raw.privatePauseRemainingMs ?? 0,
+    ),
+    alertSnoozeRemainingMs: Number(
+      raw.alert_snooze_remaining_ms ?? raw.alertSnoozeRemainingMs ?? 0,
     ),
   };
 }

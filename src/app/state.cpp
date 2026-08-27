@@ -1303,6 +1303,26 @@ RecordingStatus AppState::snooze_alerts_for(std::int64_t minutes) {
     return recording_status();
 }
 
+AppSettings AppState::set_alert_delivery(AlertDeliverySettings alerts) {
+    const auto in_day = [](std::int32_t minute) {
+        return minute >= 0 && minute < kMinutesPerDay;
+    };
+    // Rejected rather than clamped, matching set_idle_threshold_secs: a rejected setting is
+    // visible to the user, a clamped one is a value they never chose quietly taking effect.
+    if (!in_day(alerts.quiet_hours_start_min) || !in_day(alerts.quiet_hours_end_min)) {
+        throw std::runtime_error("quiet hours must be minutes of the day (0-1439)");
+    }
+    std::lock_guard lock(mutex_);
+    AppSettings candidate = settings_;
+    // The deadline is carried over from the live settings, not taken from the caller. A
+    // Settings save is about preferences; the snooze belongs to the tray action that started
+    // it, and letting a form post overwrite it would make "Resume alerts" mean two things.
+    alerts.snoozed_until_wall_ms = settings_.alerts.snoozed_until_wall_ms;
+    candidate.alerts = std::move(alerts);
+    commit_settings_unlocked(std::move(candidate), [] {});
+    return settings_;
+}
+
 RecordingStatus AppState::resume_alerts() {
     {
         std::lock_guard lock(mutex_);

@@ -64,6 +64,7 @@
   "resume_recording",
   "snooze_alerts",
   "resume_alerts",
+  "set_alert_delivery",
   "dismiss_untracked_nudge",
   "inspect_data_import",
   "stage_data_import",

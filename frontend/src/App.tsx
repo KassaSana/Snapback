@@ -42,6 +42,7 @@ import { usePomodoro } from "./usePomodoro";
 import { useTrainingDeploy } from "./useTrainingDeploy";
 import { useSession } from "./useSession";
 import { useAutostart } from "./useAutostart";
+import { useAlertDelivery } from "./useAlertDelivery";
 import { useIdleThreshold } from "./useIdleThreshold";
 import { usePrivacy } from "./usePrivacy";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
@@ -111,6 +112,7 @@ export default function App() {
   const feedback = useFeedback();
   const autostart = useAutostart();
   const idleThreshold = useIdleThreshold();
+  const alertDelivery = useAlertDelivery();
   const { mode: appearanceMode, setMode: setAppearanceMode } = useAppearance();
 
   const live = useLiveData();
@@ -138,6 +140,7 @@ export default function App() {
     refreshRecordingStatus,
     handlePausePrivately,
     handleResumeRecording,
+    handleResumeAlerts,
   } = useRecordingStatus({ setActionError: feedback.setActionError });
 
   const {
@@ -553,6 +556,7 @@ export default function App() {
           status={recordingStatus}
           onPause={handlePausePrivately}
           onResume={handleResumeRecording}
+          onResumeAlerts={handleResumeAlerts}
         />
 
         <AttendedTargetsCard
@@ -689,6 +693,10 @@ export default function App() {
             idleThresholdBusy={idleThreshold.busy}
             idleThresholdError={idleThreshold.error}
             onIdleThresholdChange={idleThreshold.update}
+            alerts={alertDelivery.alerts}
+            alertsBusy={alertDelivery.busy}
+            alertsError={alertDelivery.error}
+            onAlertsChange={alertDelivery.update}
           />
           </>
         )}

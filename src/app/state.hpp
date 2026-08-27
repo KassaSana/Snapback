@@ -153,6 +153,10 @@ public:
     // was accepted rather than what it asked for.
     RecordingStatus snooze_alerts_for(std::int64_t minutes);
     RecordingStatus resume_alerts();
+    // Roadmap 2.16. Replaces the delivery preferences wholesale. The snooze deadline is not
+    // one of them: it is set by the tray action and cleared by resume_alerts, so a Settings
+    // save cannot silently extend or cancel a snooze the user started somewhere else.
+    AppSettings set_alert_delivery(AlertDeliverySettings alerts);
     RecordingStatus resume_from_private_pause();
     // Suppress the missed-session nudge for a deliberate interval (60 minutes by default).
     void dismiss_untracked_nudge(std::int64_t minutes = 60);

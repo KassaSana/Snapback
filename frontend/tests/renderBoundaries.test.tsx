@@ -1,3 +1,4 @@
+import type { AlertDeliverySettings } from "../src/alertDelivery";
 import { memo, useMemo, useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +10,20 @@ import type { AutostartStatus, FocusSummary, PomodoroStatus } from "../src/api";
 import { useSession } from "../src/useSession";
 
 afterEach(() => cleanup());
+
+// Roadmap 2.16. Hoisted deliberately. An inline object literal would be a fresh identity on
+// every parent render, so SettingsCard's memo would miss and this suite would fail on its own
+// fixture rather than on a real regression -- which is exactly the defect it is here to catch.
+const STABLE_ALERTS = {
+  snapback: ["overlay"],
+  hyperfocus: ["native"],
+  pomodoro: ["inApp"],
+  preview: "detailed",
+  quietHoursEnabled: false,
+  quietHoursStartMin: 22 * 60,
+  quietHoursEndMin: 7 * 60,
+  snoozedUntilWallMs: 0,
+} as const satisfies AlertDeliverySettings;
 
 describe("prediction render boundaries", () => {
   it("does not re-render stable cards when unrelated parent telemetry changes", () => {
@@ -68,6 +83,7 @@ describe("prediction render boundaries", () => {
     // Stable identity, like the memoized callback App passes: an inline arrow would be a new
     // prop on every parent render and would defeat the very boundary this test measures.
     const onIdleThresholdChange = vi.fn();
+    const onAlertsChange = vi.fn();
 
     function ParentWithTelemetry() {
       const [predictionSequence, setPredictionSequence] = useState(0);
@@ -97,6 +113,10 @@ describe("prediction render boundaries", () => {
             error={null}
             onAutostartChange={onAutostartChange}
             status={autostartStatus}
+            alerts={STABLE_ALERTS}
+            alertsBusy={false}
+            alertsError={null}
+            onAlertsChange={onAlertsChange}
             idleThresholdSecs={300}
             idleThresholdBusy={false}
             idleThresholdError={null}

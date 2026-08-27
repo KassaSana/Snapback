@@ -1,7 +1,15 @@
 // Roadmap 2.16. Reading the delivery route the engine attaches to an alert event.
 import assert from "node:assert/strict";
 
-import { deliversInApp, parseAlertRoute } from "../src/alertDelivery";
+import {
+  deliversInApp,
+  formatTimeOfDay,
+  parseAlertRoute,
+  parseTimeOfDay,
+  quietHoursSummary,
+  routingSummary,
+  snoozeRemainingLabel,
+} from "../src/alertDelivery";
 
 // A route the engine actually emits: overlay only, detailed copy.
 const overlayOnly = { delivery: { inApp: false, overlay: true, native: false, preview: "detailed" } };
@@ -56,6 +64,88 @@ const overlayOnly = { delivery: { inApp: false, overlay: true, native: false, pr
   assert.equal(route.inApp, false);
   assert.equal(route.overlay, false);
   assert.equal(route.native, false);
+}
+
+{
+  // Time-of-day parsing rejects rather than coerces: every wrong answer is a quiet range the
+  // user did not choose and cannot see.
+  assert.equal(parseTimeOfDay("22:30"), 22 * 60 + 30);
+  assert.equal(parseTimeOfDay("07:00"), 7 * 60);
+  assert.equal(parseTimeOfDay(" 7:05 "), 7 * 60 + 5);
+  assert.equal(parseTimeOfDay("00:00"), 0);
+  assert.equal(parseTimeOfDay("25:00"), null);
+  assert.equal(parseTimeOfDay("22:60"), null);
+  assert.equal(parseTimeOfDay("7"), null);
+  assert.equal(parseTimeOfDay(""), null);
+  assert.equal(parseTimeOfDay("22:3"), null);
+}
+
+{
+  assert.equal(formatTimeOfDay(22 * 60 + 30), "22:30");
+  assert.equal(formatTimeOfDay(0), "00:00");
+  assert.equal(formatTimeOfDay(7 * 60), "07:00");
+  // Round-trips with the parser, which is the property that keeps an edit from drifting.
+  for (const text of ["00:00", "07:00", "13:45", "22:30", "23:59"]) {
+    assert.equal(formatTimeOfDay(parseTimeOfDay(text)!), text);
+  }
+}
+
+{
+  // The wrap has to be said out loud: "22:00 to 07:00" alone reads to plenty of people as
+  // fifteen hours of silence starting in the morning.
+  const wrapping = quietHoursSummary({
+    quietHoursEnabled: true,
+    quietHoursStartMin: 22 * 60,
+    quietHoursEndMin: 7 * 60,
+  });
+  assert.ok(wrapping.includes("the next day"));
+  assert.ok(wrapping.includes("22:00"));
+  assert.ok(wrapping.includes("07:00"));
+
+  const sameDay = quietHoursSummary({
+    quietHoursEnabled: true,
+    quietHoursStartMin: 13 * 60,
+    quietHoursEndMin: 14 * 60,
+  });
+  assert.ok(!sameDay.includes("the next day"));
+
+  // Mirrors minute_in_quiet_range: equal start and end is an empty range, not a full day.
+  const empty = quietHoursSummary({
+    quietHoursEnabled: true,
+    quietHoursStartMin: 9 * 60,
+    quietHoursEndMin: 9 * 60,
+  });
+  assert.ok(empty.includes("nothing is silenced"));
+
+  const off = quietHoursSummary({
+    quietHoursEnabled: false,
+    quietHoursStartMin: 22 * 60,
+    quietHoursEndMin: 7 * 60,
+  });
+  assert.ok(off.includes("any time"));
+}
+
+{
+  assert.equal(routingSummary([]), "Will not interrupt you.");
+  assert.equal(routingSummary(["overlay"]), "Shows as: Overlay card.");
+  assert.equal(
+    routingSummary(["overlay", "native"]),
+    "Shows as: Overlay card and System notification.",
+  );
+  assert.equal(
+    routingSummary(["native", "inApp", "overlay"]),
+    "Shows as: In the app, Overlay card and System notification.",
+  );
+}
+
+{
+  // Rounded up: a countdown reading "0 min left" while still silencing looks like a bug.
+  assert.equal(snoozeRemainingLabel(30_000), "1 min left");
+  assert.equal(snoozeRemainingLabel(60_000), "1 min left");
+  assert.equal(snoozeRemainingLabel(61_000), "2 min left");
+  assert.equal(snoozeRemainingLabel(18 * 60_000), "18 min left");
+  assert.equal(snoozeRemainingLabel(0), "");
+  assert.equal(snoozeRemainingLabel(-1), "");
 }
 
 console.log("alertDelivery.test.ts passed");

@@ -1,4 +1,5 @@
 import { deliversInApp } from "./alertDelivery";
+import type { AlertDeliverySettings } from "./alertDelivery";
 import { invoke, listen } from "./bridge";
 import { mapActivityDeletionResult } from "./activityDeletion";
 
@@ -223,6 +224,13 @@ export type RecordingStatus = {
   state: RecordingState;
   /** Milliseconds left on a timed privacy pause; 0 when indefinite or not paused. */
   privatePauseRemainingMs: number;
+  /**
+   * Roadmap 2.16. Milliseconds left on an alert snooze; 0 when not snoozed.
+   *
+   * Reported beside `state`, never instead of it. A snooze silences interventions while
+   * recording continues, so `state` still reads "recording" throughout one.
+   */
+  alertSnoozeRemainingMs: number;
 };
 
 // Roadmap 2.19. A target of 0 means "not set" -- there is no separate enabled flag to drift
@@ -338,6 +346,8 @@ export type AppSettings = {
   /** Roadmap 7.23. Seconds without input before a session stops counting as attended. */
   idleThresholdSecs: number;
   pomodoro: PomodoroConfig;
+  /** Roadmap 2.16. When and how an interruption may reach the user. */
+  alerts: AlertDeliverySettings;
 };
 
 export type PrivacySettings = {
@@ -710,6 +720,23 @@ export const api = {
   setIdleThreshold: async (seconds: number) => {
     const raw = await invoke<Record<string, unknown>>("set_idle_threshold", { seconds });
     return mapSettings(raw ?? {});
+  },
+  /**
+   * Roadmap 2.16. Replaces every delivery preference at once. `snoozedUntilWallMs` is ignored
+   * by the native side: a snooze belongs to the tray action that started it, and a Settings
+   * save must not silently extend or cancel one.
+   */
+  setAlertDelivery: async (alerts: AlertDeliverySettings) => {
+    const raw = await invoke<Record<string, unknown>>("set_alert_delivery", { alerts });
+    return mapSettings(raw ?? {});
+  },
+  snoozeAlerts: async (minutes = 0) => {
+    const raw = await invoke<Record<string, unknown>>("snooze_alerts", { minutes });
+    return mapRecordingStatus(raw ?? {});
+  },
+  resumeAlerts: async () => {
+    const raw = await invoke<Record<string, unknown>>("resume_alerts");
+    return mapRecordingStatus(raw ?? {});
   },
   dismissSnapback: () => invoke("dismiss_snapback"),
   restoreSnapbackTarget: () => invoke<FocusTargetResult>("restore_snapback_target"),

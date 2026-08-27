@@ -172,6 +172,9 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(state.snooze_alerts_for(a.value("minutes", std::int64_t{0})));
     });
     bind_cmd("resume_alerts", [&state](const json&) { return json(state.resume_alerts()); });
+    bind_cmd("set_alert_delivery", [&state](const json& a) {
+        return json(state.set_alert_delivery(a.at("alerts").get<AlertDeliverySettings>()));
+    });
     bind_cmd("dismiss_untracked_nudge", [&state](const json& a) {
         state.dismiss_untracked_nudge(a.value("minutes", std::int64_t{60}));
         return json{{"dismissed", true}};
