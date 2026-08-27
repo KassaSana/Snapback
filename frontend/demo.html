@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      The hosted demo. Same CSP as index.html, and the same rule behind it: no remote origins,
+      so `scripts/check_no_remote_subresources.py` covers this page too. The demo is served
+      over https rather than file://, but keeping the two pages identical here means the
+      published page cannot quietly acquire a dependency the shipped one is forbidden.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
+    />
+    <meta
+      name="description"
+      content="Interactive demo of Snapback, a local-first focus tracker. All data shown is generated sample data."
+    />
+    <title>Snapback — Demo</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/demo/main.tsx"></script>
+  </body>
+</html>

@@ -1,5 +1,6 @@
 # Generated. Never reformat.
 dist/
+dist-demo/
 coverage/
 node_modules/
 package-lock.json

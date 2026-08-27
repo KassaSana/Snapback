@@ -17,8 +17,10 @@ import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
   {
-    // Build output and coverage reports are generated; never lint them.
-    ignores: ["dist/**", "coverage/**", "node_modules/**"],
+    // Build output and coverage reports are generated; never lint them. `dist-demo/` is the
+    // hosted demo's output and holds a minified bundle -- linting it reports a thousand
+    // findings about code nobody wrote.
+    ignores: ["dist/**", "dist-demo/**", "coverage/**", "node_modules/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -31,7 +33,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "scripts/**/*.mjs"],
+    files: [
+      "src/**/*.{ts,tsx}",
+      "tests/**/*.{ts,tsx}",
+      "demo/**/*.{ts,tsx}",
+      "scripts/**/*.mjs",
+    ],
     plugins: { "react-hooks": reactHooks },
     rules: {
       ...reactHooks.configs.recommended.rules,

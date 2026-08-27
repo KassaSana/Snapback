@@ -2899,6 +2899,50 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   Fetch a version manifest and offer a download link — no silent install. The lightweight
   variant of the auto-updater deferred in [PACKAGING.md](PACKAGING.md).
 
+- **3.6 — DONE 2026-08-27.** `M` — a hosted demo of the dashboard.
+  Opened and closed the same day. The dashboard could not be shown to anyone without a build
+  toolchain and a compile: `frontend/src/bridge.ts` throws "Snapback bridge is unavailable"
+  the moment it loads anywhere the C++ host has not injected `window.__snapback`, so the built
+  page was not a page anyone could open.
+
+  `npm run build:demo` now publishes the same React app as a static, self-contained page over
+  a generated dataset. See [`frontend/README.md`](../frontend/README.md) for the shape. The
+  decision worth recording is that it is a **second Vite entry point**, not a flag inside the
+  desktop build: sample data is kept out of the shipped app by the module graph rather than by
+  an environment variable, dead-code elimination, or review.
+
+- **3.7 — Snapback as a real web product.** `XL` `decision` **stated goal, not scheduled**
+  Opened 2026-08-27 because it is a direction the project is aimed at, and an undocumented
+  ambition turns into an accidental architecture. **3.6's demo is not a step toward this** —
+  it is a static page with invented data, deliberately so.
+
+  The blocker is not effort, it is physics: a browser tab cannot enumerate other applications'
+  windows or read OS-level input idle time, and those two signals are the entire input to the
+  feature vector. So there is no version of this where the browser replaces the capture agent.
+  Every real design keeps a native agent on the machine and moves *storage and presentation*
+  off it, which is a different product with a different privacy contract.
+
+  What has to be settled before any code, and why each is load-bearing:
+
+  - **It contradicts an accepted promise.** The Privacy card says "Nothing leaves this device",
+    [ADR-0002](adr/0002-v1-supports-windows-and-macos.md) scopes v1 to two desktops, and 8.10
+    made release builds network-silent on purpose. A sync target is a new ADR that supersedes
+    part of that, not a feature added underneath it.
+  - **Accounts and a server** mean auth, multi-tenancy, and an operational cost this project
+    has never had. It also makes 8.5's threat model a prerequisite rather than a parallel item.
+  - **What actually syncs.** Window titles are the most sensitive rows in the database. A
+    defensible first version might sync only aggregates — scores, durations, session goals —
+    and keep raw context local. That choice defines the whole schema.
+  - **Which half owns the verdict.** Classification currently runs in-process against live
+    capture. Moving it server-side changes latency, the snapback path, and what an offline
+    machine can still do.
+
+  A staged path exists if this is wanted sooner: read-only first. The desktop agent pushes the
+  aggregates 7.12 already computes; the web app renders Review only, with no live Now surface
+  and no controls. That version needs no capture in the browser, no round trip on the alert
+  path, and can be switched off without the desktop app noticing. Depends on **8.5**, a new
+  ADR, and — realistically — on v1 shipping first.
+
 ---
 
 ## Tier 5 — Open findings from the 2026-07-20 engine/storage audit
