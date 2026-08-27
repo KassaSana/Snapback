@@ -140,4 +140,26 @@ inline AlertRoute route_alert(AlertEvent event,
     return route;
 }
 
+// The route as it crosses to the delivery layer.
+//
+// Explicit booleans here, unlike the array-of-names an AlertChannels *preference* uses in
+// settings.json. The two are different boundaries: a stored preference has to survive an
+// unknown channel from a newer build, while this is a computed instruction consumed
+// immediately by main.cpp and the frontend listener, both of which want to ask "is this
+// channel on" and nothing else. A consumer that had to scan an array to answer that would be
+// a consumer that gets it subtly wrong once.
+inline void to_json(nlohmann::json& j, const AlertRoute& v) {
+    j = nlohmann::json{{"inApp", v.channels.in_app},
+                       {"overlay", v.channels.overlay},
+                       {"native", v.channels.native},
+                       {"preview", v.preview}};
+}
+
+inline void from_json(const nlohmann::json& j, AlertRoute& v) {
+    v.channels.in_app = j.value("inApp", false);
+    v.channels.overlay = j.value("overlay", false);
+    v.channels.native = j.value("native", false);
+    v.preview = j.value("preview", AlertPreviewMode::Detailed);
+}
+
 }  // namespace snapback
