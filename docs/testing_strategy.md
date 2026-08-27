@@ -58,7 +58,7 @@ confident no, about the one toolchain a shipped bug had already hidden in.
 | `sanitizers` | ASan + UBSan over memory/lifetime-sensitive paths |
 | `thread-sanitizer` | TSan over capture and engine concurrency |
 | `onnx-linux` | Optional ONNX build and fixture inference. Linux only: the one ONNX-gated test case is a single case, and no shipped build sets `SNAPBACK_ONNX=ON` |
-| `benchmark-smoke` | The replay benchmark builds and runs; the hot-path benchmark and performance thresholds are not covered |
+| `benchmark-smoke` | The replay benchmark builds and runs; the hot-path benchmark and performance thresholds are not covered. `benchmarks/bench_hotpaths.cpp` therefore has **no build coverage in CI at all** — `scripts/test_local.sh` compiles it, and that is the only thing that does |
 | `frontend-mock` | Frontend install, typecheck, lint, tests, coverage, and build |
 | `format-check` | Changed C++ matches `.clang-format` and changed frontend files match Prettier. Changed files only — the tree was never reflowed, and on a non-PR run there is no diff base, so it reports that and passes |
 | `windows-desktop-integration` | Windows demo build and native tests without launching |
