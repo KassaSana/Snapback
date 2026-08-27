@@ -131,7 +131,14 @@ public:
     }
 
     // Deliberately unimplemented until Roadmap 3.3 — see the file header.
-    bool show_notification(const NotificationPayload&) override { return false; }
+    //
+    // Roadmap 2.16's click routing is therefore inert here, and that is a consequence rather
+    // than an omission: there is no toast to click. The remembered event/id are dropped for
+    // the same reason. When 3.3 gives this a real UNUserNotificationCenter delivery, the
+    // click handler goes in beside it and TrayCallbacks::on_notification_click is waiting.
+    bool show_notification(const NotificationPayload&, AlertEvent, std::int64_t) override {
+        return false;
+    }
 
 private:
     NSStatusItem* status_item_ = nil;

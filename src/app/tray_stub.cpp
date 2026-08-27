@@ -36,7 +36,9 @@ public:
     // false = "the OS did not accept this", which is accurate: there is no tray icon to
     // hang a notification off. Do not return true here — callers may later start trusting
     // it to decide whether to fall back to an in-app toast.
-    bool show_notification(const NotificationPayload&) override { return false; }
+    bool show_notification(const NotificationPayload&, AlertEvent, std::int64_t) override {
+        return false;
+    }
 
 private:
     TrayCallbacks callbacks_;
