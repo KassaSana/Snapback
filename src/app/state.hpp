@@ -161,6 +161,17 @@ public:
     // worse than one that brings the app forward and stops there, and coming forward is the
     // part the user unambiguously asked for by clicking.
     bool claim_alert_action(AlertEvent event, std::int64_t alert_id);
+
+    // The id a click on this kind's alert would currently claim, or 0 if there is none.
+    //
+    // For the surfaces that carry no id of their own. The overlay is the one that exists: it
+    // shows exactly one card at a time, and the card on screen is by definition the newest
+    // snapback -- so "the outstanding id" and "the id this card was raised for" are the same
+    // value. A native toast cannot use this, because the OS keeps stale ones around and the
+    // whole point of the id there is to tell them apart.
+    //
+    // Reading it does not consume it; claim_alert_action still decides.
+    std::int64_t outstanding_alert_id(AlertEvent event) const;
     PrivacySettings privacy_settings() const;
     void set_private_mode(bool enabled);
     // Roadmap 2.10. The one answer to "am I being recorded right now?", derived here so the

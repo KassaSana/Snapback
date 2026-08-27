@@ -3416,3 +3416,27 @@ TEST_CASE("a missing or zero alert id claims nothing even while one is outstandi
     CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, 0));
     CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, -1));
 }
+
+TEST_CASE("the outstanding alert id is what a surface without one of its own would claim") {
+    // The overlay carries no id: it shows one card at a time, and the card on screen is by
+    // definition the newest snapback. Reading the id must not consume it — the claim is still
+    // what decides, and a read that consumed would make the click that follows it a no-op.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    CHECK(state.outstanding_alert_id(AlertEvent::Snapback) == 0);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    const auto id = emitted_alert_id(state, "snapback");
+    REQUIRE(id > 0);
+
+    CHECK(state.outstanding_alert_id(AlertEvent::Snapback) == id);
+    CHECK(state.outstanding_alert_id(AlertEvent::Snapback) == id);  // reading is not consuming
+    CHECK(state.claim_alert_action(AlertEvent::Snapback, id));
+    CHECK(state.outstanding_alert_id(AlertEvent::Snapback) == 0);
+}

@@ -157,6 +157,18 @@ void run_tray_action(snapback::Logger& logger, const char* action,
     }
 }
 
+// Roadmap 2.16. The event the frontend acts on when a native click chose a destination this
+// side does not own.
+//
+// The alert id travels with it even though the claim has already been consumed on this side.
+// It is not a second gate -- it is what makes a log line from the frontend and one from here
+// line up when someone has to work out why a click went where it did.
+std::string dump_alert_action_event(snapback::AlertAction action, std::int64_t alert_id) {
+    return nlohmann::json{{"action", snapback::alert_action_as_str(action)},
+                          {"alertId", alert_id}}
+        .dump();
+}
+
 snapback::RecordingStatus tray_recording_status(snapback::AppState& state,
                                                 snapback::Logger& logger) noexcept {
     try {
@@ -328,6 +340,9 @@ int main(int argc, char** argv) {
     Overlay::instance().set_dismiss_callback(
         [state = state.get()] { state->dismiss_snapback(); });
 
+    // Roadmap 2.16. The overlay's "Take me back" region. Registered later, once the window
+    // exists and route_alert_click has something to raise -- see the block below the tray.
+
     webview::webview w(/*debug=*/kWebviewDebugEnabled, nullptr);
     // This guard is declared after the webview, so exception unwinding stops
     // capture and event dispatch before the webview itself is destroyed.
@@ -374,6 +389,50 @@ int main(int argc, char** argv) {
     };
 
     std::function<void()> raise_window;
+
+    // Roadmap 2.16's action-routing half. One handler for both native surfaces.
+    //
+    // The order matters and is the reason this waited on 9.15: raising the window is
+    // unconditional and comes first. A click that appears to do nothing at all is worse than
+    // one that brings the app forward and stops there -- and coming forward is the part the
+    // user unambiguously asked for by clicking, whatever the app then decides about the rest.
+    //
+    // Only after that does the claim decide whether the *destination* is still live. A false
+    // means the alert was already acted on, or a newer one of its kind replaced it, or the OS
+    // kept a toast around long after the moment it was about.
+    // `raise_window` is captured by reference because it is assigned in the platform blocks
+    // *below* this point -- both it and this lambda live until `w.run()` returns, which is the
+    // condition that makes a reference capture safe here rather than merely convenient.
+    const auto route_alert_click = [&w, state = state.get(), &logger, &raise_window](
+                                       AlertEvent event, std::int64_t alert_id) {
+        if (raise_window) raise_window();
+        if (!state->claim_alert_action(event, alert_id)) {
+            logger.info(std::string("alert click: nothing to act on for ") +
+                        std::to_string(alert_id) + " (already used, stale, or not actionable)");
+            return;
+        }
+        const auto action = alert_action_for(event);
+        logger.info(std::string("alert click: ") + alert_action_as_str(action));
+        switch (action) {
+            case AlertAction::ReturnToWork:
+                // 2.8's existing native action, reused rather than reimplemented. It raises the
+                // recorded window and unlatches the tracker in one step.
+                run_tray_action(logger, "return to work",
+                                [state] { state->restore_snapback_target(); });
+                break;
+            case AlertAction::OpenSessionComposer:
+            case AlertAction::OpenPomodoro:
+                // Handed to the frontend, which owns what a surface is. This side says which
+                // destination was chosen and stops there; teaching main.cpp about React routes
+                // would put the same decision in two places that cannot both be right.
+                emit(w, "alert_action",
+                     dump_alert_action_event(action, alert_id));
+                break;
+            case AlertAction::None:
+                break;
+        }
+    };
+
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
@@ -404,6 +463,7 @@ int main(int argc, char** argv) {
         callbacks.on_resume_alerts = [state = state.get(), &logger] {
             run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
         };
+        callbacks.on_notification_click = route_alert_click;
         // Roadmap 9.15. Close-to-tray goes on only once an icon is actually in the
         // notification area. Hiding the only window into a tray that failed to install leaves
         // the user with a running process and no way to reach it -- which is worse than the
@@ -440,6 +500,7 @@ int main(int argc, char** argv) {
         callbacks.on_resume_alerts = [state = state.get(), &logger] {
             run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
         };
+        callbacks.on_notification_click = route_alert_click;
         // Roadmap 9.15. Close-to-tray goes on only once an icon is actually in the
         // notification area. Hiding the only window into a tray that failed to install leaves
         // the user with a running process and no way to reach it -- which is worse than the
@@ -448,6 +509,16 @@ int main(int argc, char** argv) {
         if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_window, explain_close_to_tray);
     }
 #endif
+
+    // Roadmap 2.16. The overlay card's action, through the same handler the tray click uses.
+    //
+    // The overlay carries no alert id of its own: it shows exactly one card at a time and the
+    // card on screen is by definition the newest snapback, which is the one whose id is
+    // outstanding. Passing 0 would claim nothing, so the id is read back from state -- the same
+    // value the payload carried out.
+    Overlay::instance().set_action_callback([state = state.get(), &route_alert_click] {
+        route_alert_click(AlertEvent::Snapback, state->outstanding_alert_id(AlertEvent::Snapback));
+    });
 
     // Roadmap 9.15. The owner's half of the activation channel, started once the window exists
     // and kept alive by this scope until `w.run()` returns.

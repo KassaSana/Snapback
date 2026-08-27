@@ -245,6 +245,11 @@ std::int64_t AppState::issue_alert_id_unlocked(AlertEvent event, const AlertRout
     return id;
 }
 
+std::int64_t AppState::outstanding_alert_id(AlertEvent event) const {
+    std::lock_guard lock(mutex_);
+    return actionable_alert_ids_[alert_event_index(event)];
+}
+
 bool AppState::claim_alert_action(AlertEvent event, std::int64_t alert_id) {
     std::lock_guard lock(mutex_);
     // 0 never matches: ids start at 1 and a cleared slot is 0, so neither a payload that lost
