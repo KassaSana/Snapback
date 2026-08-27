@@ -4224,6 +4224,38 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   macOS host (see [running.md](running.md)) — write it carefully, because the feedback loop
   is a full CI run.*
 
+- **11.12 — A TSan-only activation case failed once and passed on re-run.** `S` Opened
+  2026-08-27. On PR #49's first CI run the ThreadSanitizer job failed on test #10, *a socket
+  file left by a crash does not block the next owner*, in
+  `tests/test_activation_channel.cpp`. Re-running the job with no code change turned it green,
+  and the other fifteen jobs — including `asan+ubsan` and all four headless matrix entries —
+  passed on both attempts. The PR touched JSON serialization, a `trim` helper, and one
+  redundant guard; nothing on the activation path, and the case is compiled only on POSIX, so
+  it cannot be the change.
+
+  **The failing assertion was not captured, and that is the first thing to fix here.**
+  Re-running replaced the attempt-1 log before it was read, and GitHub does not keep the
+  superseded copy. So this item currently records that the case is flaky and nothing about
+  *how* — which is the weakest possible bug report and exactly what 11.1 argued per-case
+  registration was supposed to end. Reproduce it under the tsan preset in a loop and keep the
+  output; do not re-run CI to green before reading the log.
+
+  Three assertions can fail, and they mean different things. `request_activation` returning
+  anything but `Activated` is the channel refusing a rebind. `wait_for_count` giving up is a
+  timing budget — it polls 500 × 10 ms, generous in wall-clock terms but TSan slows a process
+  by roughly an order of magnitude and the runner is shared. A wrong `raised` count is the
+  callback firing twice or not at all.
+
+  What makes this case different from its neighbours in the same file is worth stating,
+  because it is the likeliest home for a real defect: it is the only one that leaves a socket
+  node nothing is bound to and expects `ActivationListener::start` to unlink and rebind over
+  it. Every other case starts from a clean endpoint. If the unlink/rebind window is genuinely
+  racy, this is a production bug in `activation_channel.cpp:activation_endpoint_for`'s owner
+  and the flaky assertion is the honest one — the same shape as 11.1, where splitting the
+  suite turned a dismissed flake into a named `CaptureThread` defect.
+
+  Fix the diagnosis before the symptom. Widening the poll budget without knowing which
+  assertion fired would hide a rebind race rather than close it.
 ---
 
 ## Tier 12 — Documentation truth
