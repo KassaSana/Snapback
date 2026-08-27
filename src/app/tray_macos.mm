@@ -100,11 +100,11 @@ public:
         [target_ release];
     }
 
-    void install(TrayCallbacks callbacks) override {
+    bool install(TrayCallbacks callbacks) override {
         // AppKit is main-thread-only. Returning instead of asserting keeps a mis-wired
         // caller from taking the process down, and the missing menu bar item is a loud
         // enough symptom on its own.
-        if (![NSThread isMainThread]) return;
+        if (![NSThread isMainThread]) return false;
 
         if (!target_) target_ = [[SnapbackTrayTarget alloc] init];
         [target_ setCallbacks:std::move(callbacks)];
@@ -124,6 +124,10 @@ public:
         menu.autoenablesItems = NO;
         menu.delegate = target_;
         status_item_.menu = menu;
+        // The status item is what the user clicks to get the window back, so its existence is
+        // the honest answer to "did a tray install?" -- `button` is nil on systems too old to
+        // draw one, and a menu hung off nothing is not a way back.
+        return status_item_ != nil && status_item_.button != nil;
     }
 
     // Deliberately unimplemented until Roadmap 3.3 — see the file header.

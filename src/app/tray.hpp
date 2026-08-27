@@ -81,7 +81,11 @@ class Tray {
 public:
     virtual ~Tray() = default;
 
-    virtual void install(TrayCallbacks callbacks) = 0;
+    // Reports whether an icon actually reached the notification area. Roadmap 9.15: the
+    // caller has to know, because close-to-tray hides the only window the user has and a
+    // hidden window with no tray icon is an app they cannot get back. A void return made that
+    // a promise nobody could check, which is how it shipped unchecked.
+    virtual bool install(TrayCallbacks callbacks) = 0;
 
     // Show a native notification using the icon registered by install(). The return value
     // reports whether the OS accepted the request; callers can safely ignore it when a

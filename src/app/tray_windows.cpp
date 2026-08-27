@@ -50,7 +50,7 @@ public:
         if (hwnd_) DestroyWindow(hwnd_);
     }
 
-    void install(TrayCallbacks callbacks) override {
+    bool install(TrayCallbacks callbacks) override {
         callbacks_ = std::move(callbacks);
 
         HINSTANCE inst = GetModuleHandleW(nullptr);
@@ -64,7 +64,7 @@ public:
         // Message-only window (HWND_MESSAGE): receives tray + menu messages, no UI.
         hwnd_ = CreateWindowExW(0, kTrayWndClass, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
                                 inst, nullptr);
-        if (!hwnd_) return;
+        if (!hwnd_) return false;
         SetWindowLongPtrW(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
         nid_ = {};
@@ -76,6 +76,7 @@ public:
         nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
         wcscpy_s(nid_.szTip, L"Snapback");
         installed_ = Shell_NotifyIconW(NIM_ADD, &nid_) == TRUE;
+        return installed_;
     }
 
     bool show_notification(const NotificationPayload& payload) override {

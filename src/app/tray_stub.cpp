@@ -26,7 +26,12 @@ class NoopTray final : public Tray {
 public:
     // Callbacks are stored, not wired: there is no menu to fire them. main.cpp keeps
     // working because quitting and showing the window are both reachable from the UI.
-    void install(TrayCallbacks callbacks) override { callbacks_ = std::move(callbacks); }
+    // false for the same reason show_notification returns false: there is no icon here, and
+    // saying otherwise would let a caller hide its window into a tray that does not exist.
+    bool install(TrayCallbacks callbacks) override {
+        callbacks_ = std::move(callbacks);
+        return false;
+    }
 
     // false = "the OS did not accept this", which is accurate: there is no tray icon to
     // hang a notification off. Do not return true here — callers may later start trusting

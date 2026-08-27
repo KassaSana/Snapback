@@ -364,7 +364,6 @@ int main(int argc, char** argv) {
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
-        enable_close_to_tray(main_hwnd);
         raise_window = [main_hwnd] {
             ShowWindow(main_hwnd, SW_SHOW);
             SetForegroundWindow(main_hwnd);
@@ -392,14 +391,18 @@ int main(int argc, char** argv) {
         callbacks.on_resume_alerts = [state = state.get(), &logger] {
             run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
         };
-        Tray::instance().install(std::move(callbacks));
+        // Roadmap 9.15. Close-to-tray goes on only once an icon is actually in the
+        // notification area. Hiding the only window into a tray that failed to install leaves
+        // the user with a running process and no way to reach it -- which is worse than the
+        // behaviour close-to-tray replaced, and invisible until the day the shell is busy at
+        // login and Shell_NotifyIcon returns false.
+        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_hwnd);
     }
 #elif defined(__APPLE__)
     // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
     // it becomes AppKit again, so main.cpp stays plain C++ (see mac_ui.hpp).
     if (auto win = w.window(); win.ok()) {
         void* main_window = win.value();
-        enable_close_to_tray(main_window);
         raise_window = [main_window] { mac::bring_window_to_front(main_window); };
         TrayCallbacks callbacks;
         callbacks.on_show = raise_window;
@@ -424,7 +427,12 @@ int main(int argc, char** argv) {
         callbacks.on_resume_alerts = [state = state.get(), &logger] {
             run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
         };
-        Tray::instance().install(std::move(callbacks));
+        // Roadmap 9.15. Close-to-tray goes on only once an icon is actually in the
+        // notification area. Hiding the only window into a tray that failed to install leaves
+        // the user with a running process and no way to reach it -- which is worse than the
+        // behaviour close-to-tray replaced, and invisible until the day the shell is busy at
+        // login and Shell_NotifyIcon returns false.
+        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_window);
     }
 #endif
 

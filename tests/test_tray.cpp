@@ -109,3 +109,15 @@ TEST_CASE("the alert row carries no countdown") {
     CHECK(label.find("18") == std::string_view::npos);
     CHECK(label.find("min left") == std::string_view::npos);
 }
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+// Roadmap 9.15. On a platform with no tray backend, the answer has to be an honest no.
+// main.cpp turns close-to-tray on only when install() reports success, so a stub that claimed
+// otherwise would hide the user's only window into a notification area that does not exist.
+// This is the one platform where the claim can be checked without putting a real icon on
+// somebody's screen — Windows and macOS install for real, which is why the header comment
+// there says the plumbing is verified by running the app.
+TEST_CASE("the no-op tray reports that nothing was installed") {
+    CHECK_FALSE(Tray::instance().install(TrayCallbacks{}));
+}
+#endif
