@@ -48,6 +48,7 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | [0006](0006-trainer-is-developer-tooling.md) | Training tooling is developer-only | Accepted | 13.7 |
 | [0007](0007-time-is-integer-milliseconds-utc.md) | A point in time is UTC milliseconds since the epoch, stored as INTEGER | Accepted — **not yet applied** | 7.16 |
 | [0008](0008-protect-master-from-red-ci.md) | Protect `master` from red CI | Accepted | 6.2 |
+| [0009](0009-local-first-threat-model.md) | Local-first threat model for v1 | Accepted | 8.5 |
 
 ## Awaiting an ADR
 
@@ -56,7 +57,6 @@ should settle them — the roadmap's "Start here" table sets the order.
 
 | Session | Roadmap items | The question |
 |---------|---------------|--------------|
-| — | 8.5 | Threat model — gates whether 4.5 encryption is required |
 | — | 5.6 | What should `longest_active_stretch_5min` report for a new session? |
 | — | 7.8 | Should `set_focus_mode` rewrite the user's default? |
 | — | 9.10 | Retention window: user setting, and what default? |

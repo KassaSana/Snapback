@@ -4,6 +4,7 @@ import type { SessionSummary } from "../src/api";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
+  resolveInsightsAvgFocus,
   sessionRowLabel,
   toChronological,
 } from "../src/insightsMetrics";
@@ -52,6 +53,11 @@ assert.equal(agg.sessionCount, 2);
 assert.equal(agg.avgFocusScore, 70);
 assert.equal(agg.avgDeepFocusPct, 30);
 assert.equal(agg.totalSnapbacks, 5);
+
+// Roadmap 10.11: prefer the shared range aggregate over the session mean when both exist.
+assert.equal(resolveInsightsAvgFocus(54.2, 53.5), 54.2);
+assert.equal(resolveInsightsAvgFocus(null, 53.5), 53.5);
+assert.equal(resolveInsightsAvgFocus(undefined, 53.5), 53.5);
 
 // Reverses newest-first into oldest→newest, without mutating the input.
 const list = [summary("a", 1, 0, 0), summary("b", 2, 0, 0)];

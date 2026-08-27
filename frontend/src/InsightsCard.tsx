@@ -4,6 +4,7 @@ import { formatScore, type SessionSummary } from "./api";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
+  resolveInsightsAvgFocus,
   sessionRowLabel,
   toChronological,
 } from "./insightsMetrics";
@@ -20,6 +21,7 @@ type InsightsCardProps = {
     nextStep: string | null,
   ) => boolean | Promise<boolean>;
   reflectionStatus?: string | null;
+  rangeAvgFocusScore?: number | null;
   rangeLabel: string;
   sessionHistory: SessionSummary[];
 };
@@ -224,12 +226,17 @@ export const InsightsCard = memo(function InsightsCard({
   onDeleteSession,
   onSaveReflection,
   reflectionStatus = null,
+  rangeAvgFocusScore = null,
   rangeLabel,
   sessionHistory,
 }: InsightsCardProps) {
   const aggregates = useMemo(
     () => computeInsightsAggregates(sessionHistory),
     [sessionHistory],
+  );
+  const avgFocusScore = useMemo(
+    () => resolveInsightsAvgFocus(rangeAvgFocusScore, aggregates.avgFocusScore),
+    [aggregates.avgFocusScore, rangeAvgFocusScore],
   );
   const chronological = useMemo(() => toChronological(sessionHistory), [sessionHistory]);
   const count = sessionHistory.length;
@@ -249,7 +256,7 @@ export const InsightsCard = memo(function InsightsCard({
         <>
           <div className="insight-tiles">
             <Tile value={String(aggregates.sessionCount)} label="Sessions" />
-            <Tile value={String(Math.round(aggregates.avgFocusScore))} label="Avg focus" />
+            <Tile value={String(Math.round(avgFocusScore))} label="Avg focus" />
             <Tile value={`${Math.round(aggregates.avgDeepFocusPct)}%`} label="Deep focus" />
             <Tile value={String(aggregates.totalSnapbacks)} label="Snapbacks" />
           </div>

@@ -50,11 +50,19 @@ if (-not $PackageRoot) {
 
 $Exe = Join-Path $PackageRoot.FullName "snapback.exe"
 $FrontendIndex = Join-Path $PackageRoot.FullName "frontend\index.html"
+$License = Join-Path $PackageRoot.FullName "LICENSE"
+$Notices = Join-Path $PackageRoot.FullName "THIRD_PARTY_NOTICES.md"
 if (-not (Test-Path $Exe)) {
     throw "Package missing snapback.exe."
 }
 if (-not (Test-Path $FrontendIndex)) {
     throw "Package missing frontend\index.html."
+}
+if (-not (Test-Path $License)) {
+    throw "Package missing LICENSE."
+}
+if (-not (Test-Path $Notices)) {
+    throw "Package missing THIRD_PARTY_NOTICES.md."
 }
 
 $env:SNAPBACK_DATA_DIR = Join-Path $RepoRoot ".demo\package-validate-data"

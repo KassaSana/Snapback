@@ -4,6 +4,10 @@ ROADMAP 8.6. This is the update process for Snapback's C++ dependencies. The fro
 dependencies are a separate story handled by npm and Dependabot; see
 [running.md](running.md) for building either half.
 
+The shipped license inventory for release packages lives in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) at the repository root. This file
+records how to bump pins; the notices file is the legal artifact installers carry.
+
 ## The rule
 
 **Every fetched C++ dependency is pinned to something that cannot change underneath us.**

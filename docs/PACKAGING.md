@@ -37,6 +37,17 @@ The third check reads CI's conclusion rather than re-running the matrix, because
 the matrix here would drift from the real one. It fails closed: an API error or an
 unexpected response is treated as unproven, not as a pass.
 
+## Pre-release checklist (external, not code)
+
+These gate the first real tag but do not block merging license or demo work:
+
+| Item | Roadmap | What to do |
+| --- | --- | --- |
+| Apple Developer account | **3.3** | Enroll; longest lead time for macOS notarization and notifications |
+| Code-signing certificate | **0.4b** | Purchase EV cert; set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` on the release runner |
+| Version baseline | **9.13** | Decide fresh version (e.g. `v0.3.0`) vs retagging orphaned `v0.2.0`; bump `CMakeLists.txt` before tagging |
+| GitHub Pages source | **3.6** | Repo → Settings → Pages → Source: **GitHub Actions** (one-time; required for the live demo URL) |
+
 ## Authenticode signing
 
 Release builds should be signed so Windows SmartScreen does not warn on first run.

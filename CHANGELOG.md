@@ -17,6 +17,20 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **MIT license and third-party notices (9.12).** The repository now ships a root `LICENSE`
+  (MIT) and `THIRD_PARTY_NOTICES.md` inventory. Release packages install both beside
+  `snapback.exe`, CPack points at the real license file, and CI verifies the wiring.
+
+- **Hosted demo on GitHub Pages (3.6).** `npm run build:demo` is exercised in CI; pushes to
+  `master` that touch `frontend/` deploy `dist-demo/` via GitHub Actions.
+
+- **Review Insights avg focus matches Summary (10.11).** The Insights headline tile now uses
+  the same sample-weighted range aggregate as Summary and Trends, instead of averaging
+  per-session recap scores.
+
+- **v1 threat model (8.5).** [ADR-0009](docs/adr/0009-local-first-threat-model.md) records
+  adversaries, data sensitivity, and what "local-only" promises for v1.
+
 - **Alerts you can click (2.16).** A snapback card now offers **Take me back** beside its
   click-to-dismiss, and system notifications respond to a click instead of being something you
   could only read. Whatever you click, the window comes forward first — then a snapback returns
@@ -400,8 +414,6 @@ on `v0.2.0` at the bottom before cutting one.
 - **No macOS packaging.** No signed `.app`, notarization, or DMG yet — the one remaining
   formal v1 blocker.
 - **Windows artifacts are unsigned** until a code-signing certificate is provisioned.
-- **No project license.** The repository ships no `LICENSE` or third-party notice file, so it
-  is not yet open source in any usable sense.
 - No Linux tray or overlay, and no Linux packaging.
 
 ---

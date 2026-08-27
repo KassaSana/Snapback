@@ -3,6 +3,9 @@
 
 # Snapback (C++)
 
+**[Live demo](https://kassasana.github.io/Snapback/)** — interactive dashboard with generated
+sample data (no install required).
+
 Snapback is a native C++ desktop app that watches for focus drift and helps you
 return to the work you were doing. Its pipeline is input capture → feature
 extraction → classification → SQLite → webview UI, with native overlay and tray
@@ -82,3 +85,8 @@ benchmarking, packaging, and roadmap references.
 
 For the full end-to-end Windows walkthrough, see
 [docs/windows_demo.md](docs/windows_demo.md).
+
+## License
+
+Snapback is released under the [MIT License](LICENSE). Third-party component licenses are
+listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

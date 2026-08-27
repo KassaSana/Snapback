@@ -165,6 +165,11 @@ try {
             $installerScriptName = Split-Path -Leaf $installerScript
             $buildPathEscaped = $BuildPath.TrimEnd('\')
             $scriptDirEscaped = (Split-Path -Parent $installerScript).TrimEnd('\')
+            $licenseFile = Join-Path $RepoRoot "LICENSE"
+            $displayLicense = ""
+            if (Test-Path -LiteralPath $licenseFile) {
+                $displayLicense = $licenseFile
+            }
             @"
 [Version]
 Class=IEXPRESS
@@ -190,7 +195,7 @@ UserQuietInstCmd=%AppLaunched%
 SourceFiles=SourceFiles
 [Strings]
 InstallPrompt=
-DisplayLicense=
+DisplayLicense=$displayLicense
 FinishMessage=Snapback installation completed.
 TargetName=$installerExe
 FriendlyName=Snapback Installer
