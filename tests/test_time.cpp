@@ -45,6 +45,75 @@ TEST_CASE("local_hour_from_rfc3339 converts UTC timestamps to local time") {
 }
 #endif
 
+// Roadmap 2.16. The quiet-hours reading. These cases are written to hold in *any* timezone,
+// because CI runs them on four toolchains and `TZ` is a process global — a case that sets it
+// is a case that can interfere with another running beside it. The one case that does set it
+// is POSIX-only below, matching what `local_hour_from_rfc3339` already does here.
+
+TEST_CASE("local_minute_of_day_from_unix_ms agrees with local_hour_from_rfc3339") {
+    // Whatever this machine's offset is, the two must describe the same local reading, or one
+    // of them is lying about what time it is.
+    const std::int64_t when = 1'700'000'000'000;
+    const auto minutes = local_minute_of_day_from_unix_ms(when);
+    REQUIRE(minutes.has_value());
+    const int hour = local_hour_from_rfc3339(rfc3339_from_unix_ms(when));
+    REQUIRE(hour >= 0);
+    CHECK(*minutes / 60 == hour);
+}
+
+TEST_CASE("local_minute_of_day_from_unix_ms answers within a single day") {
+    for (const std::int64_t when : {std::int64_t{0}, std::int64_t{1'700'000'000'000}}) {
+        const auto minutes = local_minute_of_day_from_unix_ms(when);
+        REQUIRE(minutes.has_value());
+        CHECK(*minutes >= 0);
+        CHECK(*minutes < 1440);
+    }
+}
+
+TEST_CASE("local_minute_of_day_from_unix_ms reports the same minute across one second") {
+    // Sub-second precision must not leak into the reading: every instant inside a second is
+    // the same wall-clock minute.
+    const std::int64_t base = 1'700'000'000'000;
+    CHECK(local_minute_of_day_from_unix_ms(base) == local_minute_of_day_from_unix_ms(base + 999));
+}
+
+TEST_CASE("local_minute_of_day_from_unix_ms resolves minutes, not just the hour") {
+    // The reason this function exists rather than a call to the hour-granularity one: 22:30 is
+    // an ordinary bedtime, and a quiet range that can only start on the hour cannot express it.
+    const std::int64_t base = 1'700'000'000'000;
+    const auto first = local_minute_of_day_from_unix_ms(base);
+    const auto later = local_minute_of_day_from_unix_ms(base + 30 * 60 * 1000);
+    REQUIRE(first.has_value());
+    REQUIRE(later.has_value());
+    CHECK((*later - *first + 1440) % 1440 == 30);
+}
+
+#if defined(_WIN32)
+TEST_CASE("local_minute_of_day_from_unix_ms reports nullopt for a pre-epoch instant on Windows") {
+    // The Windows CRT's `localtime_s` rejects a negative time_t. Pinned rather than worked
+    // around: no caller in this app reads local time for a historical instant, and inventing
+    // a value here would be the sentinel the nullopt contract exists to avoid.
+    CHECK_FALSE(local_minute_of_day_from_unix_ms(-86'400'000).has_value());
+}
+#else
+TEST_CASE("local_minute_of_day_from_unix_ms floors a pre-epoch instant") {
+    // Same hazard `rfc3339_from_unix_ms` guards: -1500 ms is 1.5 s before the epoch and falls
+    // in second -2, so truncating toward zero would report the wrong minute for any instant in
+    // the second before midnight.
+    const auto floored = local_minute_of_day_from_unix_ms(-1500);
+    REQUIRE(floored.has_value());
+    CHECK(floored == local_minute_of_day_from_unix_ms(-2000));
+}
+
+TEST_CASE("local_minute_of_day_from_unix_ms converts into the local offset") {
+    TimezoneGuard timezone("UTC-2");
+    // 19:00 UTC is 21:00 in UTC-2, and the minute field survives the conversion.
+    const auto when = unix_ms_from_rfc3339("2026-07-11T19:30:00Z");
+    REQUIRE(when.has_value());
+    CHECK(local_minute_of_day_from_unix_ms(*when) == 21 * 60 + 30);
+}
+#endif
+
 // ADR-0007. RFC3339 is the format a timestamp is shown in, not the one it lives in, so these
 // two functions are the only crossings between the two — and a crossing that loses or invents
 // an instant is the failure the whole decision exists to prevent.
