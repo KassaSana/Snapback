@@ -328,7 +328,7 @@ Struck rows are done; the numbers renumber as they close, so "next" is always ro
 | — | ~~**7.23 / 7.25** attended-time + atomic lifecycle~~ | **Done 2026-08-06** — crash hydration, shutdown close, configurable threshold; persist-before-mutate, one label, restored focus mode |
 | — | ~~**7.12** finish the SQL aggregation~~ | **Done 2026-08-06** — four aggregates, no materialized predictions, no recap loop, query count pinned |
 | — | ~~**10.8** make Review charts truthful~~ | **Done 2026-08-06** — fixed 0–100 axis, distinct no-data state, sampled-context labels |
-| 2 | **6.2** red-master rule | Finish the process decision already isolated on its branch; 9.11 depends on protected master |
+| — | ~~**6.2** red-master rule~~ | **Done 2026-08-27** — [ADR-0008](adr/0008-protect-master-from-red-ci.md); `master` is protected, all fifteen CI contexts required, no review requirement |
 | 3 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
 | — | ~~**7.16** timestamp representation~~ | **Done 2026-08-24** — schema v7, the IPC contract, and the frontend; 5.5/7.1/7.2 close with it |
 | 5 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
@@ -486,26 +486,47 @@ accepted ADR or pretend the newly observed defects were part of its original six
 
 Opened by the 2026-07-20 staff review against run `29728565319`, when this tier was titled
 "CI is red (blocking)". **It is not red any more:** 6.1, 6.3, and 6.4 are all done and
-CI-confirmed, and run `30168981559` (2026-07-25) was green on all three OSes. The only item
-left is **6.2, a process decision** — what to do when master goes red — which is not itself
-a CI failure. Retitled 2026-07-29 so the heading stops claiming a blocking outage that
-ended three days earlier.
+CI-confirmed, and run `30168981559` (2026-07-25) was green on all three OSes. Retitled
+2026-07-29 so the heading stops claiming a blocking outage that ended three days earlier.
+**This tier is now closed:** 6.2 was the last item, and it was a process decision — what to
+do when master goes red — rather than a CI failure. It closed 2026-08-27.
 
 - **6.1 — DONE, CI-confirmed 2026-07-22.** Moved to the [Done archive](#done-archive).
   Both Windows jobs are green as of run `29890010902`; the 138 previously-skipped test
   cases ran and passed. The predicted "next problem" did surface — the first-ever real run
   of `desktop-app-build / ubuntu-latest` failed on X11 macro pollution (see 6.3's note).
 
-- **6.2 — Master has been red all day and commits kept landing.** `S` `process`
+- **6.2 — DONE 2026-08-27.** `S` `process`
+  [ADR-0008](adr/0008-protect-master-from-red-ci.md) makes `master` a protected integration
+  branch: work lands through a pull request, and all fifteen contexts `ci.yml` publishes must
+  be green before it can merge. No approving review is required — GitHub will not let an
+  author approve their own pull request, so on a one-maintainer repository that setting blocks
+  every merge rather than raising the bar. `strict` is off, so an unrelated merge does not
+  force a rebase and a fifteen-job re-run. `enforce_admins` is off as the emergency hatch, and
+  the ADR is explicit that this leaves the branch bypassable by its sole administrator.
 
-  Last five `master` runs: failure, failure, failure, success (Dependabot only), failure.
-  Five commits landed anyway, including `fix: type the permission test mock state so
-  typecheck passes` — a CI fix that did not fix CI and was not followed up.
+  **The decision was written on 2026-07-24 and then sat unmerged for a month** on
+  `phase-6-2-red-master-rule`, which is its own small lesson: an ADR on a branch is not a
+  decision, for the same reason [`adr/README.md`](adr/README.md) says a decision in a chat log
+  is not one. Two things had rotted by the time it was picked up. It claimed ADR slot 0002,
+  since taken by the v1-platforms decision. More seriously, its required-check list named
+  `ONNX backend / windows`, `Rust/C++ feature parity fixtures`, and
+  `Desktop app build / macos-latest` — none of which CI produces any more — and omitted
+  `C++ headless tests / windows-gcc`, `Formatting / changed files`, and
+  `macOS GUI launch smoke`, all added since. **Applying it verbatim would have wedged `master`
+  permanently**, because a required context that never reports blocks the merge forever. The
+  list that shipped was read from the check runs GitHub actually published for a real commit
+  rather than transcribed from the workflow file.
 
-  The proximate cause is 6.1. The real finding is that **a red master stopped being a
-  signal.** Several items in this file describe CI as a guard; those claims are currently
-  false. Fix 6.1, then decide the rule — branch protection, or a stated "red master blocks
-  merges" convention.
+  The original finding was:
+
+  > Last five `master` runs: failure, failure, failure, success (Dependabot only), failure.
+  > Five commits landed anyway, including `fix: type the permission test mock state so
+  > typecheck passes` — a CI fix that did not fix CI and was not followed up.
+  >
+  > The proximate cause is 6.1. The real finding is that **a red master stopped being a
+  > signal.** Several items in this file describe CI as a guard; those claims are currently
+  > false.
 
 - **6.3 — The `desktop-app-build` guard silently stops running when CI is red.** `S`
 
