@@ -442,7 +442,8 @@ void from_json(const json& j, PomodoroSnapshot& v) {
 
 void to_json(json& j, const RecordingStatus& v) {
     j = json{{"state", recording_state_as_str(v.state)},
-             {"privatePauseRemainingMs", v.private_pause_remaining_ms}};
+             {"privatePauseRemainingMs", v.private_pause_remaining_ms},
+             {"alertSnoozeRemainingMs", v.alert_snooze_remaining_ms}};
 }
 
 void to_json(json& j, const AttendedProgress& v) {

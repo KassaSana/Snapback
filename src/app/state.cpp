@@ -1255,6 +1255,12 @@ RecordingStatus AppState::recording_status() {
         const auto left = settings_.private_until_wall_ms - now_unix_ms();
         status.private_pause_remaining_ms = left > 0 ? left : 0;
     }
+    // Roadmap 2.16. Reported alongside `state`, never instead of it: a snooze is a fact about
+    // delivery, and the state it sits beside still says Recording.
+    if (settings_.alerts.snoozed_until_wall_ms > 0) {
+        const auto left = settings_.alerts.snoozed_until_wall_ms - now_unix_ms();
+        status.alert_snooze_remaining_ms = left > 0 ? left : 0;
+    }
     return status;
 }
 
@@ -1268,6 +1274,40 @@ RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
         // stores the instant it ends rather than a duration, so closing the window does not
         // restart the clock.
         candidate.private_until_wall_ms = minutes > 0 ? now_unix_ms() + minutes * 60 * 1000 : 0;
+        commit_settings_unlocked(std::move(candidate), [] {});
+    }
+    return recording_status();
+}
+
+// Roadmap 2.16. The tray's "Snooze alerts for 30 minutes", and its undo.
+//
+// Deliberately *not* modelled on lapse_private_pause_unlocked: an expired snooze needs no
+// repair write. route_alert already reads a passed deadline as lapsed, so a stale nonzero
+// value is inert, and rewriting settings.json from the engine tick to tidy a field nobody
+// reads would be churn on the user's disk for no observable difference.
+RecordingStatus AppState::snooze_alerts_for(std::int64_t minutes) {
+    if (minutes < 0) throw std::runtime_error("an alert snooze cannot be negative");
+    if (minutes > kMaxAlertSnoozeMins) {
+        throw std::runtime_error("an alert snooze cannot exceed " +
+                                 std::to_string(kMaxAlertSnoozeMins) + " minutes");
+    }
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        const auto span = minutes > 0 ? minutes : kDefaultAlertSnoozeMins;
+        // An instant, not a duration -- the same reasoning as the privacy pause above. A
+        // duration would restart every time the window was hidden and reopened.
+        candidate.alerts.snoozed_until_wall_ms = now_unix_ms() + span * 60 * 1000;
+        commit_settings_unlocked(std::move(candidate), [] {});
+    }
+    return recording_status();
+}
+
+RecordingStatus AppState::resume_alerts() {
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        candidate.alerts.snoozed_until_wall_ms = 0;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
     return recording_status();

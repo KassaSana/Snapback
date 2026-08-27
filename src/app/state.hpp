@@ -148,6 +148,11 @@ public:
     // Turns private mode on for a fixed stretch. 0 minutes means indefinite (the old
     // behaviour). Returns the resulting status so the caller renders what was accepted.
     RecordingStatus pause_privately_for(std::int64_t minutes);
+    // Roadmap 2.16. Silences alert *delivery* for a stretch, leaving recording alone. 0
+    // minutes means the default 30. Returns the resulting status so the caller renders what
+    // was accepted rather than what it asked for.
+    RecordingStatus snooze_alerts_for(std::int64_t minutes);
+    RecordingStatus resume_alerts();
     RecordingStatus resume_from_private_pause();
     // Suppress the missed-session nudge for a deliberate interval (60 minutes by default).
     void dismiss_untracked_nudge(std::int64_t minutes = 60);

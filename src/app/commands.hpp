@@ -164,6 +164,14 @@ inline void register_commands(webview::webview& w, AppState& state,
     });
     bind_cmd("resume_recording",
              [&state](const json&) { return json(state.resume_from_private_pause()); });
+    // Roadmap 2.16. Deliberately a sibling of the two above rather than a mode of them: this
+    // silences *delivery* and leaves recording running, and the returned status says both --
+    // `state` still reads Recording while `alertSnoozeRemainingMs` counts down.
+    bind_cmd("snooze_alerts", [&state](const json& a) {
+        // 0 (or absent) means the default 30 minutes, which is what the tray action sends.
+        return json(state.snooze_alerts_for(a.value("minutes", std::int64_t{0})));
+    });
+    bind_cmd("resume_alerts", [&state](const json&) { return json(state.resume_alerts()); });
     bind_cmd("dismiss_untracked_nudge", [&state](const json& a) {
         state.dismiss_untracked_nudge(a.value("minutes", std::int64_t{60}));
         return json{{"dismissed", true}};

@@ -568,6 +568,14 @@ struct RecordingStatus {
     // state is not PausedPrivate. The UI shows this rather than counting down on its own, so a
     // closed and reopened window cannot drift from the real deadline.
     std::int64_t private_pause_remaining_ms{};
+    // Roadmap 2.16. Remaining milliseconds of an alert snooze; 0 when not snoozed.
+    //
+    // Its own field rather than another RecordingState, and that is the point 2.16 insists on:
+    // a snooze silences interventions while recording, prediction, and episode persistence all
+    // continue. A state value would force the two facts into one slot and make "silenced" read
+    // as "not recording" -- exactly the confusion between an alert preference and privacy mode
+    // that the item forbids. `state` is untouched by a snooze.
+    std::int64_t alert_snooze_remaining_ms{};
 };
 
 // The inputs the state is derived from, gathered so the rule itself is a pure function of

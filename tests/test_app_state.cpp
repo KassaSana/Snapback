@@ -3144,3 +3144,104 @@ TEST_CASE("a snapback delivered outside quiet hours carries its route") {
     CHECK(parsed["delivery"]["inApp"] == false);
     CHECK(parsed["delivery"]["preview"] == "generic");
 }
+
+TEST_CASE("snoozing alerts leaves the recording status Recording") {
+    // 2.16's sharpest line: silencing an intervention is not privacy mode. If a snooze moved
+    // `state`, the header and the tray would both tell the user they had stopped being
+    // recorded, which is false and is the exact confusion the item forbids.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    const auto status = state.snooze_alerts_for(30);
+    CHECK(status.state == RecordingState::Recording);
+    CHECK(status.alert_snooze_remaining_ms > 0);
+    CHECK(status.alert_snooze_remaining_ms <= 30 * 60 * 1000);
+    CHECK(status.private_pause_remaining_ms == 0);
+}
+
+TEST_CASE("a snooze suppresses a snapback and still re-arms the tracker") {
+    // The snooze lever, held to the same obligation as quiet hours.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+    state.snooze_alerts_for(30);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    CHECK(state.latest_snapback() == std::nullopt);
+
+    // Past the deadline: the next return-from-distraction must fire.
+    clock.advance_minutes(31);
+    drift_and_return(state, 200.0, 240.0);
+    CHECK(state.take_snapback().has_value());
+}
+
+TEST_CASE("a lapsed snooze reports no time remaining without a repair write") {
+    // The deadline is the promise, and a passed one is inert. Nothing rewrites settings.json
+    // when it expires -- route_alert already reads it as lapsed, so tidying the field from the
+    // tick would be disk churn with no observable difference.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+    state.snooze_alerts_for(30);
+
+    clock.advance_minutes(31);
+    const auto status = state.recording_status();
+    CHECK(status.alert_snooze_remaining_ms == 0);
+    CHECK(status.state == RecordingState::Recording);
+    CHECK(state.settings().alerts.snoozed_until_wall_ms > 0);  // stale, and harmless
+}
+
+TEST_CASE("resume_alerts clears the snooze immediately") {
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+    state.snooze_alerts_for(30);
+    REQUIRE(state.recording_status().alert_snooze_remaining_ms > 0);
+
+    const auto status = state.resume_alerts();
+    CHECK(status.alert_snooze_remaining_ms == 0);
+    CHECK(state.settings().alerts.snoozed_until_wall_ms == 0);
+}
+
+TEST_CASE("an alert snooze rejects a span longer than a day") {
+    auto state = make_state();
+    CHECK_THROWS(state->snooze_alerts_for(kMaxAlertSnoozeMins + 1));
+    CHECK_THROWS(state->snooze_alerts_for(-1));
+}
+
+TEST_CASE("an alert snooze survives a rebuilt AppState") {
+    // The hidden-window/reopen case. The deadline lives in settings.json and the decision is
+    // taken on the engine thread, so nothing about it depends on a frontend being alive --
+    // but that is only true if the value is actually written and read back.
+    TempDir temp;
+    ManualClock clock;
+    {
+        auto storage = Storage::open_memory();
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path, nullptr, &clock);
+        state.snooze_alerts_for(30);
+        REQUIRE(state.recording_status().alert_snooze_remaining_ms > 0);
+    }
+
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState reopened(std::move(*storage), temp.path, nullptr, &clock);
+    reopened.start_session("implement the classifier", FocusMode::Normal);
+
+    CHECK(reopened.recording_status().alert_snooze_remaining_ms > 0);
+    AppStateTestAccess::process_event(
+        reopened, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(reopened, 101.0, 140.0);
+    CHECK(reopened.latest_snapback() == std::nullopt);  // still snoozed after the restart
+}

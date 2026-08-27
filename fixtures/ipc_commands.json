@@ -62,6 +62,8 @@
   "get_recording_status",
   "pause_recording_privately",
   "resume_recording",
+  "snooze_alerts",
+  "resume_alerts",
   "dismiss_untracked_nudge",
   "inspect_data_import",
   "stage_data_import",
