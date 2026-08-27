@@ -109,3 +109,10 @@ TEST_CASE("the alert row carries no countdown") {
     CHECK(label.find("18") == std::string_view::npos);
     CHECK(label.find("min left") == std::string_view::npos);
 }
+
+// Roadmap 9.15 note. `Tray::install` now returns whether an icon really reached the
+// notification area, and main.cpp turns close-to-tray on only when it says yes. There is no
+// case for it here on purpose: `Tray::instance()` is defined only in the `snapback` app target
+// (see CMakeLists.txt), so asserting on it would mean linking an OS singleton into every test
+// process to check one bool. That plumbing stays in the category this file's header already
+// names -- OS glue verified by running the app.

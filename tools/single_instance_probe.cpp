@@ -4,9 +4,31 @@
 #include <string_view>
 #include <thread>
 
+#include "app/activation_channel.hpp"
 #include "app/single_instance.hpp"
 
 int main(int argc, char** argv) {
+    // ROADMAP 9.15. The activation channel is a promise between two *processes*: an in-process
+    // listener and client would still pass if the endpoint were somehow process-local, which is
+    // exactly the property under test. This mode is the second process.
+    if (argc == 4 && std::string_view(argv[1]) == "activate") {
+        const auto result =
+            snapback::request_activation(std::filesystem::path(argv[2]),
+                                         snapback::kActivationTimeoutMs);
+        // One word per outcome, rather than reusing activation_result_as_str: that spelling is
+        // for a log line a person reads ("no owner"), and a space in it becomes two argv
+        // entries under _wspawnl, which quotes nothing. The probe would then take the
+        // wrong branch and fail for a reason that has nothing to do with the channel.
+        const char* token = "error";
+        switch (result) {
+            case snapback::ActivationResult::Activated: token = "activated"; break;
+            case snapback::ActivationResult::NoOwner: token = "noowner"; break;
+            case snapback::ActivationResult::TimedOut: token = "timedout"; break;
+            case snapback::ActivationResult::Refused: token = "refused"; break;
+            case snapback::ActivationResult::Error: break;
+        }
+        return std::string_view(argv[3]) == token ? 0 : 1;
+    }
     if (argc == 4 && std::string_view(argv[1]) == "hold") {
         const std::filesystem::path ready_path(argv[2]);
         const std::filesystem::path release_path(argv[3]);

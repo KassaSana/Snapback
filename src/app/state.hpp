@@ -139,6 +139,14 @@ public:
                                                std::size_t page_size = 200);
     void set_focus_mode(FocusMode mode);
     AppSettings settings() const;
+    // Roadmap 9.15. True exactly once, for the first close that leaves the app in the tray.
+    //
+    // A claim rather than a getter plus a setter: the once-ness is a property of this call, so
+    // no caller can read the flag, decide to notify, and forget to write it back. Persisted
+    // through the same commit path as every other setting, so the answer survives a restart --
+    // a one-time explanation that reappears every launch is the thing a user hunts for a
+    // preference to switch off.
+    bool claim_tray_close_notice();
     PrivacySettings privacy_settings() const;
     void set_private_mode(bool enabled);
     // Roadmap 2.10. The one answer to "am I being recorded right now?", derived here so the

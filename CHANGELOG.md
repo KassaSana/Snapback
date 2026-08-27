@@ -17,6 +17,17 @@ on `v0.2.0` at the bottom before cutting one.
 
 ### Added
 
+- **A second launch brings the running window back (9.15).** Double-clicking Snapback while it
+  is hidden in the tray now raises the window it already has, instead of printing "already
+  running" to a stream a desktop app does not own. The second process asks over a per-user,
+  per-data-directory channel and exits without opening the database, starting capture, or
+  installing a tray; when the owner cannot be reached it says which of the four reasons applied
+  rather than leaving a double-click that did nothing. Closing the window also explains itself
+  **once** — Snapback is in the tray, still recording, and Quit is there — because a window that
+  closes into nothing reads as a crash. And close-to-tray now switches on only after a tray icon
+  really exists: hiding the only window into a tray that failed to install left a running
+  process with no way back to it.
+
 - **Control over when and how Snapback interrupts (2.16).** Settings > General now chooses,
   per event, whether coming back from a distraction, a break reminder, or a Pomodoro phase
   change shows up in the app, as an overlay card, as a system notification, or not at all.

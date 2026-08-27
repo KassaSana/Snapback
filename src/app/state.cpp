@@ -1178,6 +1178,19 @@ void AppState::set_focus_mode(FocusMode mode) {
     commit_settings_unlocked(std::move(candidate), [this, mode] { focus_mode_ = mode; });
 }
 
+bool AppState::claim_tray_close_notice() {
+    std::lock_guard lock(mutex_);
+    if (settings_.tray_close_notice_shown) return false;
+    AppSettings candidate = settings_;
+    candidate.tray_close_notice_shown = true;
+    // Persist-before-mutate, like every other setter here (7.26). If the write throws, the flag
+    // stays false and the notice is shown again on the next close -- twice is a small
+    // annoyance, whereas returning true after failing to record it means the one explanation
+    // this feature gets is spent on a run nothing remembered.
+    commit_settings_unlocked(std::move(candidate), nullptr);
+    return true;
+}
+
 AppSettings AppState::settings() const {
     std::lock_guard lock(mutex_);
     return settings_;

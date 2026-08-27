@@ -75,6 +75,28 @@ inline NotificationPayload build_snapback_notification(const SnapbackPayload& pa
     return n;
 }
 
+// Roadmap 9.15. Said once, the first time closing the window leaves the app in the tray.
+//
+// Closing a window is the universal "I am done with this program", and close-to-tray quietly
+// makes it mean something else. Left unexplained, the honest reading of what happened is "it
+// crashed" -- and the user who believes that has no reason to look in the notification area
+// for the thing they think they closed.
+//
+// It deliberately does **not** go through `route_alert`. Quiet hours and snooze govern
+// interruptions *the app initiates*; this is feedback on a control the user just clicked, one
+// second earlier, and suppressing it would leave exactly the confused user this exists to
+// help. Every other notification in this binary is routed, so the exception is written down
+// here rather than left to read as an oversight.
+//
+// No preview mode either: there is nothing personal in it. It names no app, title, file,
+// project, goal, or duration -- the whole content is that Snapback is still running.
+inline NotificationPayload build_close_to_tray_notification() {
+    NotificationPayload n;
+    n.title = "Still running";
+    n.body = "Snapback is in the tray and still recording. Quit from there to stop it.";
+    return n;
+}
+
 // Roadmap 2.16. The same events, said in a way a stranger may read.
 //
 // A native notification is not only shown once: the OS copies it into a notification history

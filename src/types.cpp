@@ -523,7 +523,8 @@ void to_json(json& j, const AppSettings& v) {
              {"attendedTargetWeeklyMins", v.attended_target_weekly_mins},
              {"privateUntilWallMs", v.private_until_wall_ms},
              {"untrackedNudgeUntilWallMs", v.untracked_nudge_until_wall_ms},
-             {"alerts", v.alerts}};
+             {"alerts", v.alerts},
+             {"trayCloseNoticeShown", v.tray_close_notice_shown}};
 }
 void from_json(const json& j, AppSettings& v) {
     v.default_focus_mode = get_or<FocusMode>(j, "defaultFocusMode", FocusMode::Normal);
@@ -549,6 +550,10 @@ void from_json(const json& j, AppSettings& v) {
     // with every other preference intact -- so this is a defaulted read like the rest, not a
     // required one.
     v.alerts = get_or<AlertDeliverySettings>(j, "alerts", AlertDeliverySettings{});
+    // Absent means "not yet shown", which is the right answer for a settings.json written
+    // before 9.15 as well as for a first run: the explanation is worth showing once to someone
+    // upgrading into close-to-tray, since it is new behaviour for them too.
+    v.tray_close_notice_shown = get_or<bool>(j, "trayCloseNoticeShown", false);
 }
 
 void to_json(json& j, const PrivacySettings& v) {

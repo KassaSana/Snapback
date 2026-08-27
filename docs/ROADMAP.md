@@ -17,7 +17,7 @@ five: only **2.8** was actually complete. **2.18**, **9.15**, and **10.14** each
 half and are now marked as such, with the missing half named — in every case the half was the
 *harder* one (rule scoping, the activation channel, moving the three exports onto the new
 dialog seam), which is the failure mode worth expecting from a commit message that reads as a
-finished feature. **2.9 was not touched at all**: the goal-history dropdown belongs to
+finished feature. **9.15's missing half closed on 2026-08-27**; 2.18's and 10.14's are open. **2.9 was not touched at all**: the goal-history dropdown belongs to
 **2.11**'s idle state, and CHANGELOG.md had it filed under 2.15 — a third item, whose own work
 was done on 2026-08-06. That label is corrected. Nothing in this pass re-ran the suites.
 
@@ -401,7 +401,7 @@ machine, deleting private history, and starting against a mature database.
 | Area | Items | What the second pass found |
 |---|---|---|
 | Product truth & control | ~~**2.15**~~, **2.16–2.17** | ~~Snapback episodes are never persisted~~ (**done 2026-08-06**), interventions have no delivery policy, and append-only labels cannot express an authoritative correction |
-| Correctness & lifecycle | **7.28–7.29**, **9.15** | Editable goal-category names secretly change semantics, OS lock/sleep is treated as ordinary idle, and the single-instance tray app has no activation/close contract |
+| Correctness & lifecycle | **7.28–7.29**, ~~**9.15**~~ | Editable goal-category names secretly change semantics, OS lock/sleep is treated as ordinary idle, and ~~the single-instance tray app has no activation/close contract~~ (**done 2026-08-27**) |
 | Privacy completeness | **8.11**, ~~**8.12**~~ | App-only exclusions cannot redact one sensitive browser context; ~~“delete all” leaves personal exports plus full migration backups behind~~ (**done 2026-08-06**) |
 | Desktop quality | **10.12** | Windows overlay placement ignores the tested multi-monitor geometry and fixed pixels ignore per-monitor DPI |
 | Startup performance | **14.7** | Retention and a full `VACUUM` can block first paint before the webview even exists |
@@ -2615,8 +2615,9 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
 
   **Not done — the action-routing half below.** Click-to-open-the-composer, click-to-Return,
   stable event identity across a click, and duplicate-click idempotence all need **9.15**'s
-  activation channel, which is only partially landed; a click that "works" but leaves the
-  window behind another app is worse than no handler. `AlertRoute` deliberately carries no
+  activation channel; a click that "works" but leaves the window behind another app is worse
+  than no handler. **That blocker cleared on 2026-08-27** — 9.15 is done, and `main.cpp` now
+  holds a `raise_window` the action handler can call. `AlertRoute` deliberately carries no
   destination, so that work adds a field rather than reinterpreting one. macOS native delivery
   stays downstream of **3.3** (`tray_macos.mm` still returns false from `show_notification`).
 
@@ -3292,15 +3293,52 @@ small; the tier is large because nobody has walked that path yet.
   check, and the `-wal` cleanup) were each deliberately broken to confirm a test fails. The IPC
   contract count moved 61 → 65, caught by its own guard rather than by remembering.
 
-- **9.15 — PARTIALLY LANDED 2026-08-14 (close behaviour only).** `M/L`
-  What landed: the close-window handler. `X` / Alt+F4 on Windows and `windowShouldClose:` on
-  macOS now hide to the tray and leave capture, sessions, and the tray running; only "Quit
-  Snapback" terminates. That fixes the half where clicking X silently stopped an always-on app.
-  **What did not:** the activation channel. A second launch still cannot ask the owner to
-  restore and focus its window — there is no such channel in `single_instance.*` or `main.cpp` —
-  so double-click on a hidden instance still looks broken, which is the *other* half of this
-  item and the one a tray-resident app needs most. The one-time "still running in the tray"
-  explanation is also absent.
+- **9.15 — DONE 2026-08-27.** `M/L` Close behaviour landed 2026-08-14; the activation channel,
+  the tray-install guard, and the one-time explanation landed today.
+
+  **The channel is owned by the instance lock, not merely adjacent to it.**
+  `app/activation_channel.hpp` is a named pipe on Windows and an `AF_UNIX` socket elsewhere,
+  named from an FNV-1a hash of the canonical data directory — derived rather than assigned,
+  because the losing process cannot read the owner's state, which is the whole difficulty. Two
+  decisions are correct *only* because of where they are called from, and both say so at the
+  point they are made. The listener unlinks a socket file left by a crash and rebinds, which is
+  safe only because it runs after `SingleInstanceGuard` already holds the exclusive lock — the
+  proof that no live owner is bound to it. Unlinking on the weaker evidence of "it looked
+  stale" is how a second database owner gets in, which is what **9.8** exists to prevent.
+
+  **A collision costs a `Refused`, not the wrong window.** The request carries the channel id
+  and the owner compares it, so a hash collision or a build that computed the id differently
+  cannot raise the window for a different database. The client half is split at
+  `detail::send_activation_request`, which takes an already-composed line: that seam is the
+  only reason the refusal path is testable, since `request_activation` derives the endpoint and
+  the id from the same path and can never disagree with itself.
+
+  **The request happens above `Storage::open`**, where the old "already running" message was.
+  The losing process has opened no database, started no capture and installed no tray, so
+  blocking its only thread on the ack costs nothing it needs — and the ordering is what keeps
+  9.8's one-owner rule true while it does. On success it exits silently: the window is in front
+  of the user, and a console line nothing reads is not an improvement on that.
+
+  **Two fixes the item asked for that were quieter than the channel.** `Tray::install` returned
+  `void`, so `main.cpp` enabled close-to-tray and *then* installed the icon, never learning
+  whether one arrived — `Shell_NotifyIcon` can fail on a busy shell at login. It now returns
+  `bool` and close-to-tray goes on only after a yes; a hidden window with no tray icon is worse
+  than the behaviour close-to-tray replaced. And closing a window is the universal "I am done
+  with this program": `claim_tray_close_notice()` says once, persistently, that the app is still
+  in the tray. It is a *claim* rather than a getter beside a setter, so no caller can notify and
+  forget to record it, and the notice deliberately skips `route_alert` — quiet hours govern
+  interruptions the app initiates, not feedback on a control clicked a second earlier.
+
+  **What is verified how.** The suite covers id derivation, the fallback when `sun_path` cannot
+  hold the socket path, `NoOwner` returning promptly rather than burning the budget, exactly-once
+  handling, serial re-accept, refusal, stale-socket recovery with the lock genuinely held, and a
+  two-process activation through the probe's new `activate` mode. The window actually coming
+  forward is not headlessly testable and is not claimed to be: it was checked by hand, along with
+  a second launch exiting 0 in silence, a hard-killed owner leaving a clean relaunch, and
+  `WM_CLOSE` persisting `trayCloseNoticeShown`.
+
+  **Still downstream of 3.3:** macOS native notification delivery, so the close explanation is
+  silent there until `tray_macos.mm:show_notification` stops returning false.
   Opened 2026-08-05. **9.8** correctly prevents two processes from opening the same database,
   but a second GUI launch only prints “already running” to an invisible stderr stream and
   exits. The owner process also has no close-window handler: when `w.run()` returns the engine

@@ -156,6 +156,7 @@ endif()
 
 # --- app state: ties capture + engine + storage together. ---
 add_library(snapback_app STATIC
+  src/app/activation_channel.cpp
   src/app/autostart.cpp
   src/app/autostart_launchd.cpp
   src/app/autostart_run_key.cpp
@@ -183,7 +184,8 @@ if(WIN32)
     src/snapback/focus_window_windows.cpp
     src/app/file_dialog_windows.cpp
     src/app/window_lifecycle_windows.cpp)
-  target_link_libraries(snapback_app PUBLIC comdlg32)
+  # comdlg32: the file dialogs (10.14). advapi32: the activation pipe's per-user DACL (9.15).
+  target_link_libraries(snapback_app PUBLIC comdlg32 advapi32)
 
 elseif(APPLE)
   # ROADMAP 7.6: the file-manager backend is AppKit, so macOS needs the Objective-C++ half.
