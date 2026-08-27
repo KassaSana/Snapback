@@ -10,6 +10,20 @@ export type InsightsAggregates = {
   totalSnapbacks: number;
 };
 
+/**
+ * Headline "Avg focus" for Insights when Review shares one range (Roadmap 10.11).
+ * Summary, Trends, and Recent Focus use sample-weighted backend aggregates; the naive mean
+ * of per-session recap scores can disagree by a point from rounding alone. Prefer the
+ * shared range aggregate when predictions exist; fall back to the session mean otherwise.
+ */
+export const resolveInsightsAvgFocus = (
+  rangeAvgFocusScore: number | null | undefined,
+  sessionMeanAvgFocus: number,
+): number =>
+  rangeAvgFocusScore != null && Number.isFinite(rangeAvgFocusScore)
+    ? rangeAvgFocusScore
+    : sessionMeanAvgFocus;
+
 /** Headline stat-tile numbers across the given sessions. */
 export const computeInsightsAggregates = (
   summaries: SessionSummary[],

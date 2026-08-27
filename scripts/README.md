@@ -22,6 +22,7 @@ on Windows tooling, while the shell wrappers cover macOS and Linux.
 | `check_dead_headers.py` | any OS | verifies every `.hpp` in `src/` is included by product code — its own `.cpp` and its tests do not count as callers |
 | `check_no_remote_subresources.py` | any OS | verifies the built frontend bundle fetches nothing at runtime — no CDN, font, or remote script |
 | `check_release_tag.py` | any OS | verifies a release tag names exactly the `project(... VERSION x.y.z)` in `CMakeLists.txt` |
+| `check_release_legal.py` | any OS | verifies `LICENSE`, `THIRD_PARTY_NOTICES.md`, and CPack/install wiring for release packages |
 | `check_scripts_documented.py` | any OS | verifies every script in this directory is named in this table — the guard that keeps it honest |
 | `test_commit_msg_hook.sh` | macOS, Linux | runs the real `hooks/commit-msg` against real messages; each forbidden pattern has a case that fails when only that pattern is removed |
 | `windows_demo.ps1` | **Windows only** | MSVC build + CTest + launches `snapback.exe` |

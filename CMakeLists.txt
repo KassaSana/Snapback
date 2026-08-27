@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(snapback_cpp VERSION 0.2.0 LANGUAGES C CXX)
+project(snapback_cpp VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -336,13 +336,15 @@ if(SNAPBACK_BUILD_APP)
     message(WARNING "frontend/dist/index.html not found; snapback will fall back to SNAPBACK_FRONTEND_URL or http://localhost:5173")
   endif()
   install(TARGETS snapback RUNTIME DESTINATION .)
+  install(FILES "${CMAKE_SOURCE_DIR}/LICENSE" "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    DESTINATION .)
 
   set(CPACK_PACKAGE_NAME "Snapback")
   set(CPACK_PACKAGE_VENDOR "Snapback")
   set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
   set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Snapback local-first focus telemetry demo")
   set(CPACK_PACKAGE_INSTALL_DIRECTORY "Snapback")
-  set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/README.md")
+  set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
   if(WIN32)
     set(CPACK_GENERATOR "ZIP;NSIS")
     set(CPACK_NSIS_DISPLAY_NAME "Snapback")

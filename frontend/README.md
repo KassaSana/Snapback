@@ -44,3 +44,20 @@ does, backed by `demo/backend.ts` over a generated dataset. Two constraints it h
 A browser tab cannot read the active window or input idle time from the operating system, so
 the demo can never be the real product. The page says so in a banner rather than leaving a
 visitor to assume the numbers are measurements.
+
+### Build and preview locally
+
+```sh
+npm run build:demo    # emits dist-demo/index.html (self-contained, ~379 kB)
+npm run preview:demo  # serve dist-demo/ on a local port
+```
+
+### Published demo
+
+CI deploys `dist-demo/` to GitHub Pages on every push to `master` that touches `frontend/`
+(see [`.github/workflows/demo-pages.yml`](../.github/workflows/demo-pages.yml)).
+
+**One-time repo setup:** GitHub → Settings → Pages → Source: **GitHub Actions**. Without that,
+the workflow runs but the site stays blank.
+
+Published URL: **https://kassasana.github.io/Snapback/**

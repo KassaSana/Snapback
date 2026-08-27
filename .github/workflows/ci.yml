@@ -330,6 +330,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Build hosted demo
+        working-directory: frontend
+        run: npm run build:demo
+
       # Roadmap 8.10 is a promise about the *shipped* page, and this is the only job that
       # produces one. frontend/dist is gitignored, so the same guard in docs-smoke sees only
       # the source index.html and never the inlined bundle the user actually loads. Running it
@@ -640,6 +644,9 @@ jobs:
 
       # Roadmap Tier 12 exists because docs repeatedly named files that were never
       # created or had moved, and nothing caught it. This makes that mechanical.
+      - name: Release legal artifacts are present and wired
+        run: python3 scripts/check_release_legal.py --verbose
+
       - name: Every path a doc names must exist
         run: python3 scripts/check_doc_paths.py
 

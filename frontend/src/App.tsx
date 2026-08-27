@@ -626,6 +626,9 @@ export default function App() {
           onDeleteSession={handleDeleteSession}
           onSaveReflection={handleEditReflection}
           reflectionStatus={reflectionStatus}
+          rangeAvgFocusScore={
+            summaryReport.sampleCount > 0 ? summaryReport.avgFocusScore : null
+          }
           rangeLabel={reviewRangeLabelText}
           sessionHistory={sessionHistory}
         />

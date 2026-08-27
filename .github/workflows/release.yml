@@ -5,7 +5,7 @@ name: Release
 # installer, uploads it, and publishes the release.
 #
 # Trigger it by pushing a version tag:
-#   git tag v0.2.0 && git push origin v0.2.0
+#   git tag v0.3.0 && git push origin v0.3.0
 #
 # A tag alone is not enough (9.11). The commit must already be on master with a green
 # ci.yml run, and the tag must name CMake's PROJECT_VERSION exactly. So the order is:

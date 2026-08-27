@@ -329,12 +329,13 @@ Struck rows are done; the numbers renumber as they close, so "next" is always ro
 | — | ~~**7.12** finish the SQL aggregation~~ | **Done 2026-08-06** — four aggregates, no materialized predictions, no recap loop, query count pinned |
 | — | ~~**10.8** make Review charts truthful~~ | **Done 2026-08-06** — fixed 0–100 axis, distinct no-data state, sampled-context labels |
 | — | ~~**6.2** red-master rule~~ | **Done 2026-08-27** — [ADR-0008](adr/0008-protect-master-from-red-ci.md); `master` is protected, all fifteen CI contexts required, no review requirement |
-| 3 | **Decision session B**: 4.11, **9.13** | Settle title-parser behavior, and what happens to the orphaned `v0.2.0` tag |
+| 3 | **Decision session B**: 4.11 | Settle title-parser behavior |
+| — | ~~**9.13** orphaned `v0.2.0` tag~~ | **Done 2026-08-27** — first release is `v0.3.0`; orphaned tag left in place |
 | — | ~~**7.16** timestamp representation~~ | **Done 2026-08-24** — schema v7, the IPC contract, and the frontend; 5.5/7.1/7.2 close with it |
-| 5 | **8.5** threat model | Determines whether encryption is required and shapes uninstall/data handling |
-| 6 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
-| 7 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
-| 8 | **2.3 / Tier 13** model retraining | Resume only after a packaged trainer lands (ADR-0006); until then this is repository tooling |
+| — | ~~**8.5** threat model~~ | **Done 2026-08-27** — [ADR-0009](adr/0009-local-first-threat-model.md) |
+| 4 | **10.1 / 14.3** webview + command contract | Cover the real bridge and remove its parallel hand-maintained descriptions |
+| 5 | **4.4 / 14.1 / 14.5** performance gates | Remove avoidable query work, then measure the storage lane and engine scheduler |
+| 6 | **2.3 / Tier 13** model retraining | Resume only after a packaged trainer lands (ADR-0006); until then this is repository tooling |
 
 **Eight items were opened on 2026-08-04** and are deliberately *not* in the table above,
 because none of them displaces anything in it. They are listed here so they are findable:
@@ -342,7 +343,7 @@ because none of them displaces anything in it. They are listed here so they are 
 | Item | `S`/`M` | One line |
 |---|---|---|
 | ~~**6.6** GCC-on-Windows CI job~~ | `S` | **Done 2026-08-06** — `windows-gcc`, verified locally at 376/376 on MinGW-w64 UCRT |
-| **9.13** orphaned `v0.2.0` tag | `S` `decision` | No release baseline exists; 9.11's gate would reject the tag |
+| ~~**9.13** orphaned `v0.2.0` tag~~ | `S` `decision` | **Done 2026-08-27** — `v0.3.0` is the first release tag; orphaned `v0.2.0` unchanged |
 | ~~**12.7** ADR-0002's dead link~~ | `S` | **Done 2026-08-08** — Darwin-dev fact is inline; guard forbids citing the gitignored file |
 | ~~**4.13** nothing watches the ONNX pin~~ | `S` | **Done 2026-08-08** — weekly pin-freshness job opens an issue, never a digest PR |
 | ~~**11.9** capture invariant unverified~~ | `S` | **Done 2026-08-08** — second-thread sampler fails on inverted stores (MinGW 1157/200) |
@@ -461,8 +462,8 @@ findings outside ADR-0002: **7.24** (wrong production model inputs), **7.23/7.25
 time and incomplete session failure semantics), and **8.10** (an undisclosed runtime network
 request). **13.7**
 must also stop the normal Settings UI from promising an impossible training path. The other
-release work is **9.12** (choose a licence; there is still no `LICENSE`) and the external half
-of **0.4b** (buy the signing certificate; the packaging defect itself is fixed).
+release work is **0.4b** (buy the signing certificate; the packaging defect itself is fixed).
+**9.12** (project license and third-party notices) is done 2026-08-27.
 
 **ADR-0002 release-blocker status as of 2026-08-01:**
 
@@ -1942,20 +1943,16 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   Release demos retain the 8.4 bundled-frontend security boundary. The Windows CI smoke
   exercises the Vite/Debug route.
 
-- **8.5 — Write a threat model.** `M` `decision`
+- **8.5 — DONE 2026-08-27.** `M` `decision` — [ADR-0009](adr/0009-local-first-threat-model.md).
 
   `focoflow.db` is an unencrypted SQLite file holding a complete history of window titles,
   app names, and derived behavioural features. Any process running as the user can read it;
   the WAL and exported training CSVs have the same exposure.
 
-  That may be entirely the right call for a local-only tool — but it's currently an
-  **unstated** call. The onboarding wizard promises "local-only," which users reasonably hear
-  as "private," and those are different claims.
-
-  Write down who the adversary is (other local users? malware running as the user? someone
-  with the laptop?), what's in scope, and what "local-only" actually promises. That document
-  then decides whether SQLCipher (4.5) is a requirement or a nice-to-have, and is the honest
-  input to 7.6.
+  **Done:** ADR-0009 records the v1 adversaries, what "local-only" promises (no network egress,
+  not disk confidentiality against same-user malware), data sensitivity ordering, and that
+  SQLCipher (4.5) is optional rather than a v1 requirement. Privacy copy should stay aligned
+  with that distinction.
 
 - **8.6 — DONE 2026-07-31.** `S` All three git dependencies are pinned to commit SHAs with
   the human-readable version in a trailing comment; SQLite already had a `URL_HASH`.
@@ -3297,36 +3294,27 @@ small; the tier is large because nobody has walked that path yet.
   publish an arbitrary commit that never passed the macOS/Linux/sanitizer/ONNX matrix or a
   version whose artifact metadata disagrees with its tag.
 
-- **9.12 — Choose a project license and package dependency notices.** `S` `decision`
+- **9.12 — DONE 2026-08-27.** `S` `decision`
 
-  The repository has no `LICENSE`, `NOTICE`, or third-party notice file, while CPack points
+  The repository had no `LICENSE`, `NOTICE`, or third-party notice file, while CPack pointed
   `CPACK_RESOURCE_FILE_LICENSE` at README. That is neither a project license nor an inventory
-  of dependency obligations, and a public repository is not automatically open source.
+  of dependency obligations.
 
-  Kassa must choose the project license. Then add the real license file, audit the licenses
-  of bundled/runtime dependencies, generate the required third-party notices, include both
-  in every package, and test their presence in extracted release artifacts.
+  **Done:** MIT `LICENSE` (copyright Kassahun Sanayew), `THIRD_PARTY_NOTICES.md` with pinned
+  versions for every shipped dependency, `install(FILES …)` beside the executable, CPack
+  license file wired to `LICENSE`, IExpress `DisplayLicense` when building installers,
+  `validate_windows_package.ps1` asserts both files in extracted ZIPs, and
+  `scripts/check_release_legal.py` enforces the wiring in CI.
 
-- **9.13 — The `v0.2.0` tag is orphaned, so there is no release baseline.** `S` `decision`
-  Found 2026-08-04 while writing [`CHANGELOG.md`](../CHANGELOG.md). The tag points at
-  `ba4050f`, which shares this repository's root commit but is **reachable from no branch** —
-  history was rewritten underneath it. Meanwhile `master` is **hundreds of commits ahead** and
-  `CMakeLists.txt` still declares `0.2.0`.
+- **9.13 — DONE 2026-08-27.** `S` `decision`
 
-  Three things follow. Nothing can be diffed against "the last release", because the commit
-  that produced it no longer exists on any line of history. The version has not moved in 361
-  commits, so tagging today would reuse a number. And 9.11's `verify-tag` job **would reject
-  that tag** on the reachability check — correctly; that is the gate meeting its first real
-  case.
+  Found 2026-08-04 while writing [`CHANGELOG.md`](../CHANGELOG.md). The tag `v0.2.0` pointed at
+  `ba4050f`, reachable from no branch after history was rewritten, while `CMakeLists.txt` still
+  declared `0.2.0`.
 
-  **`decision` because the options differ in what they cost, and only Kassa can pick.** Delete
-  the tag and start at a fresh version; retag it onto a current `master` commit (this rewrites
-  what a published tag means, so anyone who fetched it sees it move); or leave it and treat
-  the first real release as the baseline, documenting the gap. The changelog currently states
-  the third, as the honest default rather than as a decision made.
-
-  Whatever is chosen, cutting a release needs the version bumped first, then a tag on a
-  `master` commit CI has proven green.
+  **Decision (option A):** the first published release is **`v0.3.0`**. `project(... VERSION
+  0.3.0)` and the frontend package version are bumped; the orphaned `v0.2.0` tag is **not**
+  retagged or deleted. Tag `v0.3.0` on a green `master` commit per [PACKAGING.md](PACKAGING.md).
 
 - **9.14 — DONE 2026-08-11.** `M`
   Opened 2026-08-05. `export_my_data`, `export_summary_report`, `export_support_bundle`, and

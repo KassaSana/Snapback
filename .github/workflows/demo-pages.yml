@@ -1,0 +1,65 @@
+# Publishes the hosted dashboard demo (Roadmap 3.6) to GitHub Pages.
+#
+# The demo is a second Vite entry point (`npm run build:demo`) that outputs a self-contained
+# page under frontend/dist-demo/. That directory is gitignored; only this workflow builds and
+# deploys it.
+#
+# One-time setup: GitHub → Settings → Pages → Build and deployment → Source: GitHub Actions.
+
+name: Demo Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/demo-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: demo-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build hosted demo
+        working-directory: frontend
+        run: npm run build:demo
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload demo artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: frontend/dist-demo
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

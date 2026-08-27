@@ -23,7 +23,7 @@ So the order matters:
 1. **Merge to `master`** and let `ci.yml` finish **green** on the merge commit.
 2. **Bump `project(... VERSION x.y.z)` in `CMakeLists.txt`** if you have not already, and
    commit it — the tag must name that exact version.
-3. **Tag that commit** and push: `git tag v0.2.0 && git push origin v0.2.0`.
+3. **Tag that commit** and push: `git tag v0.3.0 && git push origin v0.3.0`.
 
 The `verify-tag` job refuses to build unless all three hold:
 
@@ -36,6 +36,17 @@ The `verify-tag` job refuses to build unless all three hold:
 The third check reads CI's conclusion rather than re-running the matrix, because a copy of
 the matrix here would drift from the real one. It fails closed: an API error or an
 unexpected response is treated as unproven, not as a pass.
+
+## Pre-release checklist (external, not code)
+
+These gate the first real tag but do not block merging license or demo work:
+
+| Item | Roadmap | What to do |
+| --- | --- | --- |
+| Apple Developer account | **3.3** | Enroll; longest lead time for macOS notarization and notifications |
+| Code-signing certificate | **0.4b** | Purchase EV cert; set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` on the release runner |
+| Version baseline | **9.13** | **Done** — first release is `v0.3.0`; orphaned `v0.2.0` tag left in place |
+| GitHub Pages source | **3.6** | Repo → Settings → Pages → Source: **GitHub Actions** (one-time; required for the live demo URL) |
 
 ## Authenticode signing
 
