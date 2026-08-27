@@ -21,6 +21,13 @@ constexpr int kOverlayWidth = 420;
 constexpr int kOverlayHeight = 250;
 constexpr int kScreenMargin = 20;
 
+// Roadmap 2.16. The "Take me back" region, in the same design units as the card above.
+// Bottom-left, inset by the card's own padding, leaving the rest of the card as the dismiss
+// area it has always been.
+constexpr int kOverlayActionWidth = 140;
+constexpr int kOverlayActionHeight = 34;
+constexpr int kOverlayActionInset = 20;
+
 // The DPI the constants above are written against. Windows' own baseline (USER_DEFAULT_SCREEN_DPI).
 constexpr int kOverlayBaseDpi = 96;
 
@@ -92,6 +99,30 @@ ScreenPoint top_right_position(ScreenPoint monitor_pos, ScreenPoint monitor_size
 // for a screen mounted below the primary, so callers must not clamp it to zero.
 int cocoa_origin_y(int work_area_top, int top_down_y, int window_height);
 
+// Roadmap 2.16. Where "Take me back" sits inside a card of `card_size` at `dpi`.
+//
+// Pure, and in this file rather than inline in the Win32 paint handler, for the reason the
+// rest of this header already gives: placement math fails *quietly*. A hit region that does
+// not line up with the text drawn over it is a button that misses, and nothing crashes.
+//
+// DPI-scaled through scale_for_dpi like everything else here. A fixed-pixel rectangle over
+// DPI-scaled text is 10.12's defect in a new place: correct at 100% and wrong everywhere else.
+//
+// Coordinates are relative to the card's own top-left, which is what both a WM_PAINT rect and
+// a WM_LBUTTONUP's client-space point are already in.
+OverlayRect overlay_action_rect(ScreenPoint card_size, int dpi);
+
+// Whether a client-space click landed on that region.
+//
+// Half-open on the right and bottom edges, the same convention minute_in_quiet_range uses:
+// a point on the far edge belongs to the next region, so the action area and the dismiss area
+// around it cannot both claim one pixel.
+bool overlay_action_hit(ScreenPoint card_size, int dpi, ScreenPoint click);
+
+// The label drawn in that region. One definition so the painter and any future platform
+// cannot disagree about what the button says.
+const char* overlay_action_label();
+
 // The multi-line text drawn in the card, built from the snapback payload.
 std::string overlay_text(const SnapbackPayload& payload);
 
@@ -111,6 +142,15 @@ public:
     // Recovering state has no other exit) even when the user dismisses natively instead
     // of through the IPC `dismiss_snapback` command. main.cpp wires this once at startup.
     virtual void set_dismiss_callback(std::function<void()> on_dismiss) = 0;
+
+    // Roadmap 2.16. Fired when the user clicks the card's "Take me back" region -- and only
+    // then. A click anywhere else on the card stays a dismiss, which is what it has always
+    // been and what people already expect from it.
+    //
+    // The overlay is the surface this matters most on: 2.16's delivery half made the snapback
+    // default overlay-only, so without this the item's headline destination would be
+    // unreachable for anyone who never turned the native channel on.
+    virtual void set_action_callback(std::function<void()> on_action) = 0;
 
     static Overlay& instance();
 };

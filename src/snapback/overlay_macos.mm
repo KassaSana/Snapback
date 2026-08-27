@@ -140,6 +140,14 @@ public:
         if (was_visible && on_dismiss_) on_dismiss_();
     }
 
+    // Roadmap 2.16. Stored, not yet wired: the NSPanel draws its text as one attributed
+    // string with no hit regions, so adding "Take me back" here is a panel-layout change
+    // rather than a callback change. Windows carries the feature today; this is where the
+    // macOS half attaches when that layout work happens.
+    void set_action_callback(std::function<void()> on_action) override {
+        on_action_ = std::move(on_action);
+    }
+
     void set_dismiss_callback(std::function<void()> on_dismiss) override {
         on_dismiss_ = std::move(on_dismiss);
     }
@@ -215,6 +223,7 @@ private:
     NSTextField* label_ = nil;         // owned by view_
     NSTimer* timer_ = nil;
     std::function<void()> on_dismiss_;
+    std::function<void()> on_action_;
 };
 
 }  // namespace

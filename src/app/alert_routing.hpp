@@ -11,8 +11,10 @@
 // all.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include "types.hpp"
 
@@ -26,6 +28,17 @@ namespace snapback {
 // nudge nobody has asked to reconfigure. It is therefore subject to snooze and quiet hours
 // with a fixed channel set, and gains a preference the day someone wants one.
 enum class AlertEvent { Snapback, Hyperfocus, Pomodoro, UntrackedWork };
+
+// How many there are, and how to index a per-event table by one.
+//
+// Declared here beside the enum rather than wherever a table happens to live, so adding a
+// fifth event is one edit instead of a silent out-of-bounds write in a file nobody thought to
+// look at.
+inline constexpr std::size_t kAlertEventCount = 4;
+
+inline constexpr std::size_t alert_event_index(AlertEvent event) noexcept {
+    return static_cast<std::size_t>(event);
+}
 
 // Why nothing fired.
 //
@@ -58,18 +71,71 @@ inline const char* alert_suppression_as_str(AlertSuppression s) noexcept {
     }
 }
 
+// Where a click on the alert goes.
+//
+// 9.15's activation channel landed on 2026-08-27, which is what makes a click worth handling:
+// before it, a handler could act on the user's request and still leave the window behind
+// another app, which is worse than no handler at all.
+//
+// Chosen here rather than at each delivery site, for the same reason the channels are. There
+// are four delivery sites across two native surfaces and a webview; a site that picks its own
+// destination is a site that can pick the wrong one, and only on one platform.
+enum class AlertAction {
+    None,                 // nothing to open -- see the note on a suppressed route below
+    ReturnToWork,         // 2.8's "Take me back": raise the window the snapback recorded
+    OpenSessionComposer,  // 2.7's nudge: offer to start a session, never start one
+    OpenPomodoro,         // the running phase, or the break it just moved into
+};
+
+inline const char* alert_action_as_str(AlertAction a) noexcept {
+    switch (a) {
+        case AlertAction::ReturnToWork:
+            return "return to work";
+        case AlertAction::OpenSessionComposer:
+            return "open session composer";
+        case AlertAction::OpenPomodoro:
+            return "open pomodoro";
+        case AlertAction::None:
+        default:
+            return "none";
+    }
+}
+
 // What the delivery layer should do with one interruption.
 //
-// Deliberately carries no *destination*. 2.16's action-routing half -- what a click on the
-// alert opens -- depends on 9.15's activation channel and is not part of this slice; keeping
-// the destination out means that work adds a field here rather than reinterpreting one.
+// `action` is the field this struct was shaped to receive: the comment that used to sit here
+// said the destination was being kept out so 2.16's action-routing half would "add a field
+// rather than reinterpret one". This is that field.
 struct AlertRoute {
     AlertChannels channels;
     AlertPreviewMode preview{AlertPreviewMode::Detailed};
     AlertSuppression suppressed_by{AlertSuppression::None};
+    AlertAction action{AlertAction::None};
 
     bool visible() const { return channels.any(); }
 };
+
+// The destination each event opens, as a fact about the event rather than a preference.
+//
+// Not configurable, and deliberately: the channel is a question about how much a person wants
+// to be interrupted, while this is a question about what the interruption *is*. A snapback
+// that opened the Pomodoro timer would not be a preference, it would be a bug someone
+// configured.
+inline AlertAction alert_action_for(AlertEvent event) noexcept {
+    switch (event) {
+        case AlertEvent::Snapback:
+            return AlertAction::ReturnToWork;
+        case AlertEvent::UntrackedWork:
+            return AlertAction::OpenSessionComposer;
+        case AlertEvent::Pomodoro:
+        case AlertEvent::Hyperfocus:
+            // Both are the break/phase conversation. Hyperfocus says "you have been at this a
+            // while" and Pomodoro says "the phase changed"; in each case what the user wants
+            // in front of them is the timer, not a different screen.
+            return AlertAction::OpenPomodoro;
+    }
+    return AlertAction::None;
+}
 
 // Whether a local reading falls inside a quiet range.
 //
@@ -108,6 +174,7 @@ inline AlertRoute route_alert(AlertEvent event, const AlertDeliverySettings& set
                               std::int64_t now_wall_ms, std::optional<int> local_minute_of_day) {
     AlertRoute route;
     route.preview = settings.preview;
+    route.action = alert_action_for(event);
 
     switch (event) {
         case AlertEvent::Snapback:
@@ -125,8 +192,13 @@ inline AlertRoute route_alert(AlertEvent event, const AlertDeliverySettings& set
             break;
     }
 
+    // A silenced alert loses its destination as well as its channels. An alert that never
+    // appeared has nothing to be clicked -- and leaving a live destination on it would mean a
+    // toast still sitting in notification history from before a quiet hour began could act
+    // when the user finally noticed it.
     const auto silence = [&route](AlertSuppression why) {
         route.channels = AlertChannels{};
+        route.action = AlertAction::None;
         route.suppressed_by = why;
     };
 
@@ -148,7 +220,10 @@ inline AlertRoute route_alert(AlertEvent event, const AlertDeliverySettings& set
         }
     }
 
-    if (!route.channels.any()) route.suppressed_by = AlertSuppression::ChannelsOff;
+    if (!route.channels.any()) {
+        route.suppressed_by = AlertSuppression::ChannelsOff;
+        route.action = AlertAction::None;
+    }
     return route;
 }
 
@@ -164,7 +239,8 @@ inline void to_json(nlohmann::json& j, const AlertRoute& v) {
     j = nlohmann::json{{"inApp", v.channels.in_app},
                        {"overlay", v.channels.overlay},
                        {"native", v.channels.native},
-                       {"preview", v.preview}};
+                       {"preview", v.preview},
+                       {"action", alert_action_as_str(v.action)}};
 }
 
 inline void from_json(const nlohmann::json& j, AlertRoute& v) {
@@ -172,6 +248,15 @@ inline void from_json(const nlohmann::json& j, AlertRoute& v) {
     v.channels.overlay = j.value("overlay", false);
     v.channels.native = j.value("native", false);
     v.preview = j.value("preview", AlertPreviewMode::Detailed);
+    // Absent, or a destination a newer build knows and this one does not, both mean "no
+    // destination". Degrading to a click that only raises the window is the safe direction:
+    // guessing would send the user somewhere nobody chose.
+    const auto action = j.value("action", std::string("none"));
+    v.action = AlertAction::None;
+    for (const auto candidate : {AlertAction::ReturnToWork, AlertAction::OpenSessionComposer,
+                                 AlertAction::OpenPomodoro}) {
+        if (action == alert_action_as_str(candidate)) v.action = candidate;
+    }
 }
 
 }  // namespace snapback

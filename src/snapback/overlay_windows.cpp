@@ -15,6 +15,7 @@
 #define _UNICODE
 #endif
 #include <windows.h>
+#include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
 
 namespace snapback {
 namespace {
@@ -117,6 +118,9 @@ std::wstring to_wide(const std::string& s) {
     return w;
 }
 
+// Roadmap 2.16. Defined below WindowsOverlay, declared here because overlay_proc runs first.
+void overlay_action_clicked();
+
 // The card text is owned as a heap wstring pointed to by GWLP_USERDATA, so WM_PAINT can
 // render it without reaching back into the Overlay object. Replaced on each show(),
 // freed on WM_DESTROY.
@@ -137,14 +141,32 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             // text crowded into the corner of a card that doubled in size at 200%, which is the
             // same "fixed pixels ignore per-monitor DPI" complaint one level down.
             const int dpi = static_cast<int>(monitor_dpi(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)));
+            const ScreenPoint card{rc.right - rc.left, rc.bottom - rc.top};
+            const OverlayRect action = overlay_action_rect(card, dpi);
+
             RECT pad = rc;
             pad.left += scale_for_dpi(20, dpi);
             pad.top += scale_for_dpi(18, dpi);
             pad.right -= scale_for_dpi(20, dpi);
-            pad.bottom -= scale_for_dpi(18, dpi);
+            // Roadmap 2.16. The text stops above the button rather than beside it. A long
+            // window title wrapping under "Take me back" would put unreadable text behind a
+            // control the user is being invited to click.
+            pad.bottom = action.y - scale_for_dpi(8, dpi);
             if (text) {
                 DrawTextW(dc, text->c_str(), -1, &pad, DT_WORDBREAK | DT_NOPREFIX);
             }
+
+            // The button. Drawn from the same rect the hit test uses, so the thing the user
+            // aims at and the thing that responds cannot drift apart.
+            RECT button{action.x, action.y, action.x + action.width, action.y + action.height};
+            HBRUSH fill = CreateSolidBrush(RGB(58, 58, 78));
+            FillRect(dc, &button, fill);
+            DeleteObject(fill);
+            SetTextColor(dc, RGB(245, 245, 255));
+            const auto label = to_wide(overlay_action_label());
+            DrawTextW(dc, label.c_str(), -1, &button,
+                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
             EndPaint(hwnd, &ps);
             return 0;
         }
@@ -154,9 +176,22 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                 Overlay::instance().dismiss();
             }
             return 0;
-        case WM_LBUTTONUP:  // click to dismiss
-            Overlay::instance().dismiss();
+        case WM_LBUTTONUP: {
+            // Roadmap 2.16. "Take me back" inside its region; dismiss anywhere else, which is
+            // what a click on this card has always meant and what people already expect.
+            RECT client{};
+            GetClientRect(hwnd, &client);
+            const ScreenPoint size{client.right - client.left, client.bottom - client.top};
+            const ScreenPoint click{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+            const int dpi =
+                static_cast<int>(monitor_dpi(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)));
+            if (overlay_action_hit(size, dpi, click)) {
+                overlay_action_clicked();
+            } else {
+                Overlay::instance().dismiss();
+            }
             return 0;
+        }
         // Roadmap 10.12. The card is visible and has just crossed onto a display with a
         // different scale — dragged, or the user changed the setting underneath it. Windows
         // hands over the rectangle it wants in the *new* DPI; ignoring it is what leaves a card
@@ -222,6 +257,23 @@ public:
         on_dismiss_ = std::move(on_dismiss);
     }
 
+    void set_action_callback(std::function<void()> on_action) override {
+        on_action_ = std::move(on_action);
+    }
+
+    // Roadmap 2.16. The card's "Take me back" region was clicked. Hides first, then acts:
+    // restore_snapback_target raises another application's window, and leaving a TOPMOST card
+    // floating over the window the user just asked to return to is not returning them to it.
+    void action_clicked() {
+        if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
+        // The dismiss callback still runs. It is what unlatches ContextTracker's Recovering
+        // state, and acting on a card is just as much "done with this card" as dismissing it
+        // -- skipping it here is how the first click would silently disable every later
+        // snapback, which is the defect 2.16's delivery half already had to fix once.
+        if (on_dismiss_) on_dismiss_();
+        if (on_action_) on_action_();
+    }
+
 private:
     void ensure_window() {
         if (hwnd_) return;
@@ -242,7 +294,12 @@ private:
 
     HWND hwnd_ = nullptr;
     std::function<void()> on_dismiss_;
+    std::function<void()> on_action_;
 };
+
+void overlay_action_clicked() {
+    static_cast<WindowsOverlay&>(Overlay::instance()).action_clicked();
+}
 
 }  // namespace
 

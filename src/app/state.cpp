@@ -226,6 +226,41 @@ AlertRoute AppState::alert_route_unlocked(AlertEvent event) const {
     return route_alert(event, settings_.alerts, now, local_minute_of_day_from_unix_ms(now));
 }
 
+std::int64_t AppState::issue_alert_id_unlocked(AlertEvent event, const AlertRoute& route) {
+    // Requires mutex_. Roadmap 2.16. An id is issued at the moment an alert is *emitted*, not
+    // when its route is computed: a route can be computed and then not emitted, and burning an
+    // id there would retire a click the user never had the chance to make.
+    //
+    // A route with no destination gets no id and clears the slot. That is what stops a click on
+    // a toast raised before quiet hours began from acting after them -- the alert that silenced
+    // it is also the alert that took its predecessor's claim away.
+    if (!route.visible() || route.action == AlertAction::None) {
+        actionable_alert_ids_[alert_event_index(event)] = 0;
+        return 0;
+    }
+    const auto id = ++next_alert_id_;
+    // Overwrites rather than accumulates: only the newest alert of a kind is worth acting on,
+    // and a queue of claimable ids would mean an old toast in notification history still works.
+    actionable_alert_ids_[alert_event_index(event)] = id;
+    return id;
+}
+
+std::int64_t AppState::outstanding_alert_id(AlertEvent event) const {
+    std::lock_guard lock(mutex_);
+    return actionable_alert_ids_[alert_event_index(event)];
+}
+
+bool AppState::claim_alert_action(AlertEvent event, std::int64_t alert_id) {
+    std::lock_guard lock(mutex_);
+    // 0 never matches: ids start at 1 and a cleared slot is 0, so neither a payload that lost
+    // its alertId nor a kind with nothing outstanding can claim the first alert ever issued.
+    if (alert_id <= 0) return false;
+    auto& outstanding = actionable_alert_ids_[alert_event_index(event)];
+    if (outstanding != alert_id) return false;
+    outstanding = 0;
+    return true;
+}
+
 std::int64_t AppState::unix_ms_secs_ago(std::int64_t secs) const {
     // Roadmap 7.23. A pause must be stamped when the user *stopped*, not when we noticed --
     // the idle threshold means we notice five minutes late, and stamping "now" would credit
@@ -1689,6 +1724,12 @@ void AppState::engine_tick() {
     AlertRoute pomodoro_route;
     AlertRoute hyper_route;
     AlertRoute untracked_route;
+    // Roadmap 2.16. Issued beside each route in phase 1 under mutex_, carried out to phase 3,
+    // which holds no lock. 0 means this alert is not clickable.
+    std::int64_t snap_alert_id = 0;
+    std::int64_t pomodoro_alert_id = 0;
+    std::int64_t hyper_alert_id = 0;
+    std::int64_t untracked_alert_id = 0;
     std::optional<PomodoroStatus> pomodoro_to_emit;
     std::optional<std::uint64_t> hyper_to_emit;
     std::optional<std::uint64_t> untracked_to_emit;
@@ -1746,6 +1787,7 @@ void AppState::engine_tick() {
             // Roadmap 2.16. Computed here, under mutex_, because settings_ is guarded by it
             // and phase 3 below holds no lock.
             pomodoro_route = alert_route_unlocked(AlertEvent::Pomodoro);
+            pomodoro_alert_id = issue_alert_id_unlocked(AlertEvent::Pomodoro, pomodoro_route);
         }
         hook = emit_hook_;
         if (prediction_dirty_) {
@@ -1759,6 +1801,7 @@ void AppState::engine_tick() {
         if (latest_snapback_ && !snapback_emitted_) {
             snap_to_emit = *latest_snapback_;
             snap_route = latest_snapback_route_;
+            snap_alert_id = issue_alert_id_unlocked(AlertEvent::Snapback, snap_route);
             snapback_emitted_ = true;
         }
         if (hyperfocus_minutes_) {
@@ -1769,11 +1812,14 @@ void AppState::engine_tick() {
             // is always visible() -- what it carries that matters here is *which* channel and
             // which preview mode.
             hyper_route = alert_route_unlocked(AlertEvent::Hyperfocus);
+            hyper_alert_id = issue_alert_id_unlocked(AlertEvent::Hyperfocus, hyper_route);
         }
         if (untracked_minutes_) {
             untracked_to_emit = untracked_minutes_;
             untracked_minutes_.reset();
             untracked_route = alert_route_unlocked(AlertEvent::UntrackedWork);
+            untracked_alert_id =
+                issue_alert_id_unlocked(AlertEvent::UntrackedWork, untracked_route);
         }
         publish_live_read_unlocked();
     }
@@ -1859,6 +1905,7 @@ void AppState::engine_tick() {
         // reaches this block, it is dropped at the latch where it can also be acknowledged.
         auto payload = nlohmann::json(*snap_to_emit);
         payload["delivery"] = nlohmann::json(snap_route);
+        payload["alertId"] = snap_alert_id;
         hook("snapback", dump_json(payload), tick_activity_epoch);
     }
     if (pomodoro_to_emit) {
@@ -1868,6 +1915,7 @@ void AppState::engine_tick() {
         // alerts off. The alert is what the preference governs, not the state update.
         auto payload = nlohmann::json(*pomodoro_to_emit);
         payload["delivery"] = nlohmann::json(pomodoro_route);
+        payload["alertId"] = pomodoro_alert_id;
         hook("pomodoro", dump_json(payload), tick_activity_epoch);
     }
     if (hyper_to_emit) {
@@ -1878,6 +1926,7 @@ void AppState::engine_tick() {
         hook("hyperfocus",
              dump_json(nlohmann::json{{"message", note.body},
                                       {"minutes", *hyper_to_emit},
+                                      {"alertId", hyper_alert_id},
                                       {"delivery", nlohmann::json(hyper_route)}}),
              tick_activity_epoch);
     }
@@ -1886,6 +1935,7 @@ void AppState::engine_tick() {
         hook("untracked_work",
              dump_json(nlohmann::json{{"message", note.body},
                                       {"minutes", *untracked_to_emit},
+                                      {"alertId", untracked_alert_id},
                                       {"delivery", nlohmann::json(untracked_route)}}),
              tick_activity_epoch);
     }

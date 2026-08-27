@@ -65,6 +65,31 @@ int cocoa_origin_y(int work_area_top, int top_down_y, int window_height) {
     return work_area_top - top_down_y - window_height;
 }
 
+OverlayRect overlay_action_rect(ScreenPoint card_size, int dpi) {
+    const int inset = scale_for_dpi(kOverlayActionInset, dpi);
+    const int width = scale_for_dpi(kOverlayActionWidth, dpi);
+    const int height = scale_for_dpi(kOverlayActionHeight, dpi);
+
+    // Clamped to the card rather than allowed to hang off it. `overlay_rect` above already
+    // shrinks the whole card to fit a small panel at 200%, so a button sized from the
+    // unshrunken constants can be wider than the card it lives in -- and a hit region outside
+    // the window receives no clicks at all, which is a button that is simply dead.
+    const int fitted_width = std::min(width, std::max(1, card_size.x - 2 * inset));
+    const int fitted_height = std::min(height, std::max(1, card_size.y - 2 * inset));
+
+    return OverlayRect{std::max(0, std::min(inset, card_size.x - fitted_width)),
+                       std::max(0, card_size.y - inset - fitted_height), fitted_width,
+                       fitted_height};
+}
+
+bool overlay_action_hit(ScreenPoint card_size, int dpi, ScreenPoint click) {
+    const auto rect = overlay_action_rect(card_size, dpi);
+    return click.x >= rect.x && click.x < rect.x + rect.width && click.y >= rect.y &&
+           click.y < rect.y + rect.height;
+}
+
+const char* overlay_action_label() { return "Take me back"; }
+
 std::string overlay_text(const SnapbackPayload& payload) {
     std::string out = "Here's where you left off\n\n";
     out += payload.summary.empty() ? ("Return to " + payload.app_name) : payload.summary;

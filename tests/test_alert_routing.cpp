@@ -201,3 +201,70 @@ TEST_CASE("minute_in_quiet_range is total across the day") {
         CHECK(inside == (minute >= at(9) && minute < at(17)));
     }
 }
+
+TEST_CASE("every event carries the destination its own alert opens") {
+    // Roadmap 2.16's action-routing half. Decided from the event alone, not from a preference:
+    // the channel is a question about how much a person wants to be interrupted, while this is
+    // a question about what the interruption *is*.
+    const AlertDeliverySettings defaults;
+
+    CHECK(route_alert(AlertEvent::Snapback, defaults, kNow, at(12)).action ==
+          AlertAction::ReturnToWork);
+    CHECK(route_alert(AlertEvent::UntrackedWork, defaults, kNow, at(12)).action ==
+          AlertAction::OpenSessionComposer);
+    CHECK(route_alert(AlertEvent::Pomodoro, defaults, kNow, at(12)).action ==
+          AlertAction::OpenPomodoro);
+    // Hyperfocus and Pomodoro share a destination on purpose: both are the break conversation,
+    // and what the user wants in front of them either way is the timer.
+    CHECK(route_alert(AlertEvent::Hyperfocus, defaults, kNow, at(12)).action ==
+          AlertAction::OpenPomodoro);
+}
+
+TEST_CASE("a suppressed alert has no destination, whichever way it was silenced") {
+    // An alert that never appeared has nothing to be clicked. This matters most for the native
+    // channel, where a toast outlives its moment in Windows' notification history: a live
+    // destination on a quiet-hours alert would let a click act an hour after the app decided
+    // not to interrupt.
+    auto quiet = with_quiet_hours();
+    CHECK(route_alert(AlertEvent::Snapback, quiet, kNow, at(23, 30)).action ==
+          AlertAction::None);
+
+    AlertDeliverySettings snoozed;
+    snoozed.snoozed_until_wall_ms = kNow + 60'000;
+    CHECK(route_alert(AlertEvent::Snapback, snoozed, kNow, at(12)).action == AlertAction::None);
+
+    AlertDeliverySettings silent;
+    silent.snapback = AlertChannels{};
+    const auto off = route_alert(AlertEvent::Snapback, silent, kNow, at(12));
+    REQUIRE(off.suppressed_by == AlertSuppression::ChannelsOff);
+    CHECK(off.action == AlertAction::None);
+}
+
+TEST_CASE("a delivered alert keeps its destination when quiet hours are enabled but not active") {
+    // The other side of the case above. Enabled is not the same as active, and an alert
+    // delivered at noon under a 22:00-07:00 range is an ordinary clickable alert.
+    const auto route = route_alert(AlertEvent::Snapback, with_quiet_hours(), kNow, at(12));
+    REQUIRE(route.visible());
+    CHECK(route.action == AlertAction::ReturnToWork);
+}
+
+TEST_CASE("the destination survives the trip to the delivery layer") {
+    nlohmann::json wire = route_alert(AlertEvent::UntrackedWork, AlertDeliverySettings{}, kNow,
+                                      at(12));
+    CHECK(wire.at("action") == "open session composer");
+
+    const auto back = wire.get<AlertRoute>();
+    CHECK(back.action == AlertAction::OpenSessionComposer);
+}
+
+TEST_CASE("an unknown destination degrades to no destination") {
+    // A payload from a newer build. Raising the window and stopping is the safe direction --
+    // guessing would send the user somewhere nobody chose.
+    nlohmann::json wire = route_alert(AlertEvent::Snapback, AlertDeliverySettings{}, kNow,
+                                      at(12));
+    wire["action"] = "open the pod bay doors";
+    CHECK(wire.get<AlertRoute>().action == AlertAction::None);
+
+    wire.erase("action");
+    CHECK(wire.get<AlertRoute>().action == AlertAction::None);
+}

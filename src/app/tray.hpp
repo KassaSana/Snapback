@@ -10,6 +10,7 @@
 #include <span>
 #include <vector>
 
+#include "app/alert_routing.hpp"
 #include "app/notification.hpp"
 #include "types.hpp"
 
@@ -72,6 +73,13 @@ struct TrayCallbacks {
     // Roadmap 2.16. Silence delivery for kDefaultAlertSnoozeMins, and undo it.
     std::function<void()> on_snooze_alerts;
     std::function<void()> on_resume_alerts;
+    // Roadmap 2.16's action-routing half. The user clicked the notification body.
+    //
+    // The arguments are what the *tray* remembered from show_notification, not anything the
+    // click carried: a Win32 balloon click arrives as a bare NIN_BALLOONUSERCLICK with no
+    // payload, so the only way to know which alert was clicked is to have written it down when
+    // it was raised.
+    std::function<void(AlertEvent, std::int64_t)> on_notification_click;
 };
 
 // The tray icon. install() must be called on the UI thread (its hidden window is pumped
@@ -90,7 +98,18 @@ public:
     // Show a native notification using the icon registered by install(). The return value
     // reports whether the OS accepted the request; callers can safely ignore it when a
     // notification is only a best-effort nudge.
-    virtual bool show_notification(const NotificationPayload& payload) = 0;
+    //
+    // Roadmap 2.16. `event` and `alert_id` are remembered so a later click can say which alert
+    // it was: see TrayCallbacks::on_notification_click. An `alert_id` of 0 means this
+    // notification is not actionable, and a click on it will only raise the window.
+    virtual bool show_notification(const NotificationPayload& payload, AlertEvent event,
+                                   std::int64_t alert_id) = 0;
+
+    // The unactionable form, for notifications that are not routed alerts -- 9.15's
+    // close-to-tray explanation is the one that exists today.
+    bool show_notification(const NotificationPayload& payload) {
+        return show_notification(payload, AlertEvent::Snapback, /*alert_id=*/0);
+    }
 
     static Tray& instance();
 };
