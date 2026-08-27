@@ -11,6 +11,7 @@
 // all.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -27,6 +28,17 @@ namespace snapback {
 // nudge nobody has asked to reconfigure. It is therefore subject to snooze and quiet hours
 // with a fixed channel set, and gains a preference the day someone wants one.
 enum class AlertEvent { Snapback, Hyperfocus, Pomodoro, UntrackedWork };
+
+// How many there are, and how to index a per-event table by one.
+//
+// Declared here beside the enum rather than wherever a table happens to live, so adding a
+// fifth event is one edit instead of a silent out-of-bounds write in a file nobody thought to
+// look at.
+inline constexpr std::size_t kAlertEventCount = 4;
+
+inline constexpr std::size_t alert_event_index(AlertEvent event) noexcept {
+    return static_cast<std::size_t>(event);
+}
 
 // Why nothing fired.
 //

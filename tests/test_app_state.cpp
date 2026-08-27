@@ -3287,3 +3287,132 @@ TEST_CASE("the close-to-tray notice is unclaimed on a fresh install") {
     CHECK_FALSE(state.settings().tray_close_notice_shown);
     CHECK(state.claim_tray_close_notice());
 }
+
+namespace {
+
+// The alertId the engine actually put on the wire for one event name, or 0 if it emitted none.
+// Read from the payload rather than from a counter of our own: the id a click carries is the
+// one the emit produced, and asserting on anything else would test a parallel implementation.
+std::int64_t emitted_alert_id(AppState& state, const char* event_name) {
+    std::int64_t seen = 0;
+    state.set_emit_hook([&seen, event_name](const std::string& name, const std::string& payload,
+                                            std::uint64_t) {
+        if (name != event_name) return;
+        seen = nlohmann::json::parse(payload).value("alertId", std::int64_t{0});
+    });
+    AppStateTestAccess::engine_tick(state);
+    state.set_emit_hook(nullptr);
+    return seen;
+}
+
+}  // namespace
+
+TEST_CASE("a clicked alert can be acted on once and then not again") {
+    // Roadmap 2.16's duplicate-click clause. A user double-clicking a toast, or clicking one
+    // twice because the first click did not visibly do anything, must not fire the action
+    // twice — and on Windows a balloon click carries no payload at all, so the identity has to
+    // survive on this side.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+
+    const auto id = emitted_alert_id(state, "snapback");
+    REQUIRE(id > 0);
+    CHECK(state.claim_alert_action(AlertEvent::Snapback, id));
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, id));
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, id));
+}
+
+TEST_CASE("a newer alert of the same kind retires the older one's claim") {
+    // The stale-click clause, and the reason only the newest id per kind is kept. A native
+    // toast outlives its moment — Windows keeps it in notification history — so without this a
+    // click on an hour-old toast would return the user to a window they left long ago.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    const auto first = emitted_alert_id(state, "snapback");
+    REQUIRE(first > 0);
+
+    state.dismiss_snapback();  // re-arm the tracker, as a click or the overlay timer would
+    drift_and_return(state, 200.0, 240.0);
+    const auto second = emitted_alert_id(state, "snapback");
+    REQUIRE(second > first);
+
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, first));
+    CHECK(state.claim_alert_action(AlertEvent::Snapback, second));
+}
+
+TEST_CASE("an alert id does not claim across event kinds") {
+    // Ids come from one counter, so a snapback's id is a perfectly plausible Pomodoro id. The
+    // slot is per kind for exactly that reason: the click handler is told which surface fired,
+    // and mixing them up would open the timer for a snapback.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    const auto id = emitted_alert_id(state, "snapback");
+    REQUIRE(id > 0);
+
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Pomodoro, id));
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Hyperfocus, id));
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::UntrackedWork, id));
+    // Untouched by the refusals above.
+    CHECK(state.claim_alert_action(AlertEvent::Snapback, id));
+}
+
+TEST_CASE("an alert that never reached the user leaves nothing to claim") {
+    // A snoozed snapback is dropped at the latch, so no id is ever issued. Asserted as "no id
+    // in any plausible range" rather than by peeking at the slot: the property that matters is
+    // that a click cannot find one, not how the absence is stored.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+    state.snooze_alerts_for(30);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    CHECK(emitted_alert_id(state, "snapback") == 0);
+
+    for (std::int64_t guess = 0; guess <= 4; ++guess) {
+        CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, guess));
+    }
+}
+
+TEST_CASE("a missing or zero alert id claims nothing even while one is outstanding") {
+    // 0 is what a payload that lost its alertId in transit produces. It must not act, and in
+    // particular must not act on whatever happens to be outstanding — which is why issued ids
+    // start at 1 and a cleared slot is 0.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    REQUIRE(emitted_alert_id(state, "snapback") > 0);
+
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, 0));
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, -1));
+}

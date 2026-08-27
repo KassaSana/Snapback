@@ -5,6 +5,7 @@
 // std::mutex where mutation crosses threads.
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <filesystem>
 #include <functional>
@@ -147,6 +148,19 @@ public:
     // a one-time explanation that reappears every launch is the thing a user hunts for a
     // preference to switch off.
     bool claim_tray_close_notice();
+
+    // Roadmap 2.16. Consume the right to act on a clicked alert. True at most once per alert.
+    //
+    // A claim rather than a comparison, and the same shape as claim_tray_close_notice() above,
+    // because the two hard clauses of the item fall out of it instead of needing checks of
+    // their own. A **duplicate** click finds nothing left to claim. A **stale** click -- on a
+    // toast still sitting in the OS notification history from an hour ago -- claims nothing
+    // either, because a newer alert of that kind has already replaced the id.
+    //
+    // Callers still raise the window on a false. A click that appears to do nothing at all is
+    // worse than one that brings the app forward and stops there, and coming forward is the
+    // part the user unambiguously asked for by clicking.
+    bool claim_alert_action(AlertEvent event, std::int64_t alert_id);
     PrivacySettings privacy_settings() const;
     void set_private_mode(bool enabled);
     // Roadmap 2.10. The one answer to "am I being recorded right now?", derived here so the
@@ -364,6 +378,9 @@ private:
     // `publish` runs only after the commit and must not throw: its only job is to copy
     // already-committed settings into the live fields that mirror them.
     void commit_settings_unlocked(AppSettings candidate, const std::function<void()>& publish);
+    // Roadmap 2.16. Requires mutex_. Returns the id a click may claim, or 0 when this alert is
+    // not clickable -- and clears the kind's outstanding claim either way.
+    std::int64_t issue_alert_id_unlocked(AlertEvent event, const AlertRoute& route);
     // Roadmap 2.10. Ends a timed privacy pause whose deadline has passed. Requires mutex_.
     bool lapse_private_pause_unlocked();
     void save_auto_session_label_unlocked(const std::string& session_id);
@@ -456,6 +473,12 @@ private:
     // at emit: a route that flipped to suppressed in between would skip delivery *without*
     // going through the re-arm branch, which is the one path that must never be reachable.
     AlertRoute latest_snapback_route_;
+    // Roadmap 2.16. The id a click on each event's alert may still claim, and the source of
+    // the next one. 0 means "nothing clickable outstanding" -- issued ids start at 1, so a
+    // zeroed slot and a real id are never confusable, and a payload that lost its alertId in
+    // transit claims nothing rather than claiming the first alert.
+    std::int64_t next_alert_id_ = 0;
+    std::array<std::int64_t, kAlertEventCount> actionable_alert_ids_{};
     std::optional<std::int64_t> last_prediction_at_ms_;
     AppSettings settings_;
     // Mutated under mutex_ by reload_classifier_model() and retry_model_deployment_cleanup().
