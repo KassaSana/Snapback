@@ -120,6 +120,7 @@ describe("Recording status", () => {
   });
 
   it("pauses for a fixed stretch and shows the time left", async () => {
+    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
 
@@ -133,6 +134,7 @@ describe("Recording status", () => {
   });
 
   it("pauses indefinitely without promising a resume time", async () => {
+    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
 
@@ -150,7 +152,7 @@ describe("Recording status", () => {
 
     fireEvent.click(within(card()).getByRole("button", { name: "Resume recording" }));
     await waitFor(() => expect(boundary.state.resumed).toBe(true));
-    expect(await within(card()).findByText("No session")).toBeInTheDocument();
+    expect(await within(card()).findByText("Not recording")).toBeInTheDocument();
   });
 
   it("shows an unknown state as blocked rather than as recording", async () => {

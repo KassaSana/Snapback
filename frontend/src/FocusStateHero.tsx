@@ -1,6 +1,6 @@
 import {
+  displayVerdict,
   explainPrediction,
-  focusStateLabel,
   formatPercentCoarse,
   formatScoreCoarse,
   formatTime,
@@ -15,6 +15,11 @@ import { VerdictFeedback } from "./VerdictFeedback";
 // permanent contract rather than sequencing caution: the state is the policy verdict —
 // the thing the app acts on — and the score is the model's opinion, demoted to the
 // evidence line. The two may disagree on purpose.
+//
+// One exception, display-only: a quiet screen with no goal match is a guess from
+// absence (classifier.cpp:deep_work_score). Printing "Deep work" there is unearned
+// confidence. The stored verdict is left alone so snapbacks and streaks do not change
+// meaning; only the word on this card becomes "Settled".
 //
 // The verdict is shown with its evidence, not on its own. An unexplained label is
 // unfalsifiable — you cannot tell a good guess from a lucky one — and the classifier is
@@ -33,10 +38,6 @@ type Props = {
   prediction: PredictionRecord | null;
   sessionActive: boolean;
   snapbackNote: string | null;
-  // Colour class for the state word and dot. Derived from the verdict (ADR-0004) — the
-  // word and its colour must come from the same channel, or a Block-rule row at low risk
-  // renders "Distracted" painted calm.
-  verdictClass: string;
 };
 
 export function FocusStateHero({
@@ -50,31 +51,48 @@ export function FocusStateHero({
   prediction,
   sessionActive,
   snapbackNote,
-  verdictClass,
 }: Props) {
   const waiting = !prediction;
-  const { reasons, caveat } = explainPrediction(prediction, goal);
+  const display = displayVerdict(prediction, goal);
+  const { reasons, caveat, uncertain } = explainPrediction(prediction, goal);
+  // Idle Now is a start screen. A leftover (or demo) prediction is not the session, so it
+  // does not get the full verdict + scores + caveat — that is what made idle a second Review.
+  const idle = !sessionActive;
 
   return (
-    <section className="card hero-card" aria-labelledby="focus-state-heading">
+    <section
+      className={idle ? "card hero-card hero-card-idle" : "card hero-card"}
+      aria-labelledby="focus-state-heading"
+    >
       <h2 id="focus-state-heading" className="hero-eyebrow">
         Focus state
       </h2>
 
-      <p className={`hero-state hero-state-${verdictClass}`}>
-        <span className={`hero-dot hero-dot-${verdictClass}`} aria-hidden="true" />
-        {waiting ? "Waiting for signal" : focusStateLabel(prediction?.focusState ?? null)}
+      <p className={`hero-state hero-state-${idle ? "unknown" : display.level}`}>
+        <span
+          className={`hero-dot${idle ? "" : ` hero-dot-${display.level}`}`}
+          aria-hidden="true"
+        />
+        {idle ? "Ready" : display.label}
       </p>
 
-      {waiting ? (
+      {idle ? (
+        <p className="hero-secondary" aria-live="polite">
+          Start a session to see whether you are still on it.
+        </p>
+      ) : waiting ? (
         <p className="hero-secondary" aria-live="polite">
           No prediction yet — capture is warming up.
         </p>
       ) : (
         <>
-          {reasons.length > 0 ? (
+          {uncertain ? (
             <p className="hero-because" aria-live="polite">
-              <span className="hero-because-label">because</span>
+              I cannot tell whether this is work.
+            </p>
+          ) : reasons.length > 0 ? (
+            <p className="hero-because" aria-live="polite">
+              <span className="hero-because-label">because </span>
               {reasons.map((reason, index) => (
                 <span key={reason} className="hero-reason">
                   {index > 0 ? (
@@ -122,14 +140,14 @@ export function FocusStateHero({
         </p>
       ) : null}
 
-
-      {waiting ? null : (
+      {idle || waiting ? null : (
         <VerdictFeedback
           disabled={!sessionActive}
           onConfirm={onConfirmVerdict}
           onCorrect={onCorrectVerdict}
           predictedState={prediction?.focusState ?? null}
           status={labelStatus}
+          uncertain={uncertain}
         />
       )}
     </section>

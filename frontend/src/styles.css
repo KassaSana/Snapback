@@ -169,8 +169,12 @@ body {
 .app {
   max-width: 1150px;
   margin: 0 auto;
-  padding: 48px 24px 72px;
+  padding: 24px 24px 32px;
   position: relative;
+}
+
+.app:has(.grid-now) {
+  padding: 20px 24px 8px;
 }
 
 .app::before {
@@ -220,9 +224,9 @@ body {
 }
 
 h1 {
-  margin: 0 0 12px;
-  font-size: clamp(2.2rem, 3vw, 3.2rem);
-  line-height: 1.1;
+  margin: 0 0 8px;
+  font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+  line-height: 1.15;
   font-family: var(--font-serif);
 }
 
@@ -257,6 +261,59 @@ h1 {
   min-width: 180px;
 }
 
+.recording-status-header {
+  background: var(--surface-strong);
+  padding: 10px 16px;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.recording-status-header h2 {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.recording-pause-menu summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.recording-pause-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attended-inline {
+  background: var(--surface-strong);
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attended-inline h2 {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.attended-inline-line {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .status-label {
   color: var(--muted);
 }
@@ -277,6 +334,15 @@ h1 {
   grid-column: 1 / -1;
   gap: 10px;
   padding: 32px;
+}
+
+.hero-card-idle {
+  padding: 12px 18px;
+  gap: 4px;
+}
+
+.hero-card-idle .hero-state {
+  font-size: 1.35rem;
 }
 
 .hero-eyebrow {
@@ -310,6 +376,8 @@ h1 {
 .hero-dot-low { background: #2d9d68; }
 .hero-dot-medium { background: #d58a24; }
 .hero-dot-high { background: #b54a3d; }
+/* Uncertain / waiting: the default .hero-dot muted fill. The word must not look like Deep work. */
+.hero-state-unknown { color: var(--muted); }
 
 .hero-secondary {
   font-size: 1rem;
@@ -472,12 +540,29 @@ h1 {
 }
 
 .grid {
-  margin-top: 40px;
+  margin-top: 28px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 22px;
   position: relative;
   z-index: 1;
+}
+
+/* Now is a cockpit, not a mosaic of peer cards (ADR-0003). */
+.grid-now {
+  grid-template-columns: 1fr;
+  max-width: 720px;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.grid-now .card {
+  padding: 16px 20px;
+  gap: 12px;
+}
+
+.grid-now .session-card .card-header h2 {
+  font-size: 1.15rem;
 }
 
 .card {
@@ -779,6 +864,13 @@ h1 {
   color: var(--muted);
 }
 
+.session-start-fields {
+  display: grid;
+  grid-template-columns: 1fr minmax(8rem, 11rem);
+  gap: 12px 16px;
+  align-items: end;
+}
+
 .field select,
 .field input {
   width: 100%;
@@ -984,6 +1076,32 @@ h1 {
   background: var(--danger-bg);
   color: var(--danger-text);
   border-color: var(--danger-text);
+}
+
+.work-app-teach-list {
+  list-style: none;
+  margin: 8px 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.work-app-teach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.work-app-teach-name {
+  margin: 0;
+  font-weight: 600;
+}
+
+.work-app-teach-detail .helper-text {
+  margin: 2px 0 0;
 }
 
 .rules-badge {
@@ -1315,6 +1433,9 @@ h1 {
     width: 100%;
     justify-content: flex-start;
   }
+  .session-start-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* First-run permission wizard */
@@ -1440,15 +1561,34 @@ h1 {
   }
 }
 
-/* Roadmap 2.12 — the getting-started walkthrough. */
+/* Roadmap 2.12 — the getting-started walkthrough. A strip, not a card above Start. */
 
 .onboarding-guide {
   grid-column: 1 / -1;
   border-left: 3px solid var(--accent, #7eb6ff);
+  background: var(--surface-strong);
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-guide-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 14px;
+}
+
+.onboarding-guide-row h2 {
+  margin: 0;
+  font-size: 0.85rem;
 }
 
 .onboarding-step-title {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
 }

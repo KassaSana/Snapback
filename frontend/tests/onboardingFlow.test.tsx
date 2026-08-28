@@ -236,14 +236,11 @@ describe("onboarding continuation", () => {
     await screen.findByText("running");
 
     fireEvent.click(await screen.findByRole("button", { name: "Stop session" }));
-    await waitFor(() => expect(within(guide()).getByText("Step 6 of 6")).toBeInTheDocument());
-    expect(within(guide()).getByText("Read the recap in Review")).toBeInTheDocument();
-
-    // Reading it is the last step, and it completes by being read.
-    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     await waitFor(() => expect(queryGuide()).toBeNull());
+    expect(screen.getByRole("heading", { name: "Session Recap" })).toBeInTheDocument();
 
-    // Going back to Now does not un-finish it, and neither does a relaunch.
+    // Going to Review and back does not un-finish it, and neither does a relaunch.
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     fireEvent.click(screen.getByRole("tab", { name: "Now" }));
     expect(queryGuide()).toBeNull();
 

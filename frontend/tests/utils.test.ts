@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildSignals,
   clamp,
+  displayVerdict,
   explainPrediction,
   focusStateLabel,
   formatPercent,
@@ -11,6 +12,7 @@ import {
   formatScore,
   formatScoreCoarse,
   formatTime,
+  isUncertainFocusGuess,
   nextBackoffDelay,
   riskLabel,
   riskLevel,
@@ -139,23 +141,44 @@ const quietProductive = {
 const quiet = explainPrediction(quietProductive);
 assert.deepEqual(quiet.reasons, ["no app switching", "settled in one window"]);
 assert.ok(quiet.caveat, "a quiet screen with no goal signal must carry the caveat");
+assert.equal(quiet.uncertain, true);
+assert.equal(isUncertainFocusGuess(quietProductive), true);
+assert.deepEqual(displayVerdict(quietProductive), {
+  label: "Settled",
+  level: "unknown",
+  uncertain: true,
+});
 
 // A corroborating goal removes the caveat: the verdict no longer rests on absence alone.
 const withGoal = explainPrediction({ ...quietProductive, goalAlignment: 0.9 }, "ship the overlay");
 assert.equal(withGoal.caveat, null);
+assert.equal(withGoal.uncertain, false);
 assert.ok(withGoal.reasons.some((r) => r.includes("matches")));
+assert.equal(
+  displayVerdict({ ...quietProductive, goalAlignment: 0.9 }, "ship the overlay").label,
+  "Productive",
+);
 
-// A neutral goalAlignment (0.5 = nothing matched) must not be reported as a match.
-assert.ok(!explainPrediction(quietProductive, "ship the overlay").reasons.some((r) => r.includes("matches")));
+// A typed goal that did not match the window is not corroboration — alignment stayed at the unused default.
+assert.equal(isUncertainFocusGuess(quietProductive, "ship the overlay"), true);
 
 // Negative verdicts get no caveat — the caveat is about unearned confidence, not noise.
 assert.equal(
   explainPrediction({ ...quietProductive, focusState: "DISTRACTED" } as any).caveat,
   null,
 );
+assert.equal(
+  explainPrediction({ ...quietProductive, focusState: "DISTRACTED" } as any).uncertain,
+  false,
+);
+assert.equal(
+  displayVerdict({ ...quietProductive, focusState: "DISTRACTED" } as any).label,
+  "Distracted",
+);
 
 const busy = explainPrediction({ ...quietProductive, thrashScore: 0.8, driftScore: 0.7 } as any);
 assert.deepEqual(busy.reasons, ["switching apps often", "tab and title churn"]);
+assert.equal(busy.uncertain, false);
 
 // A policy override is the headline evidence, and the calm low-signal phrases are
 // suppressed with it — "Distracted because no app switching" was a contradiction (ADR-0004).
@@ -165,6 +188,15 @@ const blocked = explainPrediction({
   stateSource: "block",
 } as any);
 assert.deepEqual(blocked.reasons, ["a blocked app is open"]);
+assert.equal(blocked.uncertain, false);
+assert.equal(
+  isUncertainFocusGuess({
+    ...quietProductive,
+    focusState: "DEEP_FOCUS",
+    stateSource: "block",
+  } as any),
+  false,
+);
 
 const overRisk = explainPrediction({
   ...quietProductive,
@@ -176,5 +208,11 @@ assert.deepEqual(overRisk.reasons, ["distraction risk over the mode's bar"]);
 // Rows from before verdicts carried provenance (stateSource null) read exactly as before.
 const legacy = explainPrediction({ ...quietProductive, stateSource: null } as any);
 assert.deepEqual(legacy.reasons, ["no app switching", "settled in one window"]);
+assert.equal(legacy.uncertain, true);
 
-assert.deepEqual(explainPrediction(null), { reasons: [], caveat: null });
+assert.deepEqual(explainPrediction(null), { reasons: [], caveat: null, uncertain: false });
+assert.deepEqual(displayVerdict(null), {
+  label: "Waiting for signal",
+  level: "unknown",
+  uncertain: false,
+});

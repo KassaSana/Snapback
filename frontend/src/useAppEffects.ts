@@ -106,12 +106,13 @@ export const useAppEffects = ({
 
   // Starting or stopping a session resets the Pomodoro timer server-side
   // (AppState::start_session / stop_session both call pomodoro_.reset()), so
-  // refetch whenever the session identity changes to pick up the cleared state.
+  // refetch whenever the session identity *or status* changes — Stop keeps the
+  // same id, and the header's recording line would otherwise stay on "Recording".
   useEffect(() => {
     void refreshPomodoroStatus();
     void refreshAttendedProgress();
     void refreshRecordingStatus();
-  }, [sessionId, refreshPomodoroStatus, refreshAttendedProgress, refreshRecordingStatus]);
+  }, [sessionId, sessionStatus, refreshPomodoroStatus, refreshAttendedProgress, refreshRecordingStatus]);
 
   useEffect(() => {
     if (!sessionId || sessionStatus !== "ACTIVE") {

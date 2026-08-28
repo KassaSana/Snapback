@@ -284,7 +284,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
       sessions.push({
         sessionId,
         goal: kind.goal,
-        status: isLive ? "active" : "completed",
+        status: isLive ? "ACTIVE" : "COMPLETED",
         focusMode: kind.focusMode,
         startedAtMs,
         endedAtMs: isLive ? null : endedAtMs,

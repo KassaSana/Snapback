@@ -890,6 +890,7 @@ export const api = {
 
 export {
   buildSignals,
+  displayVerdict,
   explainPrediction,
   clamp,
   focusStateLabel,
@@ -899,10 +900,11 @@ export {
   formatScore,
   formatScoreCoarse,
   formatTime,
+  isUncertainFocusGuess,
   nextBackoffDelay,
   riskLabel,
   riskLevel,
   verdictLevel,
 } from "./utils";
 
-export type { VerdictExplanation } from "./utils";
+export type { DisplayVerdict, VerdictExplanation } from "./utils";

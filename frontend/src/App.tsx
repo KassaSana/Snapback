@@ -19,11 +19,11 @@ import { PermissionsCard } from "./PermissionsCard";
 import { PrivacyCard } from "./PrivacyCard";
 import { PermissionWizard } from "./PermissionWizard";
 import { AttendedTargetsCard } from "./AttendedTargetsCard";
-import { RecordingStatusCard } from "./RecordingStatusCard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { recentGoals } from "./sessionCockpit";
 import { sessionStatusLabel } from "./sessionStatus";
+import { nowSurfaceMode } from "./nowSurface";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { FocusFeedbackCard } from "./FocusFeedbackCard";
 import { TrainingDeployCard } from "./TrainingDeployCard";
@@ -49,6 +49,7 @@ import type { AlertDestination } from "./alertDestination";
 import { SurfaceNav, surfacePanelId, surfaceTabId, type Surface } from "./SurfaceNav";
 import { SettingsNav } from "./SettingsNav";
 import { OnboardingGuide } from "./OnboardingGuide";
+import { WorkAppTeachCard } from "./WorkAppTeachCard";
 import { DataImportCard } from "./DataImportCard";
 import { useDataImport } from "./useDataImport";
 import { captureIsReady } from "./permissionWizardState";
@@ -60,6 +61,7 @@ import {
   shouldShowOnboarding,
   writeOnboardingComplete,
 } from "./onboardingJourney";
+import { readWorkAppTeachComplete, writeWorkAppTeachComplete } from "./workAppTeach";
 import {
   DEFAULT_SETTINGS_SECTION,
   SETTINGS_SECTION_BLURBS,
@@ -120,6 +122,7 @@ export default function App() {
 
   // Roadmap 2.12. Skipping and finishing are the same durable state: the guide is done.
   const [onboardingComplete, setOnboardingComplete] = useState(() => readOnboardingComplete());
+  const [workAppTeachDone, setWorkAppTeachDone] = useState(() => readWorkAppTeachComplete());
   // Latched, because "has read the recap" is a thing that happened, not a thing that is true
   // right now — navigating away from Review must not un-finish the journey.
   const [recapSeen, setRecapSeen] = useState(false);
@@ -235,6 +238,7 @@ export default function App() {
     handleSaveReflection,
     handleSkipReflection,
     handleSkipSurvey,
+    handleStartNamedSession,
     handleStartSession,
     handleStopSession,
     handleSwitchSession,
@@ -265,6 +269,8 @@ export default function App() {
     () => sessionStatusLabel(sessionRecord, live.userIdle),
     [live.userIdle, sessionRecord],
   );
+  const sessionActive = sessionRecord?.status === "ACTIVE";
+  const nowMode = nowSurfaceMode({ sessionActive, recap });
 
   const {
     canTrainFromExport,
@@ -396,7 +402,7 @@ export default function App() {
     () => ({
       captureReady: captureIsReady(captureRunning, captureProbeConfirmed),
       goalEntered: sessionGoal.trim().length > 0,
-      sessionActive: sessionRecord?.status === "ACTIVE",
+      sessionActive,
       predictionSeen: live.prediction !== null,
       feedbackGiven: feedback.labelStatus !== null,
       sessionCompleted: recap !== null,
@@ -410,7 +416,7 @@ export default function App() {
       recap,
       recapSeen,
       sessionGoal,
-      sessionRecord,
+      sessionActive,
     ],
   );
   const onboardingStep = currentOnboardingStep(onboardingState);
@@ -426,11 +432,11 @@ export default function App() {
     void dataImport.refreshImportStatus();
   }, [dataImport.refreshImportStatus]);
 
-  // The last step completes by being *read*, so it latches when Review is open with a recap
-  // on it rather than when the user clicks anything.
+  // The last step completes by being *read*. The recap now lands on Now after Stop, so
+  // opening Review is no longer the signal — seeing the recap is.
   useEffect(() => {
-    if (surface === "review" && recap !== null) setRecapSeen(true);
-  }, [surface, recap]);
+    if (recap !== null) setRecapSeen(true);
+  }, [recap]);
 
   // Finishing is remembered the same way skipping is: the guide has done its job either way.
   useEffect(() => {
@@ -494,6 +500,10 @@ export default function App() {
         permissionMessage={permissionMessage}
         permissionSteps={permissionSteps}
         onOpenTechnicalDetails={openSettingsSection}
+        recordingStatus={recordingStatus}
+        onPauseRecording={handlePausePrivately}
+        onResumeRecording={handleResumeRecording}
+        onResumeAlerts={handleResumeAlerts}
       />
 
       <ActionErrorBanner
@@ -510,7 +520,7 @@ export default function App() {
       {/* One panel element, swapped content — ADR-0003. Cards move between surfaces by
           composition; none of them were rewritten to get here. */}
       <main
-        className="grid"
+        className={surface === "now" ? "grid grid-now" : "grid"}
         role="tabpanel"
         id={surfacePanelId(surface)}
         aria-labelledby={surfaceTabId(surface)}
@@ -554,17 +564,29 @@ export default function App() {
           onDismissSnapback={live.handleDismissSnapback}
           onRestoreSnapbackTarget={live.handleRestoreSnapbackTarget}
           prediction={live.prediction}
-          verdictClass={live.verdictClass}
-          sessionActive={sessionRecord?.status === "ACTIVE"}
+          sessionActive={sessionActive}
           snapbackNote={live.snapbackNote}
         />
 
+        {nowMode === "running" ? (
+          <WorkAppTeachCard
+            appRules={appRules}
+            contextTimeline={live.contextTimeline}
+            dismissed={workAppTeachDone}
+            onCreateAppRule={handleCreateQuickRule}
+            onDismiss={() => {
+              writeWorkAppTeachComplete();
+              setWorkAppTeachDone(true);
+            }}
+          />
+        ) : null}
 
         <div data-alert-region="session">
         <SessionControlCard
           focusMode={focusMode}
           handleFocusModeChange={handleFocusModeChange}
           handleStartSession={handleStartSession}
+          handleStartNamedSession={handleStartNamedSession}
           handleStopSession={handleStopSession}
           handleSwitchSession={handleSwitchSession}
           sessionGoal={sessionGoal}
@@ -579,33 +601,44 @@ export default function App() {
         />
         </div>
 
-        <RecordingStatusCard
-          status={recordingStatus}
-          onPause={handlePausePrivately}
-          onResume={handleResumeRecording}
-          onResumeAlerts={handleResumeAlerts}
-        />
+        {nowMode === "stopped" ? (
+          <SessionReviewCards
+            handleLabel={handleLabel}
+            handleSkipSurvey={handleSkipSurvey}
+            recap={recap}
+            surveyPending={surveyPending}
+            reflectionPending={reflectionPending}
+            reflectionSaved={reflectionSaved}
+            handleSaveReflection={handleSaveReflection}
+            handleSkipReflection={handleSkipReflection}
+          />
+        ) : null}
 
-        <AttendedTargetsCard
-          progress={attendedProgress}
-          onSave={handleSaveAttendedTargets}
-        />
+        {nowMode === "running" ? (
+          <>
+            <AttendedTargetsCard
+              compact
+              progress={attendedProgress}
+              onSave={handleSaveAttendedTargets}
+            />
 
-        <div data-alert-region="pomodoro">
-        <PomodoroCard
-          pomodoroStatus={pomodoroStatus}
-          pomodoroConfig={pomodoroConfig}
-          sessionActive={sessionRecord?.status === "ACTIVE"}
-          onStart={handleStartPomodoro}
-          onStop={handleStopPomodoro}
-          onPause={handlePausePomodoro}
-          onResume={handleResumePomodoro}
-          onSkip={handleSkipPomodoroPhase}
-          onRestart={handleRestartPomodoroPhase}
-          onAcknowledge={handleAcknowledgePomodoroPhase}
-          onSaveConfig={handleSavePomodoroConfig}
-        />
-        </div>
+            <div data-alert-region="pomodoro">
+            <PomodoroCard
+              pomodoroStatus={pomodoroStatus}
+              pomodoroConfig={pomodoroConfig}
+              sessionActive={sessionActive}
+              onStart={handleStartPomodoro}
+              onStop={handleStopPomodoro}
+              onPause={handlePausePomodoro}
+              onResume={handleResumePomodoro}
+              onSkip={handleSkipPomodoroPhase}
+              onRestart={handleRestartPomodoroPhase}
+              onAcknowledge={handleAcknowledgePomodoroPhase}
+              onSaveConfig={handleSavePomodoroConfig}
+            />
+            </div>
+          </>
+        ) : null}
           </>
         )}
 
@@ -648,17 +681,6 @@ export default function App() {
         />
 
         <FocusSummaryCard focusSummary={focusSummary} rangeLabel={reviewRangeLabelText} />
-
-        <SessionReviewCards
-          handleLabel={handleLabel}
-          handleSkipSurvey={handleSkipSurvey}
-          recap={recap}
-          surveyPending={surveyPending}
-          reflectionPending={reflectionPending}
-          reflectionSaved={reflectionSaved}
-          handleSaveReflection={handleSaveReflection}
-          handleSkipReflection={handleSkipReflection}
-        />
 
         <ActivityCards
           appRules={appRules}

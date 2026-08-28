@@ -9,15 +9,26 @@
 // the interesting number is elapsed time rather than an id. So the fix is not new data, it is
 // letting the card answer with what it already has.
 //
-// **Presets never auto-start.** ADR-0005 makes declaration explicit and manual, and a preset
-// that begins recording on click would quietly repeal that. A preset fills the form; the user
-// still presses Start. Everything here therefore returns the *proposed* goal and mode and
-// never a "started" anything.
+// **Presets and chips never auto-start.** ADR-0005 makes declaration explicit and manual, and
+// a chip that begins recording on click would quietly repeal that. They fill the form; the
+// user still presses Start. **Repeat last** is the exception: it *is* the declaration ("do
+// that again") and starts the session. Everything here still returns the *proposed* goal and
+// mode; the start lives in the click handler that asked for it.
 
 import type { SessionRecord, SessionSummary } from "./api";
 
 export const FOCUS_MODES = ["deep", "normal", "recovery"] as const;
 export type FocusMode = (typeof FOCUS_MODES)[number];
+
+/** Labels for the mode picker. The wire value stays lowercase; this is what people read. */
+export const FOCUS_MODE_LABELS: Record<FocusMode, string> = {
+  deep: "Deep",
+  normal: "Normal",
+  recovery: "Recovery",
+};
+
+export const FOCUS_MODE_HINT =
+  "Deep is stricter about drift. Recovery is looser after a break.";
 
 /** Coerce an arbitrary backend/stored string to a focus mode, falling back rather than throwing. */
 export const normalizeFocusMode = (

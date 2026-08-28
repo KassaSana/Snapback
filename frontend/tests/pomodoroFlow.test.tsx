@@ -134,13 +134,10 @@ afterEach(() => {
 });
 
 describe("Pomodoro card", () => {
-  it("disables the timer until a session is active", async () => {
+  it("stays off the idle Now surface until a session is running", async () => {
     render(<App />);
-    const card = pomodoroCard();
-
-    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_pomodoro_status"));
-    expect(within(card).getByText(/Start a focus session/i)).toBeInTheDocument();
-    expect(within(card).queryByRole("button", { name: "Start Pomodoro" })).not.toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Session Control" });
+    expect(screen.queryByRole("heading", { name: "Pomodoro" })).not.toBeInTheDocument();
   });
 
   it("starts and stops the timer once a session is active", async () => {
@@ -175,9 +172,13 @@ describe("Pomodoro card", () => {
     };
 
     render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await screen.findByText("running");
     const card = pomodoroCard();
-
-    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_pomodoro_status"));
     expect(await within(card).findByText("12:00")).toBeInTheDocument();
   });
 
@@ -261,9 +262,18 @@ describe("Pomodoro card", () => {
         intervals_before_long_break: 4, auto_start_next_phase: true },
     };
     render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await screen.findByRole("heading", { name: "Pomodoro" });
     const card = pomodoroCard();
     fireEvent.click(within(card).getByText("Customize rhythm"));
-    fireEvent.change(within(card).getByLabelText("Work minutes"), { target: { value: "40" } });
+    const workInput = within(card).getByLabelText("Work minutes");
+    await waitFor(() => expect(workInput).toHaveValue(25));
+    fireEvent.change(workInput, { target: { value: "40" } });
+    expect(workInput).toHaveValue(40);
     fireEvent.click(within(card).getByRole("button", { name: "Save rhythm" }));
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("set_pomodoro_config", {
       config: expect.objectContaining({ workMs: 40 * 60 * 1000 }),

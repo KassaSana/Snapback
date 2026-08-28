@@ -9,19 +9,24 @@ import { snoozeRemainingLabel } from "./alertDelivery";
 // The five states come from the backend already decided. Deriving them here from health plus
 // settings is exactly what the item forbids: the tray would then compute the same question
 // separately, and the two could disagree.
+//
+// The header variant is the same answer in the chrome (ADR-0003's Now cockpit): a full card
+// on idle Now was four Pause buttons under "nothing is being recorded".
 type RecordingStatusCardProps = {
   status: RecordingStatus;
   onPause: (minutes: number) => void | Promise<void>;
   onResume: () => void | Promise<void>;
   /** Roadmap 2.16. Ends an alert snooze started from the tray. */
   onResumeAlerts: () => void | Promise<void>;
+  /** Compact chrome for the app header. Same commands, no card chrome. */
+  variant?: "card" | "header";
 };
 
-const LABELS: Record<RecordingStatus["state"], string> = {
+export const RECORDING_STATE_LABELS: Record<RecordingStatus["state"], string> = {
   recording: "Recording",
   pausedIdle: "Paused for idle",
   pausedPrivate: "Paused privately",
-  noSession: "No session",
+  noSession: "Not recording",
   blocked: "Blocked",
 };
 
@@ -49,61 +54,95 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
   onPause,
   onResume,
   onResumeAlerts,
+  variant = "card",
 }: RecordingStatusCardProps) {
   const paused = status.state === "pausedPrivate";
   const snoozed = status.alertSnoozeRemainingMs > 0;
+  const canPause = status.state === "recording";
+  const header = variant === "header";
 
-  return (
-    <section className="card recording-status-card">
-      <div className="card-header">
-        <h2>Recording status</h2>
-        <span className="pill">{LABELS[status.state]}</span>
-      </div>
+  const remaining =
+    paused && status.privatePauseRemainingMs > 0 ? (
+      <p className="meta-sub">
+        {formatRemaining(status.privatePauseRemainingMs)} — recording resumes on its own.
+      </p>
+    ) : null;
 
-      <p className="helper-text">{DETAIL[status.state]}</p>
+  const snoozeLine = snoozed ? (
+    <p className="meta-sub">
+      Alerts snoozed — {snoozeRemainingLabel(status.alertSnoozeRemainingMs)}. Recording
+      continues.{" "}
+      <button type="button" className="link-button" onClick={() => void onResumeAlerts()}>
+        Resume alerts
+      </button>
+    </p>
+  ) : null;
 
-      {paused && status.privatePauseRemainingMs > 0 ? (
-        <p className="meta-sub">
-          {formatRemaining(status.privatePauseRemainingMs)} — recording resumes on its own.
-        </p>
-      ) : null}
-
-      {/*
-        Roadmap 2.16. Stated as its own line, under a status that still says Recording. A
-        snooze silences interventions; it does not stop capture, and the one place a user
-        checks "am I being recorded?" must not blur the two. The countdown lives here rather
-        than in the tray menu because this is a number that changes.
-      */}
-      {snoozed ? (
-        <p className="meta-sub">
-          Alerts snoozed — {snoozeRemainingLabel(status.alertSnoozeRemainingMs)}. Recording
-          continues.{" "}
-          <button type="button" className="link-button" onClick={() => void onResumeAlerts()}>
-            Resume alerts
-          </button>
-        </p>
-      ) : null}
-
-      {paused ? (
-        <button className="primary-button" onClick={() => void onResume()}>
-          Resume recording
-        </button>
-      ) : (
-        <div className="button-row">
-          <button className="secondary-button" onClick={() => void onPause(0)}>
-            Pause until I resume
-          </button>
+  const actions = paused ? (
+    <button className={header ? "link-button" : "primary-button"} onClick={() => void onResume()}>
+      Resume recording
+    </button>
+  ) : canPause ? (
+    <div className="button-row">
+      <button
+        className={header ? "link-button" : "secondary-button"}
+        onClick={() => void onPause(0)}
+      >
+        Pause until I resume
+      </button>
+      {header ? (
+        <details className="recording-pause-menu">
+          <summary>Pause for…</summary>
           {PAUSE_CHOICES.map((minutes) => (
             <button
               key={minutes}
-              className="secondary-button"
+              type="button"
+              className="link-button"
               onClick={() => void onPause(minutes)}
             >
               Pause {minutes}m
             </button>
           ))}
-        </div>
+        </details>
+      ) : (
+        PAUSE_CHOICES.map((minutes) => (
+          <button
+            key={minutes}
+            className="secondary-button"
+            onClick={() => void onPause(minutes)}
+          >
+            Pause {minutes}m
+          </button>
+        ))
       )}
+    </div>
+  ) : null;
+
+  if (header) {
+    return (
+      <section className="recording-status-header" aria-labelledby="recording-status-heading">
+        <h2 id="recording-status-heading">Recording status</h2>
+        <span className={`status-value${status.state === "blocked" ? " status-alert" : ""}`}>
+          {RECORDING_STATE_LABELS[status.state]}
+        </span>
+        {remaining}
+        {snoozeLine}
+        {actions}
+      </section>
+    );
+  }
+
+  return (
+    <section className="card recording-status-card">
+      <div className="card-header">
+        <h2>Recording status</h2>
+        <span className="pill">{RECORDING_STATE_LABELS[status.state]}</span>
+      </div>
+
+      <p className="helper-text">{DETAIL[status.state]}</p>
+      {remaining}
+      {snoozeLine}
+      {actions}
     </section>
   );
 });

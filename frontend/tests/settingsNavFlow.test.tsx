@@ -181,11 +181,9 @@ describe("Settings second-level navigation", () => {
     expect(screen.queryByText("Classifier")).not.toBeInTheDocument();
     expect(screen.queryByText("Heuristic only")).not.toBeInTheDocument();
     expect(screen.queryByText(/ONNX runtime/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("All systems normal")).not.toBeInTheDocument();
 
-    expect(await screen.findByText("All systems normal")).toBeInTheDocument();
-
-    // ...and the detail behind it is one click away, on the right surface and section.
-    fireEvent.click(screen.getByRole("button", { name: "Technical details" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Technical details" }));
     expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute(
       "aria-selected",
       "true",

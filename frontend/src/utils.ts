@@ -114,24 +114,76 @@ export const nextBackoffDelay = (attempt: number) => {
 export type VerdictExplanation = {
   reasons: string[];
   caveat: string | null;
+  /**
+   * True when the model is claiming focus from stillness alone. The Now hero must not
+   * print Deep work / Productive in that case — those words are the policy verdict the
+   * snapback tracker still uses, but they are unearned as a user-facing claim.
+   */
+  uncertain: boolean;
+};
+
+const GOAL_ALIGNMENT_USED = 0.08;
+
+const isPolicyOverride = (stateSource: string | null | undefined): boolean =>
+  stateSource === "block" || stateSource === "risk" || stateSource === "thrash";
+
+/**
+ * Quiet + a focus-shaped verdict + nothing else supporting it.
+ *
+ * `deep_work_score` (classifier.cpp:deep_work_score) is built from time-in-app, low
+ * switching, and stability — all measures of *absence*. A quiet screen scores the same
+ * whether you are reading a spec or watching a film. Policy overrides are never a guess:
+ * a Block rule is evidence the scores cannot show, so those rows keep their verdict word.
+ *
+ * Display-only. The stored `focus_state` is left alone on purpose (ADR-0004): clamping the
+ * score would poison `focus_momentum`, and rewriting the verdict would change snapbacks
+ * and streaks to paper over a communication problem.
+ */
+export const isUncertainFocusGuess = (record: PredictionRecord, goal?: string | null): boolean => {
+  if (isPolicyOverride(record.stateSource)) return false;
+  const quiet = record.thrashScore <= 0.2 && record.driftScore <= 0.2;
+  const claimsFocus = record.focusState === "PRODUCTIVE" || record.focusState === "DEEP_FOCUS";
+  if (!quiet || !claimsFocus) return false;
+  const goalKnown = Math.abs(record.goalAlignment - 0.5) > GOAL_ALIGNMENT_USED;
+  return !(goalKnown && Boolean(goal?.trim()));
+};
+
+export type DisplayVerdict = {
+  label: string;
+  level: RiskLevel;
+  uncertain: boolean;
+};
+
+/** What the Now hero should print. Waiting and uncertain are not stored states. */
+export const displayVerdict = (
+  record: PredictionRecord | null,
+  goal?: string | null,
+): DisplayVerdict => {
+  if (!record) {
+    return { label: "Waiting for signal", level: "unknown", uncertain: false };
+  }
+  if (isUncertainFocusGuess(record, goal)) {
+    return { label: "Settled", level: "unknown", uncertain: true };
+  }
+  return {
+    label: focusStateLabel(record.focusState),
+    level: verdictLevel(record.focusState),
+    uncertain: false,
+  };
 };
 
 // Turn a verdict into the evidence behind it, so the user can see *why* and catch it
 // being wrong. Every phrase below names what the classifier actually measured — not what
 // we wish it measured. `thrash` is app switching. `drift` is title churn plus erratic
 // keystroke intervals. Neither can see what is on the screen.
-//
-// Hence the caveat: `deep_work_score` (classifier.cpp:deep_work_score) is built from time-in-app,
-// low switching, and stability — all measures of *absence*. A quiet screen scores the
-// same whether you are reading a spec or watching a film. Saying so is more useful than
-// a confident label, and it is the honest reading of what this model can know.
 export const explainPrediction = (
   record: PredictionRecord | null,
   goal?: string | null,
 ): VerdictExplanation => {
-  if (!record) return { reasons: [], caveat: null };
+  if (!record) return { reasons: [], caveat: null, uncertain: false };
 
   const reasons: string[] = [];
+  const uncertain = isUncertainFocusGuess(record, goal);
 
   // When a policy rule decided the verdict (ADR-0004), lead with that rule — it is the one
   // piece of evidence the scores cannot show. A Block-rule row can be behaviourally calm,
@@ -152,7 +204,7 @@ export const explainPrediction = (
   else if (record.driftScore <= 0.2 && !policyReason) reasons.push("settled in one window");
 
   // 0.5 is the "no goal set / nothing matched" default, so only speak when it moved.
-  const goalKnown = Math.abs(record.goalAlignment - 0.5) > 0.08;
+  const goalKnown = Math.abs(record.goalAlignment - 0.5) > GOAL_ALIGNMENT_USED;
   const trimmedGoal = goal?.trim();
   if (goalKnown && trimmedGoal) {
     reasons.push(
@@ -162,14 +214,11 @@ export const explainPrediction = (
     );
   }
 
-  const quiet = record.thrashScore <= 0.2 && record.driftScore <= 0.2;
-  const claimsFocus = record.focusState === "PRODUCTIVE" || record.focusState === "DEEP_FOCUS";
-  const caveat =
-    quiet && claimsFocus && !(goalKnown && trimmedGoal)
-      ? "A quiet screen looks the same whether you're working or watching. Tell Snapback if this is wrong."
-      : null;
+  const caveat = uncertain
+    ? "A quiet screen looks the same whether you're working or watching. Tell Snapback if this is wrong."
+    : null;
 
-  return { reasons, caveat };
+  return { reasons, caveat, uncertain };
 };
 
 export const buildSignals = (record: PredictionRecord | null) => {

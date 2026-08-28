@@ -28,6 +28,15 @@ const boundary = vi.hoisted(() => {
         return (state.health.permissions as Record<string, unknown>) ?? {};
       case "get_settings":
         return state.settings;
+      case "start_session":
+        return {
+          session_id: "sess-42",
+          goal: String(args?.goal ?? ""),
+          status: "ACTIVE",
+          focus_mode: String(args?.focusMode ?? "normal"),
+          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+          ended_at_ms: null,
+        };
       case "get_attended_progress":
         return state.progress;
       case "set_attended_targets":
@@ -75,6 +84,16 @@ const healthyCaptureRunning = (): Record<string, unknown> => ({
   classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
 });
 
+const startSession = async () => {
+  render(<App />);
+  await screen.findByRole("heading", { name: "Session Control" });
+  fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    target: { value: "Write tests" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+  await screen.findByText("running");
+};
+
 const targetsCard = () =>
   screen.getByRole("heading", { name: "Attended time" }).closest("section") as HTMLElement;
 
@@ -104,13 +123,11 @@ describe("Attended-time targets", () => {
       weekly_target_mins: 0,
       weekly_actual_mins: 320,
     };
-    render(<App />);
+    await startSession();
     const card = await screen.findByRole("heading", { name: "Attended time" });
     const section = card.closest("section") as HTMLElement;
 
-    // The measurement is worth showing even without a plan.
-    expect(await within(section).findByText("1h 35m")).toBeInTheDocument();
-    expect(within(section).getAllByText("no target set")).toHaveLength(2);
+    expect(await within(section).findByText(/1h 35m/)).toBeInTheDocument();
     expect(within(section).getByRole("button", { name: "Set a target" })).toBeInTheDocument();
   });
 
@@ -121,19 +138,18 @@ describe("Attended-time targets", () => {
       weekly_target_mins: 1200,
       weekly_actual_mins: 300,
     };
-    render(<App />);
+    await startSession();
     await screen.findByRole("heading", { name: "Attended time" });
     const section = targetsCard();
 
-    expect(await within(section).findByText(/of 4h 0m planned \(50%\)/)).toBeInTheDocument();
+    expect(await within(section).findByText(/of 4h 0m planned/)).toBeInTheDocument();
     expect(within(section).getByRole("button", { name: "Edit targets" })).toBeInTheDocument();
   });
 
   it("saves a target and renders what the backend accepted", async () => {
-    render(<App />);
+    await startSession();
     await screen.findByRole("heading", { name: "Attended time" });
     const section = targetsCard();
-
     fireEvent.click(within(section).getByRole("button", { name: "Set a target" }));
     fireEvent.change(within(section).getByLabelText(/Daily target/), {
       target: { value: "180" },
@@ -155,7 +171,7 @@ describe("Attended-time targets", () => {
       weekly_target_mins: 0,
       weekly_actual_mins: 0,
     };
-    render(<App />);
+    await startSession();
     await screen.findByRole("heading", { name: "Attended time" });
     const section = targetsCard();
 
@@ -165,6 +181,6 @@ describe("Attended-time targets", () => {
 
     await waitFor(() => expect(boundary.state.savedTargets).not.toBeNull());
     expect(boundary.state.savedTargets).toEqual({ dailyMins: 0, weeklyMins: 0 });
-    expect(await within(section).findAllByText("no target set")).toHaveLength(2);
+    expect(within(section).queryByText(/planned/)).not.toBeInTheDocument();
   });
 });
