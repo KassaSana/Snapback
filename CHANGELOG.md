@@ -243,6 +243,15 @@ the note at the bottom.
 
 ### Fixed
 
+- **Installing from the ZIP works at all (9.4).** `scripts/install_windows_package.ps1` passed
+  `<extracted-root>\*` to `Copy-Item -LiteralPath` — the one parameter that does not expand a
+  wildcard. It looked for a file literally named `*`, found none, and copied nothing, so every
+  install died on the script's own "Installed package is missing snapback.exe" check. It now
+  enumerates the extracted root and copies each entry literally, which also avoids `-Path`
+  reading a `[` in the temp path as a character class. CI validates the ZIP but never installs
+  it, which is how a script that could not have worked once went unnoticed; 9.4 carries the
+  smoke test.
+
 - **The release workflow can actually produce an installer.** Every `Release` run since the
   workflow was written failed at the same step: `iexpress.exe` exits 1 on the GitHub-hosted
   Windows image and prints nothing else. The `v0.3.0` tag push died there, with the ZIP and all
