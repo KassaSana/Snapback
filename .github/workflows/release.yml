@@ -130,9 +130,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       # The runner image ships InnoSetup and WiX but not NSIS, and package_windows.ps1 now
-      # requires makensis rather than warning past it. Its own step, not a line inside the
-      # build step: choco drops a shim in C:\ProgramData\chocolatey\bin (already on PATH),
-      # and only a process started afterwards picks it up.
+      # requires makensis rather than warning past it. This deploys to Program Files and puts
+      # nothing on PATH; the script finds it there, so nothing is needed here beyond installing.
       - name: Install NSIS
         run: choco install nsis -y --no-progress
 

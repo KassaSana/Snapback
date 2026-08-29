@@ -32,6 +32,23 @@ function Invoke-Native {
     }
 }
 
+# NSIS installs to Program Files and adds nothing to PATH -- that is true of the official
+# installer and of `choco install nsis` alike. CPack's NSIS generator looks makensis up on
+# PATH, so put it there when it is installed but invisible. A no-op when it is already found.
+function Add-NsisToPath {
+    if (Get-Command makensis -ErrorAction SilentlyContinue) {
+        return
+    }
+    $candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} "NSIS"),
+        (Join-Path $env:ProgramFiles "NSIS")
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ "makensis.exe")) }
+    if ($candidates) {
+        $env:PATH = "$($candidates[0]);$env:PATH"
+        Write-Host "Found NSIS at $($candidates[0]); added to PATH for this run."
+    }
+}
+
 function Sign-ReleaseBinary {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -160,6 +177,11 @@ try {
     # readable.
     $installerExe = $null
     if (-not $SkipInstaller) {
+        # Neither the NSIS installer nor `choco install nsis` puts makensis on PATH -- both
+        # just drop it in Program Files -- and CPack's NSIS generator searches PATH. So find
+        # it and prepend its directory, rather than making every caller do that by hand.
+        Add-NsisToPath
+
         # A missing makensis is a hard failure, not a warning. The IExpress path only warned,
         # which is how a packaging step nothing had ever produced survived to a release tag.
         Require-Command makensis
