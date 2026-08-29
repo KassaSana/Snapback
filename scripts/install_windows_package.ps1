@@ -54,7 +54,17 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-    Copy-Item -LiteralPath (Join-Path $packageRoot.FullName "*") -Destination $InstallDir -Recurse -Force
+    # Install the package's *contents*, not the versioned folder around them. This used to
+    # hand "<root>\*" to -LiteralPath, which is the one parameter that does not expand a
+    # wildcard: it looked for a file literally named "*", found none, and copied nothing --
+    # so every install failed on the snapback.exe check below.
+    #
+    # Switching to -Path would expand the asterisk but would also treat any [ ] in the
+    # extracted path as a character class, and that path comes from $env:TEMP. Enumerating
+    # and copying each entry literally expands nothing at all.
+    Get-ChildItem -LiteralPath $packageRoot.FullName -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
+    }
 
     $exe = Join-Path $InstallDir "snapback.exe"
     if (-not (Test-Path $exe)) {

@@ -3194,10 +3194,13 @@ small; the tier is large because nobody has walked that path yet.
   does the HKCU Run key survive a reinstall to a new path, or does autostart silently point
   at a deleted binary; do settings persist; does a running instance get replaced cleanly?
 
-  **The current installer has not earned a successful baseline:**
-  `install_windows_package.ps1` passes a wildcard path to `Copy-Item -LiteralPath`, so `*`
-  is treated literally instead of expanding the package contents. CI validates the ZIP but
-  never installs it. Fix that as part of this item, then install v0.2.0, create recognizable
+  **The ZIP install path works now; the upgrade walk is still unwalked.**
+  `install_windows_package.ps1` used to pass a wildcard to `Copy-Item -LiteralPath`, the one
+  parameter that does not expand one — it copied nothing, so every install failed its own
+  `snapback.exe` check. Fixed 2026-08-29 by enumerating the extracted root and copying each
+  entry literally. **CI still validates the ZIP without ever installing it**, which is why a
+  script that could never have worked sat here unnoticed; an install smoke test belongs with
+  this item. Then install v0.2.0, create recognizable
   data, upgrade to the candidate, and prove the executable, autostart path, settings, and
   `focoflow.db` are discovered and migrated rather than appearing lost under the C++ app's
   current data-directory rules.
@@ -3206,7 +3209,7 @@ small; the tier is large because nobody has walked that path yet.
   `install_windows_package.ps1` is gone — it never built on a GitHub-hosted runner (see
   [docs/PACKAGING.md](PACKAGING.md)), so there was never anything to install. NSIS installs the
   package directly and brings its own uninstaller, which is also what 9.5's open wiring needs.
-  `install_windows_package.ps1` and its literal-`*` bug still stand for people who take the ZIP.
+  `install_windows_package.ps1` still stands for people who take the ZIP instead.
 
 - **9.5 — DECIDED AND IMPLEMENTED 2026-08-09; wiring the installer stays open.** `S`
   Decide and implement what uninstall removes. Today it plausibly leaves behind: the
