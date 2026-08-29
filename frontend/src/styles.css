@@ -1544,6 +1544,17 @@ h1 {
   opacity: 0.3;
 }
 
+/* The attended-time context bar behind the deep-work bar on the daily trend. */
+.chart-bar-context {
+  fill: var(--accent);
+  opacity: 0.22;
+}
+
+.trend-headline {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
 .chart-axis-label {
   fill: var(--muted);
   font-size: 8px;
