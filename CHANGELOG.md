@@ -243,6 +243,18 @@ the note at the bottom.
 
 ### Fixed
 
+- **The release workflow can actually produce an installer.** Every `Release` run since the
+  workflow was written failed at the same step: `iexpress.exe` exits 1 on the GitHub-hosted
+  Windows image and prints nothing else. The `v0.3.0` tag push died there, with the ZIP and all
+  629 tests already green. Four SED variants were tried on the runner — no license page, the
+  raw `LICENSE`, a staged `LICENSE.txt`, a single source directory — and all four failed
+  identically, so the SED was never the cause. The IExpress path had no successful baseline to
+  begin with: the one earlier green `Release` run built a different, Tauri-based workflow.
+  Packaging now uses CPack's NSIS generator, which `CMakeLists.txt` already configured, and
+  `release.yml` installs NSIS on the runner. A missing `makensis` is now a hard failure rather
+  than a warning — warning past it is how a step that had never produced an artifact reached a
+  release tag. `-SkipIExpress`/`-TryNsis` are replaced by a single `-SkipInstaller`.
+
 - **The test suite compiles on MSVC and libc++ again.** `focus_window_windows.cpp` called
   `std::towlower` with only `<cctype>` included; the wide-character functions live in
   `<cwctype>`. libstdc++ happens to pull it in transitively, so the one Windows job added to

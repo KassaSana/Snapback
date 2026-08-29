@@ -2,8 +2,7 @@ param(
     [string]$BuildDir = "build-windows-package",
     [string]$Config = "Release",
     [switch]$SkipNpmInstall,
-    [switch]$SkipIExpress,
-    [switch]$TryNsis,
+    [switch]$SkipInstaller,
     [string]$SignCertificate = ""
 )
 
@@ -126,10 +125,10 @@ Invoke-Native { cmake --build $BuildPath --config $Config --target snapback }
 
 # Roadmap 0.4b. Sign here — after the build, BEFORE anything packages the result.
 #
-# This used to happen at the end of the script, which looked equivalent and was not: CPack
-# and IExpress had already copied the *unsigned* snapback.exe into the ZIP and embedded that
-# ZIP in the installer. Only the loose build-tree binary and the outer installer ended up
-# signed, so every uploaded artifact still carried an unsigned executable.
+# This used to happen at the end of the script, which looked equivalent and was not: CPack had
+# already copied the *unsigned* snapback.exe into both the ZIP and the installer. Only the
+# loose build-tree binary and the outer installer ended up signed, so every uploaded artifact
+# still carried an unsigned executable.
 if ($SignCertificate) {
     $exeCandidates = @(
         (Join-Path $BuildPath "$Config\snapback.exe"),
@@ -152,88 +151,40 @@ try {
         throw "CPack ZIP output was not found under $BuildPath."
     }
 
+    # The installer used to be an IExpress self-extractor wrapping this ZIP plus
+    # install_windows_package.ps1. It never once built on a GitHub-hosted runner: iexpress.exe
+    # exits 1 there and reports nothing else, for every SED it is handed — with a license page
+    # or without, with one source directory or two. It is an undocumented IE-era GUI tool with
+    # no diagnostics, so this uses CPack's NSIS generator instead. NSIS is a real installer
+    # with a real uninstaller, CMakeLists.txt already configures it, and its failures are
+    # readable.
     $installerExe = $null
-    if (-not $SkipIExpress) {
-        $iexpress = Get-Command iexpress -ErrorAction SilentlyContinue
-        if ($iexpress) {
-            $installerScript = Join-Path $RepoRoot "scripts\install_windows_package.ps1"
-            # Derive the installer name from the ZIP CPack actually produced so the version
-            # can never drift from the hardcoded one when it bumps (e.g. "Snapback-0.2.0-win64").
-            $installerExe = Join-Path $BuildPath "$($zip.BaseName)-installer.exe"
-            $sedPath = Join-Path $BuildPath "snapback-installer.sed"
-            $zipName = Split-Path -Leaf $zip.FullName
-            $installerScriptName = Split-Path -Leaf $installerScript
-            $buildPathEscaped = $BuildPath.TrimEnd('\')
-            $scriptDirEscaped = (Split-Path -Parent $installerScript).TrimEnd('\')
-            $licenseFile = Join-Path $RepoRoot "LICENSE"
-            $displayLicense = ""
-            if (Test-Path -LiteralPath $licenseFile) {
-                $displayLicense = $licenseFile
-            }
-            @"
-[Version]
-Class=IEXPRESS
-SEDVersion=3
-[Options]
-PackagePurpose=InstallApp
-ShowInstallProgramWindow=1
-HideExtractAnimation=1
-UseLongFileName=1
-InsideCompressed=0
-CAB_FixedSize=0
-CAB_ResvCodeSigning=0
-RebootMode=N
-InstallPrompt=%InstallPrompt%
-DisplayLicense=%DisplayLicense%
-FinishMessage=%FinishMessage%
-TargetName=%TargetName%
-FriendlyName=%FriendlyName%
-AppLaunched=%AppLaunched%
-PostInstallCmd=<None>
-AdminQuietInstCmd=%AppLaunched%
-UserQuietInstCmd=%AppLaunched%
-SourceFiles=SourceFiles
-[Strings]
-InstallPrompt=
-DisplayLicense=$displayLicense
-FinishMessage=Snapback installation completed.
-TargetName=$installerExe
-FriendlyName=Snapback Installer
-AppLaunched=powershell.exe -ExecutionPolicy Bypass -NoProfile -File $installerScriptName -PackageZip $zipName
-FILE0=$zipName
-FILE1=$installerScriptName
-[SourceFiles]
-SourceFiles0=$buildPathEscaped
-SourceFiles1=$scriptDirEscaped
-[SourceFiles0]
-%FILE0%=
-[SourceFiles1]
-%FILE1%=
-"@ | Set-Content -LiteralPath $sedPath -Encoding ASCII
-            Invoke-Native { & $iexpress.Source /N /Q $sedPath }
-            if (-not (Test-Path $installerExe)) {
-                throw "IExpress did not produce $installerExe"
-            }
-            Write-Host "Unsigned IExpress installer generated: $installerExe"
-        } else {
-            Write-Warning "IExpress was not found; skipped unsigned self-extracting installer."
-        }
-    }
+    if (-not $SkipInstaller) {
+        # A missing makensis is a hard failure, not a warning. The IExpress path only warned,
+        # which is how a packaging step nothing had ever produced survived to a release tag.
+        Require-Command makensis
+        Invoke-Native { cpack -G NSIS -C $Config }
 
-    if ($TryNsis) {
-        if (Get-Command makensis -ErrorAction SilentlyContinue) {
-            Invoke-Native { cpack -G NSIS -C $Config }
-        } else {
-            Write-Warning "NSIS/makensis was not found; skipped unsigned NSIS installer."
+        # Both generators name their output from CPACK_PACKAGE_FILE_NAME, so the NSIS exe is
+        # the ZIP's base name with a different extension.
+        $nsisExe = Join-Path $BuildPath "$($zip.BaseName).exe"
+        if (-not (Test-Path -LiteralPath $nsisExe)) {
+            throw "CPack NSIS output was not found at $nsisExe."
         }
+        # Rename to the -installer.exe name the release workflow's upload glob, the signing
+        # block below, and docs/windows_demo.md all already use. Derived from the ZIP CPack
+        # actually produced, so the version cannot drift from a hardcoded one when it bumps.
+        $installerExe = Join-Path $BuildPath "$($zip.BaseName)-installer.exe"
+        Move-Item -LiteralPath $nsisExe -Destination $installerExe -Force
+        Write-Host "Unsigned NSIS installer generated: $installerExe"
     }
 
     if ($SignCertificate) {
         # snapback.exe was signed before CPack ran, above. The installer is signed here
-        # because it does not exist until IExpress has produced it — and by now it contains
-        # the ZIP built from the already-signed binary.
+        # because it does not exist until CPack has produced it — and by now it carries the
+        # already-signed binary.
         #
-        # $installerExe is $null when IExpress was skipped/absent; Test-Path $null throws
+        # $installerExe is $null when the installer was skipped; Test-Path $null throws
         # under ErrorActionPreference=Stop, so short-circuit on the null first.
         if ($installerExe -and (Test-Path $installerExe)) {
             Sign-ReleaseBinary -Path $installerExe -Certificate $SignCertificate
@@ -246,7 +197,7 @@ SourceFiles1=$scriptDirEscaped
             -Certificate $SignCertificate
         if ($installerExe -and (Test-Path $installerExe)) {
             Assert-BinarySigned -Path $installerExe -Certificate $SignCertificate `
-                -Label "IExpress installer"
+                -Label "NSIS installer"
         }
     }
 } finally {

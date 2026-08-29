@@ -3,13 +3,28 @@
 ## Current state
 
 - **Unsigned Windows ZIP** via CPack (`scripts/package_windows.ps1`)
-- **Optional IExpress self-extractor** when `iexpress` is available
+- **Windows NSIS installer** via CPack, required unless `-SkipInstaller` is passed
 - **Bundled frontend** copied beside `snapback.exe` for demo/release
 - **CI:** headless tests on 3 OSes, ASan/UBSan, TSan, feature-parity fixtures, ONNX smoke, production-smoke workflow
 - **Release:** a tag-driven workflow (`.github/workflows/release.yml`) builds + tests the
   Windows package and publishes it to GitHub Releases on a `v*` tag, behind the tag gate below
 - **Signing hook:** release builds sign EXE artifacts when
   `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` is configured
+
+## Why NSIS and not IExpress
+
+The installer used to be an IExpress self-extractor wrapping the CPack ZIP plus
+`scripts/install_windows_package.ps1`. **It never built once on a GitHub-hosted runner.**
+`iexpress.exe` exits 1 there and says nothing else — proven against four SED variants on the
+`windows-2025-vs2026` image, with a license page and without, with one source directory and
+with two. All four failed identically, so the SED content was never the problem.
+
+IExpress is an undocumented IE-era GUI tool with no error output, so there is nothing to debug.
+CPack's NSIS generator replaces it: `CMakeLists.txt` already configured it, it produces a real
+uninstaller, and when it fails it says why. `release.yml` installs NSIS on the runner because
+the image does not carry it. `package_windows.ps1` now *requires* `makensis` rather than
+warning past a missing one — the warning is how a packaging step that had never produced
+anything survived as far as a release tag.
 
 ## Cutting a release
 
@@ -74,7 +89,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 `
 When `-SignCertificate` is set, the script signs:
 
 - `snapback.exe` — **immediately after the build, before CPack runs**
-- the IExpress installer exe when produced — after IExpress, which is the first moment it exists
+- the installer exe when produced — after CPack's NSIS run, the first moment it exists
 
 The ZIP package itself is not Authenticode-signed; Windows trust is established by signing
 the executable content and installer executable.
@@ -82,8 +97,8 @@ the executable content and installer executable.
 ### Order matters (ROADMAP 0.4b)
 
 Signing used to run at the *end* of the script. That looked equivalent and was not: CPack had
-already copied the unsigned `snapback.exe` into the ZIP, and IExpress had embedded that ZIP in
-the installer. Only the loose build-tree binary and the outer installer got signatures, so
+already copied the unsigned `snapback.exe` into both the ZIP and the installer. Only the loose
+build-tree binary and the outer installer got signatures, so
 **every uploaded artifact still contained an unsigned executable** while the build log
 cheerfully reported "Signed …".
 
