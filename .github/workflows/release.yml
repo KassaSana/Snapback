@@ -106,7 +106,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Build the Windows package. package_windows.ps1 runs the frontend suite, the
-  # C++ tests (ctest), builds the Release app, and produces the ZIP + IExpress
+  # C++ tests (ctest), builds the Release app, and produces the CPack ZIP + NSIS
   # installer. If SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT is configured, the EXE
   # artifacts are Authenticode-signed before upload. It fails hard on any non-zero
   # exit, so a red build can't be released.
@@ -128,6 +128,12 @@ jobs:
           node-version-file: frontend/.nvmrc
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      # The runner image ships InnoSetup and WiX but not NSIS, and package_windows.ps1 now
+      # requires makensis rather than warning past it. This deploys to Program Files and puts
+      # nothing on PATH; the script finds it there, so nothing is needed here beyond installing.
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
 
       - name: Build Windows package
         timeout-minutes: 40

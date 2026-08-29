@@ -48,7 +48,7 @@ Why the ❌s, concretely:
   `UNUserNotificationCenter` needs a bundle identifier, which arrives with packaging
   (Roadmap 3.3). The `false` is a contract, not an oversight — callers may start trusting
   it to decide whether to fall back, so do not flip it before delivery is real.
-- **Packaging** drives `signtool`, IExpress, and CPack/NSIS — Windows tooling. See
+- **Packaging** drives `signtool` and CPack/NSIS — Windows tooling. See
   [scripts/README.md](../scripts/README.md).
 - **`overlay_windows.cpp`, `tray_windows.cpp`, `input_hook_windows.cpp`, and
   `autostart.cpp`'s Run-key path cannot compile here at all.** CI is the only place they

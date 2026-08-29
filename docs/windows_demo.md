@@ -93,7 +93,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1
 This builds frontend assets, C++ tests, `snapback.exe`, then creates:
 
 - CPack ZIP (`Snapback-*-win64.zip`)
-- optional IExpress installer
+- CPack NSIS installer — requires `makensis` on `PATH`
 - optional Authenticode signing — see [docs/PACKAGING.md](PACKAGING.md)
 
 ```powershell
@@ -102,14 +102,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package_windows.ps1 `
 ```
 
 - `Snapback-<version>-win64.zip`
-- `Snapback-<version>-win64-installer.exe` when Windows IExpress is available
+- `Snapback-<version>-win64-installer.exe` — the NSIS installer, renamed from the
+  `Snapback-<version>-win64.exe` CPack writes
 
 `<version>` is whatever `project(... VERSION x.y.z)` in `CMakeLists.txt` declares — that is
 the single source, and `scripts/check_release_tag.py` is what holds a release tag to it. The
 packaging and validation scripts derive the filename from the ZIP CPack actually produced
 rather than reconstructing it, so nothing here needs updating when the version bumps.
 
-Pass `-TryNsis` to also attempt an unsigned NSIS installer if NSIS is installed.
+The script fails outright when `makensis` is missing. Pass `-SkipInstaller` to build the ZIP
+alone on a machine without NSIS.
 
 Validate the ZIP exactly as a user would run it:
 

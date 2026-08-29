@@ -28,12 +28,12 @@ on Windows tooling, while the shell wrappers cover macOS and Linux.
 | `windows_demo.ps1` | **Windows only** | MSVC build + CTest + launches `snapback.exe` |
 | `gui_smoke_windows.ps1` | **Windows only** | Verifies a real Snapback window appears |
 | `gui_smoke_macos.sh` | **macOS only** | Launches the app and requires a session round trip, a loaded bundle, and a clean run-loop exit |
-| `package_windows.ps1` | **Windows only** | CPack ZIP, IExpress installer, Authenticode signing |
+| `package_windows.ps1` | **Windows only** | CPack ZIP, CPack NSIS installer, Authenticode signing |
 | `validate_windows_package.ps1` | **Windows only** | Checks an extracted package |
 | `install_windows_package.ps1` | **Windows only** | Installs a built package locally |
 
 The Windows-only five are not portable in principle, not just unported: they drive MSVC,
-`signtool`, IExpress, and the packaged `snapback.exe`. Off Windows they are exercised
+`signtool`, NSIS, and the packaged `snapback.exe`. Off Windows they are exercised
 only by CI.
 
 ## The `.ps1` / `.sh` difference that matters
