@@ -39,11 +39,15 @@ function Add-NsisToPath {
     if (Get-Command makensis -ErrorAction SilentlyContinue) {
         return
     }
+    # @(...) around the whole pipeline, not just the input: a single surviving candidate comes
+    # back as a bare string, and $candidates[0] on a string is its first character.
     $candidates = @(
-        (Join-Path ${env:ProgramFiles(x86)} "NSIS"),
-        (Join-Path $env:ProgramFiles "NSIS")
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ "makensis.exe")) }
-    if ($candidates) {
+        @(
+            (Join-Path ${env:ProgramFiles(x86)} "NSIS"),
+            (Join-Path $env:ProgramFiles "NSIS")
+        ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ "makensis.exe")) }
+    )
+    if ($candidates.Count -gt 0) {
         $env:PATH = "$($candidates[0]);$env:PATH"
         Write-Host "Found NSIS at $($candidates[0]); added to PATH for this run."
     }
