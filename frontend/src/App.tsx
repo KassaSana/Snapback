@@ -4,6 +4,7 @@ import { useAppEffects } from "./useAppEffects";
 
 import { ActivityCards } from "./ActivityCards";
 import { AnalyticsCard } from "./AnalyticsCard";
+import { DailyTrendCard } from "./DailyTrendCard";
 import { DiagnosticsCard } from "./DiagnosticsCard";
 import { GoalCategoriesCard } from "./GoalCategoriesCard";
 import { ActionErrorBanner } from "./ActionErrorBanner";
@@ -346,6 +347,7 @@ export default function App() {
 
   const {
     analytics,
+    dailySummary,
     deleteError: sessionDeleteError,
     deleteSession: handleDeleteSession,
     deleteStatus: sessionDeleteStatus,
@@ -670,6 +672,12 @@ export default function App() {
           analytics={analytics}
           appRules={appRules}
           onCreateAppRule={handleCreateQuickRule}
+          rangeLabel={reviewRangeLabelText}
+        />
+
+        <DailyTrendCard
+          dailySummary={dailySummary}
+          rangePreset={reviewRange.preset}
           rangeLabel={reviewRangeLabelText}
         />
 
