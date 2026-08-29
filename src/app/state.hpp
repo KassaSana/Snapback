@@ -201,6 +201,10 @@ public:
                                const std::optional<std::string>& since = std::nullopt) const;
     SummaryReport summary_report(const std::string& window,
                                  const std::optional<std::string>& since = std::nullopt) const;
+    // Per-local-calendar-day series for the Review trend surfaces. "all" is clamped to the
+    // retention window (predictions older than that are pruned anyway) and reported as capped.
+    DailySummary daily_summary(const std::string& window,
+                               const std::optional<std::string>& since = std::nullopt) const;
     SummaryExportResult export_summary_report(const std::filesystem::path& out_dir,
                                               const std::string& window,
                                               const std::optional<std::string>& since =

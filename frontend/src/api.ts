@@ -10,6 +10,7 @@ import {
   mapAutostartStatus,
   mapClassifierStatus,
   mapContextSnapshot,
+  mapDailySummary,
   mapDiagnosticsSnapshot,
   mapExportTrainingResult,
   mapFocusSummary,
@@ -407,6 +408,30 @@ export type AnalyticsSummary = {
   topApps: AnalyticsApp[];
 };
 
+/** One local calendar day of the Review trend series. The *Secs fields are durations
+ *  (attended from spans; focused/deep from prediction run gaps), never row counts —
+ *  the row count travels separately as sampleCount (roadmap 10.13). Days with no data
+ *  are omitted by the backend; charts fill the gaps. */
+export type DailySummaryDay = {
+  /** Local calendar date, "YYYY-MM-DD" — the bucketing key. */
+  day: string;
+  attendedSecs: number;
+  focusedSecs: number;
+  deepFocusSecs: number;
+  avgFocusScore: number;
+  sampleCount: number;
+  sessionCount: number;
+  snapbackCount: number;
+};
+
+export type DailySummary = {
+  window: string;
+  generatedAtMs: number;
+  /** True when the requested range reached past retention and was clamped to it. */
+  capped: boolean;
+  days: DailySummaryDay[];
+};
+
 export type SummaryWindow = "day" | "week" | "7d" | "30d" | "all" | "custom";
 
 export type ReviewWindowRequest = {
@@ -617,6 +642,10 @@ export const api = {
   getAnalytics: async (range: ReviewWindowRequest = { window: "all" }) => {
     const raw = await invoke<Record<string, unknown> | null>("get_analytics", range);
     return mapAnalyticsSummary(raw ?? {});
+  },
+  getDailySummary: async (range: ReviewWindowRequest = { window: "7d" }) => {
+    const raw = await invoke<Record<string, unknown> | null>("get_daily_summary", range);
+    return mapDailySummary(raw ?? {});
   },
   getSummaryReport: async (range: ReviewWindowRequest = { window: "day" }) => {
     const raw = await invoke<Record<string, unknown> | null>("get_summary_report", range);

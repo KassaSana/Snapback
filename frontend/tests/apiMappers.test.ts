@@ -6,6 +6,7 @@ import {
   mapAppRule,
   mapClassifierStatus,
   mapContextSnapshot,
+  mapDailySummary,
   mapDiagnosticsSnapshot,
   mapExportTrainingResult,
   mapFocusSummary,
@@ -493,5 +494,49 @@ assert.equal(pomodoroCamel.completedWorkIntervals, 4);
 
 const pomodoroUnknownPhase = mapPomodoroStatus({ running: false, phase: "bogus" });
 assert.equal(pomodoroUnknownPhase.phase, "work"); // falls back safely
+
+const dailyCamel = mapDailySummary({
+  window: "7d",
+  generatedAtMs: 1_787_000_000_000,
+  capped: true,
+  days: [
+    {
+      day: "2026-08-05",
+      attendedSecs: 1800,
+      focusedSecs: 1200,
+      deepFocusSecs: 600,
+      avgFocusScore: 63.5,
+      sampleCount: 412,
+      sessionCount: 2,
+      snapbackCount: 3,
+    },
+  ],
+});
+assert.equal(dailyCamel.window, "7d");
+assert.equal(dailyCamel.capped, true);
+assert.equal(dailyCamel.days.length, 1);
+assert.equal(dailyCamel.days[0].day, "2026-08-05");
+assert.equal(dailyCamel.days[0].attendedSecs, 1800);
+assert.equal(dailyCamel.days[0].focusedSecs, 1200);
+assert.equal(dailyCamel.days[0].deepFocusSecs, 600);
+assert.equal(dailyCamel.days[0].avgFocusScore, 63.5);
+assert.equal(dailyCamel.days[0].sampleCount, 412);
+assert.equal(dailyCamel.days[0].sessionCount, 2);
+assert.equal(dailyCamel.days[0].snapbackCount, 3);
+
+const dailySnake = mapDailySummary({
+  window: "30d",
+  generated_at_ms: 5,
+  days: [{ day: "2026-08-06", attended_secs: 60, deep_focus_secs: 30 }],
+});
+assert.equal(dailySnake.generatedAtMs, 5);
+assert.equal(dailySnake.capped, false);
+assert.equal(dailySnake.days[0].attendedSecs, 60);
+assert.equal(dailySnake.days[0].deepFocusSecs, 30);
+assert.equal(dailySnake.days[0].focusedSecs, 0);
+
+const dailyEmpty = mapDailySummary({});
+assert.equal(dailyEmpty.window, "7d");
+assert.equal(dailyEmpty.days.length, 0);
 
 console.log("apiMappers.test.ts passed");

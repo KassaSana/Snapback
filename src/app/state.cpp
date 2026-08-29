@@ -1449,6 +1449,32 @@ AnalyticsSummary AppState::analytics(const std::string& window,
     return summary;
 }
 
+DailySummary AppState::daily_summary(const std::string& window,
+                                     const std::optional<std::string>& since) const {
+    const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
+    DailySummary out;
+    out.window = window;
+    out.generated_at_ms = now_unix_ms();
+
+    // Every request is bounded by the retention window: past it, predictions and snapshots
+    // are pruned, so a longer day axis would be rows of near-zeros plus an unbounded
+    // recursive CTE (the class of surprise AUD-08 documents). `capped` tells the UI the
+    // range was cut short rather than genuinely empty.
+    const std::int64_t retention_floor_ms =
+        out.generated_at_ms
+        - static_cast<std::int64_t>(kDefaultRetentionDays) * 24 * 60 * 60 * 1000;
+    std::int64_t since_ms = retention_floor_ms;
+    if (!cutoff || *cutoff < retention_floor_ms) {
+        out.capped = true;
+    } else {
+        since_ms = *cutoff;
+    }
+
+    std::lock_guard lock(storage_mutex_);
+    out.days = const_cast<Storage&>(storage_).daily_summary(out.generated_at_ms, since_ms);
+    return out;
+}
+
 SummaryReport AppState::summary_report(const std::string& window,
                                        const std::optional<std::string>& since) const {
     const auto cutoff_opt = review_window_cutoff(window, since, cutoff_unix_ms);

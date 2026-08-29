@@ -6,6 +6,7 @@
 
 #include <array>
 #include <chrono>
+#include <map>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -1880,6 +1881,172 @@ std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
         hourly.push_back(std::move(bucket));
     }
     return hourly;
+}
+
+std::vector<DailySummaryDay> Storage::daily_summary(std::int64_t now_ms, std::int64_t since_ms) {
+    // Keyed by "YYYY-MM-DD"; std::map keeps the days ascending, and the four queries below
+    // merge into it so the statement count stays constant regardless of range (7.12).
+    std::map<std::string, DailySummaryDay> by_day;
+    const auto bucket_for = [&by_day](sqlite3_stmt* stmt, int column) -> DailySummaryDay& {
+        std::string day = column_text(stmt, column);
+        auto& bucket = by_day[day];
+        bucket.day = day;
+        return bucket;
+    };
+
+    // Snap the cutoff down to the local midnight of its own day, once, so every query filters
+    // on the same absolute instant (a raw-integer compare, which is what lets
+    // idx_predictions_ts serve it) and the first bucket is a whole calendar day. This is the
+    // one calendar-snapped window in this family of queries; the divergence from the rolling
+    // cutoffs is deliberate — a trend chart of partial first days would misread as a bad day.
+    std::int64_t start_ms = since_ms;
+    {
+        Stmt stmt(db_,
+                  "SELECT (strftime('%s', ?1 / 1000.0, 'unixepoch', 'localtime',"
+                  " 'start of day', 'utc') * 1000)");
+        stmt.bind(1, since_ms);
+        if (stmt.step_row()) start_ms = sqlite3_column_int64(stmt.get(), 0);
+    }
+    if (start_ms >= now_ms) return {};
+
+    // Query 1: attended seconds per day. A recursive local-day axis joined to session_spans,
+    // so a span crossing midnight splits exactly at the boundary; the clip arithmetic is
+    // kAttendedInWindowSql's, applied per day instead of once. Stepping the axis through
+    // 'localtime'/'start of day' (never fixed +24h arithmetic) keeps DST correct per instant,
+    // the same reasoning as attended_secs_in_local_week.
+    {
+        Stmt stmt(db_,
+                  "WITH RECURSIVE days(day_start, day_end) AS ("
+                  "  SELECT ?2, (strftime('%s', ?2 / 1000.0, 'unixepoch', 'localtime',"
+                  "              'start of day', '+1 day', 'utc') * 1000)"
+                  "  UNION ALL"
+                  "  SELECT day_end, (strftime('%s', day_end / 1000.0, 'unixepoch', 'localtime',"
+                  "                   'start of day', '+1 day', 'utc') * 1000)"
+                  "  FROM days WHERE day_end <= ?1"
+                  ") "
+                  "SELECT strftime('%Y-%m-%d', day_start / 1000.0, 'unixepoch', 'localtime'),"
+                  "       CAST(ROUND(COALESCE(SUM(MAX(0,"
+                  "         MIN(COALESCE(s.ended_at, ?1), day_end)"
+                  "         - MAX(s.started_at, day_start)"
+                  "       )), 0) / 1000.0) AS INTEGER) "
+                  "FROM days LEFT JOIN session_spans s"
+                  "  ON s.started_at < day_end AND COALESCE(s.ended_at, ?1) > day_start "
+                  "GROUP BY day_start ORDER BY day_start ASC");
+        stmt.bind(1, now_ms);
+        stmt.bind(2, start_ms);
+        while (stmt.step_row()) {
+            const auto secs = sqlite3_column_int64(stmt.get(), 1);
+            if (secs <= 0) continue;  // days with no data are omitted, as hourly buckets do
+            bucket_for(stmt.get(), 0).attended_secs = static_cast<std::uint64_t>(secs);
+        }
+    }
+
+    // Query 2: prediction volume and average per local date. The filters stay on the raw
+    // integer; 'localtime' appears only in the bucketing expression (ADR-0007's rule). The
+    // upper bound matters here where the scalar queries skip it: the day axis ends at `now`,
+    // so a future-dated row (clock skew, a fixture) must not grow the series past it.
+    {
+        Stmt stmt(db_,
+                  "SELECT strftime('%Y-%m-%d', timestamp / 1000.0, 'unixepoch', 'localtime')"
+                  "         AS day,"
+                  "       COUNT(*), AVG(focus_score) "
+                  "FROM predictions "
+                  "WHERE timestamp >= ?1 AND timestamp <= ?2 "
+                  "  AND strftime('%Y-%m-%d', timestamp / 1000.0, 'unixepoch', 'localtime')"
+                  "      IS NOT NULL "
+                  "GROUP BY day ORDER BY day ASC");
+        stmt.bind(1, start_ms);
+        stmt.bind(2, now_ms);
+        while (stmt.step_row()) {
+            auto& bucket = bucket_for(stmt.get(), 0);
+            bucket.sample_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1));
+            bucket.avg_focus_score = sqlite3_column_double(stmt.get(), 2);
+        }
+    }
+
+    // Query 3: focused and deep seconds per day — prediction_stats' run arithmetic, summed
+    // per day instead of MAX'd per run. A gap counts toward a state's total when *both* of
+    // its endpoint rows qualify (non-DISTRACTED for focused, DEEP_FOCUS for deep) and the gap
+    // is within kFocusRunGapSecs; that is exactly "inside a run" without needing the run
+    // numbering, because a per-day SUM has no per-run grouping to preserve. The both-ends
+    // rule is prediction_stats' prev_distracted lesson: the interval *entering* a state is
+    // not time spent in it. `prev_* = 0` is false for the NULL of a partition's first row,
+    // which is what excludes it. Each gap lands on the local date of its later row, so a run
+    // crossing midnight misplaces at most kFocusRunGapSecs per midnight — accepted; spans
+    // (query 1) split exactly. DEEP_FOCUS implies non-DISTRACTED, so focused >= deep per day.
+    {
+        Stmt stmt(db_,
+                  "WITH ordered AS ("
+                  "  SELECT strftime('%Y-%m-%d', timestamp / 1000.0, 'unixepoch', 'localtime')"
+                  "           AS day,"
+                  "         (focus_state = 'DISTRACTED') AS distracted,"
+                  "         LAG(focus_state = 'DISTRACTED') OVER w AS prev_distracted,"
+                  "         (focus_state = 'DEEP_FOCUS') AS deep,"
+                  "         LAG(focus_state = 'DEEP_FOCUS') OVER w AS prev_deep,"
+                  "         CAST(ROUND((timestamp -"
+                  "              LAG(timestamp) OVER w) / 1000.0) AS INTEGER) AS gap"
+                  "  FROM predictions WHERE timestamp >= ?1 AND timestamp <= ?2"
+                  "  WINDOW w AS (PARTITION BY session_id ORDER BY timestamp ASC, id ASC)"
+                  ") "
+                  "SELECT day,"
+                  "  COALESCE(SUM(CASE WHEN distracted = 0 AND prev_distracted = 0"
+                  "                    AND gap IS NOT NULL AND gap >= 0 AND gap <= ?3"
+                  "               THEN gap ELSE 0 END), 0),"
+                  "  COALESCE(SUM(CASE WHEN deep = 1 AND prev_deep = 1"
+                  "                    AND gap IS NOT NULL AND gap >= 0 AND gap <= ?3"
+                  "               THEN gap ELSE 0 END), 0) "
+                  "FROM ordered WHERE day IS NOT NULL GROUP BY day ORDER BY day ASC");
+        stmt.bind(1, start_ms);
+        stmt.bind(2, now_ms);
+        stmt.bind(3, static_cast<std::int64_t>(kFocusRunGapSecs));
+        while (stmt.step_row()) {
+            const auto focused = sqlite3_column_int64(stmt.get(), 1);
+            const auto deep = sqlite3_column_int64(stmt.get(), 2);
+            if (focused <= 0 && deep <= 0) continue;
+            auto& bucket = bucket_for(stmt.get(), 0);
+            bucket.focused_secs = static_cast<std::uint64_t>(std::max<std::int64_t>(0, focused));
+            bucket.deep_focus_secs = static_cast<std::uint64_t>(std::max<std::int64_t>(0, deep));
+        }
+    }
+
+    // Query 4: sessions started and snapback episodes per local date.
+    {
+        Stmt stmt(db_,
+                  "SELECT strftime('%Y-%m-%d', started_at / 1000.0, 'unixepoch', 'localtime')"
+                  "         AS day, COUNT(*) "
+                  "FROM sessions "
+                  "WHERE started_at IS NOT NULL AND started_at >= ?1 AND started_at <= ?2 "
+                  "  AND strftime('%Y-%m-%d', started_at / 1000.0, 'unixepoch', 'localtime')"
+                  "      IS NOT NULL "
+                  "GROUP BY day ORDER BY day ASC");
+        stmt.bind(1, start_ms);
+        stmt.bind(2, now_ms);
+        while (stmt.step_row()) {
+            bucket_for(stmt.get(), 0).session_count =
+                static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1));
+        }
+    }
+    {
+        Stmt stmt(db_,
+                  "SELECT strftime('%Y-%m-%d', timestamp / 1000.0, 'unixepoch', 'localtime')"
+                  "         AS day, COUNT(*) "
+                  "FROM snapback_events "
+                  "WHERE timestamp >= ?1 AND timestamp <= ?2 "
+                  "  AND strftime('%Y-%m-%d', timestamp / 1000.0, 'unixepoch', 'localtime')"
+                  "      IS NOT NULL "
+                  "GROUP BY day ORDER BY day ASC");
+        stmt.bind(1, start_ms);
+        stmt.bind(2, now_ms);
+        while (stmt.step_row()) {
+            bucket_for(stmt.get(), 0).snapback_count =
+                static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1));
+        }
+    }
+
+    std::vector<DailySummaryDay> out;
+    out.reserve(by_day.size());
+    for (auto& [day, bucket] : by_day) out.push_back(std::move(bucket));
+    return out;
 }
 
 std::size_t Storage::productive_session_streak(std::size_t limit, double min_avg_focus,

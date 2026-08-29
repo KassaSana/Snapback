@@ -12,6 +12,8 @@ import type {
   AppRuleRecord,
   ClassifierStatus,
   ContextSnapshot,
+  DailySummary,
+  DailySummaryDay,
   DiagnosticsSnapshot,
   ExportTrainingResult,
   FocusSummary,
@@ -146,6 +148,28 @@ export function mapAnalyticsSummary(raw: Record<string, unknown>): AnalyticsSumm
       return {
         appName: String(row.app_name ?? row.appName ?? ""),
         windowCount: Number(row.window_count ?? row.windowCount ?? 0),
+      };
+    }),
+  };
+}
+
+export function mapDailySummary(raw: Record<string, unknown>): DailySummary {
+  const daysRaw = Array.isArray(raw.days) ? raw.days : [];
+  return {
+    window: String(raw.window ?? "7d"),
+    generatedAtMs: Number(raw.generated_at_ms ?? raw.generatedAtMs ?? 0),
+    capped: Boolean(raw.capped ?? false),
+    days: daysRaw.map((value): DailySummaryDay => {
+      const row = (value ?? {}) as Record<string, unknown>;
+      return {
+        day: String(row.day ?? ""),
+        attendedSecs: Number(row.attended_secs ?? row.attendedSecs ?? 0),
+        focusedSecs: Number(row.focused_secs ?? row.focusedSecs ?? 0),
+        deepFocusSecs: Number(row.deep_focus_secs ?? row.deepFocusSecs ?? 0),
+        avgFocusScore: Number(row.avg_focus_score ?? row.avgFocusScore ?? 0),
+        sampleCount: Number(row.sample_count ?? row.sampleCount ?? 0),
+        sessionCount: Number(row.session_count ?? row.sessionCount ?? 0),
+        snapbackCount: Number(row.snapback_count ?? row.snapbackCount ?? 0),
       };
     }),
   };

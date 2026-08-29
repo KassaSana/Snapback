@@ -1,8 +1,8 @@
 /** Roadmap 10.11. One Review-level time range drives every card on that surface so the
- *  user is never comparing numbers from different populations. Calendar-day boundaries are
- *  still rolling windows until Roadmap 7.16 lands; the presets are named for what the user
- *  expects, and the backend maps them to the same cutoff_rfc3339() helper Summary already
- *  used for day/week. */
+ *  user is never comparing numbers from different populations. The presets are rolling
+ *  windows ("the last 7 x 24 hours") by design — 7.16 (integer-ms time) made calendar
+ *  semantics possible, and the daily-summary series is the one query that snaps to local
+ *  midnights; the scalar cards keep the rolling cutoff they have always had. */
 
 export type ReviewRangePreset = "today" | "7d" | "30d" | "all" | "custom";
 

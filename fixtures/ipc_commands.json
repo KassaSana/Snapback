@@ -18,6 +18,7 @@
   "get_settings",
   "get_privacy_settings",
   "get_analytics",
+  "get_daily_summary",
   "get_summary_report",
   "export_summary_report",
   "get_goal_categories",

@@ -1485,6 +1485,30 @@ TEST_CASE("AppState analytics aggregates predictions, hourly buckets, and app co
     CHECK(summary.top_apps[0].window_count == 1);
 }
 
+TEST_CASE("AppState daily_summary buckets predictions and clamps 'all' to retention") {
+    auto state = make_state();
+    state->start_session("Trend data", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 1.0, "Cursor"));
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 2.0, "Cursor"));
+
+    const auto week = state->daily_summary("7d");
+    CHECK(week.window == "7d");
+    CHECK_FALSE(week.capped);
+    CHECK(week.generated_at_ms > 0);
+    REQUIRE(week.days.size() == 1);
+    CHECK(week.days[0].sample_count == 2);
+    CHECK(week.days[0].session_count == 1);
+
+    // "all" has no cutoff; the series clamps to the retention window and says so, rather
+    // than answering with an unbounded day axis over rows the pruner has already emptied.
+    const auto all = state->daily_summary("all");
+    CHECK(all.capped);
+    REQUIRE(all.days.size() == 1);
+    CHECK(all.days[0].sample_count == 2);
+
+    CHECK_THROWS_AS(state->daily_summary("month"), std::runtime_error);
+}
+
 TEST_CASE("AppState creates and exports day or week summary reports") {
     TempDir temp;
     auto storage = Storage::open_memory();

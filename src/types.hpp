@@ -651,6 +651,30 @@ struct SummaryReport {
     std::uint32_t planned_mins{};
 };
 
+// One local calendar day of the Review trend series. `day` is the bucketing key
+// ("YYYY-MM-DD" on the user's clock, per ADR-0007's rule that local time appears only when a
+// value is bucketed for a report). All second counts are durations, not row counts (10.13):
+// attended comes from session_spans clipped per day; focused/deep sum the gaps between
+// consecutive same-state predictions, the arithmetic behind longest_focus_secs.
+struct DailySummaryDay {
+    std::string day;
+    std::uint64_t attended_secs{};
+    std::uint64_t focused_secs{};     // non-DISTRACTED run time
+    std::uint64_t deep_focus_secs{};  // DEEP_FOCUS-only run time
+    double avg_focus_score{};
+    std::size_t sample_count{};
+    std::size_t session_count{};
+    std::size_t snapback_count{};
+};
+
+struct DailySummary {
+    std::string window;
+    std::int64_t generated_at_ms{};
+    // True when the requested range reached past the retention window and was clamped to it.
+    bool capped{};
+    std::vector<DailySummaryDay> days;
+};
+
 struct SummaryExportResult {
     std::string window;
     std::string output_path;
@@ -754,6 +778,8 @@ void to_json(json& j, const AnalyticsHour& v);
 void to_json(json& j, const AnalyticsApp& v);
 void to_json(json& j, const AnalyticsSummary& v);
 void to_json(json& j, const SummaryReport& v);
+void to_json(json& j, const DailySummaryDay& v);
+void to_json(json& j, const DailySummary& v);
 void to_json(json& j, const SummaryExportResult& v);
 void to_json(json& j, const DiagnosticsSnapshot& v);
 void to_json(json& j, const GoalCategory& v);
