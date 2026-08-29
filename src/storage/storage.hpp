@@ -283,6 +283,19 @@ public:
                                           const std::optional<std::int64_t>& started_after_ms =
                                               std::nullopt);
 
+    // One row per local calendar day between `since_ms` and `now_ms`, ascending, omitting
+    // days with no data (matching hourly_focus_buckets). The window is snapped down to the
+    // local midnight of `since_ms`'s day so buckets are whole days — the one place this
+    // family of queries uses calendar semantics rather than a rolling cutoff.
+    //
+    // Attended seconds come from session_spans clipped per day by a recursive day axis, so a
+    // span crossing midnight splits exactly. Focused/deep seconds reuse prediction_stats'
+    // run arithmetic (gap between consecutive qualifying rows, capped at kFocusRunGapSecs)
+    // summed per day instead of MAX'd per run; a gap is attributed to the local date of the
+    // *later* row, so a run crossing midnight misplaces at most kFocusRunGapSecs per
+    // midnight — accepted and documented, versus spans which split exactly.
+    std::vector<DailySummaryDay> daily_summary(std::int64_t now_ms, std::int64_t since_ms);
+
     struct SessionWindowTotals {
         std::size_t session_count{};
         std::size_t completed_session_count{};

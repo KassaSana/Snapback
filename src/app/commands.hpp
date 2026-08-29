@@ -224,6 +224,10 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(state.analytics(a.value("window", std::string("all")),
                                     detail::opt_string(a, "since")));
     });
+    bind_cmd("get_daily_summary", [&state](const json& a) {
+        return json(state.daily_summary(a.value("window", std::string("7d")),
+                                        detail::opt_string(a, "since")));
+    });
     bind_cmd("get_summary_report", [&state](const json& a) {
         return json(state.summary_report(a.value("window", std::string("day")),
                                          detail::opt_string(a, "since")));

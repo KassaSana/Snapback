@@ -83,10 +83,11 @@ TEST_CASE("IPC contract: frontend invoke names are a subset of the canonical set
     }
 }
 
-TEST_CASE("IPC contract: canonical set has 71 handler commands") {
+TEST_CASE("IPC contract: canonical set has 72 handler commands") {
     // 61 -> 65 with Roadmap 9.14's import path; 66 with Roadmap 2.8; 68 with Roadmap 10.14 file
-    // dialogs; 71 with Roadmap 2.16's alert snooze, resume, and delivery preferences.
-    CHECK(load_expected_commands().size() == 71);
+    // dialogs; 71 with Roadmap 2.16's alert snooze, resume, and delivery preferences; 72 with
+    // the daily focus series behind the Review trend surfaces.
+    CHECK(load_expected_commands().size() == 72);
 }
 
 

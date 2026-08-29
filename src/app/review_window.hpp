@@ -10,7 +10,10 @@
 namespace snapback {
 
 // Roadmap 10.11. Maps the Review surface's shared range to the epoch-millisecond cutoff every
-// bounded query understands. Rolling windows until calendar-day semantics land.
+// bounded query understands. These presets are rolling windows ("the last 7 x 24 hours"), not
+// calendar ranges — 7.16 (integer-ms time) made calendar semantics *possible*, and
+// Storage::daily_summary is the one consumer that snaps its cutoff to a local midnight; the
+// scalar queries deliberately stay rolling so "7d" means the same thing it always has.
 //
 // ADR-0007 moved this from RFC3339 text to milliseconds, which removes a conversion at each of
 // the eight query call sites rather than adding one here. `since` is the exception and stays a

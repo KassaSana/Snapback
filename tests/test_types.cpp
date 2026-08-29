@@ -212,6 +212,42 @@ TEST_CASE("AppSettings serializes default focus mode as camelCase") {
     CHECK(missing.untracked_nudge_until_wall_ms == 0);
 }
 
+TEST_CASE("DailySummary serializes with camelCase keys and duration-named fields") {
+    DailySummaryDay day;
+    day.day = "2026-08-05";
+    day.attended_secs = 1800;
+    day.focused_secs = 1200;
+    day.deep_focus_secs = 600;
+    day.avg_focus_score = 63.5;
+    day.sample_count = 412;
+    day.session_count = 2;
+    day.snapback_count = 3;
+
+    DailySummary summary;
+    summary.window = "7d";
+    summary.generated_at_ms = 1'787'000'000'000;
+    summary.capped = true;
+    summary.days = {day};
+
+    json j = summary;
+    CHECK(j["window"] == "7d");
+    CHECK(j["generatedAtMs"] == 1'787'000'000'000);
+    CHECK(j["capped"] == true);
+    REQUIRE(j["days"].size() == 1);
+    const auto& d = j["days"][0];
+    CHECK(d["day"] == "2026-08-05");
+    // The *Secs suffixes are the 10.13 contract: these are durations, and the row count
+    // travels separately as sampleCount so no consumer has to guess which is which.
+    CHECK(d["attendedSecs"] == 1800);
+    CHECK(d["focusedSecs"] == 1200);
+    CHECK(d["deepFocusSecs"] == 600);
+    CHECK(d["avgFocusScore"] == doctest::Approx(63.5));
+    CHECK(d["sampleCount"] == 412);
+    CHECK(d["sessionCount"] == 2);
+    CHECK(d["snapbackCount"] == 3);
+    CHECK_FALSE(d.contains("attended_secs"));
+}
+
 TEST_CASE("LabelRequest carries the nested camelCase arg shape") {
     json j = json::parse(R"({"sessionId":"s1","label":"DEEP_FOCUS","source":"hotkey"})");
     auto req = j.get<LabelRequest>();

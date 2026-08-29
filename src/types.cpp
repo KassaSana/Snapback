@@ -550,6 +550,24 @@ void to_json(json& j, const SummaryReport& v) {
              {"plannedMins", v.planned_mins}};
 }
 
+void to_json(json& j, const DailySummaryDay& v) {
+    j = json{{"day", v.day},
+             {"attendedSecs", v.attended_secs},
+             {"focusedSecs", v.focused_secs},
+             {"deepFocusSecs", v.deep_focus_secs},
+             {"avgFocusScore", v.avg_focus_score},
+             {"sampleCount", v.sample_count},
+             {"sessionCount", v.session_count},
+             {"snapbackCount", v.snapback_count}};
+}
+
+void to_json(json& j, const DailySummary& v) {
+    j = json{{"window", v.window},
+             {"generatedAtMs", v.generated_at_ms},
+             {"capped", v.capped},
+             {"days", v.days}};
+}
+
 void to_json(json& j, const SummaryExportResult& v) {
     j = json{{"window", v.window}, {"outputPath", v.output_path}};
 }

@@ -2265,6 +2265,123 @@ TEST_CASE("attended_secs_since clips to an arbitrary Review lower bound") {
     CHECK(storage->attended_secs_since(ms("2026-08-09T12:00:00Z"), std::nullopt) == 50 * 60);
 }
 
+// --- daily_summary: the per-local-day series behind the Review trend surfaces --------------
+
+namespace {
+
+// The local midnight after `instant_ms`, derived independently of the SQL under test through
+// the C library's localtime/mktime — the same conversion SQLite's 'localtime' modifier uses,
+// so the two agree including across DST. Independent derivation is the point: a test that
+// asked storage where midnight falls would be checking the query against itself.
+std::int64_t next_local_midnight_ms(std::int64_t instant_ms) {
+    std::time_t t = static_cast<std::time_t>(instant_ms / 1000);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    tm.tm_hour = 0;
+    tm.tm_min = 0;
+    tm.tm_sec = 0;
+    tm.tm_mday += 1;
+    tm.tm_isdst = -1;  // mktime re-derives DST for the normalized date
+    return static_cast<std::int64_t>(std::mktime(&tm)) * 1000;
+}
+
+}  // namespace
+
+TEST_CASE("daily_summary splits a span crossing local midnight across both days") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("late night", FocusMode::Normal);
+
+    // Thirty minutes before a local midnight to forty-five after: the recursive day axis
+    // must clip the span at the boundary, not attribute it whole to either day.
+    const std::int64_t midnight = next_local_midnight_ms(ms("2026-08-05T12:00:00Z"));
+    storage->execute_for_test(
+        "INSERT INTO session_spans (session_id, started_at, ended_at) VALUES ('" +
+        session.session_id + "', " + std::to_string(midnight - 30 * 60 * 1000) + ", " +
+        std::to_string(midnight + 45 * 60 * 1000) + ")");
+
+    const auto days = storage->daily_summary(midnight + 3 * 60 * 60 * 1000,
+                                             midnight - 2 * 24 * 60 * 60 * 1000);
+    REQUIRE(days.size() == 2);
+    CHECK(days[0].day < days[1].day);
+    CHECK(days[0].attended_secs == 30 * 60);
+    CHECK(days[1].attended_secs == 45 * 60);
+}
+
+TEST_CASE("daily_summary omits empty days and clips an open span to now") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("still going", FocusMode::Normal);
+    storage->execute_for_test("INSERT INTO session_spans (session_id, started_at) VALUES ('" +
+                              session.session_id + "', " + ms_literal("2026-08-07T10:00:00Z") +
+                              ")");
+
+    // A week-long axis with one active day: the series has one bucket, not seven — days
+    // with nothing in them are the frontend's gaps to fill, matching hourly buckets.
+    const auto days =
+        storage->daily_summary(ms("2026-08-07T10:20:00Z"), ms("2026-08-01T00:00:00Z"));
+    REQUIRE(days.size() == 1);
+    CHECK(days[0].attended_secs == 20 * 60);
+}
+
+TEST_CASE("daily_summary sums focused and deep run gaps, not row counts") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("mixed day", FocusMode::Normal);
+
+    const std::int64_t t0 = ms("2026-08-05T18:00:00Z");
+    const auto at = [&](std::int64_t offset_secs, double focus, const std::string& state) {
+        auto p = prediction(session.session_id, focus, 0.2, state);
+        p.timestamp_ms = t0 + offset_secs * 1000;
+        storage->insert_prediction(p);
+    };
+    at(0, 90.0, "DEEP_FOCUS");
+    at(60, 88.0, "DEEP_FOCUS");    // deep gap: 60
+    at(120, 70.0, "PRODUCTIVE");   // focused gap only: prior state no longer deep
+    at(180, 30.0, "DISTRACTED");   // entering distraction is credited to neither
+    at(240, 65.0, "PRODUCTIVE");   // leaving distraction is not focus time either
+    at(300, 92.0, "DEEP_FOCUS");   // focused gap; not deep — the earlier row was PRODUCTIVE
+    at(1000, 91.0, "DEEP_FOCUS");  // 700s of silence: a gap past the cap is a break
+
+    const auto days =
+        storage->daily_summary(t0 + 60 * 60 * 1000, t0 - 24 * 60 * 60 * 1000);
+    REQUIRE(days.size() == 1);
+    CHECK(days[0].sample_count == 7);
+    CHECK(days[0].focused_secs == 180);
+    CHECK(days[0].deep_focus_secs == 60);
+    // DEEP_FOCUS implies non-DISTRACTED, so this holds for any input.
+    CHECK(days[0].focused_secs >= days[0].deep_focus_secs);
+    // No spans were recorded: measured attendance stays zero rather than being invented
+    // from prediction activity (ADR-0005 at the reporting end).
+    CHECK(days[0].attended_secs == 0);
+}
+
+TEST_CASE("daily_summary counts sessions and snapback episodes by local day") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("counted", FocusMode::Normal);
+    storage->backdate_session_for_test(session.session_id, ms("2026-08-05T18:00:00Z"));
+
+    SnapbackEpisode episode;
+    episode.session_id = session.session_id;
+    episode.summary = "Return to auth.ts";
+    episode.app_name = "Cursor";
+    episode.started_at_ms = ms("2026-08-05T18:05:00Z");
+    episode.ended_at_ms = ms("2026-08-05T18:09:00Z");
+    episode.duration_secs = 240;
+    CHECK(storage->insert_snapback_episode(episode));
+
+    const auto days =
+        storage->daily_summary(ms("2026-08-05T20:00:00Z"), ms("2026-08-03T00:00:00Z"));
+    REQUIRE(days.size() == 1);
+    CHECK(days[0].session_count == 1);
+    CHECK(days[0].snapback_count == 1);
+}
+
 // --- ADR-0007 / Roadmap 7.16: time is INTEGER epoch milliseconds ---------------------------
 
 namespace {

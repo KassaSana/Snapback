@@ -530,6 +530,99 @@ export class DemoBackend {
         };
       }
 
+      case "get_daily_summary": {
+        // Mirrors the native command: one row per local calendar day, ascending, empty days
+        // omitted. Focused/deep are run gaps between consecutive qualifying samples (both
+        // endpoints must qualify, gaps over 120s are breaks) — with the demo's exact 2-minute
+        // spacing every in-run gap counts as 120s. Attended, session, and snapback counts
+        // land on the session's start day; demo sessions never cross midnight.
+        const windowName = typeof range?.window === "string" ? range.window : "7d";
+        const start = this.rangeStart(range);
+        const localDay = (ms: number) => {
+          const d = new Date(ms);
+          const month = String(d.getMonth() + 1).padStart(2, "0");
+          const dayOfMonth = String(d.getDate()).padStart(2, "0");
+          return `${d.getFullYear()}-${month}-${dayOfMonth}`;
+        };
+        type DayBucket = {
+          day: string;
+          attendedSecs: number;
+          focusedSecs: number;
+          deepFocusSecs: number;
+          focusTotal: number;
+          sampleCount: number;
+          sessionCount: number;
+          snapbackCount: number;
+        };
+        const buckets = new Map<string, DayBucket>();
+        const bucketFor = (day: string): DayBucket => {
+          let bucket = buckets.get(day);
+          if (!bucket) {
+            bucket = {
+              day,
+              attendedSecs: 0,
+              focusedSecs: 0,
+              deepFocusSecs: 0,
+              focusTotal: 0,
+              sampleCount: 0,
+              sessionCount: 0,
+              snapbackCount: 0,
+            };
+            buckets.set(day, bucket);
+          }
+          return bucket;
+        };
+
+        const rows = this.predictionsIn(range);
+        const prevBySession = new Map<string, DemoPrediction>();
+        for (const row of rows) {
+          const bucket = bucketFor(localDay(row.timestampMs));
+          bucket.sampleCount += 1;
+          bucket.focusTotal += row.focusScore;
+          const prev = prevBySession.get(row.sessionId);
+          if (prev) {
+            const gapSecs = Math.round((row.timestampMs - prev.timestampMs) / 1000);
+            if (gapSecs >= 0 && gapSecs <= 120) {
+              if (row.focusState !== "DISTRACTED" && prev.focusState !== "DISTRACTED") {
+                bucket.focusedSecs += gapSecs;
+              }
+              if (row.focusState === "DEEP_FOCUS" && prev.focusState === "DEEP_FOCUS") {
+                bucket.deepFocusSecs += gapSecs;
+              }
+            }
+          }
+          prevBySession.set(row.sessionId, row);
+        }
+
+        for (const session of this.data.sessions) {
+          if (session.startedAtMs < start) continue;
+          const bucket = bucketFor(localDay(session.startedAtMs));
+          bucket.attendedSecs += session.attendedSecs;
+          bucket.sessionCount += 1;
+          bucket.snapbackCount += session.snapbackCount;
+        }
+
+        return {
+          window: windowName,
+          generatedAtMs: this.now(),
+          capped: false,
+          days: [...buckets.values()]
+            .sort((a, b) => (a.day < b.day ? -1 : 1))
+            .map((bucket) => ({
+              day: bucket.day,
+              attendedSecs: bucket.attendedSecs,
+              focusedSecs: bucket.focusedSecs,
+              deepFocusSecs: bucket.deepFocusSecs,
+              avgFocusScore: bucket.sampleCount
+                ? Math.round(bucket.focusTotal / bucket.sampleCount)
+                : 0,
+              sampleCount: bucket.sampleCount,
+              sessionCount: bucket.sessionCount,
+              snapbackCount: bucket.snapbackCount,
+            })),
+        };
+      }
+
       case "get_summary_report": {
         const rows = this.predictionsIn(range);
         const start = this.rangeStart(range);
