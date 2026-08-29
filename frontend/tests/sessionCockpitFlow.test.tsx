@@ -232,7 +232,7 @@ describe("session cockpit", () => {
     expect(startedSessions()).toBe(1);
   });
 
-  it("offers recent goals and repeats the last one without starting it", async () => {
+  it("offers recent goals as chips and Repeat last starts that session", async () => {
     boundary.state.history = [
       historyRow("Ship the overlay", "deep"),
       historyRow("Answer email", "normal"),
@@ -244,16 +244,23 @@ describe("session cockpit", () => {
 
     fireEvent.click(within(card).getByRole("button", { name: "Repeat last" }));
 
-    // The form is filled, including the mode that goal was last run with...
-    expect(goalField()).toHaveValue("Ship the overlay");
     await waitFor(() =>
-      expect((screen.getByLabelText("Focus mode") as HTMLSelectElement).value).toBe("deep"),
+      expect(boundary.invoke).toHaveBeenCalledWith("start_session", {
+        goal: "Ship the overlay",
+        focusMode: "deep",
+      }),
     );
-    // ...and nothing has started. ADR-0005 keeps declaration explicit: a preset fills the form,
-    // the user still presses Start.
-    expect(startedSessions()).toBe(0);
+    expect(startedSessions()).toBe(1);
+  });
 
-    // The older goal is reachable as its own chip.
+  it("fills a recent-goal chip without starting a session", async () => {
+    boundary.state.history = [
+      historyRow("Ship the overlay", "deep"),
+      historyRow("Answer email", "normal"),
+    ];
+
+    render(<App />);
+    const card = await sessionCard();
     fireEvent.click(within(card).getByRole("button", { name: "Answer email" }));
     expect(goalField()).toHaveValue("Answer email");
     expect(startedSessions()).toBe(0);
@@ -270,21 +277,21 @@ describe("session cockpit", () => {
 
     const pinned = () =>
       within(card)
-        .getAllByRole("button", { name: /· (deep|normal|recovery)$/ })
+        .getAllByRole("button", { name: /· (Deep|Normal|Recovery)$/ })
         .map((node) => node.textContent);
-    expect(pinned()).toEqual(["Ship the overlay · normal", "Answer email · normal"]);
+    expect(pinned()).toEqual(["Ship the overlay · Normal", "Answer email · Normal"]);
 
     fireEvent.click(within(card).getByRole("button", { name: "Move Answer email up" }));
-    expect(pinned()).toEqual(["Answer email · normal", "Ship the overlay · normal"]);
+    expect(pinned()).toEqual(["Answer email · Normal", "Ship the overlay · Normal"]);
 
     // Applying a pin fills the form and stops there.
     fireEvent.change(goalField(), { target: { value: "" } });
-    fireEvent.click(within(card).getByRole("button", { name: "Ship the overlay · normal" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Ship the overlay · Normal" }));
     expect(goalField()).toHaveValue("Ship the overlay");
     expect(startedSessions()).toBe(0);
 
     fireEvent.click(within(card).getByRole("button", { name: "Unpin Answer email" }));
-    expect(pinned()).toEqual(["Ship the overlay · normal"]);
+    expect(pinned()).toEqual(["Ship the overlay · Normal"]);
   });
 
   it("leads with elapsed time and keeps the session id as technical detail", async () => {

@@ -36,6 +36,7 @@ export default defineConfig({
         "src/activityDeletion.ts",
         "src/myDataExport.ts",
         "src/focusStreak.ts",
+        "src/workAppTeach.ts",
       ],
       thresholds: {
         statements: 76,

@@ -83,6 +83,9 @@ describe("App first-run permission wizard", () => {
     // ADR-0003: Now is the default surface, and it holds the session, not the config.
     expect(await screen.findByRole("heading", { name: "Session Control" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Now" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "What are you working on?" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pomodoro" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Attended time" })).not.toBeInTheDocument();
 
     // Settings-surface cards must NOT be mounted — that separation is the whole point.
     expect(screen.queryByRole("heading", { name: "Permissions" })).not.toBeInTheDocument();

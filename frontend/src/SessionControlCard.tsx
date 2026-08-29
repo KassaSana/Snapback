@@ -3,12 +3,15 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { formatTime, type SessionRecord } from "./api";
 import {
   FOCUS_MODES,
+  FOCUS_MODE_HINT,
+  FOCUS_MODE_LABELS,
   addSessionPreset,
   canStartSession,
   canStopSession,
   filterGoalSuggestions,
   formatElapsed,
   moveSessionPreset,
+  normalizeFocusMode,
   readSessionPresets,
   removeSessionPreset,
   validateSessionGoal,
@@ -23,6 +26,8 @@ type SessionControlCardProps = {
   focusMode: FocusMode;
   handleFocusModeChange: (mode: FocusMode) => void;
   handleStartSession: () => void;
+  /** Repeat last: fill and start in one declaration. */
+  handleStartNamedSession: (goal: string, mode: FocusMode) => void | Promise<void>;
   handleStopSession: () => void;
   /** Roadmap 2.11's guarded switch: stops the running session, then starts the typed one. */
   handleSwitchSession: () => void;
@@ -48,6 +53,7 @@ export const SessionControlCard = memo(function SessionControlCard({
   focusMode,
   handleFocusModeChange,
   handleStartSession,
+  handleStartNamedSession,
   handleStopSession,
   handleSwitchSession,
   sessionGoal,
@@ -181,7 +187,9 @@ export const SessionControlCard = memo(function SessionControlCard({
             </div>
             <div className="metric">
               <p className="metric-label">Mode</p>
-              <p className="metric-value">{sessionRecord?.focusMode || focusMode}</p>
+              <p className="metric-value">
+                {FOCUS_MODE_LABELS[normalizeFocusMode(sessionRecord?.focusMode || focusMode)]}
+              </p>
             </div>
           </div>
           <div className="button-row">
@@ -214,6 +222,7 @@ export const SessionControlCard = memo(function SessionControlCard({
 
       {(!sessionActive || switching) && (
         <form onSubmit={onSubmit}>
+          <div className="session-start-fields">
           <label className="field">
             <span>Focus goal</span>
             <div className="goal-input-wrapper">
@@ -264,7 +273,8 @@ export const SessionControlCard = memo(function SessionControlCard({
                     >
                       <span className="suggestion-goal-text">{suggestion.goal}</span>
                       <span className="suggestion-meta-badge">
-                        {suggestion.source === "pinned" ? "Pinned" : "Recent"} · {suggestion.focusMode}
+                        {suggestion.source === "pinned" ? "Pinned" : "Recent"} ·{" "}
+                        {FOCUS_MODE_LABELS[suggestion.focusMode]}
                       </span>
                     </li>
                   ))}
@@ -272,12 +282,6 @@ export const SessionControlCard = memo(function SessionControlCard({
               )}
             </div>
           </label>
-
-          {validation.message && (
-            <p className="helper-text helper-error" id="session-goal-error" role="alert">
-              {validation.message}
-            </p>
-          )}
 
           <label className="field">
             <span>Focus mode</span>
@@ -287,14 +291,24 @@ export const SessionControlCard = memo(function SessionControlCard({
                 void handleFocusModeChange(event.target.value as FocusMode)
               }
               disabled={sessionPending}
+              aria-describedby="focus-mode-hint"
             >
               {FOCUS_MODES.map((mode) => (
                 <option key={mode} value={mode}>
-                  {mode}
+                  {FOCUS_MODE_LABELS[mode]}
                 </option>
               ))}
             </select>
           </label>
+          </div>
+          {validation.message && (
+            <p className="helper-text helper-error" id="session-goal-error" role="alert">
+              {validation.message}
+            </p>
+          )}
+          <p className="helper-text" id="focus-mode-hint">
+            {FOCUS_MODE_HINT}
+          </p>
 
           <div className="button-row">
             <button
@@ -312,7 +326,11 @@ export const SessionControlCard = memo(function SessionControlCard({
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => applyGoal(recentGoals[0].goal, recentGoals[0].focusMode)}
+                onClick={() => {
+                  const last = recentGoals[0];
+                  applyGoal(last.goal, last.focusMode);
+                  void handleStartNamedSession(last.goal, last.focusMode);
+                }}
                 disabled={sessionPending}
                 title={recentGoals[0].goal}
               >
@@ -363,7 +381,7 @@ export const SessionControlCard = memo(function SessionControlCard({
                       onClick={() => applyGoal(preset.goal, preset.focusMode)}
                       disabled={sessionPending}
                     >
-                      {preset.goal} · {preset.focusMode}
+                      {preset.goal} · {FOCUS_MODE_LABELS[preset.focusMode]}
                     </button>
                     <button
                       type="button"

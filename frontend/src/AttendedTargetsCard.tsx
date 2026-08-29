@@ -12,6 +12,8 @@ import type { AttendedProgress } from "./api";
 type AttendedTargetsCardProps = {
   progress: AttendedProgress;
   onSave: (dailyMins: number, weeklyMins: number) => void | Promise<void>;
+  /** One-line metric on a running Now. Edit still lives behind the same control. */
+  compact?: boolean;
 };
 
 const formatMinutes = (mins: number): string => {
@@ -47,30 +49,40 @@ const Row = ({
 export const AttendedTargetsCard = memo(function AttendedTargetsCard({
   progress,
   onSave,
+  compact = false,
 }: AttendedTargetsCardProps) {
   const [editing, setEditing] = useState(false);
   const [daily, setDaily] = useState(String(progress.dailyTargetMins));
   const [weekly, setWeekly] = useState(String(progress.weeklyTargetMins));
 
   return (
-    <section className="card attended-targets-card">
+    <section className={compact ? "attended-inline" : "card attended-targets-card"}>
       <div className="card-header">
         <h2>Attended time</h2>
-        <span className="pill">measured, not scored</span>
+        {compact ? null : <span className="pill">measured, not scored</span>}
       </div>
 
-      <div className="metrics">
-        <Row
-          label="Today"
-          actual={progress.dailyActualMins}
-          target={progress.dailyTargetMins}
-        />
-        <Row
-          label="This week"
-          actual={progress.weeklyActualMins}
-          target={progress.weeklyTargetMins}
-        />
-      </div>
+      {compact ? (
+        <p className="attended-inline-line">
+          Today {formatMinutes(progress.dailyActualMins)}
+          {progress.dailyTargetMins > 0
+            ? ` of ${formatMinutes(progress.dailyTargetMins)} planned`
+            : ""}
+        </p>
+      ) : (
+        <div className="metrics">
+          <Row
+            label="Today"
+            actual={progress.dailyActualMins}
+            target={progress.dailyTargetMins}
+          />
+          <Row
+            label="This week"
+            actual={progress.weeklyActualMins}
+            target={progress.weeklyTargetMins}
+          />
+        </div>
+      )}
 
       {editing ? (
         <>

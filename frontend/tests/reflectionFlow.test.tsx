@@ -100,8 +100,6 @@ const runASession = async () => {
   await screen.findByText("running");
   fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
   await screen.findByText("completed");
-  // The end-of-session cards live on Review, alongside the check-in and recap.
-  fireEvent.click(screen.getByRole("tab", { name: "Review" }));
   await screen.findByRole("heading", { name: "Reflection" });
 };
 

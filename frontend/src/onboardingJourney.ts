@@ -58,7 +58,7 @@ export const ONBOARDING_COPY: Record<OnboardingStep, OnboardingCopy> = {
     detail: "Stopping writes the recap and asks how the session felt overall.",
   },
   review: {
-    title: "Read the recap in Review",
+    title: "Read how the session went",
     detail: "This is the payoff: what the session actually contained, in your own terms.",
   },
 };

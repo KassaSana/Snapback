@@ -424,7 +424,7 @@ export class DemoBackend {
         const session: DemoSession = {
           sessionId: `demo-live-${this.counter}`,
           goal: String(args.goal ?? "Untitled"),
-          status: "active",
+          status: "ACTIVE",
           focusMode: String(args.focusMode ?? this.settings.defaultFocusMode),
           startedAtMs: this.now(),
           endedAtMs: null,
@@ -440,7 +440,7 @@ export class DemoBackend {
       case "stop_session": {
         const session = this.session(String(args.sessionId));
         if (!session) throw new Error("No such session");
-        session.status = "completed";
+        session.status = "COMPLETED";
         session.endedAtMs = this.now();
         session.attendedSecs = Math.round((session.endedAtMs - session.startedAtMs) / 1000);
         if (this.activeSessionId === session.sessionId) this.activeSessionId = null;

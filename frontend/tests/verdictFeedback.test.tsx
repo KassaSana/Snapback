@@ -42,6 +42,25 @@ describe("VerdictFeedback", () => {
     expect(screen.getByText("Ready")).toHaveAttribute("aria-live", "polite");
   });
 
+  it("asks whether the quiet moment was work when the hero refused a verdict word", () => {
+    const onConfirm = vi.fn();
+    render(
+      <VerdictFeedback
+        disabled={false}
+        onConfirm={onConfirm}
+        onCorrect={vi.fn()}
+        predictedState="DEEP_FOCUS"
+        status={null}
+        uncertain
+      />,
+    );
+
+    expect(screen.getByText("Were you actually working?")).toBeInTheDocument();
+    expect(screen.queryByText("Is this right?")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "This reading is right" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
   it("explains why feedback is unavailable", () => {
     render(
       <VerdictFeedback
@@ -53,7 +72,7 @@ describe("VerdictFeedback", () => {
       />,
     );
 
-    expect(screen.getByText("Start a session to rate this reading.")).toBeInTheDocument();
+    expect(screen.queryByText("Start a session to rate this reading.")).not.toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });

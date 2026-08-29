@@ -6,7 +6,7 @@ import {
   shouldShowPermissionWizard,
   writeFirstRunAck,
 } from "./permissionWizardState";
-import { FOCUS_MODES, type FocusMode } from "./useSession";
+import { FOCUS_MODE_LABELS, FOCUS_MODES, type FocusMode } from "./sessionCockpit";
 
 type PermissionWizardProps = {
   healthChecked: boolean;
@@ -83,7 +83,7 @@ export const PermissionWizard = memo(function PermissionWizard({
           >
             {FOCUS_MODES.map((mode) => (
               <option key={mode} value={mode}>
-                {mode}
+                {FOCUS_MODE_LABELS[mode]}
               </option>
             ))}
           </select>

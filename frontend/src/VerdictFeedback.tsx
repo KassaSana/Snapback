@@ -18,6 +18,12 @@ type Props = {
   onCorrect: (label: FocusLabel) => void;
   predictedState: string | null;
   status: string | null;
+  /**
+   * The hero is showing Settled rather than the stored verdict. "Is this right?"
+   * would ask about a word we just refused to print; ask about the work instead.
+   * Right still records agreement with the model's state — that is the label.
+   */
+  uncertain?: boolean;
 };
 
 export function VerdictFeedback({
@@ -26,11 +32,12 @@ export function VerdictFeedback({
   onCorrect,
   predictedState,
   status,
+  uncertain = false,
 }: Props) {
   const [correcting, setCorrecting] = useState(false);
 
   if (disabled) {
-    return <p className="verdict-feedback-hint">Start a session to rate this reading.</p>;
+    return null;
   }
 
   return (
@@ -54,18 +61,16 @@ export function VerdictFeedback({
                 {focusStateLabel(state)}
               </button>
             ))}
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => setCorrecting(false)}
-            >
+            <button type="button" className="link-button" onClick={() => setCorrecting(false)}>
               Cancel
             </button>
           </div>
         </>
       ) : (
         <>
-          <span className="verdict-feedback-prompt">Is this right?</span>
+          <span className="verdict-feedback-prompt">
+            {uncertain ? "Were you actually working?" : "Is this right?"}
+          </span>
           <button
             type="button"
             className="verdict-vote"

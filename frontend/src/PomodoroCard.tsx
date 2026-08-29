@@ -36,7 +36,17 @@ export const PomodoroCard = memo(function PomodoroCard({
   onSaveConfig,
 }: PomodoroCardProps) {
   const [draft, setDraft] = useState(pomodoroConfig);
-  useEffect(() => setDraft(pomodoroConfig), [pomodoroConfig]);
+  // Sync from the server when the *values* change, not when hydrate returns a new object
+  // with the same numbers. A settings refresh during an edit used to wipe the draft.
+  useEffect(() => {
+    setDraft(pomodoroConfig);
+  }, [
+    pomodoroConfig.workMs,
+    pomodoroConfig.shortBreakMs,
+    pomodoroConfig.longBreakMs,
+    pomodoroConfig.intervalsBeforeLongBreak,
+    pomodoroConfig.autoStartNextPhase,
+  ]);
   const { running, paused, awaitingAcknowledgement, phase, completedWorkIntervals, remainingMs } =
     pomodoroStatus;
 

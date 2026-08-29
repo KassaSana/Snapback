@@ -100,47 +100,48 @@ export const useSession = ({
     [sessionId, setLabelStatus, setLabelStatusWarning],
   );
 
-  const handleStartSession = useCallback(async () => {
-    const goal = sessionGoal.trim();
-    // Validation lives in the card, which can explain itself; this stays as the last line of
-    // defence so a programmatic caller cannot open an unnamed session.
-    if (!goal || inFlight.current) {
-      return;
-    }
+  const handleStartNamedSession = useCallback(
+    async (goalInput: string, mode: FocusMode) => {
+      const goal = goalInput.trim();
+      // Validation lives in the card, which can explain itself; this stays as the last line of
+      // defence so a programmatic caller cannot open an unnamed session.
+      if (!goal || inFlight.current) {
+        return;
+      }
 
-    inFlight.current = true;
-    setSessionPending(true);
-    try {
-      const record = await api.startSession(goal, focusMode);
-      setSessionRecord(record);
-      setSessionId(record.sessionId);
-      setSessionGoal(record.goal);
-      setRecap(null);
-      setSurveyPending(false);
-      // Warn (but don't block) if capture is compromised at start — the session
-      // record exists, but it may not record activity. `null` clears the banner.
-      setActionError(
-        captureReadiness ? sessionStartCaptureWarning(captureReadiness) : null,
-      );
-      resetTimelineRefreshGate();
-      void refreshContextTimeline(record.sessionId);
-    } catch {
-      setActionError("Could not start session. Check capture permissions and try again.");
-    } finally {
-      // Cleared in `finally`, never on the success path alone: a failed start that left the
-      // guard set would wedge the button until reload, which is a worse bug than the duplicate
-      // request it is here to prevent.
-      inFlight.current = false;
-      setSessionPending(false);
-    }
-  }, [
-    captureReadiness,
-    focusMode,
-    refreshContextTimeline,
-    resetTimelineRefreshGate,
-    sessionGoal,
-    setActionError,
-  ]);
+      inFlight.current = true;
+      setSessionPending(true);
+      try {
+        setFocusMode(mode);
+        const record = await api.startSession(goal, mode);
+        setSessionRecord(record);
+        setSessionId(record.sessionId);
+        setSessionGoal(record.goal);
+        setRecap(null);
+        setSurveyPending(false);
+        // Warn (but don't block) if capture is compromised at start — the session
+        // record exists, but it may not record activity. `null` clears the banner.
+        setActionError(
+          captureReadiness ? sessionStartCaptureWarning(captureReadiness) : null,
+        );
+        resetTimelineRefreshGate();
+        void refreshContextTimeline(record.sessionId);
+      } catch {
+        setActionError("Could not start session. Check capture permissions and try again.");
+      } finally {
+        // Cleared in `finally`, never on the success path alone: a failed start that left the
+        // guard set would wedge the button until reload, which is a worse bug than the duplicate
+        // request it is here to prevent.
+        inFlight.current = false;
+        setSessionPending(false);
+      }
+    },
+    [captureReadiness, refreshContextTimeline, resetTimelineRefreshGate, setActionError],
+  );
+
+  const handleStartSession = useCallback(async () => {
+    await handleStartNamedSession(sessionGoal, focusMode);
+  }, [focusMode, handleStartNamedSession, sessionGoal]);
 
   const handleStopSession = useCallback(async () => {
     if (!sessionId || inFlight.current) {
@@ -293,6 +294,7 @@ export const useSession = ({
     handleSaveReflection,
     handleSkipReflection,
     handleSkipSurvey,
+    handleStartNamedSession,
     handleStartSession,
     handleStopSession,
     handleSwitchSession,

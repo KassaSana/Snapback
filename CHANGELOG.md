@@ -18,6 +18,18 @@ the note at the bottom.
 
 ### Added
 
+- **Now is a cockpit, not a card feed.** Idle Now is a start screen (goal, Start, Repeat last). A running session shows the state, elapsed time, a compact attended line, and Pomodoro. Stopping puts the recap and check-in on Now. The header is a recording line when healthy instead of four status pills, and Repeat last starts that session.
+
+- **Honest “Settled” when the model is guessing.** A quiet screen with no goal match no longer
+  prints Deep work or Productive on the Now hero. The stored verdict is unchanged (snapbacks
+  still use it); the card says Settled, leads with “I cannot tell whether this is work,” and
+  asks whether you were actually working. A Block rule or a matching goal still earns the
+  real word.
+
+- **“Which of these were the work?”** During a session, unlabeled apps from the context
+  timeline appear on Now with The work / Not the work / Skip. That writes the same Allow/Block
+  rules as the Review timeline, so teaching the classifier is no longer a Settings chore.
+
 - **Version baseline for the first release (9.13).** `project(... VERSION 0.3.0)` in
   `CMakeLists.txt` and the frontend package version now match the tag the first GitHub Release
   will use. The dangling `v0.2.0` tag is not retagged or deleted.

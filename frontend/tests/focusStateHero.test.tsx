@@ -36,7 +36,6 @@ function renderHero(overrides: Overrides = {}) {
     prediction: prediction(),
     sessionActive: true,
     snapbackNote: null,
-    verdictClass: "low",
     ...overrides,
   };
   render(<FocusStateHero {...props} />);
@@ -45,7 +44,11 @@ function renderHero(overrides: Overrides = {}) {
 
 describe("FocusStateHero", () => {
   it("leads with the focus state, not the score (ADR-0003)", () => {
-    renderHero();
+    // Corroborated so this is a real verdict word, not the quiet-guess Settled path.
+    renderHero({
+      goal: "fix the overlay",
+      prediction: prediction({ goalAlignment: 0.9 }),
+    });
     expect(screen.getByText("Productive")).toBeInTheDocument();
   });
 
@@ -80,6 +83,8 @@ describe("FocusStateHero", () => {
     expect(screen.getByText("no app switching")).toBeInTheDocument();
     expect(screen.getByText("settled in one window")).toBeInTheDocument();
     expect(screen.getByText(/window matches/)).toBeInTheDocument();
+    // Trailing space is the screen-reader contract: "because" + "no" must not become "becauseno".
+    expect(document.querySelector(".hero-because-label")?.textContent).toBe("because ");
   });
 
   it("leads with the policy rule when one decided the verdict, not the calm behaviour", () => {
@@ -92,9 +97,9 @@ describe("FocusStateHero", () => {
         thrashScore: 0.05,
         driftScore: 0.02,
       }),
-      verdictClass: "high",
     });
 
+    expect(screen.getByText("Distracted")).toBeInTheDocument();
     expect(screen.getByText("a blocked app is open")).toBeInTheDocument();
     expect(screen.queryByText("no app switching")).not.toBeInTheDocument();
     expect(screen.queryByText("settled in one window")).not.toBeInTheDocument();
@@ -103,7 +108,6 @@ describe("FocusStateHero", () => {
   it("names switching and churn when those are what drove the verdict", () => {
     renderHero({
       prediction: prediction({ focusState: "DISTRACTED", thrashScore: 0.8, driftScore: 0.7 }),
-      verdictClass: "high",
     });
 
     expect(screen.getByText("switching apps often")).toBeInTheDocument();
@@ -111,11 +115,16 @@ describe("FocusStateHero", () => {
   });
 
   // The honesty case: deep_work_score is built from absence of switching, so a quiet
-  // screen scores the same whether you are reading a spec or watching a film.
-  it("admits it cannot tell a quiet screen apart when nothing else supports the verdict", () => {
+  // screen scores the same whether you are reading a spec or watching a film. The stored
+  // verdict stays DEEP_FOCUS (snapbacks still use it); the word on the card does not.
+  it("refuses to print Deep work when the guess is stillness alone", () => {
     renderHero({ prediction: prediction({ focusState: "DEEP_FOCUS", goalAlignment: 0.5 }) });
 
+    expect(screen.getByText("Settled")).toBeInTheDocument();
+    expect(screen.queryByText("Deep work")).not.toBeInTheDocument();
+    expect(screen.getByText("I cannot tell whether this is work.")).toBeInTheDocument();
     expect(screen.getByText(/quiet screen looks the same/)).toBeInTheDocument();
+    expect(screen.getByText("Were you actually working?")).toBeInTheDocument();
   });
 
   it("drops the caveat once the goal corroborates the verdict", () => {
@@ -124,7 +133,9 @@ describe("FocusStateHero", () => {
       prediction: prediction({ focusState: "DEEP_FOCUS", goalAlignment: 0.9 }),
     });
 
+    expect(screen.getByText("Deep work")).toBeInTheDocument();
     expect(screen.queryByText(/quiet screen looks the same/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Settled")).not.toBeInTheDocument();
   });
 
   it("does not caveat a negative verdict", () => {
@@ -132,6 +143,7 @@ describe("FocusStateHero", () => {
       prediction: prediction({ focusState: "DISTRACTED", thrashScore: 0.1, driftScore: 0.1 }),
     });
 
+    expect(screen.getByText("Distracted")).toBeInTheDocument();
     expect(screen.queryByText(/quiet screen looks the same/)).not.toBeInTheDocument();
   });
 
@@ -158,15 +170,17 @@ describe("FocusStateHero", () => {
   it("tells the user why rating is unavailable instead of showing a dead control", () => {
     renderHero({ sessionActive: false });
 
-    expect(screen.getByText(/Start a session to rate/)).toBeInTheDocument();
+    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(screen.queryByText("Productive")).not.toBeInTheDocument();
+    expect(screen.getByText(/Start a session to see whether you are still on it/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "This reading is right" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Start a session to rate/)).not.toBeInTheDocument();
   });
 
   it("keeps the snapback callout prominent and dismissable", () => {
     const props = renderHero({
       prediction: prediction({ focusState: "DISTRACTED" }),
       snapbackNote: "You drifted from: fix the overlay",
-      verdictClass: "high",
     });
 
     expect(screen.getByText(/You drifted from/)).toBeInTheDocument();
