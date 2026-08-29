@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   type AnalyticsSummary,
+  type DailySummary,
   type FocusSummary,
   type SessionSummary,
   type SummaryReport,
@@ -31,6 +32,13 @@ const EMPTY_FOCUS: FocusSummary = {
   longestFocusSecs: 0,
 };
 
+const EMPTY_DAILY: DailySummary = {
+  window: "7d",
+  generatedAtMs: 0,
+  capped: false,
+  days: [],
+};
+
 const EMPTY_REPORT: SummaryReport = {
   window: "7d",
   generatedAtMs: 0,
@@ -57,6 +65,7 @@ const reviewRequestKey = (range: ReviewRange, generation: number): string =>
 export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflowArgs) => {
   const [range, setRangeState] = useState<ReviewRange>(() => readStoredReviewRange());
   const [analytics, setAnalytics] = useState<AnalyticsSummary>(EMPTY_ANALYTICS);
+  const [dailySummary, setDailySummary] = useState<DailySummary>(EMPTY_DAILY);
   const [focusSummary, setFocusSummary] = useState<FocusSummary>(EMPTY_FOCUS);
   const [report, setReport] = useState<SummaryReport>(EMPTY_REPORT);
   const [sessionHistory, setSessionHistory] = useState<SessionSummary[]>([]);
@@ -95,17 +104,19 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
       const params = toReviewWindowRequest(requestedRange);
       const promise = (async () => {
         try {
-          const [nextAnalytics, nextReport, nextFocus, nextHistory] = await Promise.all([
+          const [nextAnalytics, nextReport, nextFocus, nextHistory, nextDaily] = await Promise.all([
             api.getAnalytics(params),
             api.getSummaryReport(params),
             api.getFocusSummary(params),
             api.getSessionHistory(params),
+            api.getDailySummary(params),
           ]);
           if (requestId !== requestIdRef.current) return;
           setAnalytics(nextAnalytics);
           setReport(nextReport);
           setFocusSummary(nextFocus);
           setSessionHistory(nextHistory);
+          setDailySummary(nextDaily);
           loadedRequestKeyRef.current = key;
           setLoadedRequestKey(key);
           setLoading(false);
@@ -217,6 +228,7 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
 
   return {
     analytics,
+    dailySummary,
     deleteError,
     deleteSession,
     deleteStatus,
