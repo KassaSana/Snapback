@@ -568,7 +568,18 @@ void AppState::start_engine_impl(InputHook* hook) {
             // A do-while, not a while: stop_engine() can flip the flag before this thread is
             // ever scheduled, and a plain loop would then exit having drained nothing at all
             // -- losing whatever capture queued in between. One tick always runs.
+            //
+            // The exit condition asks the ring rather than trusting `backlog`, which describes
+            // the tick that has already happened. A thread asleep between ticks when the flag
+            // flips has a stale `false` from before the events arrived, and would exit over a
+            // full queue -- which is precisely what CI caught on macOS.
             bool backlog = false;
+            // Ticks spent draining after a stop was requested. A tick that throws reports no
+            // backlog but also drains nothing, so without this a permanently failing tick over
+            // a non-empty ring would spin here and shutdown would never complete. The whole
+            // ring is kEngineDrainBudget * 32 events, so this cannot cut a healthy drain short.
+            int shutdown_ticks = 0;
+            constexpr int kMaxShutdownTicks = 64;
             do {
                 try {
                     backlog = engine_tick();
@@ -594,10 +605,18 @@ void AppState::start_engine_impl(InputHook* hook) {
                 }
                 // Checked before sleeping so a stop with an empty queue exits now rather than
                 // waiting out a tick interval nobody is waiting for.
-                if (!engine_running_.load(std::memory_order_relaxed) && !backlog) break;
+                const bool stopping = !engine_running_.load(std::memory_order_relaxed);
+                if (stopping && ++shutdown_ticks >= kMaxShutdownTicks) break;
+                // Only the shutdown path consults the ring. Pacing stays on `backlog` alone:
+                // an ordinary tick usually leaves a few events queued behind it, and treating
+                // that as urgent would run the loop at 1 ms forever for a handful of
+                // keystrokes.
+                if (stopping && !backlog && !capture_.has_pending_events()) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(
-                    backlog ? kEngineBacklogTickIntervalMs : kEngineTickIntervalMs));
-            } while (engine_running_.load(std::memory_order_relaxed) || backlog);
+                    (backlog || stopping) ? kEngineBacklogTickIntervalMs
+                                          : kEngineTickIntervalMs));
+            } while (engine_running_.load(std::memory_order_relaxed) ||
+                     backlog || capture_.has_pending_events());
         });
     } catch (...) {
         engine_running_.store(false, std::memory_order_release);
