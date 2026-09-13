@@ -123,6 +123,44 @@ private:
     std::atomic<bool> emitted_{false};
 };
 
+// Pushes events as fast as it can for `duration`, the way a user holding down a key or
+// dragging the mouse does. The ring fills and starts dropping, which is the point: the engine
+// then never observes an empty buffer, which is the condition an unbounded drain never exits.
+class FloodHook final : public InputHook {
+public:
+    explicit FloodHook(std::chrono::milliseconds duration) : duration_(duration) {}
+
+    void run(InputCallback on_event, const std::atomic<bool>& stop_requested) override {
+        const auto until = std::chrono::steady_clock::now() + duration_;
+        double ts = 1.0;
+        while (std::chrono::steady_clock::now() < until &&
+               !stop_requested.load(std::memory_order_acquire) &&
+               running_.load(std::memory_order_relaxed)) {
+            CaptureEvent event;
+            event.event_type = EventType::KeyPress;
+            event.timestamp_secs = ts;
+            ts += 0.01;
+            event.app_name = "Cursor";
+            event.window_title = "state.cpp - Snapback";
+            on_event(std::move(event));
+        }
+        flooding_.store(false, std::memory_order_release);
+
+        while (running_.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
+
+    bool flooding() const { return flooding_.load(std::memory_order_acquire); }
+
+private:
+    std::chrono::milliseconds duration_;
+    std::atomic<bool> running_{true};
+    std::atomic<bool> flooding_{true};
+};
+
 // Runs `hook` as the capture producer with no engine thread, waits until it has finished
 // pushing, and hands the state back so the test can drive engine_tick() itself.
 void fill_capture_ring(AppState& state, BurstHook& hook) {
@@ -2609,6 +2647,35 @@ TEST_CASE("a truncated drain still runs the rest of the tick") {
     state->set_emit_hook(nullptr);
     AppStateTestAccess::stop_capture(*state);
     state->stop_session(session.session_id);
+}
+
+TEST_CASE("a command is not starved while capture floods the ring") {
+    // The end-to-end version of the bound: real engine thread, real producer, and a caller
+    // asking the question a UI asks constantly. Before the drain was bounded this loop blocked
+    // for as long as the flood lasted, because the tick held mutex_ until the ring ran dry and
+    // a fast producer never let it. With the bound the worst wait is one bounded slice.
+    auto state = make_state();
+    FloodHook hook(std::chrono::milliseconds(3000));
+    state->start_engine_for_test(&hook);
+
+    std::chrono::steady_clock::duration worst{};
+    int samples = 0;
+    while (hook.flooding()) {
+        const auto began = std::chrono::steady_clock::now();
+        (void)state->settings();  // pure in-memory read, but it needs mutex_
+        worst = std::max(worst, std::chrono::steady_clock::now() - began);
+        ++samples;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    state->stop_engine();
+
+    const auto worst_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(worst).count();
+    INFO("worst settings() wait during the flood: " << worst_ms << " ms");
+    CHECK(samples > 20);  // the probe really did run throughout the flood
+    // Generous on purpose: a bounded slice costs single-digit milliseconds, while the
+    // unbounded drain this replaces held the lock for the whole 3-second flood.
+    CHECK(worst_ms < 1000);
 }
 
 TEST_CASE("an under-budget drain reports no backlog") {
