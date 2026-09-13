@@ -553,15 +553,29 @@ void AppState::start_engine_impl(InputHook* hook) {
     try {
         capture_.start(hook);
         engine_thread_ = std::thread([this] {
-            while (engine_running_.load(std::memory_order_relaxed)) {
-                // True when the tick stopped draining on a budget. The backlog is then worked
-                // off at full speed across short ticks rather than in one long critical
-                // section -- the sleep below is what makes "bounded drain" a pause for other
-                // threads instead of a throughput ceiling.
-                bool backlog = false;
+            // True when the last tick stopped draining on a budget. The backlog is then worked
+            // off at full speed across short ticks rather than in one long critical section --
+            // the sleep below is what makes "bounded drain" a pause for other threads instead
+            // of a throughput ceiling.
+            //
+            // It is also part of the exit condition, not just the pacing: an unbounded drain
+            // always left the ring empty, so shutdown persisted everything captured. A bounded
+            // one does not, and stopping the moment the flag flips would silently discard
+            // whatever the last slice did not reach. stop_engine() stops the producer before
+            // joining this thread, so continuing while a backlog remains terminates -- the
+            // queue is finite and nothing is refilling it.
+            //
+            // A do-while, not a while: stop_engine() can flip the flag before this thread is
+            // ever scheduled, and a plain loop would then exit having drained nothing at all
+            // -- losing whatever capture queued in between. One tick always runs.
+            bool backlog = false;
+            do {
                 try {
                     backlog = engine_tick();
                 } catch (const std::exception& error) {
+                    // A tick that threw tells us nothing about the queue; treat it as no
+                    // backlog so a failing tick cannot keep shutdown spinning here.
+                    backlog = false;
                     try {
                         std::ostringstream message;
                         message << "engine tick failed: " << error.what();
@@ -571,15 +585,19 @@ void AppState::start_engine_impl(InputHook* hook) {
                         // unhandled exception on this thread.
                     }
                 } catch (...) {
+                    backlog = false;
                     try {
                         log().error("engine tick failed: unknown exception");
                     } catch (...) {
                         // Keep the thread boundary intact even if the logger fails.
                     }
                 }
+                // Checked before sleeping so a stop with an empty queue exits now rather than
+                // waiting out a tick interval nobody is waiting for.
+                if (!engine_running_.load(std::memory_order_relaxed) && !backlog) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(
                     backlog ? kEngineBacklogTickIntervalMs : kEngineTickIntervalMs));
-            }
+            } while (engine_running_.load(std::memory_order_relaxed) || backlog);
         });
     } catch (...) {
         engine_running_.store(false, std::memory_order_release);
@@ -819,6 +837,10 @@ bool AppState::delete_session(const std::string& session_id) {
     // a missing foreign key, and the UI would keep rendering a session the user just
     // erased. Reset exactly what stop_session() resets, plus the derived prediction state.
     if (active_session_ && active_session_->session_id == session_id) {
+        // Queued events were captured *for the session being erased*, so they go with it.
+        // Only in this branch: deleting some other session leaves a queue that belongs to the
+        // session the user is still running, and that queue must survive.
+        capture_.discard_pending_events();
         pomodoro_.reset();
         // Its spans went with the row, so there is nothing left to close and nothing to
         // reconcile against. Leaving this true would make the next tick's level check see a
@@ -1015,6 +1037,12 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
     activity_epoch_.fetch_add(1, std::memory_order_release);
+    // The epoch fences rows this tick was about to write; it does not touch what capture has
+    // already queued. Those events were recorded before the user asked for deletion, so a
+    // later tick filing them -- into a session started after this point, no less -- would put
+    // pre-deletion window titles back on disk. Deleting activity means deleting the activity
+    // still in flight too. (Bounded drop: see CaptureThread::discard_pending_events.)
+    capture_.discard_pending_events();
 
     ActivityDeletionResult result;
 
@@ -1887,6 +1915,9 @@ bool AppState::engine_tick() {
     // Whether phase 1 gave up on a budget rather than on an empty ring. Returned to the engine
     // loop, which then re-ticks immediately instead of sleeping out the tick interval.
     bool drain_truncated = false;
+    // Set under mutex_ when the throttle allows a backlog line; written to the log after the
+    // lock is released.
+    std::optional<std::size_t> backlog_to_log;
     {
         std::lock_guard lock(mutex_);
         tick_activity_epoch = activity_epoch_.load(std::memory_order_acquire);
@@ -1914,16 +1945,27 @@ bool AppState::engine_tick() {
                 break;
             }
         }
-        if (drained >= kEngineDrainBudget) drain_truncated = true;
+        // Spending the budget is not the same as leaving work behind: a burst of exactly
+        // kEngineDrainBudget events is fully consumed, and reporting a backlog for it would
+        // buy an extra 1 ms tick and a log line describing a queue that is empty. Ask the ring
+        // instead of inferring it from the counter.
+        if (drained >= kEngineDrainBudget && capture_.has_pending_events()) {
+            drain_truncated = true;
+        }
         if (drain_truncated) {
             // Throttled: while a backlog lasts this tick runs every millisecond, and one line
-            // per tick would bury the log it is meant to explain.
+            // per tick would bury the log it is meant to explain. The decision is made here,
+            // under mutex_; the write happens after the lock is released, because the logger
+            // formats and writes to its sink synchronously and a slow disk would otherwise
+            // extend exactly the critical section this function exists to bound.
             const auto log_now_ms = steady_now_ms();
-            if (last_drain_backlog_log_ms_ == 0 ||
-                log_now_ms - last_drain_backlog_log_ms_ >= kEngineBacklogLogIntervalMs) {
+            // Not a zero sentinel: steady_ms() is relative to an arbitrary epoch, so 0 is a
+            // legitimate reading (ManualClock is routinely set to it), and comparing against
+            // it would log on every tick for as long as the clock sat there.
+            if (!last_drain_backlog_log_ms_ ||
+                log_now_ms - *last_drain_backlog_log_ms_ >= kEngineBacklogLogIntervalMs) {
                 last_drain_backlog_log_ms_ = log_now_ms;
-                log().info("engine: capture backlog, drained " + std::to_string(drained) +
-                           " events this tick and yielded the state lock");
+                backlog_to_log = drained;
             }
         }
         // Idle timing runs off the tick's monotonic clock, not event timestamps: true AFK
@@ -1980,6 +2022,11 @@ bool AppState::engine_tick() {
                 issue_alert_id_unlocked(AlertEvent::UntrackedWork, untracked_route);
         }
         publish_live_read_unlocked();
+    }
+
+    if (backlog_to_log) {
+        log().info("engine: capture backlog, drained " + std::to_string(*backlog_to_log) +
+                   " events this tick and yielded the state lock");
     }
 
     if (prune_due) request_retention_maintenance();

@@ -544,9 +544,12 @@ private:
     // the process has been up, so a system clock jump cannot make a prune overdue or
     // unreachable. Seeded at construction because Storage::open just pruned.
     std::atomic<std::int64_t> last_prune_steady_ms_{0};
-    // Uptime at the last "capture backlog" log line. Guarded by mutex_ (written inside the
-    // drain phase); 0 means never logged, and the first saturated drain always reports.
-    std::int64_t last_drain_backlog_log_ms_ = 0;
+    // Uptime at the last "capture backlog" log line, or nullopt if none has been written yet.
+    // Guarded by mutex_ (decided inside the drain phase). Deliberately not an int with a 0
+    // sentinel: steady_ms() counts from an arbitrary epoch, so 0 is a value the clock can
+    // legitimately hold, and a sentinel inside the clock's own domain would defeat the
+    // throttle for as long as it sat there.
+    std::optional<std::int64_t> last_drain_backlog_log_ms_;
     // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple
     // libc++ shipped with the supported command-line tools does not provide the C++20 class
     // specialization, while atomic_load/store(shared_ptr*) are available cross-platform.

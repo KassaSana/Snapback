@@ -74,6 +74,12 @@ struct AppStateTestAccess {
 
     static void stop_capture(AppState& state) noexcept { state.capture_.stop(); }
 
+    // Whether capture still has events the engine has not taken. Lets a test assert that
+    // shutdown or a deletion left nothing behind, which is otherwise invisible.
+    static bool capture_has_pending(const AppState& state) {
+        return state.capture_.has_pending_events();
+    }
+
     static bool maintenance_pending(const AppState& state) {
         return state.maintenance_pending_.load(std::memory_order_acquire);
     }

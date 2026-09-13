@@ -2649,6 +2649,78 @@ TEST_CASE("a truncated drain still runs the rest of the tick") {
     state->stop_session(session.session_id);
 }
 
+TEST_CASE("shutdown finishes the backlog instead of discarding it") {
+    // The unbounded drain always left the ring empty, so a stop persisted everything the user
+    // had done. A bounded drain must not quietly lose the tail: the engine loop keeps ticking
+    // while a backlog remains, which terminates because stop_engine stops the producer first.
+    auto state = make_state();
+    const auto session = state->start_session("drain on the way out", FocusMode::Normal);
+
+    BurstHook hook(kEngineDrainBudget + 512);  // ~25 s of event time, > one tick's budget
+    state->start_engine_for_test(&hook);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted());
+
+    state->stop_engine();
+
+    CHECK_FALSE(AppStateTestAccess::capture_has_pending(*state));
+    // One tick's worth of those events spans ~20 s of event time and the throttle allows one
+    // prediction per second, so a shutdown that stopped after a single slice would leave about
+    // 20. Everything drained is ~25.
+    const auto persisted = AppStateTestAccess::storage(*state).recent_predictions(1000).size();
+    CHECK(persisted >= 24);
+
+    state->stop_session(session.session_id);
+}
+
+TEST_CASE("deleting activity also erases what capture had queued") {
+    // The activity epoch fences rows a tick was about to write; it does not reach into the
+    // capture queue. Events recorded before the user asked for deletion were still sitting
+    // there, and the next tick filed them -- into whatever session existed by then.
+    auto state = make_state();
+    const auto before = state->start_session("before the delete", FocusMode::Normal);
+    BurstHook hook(kEngineDrainBudget + 512);
+    fill_capture_ring(*state, hook);
+
+    state->delete_all_activity_data();
+    CHECK_FALSE(AppStateTestAccess::capture_has_pending(*state));
+
+    // A session started right after the deletion must not inherit that pre-deletion activity.
+    const auto after = state->start_session("after the delete", FocusMode::Normal);
+    for (int tick = 0; tick < 5; ++tick) AppStateTestAccess::engine_tick(*state);
+    CHECK(AppStateTestAccess::storage(*state).recent_predictions(1000).empty());
+
+    AppStateTestAccess::stop_capture(*state);
+    state->stop_session(after.session_id);
+    (void)before;
+}
+
+TEST_CASE("deleting one session leaves another session's queued events alone") {
+    // The mirror of the case above: the drop is scoped to the session being erased. Deleting
+    // some *other* session must not throw away input the user is producing right now.
+    auto state = make_state();
+    const auto keep = state->start_session("still running", FocusMode::Normal);
+    const auto other = state->start_session("a second session replaces it", FocusMode::Normal);
+    state->stop_session(other.session_id);
+    const auto live = state->start_session("the live one", FocusMode::Normal);
+
+    BurstHook hook(64);
+    fill_capture_ring(*state, hook);
+    REQUIRE(AppStateTestAccess::capture_has_pending(*state));
+
+    state->delete_session(other.session_id);
+    CHECK(AppStateTestAccess::capture_has_pending(*state));  // not this session's events
+
+    AppStateTestAccess::engine_tick(*state);
+    CHECK_FALSE(AppStateTestAccess::storage(*state).recent_predictions(1000).empty());
+
+    AppStateTestAccess::stop_capture(*state);
+    state->stop_session(live.session_id);
+    (void)keep;
+}
+
 TEST_CASE("a command is not starved while capture floods the ring") {
     // The end-to-end version of the bound: real engine thread, real producer, and a caller
     // asking the question a UI asks constantly. Before the drain was bounded this loop blocked
