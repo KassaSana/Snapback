@@ -364,6 +364,24 @@ private:
     bool engine_tick();
     void request_retention_maintenance();
     void run_retention_maintenance() noexcept;
+
+    // Every change to the maintenance flags goes through here.
+    //
+    // The worker blocks on maintenance_ready_ with a predicate over those flags. Storing a
+    // flag and calling notify_all() *without* maintenance_mutex_ held lets the notification
+    // land in the window after the worker has evaluated the predicate and before it is
+    // actually blocked on the condition variable -- a lost wakeup. For `stopping` that is not
+    // a delay, it is a hang: the worker never wakes, so the join() in stop_engine() never
+    // returns and the process cannot exit. It reproduced as one random AppState test per CI
+    // job dying on a 120 s timeout, on whichever platform lost the race that run.
+    template <typename Apply>
+    void signal_maintenance(Apply&& apply) {
+        {
+            std::lock_guard lock(maintenance_mutex_);
+            apply();
+        }
+        maintenance_ready_.notify_all();
+    }
     // Runs the event through features/classifier/tracker and updates in-memory state.
     // Requires mutex_. Does NO storage I/O — returns what to persist (nullopt if nothing).
     std::optional<PersistJob> compute_event(const CaptureEvent& event);

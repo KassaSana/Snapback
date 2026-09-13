@@ -613,8 +613,7 @@ void AppState::set_emit_hook(EmitHook hook) {
 
 void AppState::stop_engine() noexcept {
     engine_running_.store(false, std::memory_order_relaxed);
-    maintenance_stopping_.store(true, std::memory_order_release);
-    maintenance_ready_.notify_all();
+    signal_maintenance([this] { maintenance_stopping_.store(true, std::memory_order_release); });
     capture_.stop();
     if (engine_thread_.joinable()) engine_thread_.join();
     if (maintenance_thread_.joinable()) maintenance_thread_.join();
@@ -685,8 +684,9 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
         storage_.begin_session_span_now(created.session_id);
         savepoint.release();
     } catch (...) {
-        maintenance_paused_.store(replaced.has_value(), std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance([this, &replaced] {
+            maintenance_paused_.store(replaced.has_value(), std::memory_order_release);
+        });
         throw;
     }
 
@@ -756,8 +756,8 @@ void AppState::stop_session() {
         session_attended_ = false;
         pomodoro_.reset();
         active_session_.reset();
-        maintenance_paused_.store(false, std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance(
+            [this] { maintenance_paused_.store(false, std::memory_order_release); });
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         // Same reason as start_session: the payload names a window from the session being
@@ -794,8 +794,8 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         pomodoro_.reset();
         session_attended_ = false;
         active_session_.reset();
-        maintenance_paused_.store(false, std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance(
+            [this] { maintenance_paused_.store(false, std::memory_order_release); });
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         // Inside the active-session branch on purpose, unlike the pending-span drop above.
@@ -847,8 +847,8 @@ bool AppState::delete_session(const std::string& session_id) {
         // change that is not there.
         session_attended_ = false;
         active_session_.reset();
-        maintenance_paused_.store(false, std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance(
+            [this] { maintenance_paused_.store(false, std::memory_order_release); });
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
@@ -1074,8 +1074,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     for (const char* retained : kRetainedArtifacts) result.retained.emplace_back(retained);
 
     active_session_.reset();
-    maintenance_paused_.store(false, std::memory_order_release);
-    maintenance_ready_.notify_all();
+    signal_maintenance([this] { maintenance_paused_.store(false, std::memory_order_release); });
     session_attended_ = false;  // every span was deleted with the rows above
     discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
@@ -1792,11 +1791,11 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
 
 void AppState::request_retention_maintenance() {
     if (maintenance_stopping_.load(std::memory_order_acquire)) return;
-    bool expected = false;
-    if (maintenance_pending_.compare_exchange_strong(expected, true,
-                                                     std::memory_order_acq_rel)) {
-        maintenance_ready_.notify_all();
-    }
+    // Notifies even when the flag was already set: the wake is unconditional now, and a
+    // spurious one costs the worker a single predicate evaluation.
+    signal_maintenance([this] {
+        maintenance_pending_.store(true, std::memory_order_release);
+    });
 }
 
 void AppState::run_retention_maintenance() noexcept {
