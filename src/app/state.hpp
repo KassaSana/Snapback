@@ -46,6 +46,27 @@ inline constexpr std::int64_t kRetentionPruneIntervalMs = 24 * 60 * 60 * 1000;
 inline constexpr std::size_t kRetentionPruneBatchRows = 256;
 inline constexpr std::int64_t kRetentionPruneYieldMs = 10;
 
+// How many capture events one tick may process while holding mutex_. The ring holds 65,536
+// events and the drain used to run until it observed an empty buffer, so a producer that kept
+// up with the consumer made the critical section as long as the user kept typing -- and every
+// session command, settings write, idle poll, persistence flush, and UI emission waited behind
+// it. Hitting this ceiling drops nothing: the rest of the ring stays queued for the next tick,
+// which the engine loop runs immediately instead of sleeping.
+inline constexpr std::size_t kEngineDrainBudget = 2048;
+// Wall-clock ceiling on the same drain, for when per-event cost (window extraction, ONNX
+// inference) makes even the event budget too many. Checked every kEngineDrainClockCheckStride
+// events rather than per event so the drain does not pay for a virtual clock call each time.
+inline constexpr std::int64_t kEngineDrainBudgetMs = 20;
+inline constexpr std::size_t kEngineDrainClockCheckStride = 128;
+// Gap between ticks. The backlog value is deliberately not zero: it is what guarantees mutex_
+// is actually released long enough for a waiting command thread to take it between two
+// bounded drains.
+inline constexpr std::int64_t kEngineTickIntervalMs = 100;
+inline constexpr std::int64_t kEngineBacklogTickIntervalMs = 1;
+// A saturated drain is normal for a moment and a symptom if it persists, so it is logged --
+// but the loop above runs every millisecond while it lasts, hence the throttle.
+inline constexpr std::int64_t kEngineBacklogLogIntervalMs = 30'000;
+
 class AppState {
 public:
     // `logger` and `clock` are both optional (default null) so existing call sites keep
@@ -336,9 +357,31 @@ private:
         std::optional<SnapbackEpisode> snapback_episode;
     };
 
-    void engine_tick();  // features -> classifier -> tracker -> (emit) ; persist off-lock
+    // features -> classifier -> tracker -> (emit) ; persist off-lock.
+    // Returns true when the drain stopped on kEngineDrainBudget / kEngineDrainBudgetMs rather
+    // than on an empty ring — i.e. work is still queued and the caller should tick again now
+    // instead of sleeping out the usual interval.
+    bool engine_tick();
     void request_retention_maintenance();
     void run_retention_maintenance() noexcept;
+
+    // Every change to the maintenance flags goes through here.
+    //
+    // The worker blocks on maintenance_ready_ with a predicate over those flags. Storing a
+    // flag and calling notify_all() *without* maintenance_mutex_ held lets the notification
+    // land in the window after the worker has evaluated the predicate and before it is
+    // actually blocked on the condition variable -- a lost wakeup. For `stopping` that is not
+    // a delay, it is a hang: the worker never wakes, so the join() in stop_engine() never
+    // returns and the process cannot exit. It reproduced as one random AppState test per CI
+    // job dying on a 120 s timeout, on whichever platform lost the race that run.
+    template <typename Apply>
+    void signal_maintenance(Apply&& apply) {
+        {
+            std::lock_guard lock(maintenance_mutex_);
+            apply();
+        }
+        maintenance_ready_.notify_all();
+    }
     // Runs the event through features/classifier/tracker and updates in-memory state.
     // Requires mutex_. Does NO storage I/O — returns what to persist (nullopt if nothing).
     std::optional<PersistJob> compute_event(const CaptureEvent& event);
@@ -519,6 +562,12 @@ private:
     // the process has been up, so a system clock jump cannot make a prune overdue or
     // unreachable. Seeded at construction because Storage::open just pruned.
     std::atomic<std::int64_t> last_prune_steady_ms_{0};
+    // Uptime at the last "capture backlog" log line, or nullopt if none has been written yet.
+    // Guarded by mutex_ (decided inside the drain phase). Deliberately not an int with a 0
+    // sentinel: steady_ms() counts from an arbitrary epoch, so 0 is a value the clock can
+    // legitimately hold, and a sentinel inside the clock's own domain would defeat the
+    // throttle for as long as it sat there.
+    std::optional<std::int64_t> last_drain_backlog_log_ms_;
     // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple
     // libc++ shipped with the supported command-line tools does not provide the C++20 class
     // specialization, while atomic_load/store(shared_ptr*) are available cross-platform.

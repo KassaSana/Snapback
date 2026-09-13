@@ -88,6 +88,89 @@ private:
     std::atomic<bool> running_{true};
 };
 
+// Fills the capture ring with `count` key events as fast as the producer can push, then
+// parks. Used to put more work in the buffer than one tick is allowed to consume.
+class BurstHook final : public InputHook {
+public:
+    explicit BurstHook(std::size_t count) : count_(count) {}
+
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
+        for (std::size_t i = 0; i < count_; ++i) {
+            CaptureEvent event;
+            event.event_type = EventType::KeyPress;
+            // Spread across seconds: the classifier throttles to one prediction per second of
+            // event time, so identical timestamps would make every event after the first do
+            // almost no work -- the opposite of the load this hook exists to create.
+            event.timestamp_secs = 1.0 + static_cast<double>(i) * 0.01;
+            event.app_name = "Cursor";
+            event.window_title = "state.cpp - Snapback";
+            on_event(std::move(event));
+        }
+        emitted_.store(true, std::memory_order_release);
+
+        while (running_.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
+
+    bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+
+private:
+    std::size_t count_;
+    std::atomic<bool> running_{true};
+    std::atomic<bool> emitted_{false};
+};
+
+// Pushes events as fast as it can for `duration`, the way a user holding down a key or
+// dragging the mouse does. The ring fills and starts dropping, which is the point: the engine
+// then never observes an empty buffer, which is the condition an unbounded drain never exits.
+class FloodHook final : public InputHook {
+public:
+    explicit FloodHook(std::chrono::milliseconds duration) : duration_(duration) {}
+
+    void run(InputCallback on_event, const std::atomic<bool>& stop_requested) override {
+        const auto until = std::chrono::steady_clock::now() + duration_;
+        double ts = 1.0;
+        while (std::chrono::steady_clock::now() < until &&
+               !stop_requested.load(std::memory_order_acquire) &&
+               running_.load(std::memory_order_relaxed)) {
+            CaptureEvent event;
+            event.event_type = EventType::KeyPress;
+            event.timestamp_secs = ts;
+            ts += 0.01;
+            event.app_name = "Cursor";
+            event.window_title = "state.cpp - Snapback";
+            on_event(std::move(event));
+        }
+        flooding_.store(false, std::memory_order_release);
+
+        while (running_.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
+
+    bool flooding() const { return flooding_.load(std::memory_order_acquire); }
+
+private:
+    std::chrono::milliseconds duration_;
+    std::atomic<bool> running_{true};
+    std::atomic<bool> flooding_{true};
+};
+
+// Runs `hook` as the capture producer with no engine thread, waits until it has finished
+// pushing, and hands the state back so the test can drive engine_tick() itself.
+void fill_capture_ring(AppState& state, BurstHook& hook) {
+    AppStateTestAccess::start_capture_only(state, &hook);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted());
+}
+
 class ReturningHook final : public InputHook {
 public:
     void run(InputCallback, const std::atomic<bool>&) override {
@@ -2502,6 +2585,182 @@ TEST_CASE("AppState destruction stops a running engine") {
     }
 
     CHECK(hook.stopped());
+}
+
+TEST_CASE("one tick drains a bounded slice of the ring and reports the backlog") {
+    // The drain used to be `while (capture_.next_event())`, which ends only when the consumer
+    // outruns the producer -- so a user who keeps typing keeps mutex_ held, and every command,
+    // every persistence flush, and every UI emission waits for them to stop.
+    auto state = make_state();
+    BurstHook hook(kEngineDrainBudget + 512);
+    fill_capture_ring(*state, hook);
+
+    // First tick stops on the budget with events still queued.
+    CHECK(AppStateTestAccess::engine_tick(*state));
+
+    // Nothing was dropped: the remainder is still in the ring and the following ticks take it.
+    int ticks = 1;  // the truncated one above
+    for (bool backlog = true; backlog;) {
+        backlog = AppStateTestAccess::engine_tick(*state);
+        ++ticks;
+        REQUIRE(ticks < 100);  // a tick that never clears the backlog is the bug, not a pass
+    }
+    CHECK(ticks >= 2);  // the burst could not have been consumed by one tick
+    // The ring is empty now, so another tick has nothing to truncate on.
+    CHECK_FALSE(AppStateTestAccess::engine_tick(*state));
+
+    AppStateTestAccess::stop_capture(*state);
+}
+
+TEST_CASE("a truncated drain still runs the rest of the tick") {
+    // The point of bounding the drain: phases 2 and 3 -- persistence and emission -- used to be
+    // unreachable while the ring kept refilling. One tick that stops on the budget must still
+    // publish what it computed rather than deferring it until input stops.
+    auto state = make_state();
+    const auto session = state->start_session("bounded drain", FocusMode::Normal);
+
+    std::vector<std::string> seen;
+    state->set_emit_hook([&seen](const std::string& name, const std::string&, std::uint64_t) {
+        seen.push_back(name);
+    });
+
+    BurstHook hook(kEngineDrainBudget + 512);
+    fill_capture_ring(*state, hook);
+
+    REQUIRE(AppStateTestAccess::engine_tick(*state));  // truncated, backlog remains
+
+    // Phase 3 ran: the prediction this tick computed went out on the hook.
+    CHECK(std::find(seen.begin(), seen.end(), "prediction") != seen.end());
+    // Phase 2 ran: its rows are already committed, not waiting for the ring to empty.
+    const auto persisted_after_first_tick =
+        AppStateTestAccess::storage(*state).recent_predictions(1000).size();
+    CHECK(persisted_after_first_tick > 0);
+    CHECK(state->latest_prediction().has_value());
+
+    // And the deferred events are not lost -- draining the rest produces more predictions,
+    // which is what proves the first tick stopped early rather than consuming everything.
+    while (AppStateTestAccess::engine_tick(*state)) {
+    }
+    CHECK(AppStateTestAccess::storage(*state).recent_predictions(1000).size() >
+          persisted_after_first_tick);
+
+    state->set_emit_hook(nullptr);
+    AppStateTestAccess::stop_capture(*state);
+    state->stop_session(session.session_id);
+}
+
+TEST_CASE("shutdown finishes the backlog instead of discarding it") {
+    // The unbounded drain always left the ring empty, so a stop persisted everything the user
+    // had done. A bounded drain must not quietly lose the tail: the engine loop keeps ticking
+    // while a backlog remains, which terminates because stop_engine stops the producer first.
+    auto state = make_state();
+    const auto session = state->start_session("drain on the way out", FocusMode::Normal);
+
+    BurstHook hook(kEngineDrainBudget + 512);  // ~25 s of event time, > one tick's budget
+    state->start_engine_for_test(&hook);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted());
+
+    state->stop_engine();
+
+    CHECK_FALSE(AppStateTestAccess::capture_has_pending(*state));
+    // One tick's worth of those events spans ~20 s of event time and the throttle allows one
+    // prediction per second, so a shutdown that stopped after a single slice would leave about
+    // 20. Everything drained is ~25.
+    const auto persisted = AppStateTestAccess::storage(*state).recent_predictions(1000).size();
+    CHECK(persisted >= 24);
+
+    state->stop_session(session.session_id);
+}
+
+TEST_CASE("deleting activity also erases what capture had queued") {
+    // The activity epoch fences rows a tick was about to write; it does not reach into the
+    // capture queue. Events recorded before the user asked for deletion were still sitting
+    // there, and the next tick filed them -- into whatever session existed by then.
+    auto state = make_state();
+    const auto before = state->start_session("before the delete", FocusMode::Normal);
+    BurstHook hook(kEngineDrainBudget + 512);
+    fill_capture_ring(*state, hook);
+
+    state->delete_all_activity_data();
+    CHECK_FALSE(AppStateTestAccess::capture_has_pending(*state));
+
+    // A session started right after the deletion must not inherit that pre-deletion activity.
+    const auto after = state->start_session("after the delete", FocusMode::Normal);
+    for (int tick = 0; tick < 5; ++tick) AppStateTestAccess::engine_tick(*state);
+    CHECK(AppStateTestAccess::storage(*state).recent_predictions(1000).empty());
+
+    AppStateTestAccess::stop_capture(*state);
+    state->stop_session(after.session_id);
+    (void)before;
+}
+
+TEST_CASE("deleting one session leaves another session's queued events alone") {
+    // The mirror of the case above: the drop is scoped to the session being erased. Deleting
+    // some *other* session must not throw away input the user is producing right now.
+    auto state = make_state();
+    const auto keep = state->start_session("still running", FocusMode::Normal);
+    const auto other = state->start_session("a second session replaces it", FocusMode::Normal);
+    state->stop_session(other.session_id);
+    const auto live = state->start_session("the live one", FocusMode::Normal);
+
+    BurstHook hook(64);
+    fill_capture_ring(*state, hook);
+    REQUIRE(AppStateTestAccess::capture_has_pending(*state));
+
+    state->delete_session(other.session_id);
+    CHECK(AppStateTestAccess::capture_has_pending(*state));  // not this session's events
+
+    AppStateTestAccess::engine_tick(*state);
+    CHECK_FALSE(AppStateTestAccess::storage(*state).recent_predictions(1000).empty());
+
+    AppStateTestAccess::stop_capture(*state);
+    state->stop_session(live.session_id);
+    (void)keep;
+}
+
+TEST_CASE("a command is not starved while capture floods the ring") {
+    // The end-to-end version of the bound: real engine thread, real producer, and a caller
+    // asking the question a UI asks constantly. Before the drain was bounded this loop blocked
+    // for as long as the flood lasted, because the tick held mutex_ until the ring ran dry and
+    // a fast producer never let it. With the bound the worst wait is one bounded slice.
+    auto state = make_state();
+    FloodHook hook(std::chrono::milliseconds(3000));
+    state->start_engine_for_test(&hook);
+
+    std::chrono::steady_clock::duration worst{};
+    int samples = 0;
+    while (hook.flooding()) {
+        const auto began = std::chrono::steady_clock::now();
+        (void)state->settings();  // pure in-memory read, but it needs mutex_
+        worst = std::max(worst, std::chrono::steady_clock::now() - began);
+        ++samples;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    state->stop_engine();
+
+    const auto worst_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(worst).count();
+    INFO("worst settings() wait during the flood: " << worst_ms << " ms");
+    CHECK(samples > 20);  // the probe really did run throughout the flood
+    // Generous on purpose: a bounded slice costs single-digit milliseconds, while the
+    // unbounded drain this replaces held the lock for the whole 3-second flood.
+    CHECK(worst_ms < 1000);
+}
+
+TEST_CASE("an under-budget drain reports no backlog") {
+    // Guards the off-by-one: if `drained >= budget` were `>=` against the wrong counter every
+    // tick would claim a backlog and the engine loop would spin at 1 ms forever.
+    auto state = make_state();
+    BurstHook hook(16);
+    fill_capture_ring(*state, hook);
+
+    CHECK_FALSE(AppStateTestAccess::engine_tick(*state));
+    CHECK(state->latest_prediction().has_value());  // the 16 events were processed, not skipped
+
+    AppStateTestAccess::stop_capture(*state);
 }
 
 TEST_CASE("AppState confirms capture only after the backend delivers an event") {

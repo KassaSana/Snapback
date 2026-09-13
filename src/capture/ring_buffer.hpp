@@ -48,6 +48,15 @@ public:
         return value;
     }
 
+    // Consumer side. Non-destructive "is there anything to pop", so a bounded drain can tell
+    // "I stopped because my budget ran out" from "I stopped because I emptied the ring"
+    // without consuming the event that would answer it. Only meaningful on the consumer
+    // thread: the producer can make a false reading true a moment later, which is harmless
+    // here (the next tick sees it) and is why this is not used for correctness decisions.
+    bool has_pending() const {
+        return tail_.load(std::memory_order_relaxed) != head_.load(std::memory_order_acquire);
+    }
+
 private:
     static constexpr std::size_t kMask = Capacity - 1;
     // Heap, not std::array: 65,536 CaptureEvents is ~6 MB, which silently lived in

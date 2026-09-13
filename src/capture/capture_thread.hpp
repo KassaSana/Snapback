@@ -42,6 +42,26 @@ public:
         return event;
     }
 
+    // Engine side: whether a further next_event() would return an event right now.
+    bool has_pending_events() const { return buffer_.has_pending(); }
+
+    // Engine side: throw away everything queued, returning how many events went.
+    //
+    // The ring is single-producer/single-consumer, so this must not run while the engine is
+    // draining. AppState's callers satisfy that by holding the same state lock the drain holds
+    // -- the two pop sites are mutually exclusive, never concurrent.
+    //
+    // "Delete my activity" has to erase what was captured before it, including what is still
+    // in this queue -- otherwise the tick after the deletion files pre-deletion window titles
+    // into whatever session exists by then. Bounded by kCapacity rather than by "until empty"
+    // so a producer that keeps pushing cannot hold the caller here indefinitely; anything it
+    // pushes after the boundary is, correctly, post-deletion activity.
+    std::size_t discard_pending_events() {
+        std::size_t discarded = 0;
+        while (discarded < kCapacity && buffer_.pop()) ++discarded;
+        return discarded;
+    }
+
     std::uint64_t events_dropped() const { return dropped_.load(std::memory_order_relaxed); }
     bool running() const { return running_.load(std::memory_order_relaxed); }
     bool failed() const { return failed_.load(std::memory_order_acquire); }

@@ -61,7 +61,24 @@ struct AppStateTestAccess {
     // driven by the tick's idle edges, so testing it through `update_idle_for_test` alone
     // would exercise the detector and skip everything that acts on it. Points the same way
     // as 14.2.
-    static void engine_tick(AppState& state) { state.engine_tick(); }
+    // Returns what the engine loop reads: true if the drain stopped on a budget with events
+    // still queued, false if it emptied the ring.
+    static bool engine_tick(AppState& state) { return state.engine_tick(); }
+
+    // Starts the capture producer WITHOUT the engine thread. `start_engine_for_test` starts
+    // both, which makes "how much does one tick drain" a race against a thread already
+    // draining; this lets a test fill the ring and then drive engine_tick() by hand.
+    static void start_capture_only(AppState& state, InputHook* hook) {
+        state.capture_.start(hook);
+    }
+
+    static void stop_capture(AppState& state) noexcept { state.capture_.stop(); }
+
+    // Whether capture still has events the engine has not taken. Lets a test assert that
+    // shutdown or a deletion left nothing behind, which is otherwise invisible.
+    static bool capture_has_pending(const AppState& state) {
+        return state.capture_.has_pending_events();
+    }
 
     static bool maintenance_pending(const AppState& state) {
         return state.maintenance_pending_.load(std::memory_order_acquire);

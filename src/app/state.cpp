@@ -553,10 +553,40 @@ void AppState::start_engine_impl(InputHook* hook) {
     try {
         capture_.start(hook);
         engine_thread_ = std::thread([this] {
-            while (engine_running_.load(std::memory_order_relaxed)) {
+            // True when the last tick stopped draining on a budget. The backlog is then worked
+            // off at full speed across short ticks rather than in one long critical section --
+            // the sleep below is what makes "bounded drain" a pause for other threads instead
+            // of a throughput ceiling.
+            //
+            // It is also part of the exit condition, not just the pacing: an unbounded drain
+            // always left the ring empty, so shutdown persisted everything captured. A bounded
+            // one does not, and stopping the moment the flag flips would silently discard
+            // whatever the last slice did not reach. stop_engine() stops the producer before
+            // joining this thread, so continuing while a backlog remains terminates -- the
+            // queue is finite and nothing is refilling it.
+            //
+            // A do-while, not a while: stop_engine() can flip the flag before this thread is
+            // ever scheduled, and a plain loop would then exit having drained nothing at all
+            // -- losing whatever capture queued in between. One tick always runs.
+            //
+            // The exit condition asks the ring rather than trusting `backlog`, which describes
+            // the tick that has already happened. A thread asleep between ticks when the flag
+            // flips has a stale `false` from before the events arrived, and would exit over a
+            // full queue -- which is precisely what CI caught on macOS.
+            bool backlog = false;
+            // Ticks spent draining after a stop was requested. A tick that throws reports no
+            // backlog but also drains nothing, so without this a permanently failing tick over
+            // a non-empty ring would spin here and shutdown would never complete. The whole
+            // ring is kEngineDrainBudget * 32 events, so this cannot cut a healthy drain short.
+            int shutdown_ticks = 0;
+            constexpr int kMaxShutdownTicks = 64;
+            do {
                 try {
-                    engine_tick();
+                    backlog = engine_tick();
                 } catch (const std::exception& error) {
+                    // A tick that threw tells us nothing about the queue; treat it as no
+                    // backlog so a failing tick cannot keep shutdown spinning here.
+                    backlog = false;
                     try {
                         std::ostringstream message;
                         message << "engine tick failed: " << error.what();
@@ -566,14 +596,27 @@ void AppState::start_engine_impl(InputHook* hook) {
                         // unhandled exception on this thread.
                     }
                 } catch (...) {
+                    backlog = false;
                     try {
                         log().error("engine tick failed: unknown exception");
                     } catch (...) {
                         // Keep the thread boundary intact even if the logger fails.
                     }
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
+                // Checked before sleeping so a stop with an empty queue exits now rather than
+                // waiting out a tick interval nobody is waiting for.
+                const bool stopping = !engine_running_.load(std::memory_order_relaxed);
+                if (stopping && ++shutdown_ticks >= kMaxShutdownTicks) break;
+                // Only the shutdown path consults the ring. Pacing stays on `backlog` alone:
+                // an ordinary tick usually leaves a few events queued behind it, and treating
+                // that as urgent would run the loop at 1 ms forever for a handful of
+                // keystrokes.
+                if (stopping && !backlog && !capture_.has_pending_events()) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                    (backlog || stopping) ? kEngineBacklogTickIntervalMs
+                                          : kEngineTickIntervalMs));
+            } while (engine_running_.load(std::memory_order_relaxed) ||
+                     backlog || capture_.has_pending_events());
         });
     } catch (...) {
         engine_running_.store(false, std::memory_order_release);
@@ -589,8 +632,7 @@ void AppState::set_emit_hook(EmitHook hook) {
 
 void AppState::stop_engine() noexcept {
     engine_running_.store(false, std::memory_order_relaxed);
-    maintenance_stopping_.store(true, std::memory_order_release);
-    maintenance_ready_.notify_all();
+    signal_maintenance([this] { maintenance_stopping_.store(true, std::memory_order_release); });
     capture_.stop();
     if (engine_thread_.joinable()) engine_thread_.join();
     if (maintenance_thread_.joinable()) maintenance_thread_.join();
@@ -661,8 +703,9 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
         storage_.begin_session_span_now(created.session_id);
         savepoint.release();
     } catch (...) {
-        maintenance_paused_.store(replaced.has_value(), std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance([this, &replaced] {
+            maintenance_paused_.store(replaced.has_value(), std::memory_order_release);
+        });
         throw;
     }
 
@@ -732,8 +775,8 @@ void AppState::stop_session() {
         session_attended_ = false;
         pomodoro_.reset();
         active_session_.reset();
-        maintenance_paused_.store(false, std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance(
+            [this] { maintenance_paused_.store(false, std::memory_order_release); });
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         // Same reason as start_session: the payload names a window from the session being
@@ -770,8 +813,8 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         pomodoro_.reset();
         session_attended_ = false;
         active_session_.reset();
-        maintenance_paused_.store(false, std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance(
+            [this] { maintenance_paused_.store(false, std::memory_order_release); });
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         // Inside the active-session branch on purpose, unlike the pending-span drop above.
@@ -813,14 +856,18 @@ bool AppState::delete_session(const std::string& session_id) {
     // a missing foreign key, and the UI would keep rendering a session the user just
     // erased. Reset exactly what stop_session() resets, plus the derived prediction state.
     if (active_session_ && active_session_->session_id == session_id) {
+        // Queued events were captured *for the session being erased*, so they go with it.
+        // Only in this branch: deleting some other session leaves a queue that belongs to the
+        // session the user is still running, and that queue must survive.
+        capture_.discard_pending_events();
         pomodoro_.reset();
         // Its spans went with the row, so there is nothing left to close and nothing to
         // reconcile against. Leaving this true would make the next tick's level check see a
         // change that is not there.
         session_attended_ = false;
         active_session_.reset();
-        maintenance_paused_.store(false, std::memory_order_release);
-        maintenance_ready_.notify_all();
+        signal_maintenance(
+            [this] { maintenance_paused_.store(false, std::memory_order_release); });
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
@@ -1009,6 +1056,12 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
     activity_epoch_.fetch_add(1, std::memory_order_release);
+    // The epoch fences rows this tick was about to write; it does not touch what capture has
+    // already queued. Those events were recorded before the user asked for deletion, so a
+    // later tick filing them -- into a session started after this point, no less -- would put
+    // pre-deletion window titles back on disk. Deleting activity means deleting the activity
+    // still in flight too. (Bounded drop: see CaptureThread::discard_pending_events.)
+    capture_.discard_pending_events();
 
     ActivityDeletionResult result;
 
@@ -1040,8 +1093,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     for (const char* retained : kRetainedArtifacts) result.retained.emplace_back(retained);
 
     active_session_.reset();
-    maintenance_paused_.store(false, std::memory_order_release);
-    maintenance_ready_.notify_all();
+    signal_maintenance([this] { maintenance_paused_.store(false, std::memory_order_release); });
     session_attended_ = false;  // every span was deleted with the rows above
     discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
@@ -1758,11 +1810,11 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
 
 void AppState::request_retention_maintenance() {
     if (maintenance_stopping_.load(std::memory_order_acquire)) return;
-    bool expected = false;
-    if (maintenance_pending_.compare_exchange_strong(expected, true,
-                                                     std::memory_order_acq_rel)) {
-        maintenance_ready_.notify_all();
-    }
+    // Notifies even when the flag was already set: the wake is unconditional now, and a
+    // spurious one costs the worker a single predicate evaluation.
+    signal_maintenance([this] {
+        maintenance_pending_.store(true, std::memory_order_release);
+    });
 }
 
 void AppState::run_retention_maintenance() noexcept {
@@ -1846,7 +1898,7 @@ void AppState::run_retention_maintenance() noexcept {
     }
 }
 
-void AppState::engine_tick() {
+bool AppState::engine_tick() {
     // Three phases with different locks so a disk write never blocks an ordinary UI read:
     //   1) drain + classify under mutex_ (in-memory only), collecting persist jobs;
     //   2) flush them under storage_mutex_ in ONE transaction, after releasing mutex_;
@@ -1878,13 +1930,61 @@ void AppState::engine_tick() {
     // The tick only schedules retention. An owned worker performs bounded storage batches.
     bool prune_due = false;
     std::uint64_t tick_activity_epoch = 0;
+    // Whether phase 1 gave up on a budget rather than on an empty ring. Returned to the engine
+    // loop, which then re-ticks immediately instead of sleeping out the tick interval.
+    bool drain_truncated = false;
+    // Set under mutex_ when the throttle allows a backlog line; written to the log after the
+    // lock is released.
+    std::optional<std::size_t> backlog_to_log;
     {
         std::lock_guard lock(mutex_);
         tick_activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         bool had_input = false;
-        while (auto ev = capture_.next_event()) {
+        // Bounded on purpose. `while (capture_.next_event())` only ends when the consumer
+        // outruns the producer, so under sustained input this loop -- and mutex_ with it --
+        // was held for as long as the typing lasted, starving every command thread and
+        // deferring the idle poll, the persistence flush, and the UI emissions below.
+        // Leftover events stay in the ring (single consumer, so nobody else takes them) and
+        // are picked up by the next tick, which follows in kEngineBacklogTickIntervalMs.
+        std::size_t drained = 0;
+        const auto drain_started_ms = steady_now_ms();
+        while (drained < kEngineDrainBudget) {
+            auto ev = capture_.next_event();
+            if (!ev) break;
+            ++drained;
             if (is_input_event(ev->event_type)) had_input = true;
             if (auto job = compute_event(*ev)) jobs.push_back(std::move(*job));
+            // The count budget is the primary bound and needs no clock, which keeps ticks
+            // driven by a ManualClock deterministic. This second bound covers the case where
+            // per-event work is heavy enough that 2,048 of them is already too long.
+            if (drained % kEngineDrainClockCheckStride == 0 &&
+                steady_now_ms() - drain_started_ms >= kEngineDrainBudgetMs) {
+                drain_truncated = true;
+                break;
+            }
+        }
+        // Spending the budget is not the same as leaving work behind: a burst of exactly
+        // kEngineDrainBudget events is fully consumed, and reporting a backlog for it would
+        // buy an extra 1 ms tick and a log line describing a queue that is empty. Ask the ring
+        // instead of inferring it from the counter.
+        if (drained >= kEngineDrainBudget && capture_.has_pending_events()) {
+            drain_truncated = true;
+        }
+        if (drain_truncated) {
+            // Throttled: while a backlog lasts this tick runs every millisecond, and one line
+            // per tick would bury the log it is meant to explain. The decision is made here,
+            // under mutex_; the write happens after the lock is released, because the logger
+            // formats and writes to its sink synchronously and a slow disk would otherwise
+            // extend exactly the critical section this function exists to bound.
+            const auto log_now_ms = steady_now_ms();
+            // Not a zero sentinel: steady_ms() is relative to an arbitrary epoch, so 0 is a
+            // legitimate reading (ManualClock is routinely set to it), and comparing against
+            // it would log on every tick for as long as the clock sat there.
+            if (!last_drain_backlog_log_ms_ ||
+                log_now_ms - *last_drain_backlog_log_ms_ >= kEngineBacklogLogIntervalMs) {
+                last_drain_backlog_log_ms_ = log_now_ms;
+                backlog_to_log = drained;
+            }
         }
         // Idle timing runs off the tick's monotonic clock, not event timestamps: true AFK
         // means no events arrive at all, so we must measure wall time, not the last event.
@@ -1942,13 +2042,20 @@ void AppState::engine_tick() {
         publish_live_read_unlocked();
     }
 
+    if (backlog_to_log) {
+        log().info("engine: capture backlog, drained " + std::to_string(*backlog_to_log) +
+                   " events this tick and yielded the state lock");
+    }
+
     if (prune_due) request_retention_maintenance();
 
     {
         // If deletion won the boundary after phase 1, discard every buffered row and
         // event. If this tick won, deletion waits until persistence has completed.
         std::lock_guard activity_lock(activity_boundary_mutex_);
-        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
+        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) {
+            return drain_truncated;
+        }
         if (!jobs.empty() || span_session_id) {
             std::lock_guard lock(storage_mutex_);
             Storage::Transaction txn(storage_);  // one commit for the whole drain
@@ -1964,7 +2071,7 @@ void AppState::engine_tick() {
         }
     }
 
-    if (!hook) return;
+    if (!hook) return drain_truncated;
     if (idle_edge == IdleTransition::WentIdle) {
         hook("idle", "{\"idle\":true}", tick_activity_epoch);
     }
@@ -2014,6 +2121,7 @@ void AppState::engine_tick() {
                                       {"delivery", nlohmann::json(untracked_route)}}),
              tick_activity_epoch);
     }
+    return drain_truncated;
 }
 
 std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& event) {
