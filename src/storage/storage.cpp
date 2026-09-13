@@ -428,6 +428,40 @@ std::optional<Storage> Storage::open_memory() {
     }
 }
 
+Storage Storage::open_read_only(const std::filesystem::path& db_path) {
+    sqlite3* db = nullptr;
+    const auto path = db_path.string();
+    const int rc = sqlite3_open_v2(path.c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
+    if (rc != SQLITE_OK) {
+        std::string message = "storage: could not open read-only database " + path;
+        if (db) {
+            message += ": ";
+            message += sqlite3_errmsg(db);
+            sqlite3_close(db);
+        }
+        throw std::runtime_error(message);
+    }
+
+    try {
+        Storage storage(db);
+        db = nullptr;  // storage owns it from here
+        exec(storage.db_, "PRAGMA foreign_keys = ON;");
+        exec(storage.db_, "PRAGMA cache_size = -8000;");
+        exec(storage.db_, "PRAGMA temp_store = MEMORY;");
+        exec(storage.db_, "PRAGMA mmap_size = 268435456;");
+        exec(storage.db_, "PRAGMA query_only = ON;");
+        return storage;
+    } catch (...) {
+        if (db) sqlite3_close(db);
+        throw;
+    }
+}
+
+std::filesystem::path Storage::database_path() const {
+    const char* path = sqlite3_db_filename(db_, "main");
+    return path ? std::filesystem::path(path) : std::filesystem::path{};
+}
+
 Storage::Transaction::Transaction(Storage& storage) : db_(storage.db_) {
     exec(db_, "BEGIN IMMEDIATE;");
 }
@@ -1010,6 +1044,15 @@ void migrate_time_to_epoch_ms(sqlite3* db) {
     )sql");
 }
 
+void migrate_retention_timestamp_indexes(sqlite3* db) {
+    exec(db, R"sql(
+        CREATE INDEX IF NOT EXISTS idx_context_snapshots_ts
+            ON context_snapshots(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_feature_snapshots_ts
+            ON feature_snapshots(timestamp);
+    )sql");
+}
+
 constexpr Migration kMigrations[] = {
     {1, "baseline schema", migrate_baseline_schema},
     {2, "predictions.model_id", migrate_prediction_model_id},
@@ -1018,6 +1061,7 @@ constexpr Migration kMigrations[] = {
     {5, "snapback_events episode detail", migrate_snapback_episodes},
     {6, "sessions reflection", migrate_session_reflection},
     {7, "time is epoch milliseconds", migrate_time_to_epoch_ms},
+    {8, "retention timestamp indexes", migrate_retention_timestamp_indexes},
 };
 
 static_assert(std::size(kMigrations) > 0, "migration list must not be empty");
@@ -2584,6 +2628,10 @@ std::vector<ContextSnapshotDto> Storage::list_context_snapshots(const std::strin
 
 ExportTrainingResult Storage::export_training_csv(
     const std::filesystem::path& out_dir, const std::optional<std::string>& session_id) {
+    // A deferred savepoint establishes the snapshot on the first SELECT and retains it until
+    // both files are complete. On the dedicated read-only WAL connection this gives the pair
+    // one point-in-time view without blocking the engine writer.
+    Savepoint snapshot(*this, "training_export_snapshot");
     std::filesystem::create_directories(out_dir);
     std::uint64_t feature_count = 0;
     std::uint64_t label_count = 0;
@@ -2721,6 +2769,7 @@ ExportTrainingResult Storage::export_training_csv(
     result.labels_path = (out_dir / "labels.csv").string();
     result.feature_count = feature_count;
     result.label_count = label_count;
+    snapshot.release();
     return result;
 }
 
@@ -2757,11 +2806,35 @@ PruneSummary Storage::prune_runtime_data(std::int64_t cutoff_unix_ms) {
         // project's life it was never pruned at all, so it grew without bound while the other
         // two stayed flat. It used to need its own REAL seconds cutoff; as of schema v7 it
         // takes the same integer as the other two.
-        Stmt stmt(db_, "DELETE FROM feature_snapshots WHERE timestamp < ?1");
+        Stmt stmt(db_, kPruneFeatureSnapshotsSql);
         stmt.bind(1, cutoff_unix_ms);
         stmt.step_done();
         summary.feature_snapshots_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
     }
+    return summary;
+}
+
+PruneBatchSummary Storage::prune_runtime_data_batch(std::int64_t cutoff_unix_ms,
+                                                    std::size_t max_rows) {
+    PruneBatchSummary summary;
+    if (max_rows == 0) return summary;
+
+    Savepoint savepoint(*this, "prune_runtime_data_batch");
+    auto delete_up_to = [&](const char* sql, std::size_t& deleted) {
+        const std::size_t remaining = max_rows - summary.total();
+        if (remaining == 0) return;
+        Stmt stmt(db_, sql);
+        stmt.bind(1, cutoff_unix_ms);
+        stmt.bind(2, static_cast<std::int64_t>(remaining));
+        stmt.step_done();
+        deleted = static_cast<std::size_t>(sqlite3_changes(db_));
+    };
+
+    delete_up_to(kPrunePredictionsBatchSql, summary.predictions_deleted);
+    delete_up_to(kPruneContextSnapshotsBatchSql, summary.context_snapshots_deleted);
+    delete_up_to(kPruneFeatureSnapshotsBatchSql, summary.feature_snapshots_deleted);
+    summary.has_more = summary.total() == max_rows;
+    savepoint.release();
     return summary;
 }
 

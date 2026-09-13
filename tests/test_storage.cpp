@@ -1429,6 +1429,38 @@ TEST_CASE("storage export_training_csv filters by session id") {
     CHECK(features_all.find("Session B") != std::string::npos);
 }
 
+TEST_CASE("read-only training export snapshot does not block writes and stays consistent") {
+    TempDir database;
+    auto writer = Storage::open(database.path);
+    REQUIRE(writer.has_value());
+    const auto session = writer->create_session("Concurrent export", FocusMode::Normal);
+
+    auto reader = Storage::open_read_only(database.path / "focoflow.db");
+    Storage::Savepoint snapshot(reader, "test_training_export_snapshot");
+    // The first read establishes the deferred transaction's WAL snapshot.
+    REQUIRE(reader.get_session(session.session_id).has_value());
+
+    FeatureVector features;
+    features.keystroke_rate() = 4.0;
+    {
+        Storage::Transaction write(*writer);
+        writer->insert_feature_snapshot(session.session_id, features);
+        writer->insert_label(session.session_id, FocusLabel::Productive, "manual");
+        write.commit();
+    }
+
+    TempDir first_output;
+    const auto first = reader.export_training_csv(first_output.path, session.session_id);
+    CHECK(first.feature_count == 0);
+    CHECK(first.label_count == 0);
+    snapshot.release();
+
+    TempDir next_output;
+    const auto next = reader.export_training_csv(next_output.path, session.session_id);
+    CHECK(next.feature_count == 1);
+    CHECK(next.label_count == 1);
+}
+
 TEST_CASE("storage prune_runtime_data removes old rows from all three runtime tables") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -1490,6 +1522,35 @@ TEST_CASE("storage prune_runtime_data deletes feature snapshots past the cutoff"
     CHECK(exported.feature_count == 0);
 }
 
+TEST_CASE("storage periodic retention deletes in bounded resumable batches") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("Batched retention", FocusMode::Normal);
+    constexpr std::size_t kBatchRows = 256;
+    for (std::size_t i = 0; i < kBatchRows + 44; ++i) {
+        auto row = prediction(session.session_id, 50.0, 0.2, "PRODUCTIVE");
+        row.timestamp_ms = ms("2000-01-01T00:00:00Z") + static_cast<std::int64_t>(i);
+        storage->insert_prediction(row);
+    }
+
+    constexpr std::int64_t kCutoffMs = 4102444800000;  // 2100-01-01
+    const auto first =
+        storage->prune_runtime_data_batch(kCutoffMs, kBatchRows);
+    CHECK(first.total() == kBatchRows);
+    CHECK(first.has_more);
+    CHECK(storage->recent_predictions(kBatchRows + 100).size() == 44);
+
+    const auto second =
+        storage->prune_runtime_data_batch(kCutoffMs, kBatchRows);
+    CHECK(second.total() == 44);
+    CHECK_FALSE(second.has_more);
+    CHECK(storage->recent_predictions(1).empty());
+
+    const auto empty = storage->prune_runtime_data_batch(kCutoffMs, 0);
+    CHECK(empty.total() == 0);
+    CHECK_FALSE(empty.has_more);
+}
+
 TEST_CASE("should_vacuum_after_prune uses the configured threshold") {
     CHECK_FALSE(should_vacuum_after_prune(0));
     CHECK_FALSE(should_vacuum_after_prune(kVacuumMinDeletedRows - 1));
@@ -1530,8 +1591,10 @@ TEST_CASE("storage schema indexes the hot read paths") {
     CHECK(has("idx_predictions_session_ts"));
     CHECK(has("idx_predictions_ts"));
     CHECK(has("idx_feature_snapshots_session_ts"));
+    CHECK(has("idx_feature_snapshots_ts"));
     CHECK(has("idx_sessions_status_started"));
     CHECK(has("idx_context_snapshots_session_ts"));
+    CHECK(has("idx_context_snapshots_ts"));
     CHECK(has("idx_snapback_events_session"));
     CHECK(has("idx_labels_session"));
 }
@@ -2577,20 +2640,11 @@ TEST_CASE("the retention delete can use the timestamp index") {
         return false;
     };
     CHECK(uses_index(kPrunePredictionsSql));
-
-    // `context_snapshots` still scans, and that is recorded rather than asserted away.
-    // 5.5 named only `idx_predictions_ts`, and it was right to: the sole index on this table is
-    // `idx_context_snapshots_session_ts(session_id, timestamp)`, whose leading column is the
-    // session, so a bare `timestamp <` cannot use it however the predicate is written.
-    // Unwrapping the column was still necessary here -- it is what stops the NULL comparison
-    // silently keeping rows -- but it does not make this one indexed.
-    //
-    // Deliberately not fixed by adding `context_snapshots(timestamp)`. That index would be
-    // paid on every window change to save a scan that happens once per day of uptime, and
-    // that trade belongs to the Tier 14 performance work with a measurement behind it, not to
-    // a migration. Asserted as false so the day someone adds the index, this fails and they
-    // are sent here to delete the paragraph.
-    CHECK_FALSE(uses_index(kPruneContextSnapshotsSql));
+    CHECK(uses_index(kPruneContextSnapshotsSql));
+    CHECK(uses_index(kPruneFeatureSnapshotsSql));
+    CHECK(uses_index(kPrunePredictionsBatchSql));
+    CHECK(uses_index(kPruneContextSnapshotsBatchSql));
+    CHECK(uses_index(kPruneFeatureSnapshotsBatchSql));
 }
 
 TEST_CASE("migration keeps a genuine NULL and floors an unparseable value to the epoch") {

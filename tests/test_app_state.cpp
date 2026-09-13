@@ -1890,7 +1890,19 @@ TEST_CASE("a hostile window title crosses the whole pipeline without dropping th
           std::string::npos);
 }
 
-TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {
+namespace {
+
+bool wait_for_maintenance(AppState& state) {
+    for (int attempt = 0; attempt < 5000; ++attempt) {
+        if (!AppStateTestAccess::maintenance_pending(state)) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return false;
+}
+
+}  // namespace
+
+TEST_CASE("periodic retention waits for an inactive session and runs off the tick thread") {
     // AUD-07. Storage::open was the only caller of the prune, and Snapback closes to the
     // tray: a user who never restarts kept every row past the 90-day window until their
     // next reboot -- on the same storage_mutex_ the tick's persist phase needs.
@@ -1908,17 +1920,57 @@ TEST_CASE("the tick prunes retention-expired rows once a day of uptime") {
     AppStateTestAccess::engine_tick(state);
     CHECK(state.prediction_history(10).size() == 1);
 
-    // A day of uptime later, the same tick collects it. The clock is the injected one, so
-    // this is a real 24 hours as the code measures it rather than a shortened threshold.
+    // A day later the tick only queues the pass. Because this session is active, the worker
+    // remains paused and the row is still available immediately after the tick returns.
     clock.advance_minutes(24 * 60);
     AppStateTestAccess::engine_tick(state);
+    CHECK(AppStateTestAccess::maintenance_pending(state));
+    CHECK(AppStateTestAccess::maintenance_paused(state));
+    CHECK(state.prediction_history(10).size() == 1);
+
+    // Stopping the session wakes the same pending pass; it completes asynchronously.
+    state.stop_session(session.session_id);
+    REQUIRE(wait_for_maintenance(state));
     CHECK(state.prediction_history(10).empty());
 
     // ... and it is once per day, not once and then every tick after.
-    AppStateTestAccess::insert_prediction_at(state, session.session_id,
+    const auto next = state.start_session("another aged row", FocusMode::Normal);
+    AppStateTestAccess::insert_prediction_at(state, next.session_id,
                                              ms("2000-01-02T00:00:00Z"));
+    state.stop_session(next.session_id);
     AppStateTestAccess::engine_tick(state);
     CHECK(state.prediction_history(10).size() == 1);
+}
+
+TEST_CASE("a due retention pass does not make the engine tick wait for storage") {
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    const auto session = state.start_session("aged", FocusMode::Normal);
+    AppStateTestAccess::insert_prediction_at(state, session.session_id,
+                                             ms("2000-01-01T00:00:00Z"));
+    state.stop_session(session.session_id);
+    clock.advance_minutes(24 * 60);
+
+    std::atomic<bool> tick_returned{false};
+    std::thread tick;
+    AppStateTestAccess::while_holding_storage_lock(state, [&] {
+        tick = std::thread([&] {
+            AppStateTestAccess::engine_tick(state);
+            tick_returned.store(true, std::memory_order_release);
+        });
+        for (int attempt = 0;
+             attempt < 1000 && !tick_returned.load(std::memory_order_acquire); ++attempt) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(tick_returned.load(std::memory_order_acquire));
+    });
+    tick.join();
+
+    REQUIRE(wait_for_maintenance(state));
+    CHECK(state.prediction_history(1).empty());
 }
 
 namespace {
@@ -1982,6 +2034,7 @@ TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") 
     const auto session = state.start_session("aged", FocusMode::Normal);
     AppStateTestAccess::insert_prediction_at(state, session.session_id,
                                              ms("2000-01-01T00:00:00Z"));
+    state.stop_session(session.session_id);
     REQUIRE(state.prediction_history(10).size() == 1);
 
     // A day of uptime has passed, so this tick prunes -- and a delete lands in the window
@@ -1990,16 +2043,11 @@ TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") 
     clock.arm(state);
     AppStateTestAccess::engine_tick(state);
 
+    REQUIRE(wait_for_maintenance(state));
     CHECK(state.prediction_history(10).empty());
 }
 
-TEST_CASE("a VACUUM that fails after a successful prune is reported as its own failure") {
-    // The prune and the VACUUM that may follow it are separate operations with separate
-    // failure modes, and the tick wrapped both in one catch. So a VACUUM that failed on a
-    // prune that had already committed was logged as "retention prune failed" -- telling
-    // whoever reads that line that rows were not collected, when they were. Storage::open
-    // has caught the VACUUM separately since it gained one; the tick's copy of that path
-    // did not.
+TEST_CASE("periodic retention completes multiple batches without VACUUM") {
     ManualClock clock;
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -2007,29 +2055,23 @@ TEST_CASE("a VACUUM that fails after a successful prune is reported as its own f
     Logger logger(log_out, LogLevel::Info);
     AppState state(std::move(*storage), std::filesystem::path{}, &logger, &clock);
 
-    // Enough expired rows to clear kVacuumMinDeletedRows, so the VACUUM is actually reached.
+    // More than both the batch size and the old VACUUM threshold exercises multiple yields
+    // and proves periodic reclamation no longer rewrites the database.
     const auto session = state.start_session("aged", FocusMode::Normal);
     for (std::size_t i = 0; i < kVacuumMinDeletedRows; ++i) {
         AppStateTestAccess::insert_prediction_at(state, session.session_id,
                                                  ms("2000-01-01T00:00:00Z"));
     }
-    // No active session, which is the condition the tick defers the VACUUM on.
     state.stop_session(session.session_id);
 
     clock.advance_minutes(24 * 60);
-    // SQLite refuses to VACUUM from inside a transaction, which is the one way to fail the
-    // VACUUM without touching the prune: savepoints nest inside an open transaction, so the
-    // prune still does its work and releases normally.
-    Storage::Transaction txn(AppStateTestAccess::storage(state));
     AppStateTestAccess::engine_tick(state);
+    REQUIRE(wait_for_maintenance(state));
 
     const std::string logged = log_out.str();
-    // The prune reported success, because it succeeded.
-    CHECK(logged.find("storage: pruned 500 rows") != std::string::npos);
-    // ... and the VACUUM reported its own failure, in its own words.
-    CHECK(logged.find("storage: VACUUM after prune failed") != std::string::npos);
-    // The line that was wrong is gone: nothing claims the sweep did not happen.
-    CHECK(logged.find("storage: retention prune failed") == std::string::npos);
+    CHECK(logged.find("storage: periodically pruned 500 rows") != std::string::npos);
+    CHECK(logged.find("VACUUM") == std::string::npos);
+    CHECK(state.prediction_history(1).empty());
 }
 
 TEST_CASE("stopping a session discards a span decision the tick has not drained") {

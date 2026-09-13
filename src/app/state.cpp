@@ -165,8 +165,10 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     pomodoro_.restore(settings_.pomodoro_state, now_unix_ms(), steady_now_ms());
     hydrate_active_session_unlocked();
     hydrate_session_attendance_unlocked();
-    last_prune_steady_ms_ = steady_now_ms();  // Storage::open pruned on the way in
+    last_prune_steady_ms_.store(steady_now_ms());  // Storage::open pruned on the way in
+    maintenance_paused_.store(active_session_.has_value(), std::memory_order_release);
     publish_live_read_unlocked();
+    maintenance_thread_ = std::thread([this] { run_retention_maintenance(); });
 }
 
 void AppState::hydrate_active_session_unlocked() {
@@ -587,8 +589,11 @@ void AppState::set_emit_hook(EmitHook hook) {
 
 void AppState::stop_engine() noexcept {
     engine_running_.store(false, std::memory_order_relaxed);
+    maintenance_stopping_.store(true, std::memory_order_release);
+    maintenance_ready_.notify_all();
     capture_.stop();
     if (engine_thread_.joinable()) engine_thread_.join();
+    if (maintenance_thread_.joinable()) maintenance_thread_.join();
     close_open_span_on_shutdown();
 }
 
@@ -644,9 +649,10 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // running *and* still attended.
     const std::optional<std::string> replaced =
         active_session_ ? std::optional<std::string>(active_session_->session_id) : std::nullopt;
+    maintenance_paused_.store(true, std::memory_order_release);
 
     SessionRecord created;
-    {
+    try {
         Storage::Savepoint savepoint(storage_, "app_start_session");
         if (replaced) storage_.close_session_span_now(*replaced);
         created = storage_.create_session(goal, mode);
@@ -654,6 +660,10 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
         // with it — stamped by Storage's clock, the same one that stamped started_at.
         storage_.begin_session_span_now(created.session_id);
         savepoint.release();
+    } catch (...) {
+        maintenance_paused_.store(replaced.has_value(), std::memory_order_release);
+        maintenance_ready_.notify_all();
+        throw;
     }
 
     // Committed; the session exists. Roadmap 7.25: a replaced session gets the same automatic
@@ -722,6 +732,8 @@ void AppState::stop_session() {
         session_attended_ = false;
         pomodoro_.reset();
         active_session_.reset();
+        maintenance_paused_.store(false, std::memory_order_release);
+        maintenance_ready_.notify_all();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         // Same reason as start_session: the payload names a window from the session being
@@ -758,6 +770,8 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         pomodoro_.reset();
         session_attended_ = false;
         active_session_.reset();
+        maintenance_paused_.store(false, std::memory_order_release);
+        maintenance_ready_.notify_all();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         // Inside the active-session branch on purpose, unlike the pending-span drop above.
@@ -805,6 +819,8 @@ bool AppState::delete_session(const std::string& session_id) {
         // change that is not there.
         session_attended_ = false;
         active_session_.reset();
+        maintenance_paused_.store(false, std::memory_order_release);
+        maintenance_ready_.notify_all();
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
         context_tracker_.set_goal_categories(settings_.goal_categories);
@@ -1024,6 +1040,8 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     for (const char* retained : kRetainedArtifacts) result.retained.emplace_back(retained);
 
     active_session_.reset();
+    maintenance_paused_.store(false, std::memory_order_release);
+    maintenance_ready_.notify_all();
     session_attended_ = false;  // every span was deleted with the rows above
     discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
@@ -1045,8 +1063,18 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
 
 ExportTrainingResult AppState::export_training_data(
     const std::filesystem::path& out_dir, const std::optional<std::string>& session_id) {
-    std::lock_guard lock(storage_mutex_);
-    return storage_.export_training_csv(out_dir, session_id);
+    std::filesystem::path db_path;
+    {
+        std::lock_guard lock(storage_mutex_);
+        db_path = storage_.database_path();
+        if (db_path.empty()) {
+            // In-memory databases cannot be observed by a second SQLite connection. Keep the
+            // shared locked path for unit tests and explicitly in-memory instances only.
+            return storage_.export_training_csv(out_dir, session_id);
+        }
+    }
+    auto reader = Storage::open_read_only(db_path);
+    return reader.export_training_csv(out_dir, session_id);
 }
 
 PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path& out_dir,
@@ -1728,6 +1756,96 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
     }
 }
 
+void AppState::request_retention_maintenance() {
+    if (maintenance_stopping_.load(std::memory_order_acquire)) return;
+    bool expected = false;
+    if (maintenance_pending_.compare_exchange_strong(expected, true,
+                                                     std::memory_order_acq_rel)) {
+        maintenance_ready_.notify_all();
+    }
+}
+
+void AppState::run_retention_maintenance() noexcept {
+    for (;;) {
+        {
+            std::unique_lock lock(maintenance_mutex_);
+            maintenance_ready_.wait(lock, [this] {
+                return maintenance_stopping_.load(std::memory_order_acquire) ||
+                       (maintenance_pending_.load(std::memory_order_acquire) &&
+                        !maintenance_paused_.load(std::memory_order_acquire));
+            });
+        }
+        if (maintenance_stopping_.load(std::memory_order_acquire)) return;
+
+        PruneSummary total;
+        bool failed = false;
+        try {
+            const auto cutoff =
+                now_unix_ms() - static_cast<std::int64_t>(kDefaultRetentionDays) *
+                                    24 * 60 * 60 * 1000;
+            for (;;) {
+                if (maintenance_stopping_.load(std::memory_order_acquire)) return;
+                if (maintenance_paused_.load(std::memory_order_acquire)) {
+                    std::unique_lock lock(maintenance_mutex_);
+                    maintenance_ready_.wait(lock, [this] {
+                        return maintenance_stopping_.load(std::memory_order_acquire) ||
+                               !maintenance_paused_.load(std::memory_order_acquire);
+                    });
+                    continue;
+                }
+
+                PruneBatchSummary batch;
+                {
+                    std::lock_guard lock(storage_mutex_);
+                    // Starting a session raises the pause flag before waiting for this lock.
+                    // Recheck after acquiring it so a queued start prevents another batch.
+                    if (maintenance_paused_.load(std::memory_order_acquire)) continue;
+                    batch = storage_.prune_runtime_data_batch(cutoff,
+                                                              kRetentionPruneBatchRows);
+                }
+                total.predictions_deleted += batch.predictions_deleted;
+                total.context_snapshots_deleted += batch.context_snapshots_deleted;
+                total.feature_snapshots_deleted += batch.feature_snapshots_deleted;
+                if (!batch.has_more) break;
+
+                std::unique_lock lock(maintenance_mutex_);
+                maintenance_ready_.wait_for(
+                    lock, std::chrono::milliseconds(kRetentionPruneYieldMs), [this] {
+                        return maintenance_stopping_.load(std::memory_order_acquire) ||
+                               maintenance_paused_.load(std::memory_order_acquire);
+                    });
+            }
+        } catch (const std::exception& err) {
+            failed = true;
+            try {
+                log().warn(std::string("storage: periodic retention prune failed after ") +
+                           std::to_string(total.total()) + " rows: " + err.what());
+            } catch (...) {
+            }
+        } catch (...) {
+            failed = true;
+            try {
+                log().warn("storage: periodic retention prune failed: unknown error");
+            } catch (...) {
+            }
+        }
+
+        if (!failed && total.total() > 0) {
+            try {
+                std::ostringstream msg;
+                msg << "storage: periodically pruned " << total.total() << " rows older than "
+                    << kDefaultRetentionDays << "d (predictions=" << total.predictions_deleted
+                    << ", context_snapshots=" << total.context_snapshots_deleted
+                    << ", feature_snapshots=" << total.feature_snapshots_deleted << ")";
+                log().info(msg.str());
+            } catch (...) {
+            }
+        }
+        last_prune_steady_ms_.store(steady_now_ms(), std::memory_order_release);
+        maintenance_pending_.store(false, std::memory_order_release);
+    }
+}
+
 void AppState::engine_tick() {
     // Three phases with different locks so a disk write never blocks an ordinary UI read:
     //   1) drain + classify under mutex_ (in-memory only), collecting persist jobs;
@@ -1757,10 +1875,8 @@ void AppState::engine_tick() {
     std::optional<std::string> span_session_id;
     std::int64_t span_secs_ago = 0;
     bool span_opens = false;
-    // Roadmap P0-07 / AUD-07. Decided in phase 1 with the rest, run in phase 2 with the
-    // rest: the prune is a storage write and phase 1 is in-memory only.
+    // The tick only schedules retention. An owned worker performs bounded storage batches.
     bool prune_due = false;
-    bool prune_may_vacuum = false;
     std::uint64_t tick_activity_epoch = 0;
     {
         std::lock_guard lock(mutex_);
@@ -1780,23 +1896,9 @@ void AppState::engine_tick() {
         span_session_id = std::exchange(pending_span_session_, std::nullopt);
         span_secs_ago = pending_span_secs_ago_;
         span_opens = pending_span_opens_;
-        if (now_ms - last_prune_steady_ms_ >= kRetentionPruneIntervalMs) {
+        if (now_ms - last_prune_steady_ms_.load(std::memory_order_acquire) >=
+            kRetentionPruneIntervalMs) {
             prune_due = true;
-            // VACUUM rewrites the whole file, and it runs on this thread, inside this tick,
-            // holding storage_mutex_ for however long that takes. So it is not a stall the
-            // tick can be kept clear of -- the tick is what performs it, and every read that
-            // needs the same mutex (recap, history, timeline, export) waits behind it. On a
-            // 90-day database that is seconds.
-            //
-            // What the gate buys is *when* the stall lands, not whether. No session running
-            // is the cheapest moment this thread can identify on its own: nothing is being
-            // recorded that the pause delays, and no live session view is waiting on a read.
-            prune_may_vacuum = !active_session_.has_value();
-            // Stamped on the decision, not on the write. A prune skipped below (the
-            // activity epoch moved, i.e. the user just deleted data) has nothing left to
-            // collect anyway, and stamping here keeps this field under mutex_ where it
-            // belongs instead of reaching back for it from phase 2.
-            last_prune_steady_ms_ = now_ms;
         }
         if (pomodoro_.poll(now_ms)) {
             pomodoro_to_emit = pomodoro_.status(now_ms);
@@ -1840,50 +1942,7 @@ void AppState::engine_tick() {
         publish_live_read_unlocked();
     }
 
-    if (prune_due) {
-        // Ahead of the activity-boundary block below, not after it: a prune is not
-        // activity-scoped work. It deletes rows that aged out of the retention window, which
-        // stays true regardless of which session the tick was filling or whether the user
-        // deleted one mid-tick -- deleting one session leaves every other session's expired
-        // rows exactly where they were.
-        //
-        // It used to sit after that block, whose early return abandons the rest of the tick.
-        // Since the day of uptime is stamped as spent when the prune is *decided*, in phase
-        // 1, a delete winning the boundary spent the day and collected nothing: retention
-        // slipped by another full 24 h. Running first is what makes the stamp honest.
-        std::lock_guard lock(storage_mutex_);
-        try {
-            const PruneSummary summary = storage_.prune_to_retention();
-            if (summary.total() > 0) {
-                std::ostringstream msg;
-                msg << "storage: pruned " << summary.total() << " rows older than "
-                    << kDefaultRetentionDays
-                    << "d (predictions=" << summary.predictions_deleted
-                    << ", context_snapshots=" << summary.context_snapshots_deleted
-                    << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
-                log().info(msg.str());
-                if (prune_may_vacuum && should_vacuum_after_prune(summary.total())) {
-                    // Caught separately, as Storage::open catches it: by here the prune has
-                    // committed, so letting a VACUUM failure fall through to the handler
-                    // below would report "retention prune failed" for a sweep that
-                    // succeeded -- a wrong answer in the log someone is reading precisely
-                    // because something went wrong.
-                    try {
-                        storage_.vacuum();
-                    } catch (const std::exception& err) {
-                        log().warn(std::string("storage: VACUUM after prune failed: ") +
-                                   err.what());
-                    }
-                }
-            }
-        } catch (const std::exception& err) {
-            // Same posture as the prune on open: retention is housekeeping, and a failed
-            // sweep must not take down the tick that records the user's session. The next
-            // one is a day away, which is soon enough for a condition that is usually
-            // transient (a locked database, a full disk).
-            log().warn(std::string("storage: retention prune failed: ") + err.what());
-        }
-    }
+    if (prune_due) request_retention_maintenance();
 
     {
         // If deletion won the boundary after phase 1, discard every buffered row and

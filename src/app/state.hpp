@@ -7,6 +7,7 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -42,6 +43,8 @@ inline constexpr std::int64_t kCaptureStallThresholdMs = 30'000;
 // to run for weeks, so "prune on open" -- which was the only prune -- meant a user who never
 // restarts kept every row past the retention window until their next reboot.
 inline constexpr std::int64_t kRetentionPruneIntervalMs = 24 * 60 * 60 * 1000;
+inline constexpr std::size_t kRetentionPruneBatchRows = 256;
+inline constexpr std::int64_t kRetentionPruneYieldMs = 10;
 
 class AppState {
 public:
@@ -334,6 +337,8 @@ private:
     };
 
     void engine_tick();  // features -> classifier -> tracker -> (emit) ; persist off-lock
+    void request_retention_maintenance();
+    void run_retention_maintenance() noexcept;
     // Runs the event through features/classifier/tracker and updates in-memory state.
     // Requires mutex_. Does NO storage I/O — returns what to persist (nullopt if nothing).
     std::optional<PersistJob> compute_event(const CaptureEvent& event);
@@ -510,10 +515,10 @@ private:
     bool snapback_emitted_ = false;
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
     bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
-    // Uptime at the last retention prune. Monotonic, not wall clock: this measures how long
+    // Uptime at the last retention attempt. Monotonic, not wall clock: this measures how long
     // the process has been up, so a system clock jump cannot make a prune overdue or
     // unreachable. Seeded at construction because Storage::open just pruned.
-    std::int64_t last_prune_steady_ms_ = 0;
+    std::atomic<std::int64_t> last_prune_steady_ms_{0};
     // Use the shared_ptr atomic free functions instead of atomic<shared_ptr>: the Apple
     // libc++ shipped with the supported command-line tools does not provide the C++20 class
     // specialization, while atomic_load/store(shared_ptr*) are available cross-platform.
@@ -523,6 +528,14 @@ private:
     EmitHook emit_hook_;
     std::thread engine_thread_;
     std::atomic<bool> engine_running_{false};
+    // The tick only submits work. This owned worker deletes bounded batches while recording
+    // is inactive and is cancelled/joined with the engine during shutdown.
+    std::mutex maintenance_mutex_;
+    std::condition_variable maintenance_ready_;
+    std::thread maintenance_thread_;
+    std::atomic<bool> maintenance_pending_{false};
+    std::atomic<bool> maintenance_paused_{false};
+    std::atomic<bool> maintenance_stopping_{false};
 };
 
 }  // namespace snapback

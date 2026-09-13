@@ -41,9 +41,9 @@ std::string pre_migration_backup_name(int from_version);
 //   2. **Never edit a released migration.** Append a new one. Editing one changes what an
 //      already-upgraded database was built from, which is precisely the drift versioning
 //      exists to prevent.
-inline constexpr int kSchemaVersion = 7;
+inline constexpr int kSchemaVersion = 8;
 
-// The two retention DELETEs, named so a test can plan the statement production actually runs.
+// The retention DELETEs, named so a test can plan the statements production actually runs.
 //
 // Roadmap 5.5's second half is a performance claim -- that the prune uses `idx_predictions_ts`
 // rather than scanning the largest table in the database on every startup -- and a query plan
@@ -55,6 +55,21 @@ inline constexpr const char* kPrunePredictionsSql =
     "DELETE FROM predictions WHERE timestamp < ?1";
 inline constexpr const char* kPruneContextSnapshotsSql =
     "DELETE FROM context_snapshots WHERE timestamp < ?1";
+inline constexpr const char* kPruneFeatureSnapshotsSql =
+    "DELETE FROM feature_snapshots WHERE timestamp < ?1";
+
+// Periodic retention uses these bounded variants so no single maintenance transaction can
+// monopolize the engine's storage connection. The timestamp-first indexes added in schema v8
+// make both the candidate lookup and the oldest-first order sargable.
+inline constexpr const char* kPrunePredictionsBatchSql =
+    "DELETE FROM predictions WHERE id IN (SELECT id FROM predictions "
+    "WHERE timestamp < ?1 ORDER BY timestamp, id LIMIT ?2)";
+inline constexpr const char* kPruneContextSnapshotsBatchSql =
+    "DELETE FROM context_snapshots WHERE id IN (SELECT id FROM context_snapshots "
+    "WHERE timestamp < ?1 ORDER BY timestamp, id LIMIT ?2)";
+inline constexpr const char* kPruneFeatureSnapshotsBatchSql =
+    "DELETE FROM feature_snapshots WHERE id IN (SELECT id FROM feature_snapshots "
+    "WHERE timestamp < ?1 ORDER BY timestamp, id LIMIT ?2)";
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
@@ -63,6 +78,10 @@ struct PruneSummary {
     [[nodiscard]] std::size_t total() const {
         return predictions_deleted + context_snapshots_deleted + feature_snapshots_deleted;
     }
+};
+
+struct PruneBatchSummary : PruneSummary {
+    bool has_more = false;
 };
 
 inline bool should_vacuum_after_prune(std::size_t rows_deleted) {
@@ -77,7 +96,13 @@ public:
     // stderr (main.cpp passes its rotating-file logger).
     static std::optional<Storage> open(const std::filesystem::path& app_data_dir,
                                        Logger* logger = nullptr);
+    // Opens an existing database without migration, pruning, or write capability. Intended
+    // for long-running exports so WAL readers never serialize the engine's writer connection.
+    // Throws with SQLite's diagnostic when the connection cannot be opened.
+    static Storage open_read_only(const std::filesystem::path& db_path);
     static std::optional<Storage> open_memory();
+    // Empty for :memory:, otherwise the canonical main-database filename SQLite opened.
+    std::filesystem::path database_path() const;
     ~Storage();
     Storage(Storage&&) noexcept;
     Storage& operator=(Storage&&) noexcept;
@@ -437,6 +462,11 @@ public:
     // feature_snapshots.timestamp held REAL epoch seconds. ADR-0007 ended that disagreement,
     // and the doubled parameter went with it.
     PruneSummary prune_runtime_data(std::int64_t cutoff_unix_ms);
+
+    // Deletes at most `max_rows` expired rows in one transaction. A true `has_more` means
+    // the batch filled its budget, so the caller should yield before requesting another.
+    PruneBatchSummary prune_runtime_data_batch(std::int64_t cutoff_unix_ms,
+                                               std::size_t max_rows);
 
     // The same prune against the retention window, in one transaction, with the cutoff
     // computed here.

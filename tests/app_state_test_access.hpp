@@ -38,6 +38,12 @@ struct AppStateTestAccess {
         body();
     }
 
+    static void while_holding_storage_lock(AppState& state,
+                                           const std::function<void()>& body) {
+        std::lock_guard storage_lock(state.storage_mutex_);
+        body();
+    }
+
     static void process_event(AppState& state, const CaptureEvent& event) {
         state.process_event_for_test(event);
     }
@@ -56,6 +62,14 @@ struct AppStateTestAccess {
     // would exercise the detector and skip everything that acts on it. Points the same way
     // as 14.2.
     static void engine_tick(AppState& state) { state.engine_tick(); }
+
+    static bool maintenance_pending(const AppState& state) {
+        return state.maintenance_pending_.load(std::memory_order_acquire);
+    }
+
+    static bool maintenance_paused(const AppState& state) {
+        return state.maintenance_paused_.load(std::memory_order_acquire);
+    }
 
     // Whether the session currently has an attended span open (Roadmap 7.23). Reaches
     // through to the owned Storage because AppState deliberately exposes no such getter —
