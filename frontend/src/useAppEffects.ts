@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   api,
@@ -15,7 +15,7 @@ import { TIMELINE_POLL_MS } from "./useLiveData";
 type UseAppEffectsArgs = {
   refreshHealth: () => void | Promise<void>;
   captureRunning: boolean;
-  refreshReview: () => void | Promise<void>;
+  invalidateReview: () => void;
   refreshPomodoroStatus: () => void | Promise<void>;
   // Roadmap 2.19. Refreshed alongside the timer: both describe the session that just changed.
   refreshAttendedProgress: () => void | Promise<void>;
@@ -57,7 +57,7 @@ type UseAppEffectsArgs = {
 export const useAppEffects = ({
   refreshHealth,
   captureRunning,
-  refreshReview,
+  invalidateReview,
   refreshPomodoroStatus,
   refreshAttendedProgress,
   refreshRecordingStatus,
@@ -87,22 +87,17 @@ export const useAppEffects = ({
     void refreshLatest();
     void refreshAppRules();
     void refreshDeployStatus();
-    void refreshReview();
     void hydrateActiveSession();
-  }, [
-    hydrateActiveSession,
-    refreshHealth,
-    refreshLatest,
-    refreshAppRules,
-    refreshDeployStatus,
-    refreshReview,
-  ]);
+  }, [hydrateActiveSession, refreshHealth, refreshLatest, refreshAppRules, refreshDeployStatus]);
 
+  const previousSessionStatus = useRef(sessionStatus);
   useEffect(() => {
-    if (sessionStatus === "COMPLETED") {
-      void refreshReview();
+    const previous = previousSessionStatus.current;
+    previousSessionStatus.current = sessionStatus;
+    if (previous !== "COMPLETED" && sessionStatus === "COMPLETED") {
+      invalidateReview();
     }
-  }, [sessionStatus, refreshReview]);
+  }, [invalidateReview, sessionStatus]);
 
   // Starting or stopping a session resets the Pomodoro timer server-side
   // (AppState::start_session / stop_session both call pomodoro_.reset()), so
@@ -112,7 +107,13 @@ export const useAppEffects = ({
     void refreshPomodoroStatus();
     void refreshAttendedProgress();
     void refreshRecordingStatus();
-  }, [sessionId, sessionStatus, refreshPomodoroStatus, refreshAttendedProgress, refreshRecordingStatus]);
+  }, [
+    sessionId,
+    sessionStatus,
+    refreshPomodoroStatus,
+    refreshAttendedProgress,
+    refreshRecordingStatus,
+  ]);
 
   useEffect(() => {
     if (!sessionId || sessionStatus !== "ACTIVE") {

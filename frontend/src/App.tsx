@@ -354,15 +354,18 @@ export default function App() {
     exportStatus,
     exportSummary,
     focusSummary,
+    invalidateReview,
     loading: reviewLoading,
     range: reviewRange,
     reflectionStatus,
-    refreshReview,
     report: summaryReport,
     saveReflection: handleEditReflection,
     sessionHistory,
     setRange: setReviewRange,
-  } = useReviewWorkflow(handleSessionDeleted);
+  } = useReviewWorkflow({
+    active: surface === "review",
+    onSessionDeleted: handleSessionDeleted,
+  });
 
   const reviewRangeLabelText = useMemo(() => reviewRangeLabel(reviewRange), [reviewRange]);
 
@@ -373,8 +376,8 @@ export default function App() {
   const handleActivityDataDeleted = useCallback(async () => {
     clearActivitySession();
     live.clearActivityData();
+    invalidateReview();
     await Promise.all([
-      refreshReview(),
       refreshCockpitHistory(),
       refreshHealth(),
       refreshPomodoroStatus(),
@@ -386,7 +389,7 @@ export default function App() {
     live.clearActivityData,
     refreshCockpitHistory,
     refreshHealth,
-    refreshReview,
+    invalidateReview,
     refreshAttendedProgress,
     refreshRecordingStatus,
     refreshPomodoroStatus,
@@ -449,7 +452,7 @@ export default function App() {
   useAppEffects({
     refreshHealth,
     captureRunning,
-    refreshReview,
+    invalidateReview,
     refreshPomodoroStatus,
     refreshAttendedProgress,
     refreshRecordingStatus,

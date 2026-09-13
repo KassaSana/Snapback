@@ -8,7 +8,7 @@ import { FIRST_RUN_ACK_KEY } from "../src/permissionWizardState";
 const boundary = vi.hoisted(() => {
   const state: { health: Record<string, unknown> } = { health: {} };
 
-  const invoke = vi.fn(async (cmd: string): Promise<unknown> => {
+  const invoke = vi.fn(async (cmd: string, _args?: Record<string, unknown>): Promise<unknown> => {
     switch (cmd) {
       case "get_health":
         return state.health;
@@ -24,7 +24,11 @@ const boundary = vi.hoisted(() => {
         return [{ name: "coding", keywords: ["code", "test"] }];
       case "get_summary_report":
         return { window: "day" };
+      case "get_analytics":
+      case "get_focus_summary":
+        return {};
       case "get_prediction_history":
+      case "get_session_history":
       case "get_app_rules":
       case "get_context_timeline":
         return [];
@@ -77,6 +81,42 @@ afterEach(() => {
 });
 
 describe("App first-run permission wizard", () => {
+  it("hydrates Review only on first entry and reuses the cached batch", async () => {
+    render(<App />);
+
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
+    const reviewCalls = () =>
+      boundary.invoke.mock.calls.filter(([command, args]) => {
+        if (
+          command === "get_analytics" ||
+          command === "get_summary_report" ||
+          command === "get_focus_summary"
+        ) {
+          return true;
+        }
+        return (
+          command === "get_session_history" &&
+          typeof args === "object" &&
+          args !== null &&
+          "window" in args
+        );
+      });
+
+    expect(reviewCalls()).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    await waitFor(() => expect(reviewCalls()).toHaveLength(4));
+    await waitFor(() => expect(screen.getByRole("button", { name: "7 days" })).toBeEnabled());
+    expect(boundary.invoke).toHaveBeenCalledWith("get_analytics", { window: "7d" });
+    expect(boundary.invoke).toHaveBeenCalledWith("get_summary_report", { window: "7d" });
+    expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { window: "7d" });
+    expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { window: "7d" });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    expect(reviewCalls()).toHaveLength(4);
+  });
+
   it("renders the app shell on the Now surface by default", async () => {
     render(<App />);
 
@@ -154,10 +194,7 @@ describe("App first-run permission wizard", () => {
 
     expect(screen.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true");
     // The panel is labelled by the selected tab, so screen readers announce the change.
-    expect(screen.getByRole("tabpanel")).toHaveAttribute(
-      "aria-labelledby",
-      "surface-tab-review",
-    );
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "surface-tab-review");
   });
 
   it("shows the wizard on first run when capture isn't ready", async () => {

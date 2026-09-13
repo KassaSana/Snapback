@@ -46,15 +46,21 @@ const EMPTY_REPORT: SummaryReport = {
   plannedMins: 0,
 };
 
-export const useReviewWorkflow = (
-  onSessionDeleted?: (sessionId: string) => void | Promise<void>,
-) => {
+type UseReviewWorkflowArgs = {
+  active: boolean;
+  onSessionDeleted?: (sessionId: string) => void | Promise<void>;
+};
+
+const reviewRequestKey = (range: ReviewRange, generation: number): string =>
+  `${JSON.stringify(toReviewWindowRequest(range))}:${generation}`;
+
+export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflowArgs) => {
   const [range, setRangeState] = useState<ReviewRange>(() => readStoredReviewRange());
   const [analytics, setAnalytics] = useState<AnalyticsSummary>(EMPTY_ANALYTICS);
   const [focusSummary, setFocusSummary] = useState<FocusSummary>(EMPTY_FOCUS);
   const [report, setReport] = useState<SummaryReport>(EMPTY_REPORT);
   const [sessionHistory, setSessionHistory] = useState<SessionSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -62,40 +68,87 @@ export const useReviewWorkflow = (
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reflectionStatus, setReflectionStatus] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const generationRef = useRef(0);
+  const [generation, setGeneration] = useState(0);
+  const loadedRequestKeyRef = useRef<string | null>(null);
+  const [loadedRequestKey, setLoadedRequestKey] = useState<string | null>(null);
+  const inFlightRef = useRef<{
+    key: string;
+    requestId: number;
+    promise: Promise<void>;
+  } | null>(null);
 
   const setRange = useCallback((next: ReviewRange) => {
     writeStoredReviewRange(next);
     setRangeState(next);
   }, []);
 
-  const refreshReview = useCallback(async () => {
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    setError(null);
-    const params = toReviewWindowRequest(range);
-    try {
-      const [nextAnalytics, nextReport, nextFocus, nextHistory] = await Promise.all([
-        api.getAnalytics(params),
-        api.getSummaryReport(params),
-        api.getFocusSummary(params),
-        api.getSessionHistory(params),
-      ]);
-      if (requestId !== requestIdRef.current) return;
-      setAnalytics(nextAnalytics);
-      setReport(nextReport);
-      setFocusSummary(nextFocus);
-      setSessionHistory(nextHistory);
-      setLoading(false);
-    } catch {
-      if (requestId !== requestIdRef.current) return;
-      setError("Could not load Review data for this time range.");
-      setLoading(false);
-    }
-  }, [range]);
+  const loadReview = useCallback(
+    async (requestedRange: ReviewRange, requestedGeneration: number) => {
+      const key = reviewRequestKey(requestedRange, requestedGeneration);
+      if (loadedRequestKeyRef.current === key) return;
+      if (inFlightRef.current?.key === key) return inFlightRef.current.promise;
+
+      const requestId = ++requestIdRef.current;
+      setLoading(true);
+      setError(null);
+      const params = toReviewWindowRequest(requestedRange);
+      const promise = (async () => {
+        try {
+          const [nextAnalytics, nextReport, nextFocus, nextHistory] = await Promise.all([
+            api.getAnalytics(params),
+            api.getSummaryReport(params),
+            api.getFocusSummary(params),
+            api.getSessionHistory(params),
+          ]);
+          if (requestId !== requestIdRef.current) return;
+          setAnalytics(nextAnalytics);
+          setReport(nextReport);
+          setFocusSummary(nextFocus);
+          setSessionHistory(nextHistory);
+          loadedRequestKeyRef.current = key;
+          setLoadedRequestKey(key);
+          setLoading(false);
+        } catch {
+          if (requestId !== requestIdRef.current) return;
+          setError("Could not load Review data for this time range.");
+          setLoading(false);
+        } finally {
+          if (inFlightRef.current?.requestId === requestId) {
+            inFlightRef.current = null;
+          }
+        }
+      })();
+      inFlightRef.current = { key, requestId, promise };
+      return promise;
+    },
+    [],
+  );
+
+  const invalidateReview = useCallback(() => {
+    requestIdRef.current += 1;
+    loadedRequestKeyRef.current = null;
+    setLoadedRequestKey(null);
+    setLoading(false);
+    generationRef.current += 1;
+    setGeneration(generationRef.current);
+  }, []);
+
+  const refreshReview = useCallback(() => {
+    requestIdRef.current += 1;
+    loadedRequestKeyRef.current = null;
+    setLoadedRequestKey(null);
+    generationRef.current += 1;
+    const nextGeneration = generationRef.current;
+    setGeneration(nextGeneration);
+    return loadReview(range, nextGeneration);
+  }, [loadReview, range]);
 
   useEffect(() => {
-    void refreshReview();
-  }, [refreshReview]);
+    if (active) {
+      void loadReview(range, generation);
+    }
+  }, [active, generation, loadReview, range]);
 
   const exportSummary = useCallback(async () => {
     try {
@@ -172,7 +225,9 @@ export const useReviewWorkflow = (
     exportStatus,
     exportSummary,
     focusSummary,
-    loading,
+    invalidateReview,
+    loading:
+      active && (loading || (!error && loadedRequestKey !== reviewRequestKey(range, generation))),
     range,
     reflectionStatus,
     refreshReview,

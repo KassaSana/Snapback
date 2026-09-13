@@ -36,7 +36,13 @@ const boundary = vi.hoisted(() => {
         };
       case "get_session_recap":
         return { session_id: "sess-42", goal: "Write tests", duration_secs: 1800 };
+      case "get_analytics":
+      case "get_focus_summary":
+        return {};
+      case "get_summary_report":
+        return { window: "7d" };
       case "get_prediction_history":
+      case "get_session_history":
       case "get_app_rules":
       case "get_context_timeline":
         return [];
@@ -83,6 +89,18 @@ afterEach(() => {
 });
 
 describe("Session start/stop flow", () => {
+  const reviewCallCount = () =>
+    boundary.invoke.mock.calls.filter(([command, args]) => {
+      if (
+        command === "get_analytics" ||
+        command === "get_summary_report" ||
+        command === "get_focus_summary"
+      ) {
+        return true;
+      }
+      return command === "get_session_history" && args !== undefined && "window" in args;
+    }).length;
+
   it("starts a session with the entered goal and reflects it in the UI", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Session Control" });
@@ -176,5 +194,27 @@ describe("Session start/stop flow", () => {
       expect(boundary.invoke).toHaveBeenCalledWith("stop_session", { sessionId: "sess-42" }),
     );
     expect(await screen.findByText("completed")).toBeInTheDocument();
+  });
+
+  it("defers a completed-session Review refresh while Review is hidden", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    await waitFor(() => expect(reviewCallCount()).toBe(4));
+    await waitFor(() => expect(screen.getByRole("button", { name: "7 days" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("tab", { name: "Now" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await screen.findByText("running");
+    fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
+    await screen.findByText("completed");
+
+    expect(reviewCallCount()).toBe(4);
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    await waitFor(() => expect(reviewCallCount()).toBe(8));
   });
 });
