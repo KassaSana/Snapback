@@ -88,6 +88,51 @@ private:
     std::atomic<bool> running_{true};
 };
 
+// Fills the capture ring with `count` key events as fast as the producer can push, then
+// parks. Used to put more work in the buffer than one tick is allowed to consume.
+class BurstHook final : public InputHook {
+public:
+    explicit BurstHook(std::size_t count) : count_(count) {}
+
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
+        for (std::size_t i = 0; i < count_; ++i) {
+            CaptureEvent event;
+            event.event_type = EventType::KeyPress;
+            // Spread across seconds: the classifier throttles to one prediction per second of
+            // event time, so identical timestamps would make every event after the first do
+            // almost no work -- the opposite of the load this hook exists to create.
+            event.timestamp_secs = 1.0 + static_cast<double>(i) * 0.01;
+            event.app_name = "Cursor";
+            event.window_title = "state.cpp - Snapback";
+            on_event(std::move(event));
+        }
+        emitted_.store(true, std::memory_order_release);
+
+        while (running_.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
+
+    bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+
+private:
+    std::size_t count_;
+    std::atomic<bool> running_{true};
+    std::atomic<bool> emitted_{false};
+};
+
+// Runs `hook` as the capture producer with no engine thread, waits until it has finished
+// pushing, and hands the state back so the test can drive engine_tick() itself.
+void fill_capture_ring(AppState& state, BurstHook& hook) {
+    AppStateTestAccess::start_capture_only(state, &hook);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted());
+}
+
 class ReturningHook final : public InputHook {
 public:
     void run(InputCallback, const std::atomic<bool>&) override {
@@ -2502,6 +2547,81 @@ TEST_CASE("AppState destruction stops a running engine") {
     }
 
     CHECK(hook.stopped());
+}
+
+TEST_CASE("one tick drains a bounded slice of the ring and reports the backlog") {
+    // The drain used to be `while (capture_.next_event())`, which ends only when the consumer
+    // outruns the producer -- so a user who keeps typing keeps mutex_ held, and every command,
+    // every persistence flush, and every UI emission waits for them to stop.
+    auto state = make_state();
+    BurstHook hook(kEngineDrainBudget + 512);
+    fill_capture_ring(*state, hook);
+
+    // First tick stops on the budget with events still queued.
+    CHECK(AppStateTestAccess::engine_tick(*state));
+
+    // Nothing was dropped: the remainder is still in the ring and the following ticks take it.
+    int ticks = 1;  // the truncated one above
+    for (bool backlog = true; backlog;) {
+        backlog = AppStateTestAccess::engine_tick(*state);
+        ++ticks;
+        REQUIRE(ticks < 100);  // a tick that never clears the backlog is the bug, not a pass
+    }
+    CHECK(ticks >= 2);  // the burst could not have been consumed by one tick
+    // The ring is empty now, so another tick has nothing to truncate on.
+    CHECK_FALSE(AppStateTestAccess::engine_tick(*state));
+
+    AppStateTestAccess::stop_capture(*state);
+}
+
+TEST_CASE("a truncated drain still runs the rest of the tick") {
+    // The point of bounding the drain: phases 2 and 3 -- persistence and emission -- used to be
+    // unreachable while the ring kept refilling. One tick that stops on the budget must still
+    // publish what it computed rather than deferring it until input stops.
+    auto state = make_state();
+    const auto session = state->start_session("bounded drain", FocusMode::Normal);
+
+    std::vector<std::string> seen;
+    state->set_emit_hook([&seen](const std::string& name, const std::string&, std::uint64_t) {
+        seen.push_back(name);
+    });
+
+    BurstHook hook(kEngineDrainBudget + 512);
+    fill_capture_ring(*state, hook);
+
+    REQUIRE(AppStateTestAccess::engine_tick(*state));  // truncated, backlog remains
+
+    // Phase 3 ran: the prediction this tick computed went out on the hook.
+    CHECK(std::find(seen.begin(), seen.end(), "prediction") != seen.end());
+    // Phase 2 ran: its rows are already committed, not waiting for the ring to empty.
+    const auto persisted_after_first_tick =
+        AppStateTestAccess::storage(*state).recent_predictions(1000).size();
+    CHECK(persisted_after_first_tick > 0);
+    CHECK(state->latest_prediction().has_value());
+
+    // And the deferred events are not lost -- draining the rest produces more predictions,
+    // which is what proves the first tick stopped early rather than consuming everything.
+    while (AppStateTestAccess::engine_tick(*state)) {
+    }
+    CHECK(AppStateTestAccess::storage(*state).recent_predictions(1000).size() >
+          persisted_after_first_tick);
+
+    state->set_emit_hook(nullptr);
+    AppStateTestAccess::stop_capture(*state);
+    state->stop_session(session.session_id);
+}
+
+TEST_CASE("an under-budget drain reports no backlog") {
+    // Guards the off-by-one: if `drained >= budget` were `>=` against the wrong counter every
+    // tick would claim a backlog and the engine loop would spin at 1 ms forever.
+    auto state = make_state();
+    BurstHook hook(16);
+    fill_capture_ring(*state, hook);
+
+    CHECK_FALSE(AppStateTestAccess::engine_tick(*state));
+    CHECK(state->latest_prediction().has_value());  // the 16 events were processed, not skipped
+
+    AppStateTestAccess::stop_capture(*state);
 }
 
 TEST_CASE("AppState confirms capture only after the backend delivers an event") {

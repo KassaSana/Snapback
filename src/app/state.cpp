@@ -554,8 +554,13 @@ void AppState::start_engine_impl(InputHook* hook) {
         capture_.start(hook);
         engine_thread_ = std::thread([this] {
             while (engine_running_.load(std::memory_order_relaxed)) {
+                // True when the tick stopped draining on a budget. The backlog is then worked
+                // off at full speed across short ticks rather than in one long critical
+                // section -- the sleep below is what makes "bounded drain" a pause for other
+                // threads instead of a throughput ceiling.
+                bool backlog = false;
                 try {
-                    engine_tick();
+                    backlog = engine_tick();
                 } catch (const std::exception& error) {
                     try {
                         std::ostringstream message;
@@ -572,7 +577,8 @@ void AppState::start_engine_impl(InputHook* hook) {
                         // Keep the thread boundary intact even if the logger fails.
                     }
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                    backlog ? kEngineBacklogTickIntervalMs : kEngineTickIntervalMs));
             }
         });
     } catch (...) {
@@ -1846,7 +1852,7 @@ void AppState::run_retention_maintenance() noexcept {
     }
 }
 
-void AppState::engine_tick() {
+bool AppState::engine_tick() {
     // Three phases with different locks so a disk write never blocks an ordinary UI read:
     //   1) drain + classify under mutex_ (in-memory only), collecting persist jobs;
     //   2) flush them under storage_mutex_ in ONE transaction, after releasing mutex_;
@@ -1878,13 +1884,47 @@ void AppState::engine_tick() {
     // The tick only schedules retention. An owned worker performs bounded storage batches.
     bool prune_due = false;
     std::uint64_t tick_activity_epoch = 0;
+    // Whether phase 1 gave up on a budget rather than on an empty ring. Returned to the engine
+    // loop, which then re-ticks immediately instead of sleeping out the tick interval.
+    bool drain_truncated = false;
     {
         std::lock_guard lock(mutex_);
         tick_activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         bool had_input = false;
-        while (auto ev = capture_.next_event()) {
+        // Bounded on purpose. `while (capture_.next_event())` only ends when the consumer
+        // outruns the producer, so under sustained input this loop -- and mutex_ with it --
+        // was held for as long as the typing lasted, starving every command thread and
+        // deferring the idle poll, the persistence flush, and the UI emissions below.
+        // Leftover events stay in the ring (single consumer, so nobody else takes them) and
+        // are picked up by the next tick, which follows in kEngineBacklogTickIntervalMs.
+        std::size_t drained = 0;
+        const auto drain_started_ms = steady_now_ms();
+        while (drained < kEngineDrainBudget) {
+            auto ev = capture_.next_event();
+            if (!ev) break;
+            ++drained;
             if (is_input_event(ev->event_type)) had_input = true;
             if (auto job = compute_event(*ev)) jobs.push_back(std::move(*job));
+            // The count budget is the primary bound and needs no clock, which keeps ticks
+            // driven by a ManualClock deterministic. This second bound covers the case where
+            // per-event work is heavy enough that 2,048 of them is already too long.
+            if (drained % kEngineDrainClockCheckStride == 0 &&
+                steady_now_ms() - drain_started_ms >= kEngineDrainBudgetMs) {
+                drain_truncated = true;
+                break;
+            }
+        }
+        if (drained >= kEngineDrainBudget) drain_truncated = true;
+        if (drain_truncated) {
+            // Throttled: while a backlog lasts this tick runs every millisecond, and one line
+            // per tick would bury the log it is meant to explain.
+            const auto log_now_ms = steady_now_ms();
+            if (last_drain_backlog_log_ms_ == 0 ||
+                log_now_ms - last_drain_backlog_log_ms_ >= kEngineBacklogLogIntervalMs) {
+                last_drain_backlog_log_ms_ = log_now_ms;
+                log().info("engine: capture backlog, drained " + std::to_string(drained) +
+                           " events this tick and yielded the state lock");
+            }
         }
         // Idle timing runs off the tick's monotonic clock, not event timestamps: true AFK
         // means no events arrive at all, so we must measure wall time, not the last event.
@@ -1948,7 +1988,9 @@ void AppState::engine_tick() {
         // If deletion won the boundary after phase 1, discard every buffered row and
         // event. If this tick won, deletion waits until persistence has completed.
         std::lock_guard activity_lock(activity_boundary_mutex_);
-        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) return;
+        if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) {
+            return drain_truncated;
+        }
         if (!jobs.empty() || span_session_id) {
             std::lock_guard lock(storage_mutex_);
             Storage::Transaction txn(storage_);  // one commit for the whole drain
@@ -1964,7 +2006,7 @@ void AppState::engine_tick() {
         }
     }
 
-    if (!hook) return;
+    if (!hook) return drain_truncated;
     if (idle_edge == IdleTransition::WentIdle) {
         hook("idle", "{\"idle\":true}", tick_activity_epoch);
     }
@@ -2014,6 +2056,7 @@ void AppState::engine_tick() {
                                       {"delivery", nlohmann::json(untracked_route)}}),
              tick_activity_epoch);
     }
+    return drain_truncated;
 }
 
 std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& event) {
