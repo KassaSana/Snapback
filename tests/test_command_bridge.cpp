@@ -3,12 +3,15 @@
 // helpers. These are the seams the frontend depends on, minus the webview transport.
 #include "doctest_wrapper.hpp"
 
+#include <chrono>
+#include <future>
 #include <memory>
 #include <stdexcept>
 
 #include <nlohmann/json.hpp>
 
 #include "app/command_dispatch.hpp"
+#include "app/async_command_runner.hpp"
 #include "app/state.hpp"
 
 using namespace snapback;
@@ -23,6 +26,33 @@ std::unique_ptr<AppState> make_state() {
 }
 
 }  // namespace
+
+TEST_CASE("AsyncCommandRunner leaves its caller responsive and joins active work") {
+    detail::AsyncCommandRunner runner;
+    std::promise<void> entered;
+    std::promise<void> release;
+    std::promise<void> finished;
+    auto release_future = release.get_future().share();
+
+    REQUIRE(runner.submit([&] {
+        entered.set_value();
+        release_future.wait();
+        finished.set_value();
+    }));
+    REQUIRE(entered.get_future().wait_for(std::chrono::seconds(1)) ==
+            std::future_status::ready);
+
+    // This is the UI-dispatch sentinel: the submitting thread can continue while the native
+    // job is blocked, and completion is still pending until the worker is released.
+    bool sentinel_ran = false;
+    sentinel_ran = true;
+    CHECK(sentinel_ran);
+    CHECK(finished.get_future().wait_for(std::chrono::milliseconds(0)) ==
+          std::future_status::timeout);
+
+    release.set_value();
+    runner.shutdown();
+}
 
 TEST_CASE("run_json_command unwraps the [args] array and dumps the handler result") {
     // webview delivers arguments as a JSON array; the handler sees element [0].

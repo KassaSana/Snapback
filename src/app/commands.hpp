@@ -8,12 +8,15 @@
 
 #include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
 
+#include <atomic>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
 #include "app/autostart.hpp"
+#include "app/async_command_runner.hpp"
 #include "app/command_dispatch.hpp"  // pure, webview-free dispatch + validation
 #include "app/data_import.hpp"
 #include "app/file_dialog.hpp"
@@ -48,6 +51,7 @@ inline void bind_cmd(webview::webview& w, const std::string& name, JsonHandler h
 // are written.
 inline void register_commands(webview::webview& w, AppState& state,
                               const std::filesystem::path& data_dir,
+                              detail::AsyncCommandRunner& async_commands,
                               const std::string& capability_token = {}) {
     using nlohmann::json;
     // Roadmap 8.14. Wrapped so every `bind_cmd(...)` call below carries the token without each
@@ -57,6 +61,9 @@ inline void register_commands(webview::webview& w, AppState& state,
                                                   detail::JsonHandler handler) {
         detail::bind_cmd(w, name, std::move(handler), capability_token);
     };
+    // The export worker and the UI thread both touch this gate. Training consumes the files
+    // and privacy deletion erases them, so neither may overlap a partially written pair.
+    const auto training_export_active = std::make_shared<std::atomic<bool>>(false);
 
     // --- Health + predictions ---
     bind_cmd("get_health", [&state](const json&) { return json(state.health()); });
@@ -253,7 +260,11 @@ inline void register_commands(webview::webview& w, AppState& state,
     // Roadmap 8.12. Returns what was deleted, what could not be, and what was deliberately
     // kept. It used to return null, which left the UI able to say only "deleted" or "failed"
     // for an operation that can half-succeed.
-    bind_cmd("delete_all_activity_data", [&state](const json&) {
+    bind_cmd("delete_all_activity_data", [&state, training_export_active](const json&) {
+        if (training_export_active->load(std::memory_order_acquire)) {
+            throw std::runtime_error(
+                "training export is in progress; wait for it to finish before deleting activity");
+        }
         return json(state.delete_all_activity_data());
     });
     // Roadmap 7.6: "delete everything" was the only eraser available, which makes removing
@@ -373,10 +384,42 @@ inline void register_commands(webview::webview& w, AppState& state,
              [&state](const json&) { return json(state.request_permissions()); });
 
     // --- Training data export ---
-    bind_cmd("export_training_data", [&state, data_dir](const json& a) {
+    detail::JsonHandler export_training = [&state, data_dir](const json& a) {
         const auto out_dir = data_dir / "exports" / "training";
         return json(state.export_training_data(out_dir, detail::opt_string(a, "sessionId")));
-    });
+    };
+    w.bind(
+        "export_training_data",
+        [&w, &async_commands, export_training = std::move(export_training), capability_token,
+         training_export_active](std::string id, std::string req, void*) {
+            bool expected = false;
+            if (!training_export_active->compare_exchange_strong(
+                    expected, true, std::memory_order_acq_rel)) {
+                const detail::JsonHandler busy = [](const json&) -> json {
+                    throw std::runtime_error("training export is already in progress");
+                };
+                w.resolve(id, 0, detail::run_json_command(busy, req, capability_token));
+                return;
+            }
+
+            const bool queued = async_commands.submit(
+                [&w, id, req, export_training,
+                 capability_token, training_export_active] {
+                    const auto result =
+                        detail::run_json_command(export_training, req, capability_token);
+                    training_export_active->store(false, std::memory_order_release);
+                    w.resolve(id, 0, result);
+                });
+            if (!queued) {
+                training_export_active->store(false, std::memory_order_release);
+                const detail::JsonHandler stopping = [](const json&) -> json {
+                    throw std::runtime_error("Snapback is shutting down");
+                };
+                w.resolve(id, 0,
+                          detail::run_json_command(stopping, req, capability_token));
+            }
+        },
+        nullptr);
 
     // Roadmap 9.14. The missing direction. `inspect` is read-only and exists so the
     // confirmation can state what the user is about to adopt *and* what they are about to lose;
@@ -452,7 +495,11 @@ inline void register_commands(webview::webview& w, AppState& state,
         training_deploy::write_training_repo_path(data_dir, repo_path);
         return json(nullptr);
     });
-    bind_cmd("train_from_export", [data_dir](const json&) {
+    bind_cmd("train_from_export", [data_dir, training_export_active](const json&) {
+        if (training_export_active->load(std::memory_order_acquire)) {
+            throw std::runtime_error(
+                "training export is in progress; wait for it to finish before training");
+        }
         if (!developer_tools_enabled()) {
             throw std::runtime_error(
                 "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");

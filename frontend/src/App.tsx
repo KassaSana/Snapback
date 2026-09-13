@@ -278,6 +278,7 @@ export default function App() {
     deployMessage,
     deployMessageWarning,
     deployStatus,
+    exportInProgress,
     handleCopyTrainingCommand,
     handleExportTrainingData,
     handleReloadClassifierModel,
@@ -858,6 +859,7 @@ export default function App() {
             deployMessage={deployMessage}
             deployMessageWarning={deployMessageWarning}
             deployStatus={deployStatus}
+            exportInProgress={exportInProgress}
             handleCopyTrainingCommand={handleCopyTrainingCommand}
             handleExportTrainingData={handleExportTrainingData}
             handleReloadClassifierModel={handleReloadClassifierModel}

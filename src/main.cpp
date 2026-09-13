@@ -364,7 +364,9 @@ int main(int argc, char** argv) {
     // Inject the IPC shim BEFORE any page script runs (init scripts run on every navigation,
     // ahead of the bundle), then register the command binds it calls.
     w.init(build_ipc_shim_script(trusted_url, capability_token, kWebviewDebugEnabled));
-    register_commands(w, *state, data_dir, capability_token);
+    // Declared after the webview and AppState, so it is joined before either can be destroyed.
+    detail::AsyncCommandRunner async_commands;
+    register_commands(w, *state, data_dir, async_commands, capability_token);
 
     // System tray (Phase 8): left-click/double-click or the "Show" menu item brings the
     // window forward; "Quit" ends the run loop. Both branches read the native window
@@ -664,6 +666,7 @@ int main(int argc, char** argv) {
 
     w.run();
 
+        async_commands.shutdown();
         engine_lifetime.stop();
         return 0;
     } catch (const std::exception& error) {

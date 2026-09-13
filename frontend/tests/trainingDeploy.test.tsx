@@ -7,7 +7,8 @@ const boundary = vi.hoisted(() => {
     health: Record<string, unknown>;
     deployStatus: Record<string, unknown>;
     trainResult: Record<string, unknown>;
-  } = { health: {}, deployStatus: {}, trainResult: {} };
+    exportResult: unknown;
+  } = { health: {}, deployStatus: {}, trainResult: {}, exportResult: {} };
 
   const invoke = vi.fn(async (cmd: string): Promise<unknown> => {
     switch (cmd) {
@@ -17,6 +18,8 @@ const boundary = vi.hoisted(() => {
         return state.deployStatus;
       case "train_from_export":
         return state.trainResult;
+      case "export_training_data":
+        return state.exportResult;
       case "reload_classifier_model":
         return { backend: "onnx", onnx_runtime_enabled: true, model_path: "data/model.onnx" };
       case "get_prediction_history":
@@ -70,6 +73,13 @@ beforeEach(() => {
   boundary.state.health = healthyCaptureRunning();
   boundary.state.deployStatus = readyToTrain();
   boundary.state.trainResult = {};
+  boundary.state.exportResult = {
+    output_dir: "data",
+    features_path: "data/features.csv",
+    labels_path: "data/labels.csv",
+    feature_count: 100,
+    label_count: 20,
+  };
 });
 
 afterEach(() => {
@@ -108,6 +118,34 @@ describe("Training / deploy card", () => {
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_training_deploy_status"));
     expect(trainButton).toBeDisabled();
+  });
+
+  it("shows export progress and disables export and training until it resolves", async () => {
+    let finishExport!: (value: unknown) => void;
+    boundary.state.exportResult = new Promise((resolve) => {
+      finishExport = resolve;
+    });
+    renderApp("settings", "advanced");
+
+    const exportButton = await screen.findByRole("button", { name: "Export training data" });
+    const trainButton = await screen.findByRole("button", { name: "Train from export" });
+    await waitFor(() => expect(trainButton).not.toBeDisabled());
+    fireEvent.click(exportButton);
+
+    const exportingButton = await screen.findByRole("button", { name: "Exporting…" });
+    expect(exportingButton).toBeDisabled();
+    expect(trainButton).toBeDisabled();
+
+    finishExport({
+      output_dir: "data",
+      features_path: "data/features.csv",
+      labels_path: "data/labels.csv",
+      feature_count: 100,
+      label_count: 20,
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Export training data" })).not.toBeDisabled(),
+    );
   });
 
   it("warns and does NOT reload when training succeeds but ONNX isn't deployable", async () => {

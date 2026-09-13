@@ -38,11 +38,11 @@ std::set<std::string> load_expected_commands() {
 
 std::set<std::string> extract_bind_commands(const std::string& source) {
     std::set<std::string> out;
-    // Roadmap 8.14 wrapped bind_cmd in a lambda that supplies the capability token, so the
-    // call sites lost their leading `w,`. Matching the *call* rather than its first argument
-    // also means a future change to bind_cmd's signature does not silently empty this set --
-    // which would make the contract test pass by finding nothing.
-    static const std::regex pattern(R"re(\bbind_cmd\(\s*"([a-z0-9_]+)")re");
+    // Most commands use the synchronous bind_cmd wrapper. The training export deliberately
+    // uses webview's asynchronous overload directly so its callback can return to the UI loop
+    // before the worker finishes. Both are part of the same IPC contract.
+    static const std::regex pattern(
+        R"re((?:\bbind_cmd|\bw\.bind)\(\s*"([a-z0-9_]+)")re");
     std::sregex_iterator it(source.begin(), source.end(), pattern);
     const std::sregex_iterator end;
     for (; it != end; ++it) {

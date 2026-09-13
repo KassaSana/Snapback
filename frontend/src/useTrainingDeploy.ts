@@ -39,6 +39,7 @@ export const useTrainingDeploy = ({
     ReturnType<typeof api.getTrainingDeployStatus>
   > | null>(null);
   const [repoPathInput, setRepoPathInput] = useState("");
+  const [exportInProgress, setExportInProgress] = useState(false);
   const [trainingInProgress, setTrainingInProgress] = useState(false);
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
   const [deployMessageWarning, setDeployMessageWarning] = useState(false);
@@ -64,6 +65,7 @@ export const useTrainingDeploy = ({
   }, [enabled, repoPathInput]);
 
   const handleExportTrainingData = useCallback(async () => {
+    setExportInProgress(true);
     setCopyStatus(null);
     try {
       const result = await api.exportTrainingData(sessionId ?? undefined);
@@ -83,6 +85,8 @@ export const useTrainingDeploy = ({
     } catch {
       setLabelStatus("Could not export training data.");
       setLabelStatusWarning(false);
+    } finally {
+      setExportInProgress(false);
     }
   }, [refreshDeployStatus, sessionId, setLabelStatus, setLabelStatusWarning]);
 
@@ -193,10 +197,11 @@ export const useTrainingDeploy = ({
   const canTrainFromExport = useMemo(
     () =>
       !trainingInProgress &&
+      !exportInProgress &&
       Boolean(
         deployStatus?.hasExport && deployStatus.repoConfigured && deployStatus.pythonAvailable,
       ),
-    [deployStatus, trainingInProgress],
+    [deployStatus, exportInProgress, trainingInProgress],
   );
 
   return {
@@ -205,6 +210,7 @@ export const useTrainingDeploy = ({
     deployMessage,
     deployMessageWarning,
     deployStatus,
+    exportInProgress,
     handleCopyTrainingCommand,
     handleExportTrainingData,
     handleReloadClassifierModel,

@@ -16,6 +16,7 @@ type TrainingDeployCardProps = {
   deployMessage: string | null;
   deployMessageWarning: boolean;
   deployStatus: TrainingDeployStatus | null;
+  exportInProgress: boolean;
   handleCopyTrainingCommand: () => void | Promise<void>;
   handleExportTrainingData: () => void | Promise<void>;
   handleReloadClassifierModel: () => void | Promise<void>;
@@ -43,6 +44,7 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
   deployMessage,
   deployMessageWarning,
   deployStatus,
+  exportInProgress,
   handleCopyTrainingCommand,
   handleExportTrainingData,
   handleReloadClassifierModel,
@@ -74,8 +76,12 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
         <code>ml/pipeline_cli.py</code>. Not part of a normal installed app.
       </p>
       <div className="button-row">
-        <button className="secondary-button" onClick={() => void handleExportTrainingData()}>
-          Export training data
+        <button
+          className="secondary-button"
+          disabled={exportInProgress || trainingInProgress}
+          onClick={() => void handleExportTrainingData()}
+        >
+          {exportInProgress ? "Exporting…" : "Export training data"}
         </button>
       </div>
       {deployStatus ? (
@@ -164,7 +170,7 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
           </button>
           <button
             className="primary-button"
-            disabled={!canTrainFromExport}
+            disabled={!canTrainFromExport || exportInProgress}
             onClick={() => void handleTrainFromExport()}
           >
             {trainingInProgress ? "Training…" : "Train from export"}
