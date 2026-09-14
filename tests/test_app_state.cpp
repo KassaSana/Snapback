@@ -2818,7 +2818,8 @@ TEST_CASE("AppState health explains prediction freshness and suppression") {
 
     auto health = state->health();
     CHECK_FALSE(health.last_prediction_age_secs.has_value());
-    CHECK(health.prediction_suppression_reason == "no_session");
+    // AUD-19: without a session the engine still predicts; only persistence is skipped.
+    CHECK(health.prediction_suppression_reason == "not_recorded");
 
     const auto session = state->start_session("Explain prediction health", FocusMode::Normal);
     health = state->health();
@@ -2841,7 +2842,26 @@ TEST_CASE("AppState health explains prediction freshness and suppression") {
 
     AppStateTestAccess::update_idle(*state, kDefaultIdleThresholdMs + 1, true);
     state->stop_session(session.session_id);
-    CHECK(state->health().prediction_suppression_reason == "no_session");
+    CHECK(state->health().prediction_suppression_reason == "not_recorded");
+}
+
+// AUD-19 / P0-08. Pins the decision that no-session predictions are an intended live preview:
+// the engine keeps scoring so the Now surface has something to show before the user hits
+// record, and health says "not_recorded" rather than claiming suppression. The two genuinely
+// suppressing reasons are asserted above; this proves the third one is not suppression at all.
+TEST_CASE("AppState predicts without a session but does not record it") {
+    auto state = make_state();
+
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+
+    const auto health = state->health();
+    CHECK(health.prediction_suppression_reason == "not_recorded");
+    // A prediction really was produced — the preview is live, not stale.
+    REQUIRE(health.last_prediction_age_secs.has_value());
+    const auto latest = state->latest_prediction();
+    REQUIRE(latest.has_value());
+    // ...but it carries no session, which is what keeps persist() from writing it.
+    CHECK(latest->session_id.empty());
 }
 
 TEST_CASE("AppState contains engine tick exceptions and keeps the engine online") {
