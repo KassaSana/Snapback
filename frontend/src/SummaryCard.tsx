@@ -1,7 +1,9 @@
 import { memo } from "react";
 import { FOCUS_STRETCH_LABEL, formatFocusStretch } from "./focusStreak";
 
-import type { SummaryReport } from "./api";
+import type { FocusSummary, SummaryReport } from "./api";
+
+import { Tile } from "./InsightsCard";
 
 const formatDuration = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -16,6 +18,7 @@ const formatMinutes = (mins: number): string => {
 };
 
 type SummaryCardProps = {
+  focusSummary?: FocusSummary;
   exportStatus: string | null;
   onExport: () => void;
   rangeLabel: string;
@@ -23,6 +26,7 @@ type SummaryCardProps = {
 };
 
 export const SummaryCard = memo(function SummaryCard({
+  focusSummary,
   exportStatus,
   onExport,
   rangeLabel,
@@ -35,35 +39,42 @@ export const SummaryCard = memo(function SummaryCard({
   const showAttended = attendedMins > 0 || report.plannedMins > 0 || hasHistory;
 
   return (
-    <section className="card insights-card">
+    <section className="card insights-card review-overview">
       <div className="card-header">
         <h2>Summary</h2>
-        <span className="pill">{rangeLabel}</span>
+        <div className="button-row">
+          <span className="pill">{rangeLabel}</span>
+          <button className="secondary-button" disabled={!hasHistory} onClick={onExport}>
+            Export summary
+          </button>
+        </div>
       </div>
       {hasHistory || showAttended ? (
         <>
           <div className="insight-tiles">
             {showAttended ? (
-              <div className="insight-tile">
-                <p className="insight-tile-value">{formatMinutes(attendedMins)}</p>
-                <p className="insight-tile-label">Attended</p>
-                {report.plannedMins > 0 ? (
-                  <p className="meta-sub">
-                    of {formatMinutes(report.plannedMins)} planned (
-                    {Math.round((attendedMins / report.plannedMins) * 100)}%)
-                  </p>
-                ) : (
-                  <p className="meta-sub">measured, not scored</p>
-                )}
-              </div>
+              <Tile
+                value={formatMinutes(attendedMins)}
+                label="Attended"
+                detail={
+                  report.plannedMins > 0
+                    ? `of ${formatMinutes(report.plannedMins)} planned (${Math.round((attendedMins / report.plannedMins) * 100)}%)`
+                    : "measured, not scored"
+                }
+              />
             ) : null}
-            <div className="insight-tile"><p className="insight-tile-value">{formatDuration(report.focusSeconds)}</p><p className="insight-tile-label">Focus time</p></div>
-            <div className="insight-tile"><p className="insight-tile-value">{report.sessionCount}</p><p className="insight-tile-label">Sessions</p></div>
-            <div className="insight-tile"><p className="insight-tile-value">{Math.round(report.avgFocusScore)}</p><p className="insight-tile-label">Avg focus</p></div>
-            <div className="insight-tile"><p className="insight-tile-value">{formatFocusStretch(report.longestFocusSecs)}</p><p className="insight-tile-label">{FOCUS_STRETCH_LABEL}</p></div>
+            <Tile value={formatDuration(report.focusSeconds)} label="Focus time" />
+            <Tile value={String(report.sessionCount)} label="Sessions" />
+            <Tile value={String(Math.round(report.avgFocusScore))} label="Avg focus" />
+            <Tile value={formatFocusStretch(report.longestFocusSecs)} label={FOCUS_STRETCH_LABEL} />
           </div>
           <p className="helper-text">
-            {report.topContextApp ? `Most common context: ${report.topContextApp}.` : "No context leader yet."}
+            {focusSummary && focusSummary.sampleCount > 0 ? (
+              <span>Peak focus {Math.round(focusSummary.peakFocusScore)}</span>
+            ) : null}{" "}
+            {report.topContextApp
+              ? `Most common context: ${report.topContextApp}.`
+              : "No context leader yet."}
             {hasHistory
               ? ` ${Math.round(report.distractedFraction * 100)}% of predictions were distracted.`
               : ""}
@@ -74,15 +85,6 @@ export const SummaryCard = memo(function SummaryCard({
           No summary data for this range yet. Complete a session to build your report.
         </p>
       )}
-      <div className="button-row">
-        <button
-          className="secondary-button"
-          disabled={!hasHistory}
-          onClick={onExport}
-        >
-          Export summary
-        </button>
-      </div>
       {exportStatus ? <p className="helper-text">{exportStatus}</p> : null}
     </section>
   );

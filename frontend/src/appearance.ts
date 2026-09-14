@@ -32,9 +32,14 @@ export function resolvedColorScheme(mode: AppearanceMode): "light" | "dark" {
   return globalThis.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function applyAppearance(mode: AppearanceMode, root: HTMLElement = document.documentElement): void {
+export function applyAppearance(
+  mode: AppearanceMode,
+  root: HTMLElement = document.documentElement,
+): void {
   root.setAttribute(APPEARANCE_ATTRIBUTE, mode);
-  root.style.colorScheme = resolvedColorScheme(mode);
+  const scheme = resolvedColorScheme(mode);
+  root.setAttribute("data-color-scheme", scheme);
+  root.style.colorScheme = scheme;
 }
 
 export function watchSystemAppearance(onChange: () => void): () => void {

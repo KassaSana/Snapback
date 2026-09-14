@@ -45,8 +45,11 @@ const boundary = vi.hoisted(() => {
           (entry) => (entry.record as { sessionId: string }).sessionId === args?.sessionId,
         );
         if (!row) throw new Error("missing session");
-        row.record = { ...(row.record as object), reflection_done: args?.done ?? null,
-          reflection_next_step: args?.nextStep ?? null };
+        row.record = {
+          ...(row.record as object),
+          reflection_done: args?.done ?? null,
+          reflection_next_step: args?.nextStep ?? null,
+        };
         return row.record;
       }
       case "get_focus_summary":
@@ -111,10 +114,10 @@ const rawSummary = (id: string, focus: number, deep: number, snap: number) => ({
 });
 
 const insightsCard = () =>
-  screen.getByRole("heading", { name: "Insights" }).closest("section") as HTMLElement;
+  screen.getByRole("heading", { name: "Focus per session" }).closest("section") as HTMLElement;
 
 const focusSummaryCard = () =>
-  screen.getByRole("heading", { name: "Recent Focus" }).closest("section") as HTMLElement;
+  screen.getByRole("heading", { name: "Summary" }).closest("section") as HTMLElement;
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -134,18 +137,22 @@ afterEach(() => {
 });
 
 describe("Insights card", () => {
-  it("renders tiles and one bar per session from history", async () => {
+  it("renders one bar per session and a concise session aggregate", async () => {
     boundary.state.history = [rawSummary("a", 60, 40, 2), rawSummary("b", 80, 20, 3)];
     renderApp("review");
 
-    await screen.findByRole("heading", { name: "Insights" });
-    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }));
+    await screen.findByRole("heading", { name: "Focus per session" });
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }),
+    );
 
     const card = insightsCard();
     const insights = within(card);
-    // Aggregates: avg focus (60+80)/2 = 70, avg deep (40+20)/2 = 30%.
-    expect(insights.getByText("70")).toBeInTheDocument();
-    expect(insights.getByText("30%")).toBeInTheDocument();
+    expect(insights.getByText(/30% deep focus.*5 snapbacks/)).toBeInTheDocument();
+    expect(screen.getAllByText("Session management")).toHaveLength(1);
+    const manager = screen.getByText("Session management").closest("details");
+    expect(manager).not.toHaveAttribute("open");
+    expect(manager?.querySelectorAll("li")).toHaveLength(2);
     // One bar per session.
     expect(card.querySelectorAll("rect.chart-bar")).toHaveLength(2);
   });
@@ -155,7 +162,9 @@ describe("Insights card", () => {
     renderApp("review");
 
     const card = insightsCard();
-    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }));
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }),
+    );
     expect(within(card).getByText(/No completed sessions yet/i)).toBeInTheDocument();
     expect(card.querySelectorAll("rect.chart-bar")).toHaveLength(0);
   });
@@ -172,10 +181,11 @@ describe("Session deletion from Insights", () => {
   const loadTwoSessions = async () => {
     boundary.state.history = [goalSummary("a", "alpha"), goalSummary("b", "bravo")];
     renderApp("review");
-    await screen.findByRole("heading", { name: "Insights" });
+    await screen.findByRole("heading", { name: "Focus per session" });
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }),
     );
+    fireEvent.click(screen.getByText("Session management"));
   };
 
   it("names each session on its delete button rather than a bare 'Delete'", async () => {
@@ -258,30 +268,74 @@ describe("Session deletion from Insights", () => {
 });
 
 describe("Session reflection editing from Insights", () => {
+  it("keeps an unsaved reflection until it is saved or cancelled before deletion", async () => {
+    boundary.state.history = [rawSummary("a", 50, 0, 0), rawSummary("b", 60, 0, 0)];
+    renderApp("review");
+    fireEvent.click(screen.getByText("Session management"));
+    const editButtons = await screen.findAllByRole("button", { name: "Edit reflection" });
+    fireEvent.click(editButtons[0]);
+    fireEvent.change(screen.getByLabelText("What got done?"), {
+      target: { value: "unsaved result" },
+    });
+
+    for (const button of screen.getAllByRole("button", { name: /^Delete session/ })) {
+      expect(button).toBeDisabled();
+    }
+    expect(screen.getByLabelText("What got done?")).toHaveValue("unsaved result");
+    expect(boundary.invoke).not.toHaveBeenCalledWith("delete_session", expect.anything());
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    for (const button of screen.getAllByRole("button", { name: /^Delete session/ })) {
+      expect(button).toBeEnabled();
+    }
+  });
+
   it("prefills and updates an existing reflection", async () => {
     const summary = rawSummary("a", 50, 0, 0);
-    boundary.state.history = [{ ...summary, record: { ...summary.record,
-      reflection_done: "old result", reflection_next_step: "old next" } }];
+    boundary.state.history = [
+      {
+        ...summary,
+        record: {
+          ...summary.record,
+          reflection_done: "old result",
+          reflection_next_step: "old next",
+        },
+      },
+    ];
     renderApp("review");
+    fireEvent.click(screen.getByText("Session management"));
     await screen.findByRole("button", { name: "Edit reflection" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit reflection" }));
     fireEvent.change(screen.getByLabelText("What got done?"), { target: { value: "new result" } });
     fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
 
-    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("save_session_reflection", {
-      sessionId: "a", done: "new result", nextStep: "old next",
-    }));
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("save_session_reflection", {
+        sessionId: "a",
+        done: "new result",
+        nextStep: "old next",
+      }),
+    );
     expect(await screen.findByText("Reflection updated.")).toBeInTheDocument();
   });
 
   it("keeps the editor open when a reflection update fails", async () => {
     boundary.state.reflectionThrows = true;
     const summary = rawSummary("a", 50, 0, 0);
-    boundary.state.history = [{ ...summary, record: { ...summary.record,
-      reflection_done: "old result", reflection_next_step: "old next" } }];
+    boundary.state.history = [
+      {
+        ...summary,
+        record: {
+          ...summary.record,
+          reflection_done: "old result",
+          reflection_next_step: "old next",
+        },
+      },
+    ];
     renderApp("review");
 
+    fireEvent.click(screen.getByText("Session management"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit reflection" }));
     fireEvent.change(screen.getByLabelText("What got done?"), { target: { value: "new result" } });
     fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
@@ -292,7 +346,15 @@ describe("Session reflection editing from Insights", () => {
 });
 
 describe("Focus summary card", () => {
-  it("renders the recent-focus tiles from get_focus_summary", async () => {
+  it("consolidates headline metrics and peak focus in the overview", async () => {
+    boundary.state.summary = {
+      sample_count: 40,
+      session_count: 2,
+      completed_session_count: 2,
+      avg_focus_score: 72.4,
+      longest_focus_secs: 18,
+      distracted_fraction: 0.15,
+    };
     boundary.state.focusSummary = {
       sample_count: 40,
       avg_focus_score: 72.4,
@@ -310,8 +372,8 @@ describe("Focus summary card", () => {
     const card = focusSummaryCard();
     const tiles = within(card);
     expect(tiles.getByText("72")).toBeInTheDocument();
-    expect(tiles.getByText("95")).toBeInTheDocument();
-    expect(tiles.getByText("15%")).toBeInTheDocument();
+    expect(tiles.getByText("Peak focus 95")).toBeInTheDocument();
+    expect(tiles.getByText(/15% of predictions were distracted/)).toBeInTheDocument();
     // Roadmap 10.13. A duration, not a bare row count: 18 seconds reads as "18s". The tile
     // used to show the number of consecutive non-distracted prediction rows under a
     // time-like label.
@@ -326,7 +388,7 @@ describe("Focus summary card", () => {
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { window: "7d" }),
     );
-    expect(within(card).getByText(/No predictions recorded yet/i)).toBeInTheDocument();
+    expect(within(card).getByText(/No summary data for this range yet/i)).toBeInTheDocument();
   });
 });
 
@@ -341,7 +403,7 @@ describe("Review first-run states", () => {
     expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
   });
 
-  it("explains all four empty analytics surfaces without presenting zeroes as insights", async () => {
+  it("explains empty charts and overview without presenting zeroes as insights", async () => {
     boundary.state.history = [];
     boundary.state.analytics = { sample_count: 0 };
     // The backend counts an active session before its first prediction. That is still a
@@ -358,7 +420,6 @@ describe("Review first-run states", () => {
     expect(await screen.findByText(/No completed sessions yet/i)).toBeInTheDocument();
     expect(screen.getByText(/No prediction data yet/i)).toBeInTheDocument();
     expect(screen.getByText(/No summary data for this range yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/No predictions recorded yet/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export summary" })).toBeDisabled();
   });
 
@@ -377,6 +438,8 @@ describe("Review first-run states", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Export summary" })).toBeEnabled(),
     );
-    expect(within(summary as HTMLElement).queryByText(/No summary data for this range yet/i)).toBeNull();
+    expect(
+      within(summary as HTMLElement).queryByText(/No summary data for this range yet/i),
+    ).toBeNull();
   });
 });

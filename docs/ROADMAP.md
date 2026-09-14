@@ -3700,18 +3700,35 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   names the group its card lives in.
 
 - **10.10 — Build a complete visual-token and appearance system.** `M`
-  Opened 2026-08-05. `styles.css` declares `color-scheme: light`, duplicates semantic colors
-  as literals, and references undefined custom properties including `--border`, `--card`, and
-  `--text`. The browser silently drops those declarations, so some borders/text depend on
-  fallback context rather than an intentional design system.
+  **PARTIAL — frontend cleanup implemented 2026-09-14; comprehensive visual/contrast
+  coverage remains open.** Opened 2026-08-05.
 
-  Define semantic tokens for canvas, surface, border, text, controls, charts, and each focus/
-  error state. Add persisted **System / Light / Dark** appearance with System as the default;
-  every state retains text or icon meaning beyond color. Add a guard for undefined custom
-  property references, light/dark visual snapshots for the three surfaces and overlay, and
-  automated contrast checks. Coordinate with **10.3**, including disabling card-rise and
-  other nonessential animation under `prefers-reduced-motion` rather than replaying it on
-  every surface switch.
+  Complete in the frontend: semantic canvas, surface, border, text, control, chart, focus,
+  and error tokens; persisted **System / Light / Dark** appearance (System by default).
+  Explicit and system dark appearance now share one resolved token block. Risk/rules badges,
+  hero/status dots, controls, and helper states use tokens instead of light-only literals;
+  stale blue fallbacks and duplicate overriding rules are removed. The CSS guard now rejects
+  undefined tokens, raw hex/RGB/HSL colors outside the token area, and repeated selector
+  lists in the same at-rule context, with regression fixtures for the guard itself.
+
+  Review now has a full-width range bar and shared stat-tile overview, paired session/hour
+  charts, Top apps beside Recent Predictions, then full-width Context Timeline and a closed
+  Session management disclosure. Reflections and two-step deletion share one bounded list.
+  Unsaved reflections must be saved or cancelled before deletion becomes available.
+  Long lists scroll internally; chart heights and axis labels are consistent. Card-rise and
+  stagger delays are removed, reduced-motion support remains, and background glow/shadows
+  are quieter. ADR-0003's cream/coral palette, serif headings, rounded section cards, and
+  surface assignments remain intact; the App.tsx architectural split is still separate.
+
+  Verification: Review inspected in the isolated sample-data browser demo at 1100 x 760 in
+  light and dark appearance, including scrolling lists, expanded session management, and
+  surface switching; single-column layout checked at 700px. This is frontend evidence only:
+  the running native/C++ soak task was not touched.
+
+  Remaining: automated light/dark visual snapshots for **all three surfaces and the native
+  overlay**, comprehensive contrast assertions coordinated with **10.3**, and a native
+  window/overlay smoke check after the ongoing soak is finished. Repo-wide Prettier cleanup
+  remains separate from this functional change.
 
 - **10.11 — Give the whole Review surface one shared time range.** `M/L`
   Opened 2026-08-05. Trends describes all retained predictions, Summary chooses 24 hours or

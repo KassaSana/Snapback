@@ -8,8 +8,7 @@ import { DiagnosticsCard } from "./DiagnosticsCard";
 import { GoalCategoriesCard } from "./GoalCategoriesCard";
 import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
-import { FocusSummaryCard } from "./FocusSummaryCard";
-import { InsightsCard } from "./InsightsCard";
+import { InsightsCard, SessionManagementCard } from "./InsightsCard";
 import { FocusStateHero } from "./FocusStateHero";
 import { SignalsCard } from "./SignalsCard";
 import { RulesCard } from "./RulesCard";
@@ -524,7 +523,13 @@ export default function App() {
       {/* One panel element, swapped content — ADR-0003. Cards move between surfaces by
           composition; none of them were rewritten to get here. */}
       <main
-        className={surface === "now" ? "grid grid-now" : "grid"}
+        className={
+          surface === "now"
+            ? "grid grid-now"
+            : surface === "review"
+              ? "grid grid-review"
+              : "grid"
+        }
         role="tabpanel"
         id={surfacePanelId(surface)}
         aria-labelledby={surfaceTabId(surface)}
@@ -648,55 +653,49 @@ export default function App() {
 
         {surface === "review" && (
           <>
-        <ReviewRangeBar
-          disabled={reviewLoading}
-          loading={reviewLoading}
-          range={reviewRange}
-          onChange={setReviewRange}
-        />
-        {reviewError ? <p className="helper-text alert">{reviewError}</p> : null}
+            <ReviewRangeBar
+              disabled={reviewLoading}
+              loading={reviewLoading}
+              range={reviewRange}
+              onChange={setReviewRange}
+            />
+            {reviewError ? <p className="helper-text alert">{reviewError}</p> : null}
 
-        <InsightsCard
-          deleteError={sessionDeleteError}
-          deleteStatus={sessionDeleteStatus}
-          deletingSessionId={deletingSessionId}
-          onDeleteSession={handleDeleteSession}
-          onSaveReflection={handleEditReflection}
-          reflectionStatus={reflectionStatus}
-          rangeAvgFocusScore={
-            summaryReport.sampleCount > 0 ? summaryReport.avgFocusScore : null
-          }
-          rangeLabel={reviewRangeLabelText}
-          sessionHistory={sessionHistory}
-        />
+            <SummaryCard
+              focusSummary={focusSummary}
+              exportStatus={exportStatus}
+              onExport={() => void exportSummary()}
+              rangeLabel={reviewRangeLabelText}
+              report={summaryReport}
+            />
+            <InsightsCard rangeLabel={reviewRangeLabelText} sessionHistory={sessionHistory} />
 
-        <AnalyticsCard
-          analytics={analytics}
-          appRules={appRules}
-          onCreateAppRule={handleCreateQuickRule}
-          rangeLabel={reviewRangeLabelText}
-        />
+            <AnalyticsCard
+              analytics={analytics}
+              appRules={appRules}
+              onCreateAppRule={handleCreateQuickRule}
+              rangeLabel={reviewRangeLabelText}
+            />
 
-        <SummaryCard
-          exportStatus={exportStatus}
-          onExport={() => void exportSummary()}
-          rangeLabel={reviewRangeLabelText}
-          report={summaryReport}
-        />
+            <ActivityCards
+              appRules={appRules}
+              contextTimeline={live.contextTimeline}
+              historyLimit={HISTORY_LIMIT}
+              onCreateAppRule={handleCreateQuickRule}
+              predictionHistory={live.predictionHistory}
+              refreshContextTimeline={live.refreshContextTimeline}
+              sessionId={sessionId}
+            />
 
-        <FocusSummaryCard focusSummary={focusSummary} rangeLabel={reviewRangeLabelText} />
-
-        <ActivityCards
-          appRules={appRules}
-          contextTimeline={live.contextTimeline}
-          historyLimit={HISTORY_LIMIT}
-          onCreateAppRule={handleCreateQuickRule}
-          predictionHistory={live.predictionHistory}
-          refreshContextTimeline={live.refreshContextTimeline}
-          sessionId={sessionId}
-        />
-
-
+            <SessionManagementCard
+              deleteError={sessionDeleteError}
+              deleteStatus={sessionDeleteStatus}
+              deletingSessionId={deletingSessionId}
+              onDeleteSession={handleDeleteSession}
+              onSaveReflection={handleEditReflection}
+              reflectionStatus={reflectionStatus}
+              sessionHistory={sessionHistory}
+            />
           </>
         )}
 

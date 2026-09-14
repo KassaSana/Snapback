@@ -8,10 +8,7 @@ import {
   hourBars,
   referenceLines,
 } from "./analyticsChart";
-import {
-  PRODUCTIVE_SESSIONS_LABEL,
-  productiveSessionsHelperText,
-} from "./focusStreak";
+import { productiveSessionsHelperText } from "./focusStreak";
 import { getAppRuleForName, ruleKindLabel } from "./useAppRules";
 
 type AnalyticsCardProps = {
@@ -33,126 +30,138 @@ export const AnalyticsCard = memo(function AnalyticsCard({
   const references = referenceLines();
 
   return (
-    <section className="card insights-card analytics-card">
-      <div className="card-header">
-        <h2>Trends</h2>
-        <span className="pill">{rangeLabel}</span>
-      </div>
-      {analytics.sampleCount === 0 ? (
-        <p className="helper-text">No prediction data yet. Start a session to build trends.</p>
-      ) : (
-        <>
-          <div className="insight-tiles">
-            <div className="insight-tile"><p className="insight-tile-value">{Math.round(analytics.avgFocusScore)}</p><p className="insight-tile-label">Avg focus</p></div>
-            <div className="insight-tile"><p className="insight-tile-value">{analytics.sampleCount}</p><p className="insight-tile-label">Samples</p></div>
-            <div className="insight-tile"><p className="insight-tile-value">{analytics.productiveSessionStreak}</p><p className="insight-tile-label">{PRODUCTIVE_SESSIONS_LABEL}</p></div>
-          </div>
-          <svg
-            className="insights-chart"
-            viewBox="0 0 480 150"
-            role="img"
-            aria-label={`Average focus by hour of day, on a fixed 0 to ${CHART_MAX_SCORE} scale`}
-          >
-            {references.map((reference) => (
-              <g key={reference.score}>
-                <line
-                  x1="24"
-                  y1={reference.y}
-                  x2="468"
-                  y2={reference.y}
-                  className={reference.score === 0 ? "chart-baseline" : "chart-midline"}
-                />
-                <text x="2" y={reference.y + 3} className="chart-axis-label">
-                  {reference.score}
+    <>
+      <section className="card insights-card analytics-card">
+        <div className="card-header">
+          <h2>Focus by hour</h2>
+          <span className="pill">{rangeLabel}</span>
+        </div>
+        {analytics.sampleCount === 0 ? (
+          <p className="helper-text">No prediction data yet. Start a session to build trends.</p>
+        ) : (
+          <>
+            <svg
+              className="insights-chart"
+              viewBox="0 0 480 150"
+              role="img"
+              aria-label={`Average focus by hour of day, on a fixed 0 to ${CHART_MAX_SCORE} scale`}
+            >
+              {references.map((reference) => (
+                <g key={reference.score}>
+                  <line
+                    x1="24"
+                    y1={reference.y}
+                    x2="468"
+                    y2={reference.y}
+                    className={reference.score === 0 ? "chart-baseline" : "chart-midline"}
+                  />
+                  <text x="2" y={reference.y + 3} className="chart-axis-label">
+                    {reference.score}
+                  </text>
+                </g>
+              ))}
+              {bars.map((bar) =>
+                bar.hasData ? (
+                  <rect
+                    key={bar.hour}
+                    x={bar.x}
+                    y={bar.y}
+                    width={CHART.barWidth}
+                    height={bar.height}
+                    className="chart-bar"
+                  >
+                    <title>{bar.label}</title>
+                  </rect>
+                ) : (
+                  // Below the axis, in its own class: "we measured nothing here" must not be
+                  // drawable as "we measured zero here".
+                  <rect
+                    key={bar.hour}
+                    x={bar.x}
+                    y={CHART.baselineY + 2}
+                    width={CHART.barWidth}
+                    height={bar.height}
+                    className="chart-bar-empty"
+                  >
+                    <title>{bar.label}</title>
+                  </rect>
+                ),
+              )}
+              {[0, 6, 12, 18, 23].map((hour) => (
+                <text
+                  key={hour}
+                  x={CHART.firstBarX + hour * CHART.hourSpacing + CHART.barWidth / 2}
+                  y="146"
+                  textAnchor="middle"
+                  className="chart-axis-label"
+                >
+                  {String(hour).padStart(2, "0")}
                 </text>
-              </g>
-            ))}
-            {bars.map((bar) =>
-              bar.hasData ? (
-                <rect
-                  key={bar.hour}
-                  x={bar.x}
-                  y={bar.y}
-                  width={CHART.barWidth}
-                  height={bar.height}
-                  className="chart-bar"
-                >
-                  <title>{bar.label}</title>
-                </rect>
-              ) : (
-                // Below the axis, in its own class: "we measured nothing here" must not be
-                // drawable as "we measured zero here".
-                <rect
-                  key={bar.hour}
-                  x={bar.x}
-                  y={CHART.baselineY + 2}
-                  width={CHART.barWidth}
-                  height={bar.height}
-                  className="chart-bar-empty"
-                >
-                  <title>{bar.label}</title>
-                </rect>
-              ),
-            )}
-          </svg>
-          <p className="insights-caption">
-            Average focus by hour of day, 0–100. Ticks below the line are hours with no data.
-          </p>
-          <ul className="history-list">
-            {analytics.topApps.length === 0 ? (
-              <li className="history-empty">No app context data yet.</li>
-            ) : (
-              analytics.topApps.map((app) => {
-                const rule = appRules ? getAppRuleForName(appRules, app.appName) : undefined;
-                return (
-                  <li key={app.appName} className="history-item top-app-item">
-                    <div className="top-app-info">
-                      <span className="top-app-name">{app.appName}</span>
-                      {rule ? (
-                        <span className={`rules-badge rules-badge-${rule.ruleType}`}>
-                          {ruleKindLabel(rule.ruleType)}
-                        </span>
-                      ) : (
-                        onCreateAppRule && (
-                          <div className="timeline-quick-rules">
-                            <button
-                              type="button"
-                              className="mini-action-button allow-btn"
-                              title={`Always treat "${app.appName}" as Productive`}
-                              onClick={() => void onCreateAppRule(app.appName, "allow")}
-                            >
-                              + Allow
-                            </button>
-                            <button
-                              type="button"
-                              className="mini-action-button block-btn"
-                              title={`Always treat "${app.appName}" as Distracting`}
-                              onClick={() => void onCreateAppRule(app.appName, "block")}
-                            >
-                              + Block
-                            </button>
-                          </div>
-                        )
-                      )}
-                    </div>
-                    <strong>{contextSampleLabel(app.windowCount)}</strong>
-                  </li>
-                );
-              })
-            )}
-          </ul>
+              ))}
+            </svg>
+            <p className="insights-caption">
+              Average focus by hour of day, 0–100. Ticks below the line are hours with no data.
+            </p>
+            <p className="helper-text">
+              {analytics.sampleCount} prediction samples ·{" "}
+              {productiveSessionsHelperText(analytics.productiveSessionStreak)}
+            </p>
+          </>
+        )}
+      </section>
+      <section className="card top-apps-card">
+        <div className="card-header">
+          <h2>Top apps</h2>
+          <span className="pill">{rangeLabel}</span>
+        </div>
+        <ul className="history-list">
+          {analytics.topApps.length === 0 ? (
+            <li className="history-empty">No app context data yet.</li>
+          ) : (
+            analytics.topApps.map((app) => {
+              const rule = appRules ? getAppRuleForName(appRules, app.appName) : undefined;
+              return (
+                <li key={app.appName} className="history-item top-app-item">
+                  <div className="top-app-info">
+                    <span className="top-app-name">{app.appName}</span>
+                    {rule ? (
+                      <span className={`rules-badge rules-badge-${rule.ruleType}`}>
+                        {ruleKindLabel(rule.ruleType)}
+                      </span>
+                    ) : (
+                      onCreateAppRule && (
+                        <div className="timeline-quick-rules">
+                          <button
+                            type="button"
+                            className="mini-action-button allow-btn"
+                            title={`Always treat "${app.appName}" as Productive`}
+                            onClick={() => void onCreateAppRule(app.appName, "allow")}
+                          >
+                            + Allow
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-action-button block-btn"
+                            title={`Always treat "${app.appName}" as Distracting`}
+                            onClick={() => void onCreateAppRule(app.appName, "block")}
+                          >
+                            + Block
+                          </button>
+                        </div>
+                      )
+                    )}
+                  </div>
+                  <strong>{contextSampleLabel(app.windowCount)}</strong>
+                </li>
+              );
+            })
+          )}
+        </ul>
 
-          <p className="insights-caption">
-            Context samples are periodic observations of the focused window, not app switches.
-          </p>
-          {/* Roadmap 10.13. The tile above counts sessions, and its label now says so. It
-              previously read "Focus streak" — the same words as a prediction-row count on a
-              different card, over a completely different quantity. */}
-          <p className="insights-caption">
-            {productiveSessionsHelperText(analytics.productiveSessionStreak)}
-          </p>
-        </>
-      )}
-    </section>
+        <p className="insights-caption">
+          Context samples are periodic observations of the focused window, not app switches.
+        </p>
+      </section>
+    </>
   );
 });

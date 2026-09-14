@@ -4,7 +4,6 @@ import { formatScore, type SessionSummary } from "./api";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
-  resolveInsightsAvgFocus,
   sessionRowLabel,
   toChronological,
 } from "./insightsMetrics";
@@ -21,30 +20,30 @@ type InsightsCardProps = {
     nextStep: string | null,
   ) => boolean | Promise<boolean>;
   reflectionStatus?: string | null;
-  rangeAvgFocusScore?: number | null;
   rangeLabel: string;
   sessionHistory: SessionSummary[];
 };
 
 // SVG coordinate space; the element scales to its container via CSS width.
-const CHART = { w: 320, h: 120, padX: 4, padTop: 8, padBottom: 6, gap: 3, maxBarW: 40 };
+const CHART = { w: 480, h: 150, padX: 26, padTop: 26, padBottom: 24, maxBarW: 40 };
 
-export function Tile({ value, label }: { value: string; label: string }) {
+export function Tile({ value, label, detail }: { value: string; label: string; detail?: string }) {
   return (
     <div className="insight-tile">
       <p className="insight-tile-value">{value}</p>
       <p className="insight-tile-label">{label}</p>
+      {detail ? <p className="meta-sub">{detail}</p> : null}
     </div>
   );
 }
 
 function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
-  const { w, h, padX, padTop, padBottom, gap, maxBarW } = CHART;
+  const { w, h, padX, padTop, padBottom, maxBarW } = CHART;
   const baseline = h - padBottom;
   const plotH = baseline - padTop;
   const plotW = w - padX * 2;
   const slot = plotW / summaries.length;
-  const barW = Math.min(maxBarW, Math.max(2, slot - gap));
+  const barW = Math.min(maxBarW, slot * 0.8);
   const midY = baseline - 0.5 * plotH;
 
   return (
@@ -57,6 +56,23 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
       {/* Recessive reference lines: baseline (0) and a dashed midline (50). */}
       <line x1={padX} y1={baseline} x2={w - padX} y2={baseline} className="chart-baseline" />
       <line x1={padX} y1={midY} x2={w - padX} y2={midY} className="chart-midline" />
+      <line x1={padX} y1={padTop} x2={w - padX} y2={padTop} className="chart-midline" />
+      {[0, 50, 100].map((score) => (
+        <text
+          key={score}
+          x="0"
+          y={baseline - (score / 100) * plotH + 3}
+          className="chart-axis-label"
+        >
+          {score}
+        </text>
+      ))}
+      <text x={padX} y="146" className="chart-axis-label">
+        Oldest
+      </text>
+      <text x={w - padX} y="146" textAnchor="end" className="chart-axis-label">
+        Newest
+      </text>
       {summaries.map((summary, index) => {
         const barH = (focusBarHeightPct(summary.recap.avgFocusScore) / 100) * plotH;
         const x = padX + index * slot + (slot - barW) / 2;
@@ -83,23 +99,34 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
 // Roadmap 7.6: "you may inspect and destroy what I collected." The two-step confirm matches
 // the Privacy card's danger zone — one click can never delete a session, because there is no
 // undo behind this button, and a mis-click costs the user data they cannot get back.
-function SessionDeleteList({
-  deletingSessionId,
+function SessionManagementList({
+  onSaveReflection,
   onDelete,
+  deletingSessionId,
   summaries,
 }: {
+  onDelete?: (sessionId: string) => void | Promise<void>;
   deletingSessionId: string | null;
-  onDelete: (sessionId: string) => void | Promise<void>;
+  onSaveReflection?: (
+    sessionId: string,
+    done: string | null,
+    nextStep: string | null,
+  ) => boolean | Promise<boolean>;
   summaries: SessionSummary[];
 }) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [done, setDone] = useState("");
+  const [nextStep, setNextStep] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   return (
     <ul className="rules-list session-list">
       {summaries.map((summary, index) => {
         const sessionId = summary.record.sessionId;
         const label = sessionRowLabel(summary);
-        const busy = deletingSessionId === sessionId;
+        const saving = savingId === sessionId;
+        const busy = saving || deletingSessionId === sessionId;
         const confirming = confirmingId === sessionId;
 
         return (
@@ -112,105 +139,98 @@ function SessionDeleteList({
                 {formatScore(summary.recap.avgFocusScore)}
               </p>
             </div>
-            {sessionId === "" ? null : confirming ? (
-              <div className="button-row">
-                <button
-                  className="danger-button rules-delete"
-                  disabled={busy}
-                  aria-label={`Confirm delete session ${label}`}
-                  onClick={() => {
-                    setConfirmingId(null);
-                    void onDelete(sessionId);
-                  }}
-                >
-                  Confirm delete
-                </button>
-                <button
-                  className="secondary-button rules-delete"
-                  disabled={busy}
-                  onClick={() => setConfirmingId(null)}
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                className="secondary-button rules-delete"
-                disabled={busy}
-                aria-label={`Delete session ${label}`}
-                onClick={() => setConfirmingId(sessionId)}
-              >
-                Delete
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function SessionReflectionList({
-  onSaveReflection,
-  summaries,
-}: {
-  onSaveReflection: (
-    sessionId: string,
-    done: string | null,
-    nextStep: string | null,
-  ) => boolean | Promise<boolean>;
-  summaries: SessionSummary[];
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [done, setDone] = useState("");
-  const [nextStep, setNextStep] = useState("");
-  const [savingId, setSavingId] = useState<string | null>(null);
-
-  return (
-    <ul className="rules-list session-list">
-      {summaries.map((summary, index) => {
-        const sessionId = summary.record.sessionId;
-        const label = sessionRowLabel(summary);
-        const saving = savingId === sessionId;
-
-        return (
-          <li className="rules-item" key={sessionId || index}>
-            <div className="session-row-detail">
-              <span className="rules-pattern">{label}</span>
-              <p className="rules-note">
-                {formatTime(summary.record.startedAtMs)} ·{" "}
-                {Math.round(summary.recap.durationSecs / 60)} min · focus{" "}
-                {formatScore(summary.recap.avgFocusScore)}
-              </p>
-            </div>
-            {editingId === sessionId ? (
+            {onDelete ? (
+              <>
+                {sessionId === "" ? null : confirming ? (
+                  <div className="button-row">
+                    <button
+                      className="danger-button rules-delete"
+                      disabled={busy}
+                      aria-label={`Confirm delete session ${label}`}
+                      onClick={() => {
+                        setConfirmingId(null);
+                        void onDelete(sessionId);
+                      }}
+                    >
+                      Confirm delete
+                    </button>
+                    <button
+                      className="secondary-button rules-delete"
+                      disabled={busy}
+                      onClick={() => setConfirmingId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="secondary-button rules-delete"
+                    disabled={busy || editingId !== null}
+                    aria-label={`Delete session ${label}`}
+                    onClick={() => setConfirmingId(sessionId)}
+                  >
+                    Delete
+                  </button>
+                )}
+              </>
+            ) : null}
+            {onSaveReflection && editingId === sessionId ? (
               <div className="reflection-editor">
-                <label className="field-label">What got done?
-                  <textarea value={done} maxLength={1000} onChange={(event) => setDone(event.target.value)} />
+                <label className="field-label">
+                  What got done?
+                  <textarea
+                    value={done}
+                    maxLength={1000}
+                    onChange={(event) => setDone(event.target.value)}
+                  />
                 </label>
-                <label className="field-label">Next step
-                  <textarea value={nextStep} maxLength={1000} onChange={(event) => setNextStep(event.target.value)} />
+                <label className="field-label">
+                  Next step
+                  <textarea
+                    value={nextStep}
+                    maxLength={1000}
+                    onChange={(event) => setNextStep(event.target.value)}
+                  />
                 </label>
                 <div className="button-row">
-                  <button className="primary-button" disabled={saving} onClick={async () => {
-                    setSavingId(sessionId);
-                    const saved = await onSaveReflection(
-                      sessionId,
-                      done.trim() || null,
-                      nextStep.trim() || null,
-                    );
-                    setSavingId(null);
-                    if (saved) setEditingId(null);
-                  }}>Save reflection</button>
-                  <button className="ghost-button" disabled={saving} onClick={() => setEditingId(null)}>Cancel</button>
+                  <button
+                    className="primary-button"
+                    disabled={busy}
+                    onClick={async () => {
+                      setSavingId(sessionId);
+                      const saved = await onSaveReflection(
+                        sessionId,
+                        done.trim() || null,
+                        nextStep.trim() || null,
+                      );
+                      setSavingId(null);
+                      if (saved) setEditingId(null);
+                    }}
+                  >
+                    Save reflection
+                  </button>
+                  <button
+                    className="ghost-button"
+                    disabled={busy}
+                    onClick={() => setEditingId(null)}
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
-            ) : sessionId !== "" ? (
-              <button className="secondary-button" onClick={() => {
-                setDone(summary.record.reflectionDone ?? "");
-                setNextStep(summary.record.reflectionNextStep ?? "");
-                setEditingId(sessionId);
-              }}>Edit reflection</button>
+            ) : onSaveReflection && sessionId !== "" ? (
+              <button
+                className="secondary-button"
+                disabled={busy || savingId !== null}
+                onClick={() => {
+                  setConfirmingId(null);
+                  setDone(summary.record.reflectionDone ?? "");
+                  setNextStep(summary.record.reflectionNextStep ?? "");
+                  setEditingId(sessionId);
+                }}
+              >
+                Edit reflection
+              </button>
             ) : null}
           </li>
         );
@@ -220,78 +240,78 @@ function SessionReflectionList({
 }
 
 export const InsightsCard = memo(function InsightsCard({
+  rangeLabel,
+  sessionHistory,
+}: Pick<InsightsCardProps, "rangeLabel" | "sessionHistory">) {
+  const aggregates = useMemo(() => computeInsightsAggregates(sessionHistory), [sessionHistory]);
+  const chronological = useMemo(() => toChronological(sessionHistory), [sessionHistory]);
+  return (
+    <section className="card insights-card session-chart-card">
+      <div className="card-header">
+        <h2>Focus per session</h2>
+        <span className="pill">{rangeLabel}</span>
+      </div>
+      {sessionHistory.length === 0 ? (
+        <p className="helper-text">
+          No completed sessions yet. Finish a session to see your focus trends here.
+        </p>
+      ) : (
+        <>
+          <FocusTrendChart summaries={chronological} />
+          <p className="insights-caption">Avg focus score (0–100) per session · oldest → newest</p>
+          <p className="helper-text">
+            {Math.round(aggregates.avgDeepFocusPct)}% deep focus · {aggregates.totalSnapbacks}{" "}
+            snapbacks across {aggregates.sessionCount} completed sessions
+          </p>
+        </>
+      )}
+    </section>
+  );
+});
+
+export const SessionManagementCard = memo(function SessionManagementCard({
   deleteError = null,
   deleteStatus = null,
   deletingSessionId = null,
   onDeleteSession,
   onSaveReflection,
   reflectionStatus = null,
-  rangeAvgFocusScore = null,
-  rangeLabel,
   sessionHistory,
-}: InsightsCardProps) {
-  const aggregates = useMemo(
-    () => computeInsightsAggregates(sessionHistory),
-    [sessionHistory],
-  );
-  const avgFocusScore = useMemo(
-    () => resolveInsightsAvgFocus(rangeAvgFocusScore, aggregates.avgFocusScore),
-    [aggregates.avgFocusScore, rangeAvgFocusScore],
-  );
-  const chronological = useMemo(() => toChronological(sessionHistory), [sessionHistory]);
-  const count = sessionHistory.length;
-
+}: Omit<InsightsCardProps, "rangeLabel">) {
   return (
-    <section className="card insights-card">
-      <div className="card-header">
-        <h2>Insights</h2>
-        <span className="pill">{rangeLabel}</span>
-      </div>
-
-      {count === 0 ? (
+    <section className="card session-management-card">
+      <details>
+        <summary>Session management</summary>
         <p className="helper-text">
-          No completed sessions yet. Finish a session to see your focus trends here.
+          Edit reflections or delete a session. Deletion permanently removes its predictions,
+          captured window context, and labels, and changes the numbers above.
         </p>
-      ) : (
-        <>
-          <div className="insight-tiles">
-            <Tile value={String(aggregates.sessionCount)} label="Sessions" />
-            <Tile value={String(Math.round(avgFocusScore))} label="Avg focus" />
-            <Tile value={`${Math.round(aggregates.avgDeepFocusPct)}%`} label="Deep focus" />
-            <Tile value={String(aggregates.totalSnapbacks)} label="Snapbacks" />
-          </div>
-          <FocusTrendChart summaries={chronological} />
-          <p className="insights-caption">
-            Avg focus score (0–100) per session · oldest → newest
+        {sessionHistory.length ? (
+          <SessionManagementList
+            summaries={sessionHistory}
+            onSaveReflection={onSaveReflection}
+            onDelete={onDeleteSession}
+            deletingSessionId={deletingSessionId}
+          />
+        ) : (
+          <p className="helper-text">No sessions to manage in this range.</p>
+        )}
+        {reflectionStatus ? (
+          <p className="helper-text" role="status">
+            {reflectionStatus}
           </p>
-          {onSaveReflection ? (
-            <div className="session-reflection-zone">
-              <h3>Session reflections</h3>
-              <SessionReflectionList
-                onSaveReflection={onSaveReflection}
-                summaries={sessionHistory}
-              />
-              {reflectionStatus ? <p className="helper-text">{reflectionStatus}</p> : null}
-            </div>
-          ) : null}
-          {onDeleteSession ? (
-            <div className="session-delete-zone">
-              <h3>Delete a session</h3>
-              <p className="helper-text">
-                Removes that session and everything recorded under it — predictions, captured
-                window context, and labels. Permanent, and it changes the numbers above.
-              </p>
-              <SessionDeleteList
-                deletingSessionId={deletingSessionId}
-                onDelete={onDeleteSession}
-                summaries={sessionHistory}
-              />
-              {deleteStatus ? <p className="helper-text success">{deleteStatus}</p> : null}
-              {deleteError ? <p className="helper-text alert">{deleteError}</p> : null}
-            </div>
-          ) : null}
-        </>
-      )}
+        ) : null}
+        {deleteStatus ? (
+          <p className="helper-text success" role="status">
+            {deleteStatus}
+          </p>
+        ) : null}
+        {deleteError ? (
+          <p className="helper-text alert" role="alert">
+            {deleteError}
+          </p>
+        ) : null}
+      </details>
     </section>
   );
 });
