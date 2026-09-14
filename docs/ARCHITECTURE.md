@@ -90,6 +90,28 @@ since midnight**, and `snoozedUntilWallMs` as a UTC epoch-millisecond deadline.
 The two units differ on purpose — a snooze is an instant, a quiet range is a
 recurring reading of the local clock.
 
+### Two decisions the command surface encodes
+
+Both look like inconsistencies from the outside. Both are deliberate (P0-08).
+
+**Predictions run without an active session.** `compute_event` classifies and publishes
+`latest_prediction_` whether or not a session exists; what the missing session costs is
+*persistence*, since `persist()` early-returns on an empty `session_id`. This is intended: the
+Now surface previews live scores so the untracked-work nudge has something to react to before
+the user hits record. `health()`'s `predictionSuppressionReason` therefore reports three
+different kinds of thing, and only two of them mean no prediction was computed —
+`private_mode` and `idle` return early in `compute_event`, while **`not_recorded` means the
+engine is predicting normally and nothing is being written**. A prediction emitted with an
+empty `session_id` is a preview, not a bug; do not treat that field as a session id.
+
+**Model rollback is not developer-gated, and its siblings are.**
+`get_training_deploy_status`, `set_training_repo_path`, and `train_from_export` all require
+`developer_tools_enabled()`; `rollback_classifier_model` and `retry_model_deployment_cleanup`
+do not. [ADR-0006](adr/0006-trainer-is-developer-tooling.md) scopes developer tooling to
+*producing* a model. Recovering from a bad one is the user's half of that line — someone whose
+classifier was ruined by a deployment must not need `SNAPBACK_DEV_TRAINING` or a Debug build
+to get back to a working model.
+
 ## Data and model contracts
 
 Frontend DTOs use camelCase. Internal records use snake_case. The feature vector

@@ -506,12 +506,19 @@ inline void register_commands(webview::webview& w, AppState& state,
         }
         return training_deploy::train_from_export(data_dir);
     });
+    // AUD-16 / P0-08: deliberately NOT developer-gated, unlike the three commands above.
+    // ADR-0006 scopes developer tooling to *producing* a model — training, repo-path config,
+    // train-from-export, the CLI copy surface. Recovering from a bad deployed model is the
+    // other half of that line and belongs to the user: someone whose classifier was ruined by
+    // a deployment must not need SNAPBACK_DEV_TRAINING or a Debug build to escape it. The
+    // asymmetry with its siblings is the decision, not an oversight.
     bind_cmd("rollback_classifier_model", [&state, data_dir](const json&) {
         auto result = training_deploy::rollback_model(data_dir);
         result["classifier"] = state.reload_classifier_model();
         return result;
     });
     // Roadmap 13.8. Retries startup-safe deployment cleanup without restarting the app.
+    // Ungated for the same reason as rollback above: recovery, not production.
     bind_cmd("retry_model_deployment_cleanup", [&state](const json&) {
         return json(state.retry_model_deployment_cleanup());
     });

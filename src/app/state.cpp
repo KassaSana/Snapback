@@ -916,10 +916,17 @@ HealthStatus AppState::health() const {
         h.last_prediction_age_secs = static_cast<double>(std::max<std::int64_t>(
             0, steady_now_ms() - *live->last_prediction_at_ms)) / 1000.0;
     }
+    // AUD-19 / P0-08. Only the first two values mean "no prediction was computed":
+    // `is_private_event_unlocked` returns early in compute_event, and the AFK freeze bails
+    // before `classifier_.predict()`. Running without a session is deliberately *not*
+    // suppression — the Now surface previews live scores so the untracked nudge has something
+    // to react to before the user hits record. What the missing session costs is persistence
+    // (`persist()` early-returns on an empty session_id), so the value names that, rather than
+    // claiming a prediction the engine is in fact still producing.
     h.prediction_suppression_reason = live->private_mode
                                           ? "private_mode"
                                           : live->idle ? "idle"
-                                          : !live->active_session ? "no_session"
+                                          : !live->active_session ? "not_recorded"
                                                                   : "none";
     h.permissions =
         check_capture_permissions(capture_.running(), capture_.input_observed());

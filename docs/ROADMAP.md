@@ -197,12 +197,16 @@ Task ids are permanent. Verify commands assume the local build directory; see
       *Depends on:* —
       *Verify:* doctest case using the injected `ManualClock` to advance 24 h and assert
       `prune_runtime_data` ran.
-- [ ] **P0-08** Record the two open decisions (AUD-16, AUD-19): rollback stays user-facing or
-      gets dev-gated; no-session predictions are a deliberate live preview or get gated.
-      *Files:* `src/app/commands.hpp`, `src/app/state.cpp`, [`ARCHITECTURE.md`](ARCHITECTURE.md) —
-      *Depends on:* —
-      *Verify:* manual — a comment at the `rollback_classifier_model` bind site states the
-      decision, and the IPC section states the no-session prediction semantics.
+- [x] **P0-08** Record the two open decisions (AUD-16, AUD-19). **Decided:** rollback stays
+      user-facing (ADR-0006 gates *producing* a model, not recovering from a bad one — so
+      `retry_model_deployment_cleanup` stays ungated for the same reason); no-session
+      predictions are a deliberate live preview, so the health field was renamed
+      `no_session` → `not_recorded` to stop claiming a suppression that never happened.
+      *Files:* `src/app/commands.hpp`, `src/app/state.cpp`, `frontend/src/useDiagnostics.ts`,
+      `tests/test_app_state.cpp`, [`ARCHITECTURE.md`](ARCHITECTURE.md) — *Depends on:* —
+      *Verify:* comments at both bind sites state the decision, ARCHITECTURE.md's IPC section
+      has a "Two decisions the command surface encodes" subsection, and a new doctest pins the
+      preview semantics (predicts with an empty `session_id`, so `persist()` drops it).
 - [ ] **P0-09** Release-build soak check on Windows (uses the
       [`windows_demo.md`](windows_demo.md) flow).
       *Depends on:* P0-01 … P0-05, P0-07

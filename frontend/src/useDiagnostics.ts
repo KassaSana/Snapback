@@ -14,7 +14,7 @@ const emptyDiagnostics: DiagnosticsSnapshot = {
     captureEventsDropped: 0,
     captureStalled: false,
     lastPredictionAgeSecs: null,
-    predictionSuppressionReason: "no_session",
+    predictionSuppressionReason: "not_recorded",
     permissions: {
       captureAvailable: false,
       captureProbeConfirmed: false,
