@@ -99,10 +99,15 @@ export type LabelHotkeyPayload = {
 };
 
 export type ClassifierStatus = {
+  /** The backend that made the most recent prediction — "heuristic" while a loaded model is degraded. */
   backend: string;
   onnxRuntimeEnabled: boolean;
   modelPath: string | null;
   modelId: string | null;
+  /** A model is loaded but its last inference failed or was rejected; predictions are heuristic. */
+  inferenceDegraded: boolean;
+  /** Failed or rejected inferences since the model was loaded. */
+  inferenceFailures: number;
 };
 
 export type ModelDeploymentHealth = {

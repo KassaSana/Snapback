@@ -250,10 +250,17 @@ struct PermissionStatus {
 
 // ClassifierStatus.
 struct ClassifierStatus {
+    // The backend that made the most recent prediction, which is not always the one that
+    // is configured: a loaded model whose last inference failed hands that prediction to
+    // the heuristic, and `backend` says "heuristic" for it.
     std::string backend{"heuristic"};
     bool onnx_runtime_enabled{};
     std::optional<std::string> model_path;
     std::optional<std::string> model_id;
+    // A model is loaded but its last inference failed or was rejected by the output
+    // validator; the classifier is running on the heuristic until one succeeds.
+    bool inference_degraded{};
+    std::uint64_t inference_failures{};
 };
 
 // ModelDeploymentHealth — optional ONNX deployment recovery state. Roadmap 13.8.

@@ -8,6 +8,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -63,15 +65,48 @@ public:
     // Non-const because Ort::Session::Run mutates session state.
     std::optional<std::array<double, 4>> infer_probabilities(const FeatureVector& features);
 
+    // Whether the four floats a model handed back are usable as class probabilities: every
+    // entry finite and within [0, 1], and at least one of them positive. A graph that emits
+    // NaN, a negative, or all zeros has not made a prediction, and the classifier's argmax
+    // over such a row would pick a class by accident. Checked here rather than in the
+    // classifier because this is a property of the model's output contract, not of scoring.
+    static bool valid_class_probabilities(const std::array<double, 4>& probas);
+
+    // Inference health, separate from load health. A model can load and still fail every
+    // Run() (a runtime fault, an output the validator rejects), in which case the classifier
+    // falls back to the heuristic per prediction. `loaded()` alone would then keep reporting
+    // the ONNX backend for predictions the heuristic actually made. Both reset on
+    // load/unload; `last_inference_failed()` follows each Run() outcome.
+    bool last_inference_failed() const {
+        return last_inference_failed_.load(std::memory_order_relaxed);
+    }
+    std::uint64_t inference_failures() const {
+        return inference_failures_.load(std::memory_order_relaxed);
+    }
+
     // Test seam — the singleton persists across tests, so a
     // test that loads a model must reset afterward or it leaks the "onnx" backend.
     void reset_for_tests();
 
+    // Applies the validator and the failure bookkeeping to one raw model output. Split from
+    // infer_probabilities so the stub build (no runtime) can test the contract with
+    // hand-built rows; infer_probabilities is Run() plus this.
+    std::optional<std::array<double, 4>> accept_output(
+        std::optional<std::array<double, 4>> raw);
+
 private:
     bool loaded_ = false;
+    // Atomics rather than mutex-guarded: written on the engine thread, read by the health
+    // snapshot, and a slightly stale counter is harmless while a lock here is not free.
+    std::atomic<bool> last_inference_failed_{false};
+    std::atomic<std::uint64_t> inference_failures_{0};
     std::optional<std::string> model_path_;  // set on successful load
     std::optional<std::string> model_id_;    // set on successful load
 #if defined(SNAPBACK_ONNX)
+    // The Run() call and output-tensor search, minus validation. Throws are caught inside
+    // and reported as nullopt.
+    std::optional<std::array<double, 4>> run_session(const FeatureVector& features);
+
     std::unique_ptr<Ort::Env> env_;
     std::unique_ptr<Ort::Session> session_;
     std::string input_name_;

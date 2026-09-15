@@ -289,6 +289,8 @@ void AppState::publish_live_read_unlocked() {
     snapshot->idle = idle_;
     snapshot->classifier.backend = classifier_.backend();
     snapshot->classifier.onnx_runtime_enabled = classifier_.backend() == "onnx";
+    snapshot->classifier.inference_degraded = classifier_.inference_degraded();
+    snapshot->classifier.inference_failures = classifier_.inference_failures();
     snapshot->classifier.model_path = OnnxModel::instance().model_path();
     snapshot->classifier.model_id = OnnxModel::instance().model_id();
     snapshot->model_deployment = model_deployment_health_;

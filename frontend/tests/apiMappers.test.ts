@@ -359,6 +359,18 @@ const classifierCamel = mapClassifierStatus({
   modelPath: null,
 });
 assert.equal(classifierCamel.onnxRuntimeEnabled, false);
+// Inference health defaults to healthy when an older backend does not send it.
+assert.equal(classifierCamel.inferenceDegraded, false);
+assert.equal(classifierCamel.inferenceFailures, 0);
+const classifierDegraded = mapClassifierStatus({
+  backend: "heuristic",
+  onnx_runtime_enabled: false,
+  model_path: "/data/model.onnx",
+  inference_degraded: true,
+  inference_failures: 3,
+});
+assert.equal(classifierDegraded.inferenceDegraded, true);
+assert.equal(classifierDegraded.inferenceFailures, 3);
 
 // --- mapAppRule ---
 

@@ -255,6 +255,8 @@ export function mapClassifierStatus(raw: Record<string, unknown>): ClassifierSta
     onnxRuntimeEnabled: Boolean(raw.onnx_runtime_enabled ?? raw.onnxRuntimeEnabled ?? false),
     modelPath: (raw.model_path ?? raw.modelPath ?? null) as string | null,
     modelId: (raw.model_id ?? raw.modelId ?? null) as string | null,
+    inferenceDegraded: Boolean(raw.inference_degraded ?? raw.inferenceDegraded ?? false),
+    inferenceFailures: Number(raw.inference_failures ?? raw.inferenceFailures ?? 0),
   };
 }
 

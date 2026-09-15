@@ -247,6 +247,8 @@ export class DemoBackend {
         onnxRuntimeEnabled: false,
         modelPath: null,
         modelId: "heuristic:snapback-features-v1-31",
+        inferenceDegraded: false,
+        inferenceFailures: 0,
       },
       modelDeployment: {
         state: "ok",

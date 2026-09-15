@@ -128,9 +128,31 @@ PredictionScores Classifier::predict(const FeatureVector& features,
 
 std::string Classifier::backend() const {
 #if defined(SNAPBACK_ONNX)
-    if (OnnxModel::instance().loaded()) return "onnx";
+    // The backend that produced the *last* prediction, not the one that was configured. A
+    // loaded model whose last Run() failed or returned an unusable row fell back to the
+    // heuristic for that prediction, and health should say so rather than report "onnx"
+    // over heuristic numbers.
+    const auto& model = OnnxModel::instance();
+    if (model.loaded() && !model.last_inference_failed()) return "onnx";
 #endif
     return "heuristic";
+}
+
+bool Classifier::inference_degraded() const {
+#if defined(SNAPBACK_ONNX)
+    const auto& model = OnnxModel::instance();
+    return model.loaded() && model.last_inference_failed();
+#else
+    return false;
+#endif
+}
+
+std::uint64_t Classifier::inference_failures() const {
+#if defined(SNAPBACK_ONNX)
+    return OnnxModel::instance().inference_failures();
+#else
+    return 0;
+#endif
 }
 
 std::string Classifier::model_id() const {

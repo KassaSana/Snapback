@@ -2,9 +2,12 @@
 // load+run + heuristic-fallback path only when SNAPBACK_ONNX is on (fixtures/model.onnx).
 #include "doctest_wrapper.hpp"
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <optional>
 #include <string>
 
 #include "engine/classifier.hpp"
@@ -61,6 +64,67 @@ TEST_CASE("model identity is stable for content and includes the feature contrac
     std::filesystem::remove_all(dir, ec);
 }
 
+TEST_CASE("model outputs are accepted only when they are usable class probabilities") {
+    // Four floats came back from the graph and were passed straight to the classifier's
+    // argmax. NaN compares false with everything, a negative or >1 entry is not a
+    // probability, and an all-zero row ranks nothing -- each of those used to become a
+    // confident-looking prediction. The check is a property of the model's output contract,
+    // so it lives with the model rather than in scoring.
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    CHECK(OnnxModel::valid_class_probabilities({0.1, 0.2, 0.3, 0.4}));
+    CHECK(OnnxModel::valid_class_probabilities({0.0, 0.0, 1.0, 0.0}));
+    CHECK(OnnxModel::valid_class_probabilities({0.25, 0.25, 0.25, 0.25}));
+
+    CHECK_FALSE(OnnxModel::valid_class_probabilities({nan, 0.2, 0.3, 0.4}));
+    CHECK_FALSE(OnnxModel::valid_class_probabilities({0.1, inf, 0.3, 0.4}));
+    CHECK_FALSE(OnnxModel::valid_class_probabilities({-0.1, 0.4, 0.4, 0.3}));
+    CHECK_FALSE(OnnxModel::valid_class_probabilities({1.5, 0.0, 0.0, 0.0}));
+    CHECK_FALSE(OnnxModel::valid_class_probabilities({0.0, 0.0, 0.0, 0.0}));
+}
+
+TEST_CASE("rejected or failed inference is counted and flips the degraded flag") {
+    struct Guard {
+        ~Guard() { OnnxModel::instance().reset_for_tests(); }
+    } guard;
+    auto& model = OnnxModel::instance();
+    model.reset_for_tests();
+    CHECK_FALSE(model.last_inference_failed());
+    CHECK(model.inference_failures() == 0);
+
+    // A throwing Run() arrives here as nullopt; a rejected row arrives as a value.
+    CHECK_FALSE(model.accept_output(std::nullopt).has_value());
+    CHECK(model.last_inference_failed());
+    CHECK(model.inference_failures() == 1);
+
+    CHECK_FALSE(model.accept_output(std::array<double, 4>{0.0, 0.0, 0.0, 0.0}).has_value());
+    CHECK(model.inference_failures() == 2);
+
+    // One good row clears the flag but keeps the history.
+    const auto ok = model.accept_output(std::array<double, 4>{0.1, 0.2, 0.3, 0.4});
+    REQUIRE(ok.has_value());
+    CHECK((*ok)[3] == doctest::Approx(0.4));
+    CHECK_FALSE(model.last_inference_failed());
+    CHECK(model.inference_failures() == 2);
+
+    // Unloading starts a new model's history from zero.
+    model.unload();
+    CHECK_FALSE(model.last_inference_failed());
+    CHECK(model.inference_failures() == 0);
+}
+
+TEST_CASE("the classifier reports the backend that made the last prediction") {
+    // Without a loaded model there is nothing to degrade, in either build.
+    struct Guard {
+        ~Guard() { OnnxModel::instance().reset_for_tests(); }
+    } guard;
+    OnnxModel::instance().reset_for_tests();
+    Classifier clf;
+    CHECK(clf.backend() == "heuristic");
+    CHECK_FALSE(clf.inference_degraded());
+    CHECK(clf.inference_failures() == 0);
+}
+
 #if defined(SNAPBACK_ONNX)
 TEST_CASE("ONNX backend loads the fixture, runs it, and falls back to heuristic when reset") {
     // The singleton persists across tests, so always reset on the way out.
@@ -88,6 +152,27 @@ TEST_CASE("ONNX backend loads the fixture, runs it, and falls back to heuristic 
         scores.focus_state == "DISTRACTED" || scores.focus_state == "PSEUDO_PRODUCTIVE" ||
         scores.focus_state == "PRODUCTIVE" || scores.focus_state == "DEEP_FOCUS";
     CHECK(valid_state);
+
+    // The fixture ran and its output passed validation: the model is healthy and the
+    // health snapshot may say "onnx".
+    CHECK_FALSE(OnnxModel::instance().last_inference_failed());
+    CHECK(clf.backend() == "onnx");
+    CHECK_FALSE(clf.inference_degraded());
+
+    // A rejected output while the model stays loaded: the backend reported is the one that
+    // made the prediction (the heuristic), and the status says why.
+    CHECK_FALSE(OnnxModel::instance()
+                    .accept_output(std::array<double, 4>{0.0, 0.0, 0.0, 0.0})
+                    .has_value());
+    CHECK(OnnxModel::instance().loaded());
+    CHECK(clf.backend() == "heuristic");
+    CHECK(clf.inference_degraded());
+    CHECK(clf.inference_failures() == 1);
+
+    // The next successful inference restores it.
+    CHECK(clf.predict(features, FocusMode::Normal).focus_score >= 0.0);
+    CHECK(clf.backend() == "onnx");
+    CHECK_FALSE(clf.inference_degraded());
 }
 #endif
 

@@ -187,7 +187,10 @@ void from_json(const json& j, PermissionStatus& v) {
 // ---- ClassifierStatus ------------------------------------------------------
 
 void to_json(json& j, const ClassifierStatus& v) {
-    j = json{{"backend", v.backend}, {"onnxRuntimeEnabled", v.onnx_runtime_enabled}};
+    j = json{{"backend", v.backend},
+             {"onnxRuntimeEnabled", v.onnx_runtime_enabled},
+             {"inferenceDegraded", v.inference_degraded},
+             {"inferenceFailures", v.inference_failures}};
     put_opt(j, "modelPath", v.model_path);
     put_opt(j, "modelId", v.model_id);
 }
@@ -196,6 +199,8 @@ void from_json(const json& j, ClassifierStatus& v) {
     v.onnx_runtime_enabled = get_or<bool>(j, "onnxRuntimeEnabled", false);
     v.model_path = opt_str(j, "modelPath");
     v.model_id = opt_str(j, "modelId");
+    v.inference_degraded = get_or<bool>(j, "inferenceDegraded", false);
+    v.inference_failures = get_or<std::uint64_t>(j, "inferenceFailures", 0);
 }
 
 // ---- ModelDeploymentHealth -------------------------------------------------

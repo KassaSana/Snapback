@@ -1,6 +1,7 @@
 #include "engine/onnx_model.hpp"
 
 #include <array>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -46,10 +47,32 @@ std::optional<std::string> OnnxModel::model_id_for_path(
     return id.str();
 }
 
+bool OnnxModel::valid_class_probabilities(const std::array<double, 4>& probas) {
+    bool any_positive = false;
+    for (const double p : probas) {
+        if (!std::isfinite(p) || p < 0.0 || p > 1.0) return false;
+        if (p > 0.0) any_positive = true;
+    }
+    return any_positive;
+}
+
+std::optional<std::array<double, 4>> OnnxModel::accept_output(
+    std::optional<std::array<double, 4>> raw) {
+    const bool ok = raw.has_value() && valid_class_probabilities(*raw);
+    last_inference_failed_.store(!ok, std::memory_order_relaxed);
+    if (!ok) {
+        inference_failures_.fetch_add(1, std::memory_order_relaxed);
+        return std::nullopt;
+    }
+    return raw;
+}
+
 void OnnxModel::unload() {
     loaded_ = false;
     model_path_.reset();
     model_id_.reset();
+    last_inference_failed_.store(false, std::memory_order_relaxed);
+    inference_failures_.store(0, std::memory_order_relaxed);
 #if defined(SNAPBACK_ONNX)
     session_.reset();
     env_.reset();
@@ -88,6 +111,8 @@ bool OnnxModel::init(const std::filesystem::path& model_path) {
         model_path_ = model_path.string();
         model_id_ = identity;
         loaded_ = true;
+        last_inference_failed_.store(false, std::memory_order_relaxed);
+        inference_failures_.store(0, std::memory_order_relaxed);
     } catch (const std::exception&) {
         // A bad/missing/incompatible model must not crash startup; fall back to heuristic.
         session_.reset();
@@ -100,7 +125,12 @@ bool OnnxModel::init(const std::filesystem::path& model_path) {
 }
 
 std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const FeatureVector& features) {
+    // Not a failure to count: with no model there was no inference to fail.
     if (!loaded_ || !session_) return std::nullopt;
+    return accept_output(run_session(features));
+}
+
+std::optional<std::array<double, 4>> OnnxModel::run_session(const FeatureVector& features) {
     try {
         std::array<float, kFeatureCount> input{};
         for (std::size_t i = 0; i < kFeatureCount; ++i) {
@@ -151,7 +181,7 @@ bool OnnxModel::init(const std::filesystem::path&) {
 }
 
 std::optional<std::array<double, 4>> OnnxModel::infer_probabilities(const FeatureVector&) {
-    return std::nullopt;
+    return std::nullopt;  // nothing loaded, nothing ran, nothing to count
 }
 
 void OnnxModel::reset_for_tests() {

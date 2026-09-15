@@ -2,6 +2,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -38,8 +39,15 @@ public:
                              const std::vector<AppRuleRecord>& rules,
                              const std::vector<GoalCategory>& categories) const;
 
+    // The backend that produced the most recent prediction: "onnx" only while a model is
+    // loaded *and* its last inference succeeded. See OnnxModel::last_inference_failed.
     std::string backend() const;
     std::string model_id() const;
+    // True while a model is loaded but its last inference failed, so predictions are
+    // coming from the heuristic. Always false without the ONNX build.
+    bool inference_degraded() const;
+    // Count of failed or rejected inferences since the model was loaded.
+    std::uint64_t inference_failures() const;
 
 private:
     PredictionScores predict_heuristic(const FeatureVector& features,

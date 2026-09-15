@@ -27,6 +27,8 @@ const emptyDiagnostics: DiagnosticsSnapshot = {
       onnxRuntimeEnabled: false,
       modelPath: null,
       modelId: null,
+      inferenceDegraded: false,
+      inferenceFailures: 0,
     },
     modelDeployment: {
       state: "ok",
