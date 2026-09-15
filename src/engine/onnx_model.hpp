@@ -65,10 +65,12 @@ public:
     // Non-const because Ort::Session::Run mutates session state.
     std::optional<std::array<double, 4>> infer_probabilities(const FeatureVector& features);
 
-    // Whether the four floats a model handed back are usable as class probabilities: every
-    // entry finite and within [0, 1], and at least one of them positive. A graph that emits
-    // NaN, a negative, or all zeros has not made a prediction, and the classifier's argmax
-    // over such a row would pick a class by accident. Checked here rather than in the
+    // Whether the four floats a model handed back are usable as class weights: every entry
+    // finite and non-negative, and at least one of them positive. Not "within [0, 1]": the
+    // classifier normalises the row by its sum (scores_from_probas), so an unnormalised
+    // linear head -- which is what the fixture model is, and what a Gemm-only export
+    // produces -- is a valid output, while a negative entry corrupts that normalisation
+    // and NaN or an all-zero row is no prediction at all. Checked here rather than in the
     // classifier because this is a property of the model's output contract, not of scoring.
     static bool valid_class_probabilities(const std::array<double, 4>& probas);
 

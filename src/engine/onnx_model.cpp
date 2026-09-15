@@ -50,7 +50,7 @@ std::optional<std::string> OnnxModel::model_id_for_path(
 bool OnnxModel::valid_class_probabilities(const std::array<double, 4>& probas) {
     bool any_positive = false;
     for (const double p : probas) {
-        if (!std::isfinite(p) || p < 0.0 || p > 1.0) return false;
+        if (!std::isfinite(p) || p < 0.0) return false;
         if (p > 0.0) any_positive = true;
     }
     return any_positive;

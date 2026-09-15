@@ -64,22 +64,24 @@ TEST_CASE("model identity is stable for content and includes the feature contrac
     std::filesystem::remove_all(dir, ec);
 }
 
-TEST_CASE("model outputs are accepted only when they are usable class probabilities") {
-    // Four floats came back from the graph and were passed straight to the classifier's
-    // argmax. NaN compares false with everything, a negative or >1 entry is not a
-    // probability, and an all-zero row ranks nothing -- each of those used to become a
-    // confident-looking prediction. The check is a property of the model's output contract,
-    // so it lives with the model rather than in scoring.
+TEST_CASE("model outputs are accepted only when they are usable class weights") {
+    // Four floats came back from the graph and were passed straight to the classifier,
+    // which normalises them by their sum and takes the argmax. NaN compares false with
+    // everything, a negative entry corrupts the normalisation, and an all-zero row ranks
+    // nothing -- each of those used to become a confident-looking prediction. Entries above
+    // one are fine: the fixture model is an unnormalised linear head and its output for a
+    // busy window is {0.1, 0.15, 5.55, 0.2}. The check is a property of the model's output
+    // contract, so it lives with the model rather than in scoring.
     const double nan = std::numeric_limits<double>::quiet_NaN();
     const double inf = std::numeric_limits<double>::infinity();
     CHECK(OnnxModel::valid_class_probabilities({0.1, 0.2, 0.3, 0.4}));
     CHECK(OnnxModel::valid_class_probabilities({0.0, 0.0, 1.0, 0.0}));
     CHECK(OnnxModel::valid_class_probabilities({0.25, 0.25, 0.25, 0.25}));
+    CHECK(OnnxModel::valid_class_probabilities({0.1, 0.15, 5.55, 0.2}));
 
     CHECK_FALSE(OnnxModel::valid_class_probabilities({nan, 0.2, 0.3, 0.4}));
     CHECK_FALSE(OnnxModel::valid_class_probabilities({0.1, inf, 0.3, 0.4}));
     CHECK_FALSE(OnnxModel::valid_class_probabilities({-0.1, 0.4, 0.4, 0.3}));
-    CHECK_FALSE(OnnxModel::valid_class_probabilities({1.5, 0.0, 0.0, 0.0}));
     CHECK_FALSE(OnnxModel::valid_class_probabilities({0.0, 0.0, 0.0, 0.0}));
 }
 
