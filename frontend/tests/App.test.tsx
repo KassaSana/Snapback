@@ -106,7 +106,7 @@ describe("App first-run permission wizard", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     await waitFor(() => expect(reviewCalls()).toHaveLength(4));
-    await waitFor(() => expect(screen.getByRole("button", { name: "7 days" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Last 7 days" })).toBeEnabled());
     expect(boundary.invoke).toHaveBeenCalledWith("get_analytics", { window: "7d" });
     expect(boundary.invoke).toHaveBeenCalledWith("get_summary_report", { window: "7d" });
     expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { window: "7d" });

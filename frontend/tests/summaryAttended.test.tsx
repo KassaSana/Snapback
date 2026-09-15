@@ -42,6 +42,40 @@ describe("SummaryCard attended comparison", () => {
     expect(screen.getByText(/of 2h 0m planned \(38%\)/)).toBeTruthy();
   });
 
+  it("names the calendar period attendance covers, since the range pill is rolling", () => {
+    // "Last 24h" is what the scalar tiles compute; attendance for that preset is measured
+    // since local midnight so it can be compared with the daily target. Two periods under one
+    // pill is the mismatch the audit flagged -- the tile now says which one it is.
+    const { unmount } = render(
+      <SummaryCard exportStatus={null} onExport={() => {}} rangeLabel="Last 24h" report={baseReport()} />,
+    );
+    expect(screen.getByText(/planned \(38%\) · since midnight/)).toBeTruthy();
+    unmount();
+
+    render(
+      <SummaryCard
+        exportStatus={null}
+        onExport={() => {}}
+        rangeLabel="Last 7 days"
+        report={baseReport({ window: "7d", plannedMins: 600 })}
+      />,
+    );
+    expect(screen.getByText(/this calendar week/)).toBeTruthy();
+    cleanup();
+
+    // Longer and custom ranges are rolling like everything else: no suffix to add.
+    render(
+      <SummaryCard
+        exportStatus={null}
+        onExport={() => {}}
+        rangeLabel="Last 30 days"
+        report={baseReport({ window: "30d", plannedMins: 0 })}
+      />,
+    );
+    expect(screen.getByText("measured, not scored")).toBeTruthy();
+    expect(screen.queryByText(/since midnight|calendar week/)).toBeNull();
+  });
+
   it("omits a fabricated plan when plannedMins is zero", () => {
     render(
       <SummaryCard

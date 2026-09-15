@@ -24,10 +24,14 @@ export const REVIEW_RANGE_PRESETS: Array<Exclude<ReviewRangePreset, "custom">> =
   "all",
 ];
 
+// The labels say "Last …" because that is what the scalar queries compute: "today" is the
+// last 24 hours, not the calendar day, and "7d" is 7 x 24 hours, not this week. Attendance is
+// the one card that snaps to the calendar, and SummaryCard says so beside its figure rather
+// than letting one pill imply that every number on the surface shares a period.
 export const REVIEW_RANGE_LABELS: Record<ReviewRangePreset, string> = {
-  today: "Today",
-  "7d": "7 days",
-  "30d": "30 days",
+  today: "Last 24h",
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
   all: "All time",
   custom: "Custom",
 };
@@ -39,9 +43,17 @@ export function reviewRangeLabel(range: ReviewRange): string {
   return REVIEW_RANGE_LABELS[range.preset];
 }
 
+// The date the user picked is a local calendar day, so its start is local midnight, not UTC
+// midnight: `${since}T00:00:00Z` was up to a day off in either direction depending on the
+// zone. `new Date("YYYY-MM-DDT00:00:00")` (no zone suffix) is local time by spec.
+export function customRangeSinceInstant(since: string): string {
+  const local = new Date(`${since}T00:00:00`);
+  return Number.isNaN(local.getTime()) ? `${since}T00:00:00Z` : local.toISOString();
+}
+
 export function toReviewWindowRequest(range: ReviewRange): ReviewWindowRequest {
   if (range.preset === "custom") {
-    return { window: "custom", since: `${range.since}T00:00:00Z` };
+    return { window: "custom", since: customRangeSinceInstant(range.since) };
   }
   if (range.preset === "today") return { window: "day" };
   return { window: range.preset };

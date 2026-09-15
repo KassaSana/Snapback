@@ -202,7 +202,7 @@ describe("Session start/stop flow", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     await waitFor(() => expect(reviewCallCount()).toBe(4));
-    await waitFor(() => expect(screen.getByRole("button", { name: "7 days" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Last 7 days" })).toBeEnabled());
     fireEvent.click(screen.getByRole("tab", { name: "Now" }));
 
     fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {

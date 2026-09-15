@@ -37,6 +37,16 @@ export const SummaryCard = memo(function SummaryCard({
   // spans are the plan's actuals, and a quiet morning with a target still has a comparison.
   const attendedMins = Math.floor(report.attendedSeconds / 60);
   const showAttended = attendedMins > 0 || report.plannedMins > 0 || hasHistory;
+  // Attendance is compared against a daily or weekly plan, so for those two presets the
+  // backend measures it over the local calendar day / week while every other tile on this
+  // card uses the rolling window the range pill names. Say which period this figure covers
+  // instead of letting "Last 24h" stand over a since-midnight number.
+  const attendedPeriod =
+    report.window === "day"
+      ? "since midnight"
+      : report.window === "week" || report.window === "7d"
+        ? "this calendar week"
+        : null;
 
   // "Session time" is the wall clock of completed sessions, start to end -- it includes idle
   // and distracted stretches and is not the model's focused time, which is why it is no longer
@@ -65,11 +75,14 @@ export const SummaryCard = memo(function SummaryCard({
               <Tile
                 value={formatMinutes(attendedMins)}
                 label="Attended"
-                detail={
+                detail={[
                   report.plannedMins > 0
                     ? `of ${formatMinutes(report.plannedMins)} planned (${Math.round((attendedMins / report.plannedMins) * 100)}%)`
-                    : "measured, not scored"
-                }
+                    : "measured, not scored",
+                  attendedPeriod,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               />
             ) : null}
             <Tile

@@ -396,9 +396,9 @@ describe("Review first-run states", () => {
   it("offers one shared time-range control for every Review card", async () => {
     renderApp("review");
 
-    expect(await screen.findByRole("button", { name: "Today" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "7 days" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "30 days" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Last 24h" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Last 7 days" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Last 30 days" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "All time" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Custom" })).toBeInTheDocument();
   });
