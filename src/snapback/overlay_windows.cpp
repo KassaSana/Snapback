@@ -266,12 +266,18 @@ public:
     // floating over the window the user just asked to return to is not returning them to it.
     void action_clicked() {
         if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
-        // The dismiss callback still runs. It is what unlatches ContextTracker's Recovering
-        // state, and acting on a card is just as much "done with this card" as dismissing it
-        // -- skipping it here is how the first click would silently disable every later
-        // snapback, which is the defect 2.16's delivery half already had to fix once.
-        if (on_dismiss_) on_dismiss_();
+        // Act *before* dismissing. The dismiss callback clears the snapback payload, and the
+        // action callback reads it -- running them the other way round meant every click on
+        // this region reached restore_snapback_target with nothing to restore, so the native
+        // card's namesake button could never succeed.
+        //
+        // The dismiss callback still runs afterwards. It is what unlatches ContextTracker's
+        // Recovering state when the action is routed away (a stale alert id claims nothing
+        // and restore never runs), and acting on a card is just as much "done with this card"
+        // as dismissing it -- skipping it here is how the first click would silently disable
+        // every later snapback, which is the defect 2.16's delivery half already had to fix.
         if (on_action_) on_action_();
+        if (on_dismiss_) on_dismiss_();
     }
 
 private:

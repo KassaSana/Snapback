@@ -974,6 +974,11 @@ void AppState::dismiss_snapback() {
 }
 
 FocusTargetResult AppState::restore_snapback_target() {
+    // Read the target, attempt the activation, and only then decide what to keep. This used
+    // to clear the payload before calling focus_window(), so a failed activation -- the
+    // window closed, the platform stub, a title that no longer matches -- also destroyed the
+    // only copy of what the user was trying to get back to. The frontend then had nothing to
+    // retry against and no reason to show.
     std::string app_name;
     std::string window_title;
     {
@@ -982,17 +987,29 @@ FocusTargetResult AppState::restore_snapback_target() {
             app_name = latest_snapback_->app_name;
             window_title = latest_snapback_->window_title;
         }
-        clear_snapback_unlocked();
-        context_tracker_.dismiss_recovery(last_event_secs_);
-        live_read_dirty_ = true;
-        publish_live_read_unlocked();
     }
 
     if (app_name.empty() && window_title.empty()) {
         return FocusTargetResult{false, "No active snapback context to restore"};
     }
 
-    return focus_window(app_name, window_title);
+    // Outside the lock: focus_window() talks to the window system and can block.
+    const auto result = focus_window(app_name, window_title);
+
+    {
+        std::lock_guard lock(mutex_);
+        // The tracker leaves Recovering on both branches. dismiss_recovery() is its *only*
+        // exit, and a failed activation is still the user acting on the card; leaving it
+        // latched would silently disable every later snapback this session (the failure
+        // mode the suppression path in engine_tick documents). What differs is the payload:
+        // a successful return has nothing left to point at, a failed one keeps its target so
+        // "Take me back" can be tried again. The next snapback replaces it either way.
+        if (result.ok) clear_snapback_unlocked();
+        context_tracker_.dismiss_recovery(last_event_secs_);
+        live_read_dirty_ = true;
+        publish_live_read_unlocked();
+    }
+    return result;
 }
 
 SessionRecap AppState::session_recap(const std::string& session_id) {

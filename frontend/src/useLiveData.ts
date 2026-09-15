@@ -96,7 +96,12 @@ export const useLiveData = () => {
     [pushPrediction],
   );
 
+  // The summary is kept beside the note so a failed restore can rewrite the note around it
+  // without stacking one failure reason on top of the last.
+  const snapbackSummaryRef = useRef<string | null>(null);
+
   const handleSnapback = useCallback((payload: { summary: string }) => {
+    snapbackSummaryRef.current = payload.summary;
     setSnapbackNote(`Snapback: ${payload.summary}`);
   }, []);
 
@@ -113,11 +118,27 @@ export const useLiveData = () => {
   }, []);
 
   const handleRestoreSnapbackTarget = useCallback(async () => {
-    setSnapbackNote(null);
+    // Unlike dismiss, this note only clears once the native side says the window came back.
+    // It used to clear first and ignore the result, so a failed activation -- the window
+    // closed, a title that no longer matches, a platform without support -- looked exactly
+    // like a successful one, and the retry button vanished with it. The native side now keeps
+    // its target across a failure, so leaving the note (and its "Take me back") in place is a
+    // real retry rather than a decoration.
+    const summary = snapbackSummaryRef.current;
+    const failed = (reason: string) => {
+      setSnapbackNote(
+        `Snapback: ${summary ?? ""} — couldn't bring it back (${reason}). Try again or dismiss.`,
+      );
+    };
     try {
-      await api.restoreSnapbackTarget();
-    } catch {
-      // Best-effort; window activation failure is non-fatal.
+      const result = await api.restoreSnapbackTarget();
+      if (result.ok) {
+        setSnapbackNote(null);
+      } else {
+        failed(result.message);
+      }
+    } catch (error) {
+      failed(error instanceof Error ? error.message : String(error));
     }
   }, []);
 

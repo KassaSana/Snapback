@@ -2270,10 +2270,64 @@ TEST_CASE("the tick emits a snapback once and leaves it restorable") {
     const auto result = state->restore_snapback_target();
     CHECK(result.message != "No active snapback context to restore");
 
-    // Restore consumes the payload, and a consumed one does not re-emit on later ticks.
-    CHECK(state->latest_snapback() == std::nullopt);
+    // Whether or not the activation succeeded (it cannot from a test), the payload is
+    // emitted exactly once: a successful restore consumes it and a failed one keeps it
+    // for a retry, but neither re-emits on later ticks.
     for (int tick = 0; tick < 3; ++tick) AppStateTestAccess::engine_tick(*state);
     CHECK(snapbacks_emitted == 1);
+    state->set_emit_hook(nullptr);
+}
+
+TEST_CASE("a failed restore keeps its target for a retry and still re-arms the tracker") {
+    // restore_snapback_target used to clear the payload *before* calling focus_window(), so a
+    // failed activation -- the window closed, the platform stub, a title that no longer
+    // matched -- also destroyed the only copy of what the user was trying to get back to.
+    // The frontend then had nothing to retry against, and the native overlay's "Take me back"
+    // region ran its dismiss callback first for the same net effect.
+    //
+    // The two halves of the fix are asserted separately because they pull in opposite
+    // directions: the payload must survive a failure, but the tracker must not stay latched
+    // in Recovering because of one (dismiss_recovery is its only exit, and a stuck tracker
+    // silently disables every later snapback this session).
+    auto state = make_state();
+    state->start_session("implement the classifier", FocusMode::Normal);
+
+    int snapbacks_emitted = 0;
+    state->set_emit_hook([&snapbacks_emitted](const std::string& name, const std::string&,
+                                              std::uint64_t) {
+        if (name == "snapback") ++snapbacks_emitted;
+    });
+
+    const double returned_at = drive_one_episode(*state, 100.0);
+    AppStateTestAccess::engine_tick(*state);
+    REQUIRE(state->latest_snapback().has_value());
+    REQUIRE(snapbacks_emitted == 1);
+
+    const auto first = state->restore_snapback_target();
+    REQUIRE(first.message != "No active snapback context to restore");
+    if (first.ok) {
+        // A real window matched (only possible on a developer machine with that title open).
+        // Success consumes the target, exactly as before.
+        CHECK(state->latest_snapback() == std::nullopt);
+    } else {
+        // Failure keeps it, and a second attempt finds the same target rather than
+        // reporting that there is nothing to restore.
+        REQUIRE(state->latest_snapback().has_value());
+        CHECK(state->latest_snapback()->app_name == "Cursor");
+        const auto second = state->restore_snapback_target();
+        CHECK(second.message != "No active snapback context to restore");
+    }
+
+    // Kept or consumed, the payload does not re-emit.
+    for (int tick = 0; tick < 3; ++tick) AppStateTestAccess::engine_tick(*state);
+    CHECK(snapbacks_emitted == 1);
+
+    // The tracker is re-armed: a second episode produces a second snapback, which replaces
+    // whatever the failed restore left behind.
+    drive_one_episode(*state, returned_at + 10.0);
+    AppStateTestAccess::engine_tick(*state);
+    CHECK(snapbacks_emitted == 2);
+    REQUIRE(state->latest_snapback().has_value());
     state->set_emit_hook(nullptr);
 }
 
