@@ -2136,7 +2136,12 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
               "       COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN"
               "         CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000))"
               "              - started_at) / 1000.0)) AS INTEGER)"
-              "         ELSE 0 END), 0) "
+              "         ELSE 0 END), 0),"
+              // Whether the LIMIT cut sessions the window would otherwise include. Counted
+              // against the full table rather than inferred from the capped count, so exactly
+              // `limit` matching sessions reads as complete, not as truncated.
+              "       (SELECT COUNT(*) FROM sessions"
+              "         WHERE started_at IS NOT NULL AND started_at >= ?2) > ?1 "
               "FROM recent WHERE started_at IS NOT NULL AND started_at >= ?2");
     stmt.bind(1, static_cast<std::int64_t>(limit));
     stmt.bind(2, started_after_ms);
@@ -2146,6 +2151,7 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
         out.completed_session_count =
             static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 1));
         out.focus_seconds = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 2));
+        out.limit_reached = sqlite3_column_int64(stmt.get(), 3) != 0;
     }
     return out;
 }

@@ -541,6 +541,8 @@ void to_json(json& j, const SummaryReport& v) {
              {"sessionCount", v.session_count},
              {"completedSessionCount", v.completed_session_count},
              {"focusSeconds", v.focus_seconds},
+             {"sessionLimit", v.session_limit},
+             {"sessionsTruncated", v.sessions_truncated},
              {"sampleCount", v.sample_count},
              {"avgFocusScore", v.avg_focus_score},
              {"distractedFraction", v.distracted_fraction},

@@ -189,6 +189,8 @@ export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
       raw.completed_session_count ?? raw.completedSessionCount ?? 0,
     ),
     focusSeconds: Number(raw.focus_seconds ?? raw.focusSeconds ?? 0),
+    sessionLimit: Number(raw.session_limit ?? raw.sessionLimit ?? 0),
+    sessionsTruncated: Boolean(raw.sessions_truncated ?? raw.sessionsTruncated ?? false),
     sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
     avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
     distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),

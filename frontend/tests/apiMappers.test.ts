@@ -172,6 +172,13 @@ const report = mapSummaryReport({
 assert.equal(report.window, "week");
 assert.equal(report.focusSeconds, 3600);
 assert.equal(report.completedSessionCount, 3);
+// The session cap defaults closed: an older backend that does not send it is not truncated.
+assert.equal(report.sessionLimit, 0);
+assert.equal(report.sessionsTruncated, false);
+assert.equal(
+  mapSummaryReport({ window: "all", sessionLimit: 500, sessionsTruncated: true }).sessionsTruncated,
+  true,
+);
 assert.equal(report.attendedSeconds, 1800);
 assert.equal(report.plannedMins, 120);
 

@@ -643,6 +643,8 @@ export class DemoBackend {
           sessionCount: sessions.length,
           completedSessionCount: sessions.filter((s) => s.endedAtMs !== null).length,
           focusSeconds: rows.filter((r) => r.focusState !== "DISTRACTED").length * 120,
+          sessionLimit: 500,
+          sessionsTruncated: false,
           sampleCount: rows.length,
           avgFocusScore: rows.length
             ? Math.round(rows.reduce((s, r) => s + r.focusScore, 0) / rows.length)

@@ -38,6 +38,15 @@ export const SummaryCard = memo(function SummaryCard({
   const attendedMins = Math.floor(report.attendedSeconds / 60);
   const showAttended = attendedMins > 0 || report.plannedMins > 0 || hasHistory;
 
+  // "Session time" is the wall clock of completed sessions, start to end -- it includes idle
+  // and distracted stretches and is not the model's focused time, which is why it is no longer
+  // labelled "Focus time". The session aggregates also read only the newest N sessions; when
+  // that cap bit, say so rather than let "All time" quietly mean "the latest 500".
+  const sessionDetail = (base?: string) => {
+    const cap = report.sessionsTruncated ? `latest ${report.sessionLimit} sessions only` : null;
+    return [base, cap].filter(Boolean).join(" · ") || undefined;
+  };
+
   return (
     <section className="card insights-card review-overview">
       <div className="card-header">
@@ -63,8 +72,12 @@ export const SummaryCard = memo(function SummaryCard({
                 }
               />
             ) : null}
-            <Tile value={formatDuration(report.focusSeconds)} label="Focus time" />
-            <Tile value={String(report.sessionCount)} label="Sessions" />
+            <Tile
+              value={formatDuration(report.focusSeconds)}
+              label="Session time"
+              detail={sessionDetail("completed, start to end")}
+            />
+            <Tile value={String(report.sessionCount)} label="Sessions" detail={sessionDetail()} />
             <Tile value={String(Math.round(report.avgFocusScore))} label="Avg focus" />
             <Tile value={formatFocusStretch(report.longestFocusSecs)} label={FOCUS_STRETCH_LABEL} />
           </div>

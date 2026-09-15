@@ -325,6 +325,7 @@ public:
         std::size_t session_count{};
         std::size_t completed_session_count{};
         std::uint64_t focus_seconds{};  // summed elapsed of the completed ones
+        bool limit_reached{};  // more sessions matched the window than `limit` allowed in
     };
 
     // Totals for sessions started at/after `started_after`, within the newest `limit`

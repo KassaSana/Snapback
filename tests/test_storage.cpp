@@ -2053,8 +2053,16 @@ TEST_CASE("SQL session-window totals match the summary loop they replaced") {
         CHECK(actual.focus_seconds == expected.focus_seconds);
     }
     // Not vacuous: the window really does exclude most of the fixture.
-    CHECK(storage->session_window_totals(500, cutoff).session_count > 0);
-    CHECK(storage->session_window_totals(500, cutoff).session_count < LargeFixture::kSessions);
+    const auto in_window = storage->session_window_totals(500, cutoff).session_count;
+    CHECK(in_window > 0);
+    CHECK(in_window < LargeFixture::kSessions);
+
+    // limit_reached is exact at the boundary: a limit equal to the matching population is
+    // complete, one below it is not. Inferring it from the capped count cannot tell these
+    // apart, which is why the query counts against the whole table.
+    CHECK_FALSE(storage->session_window_totals(500, cutoff).limit_reached);
+    CHECK_FALSE(storage->session_window_totals(in_window, cutoff).limit_reached);
+    CHECK(storage->session_window_totals(in_window - 1, cutoff).limit_reached);
 }
 
 TEST_CASE("the analytics aggregates run in a bounded number of queries") {

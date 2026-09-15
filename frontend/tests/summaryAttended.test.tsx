@@ -13,6 +13,8 @@ const baseReport = (overrides: Partial<SummaryReport> = {}): SummaryReport => ({
   sessionCount: 1,
   completedSessionCount: 1,
   focusSeconds: 3600,
+  sessionLimit: 500,
+  sessionsTruncated: false,
   sampleCount: 10,
   avgFocusScore: 70,
   distractedFraction: 0.1,
@@ -53,5 +55,31 @@ describe("SummaryCard attended comparison", () => {
     expect(screen.getByText("1h 30m")).toBeTruthy();
     expect(screen.getByText("measured, not scored")).toBeTruthy();
     expect(screen.queryByText(/planned/)).toBeNull();
+  });
+});
+
+describe("SummaryCard session time", () => {
+  it("labels completed-session wall clock as session time, not focus time", () => {
+    // The value is started-to-ended of completed sessions, idle and distracted stretches
+    // included. Calling it "Focus time" claimed a measurement the model never made.
+    render(
+      <SummaryCard exportStatus={null} onExport={() => {}} rangeLabel="Today" report={baseReport()} />,
+    );
+    expect(screen.getByText("Session time")).toBeTruthy();
+    expect(screen.queryByText("Focus time")).toBeNull();
+    expect(screen.getByText("completed, start to end")).toBeTruthy();
+    expect(screen.queryByText(/sessions only/)).toBeNull();
+  });
+
+  it("says when the session figures cover only the latest N", () => {
+    render(
+      <SummaryCard
+        exportStatus={null}
+        onExport={() => {}}
+        rangeLabel="All time"
+        report={baseReport({ window: "all", sessionCount: 500, sessionsTruncated: true })}
+      />,
+    );
+    expect(screen.getAllByText(/latest 500 sessions only/)).toHaveLength(2);
   });
 });

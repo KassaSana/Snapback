@@ -635,7 +635,16 @@ struct SummaryReport {
     std::int64_t generated_at_ms{};
     std::size_t session_count{};
     std::size_t completed_session_count{};
+    // Summed wall-clock duration of the *completed* sessions in the window: started-to-ended,
+    // including any idle or distracted stretch inside them. It is not the model's focused
+    // time (that is longest_focus_secs' arithmetic, in DailySummaryDay::focused_secs) and not
+    // attended time (attended_seconds). The wire name is historical; the label is not.
     std::uint64_t focus_seconds{};
+    // The session queries above read the newest `session_limit` sessions and filter those by
+    // the window. `sessions_truncated` is set when that cap was binding, so "All time" can say
+    // it is really "the latest 500" instead of silently omitting the rest.
+    std::size_t session_limit{};
+    bool sessions_truncated{};
     std::size_t sample_count{};
     double avg_focus_score{};
     double distracted_fraction{};

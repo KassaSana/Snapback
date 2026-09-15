@@ -45,6 +45,8 @@ const EMPTY_REPORT: SummaryReport = {
   sessionCount: 0,
   completedSessionCount: 0,
   focusSeconds: 0,
+  sessionLimit: 0,
+  sessionsTruncated: false,
   sampleCount: 0,
   avgFocusScore: 0,
   distractedFraction: 0,

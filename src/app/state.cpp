@@ -28,6 +28,10 @@
 namespace snapback {
 namespace {
 
+// How many of the newest sessions the Summary report's session aggregates read. Reported on
+// the wire as SummaryReport::session_limit so the UI can say when it was binding.
+constexpr std::size_t kSummarySessionLimit = 500;
+
 std::string lower_copy(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -1609,12 +1613,15 @@ SummaryReport AppState::summary_report(const std::string& window,
     // 0 is the epoch, which is before any session this app could have recorded. It used to be
     // spelled "1970-01-01T00:00:00Z" for the same reason.
     const std::int64_t session_floor_ms = cutoff_opt.value_or(0);
-    const auto totals = const_cast<Storage&>(storage_).session_window_totals(500, session_floor_ms);
+    const auto totals = const_cast<Storage&>(storage_).session_window_totals(
+        kSummarySessionLimit, session_floor_ms);
     report.session_count = totals.session_count;
     report.completed_session_count = totals.completed_session_count;
     report.focus_seconds = totals.focus_seconds;
-    const auto context_counts =
-        const_cast<Storage&>(storage_).context_app_counts(500, 200, cutoff_opt);
+    report.session_limit = kSummarySessionLimit;
+    report.sessions_truncated = totals.limit_reached;
+    const auto context_counts = const_cast<Storage&>(storage_).context_app_counts(
+        kSummarySessionLimit, 200, cutoff_opt);
     // Highest count wins, ties broken by the lexicographically smaller app name — same rule
     // as before, but tracking the running best directly instead of re-looking-it-up, since
     // the counts now arrive in a const map.

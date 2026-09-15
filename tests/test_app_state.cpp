@@ -1604,6 +1604,9 @@ TEST_CASE("AppState creates and exports day or week summary reports") {
     CHECK(report.window == "day");
     CHECK(report.session_count == 1);
     CHECK(report.sample_count == 1);
+    // The session cap is reported even when it did not bind, so the UI can name it.
+    CHECK(report.session_limit == 500);
+    CHECK_FALSE(report.sessions_truncated);
     // Roadmap 2.19: no target set yet, so planned is absent rather than a fake zero goal.
     CHECK(report.planned_mins == 0);
     CHECK_THROWS_AS(state->summary_report("month"), std::runtime_error);
@@ -2233,6 +2236,27 @@ TEST_CASE("starting a session discards the replaced session's pending span decis
     // The new session keeps the span that opened with it; the drain must not have disturbed
     // it either.
     CHECK(AppStateTestAccess::has_open_span(state, second.session_id));
+}
+
+TEST_CASE("the summary report says when its session cap was binding") {
+    // The session aggregates read the newest 500 sessions and filter those by the window, so
+    // "All time" over a longer history silently described only the latest 500. The number was
+    // never on the wire, so nothing downstream could say so. Now the report carries the cap
+    // and whether it bit.
+    auto state = make_state();
+    for (int i = 0; i < 500; ++i) {
+        const auto session = state->start_session("session " + std::to_string(i), FocusMode::Normal);
+        state->stop_session(session.session_id);
+    }
+    CHECK_FALSE(state->summary_report("all").sessions_truncated);
+
+    const auto extra = state->start_session("one more", FocusMode::Normal);
+    state->stop_session(extra.session_id);
+
+    const auto report = state->summary_report("all");
+    CHECK(report.session_limit == 500);
+    CHECK(report.session_count == 500);  // the cap, not the 501 that exist
+    CHECK(report.sessions_truncated);
 }
 
 TEST_CASE("the tick emits a snapback once and leaves it restorable") {

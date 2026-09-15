@@ -444,7 +444,16 @@ export type SummaryReport = {
   generatedAtMs: number;
   sessionCount: number;
   completedSessionCount: number;
+  /**
+   * Summed wall-clock duration of the completed sessions in the range, start to end, including
+   * idle or distracted time inside them. Not model-focused time and not attended time. The
+   * name is historical; label it as session time.
+   */
   focusSeconds: number;
+  /** The session aggregates read at most this many of the newest sessions. */
+  sessionLimit: number;
+  /** True when that cap was binding, so the session figures describe only the latest N. */
+  sessionsTruncated: boolean;
   sampleCount: number;
   avgFocusScore: number;
   distractedFraction: number;
