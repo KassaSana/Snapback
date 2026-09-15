@@ -293,6 +293,10 @@ jobs:
       # nothing is asserted against them -- CI runners are too noisy for a threshold.
       - name: Run hot-path micro-benchmarks
         timeout-minutes: 3
+        env:
+          # A tenth of the full sample counts: the contended-lock section at full scale
+          # does not finish inside the step timeout on a 2-vCPU runner.
+          SNAPBACK_HOTPATH_SCALE_PERCENT: "10"
         run: ./build/snapback_hotpath_benchmarks
 
   # ---------------------------------------------------------------------------

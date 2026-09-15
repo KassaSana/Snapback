@@ -8,9 +8,11 @@
 //
 // Zero-dependency <chrono> timing (see bench_util.hpp). Runs on whatever machine builds
 // it; numbers in the report are from the dev box, not fabricated.
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -39,6 +41,19 @@ namespace {
 // Sinks to keep the optimizer from deleting the work we're timing.
 volatile double g_double_sink = 0.0;
 volatile std::uint64_t g_int_sink = 0;
+
+// SNAPBACK_HOTPATH_SCALE_PERCENT shrinks every sample count so a slow or shared machine (a
+// 2-vCPU CI runner, where the contended-lock section alone ran past three minutes with a
+// writer thread hogging the lock) still finishes. 100 is the full run; CI uses 10. Per-op
+// latencies stay comparable; only the tail percentiles get coarser.
+std::size_t scaled(std::size_t full) {
+    static const int percent = [] {
+        const char* raw = std::getenv("SNAPBACK_HOTPATH_SCALE_PERCENT");
+        const int parsed = raw ? std::atoi(raw) : 100;
+        return std::clamp(parsed, 1, 100);
+    }();
+    return std::max<std::size_t>(1, full * static_cast<std::size_t>(percent) / 100);
+}
 
 CaptureEvent make_event(EventType type, double ts, std::string app, std::string title) {
     CaptureEvent e;
@@ -156,28 +171,32 @@ Stats measure_live_read_set(AppState& state, std::atomic<bool>& stop,
         const auto session = state.active_session();
         const auto snapback = state.latest_snapback();
         const auto classifier = state.classifier_status();
-        const auto permissions = state.refresh_permissions();
+        // refresh_permissions() is deliberately absent. It never touches the state lock,
+        // so it says nothing about contention -- and on Linux it shells out
+        // (`command -v xdotool` via std::system) on every call, which turned this loop
+        // into a quarter-million process spawns and ran CI's step past its timeout.
         const bool idle = state.is_idle();
         samples.push_back(t.elapsed_us());
         g_int_sink += health.capture_events_dropped + prediction.has_value() +
                       session.has_value() + snapback.has_value() +
-                      classifier.onnx_runtime_enabled + permissions.capture_available + idle;
+                      classifier.onnx_runtime_enabled + idle;
     }
     return summarize(std::move(samples), total.elapsed_ms());
 }
 
 void bench_lock_contention() {
-    constexpr std::size_t kReadSamples = 200000;
+    const std::size_t kReadSamples = scaled(200000);
+    const std::size_t kBaselineSamples = scaled(50000);
 
     // Baseline: reader alone, no writer holding the lock.
     {
         auto state = std::make_unique<AppState>(*Storage::open_memory());
         state->start_session("lock baseline", FocusMode::Normal);
         std::atomic<bool> stop{false};
-        print_stats("health read (uncontended)", 50000,
-                    measure_health_reader(*state, stop, 50000));
-        print_stats("live read set (uncontended)", 50000,
-                    measure_live_read_set(*state, stop, 50000));
+        print_stats("health read (uncontended)", kBaselineSamples,
+                    measure_health_reader(*state, stop, kBaselineSamples));
+        print_stats("live read set (uncontended)", kBaselineSamples,
+                    measure_live_read_set(*state, stop, kBaselineSamples));
     }
 
     // Contended: a writer thread hammers process_event_for_test (feature+classify under the
@@ -235,7 +254,7 @@ Stats persist_ticks(Storage& storage, std::size_t ticks) {
 }
 
 void bench_sqlite_persistence() {
-    constexpr std::size_t kTicks = 2000;
+    const std::size_t kTicks = scaled(2000);
 
     // On-disk DB: the real engine path (autocommit -> a durability sync per statement).
     const auto dir = std::filesystem::temp_directory_path() /
@@ -261,14 +280,17 @@ int main() {
     std::cout << "Snapback hot-path micro-benchmarks\n";
     std::cout << "(steady_clock, heuristic backend; latencies are per-op)\n\n";
 
-    std::cout << "-- 1. Producer (RingBuffer::push) --\n";
+    // Flushed per section: when stdout is a pipe (CI) it is block-buffered, and a section
+    // that hangs or is killed by a timeout would otherwise take every earlier result with it.
+    std::cout << "-- 1. Producer (RingBuffer::push) --" << std::endl;
     bench_producer_push();
-    std::cout << "\n-- 2. Consumer (drain 5k -> features -> classify) --\n";
+    std::cout << "\n-- 2. Consumer (drain 5k -> features -> classify) --" << std::endl;
     bench_consumer_drain();
-    std::cout << "\n-- 3. Lock contention (AppState reads vs writer) --\n";
+    std::cout << "\n-- 3. Lock contention (AppState reads vs writer) --" << std::endl;
     bench_lock_contention();
-    std::cout << "\n-- 4. SQLite persistence (per tick) --\n";
+    std::cout << "\n-- 4. SQLite persistence (per tick) --" << std::endl;
     bench_sqlite_persistence();
+    std::cout << std::flush;
 
     // Touch the sinks so they can't be optimized away.
     if (g_double_sink < 0.0 && g_int_sink == 0) std::cout << "unreachable\n";
