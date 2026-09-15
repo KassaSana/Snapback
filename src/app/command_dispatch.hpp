@@ -6,8 +6,10 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -162,6 +164,48 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
         // input straight back. The path that runs when something has already gone wrong is
         // the last one that should be able to fail.
         return dump_json(nlohmann::json{{"__snapback_error", e.what()}});
+    }
+}
+
+// Runs a slow command off the caller's thread, one at a time per gate. The webview binding
+// calls this with its `submit` bound to the AsyncCommandRunner and `resolve` bound to
+// w.resolve(id, ...); the test calls it with plain lambdas, which is why the two are
+// parameters rather than the webview and runner themselves.
+//
+// Three outcomes, each resolved exactly once: the gate was already held (busy_message as
+// an error envelope, without touching the worker); the runner refused the job because it
+// is shutting down (a shutdown error, gate released); or the job ran (handler result,
+// gate released after the handler returns and before the caller sees the result).
+//
+// The gate is per command family, not global: a personal export and a training export
+// contend on the same worker but not on each other's files, so one running must not report
+// the other as busy.
+inline void dispatch_single_flight(const std::function<bool(std::function<void()>)>& submit,
+                                   std::function<void(std::string)> resolve,
+                                   JsonHandler handler, std::string req,
+                                   std::string expected_token,
+                                   std::shared_ptr<std::atomic<bool>> active,
+                                   std::string busy_message) {
+    bool expected = false;
+    if (!active->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        const JsonHandler busy = [message = std::move(busy_message)](const nlohmann::json&)
+            -> nlohmann::json { throw std::runtime_error(message); };
+        resolve(run_json_command(busy, req, expected_token));
+        return;
+    }
+
+    const bool queued = submit([resolve, handler = std::move(handler), req, expected_token,
+                                active] {
+        const auto result = run_json_command(handler, req, expected_token);
+        active->store(false, std::memory_order_release);
+        resolve(result);
+    });
+    if (!queued) {
+        active->store(false, std::memory_order_release);
+        const JsonHandler stopping = [](const nlohmann::json&) -> nlohmann::json {
+            throw std::runtime_error("Snapback is shutting down");
+        };
+        resolve(run_json_command(stopping, req, expected_token));
     }
 }
 

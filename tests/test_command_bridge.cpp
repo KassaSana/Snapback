@@ -3,10 +3,14 @@
 // helpers. These are the seams the frontend depends on, minus the webview transport.
 #include "doctest_wrapper.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <functional>
 #include <future>
 #include <memory>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -52,6 +56,106 @@ TEST_CASE("AsyncCommandRunner leaves its caller responsive and joins active work
 
     release.set_value();
     runner.shutdown();
+}
+
+TEST_CASE("dispatch_single_flight runs the handler on the worker and releases the gate") {
+    auto gate = std::make_shared<std::atomic<bool>>(false);
+    std::vector<std::function<void()>> queued;
+    std::vector<std::string> resolved;
+    const auto submit = [&](std::function<void()> job) {
+        queued.push_back(std::move(job));
+        return true;
+    };
+    const auto resolve = [&](std::string result) { resolved.push_back(std::move(result)); };
+    const detail::JsonHandler handler = [](const json& a) {
+        return json{{"echo", a.value("x", 0)}};
+    };
+
+    detail::dispatch_single_flight(submit, resolve, handler, R"([{"x": 7}])", "", gate, "busy");
+
+    // Queued, not run: nothing is resolved yet and the gate is held.
+    REQUIRE(queued.size() == 1);
+    CHECK(resolved.empty());
+    CHECK(gate->load());
+
+    queued.front()();
+    REQUIRE(resolved.size() == 1);
+    CHECK(json::parse(resolved.front()) == json{{"echo", 7}});
+    CHECK_FALSE(gate->load());
+}
+
+TEST_CASE("dispatch_single_flight reports busy without queueing while the gate is held") {
+    auto gate = std::make_shared<std::atomic<bool>>(true);
+    std::size_t submissions = 0;
+    std::vector<std::string> resolved;
+    const auto submit = [&](std::function<void()>) {
+        ++submissions;
+        return true;
+    };
+    const auto resolve = [&](std::string result) { resolved.push_back(std::move(result)); };
+
+    detail::dispatch_single_flight(submit, resolve, [](const json&) { return json(1); },
+                                   "[{}]", "", gate, "export is already in progress");
+
+    CHECK(submissions == 0);
+    REQUIRE(resolved.size() == 1);
+    CHECK(json::parse(resolved.front())["__snapback_error"] == "export is already in progress");
+    CHECK(gate->load());  // still held by the job that owns it
+}
+
+TEST_CASE("dispatch_single_flight releases the gate when the runner is shutting down") {
+    auto gate = std::make_shared<std::atomic<bool>>(false);
+    std::vector<std::string> resolved;
+    const auto refuse = [](std::function<void()>) { return false; };
+    const auto resolve = [&](std::string result) { resolved.push_back(std::move(result)); };
+
+    detail::dispatch_single_flight(refuse, resolve, [](const json&) { return json(1); },
+                                   "[{}]", "", gate, "busy");
+
+    REQUIRE(resolved.size() == 1);
+    CHECK(json::parse(resolved.front())["__snapback_error"] == "Snapback is shutting down");
+    // A refused job must not leave the family locked out for the rest of the process.
+    CHECK_FALSE(gate->load());
+}
+
+TEST_CASE("dispatch_single_flight releases the gate even when the handler throws") {
+    auto gate = std::make_shared<std::atomic<bool>>(false);
+    std::vector<std::function<void()>> queued;
+    std::vector<std::string> resolved;
+    const auto submit = [&](std::function<void()> job) {
+        queued.push_back(std::move(job));
+        return true;
+    };
+    const auto resolve = [&](std::string result) { resolved.push_back(std::move(result)); };
+
+    detail::dispatch_single_flight(
+        submit, resolve,
+        [](const json&) -> json { throw std::runtime_error("disk full"); }, "[{}]", "", gate,
+        "busy");
+    queued.front()();
+
+    REQUIRE(resolved.size() == 1);
+    CHECK(json::parse(resolved.front())["__snapback_error"] == "disk full");
+    CHECK_FALSE(gate->load());
+}
+
+TEST_CASE("dispatch_single_flight gates are independent per command family") {
+    auto training = std::make_shared<std::atomic<bool>>(true);  // a training export running
+    auto personal = std::make_shared<std::atomic<bool>>(false);
+    std::vector<std::function<void()>> queued;
+    std::vector<std::string> resolved;
+    const auto submit = [&](std::function<void()> job) {
+        queued.push_back(std::move(job));
+        return true;
+    };
+    const auto resolve = [&](std::string result) { resolved.push_back(std::move(result)); };
+
+    detail::dispatch_single_flight(submit, resolve, [](const json&) { return json("ok"); },
+                                   "[{}]", "", personal, "busy");
+    REQUIRE(queued.size() == 1);
+    CHECK(training->load());
+    queued.front()();
+    CHECK(json::parse(resolved.front()) == json("ok"));
 }
 
 TEST_CASE("run_json_command unwraps the [args] array and dumps the handler result") {

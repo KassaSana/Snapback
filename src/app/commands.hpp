@@ -61,9 +61,31 @@ inline void register_commands(webview::webview& w, AppState& state,
                                                   detail::JsonHandler handler) {
         detail::bind_cmd(w, name, std::move(handler), capability_token);
     };
+    // Commands that read the whole database or write large files run on the owned worker so
+    // a slow disk cannot freeze the window. Each family has its own single-flight gate.
+    const auto bind_async_cmd = [&w, &async_commands, &capability_token](
+                                    const std::string& name, detail::JsonHandler handler,
+                                    std::shared_ptr<std::atomic<bool>> gate,
+                                    std::string busy_message) {
+        w.bind(
+            name,
+            [&w, &async_commands, handler = std::move(handler), capability_token,
+             gate = std::move(gate), busy_message = std::move(busy_message)](
+                std::string id, std::string req, void*) {
+                detail::dispatch_single_flight(
+                    [&async_commands](std::function<void()> job) {
+                        return async_commands.submit(std::move(job));
+                    },
+                    [&w, id](std::string result) { w.resolve(id, 0, std::move(result)); },
+                    handler, std::move(req), capability_token, gate, busy_message);
+            },
+            nullptr);
+    };
     // The export worker and the UI thread both touch this gate. Training consumes the files
     // and privacy deletion erases them, so neither may overlap a partially written pair.
     const auto training_export_active = std::make_shared<std::atomic<bool>>(false);
+    // Personal exports write one archive; two at once would race on the same path.
+    const auto personal_export_active = std::make_shared<std::atomic<bool>>(false);
 
     // --- Health + predictions ---
     bind_cmd("get_health", [&state](const json&) { return json(state.health()); });
@@ -384,42 +406,14 @@ inline void register_commands(webview::webview& w, AppState& state,
              [&state](const json&) { return json(state.request_permissions()); });
 
     // --- Training data export ---
-    detail::JsonHandler export_training = [&state, data_dir](const json& a) {
-        const auto out_dir = data_dir / "exports" / "training";
-        return json(state.export_training_data(out_dir, detail::opt_string(a, "sessionId")));
-    };
-    w.bind(
+    bind_async_cmd(
         "export_training_data",
-        [&w, &async_commands, export_training = std::move(export_training), capability_token,
-         training_export_active](std::string id, std::string req, void*) {
-            bool expected = false;
-            if (!training_export_active->compare_exchange_strong(
-                    expected, true, std::memory_order_acq_rel)) {
-                const detail::JsonHandler busy = [](const json&) -> json {
-                    throw std::runtime_error("training export is already in progress");
-                };
-                w.resolve(id, 0, detail::run_json_command(busy, req, capability_token));
-                return;
-            }
-
-            const bool queued = async_commands.submit(
-                [&w, id, req, export_training,
-                 capability_token, training_export_active] {
-                    const auto result =
-                        detail::run_json_command(export_training, req, capability_token);
-                    training_export_active->store(false, std::memory_order_release);
-                    w.resolve(id, 0, result);
-                });
-            if (!queued) {
-                training_export_active->store(false, std::memory_order_release);
-                const detail::JsonHandler stopping = [](const json&) -> json {
-                    throw std::runtime_error("Snapback is shutting down");
-                };
-                w.resolve(id, 0,
-                          detail::run_json_command(stopping, req, capability_token));
-            }
+        [&state, data_dir](const json& a) {
+            const auto out_dir = data_dir / "exports" / "training";
+            return json(
+                state.export_training_data(out_dir, detail::opt_string(a, "sessionId")));
         },
-        nullptr);
+        training_export_active, "training export is already in progress");
 
     // Roadmap 9.14. The missing direction. `inspect` is read-only and exists so the
     // confirmation can state what the user is about to adopt *and* what they are about to lose;
@@ -461,21 +455,27 @@ inline void register_commands(webview::webview& w, AppState& state,
     // Roadmap 7.6: the legible counterpart to export_training_data. Separate command and
     // separate directory because they answer different questions and have different audiences
     // — one is for a training script, this one is for the person being recorded.
-    bind_cmd("export_my_data", [&state, data_dir](const json&) {
-        const auto result = state.export_personal_data(data_dir / "exports" / "personal");
-        // Roadmap 9.16. Per-record-type omission counts and the body checksum travel with the
-        // path. `truncated` is derived from the counts rather than being its own field, so the
-        // old failure -- reporting a complete export after dropping windows from an included
-        // session -- cannot be expressed on the wire either.
-        return json{{"outputPath", result.output_path},
-                    {"sessionCount", result.session_count},
-                    {"windowCount", result.window_count},
-                    {"episodeCount", result.episode_count},
-                    {"omittedSessions", result.omitted_sessions},
-                    {"omittedWindows", result.omitted_windows},
-                    {"checksum", result.checksum},
-                    {"truncated", result.truncated()}};
-    });
+    // Reads every session, window, and episode the user has and writes them out. That was a
+    // synchronous binding, so a long history on a slow disk held the UI thread for the whole
+    // write; it now runs on the same worker the training export uses, behind its own gate.
+    bind_async_cmd(
+        "export_my_data",
+        [&state, data_dir](const json&) {
+            const auto result = state.export_personal_data(data_dir / "exports" / "personal");
+            // Roadmap 9.16. Per-record-type omission counts and the body checksum travel with
+            // the path. `truncated` is derived from the counts rather than being its own
+            // field, so the old failure -- reporting a complete export after dropping windows
+            // from an included session -- cannot be expressed on the wire either.
+            return json{{"outputPath", result.output_path},
+                        {"sessionCount", result.session_count},
+                        {"windowCount", result.window_count},
+                        {"episodeCount", result.episode_count},
+                        {"omittedSessions", result.omitted_sessions},
+                        {"omittedWindows", result.omitted_windows},
+                        {"checksum", result.checksum},
+                        {"truncated", result.truncated()}};
+        },
+        personal_export_active, "personal data export is already in progress");
 
     // --- Training pipeline ---
     bind_cmd("get_training_deploy_status", [data_dir](const json&) {

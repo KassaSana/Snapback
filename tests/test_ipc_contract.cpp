@@ -38,11 +38,12 @@ std::set<std::string> load_expected_commands() {
 
 std::set<std::string> extract_bind_commands(const std::string& source) {
     std::set<std::string> out;
-    // Most commands use the synchronous bind_cmd wrapper. The training export deliberately
-    // uses webview's asynchronous overload directly so its callback can return to the UI loop
-    // before the worker finishes. Both are part of the same IPC contract.
+    // Most commands use the synchronous bind_cmd wrapper. Slow ones (the exports) go through
+    // bind_async_cmd, which wraps webview's asynchronous overload so the callback returns to
+    // the UI loop before the worker finishes. A direct w.bind is still recognised so a
+    // one-off registration cannot slip out of the contract. All are the same IPC surface.
     static const std::regex pattern(
-        R"re((?:\bbind_cmd|\bw\.bind)\(\s*"([a-z0-9_]+)")re");
+        R"re((?:\bbind_cmd|\bbind_async_cmd|\bw\.bind)\(\s*"([a-z0-9_]+)")re");
     std::sregex_iterator it(source.begin(), source.end(), pattern);
     const std::sregex_iterator end;
     for (; it != end; ++it) {
