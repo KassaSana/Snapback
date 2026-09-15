@@ -23,8 +23,16 @@ export const useLiveData = () => {
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
   const lastTimelineRefreshAtRef = useRef<number | null>(null);
+  // Request generations, the pattern useReviewWorkflow already uses. A timeline or latest
+  // read that resolves after a session switch or an activity clear used to land on top of
+  // the newer state and restore rows from a session that is over (or was just deleted).
+  // Every read takes a ticket; a result is applied only if its ticket is still current, and
+  // anything that resets the state also retires every ticket in flight.
+  const timelineRequestRef = useRef(0);
+  const latestRequestRef = useRef(0);
 
   const refreshContextTimeline = useCallback(async (sid?: string | null) => {
+    const requestId = ++timelineRequestRef.current;
     if (!sid) {
       setContextTimeline([]);
       return;
@@ -33,9 +41,11 @@ export const useLiveData = () => {
     lastTimelineRefreshAtRef.current = Date.now();
     try {
       const rows = await api.getContextTimeline(sid, TIMELINE_LIMIT);
+      if (requestId !== timelineRequestRef.current) return;
       setContextTimeline(rows);
     } catch {
-      setContextTimeline([]);
+      // A failed read is not an empty timeline. Leave what is on screen rather than replace
+      // it with "nothing happened"; the health card is where the failure is reported.
     }
   }, []);
 
@@ -63,15 +73,19 @@ export const useLiveData = () => {
   }, []);
 
   const refreshLatest = useCallback(async () => {
+    const requestId = ++latestRequestRef.current;
     try {
       const latest = await api.getLatestPrediction();
+      if (requestId !== latestRequestRef.current) return;
       pushPrediction(latest);
       const history = await api.getPredictionHistory(HISTORY_LIMIT);
+      if (requestId !== latestRequestRef.current) return;
       if (history.length > 0) {
         setPredictionHistory(history);
       }
     } catch {
-      pushPrediction(null);
+      // Same rule as the timeline: a read that failed says nothing about the prediction, so
+      // it must not be shown as "no prediction".
     }
   }, [pushPrediction]);
 
@@ -167,6 +181,10 @@ export const useLiveData = () => {
   }, []);
 
   const clearActivityData = useCallback(() => {
+    // Retire every read in flight first: a timeline fetched a moment before the user cleared
+    // their activity must not resolve into the empty state and bring the rows back.
+    ++timelineRequestRef.current;
+    ++latestRequestRef.current;
     setPrediction(null);
     setPredictionHistory([]);
     setHyperfocusNote(null);
