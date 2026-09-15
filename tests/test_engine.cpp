@@ -4,6 +4,7 @@
 #include "engine/app_context.hpp"
 #include "engine/classifier.hpp"
 #include "engine/features.hpp"
+#include "engine/idle_detector.hpp"
 
 using namespace snapback;
 
@@ -210,6 +211,19 @@ TEST_CASE("feature extractor trims 30s window while keeping 5min history") {
 
     CHECK(features.context_switches_30s() == doctest::Approx(1.0));
     CHECK(features.context_switches_5min() == doctest::Approx(3.0));
+}
+
+TEST_CASE("idle detector remembers how long the stretch that just ended lasted") {
+    IdleDetector detector(1000);
+    CHECK(detector.last_idle_duration_ms() == 0);
+    detector.on_activity(10'000);
+    CHECK(detector.poll(11'000) == IdleTransition::WentIdle);
+    CHECK(detector.on_activity(14'500) == IdleTransition::WokeUp);
+    // From the last input before the stretch to the input that ended it, threshold included.
+    CHECK(detector.last_idle_duration_ms() == 4'500);
+    // Ordinary activity while awake does not disturb the recorded stretch.
+    CHECK(detector.on_activity(14'600) == IdleTransition::None);
+    CHECK(detector.last_idle_duration_ms() == 4'500);
 }
 
 TEST_CASE("feature extractor resets break timer after long idle") {

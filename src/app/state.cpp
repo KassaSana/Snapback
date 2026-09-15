@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <algorithm>
+#include <limits>
 #include <cctype>
 #include <ctime>
 #include <fstream>
@@ -377,6 +378,31 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     const bool was_idle = idle_;
     idle_ = now_idle;
     if (idle_ != was_idle) live_read_dirty_ = true;
+
+    // Hand the idle stretch to the feature extractor as the one IdleEnd event the training
+    // fixtures describe (fixtures/feature_parity: a single idle_end carrying the whole
+    // duration, no idle_start). The extractor has always reset its break clock on such an
+    // event and summed idle_duration_ms into idle_time_30s / idle_event_count_5min -- but
+    // nothing in production ever produced one, so minutes_since_last_break kept counting
+    // through every real break and the hyperfocus nudge could fire on someone who had just
+    // come back from lunch. Synthetic feature tests passed because they fed the event
+    // themselves.
+    //
+    // Stamped with the event clock, not the tick clock: the extractor's windows are trimmed
+    // against event timestamps, and the two clocks are different (GetTickCount64 vs
+    // steady_clock on Windows). `last_event_secs_` is the input that woke us -- compute_event
+    // records it before the AFK early-return drops the event -- so it is exactly the moment
+    // the idle stretch ended. Ingested only while a session is running, matching the AFK
+    // freeze's rule that features exist for sessions.
+    if (edge == IdleTransition::WokeUp && active_session_ && last_event_secs_ > 0.0) {
+        CaptureEvent idle_end;
+        idle_end.event_type = EventType::IdleEnd;
+        idle_end.timestamp_secs = last_event_secs_;
+        idle_end.idle_duration_ms = static_cast<std::uint32_t>(std::min<std::int64_t>(
+            idle_detector_.last_idle_duration_ms(), std::numeric_limits<std::uint32_t>::max()));
+        idle_end.app_name = last_capture_app_;
+        features_.ingest(idle_end);
+    }
     return edge;
 }
 
@@ -389,6 +415,11 @@ IdleTransition AppState::update_idle_for_test(std::int64_t now_ms, bool had_inpu
     const auto transition = update_idle_unlocked(now_ms, had_input);
     publish_live_read_unlocked();
     return transition;
+}
+
+FeatureVector AppState::extract_features_for_test(double now_secs) {
+    std::lock_guard lock(mutex_);
+    return features_.extract(now_secs, app_rules_);
 }
 
 PomodoroStatus AppState::start_pomodoro_unlocked(std::int64_t now_ms) {

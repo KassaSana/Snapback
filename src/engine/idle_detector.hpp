@@ -33,13 +33,23 @@ public:
 
     // Record real user input observed at `now_ms`. Wakes the detector if it was idle.
     IdleTransition on_activity(std::int64_t now_ms) {
+        const std::int64_t gap_ms = std::max<std::int64_t>(0, now_ms - last_activity_ms_);
         last_activity_ms_ = now_ms;
         seen_activity_ = true;
         if (state_ == IdleState::Idle) {
             state_ = IdleState::Active;
+            last_idle_duration_ms_ = gap_ms;
             return IdleTransition::WokeUp;
         }
         return IdleTransition::None;
+    }
+
+    // How long the stretch that ended with the most recent WokeUp lasted, measured from the
+    // last input before it to the input that ended it (so it includes the threshold, not
+    // just the part after detection). The feature extractor's break bookkeeping wants this
+    // number on the IdleEnd event; 0 until the first wake.
+    [[nodiscard]] std::int64_t last_idle_duration_ms() const noexcept {
+        return last_idle_duration_ms_;
     }
 
     // Advance time with no new input. Returns WentIdle exactly once, on the tick that
@@ -79,6 +89,7 @@ public:
 private:
     std::int64_t threshold_ms_;
     std::int64_t last_activity_ms_ = 0;
+    std::int64_t last_idle_duration_ms_ = 0;
     IdleState state_ = IdleState::Active;
     bool seen_activity_ = false;
 };

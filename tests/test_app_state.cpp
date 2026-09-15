@@ -302,6 +302,50 @@ TEST_CASE("AppState idle wiring goes AFK after the threshold and wakes on input"
     CHECK_FALSE(state->is_idle());
 }
 
+TEST_CASE("coming back from idle reaches the feature extractor as one IdleEnd event") {
+    // FeatureExtractor resets its break clock on an IdleEnd whose duration clears the break
+    // threshold, and sums idle time into two model inputs. Production idle detection emitted
+    // its edges to the UI and nowhere else, so none of that ever ran outside synthetic
+    // tests: minutes_since_last_break counted through every real break, and the hyperfocus
+    // nudge could fire on someone who had just returned from lunch.
+    auto state = make_state();
+    state->start_session("write the migration", FocusMode::Normal);
+
+    // Ten minutes of typing, on the event clock, seeds the session and the break clock.
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 0.0, "Cursor"));
+    AppStateTestAccess::update_idle(*state, 0, /*had_input=*/true);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 600.0, "Cursor"));
+    AppStateTestAccess::update_idle(*state, 600'000, true);
+    CHECK(AppStateTestAccess::extract_features(*state, 600.0).minutes_since_last_break() ==
+          doctest::Approx(10.0));
+
+    // Away for 20 minutes: AFK after the threshold, then input at the 20-minute mark.
+    // The waking event itself is dropped by the AFK freeze; the wake edge is what carries
+    // the stretch into the extractor.
+    AppStateTestAccess::update_idle(*state, 600'000 + kDefaultIdleThresholdMs, false);
+    REQUIRE(state->is_idle());
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1800.0, "Cursor"));
+    CHECK(AppStateTestAccess::update_idle(*state, 1'800'000, true) == IdleTransition::WokeUp);
+
+    const auto features = AppStateTestAccess::extract_features(*state, 1800.0);
+    CHECK(features.idle_event_count_5min() == doctest::Approx(1.0));
+    // The whole stretch, threshold included: from the last keystroke to the one that woke us.
+    CHECK(features.idle_time_30s() == doctest::Approx(1200.0));
+    // And the break clock restarted at the wake, not at the last keystroke.
+    CHECK(features.minutes_since_last_break() == doctest::Approx(0.0));
+}
+
+TEST_CASE("an idle stretch with no session running feeds the extractor nothing") {
+    auto state = make_state();
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 0.0, "Cursor"));
+    AppStateTestAccess::update_idle(*state, 0, true);
+    AppStateTestAccess::update_idle(*state, kDefaultIdleThresholdMs, false);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 900.0, "Cursor"));
+    CHECK(AppStateTestAccess::update_idle(*state, 900'000, true) == IdleTransition::WokeUp);
+    CHECK(AppStateTestAccess::extract_features(*state, 900.0).idle_event_count_5min() ==
+          doctest::Approx(0.0));
+}
+
 TEST_CASE("going idle pauses the session and coming back resumes it") {
     // Roadmap 7.23 / ADR-0005. This is the action idle_detector.hpp documented from the start
     // ("5 minutes of no input pauses the session") and never performed -- the edges only ever

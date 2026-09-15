@@ -336,6 +336,9 @@ private:
     // the last step) and return the edge.
     IdleTransition update_idle_for_test(std::int64_t now_ms, bool had_input);
     std::optional<PomodoroStatus> update_pomodoro_for_test(std::int64_t now_ms);
+    // The feature vector the classifier would see at `now_secs` (event clock). Lets a test
+    // assert what reached the model without reverse-engineering it from a prediction.
+    FeatureVector extract_features_for_test(double now_secs);
 
     // Drops a span decision phase 1 has recorded but no tick has drained yet. `session_id`
     // nullopt drops whatever is pending. Requires mutex_.

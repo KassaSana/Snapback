@@ -56,6 +56,10 @@ struct AppStateTestAccess {
         return state.update_pomodoro_for_test(now_ms);
     }
 
+    static FeatureVector extract_features(AppState& state, double now_secs) {
+        return state.extract_features_for_test(now_secs);
+    }
+
     // One synchronous turn of the real engine tick — the same function the engine thread
     // runs, not a reimplementation. Roadmap 7.23 needed it because session pause/resume is
     // driven by the tick's idle edges, so testing it through `update_idle_for_test` alone
