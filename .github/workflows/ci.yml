@@ -5,7 +5,7 @@ name: CI
 #   - the same core on Windows with MinGW-w64 GCC, the toolchain 11.8's bug lived in
 #   - AddressSanitizer + UBSan on the manual-memory paths (ring buffer, locks, RAII)
 #   - the ONNX inference backend on Linux (vendored runtime + fixture model)
-#   - the benchmark harness (short smoke run)
+#   - the benchmark harness (short smoke run) and the hot-path micro-benchmarks
 #   - frontend dependency vulnerability audit
 #   - the React frontend (typecheck + tests + build)
 #   - the Windows desktop app (no-launch integration smoke)
@@ -278,14 +278,22 @@ jobs:
       - name: Configure (benchmarks on)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_BENCHMARKS=ON
 
-      - name: Build benchmark
-        run: cmake --build build --config Release --target snapback_benchmarks
+      - name: Build benchmarks
+        run: cmake --build build --config Release --target snapback_benchmarks snapback_hotpath_benchmarks
 
       - name: Run short benchmark
         timeout-minutes: 3
         env:
           SNAPBACK_BENCH_MINUTES: "5"
         run: ./build/snapback_benchmarks
+
+      # The hot-path micro-benchmarks (ring push, drain->features->classify, lock
+      # contention, SQLite tick) finish in a few seconds. Built and run here so the
+      # target cannot rot unnoticed and the numbers land in the job log for comparison;
+      # nothing is asserted against them -- CI runners are too noisy for a threshold.
+      - name: Run hot-path micro-benchmarks
+        timeout-minutes: 3
+        run: ./build/snapback_hotpath_benchmarks
 
   # ---------------------------------------------------------------------------
   # Reused React frontend: typecheck, unit/component tests, production build.
