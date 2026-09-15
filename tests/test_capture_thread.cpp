@@ -17,6 +17,10 @@
 #include "capture/capture_thread.hpp"
 #include "capture/input_context.hpp"
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 using namespace snapback;
 
 namespace {
@@ -147,6 +151,26 @@ TEST_CASE("input context fails closed when the foreground window changes") {
     CHECK_FALSE(detail::context_matches_foreground(nullptr, &captured_window, true));
     CHECK_FALSE(detail::context_matches_foreground(&captured_window, &captured_window, false));
 }
+
+#if defined(_WIN32)
+TEST_CASE("Windows mouse messages map to one click per press and nothing for release or wheel") {
+    // The hook used to classify every non-move message as a click, so a single physical
+    // click (down + up) counted twice in mouse_click_count and each wheel notch counted as a
+    // click too. The set that survives is the one the macOS tap mask captures.
+    CHECK(detail::classify_mouse_message(WM_MOUSEMOVE) == EventType::MouseMove);
+    CHECK(detail::classify_mouse_message(WM_LBUTTONDOWN) == EventType::MouseClick);
+    CHECK(detail::classify_mouse_message(WM_RBUTTONDOWN) == EventType::MouseClick);
+    CHECK(detail::classify_mouse_message(WM_MBUTTONDOWN) == EventType::MouseClick);
+    CHECK(detail::classify_mouse_message(WM_XBUTTONDOWN) == EventType::MouseClick);
+
+    CHECK(detail::classify_mouse_message(WM_LBUTTONUP) == std::nullopt);
+    CHECK(detail::classify_mouse_message(WM_RBUTTONUP) == std::nullopt);
+    CHECK(detail::classify_mouse_message(WM_MBUTTONUP) == std::nullopt);
+    CHECK(detail::classify_mouse_message(WM_XBUTTONUP) == std::nullopt);
+    CHECK(detail::classify_mouse_message(WM_MOUSEWHEEL) == std::nullopt);
+    CHECK(detail::classify_mouse_message(WM_MOUSEHWHEEL) == std::nullopt);
+}
+#endif
 
 TEST_CASE("CaptureThread drains hook events in FIFO order") {
     ScriptedHook hook(10);

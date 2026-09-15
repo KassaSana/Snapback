@@ -10,9 +10,25 @@
 #include <atomic>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <windows.h>
 
 namespace snapback {
+
+std::optional<EventType> detail::classify_mouse_message(unsigned message) {
+    switch (message) {
+        case WM_MOUSEMOVE:
+            return EventType::MouseMove;
+        case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN:
+        case WM_XBUTTONDOWN:
+            return EventType::MouseClick;
+        default:
+            return std::nullopt;
+    }
+}
+
 namespace {
 
 // Low-level hooks are process-global and the callback signature carries no user
@@ -89,12 +105,13 @@ LRESULT CALLBACK mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
                                                 static_cast<bool>(g_cached_context))) {
             return CallNextHookEx(nullptr, code, wparam, lparam);
         }
+        const auto event_type = detail::classify_mouse_message(static_cast<unsigned>(wparam));
+        if (!event_type) return CallNextHookEx(nullptr, code, wparam, lparam);
         const auto* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
         CaptureEvent ev;
         ev.timestamp_secs = now_secs();
         ev.wall_clock_secs = wall_clock_secs_now();
-        ev.event_type = (wparam == WM_MOUSEMOVE) ? EventType::MouseMove
-                                                 : EventType::MouseClick;
+        ev.event_type = *event_type;
         if (info) {
             ev.mouse_x = info->pt.x;
             ev.mouse_y = info->pt.y;
