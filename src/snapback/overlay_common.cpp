@@ -90,6 +90,12 @@ bool overlay_action_hit(ScreenPoint card_size, int dpi, ScreenPoint click) {
 
 const char* overlay_action_label() { return "Take me back"; }
 
+void settle_overlay_action(const std::function<bool()>& on_action,
+                           const std::function<void()>& on_dismiss) {
+    const bool acted = on_action && on_action();
+    if (!acted && on_dismiss) on_dismiss();
+}
+
 std::string overlay_text(const SnapbackPayload& payload) {
     std::string out = "Here's where you left off\n\n";
     out += payload.summary.empty() ? ("Return to " + payload.app_name) : payload.summary;

@@ -25,6 +25,7 @@
 #include "app/command_dispatch.hpp"
 #include "app/settings.hpp"
 #include "app/state.hpp"
+#include "snapback/overlay.hpp"
 #include "capture/permissions.hpp"
 #include "app_state_test_access.hpp"
 #include "manual_clock.hpp"
@@ -3794,6 +3795,76 @@ TEST_CASE("a clicked alert can be acted on once and then not again") {
     CHECK(state.claim_alert_action(AlertEvent::Snapback, id));
     CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, id));
     CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback, id));
+}
+
+TEST_CASE("the overlay's Take me back keeps a failed restore's target") {
+    // The native card's click runs the same three steps main.cpp wires: claim the outstanding
+    // alert, restore, then settle. Before settle_overlay_action the card always ran its dismiss
+    // callback after the action, and dismiss_snapback clears the payload -- so the retry
+    // target that restore_snapback_target had just preserved was gone one line later. The
+    // IPC button never had this problem, which is why the AppState-level test above passed
+    // while the overlay path stayed broken.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    REQUIRE(emitted_alert_id(state, "snapback") > 0);
+    REQUIRE(state.latest_snapback().has_value());
+
+    FocusTargetResult restore;
+    settle_overlay_action(
+        [&] {
+            const auto id = state.outstanding_alert_id(AlertEvent::Snapback);
+            if (!state.claim_alert_action(AlertEvent::Snapback, id)) return false;
+            restore = state.restore_snapback_target();
+            return true;
+        },
+        [&] { state.dismiss_snapback(); });
+
+    if (restore.ok) {
+        // Only on a developer machine with that window open. Success consumes the target.
+        CHECK(state.latest_snapback() == std::nullopt);
+    } else {
+        REQUIRE(state.latest_snapback().has_value());
+        CHECK(state.latest_snapback()->app_name == "Cursor");
+    }
+    // Either way the click was consumed, and the tracker is not left latched: the next
+    // episode produces a new snapback rather than being suppressed.
+    CHECK_FALSE(state.claim_alert_action(AlertEvent::Snapback,
+                                         state.outstanding_alert_id(AlertEvent::Snapback)));
+    drift_and_return(state, 150.0, 200.0);
+    CHECK(emitted_alert_id(state, "snapback") > 0);
+}
+
+TEST_CASE("a stale overlay click still dismisses the card") {
+    // Nothing to claim means restore never runs, so the dismiss callback is the only thing
+    // left that returns the tracker from Recovering.
+    ManualClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    state.start_session("implement the classifier", FocusMode::Normal);
+
+    AppStateTestAccess::process_event(
+        state, ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"));
+    drift_and_return(state, 101.0, 140.0);
+    const auto id = emitted_alert_id(state, "snapback");
+    REQUIRE(state.claim_alert_action(AlertEvent::Snapback, id));  // an earlier click used it
+
+    int dismissed = 0;
+    settle_overlay_action(
+        [&] { return state.claim_alert_action(AlertEvent::Snapback, id); },
+        [&] {
+            ++dismissed;
+            state.dismiss_snapback();
+        });
+    CHECK(dismissed == 1);
+    CHECK(state.latest_snapback() == std::nullopt);
 }
 
 TEST_CASE("a newer alert of the same kind retires the older one's claim") {

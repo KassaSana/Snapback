@@ -331,3 +331,32 @@ TEST_CASE("the button label is one definition") {
     // one word and another platform draw a different one.
     CHECK(std::string(overlay_action_label()) == "Take me back");
 }
+
+TEST_CASE("settling an acted-on card leaves the dismiss callback alone") {
+    // The action owns the alert's lifecycle once it runs: restore_snapback_target unlatches
+    // the tracker itself and keeps the payload when the activation fails. A dismiss on top
+    // of that would clear the target the frontend is about to offer a retry for.
+    int acted = 0;
+    int dismissed = 0;
+    settle_overlay_action([&] { ++acted; return true; }, [&] { ++dismissed; });
+    CHECK(acted == 1);
+    CHECK(dismissed == 0);
+}
+
+TEST_CASE("settling a card nothing acted on falls back to dismissing it") {
+    // A stale or already-used alert id claims nothing and restore never runs, so the dismiss
+    // callback is the only remaining exit from ContextTracker's Recovering state.
+    int acted = 0;
+    int dismissed = 0;
+    settle_overlay_action([&] { ++acted; return false; }, [&] { ++dismissed; });
+    CHECK(acted == 1);
+    CHECK(dismissed == 1);
+}
+
+TEST_CASE("settling a card with no action callback still dismisses") {
+    // The macOS panel stores the action callback but does not wire a region for it yet, and
+    // the stub never fires either. Neither may leave the tracker latched.
+    int dismissed = 0;
+    settle_overlay_action(nullptr, [&] { ++dismissed; });
+    CHECK(dismissed == 1);
+}

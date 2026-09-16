@@ -42,13 +42,13 @@ public:
     // Roadmap 2.16. Stored and never invoked, for the same reason as the dismiss callback
     // above: there is no card, so there is no region to click. The web UI's own "Take me back"
     // button reaches restore_snapback_target over IPC, so the action itself is not lost here.
-    void set_action_callback(std::function<void()> on_action) override {
+    void set_action_callback(std::function<bool()> on_action) override {
         on_action_ = std::move(on_action);
     }
 
 private:
     std::function<void()> on_dismiss_;
-    std::function<void()> on_action_;
+    std::function<bool()> on_action_;
 };
 
 }  // namespace

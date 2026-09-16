@@ -144,7 +144,7 @@ public:
     // string with no hit regions, so adding "Take me back" here is a panel-layout change
     // rather than a callback change. Windows carries the feature today; this is where the
     // macOS half attaches when that layout work happens.
-    void set_action_callback(std::function<void()> on_action) override {
+    void set_action_callback(std::function<bool()> on_action) override {
         on_action_ = std::move(on_action);
     }
 
@@ -223,7 +223,7 @@ private:
     NSTextField* label_ = nil;         // owned by view_
     NSTimer* timer_ = nil;
     std::function<void()> on_dismiss_;
-    std::function<void()> on_action_;
+    std::function<bool()> on_action_;
 };
 
 }  // namespace

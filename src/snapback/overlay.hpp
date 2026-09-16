@@ -123,6 +123,20 @@ bool overlay_action_hit(ScreenPoint card_size, int dpi, ScreenPoint click);
 // cannot disagree about what the button says.
 const char* overlay_action_label();
 
+// Roadmap 2.16. What happens to app state once "Take me back" has been clicked and the card
+// is off screen. Pure and shared so the ordering is written down once and tested once; the
+// platform handlers only hide their window and call this.
+//
+// This ordering has been wrong in both directions. Dismiss-then-act cleared the payload before
+// restore_snapback_target could read it, so the button never worked. Act-then-always-dismiss
+// fixed that but broke the failure path: a restore that fails keeps its target so the frontend
+// can retry, and the dismiss that followed one line later threw that target away. The rule
+// is that the action, when it runs, owns the alert's lifecycle; the dismiss callback is the
+// fallback for a click nothing acted on, since ContextTracker's Recovering state has no
+// other exit.
+void settle_overlay_action(const std::function<bool()>& on_action,
+                           const std::function<void()>& on_dismiss);
+
 // The multi-line text drawn in the card, built from the snapback payload.
 std::string overlay_text(const SnapbackPayload& payload);
 
@@ -150,7 +164,13 @@ public:
     // The overlay is the surface this matters most on: 2.16's delivery half made the snapback
     // default overlay-only, so without this the item's headline destination would be
     // unreachable for anyone who never turned the native channel on.
-    virtual void set_action_callback(std::function<void()> on_action) = 0;
+    //
+    // Returns whether the click was acted on. True means the state side has already settled
+    // the alert -- the tracker is unlatched and the payload is either consumed or deliberately
+    // kept for a retry -- and the card must not run its dismiss callback over the top of that.
+    // False means nothing claimed the click (stale id, already used), and dismissing is the
+    // only way left to unlatch the tracker. See settle_overlay_action.
+    virtual void set_action_callback(std::function<bool()> on_action) = 0;
 
     static Overlay& instance();
 };

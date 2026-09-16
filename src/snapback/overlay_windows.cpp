@@ -257,27 +257,17 @@ public:
         on_dismiss_ = std::move(on_dismiss);
     }
 
-    void set_action_callback(std::function<void()> on_action) override {
+    void set_action_callback(std::function<bool()> on_action) override {
         on_action_ = std::move(on_action);
     }
 
     // Roadmap 2.16. The card's "Take me back" region was clicked. Hides first, then acts:
     // restore_snapback_target raises another application's window, and leaving a TOPMOST card
     // floating over the window the user just asked to return to is not returning them to it.
+    // The act/dismiss ordering itself lives in settle_overlay_action, where it is tested.
     void action_clicked() {
         if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
-        // Act *before* dismissing. The dismiss callback clears the snapback payload, and the
-        // action callback reads it -- running them the other way round meant every click on
-        // this region reached restore_snapback_target with nothing to restore, so the native
-        // card's namesake button could never succeed.
-        //
-        // The dismiss callback still runs afterwards. It is what unlatches ContextTracker's
-        // Recovering state when the action is routed away (a stale alert id claims nothing
-        // and restore never runs), and acting on a card is just as much "done with this card"
-        // as dismissing it -- skipping it here is how the first click would silently disable
-        // every later snapback, which is the defect 2.16's delivery half already had to fix.
-        if (on_action_) on_action_();
-        if (on_dismiss_) on_dismiss_();
+        settle_overlay_action(on_action_, on_dismiss_);
     }
 
 private:
@@ -300,7 +290,7 @@ private:
 
     HWND hwnd_ = nullptr;
     std::function<void()> on_dismiss_;
-    std::function<void()> on_action_;
+    std::function<bool()> on_action_;
 };
 
 void overlay_action_clicked() {

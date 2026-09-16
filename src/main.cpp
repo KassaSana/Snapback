@@ -146,15 +146,20 @@ std::filesystem::path executable_dir() {
     return std::filesystem::current_path();
 }
 
-void run_tray_action(snapback::Logger& logger, const char* action,
+// Returns whether `fn` ran to completion. Most callers ignore it; route_alert_click does not,
+// because an action that threw did not settle the alert and the card's dismiss fallback is
+// then the only thing left to unlatch the tracker.
+bool run_tray_action(snapback::Logger& logger, const char* action,
                      const std::function<void()>& fn) noexcept {
     try {
         fn();
+        return true;
     } catch (const std::exception& error) {
         logger.warn(std::string("tray: ") + action + " failed: " + error.what());
     } catch (...) {
         logger.warn(std::string("tray: ") + action + " failed with an unknown error");
     }
+    return false;
 }
 
 // Roadmap 2.16. The event the frontend acts on when a native click chose a destination this
@@ -402,6 +407,11 @@ int main(int argc, char** argv) {
     // Only after that does the claim decide whether the *destination* is still live. A false
     // means the alert was already acted on, or a newer one of its kind replaced it, or the OS
     // kept a toast around long after the moment it was about.
+    //
+    // Returns whether an action ran. The overlay uses this to decide whether its dismiss
+    // callback still has a job: restore_snapback_target settles the tracker itself and keeps
+    // the payload when the activation fails, and a dismiss on top of that would throw away
+    // the target the frontend is about to offer a retry for.
     // `raise_window` is captured by reference because it is assigned in the platform blocks
     // *below* this point -- both it and this lambda live until `w.run()` returns, which is the
     // condition that makes a reference capture safe here rather than merely convenient.
@@ -411,17 +421,20 @@ int main(int argc, char** argv) {
         if (!state->claim_alert_action(event, alert_id)) {
             logger.info(std::string("alert click: nothing to act on for ") +
                         std::to_string(alert_id) + " (already used, stale, or not actionable)");
-            return;
+            return false;
         }
         const auto action = alert_action_for(event);
         logger.info(std::string("alert click: ") + alert_action_as_str(action));
         switch (action) {
             case AlertAction::ReturnToWork:
                 // 2.8's existing native action, reused rather than reimplemented. It raises the
-                // recorded window and unlatches the tracker in one step.
-                run_tray_action(logger, "return to work",
-                                [state] { state->restore_snapback_target(); });
-                break;
+                // recorded window and unlatches the tracker in one step. A failure is logged
+                // here because nothing else on this path sees it -- the frontend only learns
+                // that the payload is still there.
+                return run_tray_action(logger, "return to work", [state, &logger] {
+                    const auto result = state->restore_snapback_target();
+                    if (!result.ok) logger.warn("return to work: " + result.message);
+                });
             case AlertAction::OpenSessionComposer:
             case AlertAction::OpenPomodoro:
                 // Handed to the frontend, which owns what a surface is. This side says which
@@ -431,8 +444,9 @@ int main(int argc, char** argv) {
                      dump_alert_action_event(action, alert_id));
                 break;
             case AlertAction::None:
-                break;
+                return false;
         }
+        return true;
     };
 
 #if defined(_WIN32)
@@ -519,7 +533,8 @@ int main(int argc, char** argv) {
     // outstanding. Passing 0 would claim nothing, so the id is read back from state -- the same
     // value the payload carried out.
     Overlay::instance().set_action_callback([state = state.get(), &route_alert_click] {
-        route_alert_click(AlertEvent::Snapback, state->outstanding_alert_id(AlertEvent::Snapback));
+        return route_alert_click(AlertEvent::Snapback,
+                                 state->outstanding_alert_id(AlertEvent::Snapback));
     });
 
     // Roadmap 9.15. The owner's half of the activation channel, started once the window exists
