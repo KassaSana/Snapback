@@ -1911,7 +1911,9 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
 
   So every `webview.bind()`-exposed command is reachable from any JavaScript in the page —
   including `set_training_repo_path` and `train_from_export`, which **terminate in
-  `std::system`** (`training_deploy.cpp:command_succeeds`).
+  `std::system`**. (Since 2026-09-16 there is no shell on that path: the run is an argv
+  spawn, `training_deploy.cpp:training_spawn_request`, so the reachable surface is "start
+  the configured interpreter in the configured repo", not "execute a string".)
 
   The chain: any script execution in the webview → full local command surface → arbitrary
   process launch. The only thing preventing step one is that React escapes everything and the
