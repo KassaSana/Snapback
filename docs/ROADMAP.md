@@ -3554,6 +3554,30 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   > unconditionally. It also said the seam is tested "only by `test_ipc_contract`'s name
   > matching", which ignored `test_command_bridge` entirely.
 
+  Plan (2026-09-16). Two of the three legs of a real-binary test already exist: the macOS
+  and Windows GUI smokes launch the real app, and `SNAPBACK_GUI_SESSION_SMOKE` runs a
+  session *from C++* via `w.dispatch` and writes a marker. What they do not do is cross the
+  bridge from the page side. Close that in two steps, the first of which needs no new
+  tooling:
+
+  1. **An in-page acceptance script.** A debug-only env var (`SNAPBACK_ACCEPTANCE_SCRIPT`,
+     gated like `SNAPBACK_FRONTEND_URL`) names a JavaScript file the host evaluates after
+     the bundle loads. The script calls `window.__snapback.invoke` -- the real shim, the
+     real `webview.bind`, the real token -- for a fixed list of commands (health, start and
+     stop a session, one async export, one deliberate error) and reports each result back
+     through one new command that writes a JSON verdict file; the existing smokes assert
+     on that file the way they assert on the marker today. This is the "break between
+     `bind()` and the browser" this item names, on all three OSes, inside jobs that already
+     run.
+  2. **A driven browser on the OSes that expose one.** WebView2 speaks CDP
+     (`--remote-debugging-port` via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`), and
+     WebKitGTK has `WEBKIT_INSPECTOR_SERVER`; Playwright can attach to both and click the
+     real UI. WKWebView has no equivalent, so macOS keeps step 1 only. This is where
+     14.6's "deliberately slow fake job keeps the heartbeat responsive" belongs.
+
+  Since 14.3 the handler layer is covered by name in native tests, so step 1's list can be
+  short: it tests the transport, not the commands.
+
 - **10.2 — DONE 2026-07-25.** Decided in
   [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`) and shipped on
   `fix-macos-app-launch`: `SurfaceNav.tsx` switches between the three surfaces, `App.tsx`
@@ -4768,6 +4792,34 @@ kept here; already-deep modules and completed performance work were rejected dur
   maintenance time/result and pending reclaim bytes in diagnostics. Reuse **14.5**'s deadline
   scheduler or **14.6**'s owned jobs rather than starting another unmanaged thread, and align
   the policy with user-configurable retention in **9.10**.
+
+- **14.8 — Decompose `AppState` along its lock boundaries.** `L`
+  Opened 2026-09-16. `state.cpp` is ~2,400 lines and `AppState` has ~110 methods across
+  seven concerns that share one class: the engine tick and event pipeline; sessions and
+  their recaps; the Pomodoro state machine; alert routing, ids, and snooze/private-pause
+  policy; settings, privacy exclusions, and app rules; reporting (analytics, summaries,
+  history, exports); and model deployment/classifier lifecycle. The three ranked mutexes
+  (`mutex_`, `activity_boundary_mutex_`, `storage_mutex_`) already say where the real
+  boundaries are; the class just ignores them.
+
+  **Do not "split the file".** Extract one concern at a time behind a type that owns its own
+  state and is unit-testable without `AppState`, in this order, because each is the least
+  entangled remaining piece: (1) Pomodoro -- `pomodoro_` plus the nine `*_pomodoro*`
+  methods already form a machine whose only outward edges are `alert_route_unlocked` and
+  persistence; (2) alert policy -- `issue_alert_id_unlocked`, `claim_alert_action`,
+  `outstanding_alert_id`, snooze and private-pause lapses, reading settings through an
+  interface rather than `settings_` directly; (3) reporting -- everything that takes only
+  `storage_mutex_` and returns JSON, which is also **14.1**'s read lane if the benchmark
+  justifies one; (4) session lifecycle. The tick (`engine_tick`, `compute_event`,
+  `persist`) stays last and becomes **14.2**'s production seam once the concerns it
+  coordinates are types it can be handed.
+
+  Acceptance per extraction: the moved methods are tested against the new type alone; the
+  ranked-mutex order is unchanged (TSan and the `RankedMutex` self-check both stay green);
+  `test_app_state` passes unmodified except for construction; no behaviour change is bundled
+  in. Stop after any extraction whose diff exceeds ~600 lines and land it before the next.
+  Prerequisite for none of the open items, so it yields to anything with a user-facing
+  failure behind it.
 
 ---
 
