@@ -359,7 +359,7 @@ ChildProcess::ChildProcess(ChildProcess&&) noexcept = default;
 bool ChildProcess::running() { return !wait_for(std::chrono::milliseconds(0)); }
 
 RunResult run(const SpawnRequest& request, const CancelPredicate& should_cancel,
-              std::chrono::milliseconds poll) {
+              std::chrono::milliseconds poll, const PollCallback& on_poll) {
     RunResult result;
     auto child = ChildProcess::spawn(request, &result.error);
     if (!child) return result;
@@ -375,6 +375,7 @@ RunResult run(const SpawnRequest& request, const CancelPredicate& should_cancel,
             result.exit_code = *code;
             return result;
         }
+        if (on_poll) on_poll();
     }
 }
 

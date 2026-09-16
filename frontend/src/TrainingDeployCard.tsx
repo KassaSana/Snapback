@@ -1,6 +1,6 @@
 import { memo } from "react";
 
-import type { TrainingDeployStatus } from "./api";
+import type { TrainingDeployStatus, TrainingProgressPayload } from "./api";
 import {
   buildTrainingReadinessBlockers,
   formatLabelBreakdown,
@@ -33,6 +33,14 @@ type TrainingDeployCardProps = {
   trainFromExportHint: string | null;
   trainingCommand: string | null;
   trainingInProgress: boolean;
+  trainingProgress: TrainingProgressPayload | null;
+};
+
+const formatElapsed = (elapsedMs: number) => {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 };
 
 // ADR-0006 / roadmap 13.7. Shown only when developer tools are enabled (Debug or
@@ -63,6 +71,7 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
   trainFromExportHint,
   trainingCommand,
   trainingInProgress,
+  trainingProgress,
 }: TrainingDeployCardProps) {
   const readinessBlockers = buildTrainingReadinessBlockers(deployStatus);
   const metricsSummary = deployStatus ? formatTrainingMetrics(deployStatus.metrics) : null;
@@ -204,6 +213,12 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
           </button>
         </div>
         {trainFromExportHint ? <p className="helper-text alert">{trainFromExportHint}</p> : null}
+        {trainingInProgress && trainingProgress ? (
+          <p className="helper-text deploy-log" role="status" aria-live="polite">
+            {`Training … ${formatElapsed(trainingProgress.elapsedMs)}`}
+            {trainingProgress.logTail ? `\n${trainingProgress.logTail}` : ""}
+          </p>
+        ) : null}
         {deployMessage ? (
           <p className={`helper-text deploy-log${deployMessageWarning ? " alert" : ""}`}>
             {deployMessage}

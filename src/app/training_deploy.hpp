@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -66,12 +68,22 @@ ModelQualityDecision evaluate_model_quality(
 
 nlohmann::json training_deploy_status(const std::filesystem::path& app_data_dir);
 
+// What a running pipeline has written so far. Reported through the progress sink whenever
+// the log tail changes, at most about once a second; the first report may carry an empty
+// tail so the UI learns the run has started before Python prints anything.
+struct TrainingProgress {
+    std::int64_t elapsed_ms{};
+    std::string log_tail;  // the last few lines of training.log
+};
+using TrainingProgressSink = std::function<void(const TrainingProgress&)>;
+
 // Run the training pipeline to completion, or until `should_cancel` answers true, and report
 // the outcome. Blocks for the length of the run: callers put it on a worker, never the UI
 // thread. A cancelled run reports `cancelled: true` and deploys nothing. With no predicate
-// the run cannot be interrupted.
+// the run cannot be interrupted. `progress`, when given, is called from the calling thread.
 nlohmann::json train_from_export(const std::filesystem::path& app_data_dir,
-                                 const subprocess::CancelPredicate& should_cancel = {});
+                                 const subprocess::CancelPredicate& should_cancel = {},
+                                 const TrainingProgressSink& progress = {});
 std::string build_pipeline_command(const std::filesystem::path& output_dir);
 
 namespace detail {

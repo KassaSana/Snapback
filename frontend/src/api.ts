@@ -502,6 +502,12 @@ export type TrainFromExportResult = {
   logTail: string;
 };
 
+// One reading of a running training's log, pushed while trainFromExport is pending.
+export type TrainingProgressPayload = {
+  elapsedMs: number;
+  logTail: string;
+};
+
 export type RollbackClassifierModelResult = {
   success: boolean;
   message: string;
@@ -849,6 +855,14 @@ export const api = {
     const raw = await invoke<Record<string, unknown>>("cancel_training");
     return { requested: Boolean(raw?.requested ?? false) };
   },
+  onTrainingProgress: (handler: (payload: TrainingProgressPayload) => void) =>
+    listen<Record<string, unknown>>("training-progress", (event) => {
+      const raw = event.payload;
+      handler({
+        elapsedMs: Number(raw.elapsedMs ?? 0),
+        logTail: String(raw.logTail ?? ""),
+      });
+    }),
   onCaptureFailed: (handler: (payload: CaptureFailurePayload) => void) =>
     listen<Record<string, unknown>>("capture-failed", (event) => {
       const raw = event.payload;

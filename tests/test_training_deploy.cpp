@@ -436,6 +436,43 @@ TEST_CASE("train_from_export runs the pipeline inside the repo and reports its e
     CHECK(std::filesystem::equivalent(reported, repo.path));
 }
 
+TEST_CASE("train_from_export reports the growing log tail as progress while it runs") {
+    TempDir app_data;
+    TempDir repo;
+    // Two lines a second apart, unbuffered so they reach the file when printed. Progress is
+    // read from that file, so the second report has to contain what the first could not.
+    write_fake_repo(repo.path,
+                    "import sys, time\n"
+                    "print('epoch 1', flush=True)\n"
+                    "time.sleep(1.5)\n"
+                    "print('epoch 2', flush=True)\n"
+                    "time.sleep(1.2)\n"
+                    "sys.exit(2)\n");
+    write_minimal_export(app_data.path);
+    training_deploy::write_training_repo_path(app_data.path, repo.path);
+    if (!python_available(app_data.path)) {
+        MESSAGE("python not found; skipping the progress integration case");
+        return;
+    }
+
+    std::vector<training_deploy::TrainingProgress> reports;
+    const auto result = training_deploy::train_from_export(
+        app_data.path, {}, [&reports](const training_deploy::TrainingProgress& p) {
+            reports.push_back(p);
+        });
+
+    CHECK_FALSE(result.value("trainingSucceeded", true));
+    REQUIRE(reports.size() >= 2);
+    // Reports only go out when the tail changed, so each one says something new ...
+    for (std::size_t i = 1; i < reports.size(); ++i) {
+        CHECK(reports[i].log_tail != reports[i - 1].log_tail);
+        CHECK(reports[i].elapsed_ms >= reports[i - 1].elapsed_ms);
+    }
+    // ... and the last one has seen both lines.
+    CHECK(reports.back().log_tail.find("epoch 1") != std::string::npos);
+    CHECK(reports.back().log_tail.find("epoch 2") != std::string::npos);
+}
+
 TEST_CASE("train_from_export ends a running pipeline when asked to cancel") {
     TempDir app_data;
     TempDir repo;

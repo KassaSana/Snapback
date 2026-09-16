@@ -296,6 +296,7 @@ export default function App() {
     trainingCommand,
     trainFromExportHint,
     trainingInProgress,
+    trainingProgress,
   } = useTrainingDeploy({
     enabled: developerToolsEnabled,
     sessionId,
@@ -885,6 +886,7 @@ export default function App() {
             trainFromExportHint={trainFromExportHint}
                   trainingCommand={trainingCommand}
                   trainingInProgress={trainingInProgress}
+                  trainingProgress={trainingProgress}
                 />
               </details>
             ) : null}

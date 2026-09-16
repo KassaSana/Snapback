@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -190,6 +191,9 @@ bool python_available_cached() {
     static const SystemClock clock;
     return probe.value(clock);
 }
+
+// Lines of training.log shown as progress; the final result shows the same count.
+constexpr std::size_t kProgressTailLines = 12;
 
 std::string read_file_tail(const std::filesystem::path& path, std::size_t max_lines) {
     std::ifstream in(path);
@@ -746,7 +750,8 @@ subprocess::SpawnRequest training_spawn_request(const std::filesystem::path& rep
 }  // namespace detail
 
 nlohmann::json train_from_export(const std::filesystem::path& app_data_dir,
-                                 const subprocess::CancelPredicate& should_cancel) {
+                                 const subprocess::CancelPredicate& should_cancel,
+                                 const TrainingProgressSink& progress) {
     const auto status = training_deploy_status(app_data_dir);
     if (!status.value("hasExport", false)) {
         throw std::runtime_error(
@@ -769,9 +774,29 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir,
     const auto log_path = out_dir / "training.log";
     std::filesystem::create_directories(out_dir);
 
+    // Progress is the log tail. The child writes training.log as it goes (the spawn opened
+    // it with sharing that permits this read), so re-reading the tail every so often is the
+    // whole progress model: no protocol with the pipeline, nothing for it to opt into.
+    const auto started_at = std::chrono::steady_clock::now();
+    auto last_report_at = started_at - std::chrono::hours(1);  // report on the first poll
+    std::string last_tail;
+    bool reported_once = false;
+    const auto report_progress = [&] {
+        if (!progress) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_report_at < std::chrono::seconds(1)) return;
+        last_report_at = now;
+        auto tail = read_file_tail(log_path, kProgressTailLines);
+        if (reported_once && tail == last_tail) return;
+        reported_once = true;
+        last_tail = tail;
+        progress(TrainingProgress{
+            std::chrono::duration_cast<std::chrono::milliseconds>(now - started_at).count(),
+            std::move(tail)});
+    };
     const auto run = subprocess::run(
         detail::training_spawn_request(*repo_path, *python, out_dir, log_path),
-        should_cancel);
+        should_cancel, std::chrono::milliseconds(100), report_progress);
     if (!run.started) {
         // The interpreter answered --version a moment ago, so this is rare: the repo path
         // vanished, or the log could not be created. Nothing ran, so there is no log to
@@ -779,7 +804,7 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir,
         throw std::runtime_error("Could not start the training pipeline: " + run.error);
     }
     const int exit_code = run.exit_code;
-    const std::string log_tail = read_file_tail(log_path, 12);
+    const std::string log_tail = read_file_tail(log_path, kProgressTailLines);
     const bool onnx_exported = std::filesystem::is_regular_file(out_dir / "model.onnx");
     const auto metrics = parse_metrics_json(out_dir / "metrics.json");
     // A cancelled run is never a success, whatever the kill left behind as an exit code.

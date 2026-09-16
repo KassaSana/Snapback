@@ -88,11 +88,17 @@ struct RunResult {
 // one of them has to remember to reset.
 using CancelPredicate = std::function<bool()>;
 
+// Called once per `poll` slice while the child runs, on the calling thread. The place to
+// read a log the child is writing and report progress; it must return promptly, since the
+// next cancel check waits on it.
+using PollCallback = std::function<void()>;
+
 // Spawn, then wait in `poll` slices, asking `should_cancel` between them. When it answers
 // true the child is terminated and `cancelled` is set; the exit code is then whatever the
 // kill produced and should not be interpreted. An empty predicate waits unconditionally.
 RunResult run(const SpawnRequest& request, const CancelPredicate& should_cancel,
-              std::chrono::milliseconds poll = std::chrono::milliseconds(100));
+              std::chrono::milliseconds poll = std::chrono::milliseconds(100),
+              const PollCallback& on_poll = {});
 
 namespace detail {
 

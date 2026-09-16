@@ -3978,3 +3978,30 @@ TEST_CASE("the outstanding alert id is what a surface without one of its own wou
     CHECK(state.claim_alert_action(AlertEvent::Snapback, id));
     CHECK(state.outstanding_alert_id(AlertEvent::Snapback) == 0);
 }
+
+TEST_CASE("emit_event pushes through the emit hook with the current activity epoch") {
+    // Worker-thread emissions (training progress) share the engine's hook, so the UI-side
+    // epoch check applies to them too: one that reaches the webview after a delete-all
+    // reset must be dropped like a stale tick would be.
+    auto state = make_state();
+    std::vector<std::pair<std::string, std::string>> seen;
+    std::uint64_t seen_epoch = 0;
+    state->set_emit_hook(
+        [&](const std::string& name, const std::string& payload, std::uint64_t epoch) {
+            seen.emplace_back(name, payload);
+            seen_epoch = epoch;
+        });
+
+    state->emit_event("training-progress", R"({"elapsedMs":1200,"logTail":"epoch 1"})");
+
+    REQUIRE(seen.size() == 1);
+    CHECK(seen[0].first == "training-progress");
+    CHECK(seen[0].second.find("epoch 1") != std::string::npos);
+    CHECK(state->activity_epoch_is_current(seen_epoch));
+
+    // Without a hook it is a no-op, not a crash: the command worker can emit before main.cpp
+    // has installed one, or in the pure command tests that never do.
+    state->set_emit_hook(nullptr);
+    state->emit_event("training-progress", "{}");
+    CHECK(seen.size() == 1);
+}

@@ -98,6 +98,10 @@ public:
         std::function<void(const char* event, const std::string& json_payload,
                            ActivityEpoch activity_epoch)>;
     void set_emit_hook(EmitHook hook);
+    // Push one event to the frontend from any thread. It carries the current activity epoch,
+    // so the UI-side check treats it like an engine emission: dropped only if a delete-all
+    // has since reset the app's activity. A no-op before the hook is installed.
+    void emit_event(const char* event, const std::string& json_payload);
     // UI dispatch is asynchronous. Event closures carry the epoch from their engine tick
     // and call this immediately before touching the webview, overlay, or notification.
     bool activity_epoch_is_current(ActivityEpoch epoch) const noexcept {

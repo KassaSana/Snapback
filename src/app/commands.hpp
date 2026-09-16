@@ -522,8 +522,8 @@ inline void register_commands(webview::webview& w, AppState& state,
     // cancel that arrived while it was still queued, ends at its first poll.
     bind_async_cmd(
         "train_from_export",
-        [data_dir, training_export_active, training_cancel_requested, &async_commands](
-            const json&) {
+        [&state, data_dir, training_export_active, training_cancel_requested,
+         &async_commands](const json&) {
             if (training_export_active->load(std::memory_order_acquire)) {
                 throw std::runtime_error(
                     "training export is in progress; wait for it to finish before training");
@@ -532,10 +532,18 @@ inline void register_commands(webview::webview& w, AppState& state,
                 throw std::runtime_error(
                     "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
             }
+            // Progress is the log tail, pushed as an event whenever it changes. The result
+            // still comes back through this call's promise; the events only fill the wait.
             return training_deploy::train_from_export(
-                data_dir, [&async_commands, training_cancel_requested] {
+                data_dir,
+                [&async_commands, training_cancel_requested] {
                     return async_commands.stopping() ||
                            training_cancel_requested->load(std::memory_order_acquire);
+                },
+                [&state](const training_deploy::TrainingProgress& progress) {
+                    state.emit_event("training-progress",
+                                     dump_json(json{{"elapsedMs", progress.elapsed_ms},
+                                                    {"logTail", progress.log_tail}}));
                 });
         },
         training_active, "training is already in progress",

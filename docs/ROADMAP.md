@@ -4715,10 +4715,18 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   The card offers "Cancel training" while a run is in flight (`cancel_training`); the run
   answers through its own result, so the button cannot claim a stop the child has not made.
+  Progress is the pipeline's own log: `train_from_export` re-reads `training.log`'s tail
+  between waits and pushes `training-progress` events (via `AppState::emit_event`, the same
+  hook and epoch check the engine uses) whenever it changes; the card shows elapsed time and
+  the tail under the busy button, subscribed only for the length of the run.
 
-  Remaining: job ids returned within 50 ms with progress, completion, and failure as events;
-  the registry marking from **14.3**; and the deliberately slow fake job proving the UI
-  heartbeat stays responsive.
+  Decision (2026-09-16): completion stays on the command's own promise rather than moving
+  to a job id plus a completion event. With cancel and progress in place, the job-id model's
+  remaining benefit is surviving a webview reload mid-run, a development-only case, and it
+  would replace a working, tested IPC contract. Revisit if exports grow the same need.
+
+  Remaining: the registry marking from **14.3**, and the deliberately slow fake job proving
+  the UI heartbeat stays responsive (a 10.1 concern, since it needs the real webview).
 
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `M`
   `performance`

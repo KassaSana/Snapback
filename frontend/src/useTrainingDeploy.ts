@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { api, type ClassifierStatus } from "./api";
+import { api, type ClassifierStatus, type TrainingProgressPayload } from "./api";
 import {
   buildExportSummary,
   buildPipelineCommand,
@@ -42,6 +42,35 @@ export const useTrainingDeploy = ({
   const [exportInProgress, setExportInProgress] = useState(false);
   const [trainingInProgress, setTrainingInProgress] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
+  const [trainingProgress, setTrainingProgress] = useState<TrainingProgressPayload | null>(
+    null,
+  );
+
+  // Subscribed only for the length of a run: the event is the native side's log tail, and
+  // there is nothing to show outside one. Unsubscribing on completion also drops a report
+  // that was already in flight when the result arrived. The displayed value is reset by the
+  // run itself (start and finally below), not here -- an effect that sets state is a
+  // cascade, and the run already owns that lifecycle.
+  useEffect(() => {
+    if (!trainingInProgress) {
+      return;
+    }
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void api.onTrainingProgress((payload) => {
+      if (active) setTrainingProgress(payload);
+    }).then((dispose) => {
+      if (active) {
+        unlisten = dispose;
+      } else {
+        dispose();
+      }
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [trainingInProgress]);
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
   const [deployMessageWarning, setDeployMessageWarning] = useState(false);
   const [showAdvancedCommand, setShowAdvancedCommand] = useState(false);
@@ -109,6 +138,7 @@ export const useTrainingDeploy = ({
   const handleTrainFromExport = useCallback(async () => {
     setTrainingInProgress(true);
     setCancelRequested(false);
+    setTrainingProgress(null);
     setDeployMessage(null);
     setDeployMessageWarning(false);
     setCopyStatus(null);
@@ -152,6 +182,7 @@ export const useTrainingDeploy = ({
     } finally {
       setTrainingInProgress(false);
       setCancelRequested(false);
+      setTrainingProgress(null);
     }
   }, [onClassifierStatusChange, refreshDeployStatus]);
 
@@ -247,6 +278,7 @@ export const useTrainingDeploy = ({
     handleTrainFromExport,
     modelReloadStatus,
     refreshDeployStatus,
+    trainingProgress,
     repoPathInput,
     setRepoPathInput,
     setShowAdvancedCommand,

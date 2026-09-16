@@ -187,6 +187,17 @@ TEST_CASE("run terminates the child when the cancel flag is raised") {
     CHECK(elapsed < 10s);
 }
 
+TEST_CASE("run calls on_poll once per slice while the child runs") {
+    // The cancel predicate is asked before each slice and on_poll after it, so cancelling
+    // "after three polls" pins both the count and the order.
+    int polls = 0;
+    const auto result = subprocess::run(
+        {sleeper()}, [&polls] { return polls >= 3; }, 20ms, [&] { ++polls; });
+    REQUIRE(result.started);
+    CHECK(result.cancelled);
+    CHECK(polls == 3);
+}
+
 TEST_CASE("a cancel raised before the run starts is honoured without waiting") {
     const auto started_at = std::chrono::steady_clock::now();
     const auto result = subprocess::run({sleeper()}, [] { return true; }, 20ms);

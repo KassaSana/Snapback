@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the native boundary so the real api.ts + useTrainingDeploy run end to end.
@@ -35,8 +35,21 @@ const boundary = vi.hoisted(() => {
     }
   });
 
-  const listen = vi.fn(async () => () => {});
-  return { state, invoke, listen };
+  // Handlers are recorded so a test can push a native event (training-progress) mid-run.
+  const listeners: Record<string, Array<(event: { payload: unknown }) => void>> = {};
+  const listen = vi.fn(
+    async (event: string, handler: (event: { payload: unknown }) => void) => {
+      (listeners[event] ??= []).push(handler);
+      return () => {
+        listeners[event] = (listeners[event] ?? []).filter((h) => h !== handler);
+      };
+    },
+  );
+  const emit = (event: string, payload: unknown) => {
+    for (const handler of listeners[event] ?? []) handler({ payload });
+  };
+  const listenerCount = (event: string) => (listeners[event] ?? []).length;
+  return { state, invoke, listen, emit, listenerCount };
 });
 
 vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
@@ -272,5 +285,42 @@ describe("Training / deploy card", () => {
     );
     expect(screen.getByRole("button", { name: "Train from export" })).not.toBeDisabled();
     expect(boundary.invoke).not.toHaveBeenCalledWith("reload_classifier_model");
+  });
+
+  it("shows the native log tail as progress while training runs, and only then", async () => {
+    let finishRun: (result: Record<string, unknown>) => void = () => {};
+    boundary.state.trainPending = new Promise((resolve) => {
+      finishRun = resolve;
+    });
+    renderApp("settings", "advanced");
+
+    const trainButton = await screen.findByRole("button", { name: "Train from export" });
+    await waitFor(() => expect(trainButton).not.toBeDisabled());
+    // Nothing listens before a run: the event has no meaning outside one.
+    expect(boundary.listenerCount("training-progress")).toBe(0);
+    fireEvent.click(trainButton);
+    await waitFor(() => expect(boundary.listenerCount("training-progress")).toBe(1));
+
+    act(() => {
+      boundary.emit("training-progress", { elapsedMs: 83000, logTail: "epoch 3/10" });
+    });
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("1m 23s");
+    expect(status).toHaveTextContent("epoch 3/10");
+
+    finishRun({
+      success: false,
+      training_succeeded: false,
+      deploy_ready: false,
+      onnx_exported: false,
+      message: "Training failed. Check the training log for details.",
+      metrics: null,
+      log_tail: "epoch 3/10",
+    });
+
+    expect(await screen.findByText(/Training failed/)).toBeInTheDocument();
+    // The progress line goes with the run, and so does the subscription.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await waitFor(() => expect(boundary.listenerCount("training-progress")).toBe(0));
   });
 });

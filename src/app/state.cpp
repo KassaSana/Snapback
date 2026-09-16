@@ -667,6 +667,19 @@ void AppState::set_emit_hook(EmitHook hook) {
     emit_hook_ = std::move(hook);
 }
 
+void AppState::emit_event(const char* event, const std::string& json_payload) {
+    EmitHook hook;
+    ActivityEpoch epoch = 0;
+    {
+        // Copy out and call unlocked, as the tick does: the hook only queues a UI closure,
+        // but nothing here should depend on that staying true.
+        std::lock_guard lock(mutex_);
+        hook = emit_hook_;
+        epoch = activity_epoch_.load(std::memory_order_acquire);
+    }
+    if (hook) hook(event, json_payload, epoch);
+}
+
 void AppState::stop_engine() noexcept {
     engine_running_.store(false, std::memory_order_relaxed);
     signal_maintenance([this] { maintenance_stopping_.store(true, std::memory_order_release); });
