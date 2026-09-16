@@ -2,12 +2,18 @@
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <regex>
 #include <set>
 #include <sstream>
 #include <string>
 
 #include <nlohmann/json.hpp>
+
+#include "app/async_command_runner.hpp"
+#include "app/command_handlers.hpp"
+#include "app/command_registry.hpp"
+#include "app/state.hpp"
 
 #ifndef SNAPBACK_FIXTURES_DIR
 #define SNAPBACK_FIXTURES_DIR "fixtures"
@@ -16,6 +22,8 @@
 #ifndef SNAPBACK_SOURCE_DIR
 #define SNAPBACK_SOURCE_DIR "."
 #endif
+
+using namespace snapback;
 
 namespace {
 
@@ -36,20 +44,31 @@ std::set<std::string> load_expected_commands() {
     return out;
 }
 
-std::set<std::string> extract_bind_commands(const std::string& source) {
-    std::set<std::string> out;
-    // Most commands use the synchronous bind_cmd wrapper. Slow ones (the exports) go through
-    // bind_async_cmd, which wraps webview's asynchronous overload so the callback returns to
-    // the UI loop before the worker finishes. A direct w.bind is still recognised so a
-    // one-off registration cannot slip out of the contract. All are the same IPC surface.
-    static const std::regex pattern(
-        R"re((?:\bbind_cmd|\bbind_async_cmd|\bw\.bind)\(\s*"([a-z0-9_]+)")re");
-    std::sregex_iterator it(source.begin(), source.end(), pattern);
-    const std::sregex_iterator end;
-    for (; it != end; ++it) {
-        out.insert((*it)[1].str());
+// The registry the app binds, built the way main.cpp builds it but against an in-memory
+// AppState (Roadmap 14.3). Names come from the real registration calls, so a handler that
+// is registered under the wrong name, twice, or not at all fails here rather than in a
+// running window. The regex over commands.hpp that this replaced could not see a handler
+// at all, only the text that mentioned it.
+struct RegisteredCommands {
+    std::unique_ptr<AppState> state;
+    detail::AsyncCommandRunner runner;
+    CommandRegistry registry;
+    std::filesystem::path data_dir;
+
+    RegisteredCommands() {
+        auto storage = Storage::open_memory();
+        if (!storage) throw std::runtime_error("failed to open in-memory storage");
+        state = std::make_unique<AppState>(std::move(*storage));
+        data_dir = std::filesystem::temp_directory_path() / "snapback_cpp_ipc_contract";
+        register_command_handlers(registry, *state, data_dir, runner);
     }
-    return out;
+    ~RegisteredCommands() { runner.shutdown(); }
+};
+
+std::set<std::string> registered_command_names() {
+    RegisteredCommands commands;
+    const auto names = commands.registry.names();
+    return {names.begin(), names.end()};
 }
 
 std::set<std::string> extract_frontend_invokes(const std::string& source) {
@@ -65,12 +84,19 @@ std::set<std::string> extract_frontend_invokes(const std::string& source) {
 
 }  // namespace
 
-TEST_CASE("IPC contract: C++ bind list matches the canonical command set") {
+TEST_CASE("IPC contract: the registered command set matches the canonical fixture") {
     const auto expected = load_expected_commands();
-    const auto source =
-        read_file(std::filesystem::path(SNAPBACK_SOURCE_DIR) / "src/app/commands.hpp");
-    const auto bound = extract_bind_commands(source);
-    CHECK(bound == expected);
+    const auto registered = registered_command_names();
+    // Named both ways so a failure says which side the stray is on.
+    for (const auto& name : registered) {
+        CAPTURE(name);
+        CHECK_MESSAGE(expected.count(name) == 1, "registered but missing from the fixture");
+    }
+    for (const auto& name : expected) {
+        CAPTURE(name);
+        CHECK_MESSAGE(registered.count(name) == 1, "in the fixture but not registered");
+    }
+    CHECK(registered == expected);
 }
 
 TEST_CASE("IPC contract: frontend invoke names are a subset of the canonical set") {

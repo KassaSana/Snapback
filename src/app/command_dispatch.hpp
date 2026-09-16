@@ -112,6 +112,8 @@ using JsonHandler = std::function<nlohmann::json(const nlohmann::json&)>;
 // It is deliberately stripped from the args before the handler runs. A command should not be
 // able to read it, log it, or write it into an export by accident.
 inline constexpr const char* kCapabilityTokenKey = "__snapbackToken";
+// The one key of an error envelope; a reply is either a handler result or this.
+inline constexpr const char* kErrorKey = "__snapback_error";
 
 // Constant-time-ish comparison. The token is 256 bits of CSPRNG output and an attacker gets no
 // oracle to time against here, but a length-independent compare costs nothing and removes the
@@ -163,7 +165,7 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
         // paths and OS-derived strings, and `nlohmann::json::parse` quotes the offending
         // input straight back. The path that runs when something has already gone wrong is
         // the last one that should be able to fail.
-        return dump_json(nlohmann::json{{"__snapback_error", e.what()}});
+        return dump_json(nlohmann::json{{kErrorKey, e.what()}});
     }
 }
 

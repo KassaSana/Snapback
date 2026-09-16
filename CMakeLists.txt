@@ -159,6 +159,8 @@ endif()
 add_library(snapback_app STATIC
   src/app/activation_channel.cpp
   src/app/autostart.cpp
+  src/app/command_handlers.cpp
+  src/app/command_registry.cpp
   src/app/autostart_launchd.cpp
   src/app/autostart_run_key.cpp
   src/app/autostart_systemd.cpp

@@ -66,8 +66,13 @@ downgrade cannot write rows a later build considers malformed.
 
 ## IPC
 
-`src/app/commands.hpp` is the single command registry. `webview.bind()` exposes
-each command as a browser function. `src/app/ipc_shim.hpp` injects
+`src/app/command_handlers.cpp` registers every command into a `CommandRegistry`
+(`src/app/command_registry.hpp`), a webview-free table of name, handler, and worker policy.
+`src/app/commands.hpp` is the adapter: it binds whatever the registry holds with
+`webview.bind()`, exposing each command as a browser function. Tests build the same registry
+against an in-memory `AppState` and invoke real handlers by name (`test_command_registry`);
+the IPC contract test compares the registry's names to `fixtures/ipc_commands.json`.
+`src/app/ipc_shim.hpp` injects
 `window.__snapback` before page scripts run:
 
 - `invoke(command, args)` forwards to the matching native binding.

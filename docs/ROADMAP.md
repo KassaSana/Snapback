@@ -3537,10 +3537,11 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   `frontend/package.json`. Frontend tests mock `invoke()`; C++ tests run headless.
 
   Be precise about what *is* covered, because this entry used to overstate the gap.
-  `test_ipc_contract` pins command names three ways (the `bind_cmd` list, the frontend's
-  `invoke` calls, and `fixtures/ipc_commands.json`), and `test_command_bridge` covers the
-  dispatcher itself — arg unwrapping, the error envelope, the escaped-JSON event boundary,
-  the validation helpers, and two real handlers round-tripping with camelCase keys.
+  `test_ipc_contract` pins command names three ways (the registered `CommandRegistry`, the
+  frontend's `invoke` calls, and `fixtures/ipc_commands.json`), `test_command_bridge` covers
+  the dispatcher itself — arg unwrapping, the error envelope, the escaped-JSON event boundary,
+  the validation helpers — and since 14.3 `test_command_registry` invokes the real handlers
+  by name through that same envelope.
 
   **What nothing exercises is the real `webview.bind()` round trip in a running process.**
   Every test above calls the handler layer directly, so a break *between* `bind()` and the
@@ -4645,6 +4646,20 @@ kept here; already-deep modules and completed performance work were rejected dur
   name in native tests, and the frontend contract fixture must be generated from or validated
   against the same manifest. This complements 10.1's real-webview E2E; neither replaces the
   other.
+
+  Progress (2026-09-16): `CommandRegistry` (`src/app/command_registry.hpp`) holds name,
+  handler, and worker policy; `command_handlers.cpp` registers all 73 and `commands.hpp` is
+  the adapter that binds them. The one platform reach in the handler table (the native
+  overlay's dismiss) became an injected hook, so the table links headless. The contract test
+  now compares the registry's names -- built against a real `AppState` -- to the fixture,
+  replacing the regex over the source; `test_command_registry` invokes real handlers by
+  name through the bridge's envelope, including the token check, and pins which commands
+  carry a worker policy.
+
+  Remaining: argument defaults and result casing are still described twice (handler and
+  `apiMappers.ts`); a generated TypeScript manifest, or per-command result-shape assertions
+  in the registry tests, would close that. The registry is also where 14.6's "slow" marking
+  now lives, as the async policy.
 
 - **14.4 — Move frontend invalidation into workflow modules.** `M`
 
