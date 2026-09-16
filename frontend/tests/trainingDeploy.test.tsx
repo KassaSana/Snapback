@@ -7,8 +7,10 @@ const boundary = vi.hoisted(() => {
     health: Record<string, unknown>;
     deployStatus: Record<string, unknown>;
     trainResult: Record<string, unknown>;
+    // When set, train_from_export returns this instead, so a test can hold the run open.
+    trainPending: Promise<Record<string, unknown>> | null;
     exportResult: unknown;
-  } = { health: {}, deployStatus: {}, trainResult: {}, exportResult: {} };
+  } = { health: {}, deployStatus: {}, trainResult: {}, trainPending: null, exportResult: {} };
 
   const invoke = vi.fn(async (cmd: string): Promise<unknown> => {
     switch (cmd) {
@@ -17,7 +19,9 @@ const boundary = vi.hoisted(() => {
       case "get_training_deploy_status":
         return state.deployStatus;
       case "train_from_export":
-        return state.trainResult;
+        return state.trainPending ?? state.trainResult;
+      case "cancel_training":
+        return { requested: true };
       case "export_training_data":
         return state.exportResult;
       case "reload_classifier_model":
@@ -73,6 +77,7 @@ beforeEach(() => {
   boundary.state.health = healthyCaptureRunning();
   boundary.state.deployStatus = readyToTrain();
   boundary.state.trainResult = {};
+  boundary.state.trainPending = null;
   boundary.state.exportResult = {
     output_dir: "data",
     features_path: "data/features.csv",
@@ -227,5 +232,45 @@ describe("Training / deploy card", () => {
       expect(boundary.invoke).toHaveBeenCalledWith("reload_classifier_model"),
     );
     expect(await screen.findByText("Loaded trained ONNX model.")).toBeInTheDocument();
+  });
+
+  it("offers Cancel while training runs and reports the cancelled run without reloading", async () => {
+    // The run stays open until the test releases it, the way a real Python run would; the
+    // native side answers the cancel through the run's own result, not the cancel call.
+    let finishRun: (result: Record<string, unknown>) => void = () => {};
+    boundary.state.trainPending = new Promise((resolve) => {
+      finishRun = resolve;
+    });
+    renderApp("settings", "advanced");
+
+    const trainButton = await screen.findByRole("button", { name: "Train from export" });
+    await waitFor(() => expect(trainButton).not.toBeDisabled());
+    expect(screen.queryByRole("button", { name: /Cancel training/ })).not.toBeInTheDocument();
+    fireEvent.click(trainButton);
+
+    const cancelButton = await screen.findByRole("button", { name: "Cancel training" });
+    fireEvent.click(cancelButton);
+    await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("cancel_training"));
+    // Acknowledged at once, and not clickable twice.
+    const cancelling = await screen.findByRole("button", { name: /Cancelling/ });
+    expect(cancelling).toBeDisabled();
+
+    finishRun({
+      success: false,
+      training_succeeded: false,
+      cancelled: true,
+      deploy_ready: false,
+      onnx_exported: false,
+      message: "Training was cancelled before it finished. Nothing was deployed.",
+      metrics: null,
+      log_tail: "",
+    });
+
+    expect(await screen.findByText(/Training was cancelled/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Cancel/ })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Train from export" })).not.toBeDisabled();
+    expect(boundary.invoke).not.toHaveBeenCalledWith("reload_classifier_model");
   });
 });

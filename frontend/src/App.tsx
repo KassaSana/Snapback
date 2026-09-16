@@ -274,6 +274,7 @@ export default function App() {
 
   const {
     canTrainFromExport,
+    cancelRequested,
     copyStatus,
     deployMessage,
     deployMessageWarning,
@@ -283,6 +284,7 @@ export default function App() {
     handleExportTrainingData,
     handleReloadClassifierModel,
     handleRollbackClassifierModel,
+    handleCancelTraining,
     handleSaveRepoPath,
     handleTrainFromExport,
     modelReloadStatus,
@@ -859,6 +861,7 @@ export default function App() {
                 <summary>Model training</summary>
                 <TrainingDeployCard
             canTrainFromExport={canTrainFromExport}
+            cancelRequested={cancelRequested}
             classifierBackend={classifierBackend}
             classifierModelId={classifierModelId}
             classifierModelPath={classifierModelPath}
@@ -871,6 +874,7 @@ export default function App() {
             handleExportTrainingData={handleExportTrainingData}
             handleReloadClassifierModel={handleReloadClassifierModel}
             handleRollbackClassifierModel={handleRollbackClassifierModel}
+            handleCancelTraining={handleCancelTraining}
             handleSaveRepoPath={handleSaveRepoPath}
             handleTrainFromExport={handleTrainFromExport}
             modelReloadStatus={modelReloadStatus}

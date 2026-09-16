@@ -799,6 +799,7 @@ export class DemoBackend {
       case "inspect_data_import":
       case "stage_data_import":
       case "train_from_export":
+      case "cancel_training":
       case "set_training_repo_path":
         return this.unavailable();
 

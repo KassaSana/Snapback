@@ -4713,9 +4713,11 @@ kept here; already-deep modules and completed performance work were rejected dur
   including that `py -3`'s python.exe dies with the launcher. `pythonAvailable` no longer
   spawns on every status refresh.
 
+  The card offers "Cancel training" while a run is in flight (`cancel_training`); the run
+  answers through its own result, so the button cannot claim a stop the child has not made.
+
   Remaining: job ids returned within 50 ms with progress, completion, and failure as events;
-  a user-facing cancel (the predicate is in place, the button and command are not); the
-  registry marking from **14.3**; and the deliberately slow fake job proving the UI
+  the registry marking from **14.3**; and the deliberately slow fake job proving the UI
   heartbeat stays responsive.
 
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `M`

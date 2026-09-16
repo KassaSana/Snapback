@@ -49,6 +49,7 @@
   "get_training_deploy_status",
   "set_training_repo_path",
   "train_from_export",
+  "cancel_training",
   "rollback_classifier_model",
   "retry_model_deployment_cleanup",
   "save_session_reflection",

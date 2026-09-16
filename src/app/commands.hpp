@@ -66,18 +66,20 @@ inline void register_commands(webview::webview& w, AppState& state,
     const auto bind_async_cmd = [&w, &async_commands, &capability_token](
                                     const std::string& name, detail::JsonHandler handler,
                                     std::shared_ptr<std::atomic<bool>> gate,
-                                    std::string busy_message) {
+                                    std::string busy_message,
+                                    std::function<void()> on_claimed = {}) {
         w.bind(
             name,
             [&w, &async_commands, handler = std::move(handler), capability_token,
-             gate = std::move(gate), busy_message = std::move(busy_message)](
-                std::string id, std::string req, void*) {
+             gate = std::move(gate), busy_message = std::move(busy_message),
+             on_claimed = std::move(on_claimed)](std::string id, std::string req, void*) {
                 detail::dispatch_single_flight(
                     [&async_commands](std::function<void()> job) {
                         return async_commands.submit(std::move(job));
                     },
                     [&w, id](std::string result) { w.resolve(id, 0, std::move(result)); },
-                    handler, std::move(req), capability_token, gate, busy_message);
+                    handler, std::move(req), capability_token, gate, busy_message,
+                    on_claimed);
             },
             nullptr);
     };
@@ -89,6 +91,10 @@ inline void register_commands(webview::webview& w, AppState& state,
     // and log into the same directory. Export cannot overlap it (same worker); the UI-thread
     // deletion can, and reads this to refuse.
     const auto training_active = std::make_shared<std::atomic<bool>>(false);
+    // Raised by cancel_training, read by the run at each poll, cleared when the next run
+    // claims the gate. Set only while the gate is held, so a click after a run has ended
+    // cannot cancel the run after that.
+    const auto training_cancel_requested = std::make_shared<std::atomic<bool>>(false);
     // Personal exports write one archive; two at once would race on the same path.
     const auto personal_export_active = std::make_shared<std::atomic<bool>>(false);
 
@@ -511,11 +517,13 @@ inline void register_commands(webview::webview& w, AppState& state,
     // Training runs Python for minutes. It was a sync binding, which runs on the webview's
     // own thread: the window froze for the whole run. On the worker it also has to be
     // cancellable, because the runner joins that worker at shutdown -- quitting mid-run
-    // would otherwise wait for Python to finish. The predicate reads the runner's state live,
-    // so a job that starts during the shutdown drain ends at its first poll.
+    // would otherwise wait for Python to finish. The predicate reads the runner's state and
+    // the user's cancel live, so a job that starts during the shutdown drain, or after a
+    // cancel that arrived while it was still queued, ends at its first poll.
     bind_async_cmd(
         "train_from_export",
-        [data_dir, training_export_active, &async_commands](const json&) {
+        [data_dir, training_export_active, training_cancel_requested, &async_commands](
+            const json&) {
             if (training_export_active->load(std::memory_order_acquire)) {
                 throw std::runtime_error(
                     "training export is in progress; wait for it to finish before training");
@@ -525,9 +533,26 @@ inline void register_commands(webview::webview& w, AppState& state,
                     "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
             }
             return training_deploy::train_from_export(
-                data_dir, [&async_commands] { return async_commands.stopping(); });
+                data_dir, [&async_commands, training_cancel_requested] {
+                    return async_commands.stopping() ||
+                           training_cancel_requested->load(std::memory_order_acquire);
+                });
         },
-        training_active, "training is already in progress");
+        training_active, "training is already in progress",
+        [training_cancel_requested] {
+            training_cancel_requested->store(false, std::memory_order_release);
+        });
+    // Reports whether there was a run to cancel. The run itself answers through its own
+    // result (`cancelled: true`) once the child is gone; this only raises the request.
+    bind_cmd("cancel_training", [training_active, training_cancel_requested](const json&) {
+        if (!developer_tools_enabled()) {
+            throw std::runtime_error(
+                "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
+        }
+        const bool running = training_active->load(std::memory_order_acquire);
+        if (running) training_cancel_requested->store(true, std::memory_order_release);
+        return json{{"requested", running}};
+    });
     // AUD-16 / P0-08: deliberately NOT developer-gated, unlike the three commands above.
     // ADR-0006 scopes developer tooling to *producing* a model — training, repo-path config,
     // train-from-export, the CLI copy surface. Recovering from a bad deployed model is the

@@ -41,6 +41,7 @@ export const useTrainingDeploy = ({
   const [repoPathInput, setRepoPathInput] = useState("");
   const [exportInProgress, setExportInProgress] = useState(false);
   const [trainingInProgress, setTrainingInProgress] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
   const [deployMessage, setDeployMessage] = useState<string | null>(null);
   const [deployMessageWarning, setDeployMessageWarning] = useState(false);
   const [showAdvancedCommand, setShowAdvancedCommand] = useState(false);
@@ -107,11 +108,19 @@ export const useTrainingDeploy = ({
 
   const handleTrainFromExport = useCallback(async () => {
     setTrainingInProgress(true);
+    setCancelRequested(false);
     setDeployMessage(null);
     setDeployMessageWarning(false);
     setCopyStatus(null);
     try {
       const result = await api.trainFromExport();
+      if (result.cancelled) {
+        // Not a failure: the user asked for this. No metrics, no reload, no warning tone.
+        setDeployMessage(result.message);
+        setDeployMessageWarning(false);
+        await refreshDeployStatus();
+        return;
+      }
       const metricsSummary = formatTrainingMetrics(result.metrics);
       const detail = metricsSummary ? ` ${metricsSummary}.` : "";
       const outcome = classifyTrainDeployOutcome(result);
@@ -142,8 +151,25 @@ export const useTrainingDeploy = ({
       setDeployMessage(err instanceof Error ? err.message : "Training could not start.");
     } finally {
       setTrainingInProgress(false);
+      setCancelRequested(false);
     }
   }, [onClassifierStatusChange, refreshDeployStatus]);
+
+  // The button flips to "Cancelling…" at once; the run's own result (awaited above) is what
+  // ends the in-progress state, once the native side has actually stopped the child.
+  const handleCancelTraining = useCallback(async () => {
+    setCancelRequested(true);
+    try {
+      const { requested } = await api.cancelTraining();
+      if (!requested) {
+        setCancelRequested(false);
+      }
+    } catch (err) {
+      setCancelRequested(false);
+      setDeployMessage(err instanceof Error ? err.message : "Could not cancel training.");
+      setDeployMessageWarning(true);
+    }
+  }, []);
 
   const handleCopyTrainingCommand = useCallback(async () => {
     const command = deployStatus
@@ -206,6 +232,7 @@ export const useTrainingDeploy = ({
 
   return {
     canTrainFromExport,
+    cancelRequested,
     copyStatus,
     deployMessage,
     deployMessageWarning,
@@ -215,6 +242,7 @@ export const useTrainingDeploy = ({
     handleExportTrainingData,
     handleReloadClassifierModel,
     handleRollbackClassifierModel,
+    handleCancelTraining,
     handleSaveRepoPath,
     handleTrainFromExport,
     modelReloadStatus,

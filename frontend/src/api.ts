@@ -491,6 +491,8 @@ export type AutostartStatus = {
 export type TrainFromExportResult = {
   success: boolean;
   trainingSucceeded: boolean;
+  // The run was ended early (by the user, or by the app shutting down); nothing was deployed.
+  cancelled?: boolean;
   deployReady: boolean;
   message: string;
   onnxExported: boolean;
@@ -840,6 +842,12 @@ export const api = {
   trainFromExport: async () => {
     const raw = await invoke<Record<string, unknown>>("train_from_export");
     return mapTrainFromExportResult(raw);
+  },
+  // Only raises the request; the run reports its own end through trainFromExport's result.
+  // `requested` is false when no run was in progress to cancel.
+  cancelTraining: async () => {
+    const raw = await invoke<Record<string, unknown>>("cancel_training");
+    return { requested: Boolean(raw?.requested ?? false) };
   },
   onCaptureFailed: (handler: (payload: CaptureFailurePayload) => void) =>
     listen<Record<string, unknown>>("capture-failed", (event) => {

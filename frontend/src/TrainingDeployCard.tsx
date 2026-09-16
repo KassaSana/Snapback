@@ -9,6 +9,7 @@ import {
 
 type TrainingDeployCardProps = {
   canTrainFromExport: boolean;
+  cancelRequested: boolean;
   classifierBackend: string;
   classifierModelId: string | null;
   classifierModelPath: string | null;
@@ -18,6 +19,7 @@ type TrainingDeployCardProps = {
   deployStatus: TrainingDeployStatus | null;
   exportInProgress: boolean;
   handleCopyTrainingCommand: () => void | Promise<void>;
+  handleCancelTraining: () => void | Promise<void>;
   handleExportTrainingData: () => void | Promise<void>;
   handleReloadClassifierModel: () => void | Promise<void>;
   handleRollbackClassifierModel: () => void | Promise<void>;
@@ -37,6 +39,7 @@ type TrainingDeployCardProps = {
 // SNAPBACK_DEV_TRAINING). A normal Release Settings surface must not render this card.
 export const TrainingDeployCard = memo(function TrainingDeployCard({
   canTrainFromExport,
+  cancelRequested,
   classifierBackend,
   classifierModelId,
   classifierModelPath,
@@ -45,6 +48,7 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
   deployMessageWarning,
   deployStatus,
   exportInProgress,
+  handleCancelTraining,
   handleCopyTrainingCommand,
   handleExportTrainingData,
   handleReloadClassifierModel,
@@ -175,6 +179,15 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
           >
             {trainingInProgress ? "Training…" : "Train from export"}
           </button>
+          {trainingInProgress ? (
+            <button
+              className="secondary-button"
+              disabled={cancelRequested}
+              onClick={() => void handleCancelTraining()}
+            >
+              {cancelRequested ? "Cancelling…" : "Cancel training"}
+            </button>
+          ) : null}
           <button
             className="secondary-button"
             disabled={!candidateDeployable && !classifierModelPath}

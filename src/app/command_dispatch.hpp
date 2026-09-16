@@ -180,12 +180,19 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
 // The gate is per command family, not global: a personal export and a training export
 // contend on the same worker but not on each other's files, so one running must not report
 // the other as busy.
+//
+// `on_claimed` runs on the calling thread right after the gate is taken and before the job
+// is queued -- never on the busy path. It is where per-run state is reset: the caller's
+// thread is the one that also carries the commands that would set that state (a cancel
+// request), so resetting here orders "new run" strictly after any request aimed at the old
+// one, and strictly before any aimed at this one. Resetting inside the job would race both.
 inline void dispatch_single_flight(const std::function<bool(std::function<void()>)>& submit,
                                    std::function<void(std::string)> resolve,
                                    JsonHandler handler, std::string req,
                                    std::string expected_token,
                                    std::shared_ptr<std::atomic<bool>> active,
-                                   std::string busy_message) {
+                                   std::string busy_message,
+                                   const std::function<void()>& on_claimed = {}) {
     bool expected = false;
     if (!active->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
         const JsonHandler busy = [message = std::move(busy_message)](const nlohmann::json&)
@@ -193,6 +200,7 @@ inline void dispatch_single_flight(const std::function<bool(std::function<void()
         resolve(run_json_command(busy, req, expected_token));
         return;
     }
+    if (on_claimed) on_claimed();
 
     const bool queued = submit([resolve, handler = std::move(handler), req, expected_token,
                                 active] {

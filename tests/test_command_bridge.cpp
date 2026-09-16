@@ -134,6 +134,35 @@ TEST_CASE("dispatch_single_flight runs the handler on the worker and releases th
     CHECK_FALSE(gate->load());
 }
 
+TEST_CASE("dispatch_single_flight runs on_claimed once the gate is taken, before queueing") {
+    // on_claimed is where a run's cancel flag is cleared. It has to run on the dispatching
+    // thread after the claim (so a cancel aimed at the previous run is discarded) and before
+    // the job is queued (so a cancel aimed at this run is not).
+    auto gate = std::make_shared<std::atomic<bool>>(false);
+    std::vector<std::string> order;
+    const auto submit = [&](std::function<void()>) {
+        order.push_back("queued");
+        return true;
+    };
+    const auto resolve = [](std::string) {};
+    detail::dispatch_single_flight(
+        submit, resolve, [](const json&) { return json(1); }, "[{}]", "", gate, "busy",
+        [&] {
+            CHECK(gate->load());
+            order.push_back("claimed");
+        });
+    CHECK(order == std::vector<std::string>{"claimed", "queued"});
+}
+
+TEST_CASE("dispatch_single_flight does not run on_claimed on the busy path") {
+    auto gate = std::make_shared<std::atomic<bool>>(true);
+    bool claimed = false;
+    detail::dispatch_single_flight(
+        [](std::function<void()>) { return true; }, [](std::string) {},
+        [](const json&) { return json(1); }, "[{}]", "", gate, "busy", [&] { claimed = true; });
+    CHECK_FALSE(claimed);
+}
+
 TEST_CASE("dispatch_single_flight reports busy without queueing while the gate is held") {
     auto gate = std::make_shared<std::atomic<bool>>(true);
     std::size_t submissions = 0;
