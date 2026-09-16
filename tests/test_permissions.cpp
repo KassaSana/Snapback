@@ -40,6 +40,19 @@ TEST_CASE("checking permissions never changes the reported state") {
     CHECK(first.message == second.message);
 }
 
+TEST_CASE("invalidating the probe cache does not change the answer") {
+    // The cache only amortises; it must never be the thing that decides. A probe after
+    // invalidation has to agree with the one before it, or the "check again" button in
+    // onboarding would show a different status from the health poll for no reason.
+    const auto before = check_capture_permissions(true, true);
+    invalidate_permission_probe_cache();
+    const auto after = check_capture_permissions(true, true);
+
+    CHECK(before.capture_available == after.capture_available);
+    CHECK(before.active_window_available == after.active_window_available);
+    CHECK(before.setup_steps == after.setup_steps);
+}
+
 #if defined(_WIN32)
 TEST_CASE("requesting permissions succeeds on Windows without a dialog") {
     // Windows hooks need no consent, so the request is a no-op that reports success.

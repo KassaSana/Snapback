@@ -172,9 +172,9 @@ Stats measure_live_read_set(AppState& state, std::atomic<bool>& stop,
         const auto snapback = state.latest_snapback();
         const auto classifier = state.classifier_status();
         // refresh_permissions() is deliberately absent. It never touches the state lock,
-        // so it says nothing about contention -- and on Linux it shells out
-        // (`command -v xdotool` via std::system) on every call, which turned this loop
-        // into a quarter-million process spawns and ran CI's step past its timeout.
+        // so it says nothing about contention. (It used to shell out on Linux on every
+        // call, which turned this loop into a quarter-million process spawns; the xdotool
+        // probe is cached now, so health() above no longer pays that either.)
         const bool idle = state.is_idle();
         samples.push_back(t.elapsed_us());
         g_int_sink += health.capture_events_dropped + prediction.has_value() +

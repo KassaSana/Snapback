@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <string>
 
+#include "util/cached_probe.hpp"
+
 #if defined(__APPLE__)
 #include <ApplicationServices/ApplicationServices.h>
 #endif
@@ -10,16 +12,37 @@
 namespace snapback {
 namespace {
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__APPLE__)
 bool command_available(const char* command) {
     std::string probe = "command -v ";
     probe += command;
     probe += " >/dev/null 2>/dev/null";
     return std::system(probe.c_str()) == 0;
 }
+
+// Whether xdotool is installed changes about once per machine, but every health poll asked
+// again, and asking means forking a shell on the command worker. The pollers read through
+// this cache; request_capture_permissions() invalidates it so a user who just ran
+// `apt install xdotool` and clicked "check again" is not shown a 30-second-old "missing".
+CachedProbe& xdotool_probe() {
+    static CachedProbe probe([] { return command_available("xdotool"); },
+                             kCommandProbeTtlMs);
+    return probe;
+}
+
+const Clock& system_clock() {
+    static const SystemClock clock;
+    return clock;
+}
 #endif
 
 }  // namespace
+
+void invalidate_permission_probe_cache() {
+#if !defined(_WIN32) && !defined(__APPLE__)
+    xdotool_probe().invalidate();
+#endif
+}
 
 PermissionStatus check_capture_permissions(bool capture_running, bool capture_observed) {
     PermissionStatus status;
@@ -44,7 +67,7 @@ PermissionStatus check_capture_permissions(bool capture_running, bool capture_ob
     }
 #else
     const bool has_display = std::getenv("DISPLAY") != nullptr || std::getenv("WAYLAND_DISPLAY") != nullptr;
-    const bool has_xdotool = command_available("xdotool");
+    const bool has_xdotool = xdotool_probe().value(system_clock());
     status.capture_available = has_display && has_xdotool;
     status.active_window_available = has_display && has_xdotool;
     status.message = status.capture_available
@@ -85,6 +108,10 @@ bool request_capture_permissions() {
 #else
     // Linux capture needs a desktop session and xdotool, not a permission grant — there is
     // no dialog to raise, so report the current state instead of pretending we asked.
+    //
+    // The user clicked a button, so "current" has to mean now, not whatever the health
+    // poll cached up to kCommandProbeTtlMs ago.
+    invalidate_permission_probe_cache();
     return check_capture_permissions(false).capture_available;
 #endif
 }
