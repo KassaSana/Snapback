@@ -377,6 +377,89 @@ TEST_CASE("training_deploy rejects invalid configured repo") {
                     std::runtime_error);
 }
 
+namespace {
+
+// A stand-in for the training pipeline (the real one is not in this checkout, ADR-0006):
+// enough of an `ml/pipeline_cli.py` for train_from_export to accept the repo and run it.
+// The script body decides what the "pipeline" does.
+void write_fake_repo(const std::filesystem::path& repo, const std::string& script_body) {
+    write_text(repo / "ml" / "pipeline_cli.py", script_body);
+}
+
+void write_minimal_export(const std::filesystem::path& app_data) {
+    const auto out_dir = training_deploy::export_dir(app_data);
+    write_text(out_dir / "features.csv", "a,b\n1,2\n");
+    write_text(out_dir / "labels.csv", "label\n1\n");
+}
+
+// The C++ tests do not require Python, so the two integration cases below step aside
+// without it rather than fail. Every CI runner has it; a developer box might not.
+bool python_available(const std::filesystem::path& app_data) {
+    return training_deploy::training_deploy_status(app_data).value("pythonAvailable", false);
+}
+
+}  // namespace
+
+TEST_CASE("train_from_export runs the pipeline inside the repo and reports its exit code") {
+    TempDir app_data;
+    TempDir repo;
+    // Exit 2 is the pipeline's "majority-classifier stub" signal; the message the user sees
+    // depends on that code arriving intact through the spawn. The prints prove the working
+    // directory and the arguments reached the child, via the log the app captured.
+    write_fake_repo(repo.path,
+                    "import os, sys\n"
+                    "print('cwd=' + os.getcwd())\n"
+                    "print('argv=' + ' '.join(sys.argv[1:]))\n"
+                    "sys.exit(2)\n");
+    write_minimal_export(app_data.path);
+    training_deploy::write_training_repo_path(app_data.path, repo.path);
+    if (!python_available(app_data.path)) {
+        MESSAGE("python not found; skipping the pipeline integration case");
+        return;
+    }
+
+    const auto result = training_deploy::train_from_export(app_data.path);
+
+    CHECK_FALSE(result.value("trainingSucceeded", true));
+    CHECK_FALSE(result.value("cancelled", true));
+    CHECK(result.value("message", "").find("majority-classifier") != std::string::npos);
+    const auto log_tail = result.value("logTail", "");
+    CHECK(log_tail.find("argv=-m") == std::string::npos);  // -m is the interpreter's, not ours
+    CHECK(log_tail.find("--skip-export") != std::string::npos);
+    CHECK(log_tail.find("--output-dir") != std::string::npos);
+    // The child's cwd is the repo. Compared through the filesystem rather than as text, since
+    // Python reports the OS's spelling of the path and TempDir holds the C++ one.
+    const auto cwd_line = log_tail.find("cwd=");
+    REQUIRE(cwd_line != std::string::npos);
+    const auto cwd_end = log_tail.find('\n', cwd_line);
+    const std::filesystem::path reported = log_tail.substr(cwd_line + 4, cwd_end - cwd_line - 4);
+    CHECK(std::filesystem::equivalent(reported, repo.path));
+}
+
+TEST_CASE("train_from_export ends a running pipeline when asked to cancel") {
+    TempDir app_data;
+    TempDir repo;
+    write_fake_repo(repo.path, "import time\ntime.sleep(30)\n");
+    write_minimal_export(app_data.path);
+    training_deploy::write_training_repo_path(app_data.path, repo.path);
+    if (!python_available(app_data.path)) {
+        MESSAGE("python not found; skipping the cancellation integration case");
+        return;
+    }
+
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto result = training_deploy::train_from_export(app_data.path, [started_at] {
+        return std::chrono::steady_clock::now() - started_at > std::chrono::milliseconds(500);
+    });
+    const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+    CHECK(result.value("cancelled", false));
+    CHECK_FALSE(result.value("trainingSucceeded", true));
+    CHECK_FALSE(result.value("success", true));
+    CHECK(result.value("message", "").find("cancelled") != std::string::npos);
+    CHECK(elapsed < std::chrono::seconds(10));
+}
+
 TEST_CASE("training_deploy builds platform command with output dir") {
     const auto command = training_deploy::build_pipeline_command("C:/app data/exports/training");
     CHECK(command.find("-m ml.pipeline_cli") != std::string::npos);

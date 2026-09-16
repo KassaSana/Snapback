@@ -4705,6 +4705,19 @@ kept here; already-deep modules and completed performance work were rejected dur
   of this work, aligning with **4.2**, and do not promise cancellation until the child can
   actually be stopped.
 
+  Progress (2026-09-16): the owned process API exists (`util/subprocess.hpp`: argv, not a
+  shell; Job object / process group so a kill reaches the launcher's children; SIGTERM then
+  SIGKILL). `train_from_export` runs through it on the command worker, gated so one training
+  runs at a time and the privacy deletion refuses while one is reading the export directory,
+  and it ends at its next poll once shutdown begins -- verified with a real Python child,
+  including that `py -3`'s python.exe dies with the launcher. `pythonAvailable` no longer
+  spawns on every status refresh.
+
+  Remaining: job ids returned within 50 ms with progress, completion, and failure as events;
+  a user-facing cancel (the predicate is in place, the button and command are not); the
+  registry marking from **14.3**; and the deliberately slow fake job proving the UI
+  heartbeat stays responsive.
+
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `M`
   `performance`
   Opened 2026-08-05. `main.cpp` blocks on `Storage::open()` before the webview is constructed.

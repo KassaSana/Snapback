@@ -10,6 +10,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -56,6 +57,55 @@ TEST_CASE("AsyncCommandRunner leaves its caller responsive and joins active work
 
     release.set_value();
     runner.shutdown();
+}
+
+TEST_CASE("AsyncCommandRunner::stopping lets a long job cut itself short at shutdown") {
+    // The training run: a job that would block for minutes and can only end early by
+    // asking. shutdown() joins the worker, so if the job ignored stopping() this test would
+    // hang -- which is precisely the exit hang the accessor exists to prevent.
+    detail::AsyncCommandRunner runner;
+    std::promise<void> entered;
+    std::atomic<bool> saw_stopping{false};
+
+    REQUIRE(runner.submit([&] {
+        entered.set_value();
+        while (!runner.stopping()) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        saw_stopping.store(true);
+    }));
+    REQUIRE(entered.get_future().wait_for(std::chrono::seconds(1)) ==
+            std::future_status::ready);
+    CHECK_FALSE(runner.stopping());
+
+    const auto started_at = std::chrono::steady_clock::now();
+    runner.shutdown();
+    CHECK(saw_stopping.load());
+    CHECK(std::chrono::steady_clock::now() - started_at < std::chrono::seconds(5));
+}
+
+TEST_CASE("a job queued before shutdown still runs and sees stopping() from its first poll") {
+    // Shutdown drains the queue rather than dropping it, so a training job can begin after
+    // the exit has started. It must end at its first poll, not run to completion.
+    detail::AsyncCommandRunner runner;
+    std::promise<void> release_first;
+    auto release_future = release_first.get_future().share();
+    std::atomic<bool> second_ran{false};
+    std::atomic<bool> second_saw_stopping{false};
+
+    REQUIRE(runner.submit([&] { release_future.wait(); }));
+    REQUIRE(runner.submit([&] {
+        second_ran.store(true);
+        second_saw_stopping.store(runner.stopping());
+    }));
+
+    // Begin shutdown from another thread while the first job still holds the worker, then
+    // let it go; the second job runs during the drain.
+    std::thread stopper([&] { runner.shutdown(); });
+    while (!runner.stopping()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    release_first.set_value();
+    stopper.join();
+
+    CHECK(second_ran.load());
+    CHECK(second_saw_stopping.load());
 }
 
 TEST_CASE("dispatch_single_flight runs the handler on the worker and releases the gate") {

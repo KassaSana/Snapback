@@ -81,9 +81,14 @@ inline void register_commands(webview::webview& w, AppState& state,
             },
             nullptr);
     };
-    // The export worker and the UI thread both touch this gate. Training consumes the files
-    // and privacy deletion erases them, so neither may overlap a partially written pair.
+    // Training consumes the export's files and privacy deletion erases them, so neither may
+    // overlap a partially written pair. Export and training share the worker, which already
+    // serialises them; the gate is what the UI-thread deletion reads.
     const auto training_export_active = std::make_shared<std::atomic<bool>>(false);
+    // Held for the length of a Python run, which reads the export's CSVs and writes its model
+    // and log into the same directory. Export cannot overlap it (same worker); the UI-thread
+    // deletion can, and reads this to refuse.
+    const auto training_active = std::make_shared<std::atomic<bool>>(false);
     // Personal exports write one archive; two at once would race on the same path.
     const auto personal_export_active = std::make_shared<std::atomic<bool>>(false);
 
@@ -282,10 +287,18 @@ inline void register_commands(webview::webview& w, AppState& state,
     // Roadmap 8.12. Returns what was deleted, what could not be, and what was deliberately
     // kept. It used to return null, which left the UI able to say only "deleted" or "failed"
     // for an operation that can half-succeed.
-    bind_cmd("delete_all_activity_data", [&state, training_export_active](const json&) {
+    bind_cmd("delete_all_activity_data",
+             [&state, training_export_active, training_active](const json&) {
         if (training_export_active->load(std::memory_order_acquire)) {
             throw std::runtime_error(
                 "training export is in progress; wait for it to finish before deleting activity");
+        }
+        // Deleting exports/training under a running pipeline would take its inputs away
+        // mid-read and race its outputs. Training only became concurrent with this command
+        // when it moved off the UI thread, which is why the check is newer than its sibling.
+        if (training_active->load(std::memory_order_acquire)) {
+            throw std::runtime_error(
+                "training is in progress; wait for it to finish before deleting activity");
         }
         return json(state.delete_all_activity_data());
     });
@@ -495,17 +508,26 @@ inline void register_commands(webview::webview& w, AppState& state,
         training_deploy::write_training_repo_path(data_dir, repo_path);
         return json(nullptr);
     });
-    bind_cmd("train_from_export", [data_dir, training_export_active](const json&) {
-        if (training_export_active->load(std::memory_order_acquire)) {
-            throw std::runtime_error(
-                "training export is in progress; wait for it to finish before training");
-        }
-        if (!developer_tools_enabled()) {
-            throw std::runtime_error(
-                "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
-        }
-        return training_deploy::train_from_export(data_dir);
-    });
+    // Training runs Python for minutes. It was a sync binding, which runs on the webview's
+    // own thread: the window froze for the whole run. On the worker it also has to be
+    // cancellable, because the runner joins that worker at shutdown -- quitting mid-run
+    // would otherwise wait for Python to finish. The predicate reads the runner's state live,
+    // so a job that starts during the shutdown drain ends at its first poll.
+    bind_async_cmd(
+        "train_from_export",
+        [data_dir, training_export_active, &async_commands](const json&) {
+            if (training_export_active->load(std::memory_order_acquire)) {
+                throw std::runtime_error(
+                    "training export is in progress; wait for it to finish before training");
+            }
+            if (!developer_tools_enabled()) {
+                throw std::runtime_error(
+                    "training tooling is developer-only; set SNAPBACK_DEV_TRAINING or use a Debug build");
+            }
+            return training_deploy::train_from_export(
+                data_dir, [&async_commands] { return async_commands.stopping(); });
+        },
+        training_active, "training is already in progress");
     // AUD-16 / P0-08: deliberately NOT developer-gated, unlike the three commands above.
     // ADR-0006 scopes developer tooling to *producing* a model — training, repo-path config,
     // train-from-export, the CLI copy surface. Recovering from a bad deployed model is the
