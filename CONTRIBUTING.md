@@ -5,8 +5,9 @@ obvious** — the ones where following your instincts produces a red build or, w
 inconsistency nobody notices for a month.
 
 This file is committed on purpose. Guidance that lives only in a personal, gitignored agent
-file (`CLAUDE.md` and friends are gitignored here, deliberately, and docs may not cite them
-as paths) is guidance no clone has and no tool but its owner's can read. Before this file
+file (`CLAUDE.md` is gitignored here, deliberately, and docs may not cite it as a path) is
+guidance no clone has and no tool but its owner's can read. The committed [`AGENTS.md`](AGENTS.md)
+is the tool-neutral entry point that sends every agent here first. Before this file
 existed, the commit-attribution rule below was written down in exactly one place —
 `.cursor/rules/commit-attribution.mdc` — which meant Cursor knew about it and nothing else
 did, including a human reading the repo for the first time.
