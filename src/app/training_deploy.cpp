@@ -12,32 +12,13 @@
 #include <string>
 #include <vector>
 
-#if !defined(_WIN32)
-#include <sys/wait.h>  // WIFEXITED / WEXITSTATUS — std::system returns a wait status here
-#endif
-
 #include "engine/onnx_model.hpp"
+#include "util/cached_probe.hpp"
 #include "util/fs_replace.hpp"
 
 namespace snapback::training_deploy {
 
 namespace detail {
-
-int normalized_exit_code(int system_result) {
-    if (system_result == -1) return -1;  // couldn't even start a shell
-#if defined(_WIN32)
-    // cmd.exe returns the child's exit code directly.
-    return system_result;
-#else
-    // POSIX std::system returns a *wait status*, not an exit code: a child exiting 2 comes
-    // back as 512 (2 << 8). The pipeline's `exit_code == 2` check for the
-    // majority-classifier stub therefore never fired, and users lost the "capture more
-    // labeled sessions" guidance. (`== 0` worked only because status 0 <=> exit 0.)
-    if (WIFEXITED(system_result)) return WEXITSTATUS(system_result);
-    if (WIFSIGNALED(system_result)) return 128 + WTERMSIG(system_result);  // shell convention
-    return -1;
-#endif
-}
 
 std::string shell_quote(const std::string& value) {
 #if defined(_WIN32)
@@ -75,8 +56,6 @@ std::string shell_quote(const std::string& value) {
 namespace {
 
 std::string quote(const std::filesystem::path& path) { return detail::shell_quote(path.string()); }
-
-std::string quote_arg(const std::string& value) { return detail::shell_quote(value); }
 
 std::uint64_t count_csv_rows(const std::filesystem::path& path) {
     std::ifstream in(path);
@@ -165,8 +144,13 @@ std::optional<nlohmann::json> parse_json_object(const std::filesystem::path& pat
     return parsed;
 }
 
-bool command_succeeds(const std::string& command) {
-    return std::system(command.c_str()) == 0;
+// Whether `argv` runs and exits 0, with its output discarded. Spawned directly, so a program
+// name is never handed to a shell.
+bool program_runs(std::vector<std::string> argv) {
+    subprocess::SpawnRequest request;
+    request.argv = std::move(argv);
+    const auto result = subprocess::run(request, nullptr);
+    return result.started && result.exit_code == 0;
 }
 
 std::optional<std::string> get_env_var(const char* name) {
@@ -182,22 +166,29 @@ std::optional<std::string> get_env_var(const char* name) {
 #endif
 }
 
-struct PythonCommand {
-    std::string program;
-    std::vector<std::string> prefix_args;
-};
-
-std::optional<PythonCommand> find_python() {
+// The interpreter as the leading argv elements of a training run: `py -3` on Windows (the
+// launcher picks the newest Python 3), `python3` elsewhere, with bare `python` as the
+// fallback on both.
+std::optional<std::vector<std::string>> find_python() {
 #if defined(_WIN32)
-    if (command_succeeds("py -3 --version >NUL 2>NUL")) return PythonCommand{"py", {"-3"}};
-    if (command_succeeds("python --version >NUL 2>NUL")) return PythonCommand{"python", {}};
+    if (program_runs({"py", "-3", "--version"})) return std::vector<std::string>{"py", "-3"};
 #else
-    if (command_succeeds("python3 --version >/dev/null 2>/dev/null")) {
-        return PythonCommand{"python3", {}};
-    }
-    if (command_succeeds("python --version >/dev/null 2>/dev/null")) return PythonCommand{"python", {}};
+    if (program_runs({"python3", "--version"})) return std::vector<std::string>{"python3"};
 #endif
+    if (program_runs({"python", "--version"})) return std::vector<std::string>{"python"};
     return std::nullopt;
+}
+
+// Whether an interpreter is installed changes about once per machine, and the status panel
+// asks on every refresh -- each ask is one or two process spawns. Cached the same way the
+// xdotool check is (util/cached_probe.hpp). train_from_export itself always probes afresh:
+// that call is the user saying "try now", and a cached "no" would be a stale refusal.
+constexpr std::int64_t kPythonProbeTtlMs = 60'000;
+
+bool python_available_cached() {
+    static CachedProbe probe([] { return find_python().has_value(); }, kPythonProbeTtlMs);
+    static const SystemClock clock;
+    return probe.value(clock);
 }
 
 std::string read_file_tail(const std::filesystem::path& path, std::size_t max_lines) {
@@ -727,14 +718,35 @@ nlohmann::json training_deploy_status(const std::filesystem::path& app_data_dir)
         {"metrics", metrics.value_or(nlohmann::json(nullptr))},
         {"qualityGate", quality_gate},
         {"rollbackAvailable", rollback_available(app_data_dir)},
-        {"pythonAvailable", find_python().has_value()},
+        {"pythonAvailable", python_available_cached()},
         {"repoPath", repo_path ? nlohmann::json(repo_path->string()) : nlohmann::json(nullptr)},
         {"repoConfigured", repo_path.has_value()},
         {"pipelineCommand", build_pipeline_command(out_dir)},
     };
 }
 
-nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
+namespace detail {
+
+subprocess::SpawnRequest training_spawn_request(const std::filesystem::path& repo_path,
+                                                const std::vector<std::string>& python_argv,
+                                                const std::filesystem::path& output_dir,
+                                                const std::filesystem::path& log_path) {
+    subprocess::SpawnRequest request;
+    request.argv = python_argv;
+    request.argv.insert(request.argv.end(),
+                        {"-m", "ml.pipeline_cli", "--output-dir", output_dir.string(),
+                         "--skip-export"});
+    // `python -m` resolves the package from the working directory, which is why the run
+    // happens inside the repo rather than pointing at it.
+    request.cwd = repo_path;
+    request.output_path = log_path;
+    return request;
+}
+
+}  // namespace detail
+
+nlohmann::json train_from_export(const std::filesystem::path& app_data_dir,
+                                 const subprocess::CancelPredicate& should_cancel) {
     const auto status = training_deploy_status(app_data_dir);
     if (!status.value("hasExport", false)) {
         throw std::runtime_error(
@@ -757,21 +769,21 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
     const auto log_path = out_dir / "training.log";
     std::filesystem::create_directories(out_dir);
 
-    std::ostringstream cmd;
-#if defined(_WIN32)
-    cmd << "cd /d " << quote(*repo_path) << " && " << python->program;
-#else
-    cmd << "cd " << quote(*repo_path) << " && " << python->program;
-#endif
-    for (const auto& arg : python->prefix_args) cmd << ' ' << quote_arg(arg);
-    cmd << " -m ml.pipeline_cli --output-dir " << quote(out_dir)
-        << " --skip-export > " << quote(log_path) << " 2>&1";
-
-    const int exit_code = detail::normalized_exit_code(std::system(cmd.str().c_str()));
+    const auto run = subprocess::run(
+        detail::training_spawn_request(*repo_path, *python, out_dir, log_path),
+        should_cancel);
+    if (!run.started) {
+        // The interpreter answered --version a moment ago, so this is rare: the repo path
+        // vanished, or the log could not be created. Nothing ran, so there is no log to
+        // point at; say what failed instead.
+        throw std::runtime_error("Could not start the training pipeline: " + run.error);
+    }
+    const int exit_code = run.exit_code;
     const std::string log_tail = read_file_tail(log_path, 12);
     const bool onnx_exported = std::filesystem::is_regular_file(out_dir / "model.onnx");
     const auto metrics = parse_metrics_json(out_dir / "metrics.json");
-    const bool training_succeeded = exit_code == 0;
+    // A cancelled run is never a success, whatever the kill left behind as an exit code.
+    const bool training_succeeded = exit_code == 0 && !run.cancelled;
     const auto deployed_quality = parse_json_object(app_data_dir / "model_quality.json");
     ModelQualityDecision quality;
     bool quality_checked = false;
@@ -798,7 +810,9 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
     }
 
     std::string message;
-    if (!training_succeeded) {
+    if (run.cancelled) {
+        message = "Training was cancelled before it finished. Nothing was deployed.";
+    } else if (!training_succeeded) {
         message = build_failure_message(exit_code, log_tail);
     } else if (onnx_exported) {
         message = quality.reason;
@@ -814,6 +828,7 @@ nlohmann::json train_from_export(const std::filesystem::path& app_data_dir) {
     return nlohmann::json{
         {"success", training_succeeded && onnx_exported && quality.accepted && !sync_warning},
         {"trainingSucceeded", training_succeeded},
+        {"cancelled", run.cancelled},
         {"deployReady", training_succeeded && onnx_exported && quality.accepted && !sync_warning},
         {"message", message},
         {"onnxExported", onnx_exported},

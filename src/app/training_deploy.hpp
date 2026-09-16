@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "types.hpp"
+#include "util/subprocess.hpp"
 
 namespace snapback::training_deploy {
 
@@ -64,19 +65,30 @@ ModelQualityDecision evaluate_model_quality(
     const std::optional<nlohmann::json>& deployed_quality = std::nullopt);
 
 nlohmann::json training_deploy_status(const std::filesystem::path& app_data_dir);
-nlohmann::json train_from_export(const std::filesystem::path& app_data_dir);
+
+// Run the training pipeline to completion, or until `should_cancel` answers true, and report
+// the outcome. Blocks for the length of the run: callers put it on a worker, never the UI
+// thread. A cancelled run reports `cancelled: true` and deploys nothing. With no predicate
+// the run cannot be interrupted.
+nlohmann::json train_from_export(const std::filesystem::path& app_data_dir,
+                                 const subprocess::CancelPredicate& should_cancel = {});
 std::string build_pipeline_command(const std::filesystem::path& output_dir);
 
 namespace detail {
 
 // Quote a single argument for the platform shell so its contents can never be interpreted
-// as syntax. Exposed for testing — the repo path reaches std::system, and it comes from a
-// user-writable env var / file, so this is the boundary that has to hold.
+// as syntax. This guards `pipelineCommand`, the copy-and-paste string the user runs in their
+// own shell. The app's own training run does not go through a shell at all (see
+// training_spawn_request), so this is a display concern, not the execution boundary.
 std::string shell_quote(const std::string& value);
 
-// Turn the return of std::system into an actual exit code. On POSIX that return is a wait
-// status, so a child exiting 2 arrives as 512 — see the implementation. Exposed for testing.
-int normalized_exit_code(int system_result);
+// The process the app starts for a training run, as an argv array rather than a command
+// line. Exposed so a test can pin the property that made std::system unsafe here: the repo
+// path is one argv element, whatever characters it contains.
+subprocess::SpawnRequest training_spawn_request(const std::filesystem::path& repo_path,
+                                                const std::vector<std::string>& python_argv,
+                                                const std::filesystem::path& output_dir,
+                                                const std::filesystem::path& log_path);
 
 }  // namespace detail
 

@@ -2,10 +2,11 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <string>
+#include <vector>
 
 #include "app/training_deploy.hpp"
 
@@ -390,10 +391,10 @@ TEST_CASE("training_deploy builds platform command with output dir") {
 }
 
 TEST_CASE("shell_quote neutralizes command substitution in repo paths") {
-    // The repo path comes from SNAPBACK_REPO or training_repo.txt — both writable by any
-    // local process running as the user — and ends up inside a std::system() command.
-    // A directory literally named "$(...)" passes is_training_repo()'s existence check,
-    // because std::filesystem treats the name as literal while the shell does not.
+    // shell_quote now guards only pipelineCommand, the string the user pastes into their
+    // own shell; the app's run passes the path as argv (see training_spawn_request). The
+    // pasted string still has to survive a directory literally named "$(...)", which
+    // std::filesystem treats as a name and the shell does not.
     const auto quoted = training_deploy::detail::shell_quote("/tmp/$(touch /tmp/pwned)");
 
 #if defined(_WIN32)
@@ -427,26 +428,23 @@ TEST_CASE("shell_quote leaves ordinary paths usable") {
 #endif
 }
 
-TEST_CASE("normalized_exit_code unwraps the POSIX wait status") {
-    using training_deploy::detail::normalized_exit_code;
+TEST_CASE("training_spawn_request keeps the repo path as one argv element") {
+    // The repo path comes from SNAPBACK_REPO or training_repo.txt -- both writable by any
+    // local process running as the user. When the run went through std::system, a directory
+    // literally named "$(...)" passed is_training_repo()'s existence check and then executed.
+    // Now the path is handed to the child as data: one argv element, no shell in between, and
+    // the working directory rather than a `cd` in a command string.
+    const std::filesystem::path hostile_repo = "/tmp/$(touch /tmp/pwned)";
+    const auto request = training_deploy::detail::training_spawn_request(
+        hostile_repo, {"py", "-3"}, "C:/app data/exports/training",
+        "C:/app data/exports/training/training.log");
 
-    // The bug: std::system returns a wait status on POSIX, so a child exiting 2 arrives as
-    // 512 and the `exit_code == 2` branch that surfaces the majority-classifier-stub
-    // guidance never fired. Verified against a real `sh -c 'exit 2'`, which returns 512.
-    CHECK(normalized_exit_code(0) == 0);
-#if defined(_WIN32)
-    CHECK(normalized_exit_code(2) == 2);
-#else
-    CHECK(normalized_exit_code(512) == 2);   // 2 << 8
-    CHECK(normalized_exit_code(256) == 1);
-    CHECK(normalized_exit_code(9) == 128 + 9);  // killed by SIGKILL, shell convention
-#endif
-    CHECK(normalized_exit_code(-1) == -1);  // shell never started
-}
-
-TEST_CASE("normalized_exit_code agrees with a real child process") {
-    // Ties the unit test to reality rather than to my reading of the man page.
-    using training_deploy::detail::normalized_exit_code;
-    CHECK(normalized_exit_code(std::system("exit 2")) == 2);
-    CHECK(normalized_exit_code(std::system("exit 0")) == 0);
+    const std::vector<std::string> expected_argv = {
+        "py", "-3", "-m", "ml.pipeline_cli", "--output-dir", "C:/app data/exports/training",
+        "--skip-export"};
+    CHECK(request.argv == expected_argv);
+    REQUIRE(request.cwd.has_value());
+    CHECK(*request.cwd == hostile_repo);
+    REQUIRE(request.output_path.has_value());
+    CHECK(*request.output_path == std::filesystem::path("C:/app data/exports/training/training.log"));
 }
