@@ -97,6 +97,13 @@ inline void register_commands(webview::webview& w, AppState& state,
     const auto training_cancel_requested = std::make_shared<std::atomic<bool>>(false);
     // Personal exports write one archive; two at once would race on the same path.
     const auto personal_export_active = std::make_shared<std::atomic<bool>>(false);
+    // The three below were synchronous bindings until 2026-09-16, which put a full database
+    // copy (VACUUM INTO) and two file writes on the webview's thread. Each has the same
+    // shape as the exports: a worker job, one gate, and a UI-thread command that must not
+    // touch the same files while the gate is held.
+    const auto summary_export_active = std::make_shared<std::atomic<bool>>(false);
+    const auto support_export_active = std::make_shared<std::atomic<bool>>(false);
+    const auto import_staging_active = std::make_shared<std::atomic<bool>>(false);
 
     // --- Health + predictions ---
     bind_cmd("get_health", [&state](const json&) { return json(state.health()); });
@@ -105,12 +112,15 @@ inline void register_commands(webview::webview& w, AppState& state,
         result["supportBundlePrivacyNotice"] = kSupportBundlePrivacyNotice;
         return result;
     });
-    bind_cmd("export_support_bundle", [&state, data_dir](const json&) {
-        const auto exported =
-            export_support_bundle(data_dir / "exports" / "support", state.diagnostics());
-        return json{{"outputPath", exported.output_path},
-                    {"privacyNotice", exported.privacy_notice}};
-    });
+    bind_async_cmd(
+        "export_support_bundle",
+        [&state, data_dir](const json&) {
+            const auto exported =
+                export_support_bundle(data_dir / "exports" / "support", state.diagnostics());
+            return json{{"outputPath", exported.output_path},
+                        {"privacyNotice", exported.privacy_notice}};
+        },
+        support_export_active, "support bundle export is already in progress");
     bind_cmd("get_latest_prediction", [&state](const json&) {
         auto p = state.latest_prediction();
         return p ? json(*p) : json(nullptr);
@@ -272,11 +282,14 @@ inline void register_commands(webview::webview& w, AppState& state,
         return json(state.summary_report(a.value("window", std::string("day")),
                                          detail::opt_string(a, "since")));
     });
-    bind_cmd("export_summary_report", [&state, data_dir](const json& a) {
-        return json(state.export_summary_report(data_dir / "exports" / "summaries",
-                                                 a.value("window", std::string("day")),
-                                                 detail::opt_string(a, "since")));
-    });
+    bind_async_cmd(
+        "export_summary_report",
+        [&state, data_dir](const json& a) {
+            return json(state.export_summary_report(data_dir / "exports" / "summaries",
+                                                     a.value("window", std::string("day")),
+                                                     detail::opt_string(a, "since")));
+        },
+        summary_export_active, "summary export is already in progress");
     bind_cmd("set_private_mode", [&state](const json& a) {
         state.set_private_mode(a.at("enabled").get<bool>());
         return json(state.privacy_settings());
@@ -294,10 +307,16 @@ inline void register_commands(webview::webview& w, AppState& state,
     // kept. It used to return null, which left the UI able to say only "deleted" or "failed"
     // for an operation that can half-succeed.
     bind_cmd("delete_all_activity_data",
-             [&state, training_export_active, training_active](const json&) {
+             [&state, training_export_active, training_active, summary_export_active](
+                 const json&) {
         if (training_export_active->load(std::memory_order_acquire)) {
             throw std::runtime_error(
                 "training export is in progress; wait for it to finish before deleting activity");
+        }
+        // exports/summaries is on this command's deletion list too.
+        if (summary_export_active->load(std::memory_order_acquire)) {
+            throw std::runtime_error(
+                "summary export is in progress; wait for it to finish before deleting activity");
         }
         // Deleting exports/training under a running pipeline would take its inputs away
         // mid-read and race its outputs. Training only became concurrent with this command
@@ -449,26 +468,38 @@ inline void register_commands(webview::webview& w, AppState& state,
 
     // Staged rather than applied, because the swap cannot happen while this process holds the
     // database open — see data_import.hpp. Returns what will happen at the next launch.
-    bind_cmd("stage_data_import", [data_dir](const json& a) {
-        const auto staged = stage_import(
-            std::filesystem::path(detail::opt_string(a, "path").value_or("")),
-            data_dir / "focoflow.db", nullptr);
-        return json{{"ok", staged.ok},
-                    {"message", staged.message},
-                    {"schemaVersion", staged.schema_version},
-                    {"sessionCount", staged.session_count}};
-    });
+    // Staging is a VACUUM INTO of the whole incoming database: seconds for a mature one, all
+    // of it disk-bound, so it runs on the worker. The two commands below that read or remove
+    // the staged file check the gate rather than race a copy in progress.
+    bind_async_cmd(
+        "stage_data_import",
+        [data_dir](const json& a) {
+            const auto staged = stage_import(
+                std::filesystem::path(detail::opt_string(a, "path").value_or("")),
+                data_dir / "focoflow.db", nullptr);
+            return json{{"ok", staged.ok},
+                        {"message", staged.message},
+                        {"schemaVersion", staged.schema_version},
+                        {"sessionCount", staged.session_count}};
+        },
+        import_staging_active, "a data import is already being staged");
 
     // The undo. A staged import that has not been applied is one file deletion away from never
     // having happened, and the user is entitled to that before they restart.
-    bind_cmd("cancel_data_import", [data_dir](const json&) {
+    bind_cmd("cancel_data_import", [data_dir, import_staging_active](const json&) {
+        if (import_staging_active->load(std::memory_order_acquire)) {
+            throw std::runtime_error("a data import is still being staged; wait for it to finish");
+        }
         const auto db_path = data_dir / "focoflow.db";
         const bool cancelled = cancel_staged_import(db_path);
         return json{{"cancelled", cancelled}, {"pending", has_staged_import(db_path)}};
     });
 
-    bind_cmd("get_data_import_status", [data_dir](const json&) {
-        return json{{"pending", has_staged_import(data_dir / "focoflow.db")}};
+    bind_cmd("get_data_import_status", [data_dir, import_staging_active](const json&) {
+        // A stage in progress has already created the file; it is not pending until the copy
+        // has finished, and reporting it early would invite a restart onto a half-written one.
+        const bool staging = import_staging_active->load(std::memory_order_acquire);
+        return json{{"pending", !staging && has_staged_import(data_dir / "focoflow.db")}};
     });
 
     // Roadmap 7.6: the legible counterpart to export_training_data. Separate command and
