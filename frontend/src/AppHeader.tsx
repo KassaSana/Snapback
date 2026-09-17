@@ -22,6 +22,10 @@ type AppHeaderProps = {
   onPauseRecording: (minutes: number) => void | Promise<void>;
   onResumeRecording: () => void | Promise<void>;
   onResumeAlerts: () => void | Promise<void>;
+  /** True while a session runs, so the headline reads as an active state. */
+  sessionActive?: boolean;
+  /** The running session's goal, named in the subtitle while it runs. */
+  activeGoal?: string | null;
 };
 
 export const AppHeader = memo(function AppHeader({
@@ -39,6 +43,8 @@ export const AppHeader = memo(function AppHeader({
   onPauseRecording,
   onResumeRecording,
   onResumeAlerts,
+  sessionActive = false,
+  activeGoal = null,
 }: AppHeaderProps) {
   const permissionHealth = summarizePermissions({
     captureAvailable: permissionCaptureAvailable,
@@ -72,8 +78,14 @@ export const AppHeader = memo(function AppHeader({
     <header className="app-header">
       <div>
         <p className="eyebrow">Snapback</p>
-        <h1>What are you working on?</h1>
-        <p className="subtitle">Name a goal and start.</p>
+        <h1>{sessionActive ? "Session in progress" : "What are you working on?"}</h1>
+        <p className="subtitle">
+          {sessionActive
+            ? activeGoal
+              ? `Working on ${activeGoal}.`
+              : "Recording your focus."
+            : "Name a goal and start."}
+        </p>
       </div>
       <div className="status-stack">
         <RecordingStatusCard

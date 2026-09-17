@@ -93,7 +93,7 @@ export const PrivacyCard = memo(function PrivacyCard({
           settings?.excludedApps.map((app) => (
             <li key={app} className="rules-item">
               <span className="rules-pattern">{app}</span>
-              <button className="secondary-button rules-delete" disabled={busy} onClick={() => void onRemoveExclusion(app)}>
+              <button className="secondary-button rules-delete" disabled={busy} onClick={() => void onRemoveExclusion(app)} aria-label={`Remove ${app} exclusion`}>
                 Remove
               </button>
             </li>

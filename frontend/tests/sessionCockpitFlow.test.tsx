@@ -232,7 +232,7 @@ describe("session cockpit", () => {
     expect(startedSessions()).toBe(1);
   });
 
-  it("offers recent goals as chips and Repeat last starts that session", async () => {
+  it("offers recent goals as chips and Start last session starts that session", async () => {
     boundary.state.history = [
       historyRow("Ship the overlay", "deep"),
       historyRow("Answer email", "normal"),
@@ -240,9 +240,9 @@ describe("session cockpit", () => {
 
     render(<App />);
     const card = await sessionCard();
-    await within(card).findByRole("button", { name: "Repeat last" });
+    await within(card).findByRole("button", { name: "Start last session" });
 
-    fireEvent.click(within(card).getByRole("button", { name: "Repeat last" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Start last session" }));
 
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("start_session", {

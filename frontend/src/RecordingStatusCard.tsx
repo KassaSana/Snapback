@@ -105,15 +105,22 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
           ))}
         </details>
       ) : (
-        PAUSE_CHOICES.map((minutes) => (
-          <button
-            key={minutes}
-            className="secondary-button"
-            onClick={() => void onPause(minutes)}
-          >
-            Pause {minutes}m
-          </button>
-        ))
+        <div className="pause-choices">
+          <span className="meta-label" id="recording-pause-choices-label">
+            Pause for a while
+          </span>
+          <div className="button-row" role="group" aria-labelledby="recording-pause-choices-label">
+            {PAUSE_CHOICES.map((minutes) => (
+              <button
+                key={minutes}
+                className="secondary-button"
+                onClick={() => void onPause(minutes)}
+              >
+                Pause {minutes}m
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   ) : null;

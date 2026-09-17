@@ -26,7 +26,7 @@ type SessionControlCardProps = {
   focusMode: FocusMode;
   handleFocusModeChange: (mode: FocusMode) => void;
   handleStartSession: () => void;
-  /** Repeat last: fill and start in one declaration. */
+  /** Start last session: fills the form and starts in one declaration. */
   handleStartNamedSession: (goal: string, mode: FocusMode) => void | Promise<void>;
   handleStopSession: () => void;
   /** Roadmap 2.11's guarded switch: stops the running session, then starts the typed one. */
@@ -332,9 +332,9 @@ export const SessionControlCard = memo(function SessionControlCard({
                   void handleStartNamedSession(last.goal, last.focusMode);
                 }}
                 disabled={sessionPending}
-                title={recentGoals[0].goal}
+                title={`Start a session for ${recentGoals[0].goal} right away`}
               >
-                Repeat last
+                Start last session
               </button>
             )}
             {validateSessionGoal(sessionGoal).valid && (

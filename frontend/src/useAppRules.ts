@@ -38,7 +38,7 @@ export const useAppRules = () => {
   const handleAddAppRule = useCallback(async () => {
     const pattern = rulePattern.trim();
     if (!pattern) {
-      setRulesStatus("Enter an app name or keyword (e.g. discord, notion).");
+      setRulesStatus("Enter an app name or keyword (e.g. YouTube).");
       return;
     }
 

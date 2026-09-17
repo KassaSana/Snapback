@@ -210,6 +210,12 @@ export class DemoBackend {
 
   private recordingStatus(): Json {
     const now = this.now();
+    // Mirrors the native lapse: a timed pause whose deadline has passed resumes on
+    // read. An indefinite pause (until == 0) never lapses on its own.
+    if (this.privacy.privateMode && this.privatePauseUntil > 0 && this.privatePauseUntil <= now) {
+      this.privacy.privateMode = false;
+      this.privatePauseUntil = 0;
+    }
     const privateLeft = Math.max(0, this.privatePauseUntil - now);
     const snoozeLeft = Math.max(0, this.snoozeUntil - now);
     let state = "recording";
@@ -261,17 +267,12 @@ export class DemoBackend {
     };
   }
 
-  private unavailable(extra: Json = {}): Json {
-    return {
-      ok: false,
-      cancelled: true,
-      supported: false,
-      opened: false,
-      path: DEMO_PATH_NOTE,
-      outputPath: DEMO_PATH_NOTE,
-      message: "This writes a file, so it is disabled in the browser demo.",
-      ...extra,
-    };
+  private unavailable(): Json {
+    // A demo that reports a successful export is worse than one that refuses: the
+    // frontend maps a resolved value to a success message, so anything that would
+    // touch a real disk rejects here instead of returning a shape the UI could
+    // read as "wrote 0 sessions, complete history".
+    throw new Error("This writes a file, so it is disabled in the browser demo.");
   }
 
   /**
@@ -319,6 +320,8 @@ export class DemoBackend {
     switch (command) {
       case "get_health":
         return this.health();
+      case "report_acceptance_verdict":
+        throw new Error("The desktop acceptance harness is unavailable in the browser demo.");
       case "get_diagnostics":
         return {
           version: "demo",
@@ -356,9 +359,14 @@ export class DemoBackend {
 
       case "get_recording_status":
         return this.recordingStatus();
-      case "pause_recording_privately":
-        this.privatePauseUntil = this.now() + Number(args.minutes ?? 30) * MINUTE;
+      case "pause_recording_privately": {
+        // 0 means indefinite, matching the native side: an explicit 0 must not fall
+        // through to "now plus nothing", which lapses before the next status read.
+        const minutes = Number(args.minutes ?? 0);
+        this.privacy.privateMode = true;
+        this.privatePauseUntil = minutes > 0 ? this.now() + minutes * MINUTE : 0;
         return this.recordingStatus();
+      }
       case "resume_recording":
         this.privatePauseUntil = 0;
         this.privacy.privateMode = false;
@@ -680,9 +688,12 @@ export class DemoBackend {
       case "set_alert_delivery":
         this.settings.alerts = { ...this.settings.alerts, ...((args.alerts ?? {}) as Json) };
         return this.settings as unknown as Json;
-      case "snooze_alerts":
-        this.snoozeUntil = this.now() + Number(args.minutes ?? 30) * MINUTE;
+      case "snooze_alerts": {
+        // 0 (or absent) means the default 30 minutes, matching the native side.
+        const minutes = Number(args.minutes ?? 0);
+        this.snoozeUntil = this.now() + (minutes > 0 ? minutes : 30) * MINUTE;
         return this.recordingStatus();
+      }
       case "resume_alerts":
         this.snoozeUntil = 0;
         return this.recordingStatus();
@@ -788,20 +799,43 @@ export class DemoBackend {
       case "cancel_data_import":
         return { cancelled: true, pending: false };
 
-      // Everything that would write to, read from, or open a real file.
+      // Everything that would write to, read from, or open a real file rejects
+      // rather than resolving: the frontend reads a resolved value as success, so a
+      // fake shape here becomes "Exported 0 sessions, complete history".
       case "export_support_bundle":
       case "export_my_data":
       case "export_summary_report":
       case "export_training_data":
       case "open_data_folder":
-      case "pick_open_file":
-      case "pick_save_file":
-      case "inspect_data_import":
-      case "stage_data_import":
       case "train_from_export":
       case "cancel_training":
       case "set_training_repo_path":
         return this.unavailable();
+      // Read-only probes whose UI already renders a refusal faithfully: inspect and
+      // stage show the message verbatim in a warning tone, and a file dialog that
+      // never opened is a cancellation, not an error — the caller no-ops on it.
+      case "inspect_data_import":
+        return {
+          acceptable: false,
+          message: "Files cannot be read in the browser demo.",
+          schemaVersion: 0,
+          sessionCount: 0,
+        };
+      case "stage_data_import":
+        return {
+          ok: false,
+          message: "Files cannot be staged in the browser demo.",
+          schemaVersion: 0,
+          sessionCount: 0,
+        };
+      case "pick_open_file":
+      case "pick_save_file":
+        return {
+          ok: false,
+          cancelled: true,
+          path: "",
+          message: "File pickers are disabled in the browser demo.",
+        };
 
       case "submit_label":
       case "dismiss_snapback":

@@ -515,17 +515,38 @@ export type RollbackClassifierModelResult = {
   classifier: ClassifierStatus;
 };
 
+// A resolved export value is read as success, so a refusal shape (the browser demo's
+// answer to anything that would touch a real disk) must throw rather than map to
+// defaults like "wrote 0 sessions, complete history". Native success shapes carry no
+// ok/supported/cancelled fields, so these flags can only be a refusal.
+function throwIfUnavailable(raw: Record<string, unknown>, action: string): void {
+  if (raw.ok === false || raw.supported === false || raw.cancelled === true) {
+    const message = typeof raw.message === "string" && raw.message ? raw.message : action;
+    throw new Error(message);
+  }
+}
+
 export const api = {
   getHealth: async () => {
     const raw = await invoke<Record<string, unknown>>("get_health");
     return mapHealth(raw);
   },
+  // Roadmap 10.1. Ordinary UI never calls this. Acceptance-enabled desktop builds inject a
+  // page script that uses it to publish the result of a real webview.bind round trip.
+  reportAcceptanceVerdict: (verdict: Record<string, unknown>) =>
+    invoke<{ accepted: boolean }>("report_acceptance_verdict", { verdict }),
   getDiagnostics: async () => {
     const raw = await invoke<Record<string, unknown> | null>("get_diagnostics");
     return mapDiagnosticsSnapshot(raw ?? {});
   },
-  exportSupportBundle: () =>
-    invoke<SupportBundleExportResult>("export_support_bundle"),
+  exportSupportBundle: async () => {
+    const raw = await invoke<Record<string, unknown>>("export_support_bundle");
+    throwIfUnavailable(raw, "Support bundle export is unavailable.");
+    return {
+      outputPath: typeof raw.outputPath === "string" ? raw.outputPath : "",
+      privacyNotice: typeof raw.privacyNotice === "string" ? raw.privacyNotice : "",
+    } satisfies SupportBundleExportResult;
+  },
   getLatestPrediction: async () => {
     const raw = await invoke<Record<string, unknown> | null>("get_latest_prediction");
     return raw ? mapPrediction(raw) : null;
@@ -675,6 +696,7 @@ export const api = {
   },
   exportSummaryReport: async (range: ReviewWindowRequest) => {
     const raw = await invoke<Record<string, unknown>>("export_summary_report", range);
+    throwIfUnavailable(raw, "Summary export is unavailable.");
     return mapSummaryExportResult(raw);
   },
   getGoalCategories: async () => {
@@ -709,6 +731,7 @@ export const api = {
     invoke<FileDialogResult>("pick_save_file", { options: options ?? null }),
   exportMyData: async () => {
     const raw = await invoke<Record<string, unknown>>("export_my_data");
+    throwIfUnavailable(raw, "Data export is unavailable.");
     return {
       outputPath: typeof raw.outputPath === "string" ? raw.outputPath : "",
       sessionCount: Number(raw.sessionCount ?? 0),
@@ -837,6 +860,7 @@ export const api = {
     const raw = await invoke<Record<string, unknown>>("export_training_data", {
       sessionId: sessionId ?? null,
     });
+    throwIfUnavailable(raw, "Training data export is unavailable.");
     return mapExportTrainingResult(raw);
   },
   getTrainingDeployStatus: async () => {

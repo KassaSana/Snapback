@@ -2914,6 +2914,14 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   desktop build: sample data is kept out of the shipped app by the module graph rather than by
   an environment variable, dead-code elimination, or review.
 
+  2026-09-17 QA pass over the demo: file-writing commands (`export_my_data`,
+  `export_summary_report`, the support bundle, training export) resolved with shapes the
+  frontend read as success — "Exported 0 sessions, complete history". They now reject in
+  `frontend/demo/backend.ts`, and `frontend/src/api.ts` throws on any refusal-shaped
+  export response instead of mapping it to defaults. Same pass fixed the demo's
+  indefinite privacy pause (`minutes: 0` expired immediately) and gave the timed pause
+  the native lapse-on-read.
+
 - **3.7 — Snapback as a real web product.** `XL` `decision` **stated goal, not scheduled**
   Opened 2026-08-27 because it is a direction the project is aimed at, and an undocumented
   ambition turns into an accidental architecture. **3.6's demo is not a step toward this** —
@@ -3577,6 +3585,22 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
 
   Since 14.3 the handler layer is covered by name in native tests, so step 1's list can be
   short: it tests the transport, not the commands.
+
+  **Step 1 implemented 2026-09-16.** `scripts/gui_acceptance.js` is injected only into a
+  desktop target explicitly compiled with `SNAPBACK_ENABLE_ACCEPTANCE_HARNESS=ON`; ordinary
+  Debug and Release builds cannot enable arbitrary JavaScript with an environment variable.
+  It crosses the real shim and `webview.bind()` for health, session start/stop, an async
+  support export, and a deliberate native error, then reports five structured results through
+  `report_acceptance_verdict`. The Windows CI desktop job and macOS GUI smoke assert the JSON
+  verdict and require the app to terminate through its run loop. Step 2 -- driven clicks via
+  WebView2/WebKitGTK -- remains.
+
+  **Step 2 Windows slice implemented 2026-09-16.** The Windows smoke chooses an ephemeral
+  loopback CDP port, attaches directly to the running WebView2 with Node's built-in WebSocket,
+  and clicks Review, Settings, Start session, and Stop session in the real React UI. No
+  Playwright/browser download is needed. The structured verdict identifies the CDP driver and
+  the app still has to exit through its run loop. WebKitGTK-driven clicks remain; WKWebView
+  stays on step 1 because it exposes no equivalent automation endpoint.
 
 - **10.2 — DONE 2026-07-25.** Decided in
   [ADR-0003](adr/0003-three-surface-dashboard.md) (`Accepted`) and shipped on

@@ -89,7 +89,7 @@ describe("privacy controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add exclusion" }));
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("set_privacy_exclusions", { excludedApps: ["Banking"] }));
     expect(await screen.findByText("Banking")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Banking exclusion" }));
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("set_privacy_exclusions", { excludedApps: [] }));
   });
 

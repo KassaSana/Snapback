@@ -512,6 +512,8 @@ export default function App() {
         onPauseRecording={handlePausePrivately}
         onResumeRecording={handleResumeRecording}
         onResumeAlerts={handleResumeAlerts}
+        sessionActive={sessionActive}
+        activeGoal={sessionRecord?.goal ?? null}
       />
 
       <ActionErrorBanner

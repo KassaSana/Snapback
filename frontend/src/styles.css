@@ -236,12 +236,22 @@ h1 {
   cursor: pointer;
   font-size: 0.85rem;
   color: var(--muted);
+  padding: 4px 0;
 }
 
 .recording-pause-menu {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+}
+
+/* Card variant: the timed choices sit apart from "Pause until I resume" under their
+   own label, so the row of durations scans as one decision rather than four. */
+.pause-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .attended-inline {
@@ -514,8 +524,19 @@ h1 {
 .grid-now {
   grid-template-columns: 1fr;
   max-width: 720px;
+  width: 100%;
+  margin-inline: auto;
   gap: 16px;
   margin-top: 16px;
+}
+
+/* A wide desktop window is not a phone: let the cockpit breathe rather than pinning a
+   narrow column to the left edge with a void beside it. Single column is kept — the
+   order is the journey — only the measure grows. */
+@media (min-width: 1100px) {
+  .grid-now {
+    max-width: 880px;
+  }
 }
 
 .grid-now .card {
@@ -1543,6 +1564,7 @@ h1 {
 .settings-nav,
 .settings-section {
   grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .settings-nav > div[role="tablist"] {
@@ -1888,6 +1910,24 @@ h1 {
 
   .review-range-custom {
     flex-wrap: wrap;
+  }
+}
+
+/* A narrow phone fits about four settings tabs: rather than wrapping the last ones
+   onto a second row inside the pill, the strip scrolls sideways as one intentional
+   row. Tabs keep full names — no shrinking to fit. */
+@media (max-width: 560px) {
+  .settings-nav > div[role="tablist"] {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: 100%;
+    border-radius: 16px;
+  }
+
+  .settings-tab {
+    white-space: nowrap;
+    flex: 0 0 auto;
   }
 }
 

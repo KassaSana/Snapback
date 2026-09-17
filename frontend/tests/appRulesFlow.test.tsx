@@ -121,7 +121,7 @@ describe("App rules add/delete flow", () => {
     renderApp("settings", "focus");
     await screen.findByRole("heading", { name: "Personal App Rules" });
 
-    fireEvent.change(screen.getByPlaceholderText("discord, notion, youtube"), {
+    fireEvent.change(screen.getByPlaceholderText("YouTube"), {
       target: { value: "discord" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
@@ -159,7 +159,7 @@ describe("App rules add/delete flow", () => {
     renderApp("settings", "focus");
     expect(await screen.findByText("notion")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove notion rule" }));
 
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("delete_app_rule", { id: 7 }),

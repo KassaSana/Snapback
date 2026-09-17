@@ -40,14 +40,15 @@ export const RulesCard = memo(function RulesCard({
         <span className="pill">your overrides</span>
       </div>
       <p className="helper-text">
-        Match part of an app name or window title. Allow marks matching windows as on-task for
+        Match part of an app name or window title — one pattern per rule, so add another
+        rule for a second app. Allow marks matching windows as on-task for
         you. Block raises distraction scoring for matches — it does not close or block apps.
       </p>
       <label className="field">
         <span>Pattern</span>
         <input
           type="text"
-          placeholder="discord, notion, youtube"
+          placeholder="YouTube"
           value={rulePattern}
           onChange={(event) => setRulePattern(event.target.value)}
         />
@@ -96,6 +97,7 @@ export const RulesCard = memo(function RulesCard({
               <button
                 className="secondary-button rules-delete"
                 onClick={() => void handleDeleteAppRule(rule)}
+                aria-label={`Remove ${rule.pattern} rule`}
               >
                 Remove
               </button>
