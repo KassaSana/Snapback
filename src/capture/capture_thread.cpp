@@ -18,14 +18,18 @@ void CaptureThread::record_failure(const char* reason) noexcept {
     // where the diagnostics panel said "capture failed" and "running: true" in the same
     // report. Found by ROADMAP 11.1: running each doctest case in its own process made a
     // pre-existing ~2.5% flake reproducible, and the flaky assertion was the honest one.
+    //
+    // Publish the reason under failure_mutex_ before failed_ flips. health() can observe
+    // failed() then take the same mutex; writing the string first means that path never
+    // returns capture_failed with an empty explanation for a failure that already has one.
     running_.store(false, std::memory_order_release);
-    failed_.store(true, std::memory_order_release);
     try {
         std::lock_guard lock(failure_mutex_);
         failure_reason_ = reason;
     } catch (...) {
         // The boolean still reports failure if allocating the diagnostic text fails.
     }
+    failed_.store(true, std::memory_order_release);
 }
 
 void CaptureThread::start(InputHook* hook) {

@@ -140,6 +140,7 @@ describe("prediction render boundaries", () => {
     let sessionControlRenders = 0;
     const refreshContextTimeline = vi.fn();
     const resetTimelineRefreshGate = vi.fn();
+    const clearSessionLiveSignals = vi.fn();
     const setActionError = vi.fn();
     const setLabelStatus = vi.fn();
     const setLabelStatusWarning = vi.fn();
@@ -167,6 +168,7 @@ describe("prediction render boundaries", () => {
       const session = useSession({
         refreshContextTimeline,
         resetTimelineRefreshGate,
+        clearSessionLiveSignals,
         setActionError,
         setLabelStatus,
         setLabelStatusWarning,

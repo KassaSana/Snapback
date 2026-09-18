@@ -255,6 +255,7 @@ export default function App() {
   } = useSession({
     refreshContextTimeline: live.refreshContextTimeline,
     resetTimelineRefreshGate: live.resetTimelineRefreshGate,
+    clearSessionLiveSignals: live.clearSessionLiveSignals,
     setActionError: feedback.setActionError,
     setLabelStatus: feedback.setLabelStatus,
     setLabelStatusWarning: feedback.setLabelStatusWarning,

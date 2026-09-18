@@ -621,9 +621,11 @@ void AppState::start_engine_impl(InputHook* hook) {
                 try {
                     backlog = engine_tick();
                 } catch (const std::exception& error) {
-                    // A tick that threw tells us nothing about the queue; treat it as no
-                    // backlog so a failing tick cannot keep shutdown spinning here.
-                    backlog = false;
+                    // A tick that threw may still have left events in the ring (budget cut)
+                    // even though its computed jobs were discarded. Ask the ring so ordinary
+                    // operation keeps draining; shutdown still exits via kMaxShutdownTicks
+                    // when every retry keeps throwing over a non-empty queue.
+                    backlog = capture_.has_pending_events();
                     try {
                         std::ostringstream message;
                         message << "engine tick failed: " << error.what();
@@ -633,7 +635,7 @@ void AppState::start_engine_impl(InputHook* hook) {
                         // unhandled exception on this thread.
                     }
                 } catch (...) {
-                    backlog = false;
+                    backlog = capture_.has_pending_events();
                     try {
                         log().error("engine tick failed: unknown exception");
                     } catch (...) {
@@ -788,6 +790,16 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // row -- or, for a pause, back-date a close into a session that already has its own
     // ending. The new session's attendance starts from the span opened with it.
     discard_pending_span_unlocked();
+    // Generation fence for queued UI emissions. Deletion already bumps this so a stale
+    // prediction/snapback dispatch cannot land after the row is gone; start and replace must
+    // do the same, or a tick that queued under the previous session can still paint its
+    // card (and raise its overlay) after the user has moved on. Persistence is not fenced
+    // here: jobs already drained still belong to the session they name.
+    activity_epoch_.fetch_add(1, std::memory_order_release);
+    // Drop a pending emit only. The cached latest prediction may still name the previous
+    // session (delete_session tests and the live card rely on that) — the epoch bump is
+    // what stops it from being re-dispatched as a fresh event under this generation.
+    prediction_dirty_ = false;
     session_attended_ = true;
     // Pressing Start *is* input. Without this the detector can still be Idle from before the
     // session existed, and the next tick would read "should not be attended" and immediately
@@ -832,6 +844,10 @@ void AppState::stop_session() {
         // Same reason as start_session: the payload names a window from the session being
         // closed, and there is no session left for "Take me back" to be about.
         clear_snapback_unlocked();
+        // Same generation fence as start_session: a prediction or snapback already queued for
+        // the UI must not land after Stop has cleared the native payload.
+        activity_epoch_.fetch_add(1, std::memory_order_release);
+        prediction_dirty_ = false;
     }
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -871,6 +887,8 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         // Stopping *some other* session by id must not clear a payload that belongs to the
         // session still running -- that would silently cancel a live snapback card.
         clear_snapback_unlocked();
+        activity_epoch_.fetch_add(1, std::memory_order_release);
+        prediction_dirty_ = false;
         live_read_dirty_ = true;
     }
     publish_live_read_unlocked();
@@ -1105,7 +1123,11 @@ FocusSummary AppState::focus_summary_for_window(const std::string& window,
                                                 const std::optional<std::string>& since) {
     const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
     std::lock_guard lock(storage_mutex_);
-    auto rows = storage_.predictions_since(cutoff);
+    // Newest-first from SQL, then reverse: summarize_predictions measures streak gaps
+    // between chronological neighbours. Cap the materialisation so a 90-day window cannot
+    // hold storage_mutex_ across an unbounded scan on the UI command path.
+    auto rows = storage_.predictions_since(cutoff, kFocusSummaryMaxSamples);
+    std::reverse(rows.begin(), rows.end());
     return summarize_predictions(rows);
 }
 
@@ -1426,19 +1448,30 @@ bool AppState::lapse_private_pause_unlocked() {
 }
 
 RecordingStatus AppState::recording_status() {
-    std::lock_guard lock(mutex_);
-    lapse_private_pause_unlocked();
-
     RecordingInputs inputs;
-    // Same sources health() reads, deliberately: two descriptions of whether capture works
-    // that can disagree is the defect 2.10 is about, one layer down.
-    inputs.capture_failed = capture_.failed();
+    std::int64_t private_until_wall_ms = 0;
+    std::int64_t snoozed_until_wall_ms = 0;
+    bool capture_running = false;
+    bool input_observed = false;
+    {
+        std::lock_guard lock(mutex_);
+        lapse_private_pause_unlocked();
+
+        // Same sources health() reads, deliberately: two descriptions of whether capture works
+        // that can disagree is the defect 2.10 is about, one layer down.
+        inputs.capture_failed = capture_.failed();
+        inputs.private_mode = settings_.private_mode;
+        inputs.has_active_session = active_session_.has_value();
+        inputs.idle = idle_;
+        private_until_wall_ms = settings_.private_until_wall_ms;
+        snoozed_until_wall_ms = settings_.alerts.snoozed_until_wall_ms;
+        capture_running = capture_.running();
+        input_observed = capture_.input_observed();
+    }
+    // OS permission probes (and on Linux, `command -v` subprocesses) must not run under
+    // mutex_: they would stall the engine drain for the duration of the probe.
     inputs.capture_permitted =
-        check_capture_permissions(capture_.running(), capture_.input_observed())
-            .capture_available;
-    inputs.private_mode = settings_.private_mode;
-    inputs.has_active_session = active_session_.has_value();
-    inputs.idle = idle_;
+        check_capture_permissions(capture_running, input_observed).capture_available;
 
     RecordingStatus status;
     status.state = derive_recording_state(inputs);
@@ -1447,14 +1480,14 @@ RecordingStatus AppState::recording_status() {
     // while capture was broken reported zero time left: Blocked outranks PausedPrivate, so the
     // branch never ran even though the deadline was real and still approaching. The user would
     // fix their permissions and find the countdown had apparently restarted.
-    if (settings_.private_mode && settings_.private_until_wall_ms > 0) {
-        const auto left = settings_.private_until_wall_ms - now_unix_ms();
+    if (inputs.private_mode && private_until_wall_ms > 0) {
+        const auto left = private_until_wall_ms - now_unix_ms();
         status.private_pause_remaining_ms = left > 0 ? left : 0;
     }
     // Roadmap 2.16. Reported alongside `state`, never instead of it: a snooze is a fact about
     // delivery, and the state it sits beside still says Recording.
-    if (settings_.alerts.snoozed_until_wall_ms > 0) {
-        const auto left = settings_.alerts.snoozed_until_wall_ms - now_unix_ms();
+    if (snoozed_until_wall_ms > 0) {
+        const auto left = snoozed_until_wall_ms - now_unix_ms();
         status.alert_snooze_remaining_ms = left > 0 ? left : 0;
     }
     return status;
@@ -1811,11 +1844,9 @@ PermissionStatus AppState::refresh_permissions() {
 }
 
 PermissionStatus AppState::request_permissions() {
-    std::lock_guard lock(mutex_);
-    // Prompt first, then re-probe so the returned status reflects the user's answer in the
-    // same round trip (the macOS dialog is modal, so by the time this returns they've
-    // decided). Re-probing rather than trusting the prompt's return value keeps one code
-    // path — check_capture_permissions — as the single source of truth for the status DTO.
+    // Prompt and re-probe without mutex_. The macOS dialog is modal and can take seconds;
+    // holding the state lock across it would stall the engine drain for the whole sheet.
+    // CaptureThread owns its own synchronisation for the fields the probe reads.
     request_capture_permissions();
     return check_capture_permissions(capture_.running(), capture_.input_observed());
 }
@@ -2093,7 +2124,12 @@ bool AppState::engine_tick() {
         // which is seconds after this tick. Draining here is what made restore a no-op --
         // the card stayed on screen long after the field behind it was empty. The payload
         // is cleared by dismiss/restore, or replaced by the next snapback.
-        if (latest_snapback_ && !snapback_emitted_) {
+        //
+        // Only arm the one-shot emit when a listener can receive it. The engine starts
+        // before main installs the emit hook; marking emitted with a null hook permanently
+        // suppressed the overlay for that snapback (the payload stayed for restore, but no
+        // event ever reached the webview or native overlay).
+        if (hook && latest_snapback_ && !snapback_emitted_) {
             snap_to_emit = *latest_snapback_;
             snap_route = latest_snapback_route_;
             snap_alert_id = issue_alert_id_unlocked(AlertEvent::Snapback, snap_route);

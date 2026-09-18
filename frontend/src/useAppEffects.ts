@@ -36,7 +36,7 @@ type UseAppEffectsArgs = {
   applyOverlayFailure: (payload: OverlayFailurePayload) => void;
   applyPersistenceFailure: (payload: { reason: string; message: string }) => void;
 
-  handlePrediction: (record: PredictionRecord | null) => void;
+  handlePrediction: (record: PredictionRecord | null, activeSessionId?: string | null) => void;
   handleSnapback: (payload: SnapbackPayload) => void;
   handleHyperfocus: (payload: { message: string }) => void;
   handleUntrackedWork: (payload: { message: string }) => void;
@@ -173,7 +173,7 @@ export const useAppEffects = ({
     );
     unsubs.push(
       api.onPrediction((record) => {
-        handlePrediction(record);
+        handlePrediction(record, sessionId);
         if (record.sessionId === sessionId && sessionStatus === "ACTIVE") {
           refreshTimelineFromEvent(record.sessionId);
         }

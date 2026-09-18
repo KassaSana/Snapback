@@ -838,9 +838,9 @@ TEST_CASE("a failed start leaves the previous session exactly as it was") {
     // it was recording a session that did not exist.
     //
     // The failure here is real rather than injected. A second connection holds a write
-    // transaction, and SQLite is opened with no busy timeout, so the insert gets SQLITE_BUSY
-    // immediately -- which is also the honest production scenario (another Snapback process,
-    // or a backup tool, holding the file).
+    // transaction; after waiting out kSqliteBusyTimeoutMs the insert gets SQLITE_BUSY --
+    // which is also the honest production scenario (another Snapback process, or a backup
+    // tool, holding the file longer than the brief retry window).
     TempDir temp;
     auto storage = Storage::open(temp.path);
     REQUIRE(storage.has_value());
@@ -1538,13 +1538,31 @@ TEST_CASE("AppState::delete_session invalidates events already queued for the UI
     // may already be sitting in the dispatch queue, and delivering it would repopulate the
     // UI with data the user just erased.
     auto state = make_state();
+    REQUIRE(AppStateTestAccess::activity_epoch(*state) == 0);
     const auto session = state->start_session("Queued", FocusMode::Normal);
-    // A fresh AppState starts at epoch 0, and events captured before the delete carry it.
-    REQUIRE(state->activity_epoch_is_current(0));
+    // Start bumps the generation; events latched after that carry the post-start epoch.
+    const auto epoch_before_delete = AppStateTestAccess::activity_epoch(*state);
+    REQUIRE(epoch_before_delete != 0);
 
     REQUIRE(state->delete_session(session.session_id));
 
-    CHECK_FALSE(state->activity_epoch_is_current(0));
+    CHECK(AppStateTestAccess::activity_epoch(*state) != epoch_before_delete);
+}
+
+TEST_CASE("AppState bumps the activity epoch on session start and stop") {
+    // Deletion already fenced queued UI emissions with the epoch. Start/replace/stop did
+    // not, so a prediction or snapback dispatched for session A could still paint after the
+    // user had started session B (or stopped). The emit hook in main rejects any event whose
+    // epoch is no longer current.
+    auto state = make_state();
+    REQUIRE(AppStateTestAccess::activity_epoch(*state) == 0);
+
+    const auto first = state->start_session("epoch fence", FocusMode::Normal);
+    const auto after_start = AppStateTestAccess::activity_epoch(*state);
+    REQUIRE(after_start != 0);
+
+    state->stop_session(first.session_id);
+    CHECK(AppStateTestAccess::activity_epoch(*state) != after_start);
 }
 
 TEST_CASE("AppState excludes matching apps without affecting other apps") {
@@ -2344,6 +2362,28 @@ TEST_CASE("the tick emits a snapback once and leaves it restorable") {
     // for a retry, but neither re-emits on later ticks.
     for (int tick = 0; tick < 3; ++tick) AppStateTestAccess::engine_tick(*state);
     CHECK(snapbacks_emitted == 1);
+    state->set_emit_hook(nullptr);
+}
+
+TEST_CASE("a snapback is not marked emitted until an emit hook exists") {
+    // The engine thread starts before main installs the webview emit hook. Marking the
+    // one-shot flag with a null hook permanently suppressed that snapback's overlay event.
+    auto state = make_state();
+    state->start_session("wait for the hook", FocusMode::Normal);
+    drive_one_episode(*state, 100.0);
+    REQUIRE(state->latest_snapback().has_value());
+
+    AppStateTestAccess::engine_tick(*state);
+    CHECK_FALSE(AppStateTestAccess::snapback_emitted(*state));
+
+    int snapbacks_emitted = 0;
+    state->set_emit_hook([&snapbacks_emitted](const char* name, const std::string&,
+                                              AppState::ActivityEpoch) {
+        if (std::string(name) == "snapback") ++snapbacks_emitted;
+    });
+    AppStateTestAccess::engine_tick(*state);
+    CHECK(snapbacks_emitted == 1);
+    CHECK(AppStateTestAccess::snapback_emitted(*state));
     state->set_emit_hook(nullptr);
 }
 

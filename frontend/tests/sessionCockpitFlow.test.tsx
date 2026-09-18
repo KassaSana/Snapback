@@ -214,6 +214,7 @@ describe("session cockpit", () => {
       useSession({
         refreshContextTimeline: noop,
         resetTimelineRefreshGate: noop,
+        clearSessionLiveSignals: noop,
         setActionError: noop,
         setLabelStatus: noop,
         setLabelStatusWarning: noop,

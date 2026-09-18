@@ -394,7 +394,7 @@ has a concrete user failure, acceptance boundary, and dependency in its owning t
 |---|---|---|
 | Correctness | ~~**7.24–7.26**~~, **7.27**, ~~reopened **7.12**~~ | ~~Clock domains are mixed~~, ~~session/settings commands are not failure-atomic~~, capture semantics differ by OS, ~~and analytics still has unbounded/N+1 work~~ — only **7.27** remains |
 | Release/privacy truth | **8.10**, **13.7** | A runtime font request contradicts local-only, while consumer Settings exposes a trainer absent from both this tree and an installed app |
-| Architecture/performance | **14.5–14.6**, expanded **14.4** | The engine polls forever, slow commands block the UI thread, and hidden surfaces fetch data at startup |
+| Architecture/performance | **14.5–14.6**, expanded **14.4** | Deadline wake and owned-job heartbeat remain; drain bound and Review-at-startup gating have landed |
 | Product depth | **2.9–2.14** | History is not explorable, recording state is hard to see, repeat work is slow, onboarding stops before first value, Pomodoro is skeletal, and sessions cannot hold a reflection |
 | Frontend/visual quality | **10.8–10.11** | Review charts mislead, Settings leads with internals, CSS tokens are incomplete/light-only, and Review cards describe different periods |
 
@@ -1168,9 +1168,10 @@ internals, and the benchmark harness.
   Pomodoro, attendance — happens after `release()`, where nothing can throw.
 
   **The failure in the test is real, not injected.** A second connection holds a
-  `BEGIN IMMEDIATE`, and SQLite is opened with no busy timeout, so the write gets `SQLITE_BUSY`
-  immediately. That needed no test-only seam in the shipping class (7.14's objection) and it is
-  the honest production scenario: another process or a backup tool holding the file.
+  `BEGIN IMMEDIATE`, and after waiting out `kSqliteBusyTimeoutMs` the write gets `SQLITE_BUSY`.
+  That needed no test-only seam in the shipping class (7.14's objection) and it is
+  the honest production scenario: another process or a backup tool holding the file past the
+  brief retry window.
 
   **Replacement writes the same automatic label a stop does.** Previously the only thing
   deciding whether a finished session got a verdict was whether the user pressed Stop or just
@@ -4739,6 +4740,11 @@ kept here; already-deep modules and completed performance work were rejected dur
   the acceptance stands; `useReviewWorkflow` fetches analytics once inside its batched
   `refreshReview`. Do not go looking for the duplicate.
 
+  *Progress 2026-09-17:* Review hydration is gated on `active` (`surface === "review"`).
+  Mounting Now no longer runs the Review batch; `frontend/tests/reviewWorkflow.test.tsx`
+  pins zero review calls while inactive. Remaining performance work here is the broader
+  workflow extraction and any Settings-surface gating still open above.
+
 - **14.5 — Replace the fixed 10 Hz engine poll with deadline-aware, bounded work.** `M`
   `performance`
   Opened 2026-08-05. The engine calls `engine_tick()` and sleeps 100 ms forever, including
@@ -4754,6 +4760,11 @@ kept here; already-deep modules and completed performance work were rejected dur
   cannot starve. Record same-host idle CPU/wakeups and event-to-prediction p95 before/after,
   with instrumentation overhead below 1%. ADR-0005 keeps sessions explicit, so also measure
   and eliminate unnecessary no-session classifier work without breaking **2.7**'s nudge path.
+
+  *Progress 2026-09-17:* the per-tick drain is already bounded (`kEngineDrainBudget` /
+  `kEngineDrainBudgetMs` in `state.hpp`, with backlog re-tick). Remaining work is
+  deadline-aware wake (idle CPU when quiet) and diagnostics, not re-bounding the drain. The
+  paragraph above that describes an unbounded `while (next_event())` is historical.
 
 - **14.6 — Move long-running commands behind owned, cancellable jobs.** `L`
   Opened 2026-08-05. Webview bindings run on the UI thread. Training waits in `std::system()`
@@ -4793,6 +4804,11 @@ kept here; already-deep modules and completed performance work were rejected dur
   Remaining: the registry marking from **14.3**, and the deliberately slow fake job proving
   the UI heartbeat stays responsive (a 10.1 concern, since it needs the real webview).
 
+  *Correction 2026-09-17:* the opening paragraph's claim that training waits in
+  `std::system()` on the UI bind path is historical. `train_from_export` and the exports
+  already run on the command worker (`CommandRegistry` async policy); what remains is the
+  heartbeat proof and any further job-id model revisit noted above.
+
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `M`
   `performance`
   Opened 2026-08-05. `main.cpp` blocks on `Storage::open()` before the webview is constructed.
@@ -4816,6 +4832,12 @@ kept here; already-deep modules and completed performance work were rejected dur
   maintenance time/result and pending reclaim bytes in diagnostics. Reuse **14.5**'s deadline
   scheduler or **14.6**'s owned jobs rather than starting another unmanaged thread, and align
   the policy with user-configurable retention in **9.10**.
+
+  *Progress 2026-09-17:* periodic retention no longer runs inside `engine_tick` under
+  `storage_mutex_`. The tick only schedules work; `run_retention_maintenance` on
+  `maintenance_thread_` deletes in bounded batches and yields, pauses while a session is
+  active, and does not VACUUM. Startup `Storage::open` prune+VACUUM is still the launch
+  blocker this item names. `idx_feature_snapshots_ts` exists (schema v8).
 
 - **14.8 — Decompose `AppState` along its lock boundaries.** `L`
   Opened 2026-09-16. `state.cpp` is ~2,400 lines and `AppState` has ~110 methods across
@@ -4844,6 +4866,20 @@ kept here; already-deep modules and completed performance work were rejected dur
   in. Stop after any extraction whose diff exceeds ~600 lines and land it before the next.
   Prerequisite for none of the open items, so it yields to anything with a user-facing
   failure behind it.
+
+  *Progress 2026-09-17 (concurrency audit follow-ups, before any extraction):*
+  - Session start/stop bump `activity_epoch_` the way deletion already did, so queued
+    prediction/snapback UI dispatches cannot paint after a generation change; the frontend
+    also drops live cards on start/stop and ignores predictions for a different session id.
+  - Writers open with `PRAGMA busy_timeout = kSqliteBusyTimeoutMs` so a brief external lock
+    no longer fails `BEGIN IMMEDIATE` immediately and discards a drained persistence batch.
+  - Snapbacks are not marked emitted until an emit hook exists (engine can start before the
+    webview hook is installed).
+  - `CaptureThread::record_failure` publishes the reason before `failed_`.
+  - `recording_status` / `request_permissions` no longer hold `mutex_` across OS permission
+    probes; `focus_summary_for_window` caps and reverses its prediction sample.
+  Still under lock by design until extraction: settings fsync (`commit_settings_unlocked`)
+  and ONNX reload (singleton shared with the tick).
 
 ---
 

@@ -22,6 +22,12 @@ namespace snapback {
 
 inline constexpr int kDefaultRetentionDays = 90;
 inline constexpr std::size_t kVacuumMinDeletedRows = 500;
+// How long a writer waits on SQLITE_BUSY before failing. Without this, BEGIN IMMEDIATE
+// returns immediately when another connection holds a write lock, the engine tick throws
+// after draining the ring, and that persistence batch is discarded. A few hundred
+// milliseconds covers a backup tool or inspector briefly opening the file; a sustained
+// external writer still fails, but ordinary contention no longer loses a drained slice.
+inline constexpr int kSqliteBusyTimeoutMs = 500;
 
 // Roadmap 7.22. The copy taken immediately before a schema migration alters the database,
 // named for the version it was taken *from* so a user with two upgrades behind them can tell
@@ -368,11 +374,14 @@ public:
     void insert_prediction(const PredictionRecord& p);
     std::optional<PredictionRecord> latest_prediction();
     std::vector<PredictionRecord> recent_predictions(std::size_t limit);
-    // Returns every prediction at or after `cutoff`, or all predictions when the cutoff is
-    // absent. The timestamp range stays in SQL so idx_predictions_ts can serve analytics
-    // windows without silently dropping older rows.
+    // Returns predictions at or after `cutoff` (or all predictions when the cutoff is
+    // absent), newest first. The timestamp range stays in SQL so idx_predictions_ts can
+    // serve analytics windows without silently dropping older rows. When `limit` is set,
+    // only that many newest rows are returned — focus-summary callers must reverse to
+    // chronological order before aggregating streaks.
     std::vector<PredictionRecord> predictions_since(
-        const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
+        const std::optional<std::int64_t>& cutoff_ms = std::nullopt,
+        std::optional<std::size_t> limit = std::nullopt);
     void insert_feature_snapshot(const std::string& session_id, const FeatureVector& f);
 
     // Labels (one-tap feedback)

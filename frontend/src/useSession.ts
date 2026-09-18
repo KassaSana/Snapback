@@ -20,6 +20,7 @@ export type { FocusMode } from "./sessionCockpit";
 type UseSessionArgs = {
   refreshContextTimeline: (sid?: string | null) => void | Promise<void>;
   resetTimelineRefreshGate: () => void;
+  clearSessionLiveSignals: () => void;
   setActionError: (value: string | null) => void;
   setLabelStatus: (value: string | null) => void;
   setLabelStatusWarning: (value: boolean) => void;
@@ -30,6 +31,7 @@ type UseSessionArgs = {
 export const useSession = ({
   refreshContextTimeline,
   resetTimelineRefreshGate,
+  clearSessionLiveSignals,
   setActionError,
   setLabelStatus,
   setLabelStatusWarning,
@@ -118,6 +120,9 @@ export const useSession = ({
         setSessionId(record.sessionId);
         setSessionGoal(record.goal);
         setRecap(null);
+        // Drop live cards from the previous generation immediately; the native epoch bump
+        // rejects most stale dispatches, and this clears anything already painted.
+        clearSessionLiveSignals();
         setSurveyPending(false);
         // Warn (but don't block) if capture is compromised at start — the session
         // record exists, but it may not record activity. `null` clears the banner.
@@ -136,7 +141,7 @@ export const useSession = ({
         setSessionPending(false);
       }
     },
-    [captureReadiness, refreshContextTimeline, resetTimelineRefreshGate, setActionError],
+    [captureReadiness, clearSessionLiveSignals, refreshContextTimeline, resetTimelineRefreshGate, setActionError],
   );
 
   const handleStartSession = useCallback(async () => {
@@ -153,6 +158,7 @@ export const useSession = ({
     try {
       const record = await api.stopSession(sessionId);
       setSessionRecord(record);
+      clearSessionLiveSignals();
       const sessionRecap = await api.getSessionRecap(sessionId);
       setRecap(sessionRecap);
       setSurveyPending(true);
@@ -170,6 +176,7 @@ export const useSession = ({
       setSessionPending(false);
     }
   }, [
+    clearSessionLiveSignals,
     refreshContextTimeline,
     resetTimelineRefreshGate,
     sessionId,

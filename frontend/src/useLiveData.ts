@@ -104,7 +104,18 @@ export const useLiveData = () => {
   }, [refreshContextTimeline]);
 
   const handlePrediction = useCallback(
-    (record: PredictionRecord | null) => {
+    (record: PredictionRecord | null, activeSessionId?: string | null) => {
+      // Session start/stop bumps the native activity epoch so most stale dispatches die
+      // before they reach here; this is the belt for anything that still arrives — a
+      // prediction named for a previous session must not paint under the new one.
+      if (
+        record &&
+        activeSessionId &&
+        record.sessionId &&
+        record.sessionId !== activeSessionId
+      ) {
+        return;
+      }
       pushPrediction(record);
     },
     [pushPrediction],
@@ -113,6 +124,13 @@ export const useLiveData = () => {
   // The summary is kept beside the note so a failed restore can rewrite the note around it
   // without stacking one failure reason on top of the last.
   const snapbackSummaryRef = useRef<string | null>(null);
+
+  const clearSessionLiveSignals = useCallback(() => {
+    ++latestRequestRef.current;
+    setPrediction(null);
+    setSnapbackNote(null);
+    snapbackSummaryRef.current = null;
+  }, []);
 
   const handleSnapback = useCallback((payload: { summary: string }) => {
     snapbackSummaryRef.current = payload.summary;
@@ -204,6 +222,7 @@ export const useLiveData = () => {
   return {
     contextTimeline,
     clearActivityData,
+    clearSessionLiveSignals,
     handleDismissSnapback,
     handleRestoreSnapbackTarget,
     handleHyperfocus,

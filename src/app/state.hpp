@@ -67,6 +67,12 @@ inline constexpr std::int64_t kEngineBacklogTickIntervalMs = 1;
 // but the loop above runs every millisecond while it lasts, hence the throttle.
 inline constexpr std::int64_t kEngineBacklogLogIntervalMs = 30'000;
 
+// Upper bound on rows materialised for a Review focus-summary window. Uncapped scans held
+// storage_mutex_ across every prediction in the retention window; a mature install can keep
+// tens of thousands of rows. The newest N still feed averages and the streak math once
+// reversed to chronological order.
+inline constexpr std::size_t kFocusSummaryMaxSamples = 50'000;
+
 class AppState {
 public:
     // `logger` and `clock` are both optional (default null) so existing call sites keep
@@ -509,6 +515,11 @@ private:
     // Asynchronous emissions take neither: they carry and validate activity_epoch_ on the
     // UI thread. mutex_ guards mutable in-memory state; storage_mutex_ serializes all
     // storage_ access. Hot UI reads consume the immutable live snapshot and take neither.
+    //
+    // activity_epoch_ advances on activity deletion *and* on session start/stop/replace so
+    // a queued prediction or snapback dispatch cannot paint after the user has moved on.
+    // Deletion also takes activity_boundary_mutex_ to fence off-lock persistence; ordinary
+    // session lifecycle does not — drained jobs still belong to the session they name.
     //
     // ROADMAP 11.6: the paragraph above is no longer the only thing holding that order.
     // These are RankedMutex, so an inverted acquisition reports itself on the first run

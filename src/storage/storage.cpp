@@ -355,6 +355,10 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         // corrupt the DB) — the right trade for local focus telemetry.
         exec(storage.db_, "PRAGMA journal_mode = WAL;");
         exec(storage.db_, "PRAGMA synchronous = NORMAL;");
+        // Wait briefly on SQLITE_BUSY instead of failing the first contended BEGIN.
+        // See kSqliteBusyTimeoutMs.
+        exec(storage.db_,
+             ("PRAGMA busy_timeout = " + std::to_string(kSqliteBusyTimeoutMs)).c_str());
         // Bigger page cache, in-memory temp tables, and memory-mapped I/O speed up the
         // read/export/recap queries and reduce checkpoint stalls. cache_size is negative =
         // kibibytes (~8 MB); mmap_size is bytes (256 MB).
@@ -418,6 +422,8 @@ std::optional<Storage> Storage::open_memory() {
         // both so the in-memory and on-disk paths behave identically for tests.
         exec(storage.db_, "PRAGMA journal_mode = WAL;");
         exec(storage.db_, "PRAGMA synchronous = NORMAL;");
+        exec(storage.db_,
+             ("PRAGMA busy_timeout = " + std::to_string(kSqliteBusyTimeoutMs)).c_str());
         exec(storage.db_, "PRAGMA cache_size = -8000;");
         exec(storage.db_, "PRAGMA temp_store = MEMORY;");
         // Empty path: an in-memory database has no file to back up, and nothing to lose.
@@ -2394,8 +2400,8 @@ std::vector<PredictionRecord> Storage::recent_predictions(std::size_t limit) {
 }
 
 std::vector<PredictionRecord> Storage::predictions_since(
-    const std::optional<std::int64_t>& cutoff_ms) {
-    const char* sql = cutoff_ms
+    const std::optional<std::int64_t>& cutoff_ms, std::optional<std::size_t> limit) {
+    std::string sql = cutoff_ms
                           ? "SELECT session_id, focus_score, distraction_risk, focus_state, "
                             "thrash_score, drift_score, goal_alignment, timestamp, model_id, "
                             "state_source "
@@ -2405,7 +2411,10 @@ std::vector<PredictionRecord> Storage::predictions_since(
                             "thrash_score, drift_score, goal_alignment, timestamp, model_id, "
                             "state_source "
                             "FROM predictions ORDER BY timestamp DESC";
-    Stmt stmt(db_, sql);
+    if (limit) {
+        sql += " LIMIT " + std::to_string(*limit);
+    }
+    Stmt stmt(db_, sql.c_str());
     if (cutoff_ms) stmt.bind(1, *cutoff_ms);
     std::vector<PredictionRecord> rows;
     while (stmt.step_row()) rows.push_back(read_prediction(stmt.get()));
