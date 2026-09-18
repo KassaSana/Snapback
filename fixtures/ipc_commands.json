@@ -2,6 +2,7 @@
   "get_diagnostics",
   "export_support_bundle",
   "get_health",
+  "report_acceptance_verdict",
   "get_latest_prediction",
   "get_prediction_history",
   "get_focus_summary",

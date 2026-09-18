@@ -63,10 +63,13 @@ inline void bind_registry(webview::webview& w, const CommandRegistry& registry,
 inline void register_commands(webview::webview& w, AppState& state,
                               const std::filesystem::path& data_dir,
                               detail::AsyncCommandRunner& async_commands,
-                              const std::string& capability_token = {}) {
+                              const std::string& capability_token = {},
+                              NativeUiHooks ui = {}) {
     CommandRegistry registry;
-    register_command_handlers(registry, state, data_dir, async_commands,
-                              NativeUiHooks{[] { Overlay::instance().dismiss(); }});
+    if (!ui.dismiss_overlay) {
+        ui.dismiss_overlay = [] { Overlay::instance().dismiss(); };
+    }
+    register_command_handlers(registry, state, data_dir, async_commands, std::move(ui));
     detail::bind_registry(w, registry, async_commands, capability_token);
 }
 

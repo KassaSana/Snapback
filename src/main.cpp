@@ -23,6 +23,7 @@
 #include <nlohmann/json.hpp>
 
 #include "app/activation_channel.hpp"
+#include "app/acceptance_harness.hpp"
 #include "app/commands.hpp"
 #include "app/data_import.hpp"
 #include "app/frontend_assets.hpp"
@@ -369,9 +370,30 @@ int main(int argc, char** argv) {
     // Inject the IPC shim BEFORE any page script runs (init scripts run on every navigation,
     // ahead of the bundle), then register the command binds it calls.
     w.init(build_ipc_shim_script(trusted_url, capability_token, kWebviewDebugEnabled));
+
+    // Roadmap 10.1. This source loader does not exist in ordinary builds, including Debug:
+    // CMake must opt a GUI-smoke target into it explicitly. That keeps an arbitrary script
+    // environment variable from becoming a capability in a packaged binary.
+    std::optional<std::string> acceptance_script;
+#if defined(SNAPBACK_ENABLE_ACCEPTANCE_HARNESS)
+    if (const auto path = env_var("SNAPBACK_ACCEPTANCE_SCRIPT")) {
+        acceptance_script = load_acceptance_script(*path);
+        w.init(*acceptance_script);
+        logger.info("desktop acceptance script loaded: " + *path);
+    }
+#endif
     // Declared after the webview and AppState, so it is joined before either can be destroyed.
     detail::AsyncCommandRunner async_commands;
-    register_commands(w, *state, data_dir, async_commands, capability_token);
+    NativeUiHooks native_ui{[] { Overlay::instance().dismiss(); }, {}};
+    if (acceptance_script) {
+        native_ui.report_acceptance_verdict = [data_dir, &w](const nlohmann::json& verdict) {
+            write_acceptance_verdict(data_dir / "acceptance-verdict.json", verdict);
+            // Let the binding resolve before ending the same run loop that delivered it.
+            w.dispatch([&w] { w.terminate(); });
+        };
+    }
+    register_commands(w, *state, data_dir, async_commands, capability_token,
+                      std::move(native_ui));
 
     // System tray (Phase 8): left-click/double-click or the "Show" menu item brings the
     // window forward; "Quit" ends the run loop. Both branches read the native window

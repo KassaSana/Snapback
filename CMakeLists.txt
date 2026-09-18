@@ -53,6 +53,8 @@ FetchContent_MakeAvailable(nlohmann_json doctest)
 option(SNAPBACK_BUILD_APP "Build the desktop app target (webview + sqlite)" OFF)
 option(SNAPBACK_ONNX      "Build with ONNX Runtime inference" OFF)
 option(SNAPBACK_BUILD_BENCHMARKS "Build standalone performance benchmarks" OFF)
+option(SNAPBACK_ENABLE_ACCEPTANCE_HARNESS
+  "Compile the test-only page-to-native desktop acceptance hook" OFF)
 
 # SQLite amalgamation. Prefer a local vendored copy when present
 # so offline development works; otherwise fetch a pinned upstream amalgamation for CI.
@@ -157,6 +159,7 @@ endif()
 
 # --- app state: ties capture + engine + storage together. ---
 add_library(snapback_app STATIC
+  src/app/acceptance_harness.cpp
   src/app/activation_channel.cpp
   src/app/autostart.cpp
   src/app/command_handlers.cpp
@@ -301,6 +304,11 @@ if(SNAPBACK_BUILD_APP)
   add_executable(snapback
     src/main.cpp
   )
+  if(SNAPBACK_ENABLE_ACCEPTANCE_HARNESS)
+    # Explicitly opt-in per smoke build. Normal Debug and Release packages both omit the
+    # arbitrary-JavaScript loader; an environment variable alone can never turn it on.
+    target_compile_definitions(snapback PRIVATE SNAPBACK_ENABLE_ACCEPTANCE_HARNESS=1)
+  endif()
   if(WIN32)
     target_sources(snapback PRIVATE src/snapback/overlay_windows.cpp src/app/tray_windows.cpp)
   elseif(APPLE)

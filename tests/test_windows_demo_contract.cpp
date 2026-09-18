@@ -33,9 +33,8 @@ namespace {
 // The repo does now have a `.gitattributes`, but it deliberately covers only the sh scripts,
 // whose shebang genuinely cannot survive CRLF. `scripts/*.ps1` is excluded for the reason
 // above, so this normalisation is still what makes the assertions below portable.
-std::string read_windows_demo_script() {
-    const auto path =
-        std::filesystem::path(SNAPBACK_SOURCE_DIR) / "scripts/windows_demo.ps1";
+std::string read_script(const std::filesystem::path& relative_path) {
+    const auto path = std::filesystem::path(SNAPBACK_SOURCE_DIR) / relative_path;
     std::ifstream input(path, std::ios::binary);
     std::string contents{std::istreambuf_iterator<char>(input),
                          std::istreambuf_iterator<char>()};
@@ -46,7 +45,7 @@ std::string read_windows_demo_script() {
 }  // namespace
 
 TEST_CASE("Windows Vite demo selects Debug and probes the local server") {
-    const auto script = read_windows_demo_script();
+    const auto script = read_script("scripts/windows_demo.ps1");
 
     CHECK(script.find("$BuildConfig = if ($UseVite) { \"Debug\" } else { \"Release\" }") !=
           std::string::npos);
@@ -56,4 +55,11 @@ TEST_CASE("Windows Vite demo selects Debug and probes the local server") {
     CHECK(script.find("Assert-LocalFrontendUrl") != std::string::npos);
     CHECK(script.find("if ($UseVite) {\n    Wait-ForFrontend\n}") != std::string::npos);
     CHECK(script.find("--config Release --target snapback") == std::string::npos);
+}
+
+TEST_CASE("Windows GUI smoke finds the configuration selected by its caller") {
+    const auto script = read_script("scripts/gui_smoke_windows.ps1");
+
+    CHECK(script.find("(Join-Path $BuildPath \"$Config\\snapback.exe\")") !=
+          std::string::npos);
 }

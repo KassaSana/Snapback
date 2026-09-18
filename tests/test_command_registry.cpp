@@ -43,13 +43,19 @@ struct App {
     detail::AsyncCommandRunner runner;
     CommandRegistry registry;
     int overlay_dismissals = 0;
+    json acceptance_verdict;
+    bool acceptance_enabled = false;
 
     App() {
         auto storage = Storage::open_memory();
         if (!storage) throw std::runtime_error("failed to open in-memory storage");
         state = std::make_unique<AppState>(std::move(*storage));
-        register_command_handlers(registry, *state, data_dir.path, runner,
-                                  NativeUiHooks{[this] { ++overlay_dismissals; }});
+        NativeUiHooks ui{[this] { ++overlay_dismissals; }, {}};
+        if (acceptance_enabled) {
+            ui.report_acceptance_verdict =
+                [this](const json& verdict) { acceptance_verdict = verdict; };
+        }
+        register_command_handlers(registry, *state, data_dir.path, runner, std::move(ui));
     }
     ~App() { runner.shutdown(); }
 };
@@ -98,6 +104,31 @@ TEST_CASE("the real handler table answers get_health with the health shape") {
     CHECK(health.contains("status"));
     CHECK(health.contains("classifier"));
     CHECK(health.contains("permissions"));
+}
+
+TEST_CASE("acceptance verdict reporting is disabled unless the native smoke opted in") {
+    App app;
+    CHECK_THROWS_WITH(app.registry.call("report_acceptance_verdict",
+                                        {{"verdict", {{"passed", true}}}}),
+                      "desktop acceptance harness is disabled in this build");
+}
+
+TEST_CASE("acceptance verdict reporting reaches the injected native sink") {
+    App app;
+    // Rebuild the table with the hook enabled; ordinary production construction above keeps
+    // it absent, which is the boundary this case is pinning.
+    app.registry = CommandRegistry{};
+    app.acceptance_enabled = true;
+    NativeUiHooks ui{[&app] { ++app.overlay_dismissals; },
+                     [&app](const json& verdict) { app.acceptance_verdict = verdict; }};
+    register_command_handlers(app.registry, *app.state, app.data_dir.path, app.runner,
+                              std::move(ui));
+
+    const auto reply = app.registry.call("report_acceptance_verdict",
+                                         {{"verdict", {{"passed", true}, {"checks", 5}}}});
+    CHECK(reply.at("accepted") == true);
+    CHECK(app.acceptance_verdict.at("passed") == true);
+    CHECK(app.acceptance_verdict.at("checks") == 5);
 }
 
 TEST_CASE("the real handler table runs a session through start, get, and stop") {

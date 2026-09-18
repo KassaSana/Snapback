@@ -43,36 +43,39 @@ component suite with V8 coverage floors of 76% statements, 66% branches, 74% fun
 
 ## Main CI workflow
 
-`.github/workflows/ci.yml` has thirteen job definitions, every one of them in the table below;
-the headless matrix expands across Windows, macOS, and Linux.
+`.github/workflows/ci.yml` has five job definitions. The headless matrix expands across
+Windows, macOS, and Linux, yielding seven hosted jobs. Costlier and optional checks run weekly
+or on demand in `.github/workflows/deep-checks.yml`.
 
-If you add a job, add a row. This table once sat at eleven rows against twelve jobs — the
-missing one was `windows-gcc`, so it answered "will my change be covered on MinGW?" with a
-confident no, about the one toolchain a shipped bug had already hidden in.
+| Job | What it proves |
+| --- | --- |
+| `cpp-headless` | CMake + CTest on Windows, macOS, and Linux; its Ubuntu entry also runs documentation, repository, and supply-chain guards |
+| `sanitizers` | ASan + UBSan over memory/lifetime-sensitive paths |
+| `frontend-mock` | Frontend install, typecheck, lint, tests, coverage, and build |
+| `windows-desktop-integration` | Windows app launches; page-side acceptance crosses the real bridge, then a CDP driver clicks navigation and session controls in the real WebView2 UI |
+| `macos-gui-smoke` | macOS app launches, loads its bundle, crosses the real webview bridge, and exits |
+
+## Weekly and on-demand deep checks
+
+`.github/workflows/deep-checks.yml` keeps slower or optional coverage without charging every
+push for it:
 
 | Job | What it proves |
 | --- | --- |
 | `security-audit` | The committed frontend lockfile has no high/critical npm advisory |
-| `cpp-headless` | CMake + CTest on Windows, macOS, and Linux |
-| `windows-gcc` | The portable core builds and tests under MinGW-w64 GCC — the one toolchain combination nothing else covers, and the one a shipped file-replacement bug lived in |
-| `sanitizers` | ASan + UBSan over memory/lifetime-sensitive paths |
+| `windows-gcc` | The portable core builds and tests under MinGW-w64 GCC, which previously exposed a file-replacement defect |
 | `thread-sanitizer` | TSan over capture and engine concurrency |
-| `onnx-linux` | Optional ONNX build and fixture inference. Linux only: the one ONNX-gated test case is a single case, and no shipped build sets `SNAPBACK_ONNX=ON` |
-| `benchmark-smoke` | The replay benchmark builds and runs; the hot-path benchmark and performance thresholds are not covered. `benchmarks/bench_hotpaths.cpp` therefore has **no build coverage in CI at all** — `scripts/test_local.sh` compiles it, and that is the only thing that does |
-| `frontend-mock` | Frontend install, typecheck, lint, tests, coverage, and build |
-| `format-check` | Changed C++ matches `.clang-format` and changed frontend files match Prettier. Changed files only — the tree was never reflowed, and on a non-PR run there is no diff base, so it reports that and passes |
-| `windows-desktop-integration` | Windows demo build and native tests without launching |
-| `desktop-app-build` | Desktop app links on macOS and Linux |
-| `macos-gui-smoke` | macOS app launches, loads its bundle, round-trips a session, and exits |
-| `docs-smoke` | Documentation paths and immutable dependency pins remain valid |
+| `onnx-linux` | Optional ONNX build and fixture inference |
 
-The three desktop jobs intentionally do not depend on the headless suite: a broken core must
+The two desktop jobs intentionally do not depend on the headless suite: a broken core must
 not hide whether the platform shell still builds or launches.
 
 ## Other workflows
 
 - `.github/workflows/production-smoke.yml` builds and validates an unsigned Windows package
   on demand and weekly.
+- `.github/workflows/deep-checks.yml` runs the slower compiler, concurrency, ONNX, and npm
+  advisory checks weekly and on demand.
 - `.github/workflows/benchmarks.yml` runs manual, parameterized benchmarks and uploads the
   raw output. See [benchmarking.md](benchmarking.md).
 - `.github/workflows/release.yml` builds the tag-driven Windows package and publishes a
@@ -88,7 +91,10 @@ Headless CI does not prove:
 - real macOS Accessibility/Input Monitoring permission prompts;
 - sustained real input capture on every desktop environment;
 - Linux tray/overlay behavior, which is still stubbed; or
-- a browser-driven click through the real `webview.bind()` boundary.
+- browser-driven clicking remains open on WebKitGTK, but Windows now drives the real WebView2
+  UI through CDP. Both Windows and macOS also run a page-side acceptance program through the
+  real shim, `webview.bind()`, command registry, async worker, and error envelope (Roadmap
+  10.1).
 
 Those gaps belong in [ROADMAP.md](ROADMAP.md), not in a second task list here. When a new
 test layer lands, update this document to describe what it actually proves.

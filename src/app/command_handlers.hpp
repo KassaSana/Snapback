@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <functional>
 
+#include <nlohmann/json_fwd.hpp>
+
 #include "app/async_command_runner.hpp"
 #include "app/command_registry.hpp"
 #include "app/state.hpp"
@@ -18,6 +20,10 @@ namespace snapback {
 // a test passes something it can count.
 struct NativeUiHooks {
     std::function<void()> dismiss_overlay;
+    // Present only in a test build launched with SNAPBACK_ACCEPTANCE_SCRIPT. Keeping the
+    // writer outside the handler table means headless tests and production packages cannot
+    // choose a filesystem destination through IPC.
+    std::function<void(const nlohmann::json&)> report_acceptance_verdict;
 };
 
 // `data_dir` is where exports and the training log are written. `async_commands` is the

@@ -2,20 +2,15 @@ name: CI
 
 # Guards the native application. Coverage:
 #   - portable core (core + capture + app-lib + tests) on Windows / macOS / Linux
-#   - the same core on Windows with MinGW-w64 GCC, the toolchain 11.8's bug lived in
 #   - AddressSanitizer + UBSan on the manual-memory paths (ring buffer, locks, RAII)
-#   - the ONNX inference backend on Linux (vendored runtime + fixture model)
-#   - the benchmark harness (short smoke run) and the hot-path micro-benchmarks
-#   - frontend dependency vulnerability audit
 #   - the React frontend (typecheck + tests + build)
-#   - the Windows desktop app (no-launch integration smoke)
-#   - the desktop app link on Linux (build-only, never launched)
+#   - the Windows desktop app, built and launched through a real-webview acceptance smoke
 #   - the desktop app on macOS, built *and launched*, by the GUI smoke job
-#   - docs invariants
+#   - repository, documentation, and supply-chain guards on the Ubuntu core run
 #
 # Anti-hang guarantees: every job has `timeout-minutes`, the riskiest steps have their
-# own step timeout, ctest uses `--timeout`/`--no-tests=error`, the GUI app is never
-# launched here, and superseded PR runs are cancelled so nothing piles up.
+# own step timeout, ctest uses `--timeout`/`--no-tests=error`, GUI launch smokes have
+# bounded waits, and superseded PR runs are cancelled so nothing piles up.
 
 on:
   push:
@@ -44,29 +39,6 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Dependency vulnerability audit. This checks the committed frontend lockfile
-  # against npm's advisory database and fails on high/critical vulnerabilities.
-  # ---------------------------------------------------------------------------
-  security-audit:
-    name: Security audit / frontend
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: frontend/.nvmrc
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Audit frontend npm dependencies
-        working-directory: frontend
-        run: npm audit --package-lock-only --audit-level=high
-
-  # ---------------------------------------------------------------------------
   # Portable core on all three OSes: pure logic, no webview, no ONNX. Must stay
   # green everywhere (the capture/app sources are #if-guarded per platform).
   # ---------------------------------------------------------------------------
@@ -81,6 +53,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # The Ubuntu entry also runs the attribution guard, which must inspect
+          # history rather than passing against a one-commit shallow checkout.
+          fetch-depth: 0
 
       - name: Configure core
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
@@ -91,74 +67,28 @@ jobs:
       - name: Run CTest
         run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
 
-  # ---------------------------------------------------------------------------
-  # The portable core again, on Windows with MinGW-w64 GCC. Roadmap 6.6.
-  #
-  # cpp-headless above compiles Windows with MSVC and the other two OSes with
-  # clang++, which leaves exactly one combination nobody builds: **libstdc++'s
-  # MinGW filesystem implementation**. That is where 11.8's production bug lived
-  # — `copy_options::overwrite_existing` is silently ignored there, which broke
-  # model rollback outright and left `save_app_settings` writing a stale backup
-  # while reporting success. It reached `master`, and it was found only because a
-  # portable GCC happened to be the only compiler on the dev machine. Nothing
-  # about that was systematic; this is.
-  #
-  # Headless only. The desktop app's Win32 GUI link under MinGW is a separate
-  # question and not the one this job exists to answer.
-  #
-  # No `needs:` — same Roadmap 6.3 reasoning as the desktop jobs: a toolchain
-  # guard that stops running when the rest of CI is red does not guard the case
-  # it exists for.
-  #
-  # Expect a *pass* here to mean less than it does elsewhere in one specific way:
-  # 11.9 records that the `CaptureThread` contradiction case does not detect its
-  # own bug on this toolchain. That is a documented property of the test, not a
-  # regression in this job.
-  # ---------------------------------------------------------------------------
-  windows-gcc:
-    name: C++ headless tests / windows-gcc
-    runs-on: windows-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        # Overrides the workflow-level bash: the toolchain, its cmake, and its
-        # mingw32-make all live inside the UCRT64 environment, and reaching them
-        # from the runner's own bash would build against a different libstdc++
-        # than the one under test.
-        shell: msys2 {0}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # UCRT rather than MSVCRT: it is what current MinGW-w64 defaults to and what
-      # the dev machine that found 11.8 was running, so this reproduces that
-      # environment rather than an older one. `git` is installed explicitly because
-      # CMake's FetchContent needs it and the MSYS2 shell does not inherit the
-      # runner's PATH.
-      - name: Setup MSYS2 (MinGW-w64 UCRT)
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: false
-          install: >-
-            git
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-make
-
-      - name: Report the toolchain under test
-        run: g++ --version
-
-      - name: Configure core (MinGW Makefiles)
-        run: >
-          cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-          -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
-
-      - name: Build C++ tests
-        run: cmake --build build --target snapback_tests
-
-      - name: Run CTest
-        run: ctest --test-dir build --output-on-failure --timeout 120 --no-tests=error
+      # Keep these inexpensive repository guards on the existing Ubuntu runner
+      # rather than paying for a separate "docs smoke" job on every push.
+      - name: Repository guards
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          grep -q "docs/windows_demo.md" README.md
+          test -f docs/windows_demo.md
+          python3 scripts/check_release_legal.py --verbose
+          python3 scripts/check_doc_paths.py
+          python3 scripts/check_doc_symbols.py --verbose
+          python3 scripts/check_dependency_pins.py --verbose
+          python3 scripts/check_onnx_pins.py --verbose
+          python3 scripts/check_pin_freshness.py --offline --verbose
+          python3 scripts/check_ps_exit_codes.py --verbose
+          python3 scripts/check_commit_attribution.py --verbose
+          sh scripts/test_commit_msg_hook.sh
+          python3 scripts/check_no_remote_subresources.py --verbose
+          python3 scripts/check_coverage_exclusions.py --verbose
+          python3 scripts/check_unit_test_wiring.py --verbose
+          python3 scripts/check_no_bom.py
+          python3 scripts/check_scripts_documented.py
+          python3 scripts/check_dead_headers.py --verbose
 
   # ---------------------------------------------------------------------------
   # AddressSanitizer + UBSan (Linux/clang). Highest-value guard for the SPSC ring
@@ -190,114 +120,6 @@ jobs:
 
       - name: Run CTest (sanitized)
         run: ctest --test-dir build --output-on-failure --timeout 300 --no-tests=error
-
-  # ---------------------------------------------------------------------------
-  # ThreadSanitizer (Linux/clang). Runs the concurrency tests — the SPSC ring stress
-  # (test_ring_buffer.cpp) and the AppState reader/writer race test (test_app_state.cpp)
-  # — under TSan to catch data races in the hand-rolled acquire/release ring and lock-order
-  # bugs in the two-mutex state split. RelWithDebInfo keeps TSan fast enough for the
-  # 500k-iteration ring test; the 600s ctest timeout is the safety net.
-  # ---------------------------------------------------------------------------
-  thread-sanitizer:
-    name: ThreadSanitizer
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      CC: clang
-      CXX: clang++
-      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Configure (tsan)
-        run: >
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g"
-          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
-
-      - name: Build tests
-        run: cmake --build build --target snapback_tests
-
-      - name: Run CTest (tsan)
-        run: ctest --test-dir build --output-on-failure --timeout 600 --no-tests=error
-
-  # ---------------------------------------------------------------------------
-  # ONNX backend: vendor the runtime, build with SNAPBACK_ONNX=ON, run tests. The
-  # ONNX fixture test loads fixtures/model.onnx and asserts backend() == "onnx".
-  # ---------------------------------------------------------------------------
-  onnx-linux:
-    name: ONNX backend / linux
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # Roadmap 8.9. Same manifest as the Windows job -- see the comment there.
-      - name: Vendor ONNX Runtime
-        timeout-minutes: 5
-        run: |
-          # python3 rather than jq: the docs-smoke job already depends on python3, so this
-          # adds no new tool to the runner image.
-          pins=third_party/onnxruntime-pins.json
-          read_pin() { python3 -c "import json,sys; print(json.load(open('${pins}'))$1)"; }
-          version=$(read_pin "['version']")
-          archive=$(read_pin "['archives']['linux-x64']['file']")
-          expected=$(read_pin "['archives']['linux-x64']['sha256']")
-          release_url=$(read_pin "['release_url']")
-          curl --fail --location --retry 3 "${release_url}/${archive}" --output "${archive}"
-          # Verify before extracting. This archive is executable code that CMake links into
-          # the test binary, and extraction is what writes attacker-controlled paths to disk.
-          echo "${expected}  ${archive}" | sha256sum --check --strict -
-          tar -xzf "${archive}" --directory third_party
-          mv "third_party/onnxruntime-linux-x64-${version}" third_party/onnxruntime
-          test -f third_party/onnxruntime/lib/libonnxruntime.so
-
-      - name: Configure (ONNX on)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_ONNX=ON
-
-      - name: Build tests
-        run: cmake --build build --config Release --target snapback_tests
-
-      - name: Run CTest (incl. ONNX fixture)
-        run: ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
-
-  # ---------------------------------------------------------------------------
-  # Benchmark smoke: the harness still builds and completes on a short trace.
-  # Bounded by SNAPBACK_BENCH_MINUTES and a step timeout so it can't run away.
-  # ---------------------------------------------------------------------------
-  benchmark-smoke:
-    name: Benchmark smoke / linux
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Configure (benchmarks on)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_BENCHMARKS=ON
-
-      - name: Build benchmarks
-        run: cmake --build build --config Release --target snapback_benchmarks snapback_hotpath_benchmarks
-
-      - name: Run short benchmark
-        timeout-minutes: 3
-        env:
-          SNAPBACK_BENCH_MINUTES: "5"
-        run: ./build/snapback_benchmarks
-
-      # The hot-path micro-benchmarks (ring push, drain->features->classify, lock
-      # contention, SQLite tick) finish in a few seconds. Built and run here so the
-      # target cannot rot unnoticed and the numbers land in the job log for comparison;
-      # nothing is asserted against them -- CI runners are too noisy for a threshold.
-      - name: Run hot-path micro-benchmarks
-        timeout-minutes: 3
-        env:
-          # A tenth of the full sample counts: the contended-lock section at full scale
-          # does not finish inside the step timeout on a 2-vCPU runner.
-          SNAPBACK_HOTPATH_SCALE_PERCENT: "10"
-        run: ./build/snapback_hotpath_benchmarks
 
   # ---------------------------------------------------------------------------
   # Reused React frontend: typecheck, unit/component tests, production build.
@@ -347,118 +169,16 @@ jobs:
         run: npm run build:demo
 
       # Roadmap 8.10 is a promise about the *shipped* page, and this is the only job that
-      # produces one. frontend/dist is gitignored, so the same guard in docs-smoke sees only
+      # produces one. frontend/dist is gitignored, so the repository guard sees only
       # the source index.html and never the inlined bundle the user actually loads. Running it
       # here, after the build, is what checks the artifact the promise is about.
       - name: The built bundle must not fetch anything
         run: python3 scripts/check_no_remote_subresources.py --verbose
 
   # ---------------------------------------------------------------------------
-  # Roadmap 4.12. Formatting: NEW files are enforced, EXISTING files are advisory.
-  #
-  # The tree was deliberately never reformatted -- doing so would rewrite nearly every file
-  # and destroy `git blame` granularity on a codebase whose comments carry most of its
-  # reasoning. The obvious compromise, "check whatever the PR touched", does not survive
-  # contact with a large legacy file: `src/App.tsx` is 830 lines and 606 of them move under
-  # Prettier, so a one-line edit there would demand a 606-line reformat or a red build. That
-  # is a rule people route around, not a rule people follow.
-  #
-  # So the split is by file age, not by whether the file was touched:
-  #
-  #   * A file ADDED in this change must be formatted. New code costs nothing to get right,
-  #     and this is the only moment it is free.
-  #   * A file that already existed is reported and does not fail. Converting one is a
-  #     deliberate, separate commit whose diff is all formatting -- reviewable as such,
-  #     instead of hidden inside a behaviour change.
-  #
-  # On a push to master there is no diff base, so the job says so and exits 0 rather than
-  # checking everything: a job that fails 100% of the time on master teaches everyone to
-  # ignore it.
   # ---------------------------------------------------------------------------
-  format-check:
-    name: Formatting / changed files
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          # Need the base commit to diff against; the default single-commit clone has none.
-          fetch-depth: 0
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: frontend/.nvmrc
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        timeout-minutes: 8
-        run: npm ci
-
-      - name: Work out what changed
-        id: changed
-        run: |
-          emit() { echo "$1=$2" >> "$GITHUB_OUTPUT"; }
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "No diff base outside a pull request; nothing to check."
-            emit added_cpp ""; emit added_web ""; emit touched_cpp ""; emit touched_web ""
-            exit 0
-          fi
-          base="${{ github.event.pull_request.base.sha }}"
-          # ...HEAD compares against the merge base, so unrelated commits landing on master
-          # while the PR is open do not show up as this PR's changes.
-          # `-C` treats a copy as a copy; a copied file is new code and should be formatted.
-          added="$(git diff --name-only --diff-filter=AC "$base"...HEAD)"
-          touched="$(git diff --name-only --diff-filter=MR "$base"...HEAD)"
-          echo "Added:"; echo "$added"; echo "Modified:"; echo "$touched"
-          # Keep only paths that still exist -- a rename's old path is already gone.
-          pick() { { grep -E "$2" || true; } <<< "$1" | while read -r f; do
-                     [ -n "$f" ] && [ -f "$f" ] && echo "$f"; done | tr '\n' ' '; }
-          emit added_cpp   "$(pick "$added"   '\.(cpp|hpp|mm)$')"
-          emit added_web   "$(pick "$added"   '^frontend/.*\.(ts|tsx|js|mjs|css)$')"
-          emit touched_cpp "$(pick "$touched" '\.(cpp|hpp|mm)$')"
-          emit touched_web "$(pick "$touched" '^frontend/.*\.(ts|tsx|js|mjs|css)$')"
-
-      # A malformed .clang-format is otherwise a confusing per-file error on every file; this
-      # turns it into one clear failure carrying the parser's own message.
-      - name: The .clang-format config must be valid
-        run: clang-format --version && clang-format --dump-config > /dev/null
-
-      - name: New C++ must match .clang-format
-        if: steps.changed.outputs.added_cpp != ''
-        run: clang-format --dry-run --Werror ${{ steps.changed.outputs.added_cpp }}
-
-      - name: New frontend files must match Prettier
-        if: steps.changed.outputs.added_web != ''
-        working-directory: frontend
-        run: |
-          # Paths arrive repo-relative; prettier runs from frontend/, so strip the prefix.
-          rel=""; for f in ${{ steps.changed.outputs.added_web }}; do rel="$rel ${f#frontend/}"; done
-          npx prettier --check $rel
-
-      # Advisory. Never fails the build -- see the note at the top of this job for why
-      # converting a pre-existing file is its own commit rather than a condition of editing it.
-      - name: Pre-existing files you touched (advisory, never fails)
-        if: steps.changed.outputs.touched_cpp != '' || steps.changed.outputs.touched_web != ''
-        continue-on-error: true
-        working-directory: ${{ github.workspace }}
-        run: |
-          echo "These already existed, so formatting is not enforced on them here."
-          echo "To convert one, do it in a commit of its own that contains nothing else."
-          if [ -n "${{ steps.changed.outputs.touched_cpp }}" ]; then
-            clang-format --dry-run ${{ steps.changed.outputs.touched_cpp }} || true
-          fi
-          if [ -n "${{ steps.changed.outputs.touched_web }}" ]; then
-            rel=""; for f in ${{ steps.changed.outputs.touched_web }}; do rel="$rel ${f#frontend/}"; done
-            ( cd frontend && npx prettier --list-different $rel || true )
-          fi
-
-  # ---------------------------------------------------------------------------
-  # Windows desktop app: build + no-launch integration smoke (never starts the
-  # GUI, which would hang).
+  # Windows desktop app: build + bounded real-webview acceptance smoke. The app
+  # terminates itself after publishing its verdict, and the script kills it on timeout.
   #
   # Deliberately has NO `needs:` (Roadmap 6.3): with `needs: [cpp-headless,
   # frontend-mock]` this job was *skipped* whenever those failed — so the one
@@ -481,10 +201,20 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Run Windows demo no-launch smoke
+      - name: Build Windows desktop acceptance target
         shell: pwsh
         timeout-minutes: 30
-        run: .\scripts\windows_demo.ps1 -UseVite -NoLaunch
+        run: .\scripts\windows_demo.ps1 -UseVite -EnableAcceptanceHarness -NoLaunch
+
+      - name: Run Windows real-webview acceptance smoke
+        shell: pwsh
+        timeout-minutes: 5
+        run: .\scripts\gui_smoke_windows.ps1 -BuildDir build-windows-demo -Config Debug -NoBuild -Acceptance
+
+      - name: Drive the Windows UI through WebView2 CDP
+        shell: pwsh
+        timeout-minutes: 5
+        run: .\scripts\gui_smoke_windows.ps1 -BuildDir build-windows-demo -Config Debug -NoBuild -Driven
 
       - name: Upload demo logs
         if: always()
@@ -511,82 +241,6 @@ jobs:
   # Deliberately no `needs:` — same Roadmap 6.3 reasoning as the Windows job
   # above: this link check depends on the code compiling, not on the headless
   # suite passing, and gating it on test jobs made it skip while CI was red.
-  desktop-app-build:
-    name: Desktop app build / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      # macOS is deliberately absent. `macos-gui-smoke` below runs the identical configure
-      # and build (scripts/gui_smoke_macos.sh) and then launches the result — and a binary
-      # that launched must have linked, so a separate macOS link check proves nothing the
-      # smoke job has not already proved. It cost ~12 of the run's 84 billed minutes at the
-      # x10 macOS multiplier and turned one macOS build break into two red X's.
-      #
-      # Kept as a one-entry matrix rather than inlined so the check keeps the name
-      # "Desktop app build / ubuntu-latest" that branch protection may already require.
-      matrix:
-        os: [ubuntu-latest]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # webview picks webkit2gtk-4.1 first and falls back to 4.0; 4.1 is what
-      # ubuntu-latest ships.
-      # This step normally takes seconds, and it had no timeout of its own while the build
-      # step below did — so when apt hung on 2026-08-19 it burned all 30 minutes of the job
-      # budget and reported nothing. That contradicted this file's own anti-hang promise that
-      # the riskiest steps carry a step timeout; fetching packages over the network is the
-      # riskiest step in this job. Five minutes is ~10x the normal duration: long enough for a
-      # slow mirror, short enough that a hang fails fast and reads as a hang.
-      #
-      # DEBIAN_FRONTEND=noninteractive so apt can never block on a prompt no one can answer.
-      - name: Install Linux webview dependencies
-        if: runner.os == 'Linux'
-        timeout-minutes: 6
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        # The runner image ships a mirrorlist (/etc/apt/apt-mirrors.txt) whose first entry is
-        # azure.archive.ubuntu.com. When that host is unreachable — as it was on 2026-08-19 —
-        # apt spends its whole retry budget per index file before falling back, so `update`
-        # never finishes and the step dies on its timeout. The packages are not the problem:
-        # the same log shows archive.ubuntu.com answering `Hit`/`Get` immediately while every
-        # azure line reads `Ign`.
-        #
-        # So point apt at the host that answered, and bound the per-connection timeouts. A
-        # plain retry loop is not enough on its own and was actively counterproductive here:
-        # it repeated a five-minute hang three times rather than failing once.
-        run: |
-          set -eu
-          # Not fatal if a future image renames this file or drops the mirrorlist: apt still
-          # works, it just keeps whatever mirror the image chose. Say so rather than dying on
-          # something incidental to installing two packages.
-          sources=/etc/apt/sources.list.d/ubuntu.sources
-          if [ -f "$sources" ] && grep -q 'mirror+file:/etc/apt/apt-mirrors.txt' "$sources"; then
-            sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|https://archive.ubuntu.com/ubuntu|g' "$sources"
-            echo "apt: pinned to archive.ubuntu.com in $sources"
-          else
-            echo "apt: no mirrorlist entry found in $sources; leaving apt sources as the image set them" >&2
-          fi
-          apt_opts="-o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
-          for attempt in 1 2 3; do
-            if sudo apt-get $apt_opts update && \
-               sudo apt-get $apt_opts install -y libgtk-3-dev libwebkit2gtk-4.1-dev; then
-              exit 0
-            fi
-            echo "apt attempt ${attempt} failed; retrying in $((attempt * 10))s" >&2
-            sleep $((attempt * 10))
-          done
-          echo "apt failed three times against a reachable mirror; this is a real failure" >&2
-          exit 1
-
-      - name: Configure (app on)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=ON -DSNAPBACK_ONNX=OFF
-
-      - name: Build desktop app (link check, no launch)
-        timeout-minutes: 20
-        run: cmake --build build --target snapback --config Release
-
   # ---------------------------------------------------------------------------
   # macOS GUI launch smoke — ADR-0002 release blocker.
   #
@@ -596,8 +250,8 @@ jobs:
   # invisible at link time — a webview that cannot create its window, and a
   # frontend bundle that never got copied next to the executable (an empty
   # window, not an error).
-  # scripts/gui_smoke_macos.sh launches the real binary, drives a session
-  # start/stop through AppState and SQLite from the UI thread, and requires the
+  # scripts/gui_smoke_macos.sh launches the real binary and runs page-side checks
+  # through the shim, webview binding, AppState, and SQLite before requiring the
   # run loop to exit on its own.
   #
   # No `needs:` for the same Roadmap 6.3 reason as the two jobs above: this
@@ -632,122 +286,3 @@ jobs:
           name: macos-gui-smoke-logs
           path: .demo/gui-smoke-data-macos/*.log
           if-no-files-found: ignore
-
-  # ---------------------------------------------------------------------------
-  # Docs invariants.
-  # ---------------------------------------------------------------------------
-  docs-smoke:
-    name: Docs smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          # checkout defaults to a shallow clone of one commit. The attribution guard below
-          # walks the whole history, and against a shallow clone it would cheerfully report
-          # "checked 1 commits" forever -- passing without looking at anything.
-          fetch-depth: 0
-
-      - name: Ensure Windows demo runbook is linked
-        run: |
-          grep -q "docs/windows_demo.md" README.md
-          test -f docs/windows_demo.md
-
-      # Roadmap Tier 12 exists because docs repeatedly named files that were never
-      # created or had moved, and nothing caught it. This makes that mechanical.
-      - name: Release legal artifacts are present and wired
-        run: python3 scripts/check_release_legal.py --verbose
-
-      - name: Every path a doc names must exist
-        run: python3 scripts/check_doc_paths.py
-
-      # Tier 12's own lesson was that the guard above "cannot check claims -- only paths."
-      # A `file.cpp:123` citation is the worst case of that: the file still exists, so the
-      # path guard stays green while the line number drifts onto unrelated code. An audit on
-      # 2026-08-19 found 84 such citations with a large fraction already pointing at blank
-      # lines, a closing brace, or past the end of a 20-line file. Citations now name a
-      # symbol, which moves with the code, and this fails when the symbol stops existing.
-      - name: Every code citation must name a symbol that still exists
-        run: python3 scripts/check_doc_symbols.py --verbose
-
-      # Roadmap 8.6. Dependabot watches Actions and npm but not CMake FetchContent, so a
-      # dependency pinned to a mutable tag is source we compile and ship with nothing
-      # watching it. Cheap to check, and only a guard stops the policy from rotting.
-      - name: Every fetched dependency must be pinned to an immutable revision
-        run: python3 scripts/check_dependency_pins.py --verbose
-
-      # Roadmap 8.9. The guard above reads CMakeLists.txt and so never saw the ONNX
-      # archives the two ONNX jobs download straight from a release URL. A release asset
-      # can be re-uploaded under the same name, so the digest is the only real pin.
-      - name: Every vendored ONNX archive must be verified before extraction
-        run: python3 scripts/check_onnx_pins.py --verbose
-
-      # Roadmap 4.13. The scheduled pin-freshness workflow queries GitHub; this only
-      # checks that the parser still sees onnx + the three git FetchContent pins, so a
-      # CMake rename cannot silently empty the watcher.
-      - name: Pin-freshness parser still sees every watched pin
-        run: python3 scripts/check_pin_freshness.py --offline --verbose
-
-      # $ErrorActionPreference = "Stop" does not cover native executables, so an unchecked
-      # cmake/npm call in a .ps1 lets a red build exit 0. windows_demo.ps1 did exactly that:
-      # the Windows job stayed green across three commits whose main.cpp did not compile, and
-      # only the macOS/Linux jobs — which call cmake straight from the workflow — noticed.
-      - name: Every native call in a PowerShell script must check its exit code
-        run: python3 scripts/check_ps_exit_codes.py --verbose
-
-      # Every commit here is Kassa's own work. Several tools append attribution trailers by
-      # default, silently, at commit time. Such a commit is permanent in a way an ordinary
-      # mistake is not: rewriting it changes every SHA after it, which would break release
-      # tags and 9.11's CI-conclusion gate. Catch it before it lands.
-      - name: Every commit must be attributed to Kassa
-        run: python3 scripts/check_commit_attribution.py --verbose
-
-      # The gate above runs after the commit exists, which is too late to fix one without
-      # rewriting history. scripts/hooks/commit-msg removes the trailers while they are still
-      # free to remove. Nothing else exercises it -- a clone that never enables the hook is
-      # the normal case -- so a broken hook would sit undetected until the day it was needed.
-      # These cases run the real hook against real messages rather than reading it as text.
-      - name: The commit-msg hook must strip what CI rejects
-        run: sh scripts/test_commit_msg_hook.sh
-
-      # Roadmap 8.10. The Privacy card promises "Nothing leaves this device" and the bundler
-      # claims zero subresource requests. Both were false because the page fetched webfonts —
-      # and invisibly so, since an offline launch just rendered fallback type and looked fine.
-      - name: The shipped page must not fetch anything
-        run: python3 scripts/check_no_remote_subresources.py --verbose
-
-      # Roadmap 11.11. Pure-logic modules are excluded from the component-coverage gate
-      # because a different runner tests them. That list is one edit away from being a way to
-      # silence the gate rather than sharpen it, and the failure would look like an improving
-      # coverage number.
-      - name: Every coverage exclusion must be tested somewhere else
-        run: python3 scripts/check_coverage_exclusions.py --verbose
-
-      # The converse of the gate above. `test:unit` is a hand-chained list of `tsx
-      # tests/<name>.test.ts` calls, so a new pure-logic test file runs only if somebody
-      # remembered to add it. One that nobody added still typechecks, still looks like a
-      # test, and leaves the suite green -- the missing coverage is invisible exactly where
-      # it matters.
-      - name: Every pure-logic test file must actually be run
-        run: python3 scripts/check_unit_test_wiring.py --verbose
-
-      # A UTF-8 BOM is three invisible bytes that break `#!` lines, strict JSON parsers, and
-      # the first line of a diff. Five files had picked one up from a Windows editor, with no
-      # pattern beyond "something touched this file" -- which is why it is checked rather
-      # than agreed.
-      - name: No tracked file may start with a UTF-8 BOM
-        run: python3 scripts/check_no_bom.py
-
-      # scripts/README.md is the only place saying which of these CI runs and which are
-      # Windows-only. Five gates were missing from it, so it answered "what will CI check
-      # about my change?" confidently and wrongly.
-      - name: Every script must be documented in scripts/README.md
-        run: python3 scripts/check_scripts_documented.py
-
-      # Automates the monthly dead-code sweep. A header only its own tests include compiles,
-      # has passing tests, and ships nothing -- every signal a reviewer reads says it is
-      # live. That is the shape 2.4 had, and it survived long enough to be reasoned about as
-      # if it worked.
-      - name: Every header in src/ must have a product caller
-        run: python3 scripts/check_dead_headers.py --verbose

@@ -35,8 +35,13 @@ the merged hardening baseline through all **15 hosted CI jobs**; all passed, inc
 more from the audit batches: **2.15, 8.12, 7.26, 9.16, 10.13**. The local baseline is now
 **400/400 C++ cases** (up from 336 after 7.22) and clean frontend unit scripts plus typecheck;
 the component suite still cannot run on this machine (**11.11**), so every frontend change went
-into a `tsx`-testable pure module rather than into a component. CI is now **16 hosted jobs**
-with 6.6's `windows-gcc`, whose configuration was reproduced locally before being turned on.
+into a `tsx`-testable pure module rather than into a component.
+
+*Progress 2026-09-18 (CI simplification):* push and pull-request CI now has seven hosted
+jobs: the three-platform core matrix, ASan/UBSan, frontend tests, and Windows/macOS desktop
+smokes. Repository, documentation, and supply-chain guards run within the Ubuntu core entry.
+MinGW, TSan, ONNX, and npm advisory checks moved to weekly/on-demand deep checks; the Linux
+desktop-link, benchmark-smoke, and dedicated formatting jobs were removed.
 
 **Three defects in that pass were found by a test rather than by reading**, which is worth
 recording because each was a plausible-looking wrong number rather than a crash. 10.13's SQL
@@ -89,7 +94,7 @@ The guard deliberately does **not** flag prose that merely names a tool: an exis
 explains a filename decision by referring to `CLAUDE.md`, and naming a thing is not claiming
 it wrote the code. It matches trailers, footers, and author/committer addresses only. It also
 refuses to run against a shallow clone rather than report success for the one commit it can
-see, which is why `docs-smoke` checks out with `fetch-depth: 0`.
+see, which is why the Ubuntu `cpp-headless` entry checks out with `fetch-depth: 0`.
 
 ---
 
@@ -3109,7 +3114,7 @@ Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [Done archive](#done-archive)).
   manifest and the three git FetchContent pins (nlohmann_json, doctest, webview) to each
   project's latest GitHub release. `.github/workflows/pin-freshness.yml` runs weekly (and
   on demand), opens or comments on a `[pin-freshness]` issue when any pin is behind, and
-  never edits a digest. `docs-smoke` runs the parser offline so a CMake rename cannot
+  never edits a digest. The Ubuntu `cpp-headless` repository guard runs the parser offline so a CMake rename cannot
   empty the watcher silently. CVE/advisory monitoring remains out of scope until 8.5.
 
   The original finding was:

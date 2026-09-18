@@ -30,7 +30,7 @@ not a broken tree.**
 Why the ❌s, concretely:
 
 - **ONNX** expects a vendored runtime at `third_party/onnxruntime` (`CMakeLists.txt:84`).
-  **That directory is not in this repo** — CI's `onnx-linux` job vendors
+  **That directory is not in this repo** — the weekly/on-demand `onnx-linux` job vendors
   it as a build step. Turning `SNAPBACK_ONNX=ON` without it is a `FATAL_ERROR` at configure
   time, not a slow build. It is **off by default**, so the normal build never touches it.
 
@@ -130,10 +130,11 @@ On Windows, use the runbook instead — it wires the demo data dir and the tray:
 [windows_demo.md](windows_demo.md).
 
 On macOS, [`scripts/gui_smoke_macos.sh`](../scripts/gui_smoke_macos.sh) does the whole
-sequence above and then checks it worked: it launches the binary, drives a session
-start/stop through storage from the UI thread, requires the run loop to exit on its own,
-and fails if the webview landed on `about:blank` instead of the bundle. It is the same
-script CI runs, so a local failure is a real failure.
+sequence above and then checks it worked: it launches the binary, runs five page-side
+checks across the real webview bridge (including session storage, async export, and an
+error envelope), requires the run loop to exit on its own, and fails if the webview landed
+on `about:blank` instead of the bundle. It is the same script CI runs, so a local failure
+is a real failure.
 
 ```sh
 ./scripts/gui_smoke_macos.sh                  # frontend + build + launch
@@ -165,7 +166,9 @@ All optional. Read in `main.cpp`.
 | `SNAPBACK_FRONTEND_URL` | Point the webview at a dev server — **debug builds only**; release ignores it (Roadmap 8.4, and see 8.7) |
 | `SNAPBACK_OVERLAY_TEST` | Pop a sample overlay on launch |
 | `SNAPBACK_NOTIFICATION_TEST` | Fire a sample notification on launch (Windows only — macOS returns `false` until 3.3) |
-| `SNAPBACK_GUI_SESSION_SMOKE` | Start and stop a session through storage on the UI thread, write `gui_session_smoke.ok` into the data directory, then terminate. What the launch smokes on both OSes assert against |
+| `SNAPBACK_GUI_SESSION_SMOKE` | Legacy native Windows launch check: start and stop a session through storage on the UI thread, write `gui_session_smoke.ok` into the data directory, then terminate. The real-webview acceptance smokes use `SNAPBACK_ACCEPTANCE_SCRIPT` instead. |
+| `SNAPBACK_ACCEPTANCE_SCRIPT` | Test builds compiled with `SNAPBACK_ENABLE_ACCEPTANCE_HARNESS=ON` only: inject a page-side JavaScript acceptance program. The GUI smokes use this to cross the real webview bridge and publish `acceptance-verdict.json`; ordinary builds ignore it. |
+| `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` | WebView2 runtime option used only by the Windows `-Driven` smoke to expose a loopback CDP port. The smoke chooses an ephemeral port and ordinary launches leave this unset. |
 | `SNAPBACK_BENCH_MINUTES` | Benchmark trace length |
 
 Default data directory: `%APPDATA%\snapback` on Windows, `~/.snapback` elsewhere

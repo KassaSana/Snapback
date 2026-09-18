@@ -2,7 +2,7 @@
 """Fail if the ONNX Runtime archives CI downloads are not pinned by SHA-256.
 
 ROADMAP 8.9. `scripts/check_dependency_pins.py` (8.6) covers the dependencies CMake
-fetches. It does not cover these: the two ONNX jobs in `.github/workflows/ci.yml` download
+fetches. It does not cover these: the ONNX job in `.github/workflows/deep-checks.yml` downloads
 a prebuilt runtime archive from a GitHub release and extract it into `third_party/`, where
 CMake links it into the test binary. That is executable third-party code entering the build
 by a path 8.6 never looked at, which is why 8.6's broad claim that fetched dependencies are
@@ -21,7 +21,7 @@ enforces the properties that make that arrangement actually hold:
     that forgets to re-hash fail loudly instead of silently verifying the old digest against
     a new file (it cannot: the URL it builds would still point at the old version)
   * no two platforms share a digest, which is what a copy-paste bump looks like
-  * ci.yml reads the manifest and hardcodes neither a version nor a digest
+  * the ONNX workflow reads the manifest and hardcodes neither a version nor a digest
   * each vendor step verifies the hash *before* it extracts -- checking afterwards would
     already have written attacker-controlled paths to disk
 
@@ -38,7 +38,7 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "third_party", "onnxruntime-pins.json")
-WORKFLOW = os.path.join(REPO, ".github", "workflows", "ci.yml")
+WORKFLOW = os.path.join(REPO, ".github", "workflows", "deep-checks.yml")
 
 MANIFEST_REL = "third_party/onnxruntime-pins.json"
 
@@ -46,7 +46,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
 # The step name both ONNX jobs use, and the shell tokens that mean "extract" and "verify".
-# Keep these in sync with ci.yml; a rename that this script stops recognising is caught by
+# Keep these in sync with deep-checks.yml; a rename that this script stops recognising is caught by
 # the "found no vendor steps" check rather than passing silently.
 VENDOR_STEP = "- name: Vendor ONNX Runtime"
 EXTRACT_TOKENS = ("Expand-Archive", "tar -xzf")
@@ -118,20 +118,20 @@ def check_workflow(problems: list[str], pins: dict, verbose: bool) -> None:
 
     if MANIFEST_REL not in workflow:
         problems.append(
-            f"ci.yml never reads {MANIFEST_REL}, so the manifest is not the source of truth."
+            f"deep-checks.yml never reads {MANIFEST_REL}, so the manifest is not the source of truth."
         )
 
     for digest in (entry.get("sha256", "") for entry in (pins.get("archives") or {}).values()):
         if digest and digest in workflow:
             problems.append(
-                "ci.yml hardcodes a digest that also lives in the manifest. Read it from "
+                "deep-checks.yml hardcodes a digest that also lives in the manifest. Read it from "
                 "the manifest instead, or the two will drift."
             )
             break
 
     if re.search(r"^\s*ORT_VERSION\s*:", workflow, re.MULTILINE):
         problems.append(
-            "ci.yml still sets ORT_VERSION. The version belongs in the manifest beside the "
+                "deep-checks.yml still sets ORT_VERSION. The version belongs in the manifest beside the "
             "digests, so a bump cannot change one without the other."
         )
 
@@ -139,7 +139,7 @@ def check_workflow(problems: list[str], pins: dict, verbose: bool) -> None:
     if not steps:
         # A renamed step would otherwise make this script report success forever.
         problems.append(
-            f"found no {VENDOR_STEP!r} steps in ci.yml -- this parser is out of date with "
+            f"found no {VENDOR_STEP!r} steps in deep-checks.yml -- this parser is out of date with "
             f"the workflow."
         )
 

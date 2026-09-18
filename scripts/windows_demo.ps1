@@ -8,6 +8,7 @@ param(
     [switch]$SkipFrontend,
     [switch]$SkipNpmInstall,
     [switch]$UseVite,
+    [switch]$EnableAcceptanceHarness,
     [switch]$OverlayTest,
     [switch]$NoLaunch
 )
@@ -170,6 +171,9 @@ $configureArgs = @("-S", $RepoRoot, "-B", $BuildPath)
 if ($Generator) { $configureArgs += @("-G", $Generator) }
 if ($Arch) { $configureArgs += @("-A", $Arch) }
 $configureArgs += @("-DSNAPBACK_BUILD_APP=ON", "-DSNAPBACK_ONNX=OFF")
+if ($EnableAcceptanceHarness) {
+    $configureArgs += "-DSNAPBACK_ENABLE_ACCEPTANCE_HARNESS=ON"
+}
 Invoke-Native { cmake @configureArgs }
 Invoke-Native { cmake --build $BuildPath --config $BuildConfig --target snapback_tests }
 Invoke-Native { ctest --test-dir $BuildPath -C $BuildConfig --output-on-failure }

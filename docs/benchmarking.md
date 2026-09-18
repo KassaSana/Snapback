@@ -47,10 +47,8 @@ neither:
 
 - **`benchmarks.yml`** — *manual only* (`workflow_dispatch`), takes a `minutes` input,
   uploads a `benchmark-results` artifact. This is the one that produces numbers.
-- **`benchmark-smoke`** in `ci.yml` — runs on every push and proves only that
-  `snapback_benchmarks` builds and runs. It does not run `snapback_hotpath_benchmarks`, and
-  **it is not a performance regression gate**; nothing compares output to the baselines
-  below.
+- The manual `benchmarks.yml` workflow is the only hosted benchmark run. It is not a
+  performance-regression gate; nothing compares output to the baselines below.
 
 ## What It Measures
 

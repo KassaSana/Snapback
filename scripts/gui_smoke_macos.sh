@@ -12,9 +12,8 @@
 # What this asserts, in order of what it would catch:
 #
 #   1. The process starts and stays up long enough to reach its run loop.
-#   2. SNAPBACK_GUI_SESSION_SMOKE's round trip completes — a session is started and stopped
-#      through AppState and SQLite from the UI thread, and the marker names it. This is what
-#      makes it a *launch* smoke rather than a "did the process exist" check.
+#   2. The injected page-side acceptance script crosses the real shim + webview.bind boundary,
+#      starts/stops a session, awaits an async export, and receives a deliberate error.
 #   3. The run loop exits on its own when terminate() is called, rather than being killed.
 #      That is the same path the tray's Quit item drives, and a hang there strands the app
 #      with no way out but Force Quit.
@@ -25,7 +24,7 @@
 # There is no window-title check like the Windows script's MainWindowTitle probe: reading
 # another process's windows on macOS needs Accessibility permission, which a CI runner
 # cannot grant unattended. Assertion 2 covers the same ground more directly anyway — the
-# marker can only be written from a dispatch on the running UI loop.
+# verdict can only be written after page JavaScript reaches the bound native command.
 #
 # Usage: scripts/gui_smoke_macos.sh [--no-build] [--skip-frontend] [--timeout N]
 
@@ -55,7 +54,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_PATH="$REPO_ROOT/$BUILD_DIR"
 DATA_DIR="$REPO_ROOT/.demo/gui-smoke-data-macos"
-MARKER="$DATA_DIR/gui_session_smoke.ok"
+MARKER="$DATA_DIR/acceptance-verdict.json"
 APP_LOG="$DATA_DIR/snapback.log"
 
 cd "$REPO_ROOT"
@@ -75,7 +74,8 @@ fi
 
 if [[ "$DO_BUILD" == "1" ]]; then
     echo "==> building snapback (SNAPBACK_BUILD_APP=ON)"
-    cmake -S . -B "$BUILD_PATH" -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=ON
+    cmake -S . -B "$BUILD_PATH" -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=ON \
+        -DSNAPBACK_ENABLE_ACCEPTANCE_HARNESS=ON
     cmake --build "$BUILD_PATH" --target snapback --parallel
 fi
 
@@ -92,7 +92,8 @@ rm -rf "$DATA_DIR"
 mkdir -p "$DATA_DIR"
 
 export SNAPBACK_DATA_DIR="$DATA_DIR"
-export SNAPBACK_GUI_SESSION_SMOKE=1
+export SNAPBACK_ACCEPTANCE_SCRIPT="$REPO_ROOT/scripts/gui_acceptance.js"
+unset SNAPBACK_GUI_SESSION_SMOKE || true
 unset SNAPBACK_FRONTEND_URL || true
 unset SNAPBACK_OVERLAY_TEST || true
 
@@ -114,7 +115,7 @@ trap cleanup EXIT
 deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
 while [[ ! -f "$MARKER" ]]; do
     if [[ $(date +%s) -ge $deadline ]]; then
-        echo "FAIL: no session marker at $MARKER within ${TIMEOUT_SECONDS}s." >&2
+        echo "FAIL: no desktop acceptance verdict at $MARKER within ${TIMEOUT_SECONDS}s." >&2
         [[ -f "$APP_LOG" ]] && { echo "--- snapback.log ---" >&2; cat "$APP_LOG" >&2; }
         echo "--- stdout ---" >&2; cat "$DATA_DIR/stdout.log" >&2
         exit 1
@@ -134,13 +135,13 @@ while [[ ! -f "$MARKER" ]]; do
     sleep 0.25
 done
 
-SESSION_ID="$(cat "$MARKER")"
-if [[ -z "$SESSION_ID" ]]; then
-    echo "FAIL: session marker at $MARKER is empty." >&2
+if ! python3 -c 'import json,sys; v=json.load(open(sys.argv[1], encoding="utf-8")); assert v.get("passed") is True; c=v.get("checks", []); assert len(c)==5 and all(x.get("passed") is True for x in c)' "$MARKER"; then
+    echo "FAIL: desktop acceptance verdict contains a failed or missing check." >&2
+    cat "$MARKER" >&2
     exit 1
 fi
 
-# The smoke hook calls webview::terminate() right after writing the marker, so the process
+# The verdict handler dispatches webview::terminate() right after writing the marker, so the process
 # must now wind down by itself. Asserting that instead of just SIGTERM-ing it is what keeps
 # a run loop that ignores terminate() from passing — the same path the tray's Quit item
 # uses, and a hang there would strand the app with no way out but Force Quit.
@@ -154,7 +155,7 @@ while kill -0 "$APP_PID" 2>/dev/null; do
 done
 wait "$APP_PID" && exit_status=0 || exit_status=$?
 if [[ "$exit_status" != "0" ]]; then
-    echo "FAIL: snapback exited with code $exit_status after a successful session round trip." >&2
+    echo "FAIL: snapback exited with code $exit_status after successful desktop acceptance." >&2
     [[ -f "$APP_LOG" ]] && { echo "--- snapback.log ---" >&2; cat "$APP_LOG" >&2; }
     exit 1
 fi
@@ -175,4 +176,4 @@ if grep -q "no frontend bundle next to the executable" "$APP_LOG"; then
     exit 1
 fi
 
-echo "PASS: snapback launched, ran session $SESSION_ID through storage, and loaded its bundle."
+echo "PASS: snapback loaded its bundle and crossed page -> shim -> webview.bind -> native handlers."

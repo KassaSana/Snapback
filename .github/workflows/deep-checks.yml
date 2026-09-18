@@ -1,0 +1,102 @@
+name: Deep checks
+
+# Costlier or optional coverage. Run automatically each week, and on demand before
+# a release or when touching concurrency, ONNX, or Windows filesystem code.
+on:
+  schedule:
+    - cron: "23 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CMAKE_BUILD_PARALLEL_LEVEL: "4"
+
+jobs:
+  security-audit:
+    name: Security audit / frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --package-lock-only --audit-level=high
+
+  windows-gcc:
+    name: C++ headless tests / windows-gcc
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-make
+      - name: Configure core
+        run: >-
+          cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+          -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
+      - name: Build and test
+        run: |
+          cmake --build build --target snapback_tests
+          ctest --test-dir build --output-on-failure --timeout 120 --no-tests=error
+
+  thread-sanitizer:
+    name: ThreadSanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CC: clang
+      CXX: clang++
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure, build, and test
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+          cmake --build build --target snapback_tests
+          ctest --test-dir build --output-on-failure --timeout 600 --no-tests=error
+
+  onnx-linux:
+    name: ONNX backend / linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Vendor ONNX Runtime
+        timeout-minutes: 5
+        run: |
+          pins=third_party/onnxruntime-pins.json
+          read_pin() { python3 -c "import json,sys; print(json.load(open('${pins}'))$1)"; }
+          version=$(read_pin "['version']")
+          archive=$(read_pin "['archives']['linux-x64']['file']")
+          expected=$(read_pin "['archives']['linux-x64']['sha256']")
+          release_url=$(read_pin "['release_url']")
+          curl --fail --location --retry 3 "${release_url}/${archive}" --output "${archive}"
+          echo "${expected}  ${archive}" | sha256sum --check --strict -
+          tar -xzf "${archive}" --directory third_party
+          mv "third_party/onnxruntime-linux-x64-${version}" third_party/onnxruntime
+      - name: Configure, build, and test
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_ONNX=ON
+          cmake --build build --config Release --target snapback_tests
+          ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error

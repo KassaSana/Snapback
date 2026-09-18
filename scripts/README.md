@@ -27,7 +27,9 @@ on Windows tooling, while the shell wrappers cover macOS and Linux.
 | `test_commit_msg_hook.sh` | macOS, Linux | runs the real `hooks/commit-msg` against real messages; each forbidden pattern has a case that fails when only that pattern is removed |
 | `windows_demo.ps1` | **Windows only** | MSVC build + CTest + launches `snapback.exe` |
 | `gui_smoke_windows.ps1` | **Windows only** | Verifies a real Snapback window appears |
-| `gui_smoke_macos.sh` | **macOS only** | Launches the app and requires a session round trip, a loaded bundle, and a clean run-loop exit |
+| `gui_smoke_macos.sh` | **macOS only** | Launches the app and requires a page-to-native acceptance round trip, a loaded bundle, and a clean run-loop exit |
+| `gui_acceptance.js` | Windows + macOS GUI smokes | Page-side Roadmap 10.1 program that crosses the real IPC shim/bind boundary and reports a structured verdict |
+| `gui_acceptance_cdp.mjs` + `gui_acceptance_cdp_bootstrap.js` | Windows GUI smoke | Attaches to WebView2 without a browser download, clicks the real React UI, and reports a structured verdict |
 | `package_windows.ps1` | **Windows only** | CPack ZIP, CPack NSIS installer, Authenticode signing |
 | `validate_windows_package.ps1` | **Windows only** | Checks an extracted package |
 | `install_windows_package.ps1` | **Windows only** | Installs a built package locally |

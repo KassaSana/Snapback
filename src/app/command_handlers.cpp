@@ -31,6 +31,9 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     // what the headless tests and the stub platforms want.
     const auto dismiss_overlay = std::make_shared<std::function<void()>>(
         ui.dismiss_overlay ? std::move(ui.dismiss_overlay) : [] {});
+    const auto report_acceptance_verdict =
+        std::make_shared<std::function<void(const json&)>>(
+            std::move(ui.report_acceptance_verdict));
     // Training consumes the export's files and privacy deletion erases them, so neither may
     // overlap a partially written pair. Export and training share the worker, which already
     // serialises them; the gate is what the UI-thread deletion reads.
@@ -55,6 +58,14 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
 
     // --- Health + predictions ---
     registry.add("get_health", [&state](const json&) { return json(state.health()); });
+    registry.add("report_acceptance_verdict", [report_acceptance_verdict](const json& a) {
+        if (!*report_acceptance_verdict) {
+            throw std::runtime_error("desktop acceptance harness is disabled in this build");
+        }
+        const auto& verdict = a.at("verdict");
+        (*report_acceptance_verdict)(verdict);
+        return json{{"accepted", true}};
+    });
     registry.add("get_diagnostics", [&state](const json&) {
         auto result = json(state.diagnostics());
         result["supportBundlePrivacyNotice"] = kSupportBundlePrivacyNotice;
