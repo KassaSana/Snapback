@@ -3276,6 +3276,16 @@ small; the tier is large because nobody has walked that path yet.
   event shape. Wire the native state and event, degrade health truthfully, avoid a hot retry
   loop, and test disk-full/locked failures.
 
+  **Attendance recovery landed 2026-09-20.** `AppState::engine_tick` now keeps ordered span
+  transitions pending until their transaction commits, retains the first Storage-clock
+  boundary across retries, and advances committed attendance only after acknowledgement.
+  A wake that arrives behind a failed idle-close is preserved rather than overwriting it;
+  stop, replace, and delete still discard transitions for dead sessions. Snapback's one-shot
+  emission is acknowledged after the same persistence phase, so a failed transaction cannot
+  consume the alert. Tests cover real SQLite `BEGIN` contention plus injected begin/write/
+  commit-stage failures. The wider health state, event, backoff policy, and user-facing
+  failure treatment above remain open.
+
 - **9.7 — DONE 2026-07-26.** Insights, trends, summary reports, and recent focus now all
   render explicit first-run guidance instead of zero-valued metrics or blank charts. Summary
   export stays disabled until a completed session or prediction exists, and Review-surface

@@ -1356,13 +1356,16 @@ bool Storage::begin_session_span_now(const std::string& session_id) {
     return begin_session_span(session_id, unix_now_ms());
 }
 
+std::int64_t Storage::session_span_timestamp_now(std::int64_t millis_ago) const {
+    return unix_now_ms() - std::max<std::int64_t>(0, millis_ago);
+}
+
 bool Storage::close_session_span_now(const std::string& session_id, std::int64_t secs_ago) {
     // Off the same clock the rest of this file stamps with. This used to round-trip through
     // SQL and RFC3339 text purely to express "now minus N seconds" in the stored format;
     // milliseconds are arithmetic, so the detour is gone along with the whole-second rounding
     // it silently imposed on a value 7.23 cares about to the second.
-    return close_session_span(
-        session_id, unix_now_ms() - std::max<std::int64_t>(0, secs_ago) * 1000);
+    return close_session_span(session_id, session_span_timestamp_now(secs_ago * 1000));
 }
 
 bool Storage::close_session_span(const std::string& session_id, std::int64_t ended_at_ms) {

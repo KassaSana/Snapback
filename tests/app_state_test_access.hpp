@@ -127,15 +127,48 @@ struct AppStateTestAccess {
     // decision makes the same sequence deterministic.
     static void stage_pending_span_open(AppState& state, const std::string& session_id) {
         std::lock_guard lock(state.mutex_);
-        state.pending_span_session_ = session_id;
-        state.pending_span_opens_ = true;
-        state.pending_span_secs_ago_ = 0;
+        state.pending_span_transitions_.push_back(AppState::PendingSpanTransition{
+            ++state.next_span_transition_id_, session_id, true, 0, std::nullopt});
     }
 
     // The session a pending span decision names, if any.
     static std::optional<std::string> pending_span_session(AppState& state) {
         std::lock_guard lock(state.mutex_);
-        return state.pending_span_session_;
+        if (state.pending_span_transitions_.empty()) return std::nullopt;
+        return state.pending_span_transitions_.front().session_id;
+    }
+
+    static std::size_t pending_span_count(AppState& state) {
+        std::lock_guard lock(state.mutex_);
+        return state.pending_span_transitions_.size();
+    }
+
+    static std::optional<std::int64_t> pending_span_timestamp(AppState& state) {
+        std::lock_guard lock(state.mutex_);
+        if (state.pending_span_transitions_.empty()) return std::nullopt;
+        return state.pending_span_transitions_.front().timestamp_ms;
+    }
+
+    static bool committed_attendance(AppState& state) {
+        std::lock_guard lock(state.mutex_);
+        return state.committed_session_attended_;
+    }
+
+    static void fail_next_persistence_at(AppState& state, std::string stage) {
+        std::lock_guard lock(state.mutex_);
+        const auto fired = std::make_shared<bool>(false);
+        state.persistence_test_hook_ =
+            [stage = std::move(stage), fired](const char* current) {
+                if (!*fired && stage == current) {
+                    *fired = true;
+                    throw std::runtime_error("injected persistence failure at " + stage);
+                }
+            };
+    }
+
+    static void clear_persistence_failure(AppState& state) {
+        std::lock_guard lock(state.mutex_);
+        state.persistence_test_hook_ = nullptr;
     }
 
     // The *live* focus mode driving the classifier right now (Roadmap 7.25). Not the same

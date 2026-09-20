@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -417,17 +418,25 @@ private:
     // Last capture event's app. Excluded-app time resets the untracked stretch (2.7).
     std::string last_capture_app_;
 
-    // The session a pending span decision belongs to. Carried with the decision because the
-    // decision outlives the moment it was made: phase 1 records it, phase 2 writes it, and
-    // the session can be stopped, replaced, or deleted in between. Without the id there is
-    // nothing to invalidate against.
-    std::optional<std::string> pending_span_session_;
-    std::int64_t pending_span_secs_ago_ = 0;  // how far to back-date a pause
-    bool pending_span_opens_ = false;  // true = the user came back, false = they went away
-    // Whether the active session currently has a span open. Attendance is tracked as a level
-    // rather than inferred from idle edges alone, because it also changes at start, stop,
-    // shutdown, and crash hydration — none of which produce an edge. Guarded by mutex_.
+    struct PendingSpanTransition {
+        std::uint64_t id{};
+        std::string session_id;
+        bool opens{};
+        std::int64_t millis_ago{};
+        // Resolved from Storage's clock on the first attempt and retained across retries.
+        std::optional<std::int64_t> timestamp_ms;
+    };
+    // Decisions stay here until the transaction commits. A deque is required rather than a
+    // single slot: the user can wake while a failed idle-close is waiting to retry, and both
+    // boundaries must land in order.
+    std::deque<PendingSpanTransition> pending_span_transitions_;
+    std::uint64_t next_span_transition_id_ = 0;
+    // Deterministic transaction-stage fault seam used by AppState tests. Empty in production.
+    std::function<void(const char*)> persistence_test_hook_;
+    // Desired attendance follows the detector immediately; committed attendance advances
+    // only when the corresponding storage transaction commits. Both require mutex_.
     bool session_attended_ = false;
+    bool committed_session_attended_ = false;
     // Closes a span a previous process left open, at the session's last recorded activity.
     // Requires mutex_ + storage_mutex_ (the constructor runs before either can be contended).
     void hydrate_session_attendance_unlocked();
@@ -574,6 +583,7 @@ private:
     // lifetime are separate here: the event fires once, but the payload has to survive
     // until the user dismisses or restores it.
     bool snapback_emitted_ = false;
+    std::uint64_t snapback_generation_ = 0;
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
     bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
     // Uptime at the last retention attempt. Monotonic, not wall clock: this measures how long

@@ -201,6 +201,7 @@ void AppState::hydrate_session_attendance_unlocked() {
     // at whatever the database last saw, and whether the user is here *now* is a question the
     // idle detector answers on the first tick, not one startup should assume.
     session_attended_ = false;
+    committed_session_attended_ = false;
     if (!active_session_) return;
     const auto closed_at = storage_.close_dangling_session_span(active_session_->session_id);
     if (!closed_at) return;
@@ -333,14 +334,12 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     const bool should_attend = active_session_.has_value() && !now_idle;
     if (should_attend != session_attended_) {
         if (active_session_) {
-            pending_span_session_ = active_session_->session_id;
-            pending_span_opens_ = should_attend;
-            // An offset, not a timestamp: Storage stamps with its own clock, so handing it one
-            // of ours would compare two clocks against each other. Back-dating matters because
-            // we only notice a whole idle threshold late — stamping the pause at detection
-            // time would credit those five minutes as attended on every single pause.
-            pending_span_secs_ago_ =
-                should_attend ? 0 : idle_detector_.idle_for_ms(now_ms) / 1000;
+            // Keep the offset until phase 2 can resolve it against Storage's wall clock. Once
+            // resolved, the absolute boundary stays attached to this transition across every
+            // retry instead of sliding forward with the retry time.
+            pending_span_transitions_.push_back(PendingSpanTransition{
+                ++next_span_transition_id_, active_session_->session_id, should_attend,
+                should_attend ? 0 : idle_detector_.idle_for_ms(now_ms), std::nullopt});
         }
         session_attended_ = should_attend;
     }
@@ -702,25 +701,25 @@ void AppState::close_open_span_on_shutdown() noexcept {
     try {
         std::lock_guard state_lock(mutex_);
         std::lock_guard store_lock(storage_mutex_);
-        if (!active_session_ || !session_attended_) return;
+        if (!active_session_ || !committed_session_attended_) return;
         storage_.close_session_span_now(active_session_->session_id);
         session_attended_ = false;
+        committed_session_attended_ = false;
     } catch (...) {
         // Deliberately swallowed; see above.
     }
 }
 
 void AppState::discard_pending_span_unlocked(const std::optional<std::string>& session_id) {
-    if (!pending_span_session_) return;
-    if (session_id && *session_id != *pending_span_session_) return;
-    pending_span_session_.reset();
-    pending_span_opens_ = false;
-    pending_span_secs_ago_ = 0;
+    std::erase_if(pending_span_transitions_, [&](const PendingSpanTransition& transition) {
+        return !session_id || transition.session_id == *session_id;
+    });
 }
 
 void AppState::clear_snapback_unlocked() {
     latest_snapback_.reset();
     snapback_emitted_ = false;
+    ++snapback_generation_;
 }
 
 SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
@@ -801,6 +800,7 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     // what stops it from being re-dispatched as a fresh event under this generation.
     prediction_dirty_ = false;
     session_attended_ = true;
+    committed_session_attended_ = true;
     // Pressing Start *is* input. Without this the detector can still be Idle from before the
     // session existed, and the next tick would read "should not be attended" and immediately
     // close the span that was just opened.
@@ -835,6 +835,7 @@ void AppState::stop_session() {
         discard_pending_span_unlocked(session_id);
         save_auto_session_label_unlocked(session_id);
         session_attended_ = false;
+        committed_session_attended_ = false;
         pomodoro_.reset();
         active_session_.reset();
         signal_maintenance(
@@ -878,6 +879,7 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
     if (active_session_ && active_session_->session_id == session_id) {
         pomodoro_.reset();
         session_attended_ = false;
+        committed_session_attended_ = false;
         active_session_.reset();
         signal_maintenance(
             [this] { maintenance_paused_.store(false, std::memory_order_release); });
@@ -933,6 +935,7 @@ bool AppState::delete_session(const std::string& session_id) {
         // reconcile against. Leaving this true would make the next tick's level check see a
         // change that is not there.
         session_attended_ = false;
+        committed_session_attended_ = false;
         active_session_.reset();
         signal_maintenance(
             [this] { maintenance_paused_.store(false, std::memory_order_release); });
@@ -1191,6 +1194,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     active_session_.reset();
     signal_maintenance([this] { maintenance_paused_.store(false, std::memory_order_release); });
     session_attended_ = false;  // every span was deleted with the rows above
+    committed_session_attended_ = false;
     discard_pending_span_unlocked();  // and there is no session left for one to name
     latest_prediction_.reset();
     clear_snapback_unlocked();
@@ -2012,6 +2016,7 @@ bool AppState::engine_tick() {
     //   2) flush them under storage_mutex_ in ONE transaction, after releasing mutex_;
     //   3) queue epoch-tagged events holding no lock (the hook hops to the UI thread).
     EmitHook hook;
+    std::function<void(const char*)> persistence_test_hook;
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
     AlertRoute snap_route;
@@ -2032,12 +2037,11 @@ bool AppState::engine_tick() {
     // Roadmap 7.23. The span write cannot happen in phase 1: that phase holds mutex_ and is
     // deliberately in-memory only, so a disk write there would block every UI read. Phase 1
     // decides *what* to record; phase 2 records it under storage_mutex_.
-    std::optional<std::string> span_session_id;
-    std::int64_t span_secs_ago = 0;
-    bool span_opens = false;
+    std::vector<PendingSpanTransition> span_transitions;
     // The tick only schedules retention. An owned worker performs bounded storage batches.
     bool prune_due = false;
     std::uint64_t tick_activity_epoch = 0;
+    std::uint64_t snapback_generation = 0;
     // Whether phase 1 gave up on a budget rather than on an empty ring. Returned to the engine
     // loop, which then re-ticks immediately instead of sleeping out the tick interval.
     bool drain_truncated = false;
@@ -2098,12 +2102,11 @@ bool AppState::engine_tick() {
         // means no events arrive at all, so we must measure wall time, not the last event.
         const auto now_ms = steady_now_ms();
         idle_edge = update_idle_unlocked(now_ms, had_input);
-        // The span decision was made inside update_idle_unlocked, beside the idle logic that
-        // knows why. Take it here and write it in phase 2 — phase 1 holds mutex_ and must not
-        // touch the disk.
-        span_session_id = std::exchange(pending_span_session_, std::nullopt);
-        span_secs_ago = pending_span_secs_ago_;
-        span_opens = pending_span_opens_;
+        // Snapshot without consuming. A transaction failure must leave every transition in
+        // the queue, and an edge appended while phase 2 is writing must remain behind this
+        // batch for the next tick.
+        span_transitions.assign(pending_span_transitions_.begin(),
+                                pending_span_transitions_.end());
         if (now_ms - last_prune_steady_ms_.load(std::memory_order_acquire) >=
             kRetentionPruneIntervalMs) {
             prune_due = true;
@@ -2116,6 +2119,7 @@ bool AppState::engine_tick() {
             pomodoro_alert_id = issue_alert_id_unlocked(AlertEvent::Pomodoro, pomodoro_route);
         }
         hook = emit_hook_;
+        persistence_test_hook = persistence_test_hook_;
         if (prediction_dirty_) {
             pred_to_emit = latest_prediction_;
             prediction_dirty_ = false;
@@ -2132,8 +2136,7 @@ bool AppState::engine_tick() {
         if (hook && latest_snapback_ && !snapback_emitted_) {
             snap_to_emit = *latest_snapback_;
             snap_route = latest_snapback_route_;
-            snap_alert_id = issue_alert_id_unlocked(AlertEvent::Snapback, snap_route);
-            snapback_emitted_ = true;
+            snapback_generation = snapback_generation_;
         }
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
@@ -2162,25 +2165,78 @@ bool AppState::engine_tick() {
 
     if (prune_due) request_retention_maintenance();
 
-    {
+    try {
         // If deletion won the boundary after phase 1, discard every buffered row and
         // event. If this tick won, deletion waits until persistence has completed.
         std::lock_guard activity_lock(activity_boundary_mutex_);
         if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) {
             return drain_truncated;
         }
-        if (!jobs.empty() || span_session_id) {
+        if (!jobs.empty() || !span_transitions.empty() || snap_to_emit) {
             std::lock_guard lock(storage_mutex_);
-            Storage::Transaction txn(storage_);  // one commit for the whole drain
-            for (const auto& job : jobs) persist(job);
-            if (span_session_id) {
-                if (span_opens) {
-                    storage_.begin_session_span_now(*span_session_id);
-                } else {
-                    storage_.close_session_span_now(*span_session_id, span_secs_ago);
+            // Resolve each boundary before BEGIN. Even a BEGIN failure therefore leaves the
+            // retry carrying the original Storage-clock instant rather than a fresh "now".
+            for (auto& transition : span_transitions) {
+                if (!transition.timestamp_ms) {
+                    transition.timestamp_ms =
+                        storage_.session_span_timestamp_now(transition.millis_ago);
                 }
             }
+            if (persistence_test_hook) persistence_test_hook("begin");
+            Storage::Transaction txn(storage_);  // one commit for the whole drain
+            if (persistence_test_hook) persistence_test_hook("write");
+            for (const auto& job : jobs) persist(job);
+            for (const auto& transition : span_transitions) {
+                if (transition.opens) {
+                    storage_.begin_session_span(transition.session_id,
+                                                *transition.timestamp_ms);
+                } else {
+                    storage_.close_session_span(transition.session_id,
+                                                *transition.timestamp_ms);
+                }
+            }
+            if (persistence_test_hook) persistence_test_hook("commit");
             txn.commit();
+        }
+    } catch (...) {
+        // Store timestamps only after releasing the storage and activity locks; taking the
+        // state lock inside either would invert the ranked order. The decisions themselves
+        // were never removed, so this only enriches them for the next attempt.
+        std::lock_guard lock(mutex_);
+        for (const auto& attempted : span_transitions) {
+            const auto pending = std::find_if(
+                pending_span_transitions_.begin(), pending_span_transitions_.end(),
+                [&](const PendingSpanTransition& item) { return item.id == attempted.id; });
+            if (pending != pending_span_transitions_.end() && !pending->timestamp_ms) {
+                pending->timestamp_ms = attempted.timestamp_ms;
+            }
+        }
+        throw;
+    }
+
+    {
+        std::lock_guard lock(mutex_);
+        for (const auto& committed : span_transitions) {
+            const auto pending = std::find_if(
+                pending_span_transitions_.begin(), pending_span_transitions_.end(),
+                [&](const PendingSpanTransition& item) { return item.id == committed.id; });
+            if (pending == pending_span_transitions_.end()) continue;
+            if (active_session_ && active_session_->session_id == committed.session_id) {
+                committed_session_attended_ = committed.opens;
+            }
+            pending_span_transitions_.erase(pending);
+        }
+
+        // Persistence owns acknowledgement. If the transaction threw, control never reaches
+        // this block and the same payload remains eligible on the next tick.
+        if (snap_to_emit) {
+            if (latest_snapback_ && !snapback_emitted_ &&
+                snapback_generation_ == snapback_generation) {
+                snap_alert_id = issue_alert_id_unlocked(AlertEvent::Snapback, snap_route);
+                snapback_emitted_ = true;
+            } else {
+                snap_to_emit.reset();
+            }
         }
     }
 
@@ -2294,6 +2350,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
                 latest_snapback_ = *snapback;
                 latest_snapback_route_ = route;
                 snapback_emitted_ = false;  // replaces any predecessor, restored or not
+                ++snapback_generation_;
                 live_read_dirty_ = true;
             } else {
                 // The card will never be shown, so nobody can dismiss it -- and

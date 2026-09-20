@@ -831,6 +831,115 @@ TEST_CASE("mouse movement alone counts as presence") {
     CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
 }
 
+TEST_CASE("a failed attendance transaction retries the idle close without new input") {
+    TempDir temp;
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path, nullptr, &clock);
+
+    const auto session = state.start_session("retry attendance", FocusMode::Normal);
+    REQUIRE(AppStateTestAccess::has_open_span(state, session.session_id));
+
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    auto blocker = Storage::open(temp.path);
+    REQUIRE(blocker.has_value());
+    {
+        Storage::Transaction lock_holder(*blocker);
+        CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+    }
+
+    CHECK(AppStateTestAccess::committed_attendance(state));
+    REQUIRE(AppStateTestAccess::pending_span_timestamp(state).has_value());
+
+    // The failed tick already advanced the idle detector. Retrying with no new input must
+    // therefore replay the original attendance decision rather than wait for another edge.
+    CHECK(AppStateTestAccess::engine_tick(state) == false);
+    CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+}
+
+TEST_CASE("attendance retries BEGIN write and COMMIT stage failures at one boundary") {
+    for (const std::string stage : {"begin", "write", "commit"}) {
+        TempDir temp;
+        ManualClock clock;
+        clock.set_steady_ms(0);
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage.has_value());
+        AppState state(std::move(*storage), temp.path, nullptr, &clock);
+
+        const auto session = state.start_session("retry " + stage, FocusMode::Normal);
+        clock.advance_ms(kDefaultIdleThresholdMs);
+        AppStateTestAccess::fail_next_persistence_at(state, stage);
+        CHECK_THROWS_AS(AppStateTestAccess::engine_tick(state), std::runtime_error);
+
+        CHECK(AppStateTestAccess::committed_attendance(state));
+        CHECK(AppStateTestAccess::pending_span_count(state) == 1);
+        const auto original_boundary = AppStateTestAccess::pending_span_timestamp(state);
+        REQUIRE(original_boundary.has_value());
+
+        // A second failure must retain the already-resolved Storage-clock instant.
+        AppStateTestAccess::fail_next_persistence_at(state, stage);
+        CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+        CHECK(AppStateTestAccess::pending_span_timestamp(state) == original_boundary);
+
+        AppStateTestAccess::clear_persistence_failure(state);
+        CHECK(AppStateTestAccess::engine_tick(state) == false);
+        CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+        CHECK_FALSE(AppStateTestAccess::committed_attendance(state));
+        CHECK(AppStateTestAccess::pending_span_count(state) == 0);
+    }
+}
+
+TEST_CASE("a failed wake-open retries without another input event") {
+    TempDir temp;
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path, nullptr, &clock);
+
+    const auto session = state.start_session("retry wake", FocusMode::Normal);
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::engine_tick(state);
+    REQUIRE_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+    REQUIRE_FALSE(AppStateTestAccess::committed_attendance(state));
+
+    AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+    AppStateTestAccess::fail_next_persistence_at(state, "write");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+    CHECK_FALSE(AppStateTestAccess::committed_attendance(state));
+
+    AppStateTestAccess::clear_persistence_failure(state);
+    AppStateTestAccess::engine_tick(state);
+    CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
+    CHECK(AppStateTestAccess::committed_attendance(state));
+}
+
+TEST_CASE("wake during a failed idle close preserves both transitions in order") {
+    TempDir temp;
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp.path, nullptr, &clock);
+
+    const auto session = state.start_session("ordered retry", FocusMode::Normal);
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::fail_next_persistence_at(state, "commit");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+    REQUIRE(AppStateTestAccess::pending_span_count(state) == 1);
+
+    AppStateTestAccess::update_idle(state, clock.steady_ms(), /*had_input=*/true);
+    REQUIRE(AppStateTestAccess::pending_span_count(state) == 2);
+    AppStateTestAccess::clear_persistence_failure(state);
+    AppStateTestAccess::engine_tick(state);
+
+    CHECK(AppStateTestAccess::pending_span_count(state) == 0);
+    CHECK(AppStateTestAccess::has_open_span(state, session.session_id));
+    CHECK(AppStateTestAccess::committed_attendance(state));
+}
+
 TEST_CASE("a failed start leaves the previous session exactly as it was") {
     // Roadmap 7.25. start_session used to change focus mode and reset the extractor, tracker,
     // and Pomodoro *before* the storage write that can throw. A failed insert therefore left
@@ -2381,6 +2490,33 @@ TEST_CASE("a snapback is not marked emitted until an emit hook exists") {
                                               AppState::ActivityEpoch) {
         if (std::string(name) == "snapback") ++snapbacks_emitted;
     });
+    AppStateTestAccess::engine_tick(*state);
+    CHECK(snapbacks_emitted == 1);
+    CHECK(AppStateTestAccess::snapback_emitted(*state));
+    state->set_emit_hook(nullptr);
+}
+
+TEST_CASE("a snapback remains pending until the tick transaction commits") {
+    auto state = make_state();
+    const auto session = state->start_session("retry the alert", FocusMode::Normal);
+    int snapbacks_emitted = 0;
+    state->set_emit_hook([&snapbacks_emitted](const char* name, const std::string&,
+                                              AppState::ActivityEpoch) {
+        if (std::string(name) == "snapback") ++snapbacks_emitted;
+    });
+    drive_one_episode(*state, 100.0);
+    REQUIRE(state->latest_snapback().has_value());
+
+    // Give the tick storage work in the same transaction as the episode and fail the commit.
+    // The payload must remain eligible rather than being consumed before persistence.
+    AppStateTestAccess::stage_pending_span_open(*state, session.session_id);
+    AppStateTestAccess::fail_next_persistence_at(*state, "commit");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(*state));
+    CHECK(snapbacks_emitted == 0);
+    CHECK_FALSE(AppStateTestAccess::snapback_emitted(*state));
+
+    AppStateTestAccess::clear_persistence_failure(*state);
+    AppStateTestAccess::engine_tick(*state);
     AppStateTestAccess::engine_tick(*state);
     CHECK(snapbacks_emitted == 1);
     CHECK(AppStateTestAccess::snapback_emitted(*state));

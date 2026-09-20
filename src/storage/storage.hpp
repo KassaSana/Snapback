@@ -189,6 +189,10 @@ public:
     bool begin_session_span_now(const std::string& session_id);
     bool close_session_span_now(const std::string& session_id, std::int64_t secs_ago = 0);
 
+    // Resolve an offset against Storage's wall clock once, so a caller that retries a failed
+    // transaction can reuse the exact same boundary instead of moving it to the retry time.
+    std::int64_t session_span_timestamp_now(std::int64_t millis_ago = 0) const;
+
     // Closes the session's open span at `ended_at`. Returns false when none was open, which
     // is an ordinary outcome (already paused, or a session that predates this table) rather
     // than an error. A span is never closed earlier than it started.
