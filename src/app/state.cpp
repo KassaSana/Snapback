@@ -308,7 +308,8 @@ bool AppState::is_input_event(EventType type) {
            type == EventType::MouseMove || type == EventType::MouseClick;
 }
 
-IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_input) {
+IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_input,
+                                              const CaptureEvent* waking_event) {
     // on_activity resets the clock (and wakes us); poll then checks the threshold. A tick
     // with input can only ever wake us, never sleep us; a tick without input can only sleep.
     IdleTransition edge = IdleTransition::None;
@@ -317,6 +318,10 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
         edge = poll_edge;
     }
     const bool now_idle = idle_detector_.state() == IdleState::Idle;
+    if (edge == IdleTransition::WentIdle) {
+        foreground_context_needs_resync_ = true;
+        idle_foreground_context_.reset();
+    }
 
     // Roadmap 7.23 / ADR-0005. This is the action idle_detector.hpp has always documented
     // ("5 minutes of no input pauses the session", "callers act on the edges, not the level")
@@ -389,17 +394,27 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     //
     // Stamped with the event clock, not the tick clock: the extractor's windows are trimmed
     // against event timestamps, and the two clocks are different (GetTickCount64 vs
-    // steady_clock on Windows). `last_event_secs_` is the input that woke us -- compute_event
-    // records it before the AFK early-return drops the event -- so it is exactly the moment
-    // the idle stretch ended. Ingested only while a session is running, matching the AFK
-    // freeze's rule that features exist for sessions.
-    if (edge == IdleTransition::WokeUp && active_session_ && last_event_secs_ > 0.0) {
+    // steady_clock on Windows). Production passes the input that caused the edge because it
+    // now applies the wake transition before processing that input. The test seam can still
+    // drive the older two-call shape, in which compute_event recorded last_event_secs_ first.
+    // Ingested only while a session is running, matching the AFK freeze's rule that features
+    // exist for sessions.
+    const double wake_event_secs = waking_event ? waking_event->timestamp_secs : last_event_secs_;
+    if (edge == IdleTransition::WokeUp && active_session_ && wake_event_secs > 0.0) {
         CaptureEvent idle_end;
         idle_end.event_type = EventType::IdleEnd;
-        idle_end.timestamp_secs = last_event_secs_;
+        idle_end.timestamp_secs = wake_event_secs;
         idle_end.idle_duration_ms = static_cast<std::uint32_t>(std::min<std::int64_t>(
             idle_detector_.last_idle_duration_ms(), std::numeric_limits<std::uint32_t>::max()));
-        idle_end.app_name = last_capture_app_;
+        // A private/excluded waking event may end AFK, but its app/title must not enter the
+        // feature windows. The next permitted event will reconcile foreground context.
+        if (waking_event && !is_private_event_unlocked(*waking_event)) {
+            idle_end.app_name = waking_event->app_name;
+            idle_end.window_title = waking_event->window_title;
+            idle_end.wall_clock_secs = waking_event->wall_clock_secs;
+        } else if (!waking_event) {
+            idle_end.app_name = last_capture_app_;
+        }
         features_.ingest(idle_end);
     }
     return edge;
@@ -2064,7 +2079,17 @@ bool AppState::engine_tick() {
             auto ev = capture_.next_event();
             if (!ev) break;
             ++drained;
-            if (is_input_event(ev->event_type)) had_input = true;
+            if (is_input_event(ev->event_type)) {
+                had_input = true;
+                // Apply the wake edge before compute_event so the event that caused it is not
+                // discarded by the AFK freeze. Preserve permitted context first: the focus
+                // event may have arrived earlier in this same drain, while an input event also
+                // carries a materialized snapshot when no separate focus edge was observed.
+                if (idle_) {
+                    if (!is_private_event_unlocked(*ev)) idle_foreground_context_ = *ev;
+                    idle_edge = update_idle_unlocked(steady_now_ms(), true, &*ev);
+                }
+            }
             if (auto job = compute_event(*ev)) jobs.push_back(std::move(*job));
             // The count budget is the primary bound and needs no clock, which keeps ticks
             // driven by a ManualClock deterministic. This second bound covers the case where
@@ -2101,7 +2126,8 @@ bool AppState::engine_tick() {
         // Idle timing runs off the tick's monotonic clock, not event timestamps: true AFK
         // means no events arrive at all, so we must measure wall time, not the last event.
         const auto now_ms = steady_now_ms();
-        idle_edge = update_idle_unlocked(now_ms, had_input);
+        const auto final_idle_edge = update_idle_unlocked(now_ms, had_input);
+        if (final_idle_edge != IdleTransition::None) idle_edge = final_idle_edge;
         // Snapshot without consuming. A transaction failure must leave every transition in
         // the queue, and an edge appended while phase 2 is writing must remain behind this
         // batch for the next tick.
@@ -2302,6 +2328,18 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     last_capture_app_ = event.app_name;
     if (is_private_event_unlocked(event)) return std::nullopt;
     last_event_secs_ = event.timestamp_secs;
+
+    // Foreground edges observed while AFK were deliberately excluded from the rolling
+    // windows. Preserve their context independently, then reconcile it exactly once after
+    // the wake transition and before the waking input is ingested/classified. This changes
+    // cached identity without inventing another focus event or counting the input twice.
+    if (idle_) idle_foreground_context_ = event;
+    if (!idle_ && foreground_context_needs_resync_) {
+        if (!idle_foreground_context_) idle_foreground_context_ = event;
+        features_.resynchronize_foreground(*idle_foreground_context_);
+        foreground_context_needs_resync_ = false;
+        idle_foreground_context_.reset();
+    }
 
     PersistJob job;
     const bool have_session = active_session_.has_value();

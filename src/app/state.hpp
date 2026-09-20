@@ -417,6 +417,11 @@ private:
     std::optional<std::uint64_t> untracked_minutes_;  // pending emit, drained by the tick
     // Last capture event's app. Excluded-app time resets the untracked stretch (2.7).
     std::string last_capture_app_;
+    // AFK intentionally freezes feature ingestion, including foreground-change events. Keep
+    // the newest permitted context separately so the first public event after wake can
+    // reconcile the extractor before that event is counted and classified.
+    std::optional<CaptureEvent> idle_foreground_context_;
+    bool foreground_context_needs_resync_ = false;
 
     struct PendingSpanTransition {
         std::uint64_t id{};
@@ -501,7 +506,8 @@ private:
     static bool is_input_event(EventType type);  // key/mouse = real user activity
     // Advance the idle state machine one step. Requires mutex_. Returns the transition
     // edge so the tick loop can emit it. Sets idle_ from the resulting state.
-    IdleTransition update_idle_unlocked(std::int64_t now_ms, bool had_input);
+    IdleTransition update_idle_unlocked(std::int64_t now_ms, bool had_input,
+                                        const CaptureEvent* waking_event = nullptr);
     PomodoroStatus start_pomodoro_unlocked(std::int64_t now_ms);
     // Roadmap 2.13. Writes the timer's position into settings.json; best-effort, so a failed
     // save costs the relaunch-resume but never the running phase.

@@ -106,6 +106,10 @@ struct WindowedEvent {
 class FeatureExtractor {
 public:
     void ingest(const CaptureEvent& ev);
+    // Reconcile cached foreground identity after an AFK freeze without counting a synthetic
+    // focus switch. The capture event that wakes the engine is ingested separately, so this
+    // changes context only and cannot double-count that input in the rolling windows.
+    void resynchronize_foreground(const CaptureEvent& ev);
     FeatureVector extract(double now_secs);
 
     void update_focus_score(double score, double alpha);

@@ -243,9 +243,14 @@ digest advertises the numbers and before any training corpus is collected**, bec
 change the input distribution (train/serve skew otherwise). This is one coordinated
 feature-contract change, not three drive-by fixes:
 
-1. Synthesize idle events / reset the break clock (AUD-02, M) — revives `idle_time_30s`,
-   `idle_event_count_5min`, `longest_active_stretch_5min`, `minutes_since_last_break`, and
-   re-arms the hyperfocus nudge.
+1. **DONE 2026-09-20.** Synthesize idle events / reset the break clock (AUD-02, M) — revives
+   `idle_time_30s`, `idle_event_count_5min`, `longest_active_stretch_5min`,
+   `minutes_since_last_break`, and re-arms the hyperfocus nudge. The wake-context remainder
+   now applies the idle edge before processing its input, preserves the latest permitted
+   foreground independently of the AFK-frozen event windows, and reconciles it through
+   `features.cpp:FeatureExtractor::resynchronize_foreground` before the first post-wake
+   prediction. Production-path tests pin IDE → idle → blocked browser, one counted waking
+   key, one `IdleEnd`, and excluded-app privacy.
 2. Stop counting the empty app name in `unique_apps_5min` (AUD-12, XS) — batched into the same
    contract bump and golden-fixture regeneration.
 3. Resolve the `is_pseudo_productive` question with the trainer (AUD-11, XS investigate) —

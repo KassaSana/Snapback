@@ -112,6 +112,12 @@ void FeatureExtractor::ingest(const CaptureEvent& ev) {
     update_current_app(ev, now);
 }
 
+void FeatureExtractor::resynchronize_foreground(const CaptureEvent& ev) {
+    current_app_name_ = ev.app_name;
+    current_window_title_ = ev.window_title;
+    current_app_start_secs_ = ev.timestamp_secs;
+}
+
 std::uint32_t FeatureExtractor::intern_app(const std::string& app_name) {
     auto it = app_ids_.find(app_name);
     if (it != app_ids_.end()) return it->second;

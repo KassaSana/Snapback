@@ -185,6 +185,52 @@ private:
     std::atomic<bool> returned_{false};
 };
 
+// Publishes one caller-released phase at a time. Idle/wake ordering is a relationship between
+// the capture producer, the ring, and engine_tick; feeding compute_event directly would skip
+// the exact boundary this hook exists to pin down.
+class PhasedEventHook final : public InputHook {
+public:
+    explicit PhasedEventHook(std::vector<std::vector<CaptureEvent>> phases)
+        : phases_(std::move(phases)) {}
+
+    void run(InputCallback on_event, const std::atomic<bool>& stop_requested) override {
+        for (std::size_t phase = 0; phase < phases_.size(); ++phase) {
+            while (released_.load(std::memory_order_acquire) <= phase &&
+                   running_.load(std::memory_order_relaxed) &&
+                   !stop_requested.load(std::memory_order_acquire)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            if (!running_.load(std::memory_order_relaxed) ||
+                stop_requested.load(std::memory_order_acquire)) {
+                return;
+            }
+            for (const auto& event : phases_[phase]) on_event(event);
+            emitted_.store(phase + 1, std::memory_order_release);
+        }
+
+        while (running_.load(std::memory_order_relaxed) &&
+               !stop_requested.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+
+    void stop() noexcept override { running_.store(false, std::memory_order_relaxed); }
+
+    void release(std::size_t phase_count) {
+        released_.store(phase_count, std::memory_order_release);
+    }
+
+    bool emitted(std::size_t phase_count) const {
+        return emitted_.load(std::memory_order_acquire) >= phase_count;
+    }
+
+private:
+    std::vector<std::vector<CaptureEvent>> phases_;
+    std::atomic<std::size_t> released_{0};
+    std::atomic<std::size_t> emitted_{0};
+    std::atomic<bool> running_{true};
+};
+
 CaptureEvent ev(EventType type, double ts, const char* app = "Cursor",
                 const char* title = "state.cpp - Snapback") {
     CaptureEvent e;
@@ -334,6 +380,101 @@ TEST_CASE("coming back from idle reaches the feature extractor as one IdleEnd ev
     CHECK(features.idle_time_30s() == doctest::Approx(1200.0));
     // And the break clock restarted at the wake, not at the last keystroke.
     CHECK(features.minutes_since_last_break() == doctest::Approx(0.0));
+}
+
+TEST_CASE("engine wake reconciles permitted foreground context before counting waking input") {
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    state.start_session("write the migration", FocusMode::Normal);
+    state.upsert_app_rule("youtube", AppRuleKind::Block, std::nullopt);
+
+    PhasedEventHook hook({
+        {ev(EventType::WindowFocusChange, 1.0, "Cursor", "state.cpp - Snapback"),
+         ev(EventType::KeyPress, 2.0, "Cursor", "state.cpp - Snapback")},
+        {ev(EventType::WindowFocusChange, 900.0, "Google Chrome", "YouTube - Recommended"),
+         ev(EventType::KeyPress, 901.0, "Google Chrome", "YouTube - Recommended")},
+    });
+    AppStateTestAccess::start_capture_only(state, &hook);
+
+    hook.release(1);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(1); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted(1));
+    AppStateTestAccess::engine_tick(state);
+    CHECK(AppStateTestAccess::extract_features(state, 2.0).app_name == "Cursor");
+
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::engine_tick(state);
+    REQUIRE(state.is_idle());
+
+    hook.release(2);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(2); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted(2));
+    AppStateTestAccess::engine_tick(state);
+
+    const auto features = AppStateTestAccess::extract_features(state, 901.0);
+    CHECK_FALSE(state.is_idle());
+    CHECK(features.app_name == "Google Chrome");
+    CHECK(features.window_title == "YouTube - Recommended");
+    CHECK(features.is_browser() == doctest::Approx(1.0));
+    CHECK(features.is_ide() == doctest::Approx(0.0));
+    CHECK(features.keystroke_count() == doctest::Approx(1.0));
+    CHECK(features.idle_event_count_5min() == doctest::Approx(1.0));
+    REQUIRE(state.latest_prediction().has_value());
+    CHECK(state.latest_prediction()->state_source == "block");
+
+    AppStateTestAccess::stop_capture(state);
+}
+
+TEST_CASE("excluded waking context remains outside feature ingestion") {
+    ManualClock clock;
+    clock.set_steady_ms(0);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+    state.start_session("private research", FocusMode::Normal);
+    state.set_privacy_exclusions({"1Password"});
+
+    PhasedEventHook hook({
+        {ev(EventType::WindowFocusChange, 1.0, "Cursor", "state.cpp - Snapback"),
+         ev(EventType::KeyPress, 2.0, "Cursor", "state.cpp - Snapback")},
+        {ev(EventType::WindowFocusChange, 900.0, "1Password", "Private vault"),
+         ev(EventType::KeyPress, 901.0, "1Password", "Private vault")},
+    });
+    AppStateTestAccess::start_capture_only(state, &hook);
+
+    hook.release(1);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(1); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted(1));
+    AppStateTestAccess::engine_tick(state);
+
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::engine_tick(state);
+    REQUIRE(state.is_idle());
+
+    hook.release(2);
+    for (int attempt = 0; attempt < 5000 && !hook.emitted(2); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    REQUIRE(hook.emitted(2));
+    AppStateTestAccess::engine_tick(state);
+
+    const auto features = AppStateTestAccess::extract_features(state, 901.0);
+    CHECK_FALSE(state.is_idle());
+    CHECK(features.app_name == "Cursor");
+    CHECK(features.window_title == "state.cpp - Snapback");
+    CHECK(features.keystroke_count() == doctest::Approx(0.0));
+    CHECK(features.idle_event_count_5min() == doctest::Approx(1.0));
+
+    AppStateTestAccess::stop_capture(state);
 }
 
 TEST_CASE("an idle stretch with no session running feeds the extractor nothing") {
