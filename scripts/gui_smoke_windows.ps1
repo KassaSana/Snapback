@@ -62,6 +62,7 @@ Remove-Item Env:\SNAPBACK_FRONTEND_URL -ErrorAction SilentlyContinue
 $sessionMarker = Join-Path $DemoDataDir "gui_session_smoke.ok"
 $acceptanceVerdict = Join-Path $DemoDataDir "acceptance-verdict.json"
 $previousWebViewArguments = [Environment]::GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+$previousWebViewUserDataFolder = [Environment]::GetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER")
 Remove-Item -LiteralPath $sessionMarker, $acceptanceVerdict -Force -ErrorAction SilentlyContinue
 if ($OverlayTest) {
     $env:SNAPBACK_OVERLAY_TEST = "1"
@@ -81,6 +82,10 @@ if ($OverlayTest) {
     $listener.Start()
     $cdpPort = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
     $listener.Stop()
+    # WebView2 may retain the browser process used by the preceding -Acceptance smoke. Browser
+    # arguments are fixed when that shared process starts, so it would not begin listening on
+    # this run's CDP port. A unique temporary profile gives the driven smoke its own process.
+    $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $DemoDataDir "webview2-cdp-$cdpPort"
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=$cdpPort"
 } else {
     Remove-Item Env:\SNAPBACK_OVERLAY_TEST -ErrorAction SilentlyContinue
@@ -181,5 +186,10 @@ try {
         Remove-Item Env:\WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
     } else {
         $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $previousWebViewArguments
+    }
+    if ($null -eq $previousWebViewUserDataFolder) {
+        Remove-Item Env:\WEBVIEW2_USER_DATA_FOLDER -ErrorAction SilentlyContinue
+    } else {
+        $env:WEBVIEW2_USER_DATA_FOLDER = $previousWebViewUserDataFolder
     }
 }

@@ -63,3 +63,16 @@ TEST_CASE("Windows GUI smoke finds the configuration selected by its caller") {
     CHECK(script.find("(Join-Path $BuildPath \"$Config\\snapback.exe\")") !=
           std::string::npos);
 }
+
+TEST_CASE("Windows driven GUI smoke isolates its WebView2 browser profile") {
+    const auto script = read_script("scripts/gui_smoke_windows.ps1");
+
+    CHECK(script.find(
+              "$env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $DemoDataDir \"webview2-cdp-$cdpPort\"") !=
+          std::string::npos);
+    CHECK(script.find(
+              "$previousWebViewUserDataFolder = [Environment]::GetEnvironmentVariable(\"WEBVIEW2_USER_DATA_FOLDER\")") !=
+          std::string::npos);
+    CHECK(script.find("Remove-Item Env:\\WEBVIEW2_USER_DATA_FOLDER -ErrorAction SilentlyContinue") !=
+          std::string::npos);
+}
