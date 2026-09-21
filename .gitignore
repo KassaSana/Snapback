@@ -18,3 +18,10 @@ compile_commands.json
 # (Codex, Cursor, Gemini, Claude Code) reads. Personal agent files stay local:
 CLAUDE.md
 CLAUDE.local.md
+# Personal attribution-guard tooling stays on the machine that installs it; the tracked
+# scripts/hooks + check_commit_attribution.py are the project's mechanism.
+scripts/githooks/
+scripts/install_githooks.py
+scripts/strip_commit_attribution.py
+scripts/sole-author-lockdown/
+__pycache__/

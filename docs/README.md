@@ -28,6 +28,9 @@ session notes and parallel TODO lists do not belong in the repository.
 - [Audit 2026-08-19](audit-2026-08-19.md) — AUD/FWD findings from a full read of the tree.
   A dated record, not a second backlog: open work it identifies is sequenced in
   [`ROADMAP.md`](ROADMAP.md).
+- [Astra review](ASTRA_REVIEW.md) — a read-only source review (organized 2026-09-19) that
+  reconciles the audit and roadmap into twelve proposed correctness slices. Reference
+  material only; slices become work when triaged into [`ROADMAP.md`](ROADMAP.md).
 - [Roadmap archive](roadmap_archive.md) — completed roadmap items, kept for history.
   Deliberately stale as of each entry's completion date.
 
