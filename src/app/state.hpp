@@ -216,6 +216,10 @@ public:
     // Turns private mode on for a fixed stretch. 0 minutes means indefinite (the old
     // behaviour). Returns the resulting status so the caller renders what was accepted.
     RecordingStatus pause_privately_for(std::int64_t minutes);
+    // Emits `recording-status` with the current answer and returns it. Every mutator above
+    // and below that can change the answer ends by calling this, so tray- and Settings-
+    // originated changes reach the page without it polling.
+    RecordingStatus announce_recording_status();
     // Roadmap 2.16. Silences alert *delivery* for a stretch, leaving recording alone. 0
     // minutes means the default 30. Returns the resulting status so the caller renders what
     // was accepted rather than what it asked for.

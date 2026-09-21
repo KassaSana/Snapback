@@ -15,7 +15,15 @@ export const privacyExclusionWarning = (value: string): string | null => {
   return null;
 };
 
-export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) => {
+type UsePrivacyArgs = {
+  onActivityDataDeleted?: () => void | Promise<void>;
+  // Roadmap 2.10. The header's recording state is a separate read of the same native
+  // setting. Flipping the toggle here must make that side ask again, or Settings says
+  // "private mode on" under a header still saying "Recording".
+  onPrivateModeChanged?: () => void | Promise<void>;
+};
+
+export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UsePrivacyArgs = {}) => {
   const [settings, setSettings] = useState<PrivacySettings | null>(null);
   const [exclusionInput, setExclusionInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,12 +53,13 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
     setError(null);
     try {
       setSettings(await api.setPrivateMode(enabled));
+      await onPrivateModeChanged?.();
     } catch {
       setError("Could not update private mode.");
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [onPrivateModeChanged]);
 
   const saveExclusions = useCallback(async (excludedApps: string[]) => {
     setBusy(true);
@@ -160,6 +169,7 @@ export const usePrivacy = (onActivityDataDeleted?: () => void | Promise<void>) =
     exportMyData,
     exportStatus,
     openDataFolder,
+    refresh,
     removeExclusion,
     setExclusionInput,
     setPrivateMode,

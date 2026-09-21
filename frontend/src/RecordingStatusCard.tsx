@@ -18,6 +18,12 @@ type RecordingStatusCardProps = {
   onResume: () => void | Promise<void>;
   /** Roadmap 2.16. Ends an alert snooze started from the tray. */
   onResumeAlerts: () => void | Promise<void>;
+  /**
+   * The last attempt to confirm this with the app failed, so `status` is the last answer we
+   * had rather than the current one. Said out loud: a state this surface cannot vouch for is
+   * still shown, but not as a fact.
+   */
+  unconfirmed?: boolean;
   /** Compact chrome for the app header. Same commands, no card chrome. */
   variant?: "card" | "header";
 };
@@ -54,6 +60,7 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
   onPause,
   onResume,
   onResumeAlerts,
+  unconfirmed = false,
   variant = "card",
 }: RecordingStatusCardProps) {
   const paused = status.state === "pausedPrivate";
@@ -67,6 +74,12 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
         {formatRemaining(status.privatePauseRemainingMs)} — recording resumes on its own.
       </p>
     ) : null;
+
+  const unconfirmedLine = unconfirmed ? (
+    <p className="meta-sub status-alert">
+      Could not confirm with the app — showing the last known state.
+    </p>
+  ) : null;
 
   const snoozeLine = snoozed ? (
     <p className="meta-sub">
@@ -132,6 +145,7 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
         <span className={`status-value${status.state === "blocked" ? " status-alert" : ""}`}>
           {RECORDING_STATE_LABELS[status.state]}
         </span>
+        {unconfirmedLine}
         {remaining}
         {snoozeLine}
         {actions}
@@ -147,6 +161,7 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
       </div>
 
       <p className="helper-text">{DETAIL[status.state]}</p>
+      {unconfirmedLine}
       {remaining}
       {snoozeLine}
       {actions}

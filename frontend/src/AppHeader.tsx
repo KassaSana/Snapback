@@ -19,6 +19,7 @@ type AppHeaderProps = {
   /** Opens the Settings section holding the technical details behind the badge. */
   onOpenTechnicalDetails: (section: SettingsSection) => void;
   recordingStatus: RecordingStatus;
+  recordingStatusUnconfirmed: boolean;
   onPauseRecording: (minutes: number) => void | Promise<void>;
   onResumeRecording: () => void | Promise<void>;
   onResumeAlerts: () => void | Promise<void>;
@@ -40,6 +41,7 @@ export const AppHeader = memo(function AppHeader({
   permissionSteps,
   onOpenTechnicalDetails,
   recordingStatus,
+  recordingStatusUnconfirmed,
   onPauseRecording,
   onResumeRecording,
   onResumeAlerts,
@@ -91,6 +93,7 @@ export const AppHeader = memo(function AppHeader({
         <RecordingStatusCard
           variant="header"
           status={recordingStatus}
+          unconfirmed={recordingStatusUnconfirmed}
           onPause={onPauseRecording}
           onResume={onResumeRecording}
           onResumeAlerts={onResumeAlerts}

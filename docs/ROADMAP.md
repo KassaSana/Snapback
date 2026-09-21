@@ -2405,6 +2405,19 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   as appropriate. The actions call the same durable privacy-pause methods as the dashboard;
   neither platform derives a parallel answer. Linux remains under its existing tray stub.
 
+  **Coherence follow-up landed 2026-09-21** (Astra review slice 3; the review found the
+  page only re-asked on session changes and its own clicks, so a tray pause, an idle
+  transition, a lapsed deadline, or the Settings toggle left the header stale). Every native
+  write that changes the answer now emits `recording-status` with the same payload the
+  command returns (`state.cpp:AppState::announce_recording_status`), and the page applies it
+  instead of asking again. `useRecordingStatus.ts` schedules one refresh just past the
+  earliest pause/snooze deadline, re-asks on every `idle` event, stamps each request so an
+  older answer can never overwrite a newer one, and says "could not confirm" beside the last
+  known state when a refresh fails rather than presenting it as current. The Settings
+  private-mode toggle and the header refresh each other in both directions. Six regression
+  cases in `frontend/tests/recordingStatusFlow.test.tsx`, one native case pinning that every
+  mutator announces and a plain read does not.
+
 - **2.11 — DONE 2026-08-10 except the Pomodoro preset and Running/Paused elapsed split.** `M`
   Opened 2026-08-05. Start and Stop are always enabled, a blank goal silently does nothing,
   duplicate clicks can issue duplicate requests, and the prominent running-session metadata

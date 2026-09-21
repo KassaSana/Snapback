@@ -6,6 +6,7 @@ import {
   type OverlayFailurePayload,
   type PomodoroStatus,
   type PredictionRecord,
+  type RecordingStatus,
   type SnapbackPayload,
 } from "./api";
 import type { AlertDestination } from "./alertDestination";
@@ -19,9 +20,12 @@ type UseAppEffectsArgs = {
   refreshPomodoroStatus: () => void | Promise<void>;
   // Roadmap 2.19. Refreshed alongside the timer: both describe the session that just changed.
   refreshAttendedProgress: () => void | Promise<void>;
-  // Roadmap 2.10. Polled with the rest: a timed pause lapses on the backend's clock, so the
-  // header learns it has ended the same way it learns anything else.
+  // Roadmap 2.10. Re-asked on every session change and every idle transition -- both change
+  // the answer natively without a command from this side. A timed pause lapsing is handled
+  // inside useRecordingStatus (it schedules its own refresh at the deadline), and tray or
+  // Settings changes arrive as `recording-status` events below.
   refreshRecordingStatus: () => void | Promise<void>;
+  applyRecordingStatusEvent: (status: RecordingStatus) => void;
   refreshLatest: () => void | Promise<void>;
   refreshAppRules: () => void | Promise<void>;
   refreshDeployStatus: () => void | Promise<void>;
@@ -61,6 +65,7 @@ export const useAppEffects = ({
   refreshPomodoroStatus,
   refreshAttendedProgress,
   refreshRecordingStatus,
+  applyRecordingStatusEvent,
   refreshLatest,
   refreshAppRules,
   refreshDeployStatus,
@@ -208,6 +213,14 @@ export const useAppEffects = ({
     unsubs.push(
       api.onIdle((payload) => {
         handleIdle(payload);
+        // "Paused for idle" is one of the recording states, and the engine decided it just
+        // now. Without this the header kept saying "Recording" for the whole absence.
+        void refreshRecordingStatus();
+      }),
+    );
+    unsubs.push(
+      api.onRecordingStatus((status) => {
+        applyRecordingStatusEvent(status);
       }),
     );
     unsubs.push(
@@ -238,9 +251,11 @@ export const useAppEffects = ({
     handleUntrackedWork,
     handleIdle,
     applyAlertDestination,
+    applyRecordingStatusEvent,
     handlePomodoroEvent,
     handlePrediction,
     handleSnapback,
+    refreshRecordingStatus,
     refreshTimelineFromEvent,
     sessionId,
     sessionStatus,

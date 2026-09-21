@@ -965,6 +965,16 @@ export const api = {
     }),
   onIdle: (handler: (payload: { idle: boolean }) => void) =>
     listen<{ idle: boolean }>("idle", (event) => handler(event.payload)),
+  /**
+   * Roadmap 2.10 / 2.16. The native side changed the answer to "am I being recorded?" --
+   * a pause, resume, or snooze from the tray, or the private-mode toggle in Settings. The
+   * payload is the same shape `getRecordingStatus` returns, so the header applies it rather
+   * than asking again.
+   */
+  onRecordingStatus: (handler: (status: RecordingStatus) => void) =>
+    listen<Record<string, unknown>>("recording-status", (event) => {
+      handler(mapRecordingStatus(event.payload));
+    }),
   onLabelHotkey: (handler: (payload: LabelHotkeyPayload) => void) =>
     listen<Record<string, unknown>>("label-hotkey", (event) => {
       const raw = event.payload;

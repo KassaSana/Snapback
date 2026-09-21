@@ -3767,6 +3767,50 @@ TEST_CASE("a timed privacy pause reports the time left and lapses on its own") {
     CHECK_FALSE(state.privacy_settings().private_mode);
 }
 
+TEST_CASE("every change to the recording answer is announced to the page") {
+    // The tray and the Settings toggle mutate this object directly; the page never sees
+    // those commands. Each write that can change "am I being recorded?" therefore emits
+    // `recording-status` carrying the same answer it returns, so the header does not keep
+    // reporting the state it last asked for.
+    ManualClock clock;
+    clock.set_wall_time(1'700'000'000);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), {}, nullptr, &clock);
+
+    std::vector<std::string> payloads;
+    state.set_emit_hook([&payloads](const std::string& name, const std::string& payload,
+                                    std::uint64_t) {
+        if (name == "recording-status") payloads.push_back(payload);
+    });
+
+    const auto same_answer = [&](const RecordingStatus& returned) {
+        REQUIRE(payloads.size() == 1);
+        CHECK(nlohmann::json::parse(payloads.back()) == nlohmann::json(returned));
+        payloads.clear();
+    };
+
+    same_answer(state.pause_privately_for(30));
+    same_answer(state.resume_from_private_pause());
+    same_answer(state.snooze_alerts_for(30));
+    same_answer(state.resume_alerts());
+
+    state.set_private_mode(true);
+    REQUIRE(payloads.size() == 1);
+    if (capture_is_permitted_here()) {
+        CHECK(nlohmann::json::parse(payloads.back())["state"] == "pausedPrivate");
+    }
+    payloads.clear();
+    state.set_private_mode(false);
+    CHECK(payloads.size() == 1);
+
+    // Reading is not a change: the poll path stays silent so an event cannot echo forever.
+    payloads.clear();
+    (void)state.recording_status();
+    CHECK(payloads.empty());
+    state.set_emit_hook(nullptr);
+}
+
 TEST_CASE("an indefinite privacy pause never lapses by itself") {
     ManualClock clock;
     clock.set_wall_time(1'700'000'000);

@@ -89,6 +89,11 @@ and decide nothing (Roadmap 2.16). `pomodoro` is annotated but **never
 suppressed**: it is also how the frontend timer card learns the phase changed,
 so gating it would freeze the card for anyone who turned Pomodoro alerts off.
 
+`recording-status` carries the same object `get_recording_status` returns and is emitted
+by every native write that can change it — a tray pause or snooze, the Settings private-mode
+toggle, a resume. The page applies it directly; it never polls the countdown, only re-asks
+once at the earliest deadline and on each `idle` transition (Roadmap 2.10).
+
 `settings.json` carries the preferences behind that decision under `alerts`:
 per-event channel arrays, `preview`, the quiet-hours range as **local minutes
 since midnight**, and `snoozedUntilWallMs` as a UTC epoch-millisecond deadline.

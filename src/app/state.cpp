@@ -1512,6 +1512,18 @@ RecordingStatus AppState::recording_status() {
     return status;
 }
 
+// Every write that changes the answer to "am I being recorded?" announces the new answer.
+// The tray calls pause/snooze/resume directly on this object and the page never sees the
+// command, so without this the header keeps the state it last asked for until the next
+// session change -- "Paused privately" long after the tray resumed, or "Recording" during a
+// pause the user just started from the tray. The payload is the same shape
+// get_recording_status returns, so the page applies it instead of asking again.
+RecordingStatus AppState::announce_recording_status() {
+    RecordingStatus status = recording_status();
+    emit_event("recording-status", dump_json(nlohmann::json(status)));
+    return status;
+}
+
 RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
     if (minutes < 0) throw std::runtime_error("a privacy pause cannot be negative");
     {
@@ -1524,7 +1536,7 @@ RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
         candidate.private_until_wall_ms = minutes > 0 ? now_unix_ms() + minutes * 60 * 1000 : 0;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
-    return recording_status();
+    return announce_recording_status();
 }
 
 // Roadmap 2.16. The tray's "Snooze alerts for 30 minutes", and its undo.
@@ -1548,7 +1560,7 @@ RecordingStatus AppState::snooze_alerts_for(std::int64_t minutes) {
         candidate.alerts.snoozed_until_wall_ms = now_unix_ms() + span * 60 * 1000;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
-    return recording_status();
+    return announce_recording_status();
 }
 
 AppSettings AppState::set_alert_delivery(AlertDeliverySettings alerts) {
@@ -1578,7 +1590,7 @@ RecordingStatus AppState::resume_alerts() {
         candidate.alerts.snoozed_until_wall_ms = 0;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
-    return recording_status();
+    return announce_recording_status();
 }
 
 RecordingStatus AppState::resume_from_private_pause() {
@@ -1589,7 +1601,7 @@ RecordingStatus AppState::resume_from_private_pause() {
         candidate.private_until_wall_ms = 0;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
-    return recording_status();
+    return announce_recording_status();
 }
 
 void AppState::dismiss_untracked_nudge(std::int64_t minutes) {
@@ -1608,13 +1620,18 @@ void AppState::dismiss_untracked_nudge(std::int64_t minutes) {
 }
 
 void AppState::set_private_mode(bool enabled) {
-    std::lock_guard lock(mutex_);
-    AppSettings candidate = settings_;
-    candidate.private_mode = enabled;
-    commit_settings_unlocked(std::move(candidate), [this] {
-        live_read_dirty_ = true;
-        publish_live_read_unlocked();
-    });
+    {
+        std::lock_guard lock(mutex_);
+        AppSettings candidate = settings_;
+        candidate.private_mode = enabled;
+        commit_settings_unlocked(std::move(candidate), [this] {
+            live_read_dirty_ = true;
+            publish_live_read_unlocked();
+        });
+    }
+    // Outside the lock: recording_status() probes OS permissions, and the header must learn
+    // about a toggle flipped in Settings the same way it learns about one from the tray.
+    announce_recording_status();
 }
 
 void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {

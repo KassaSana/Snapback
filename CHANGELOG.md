@@ -18,6 +18,12 @@ the note at the bottom.
 
 ### Added
 
+- **The recording line stays true when the change came from somewhere else (2.10).** A pause
+  or snooze from the tray, the private-mode toggle in Settings, walking away from the
+  keyboard, or a timed pause running out all update the header now, and the header and the
+  Settings toggle keep each other current. When the app cannot be reached to confirm, the
+  header says so beside the last state it knew rather than presenting it as current.
+
 - **Now is a cockpit, not a card feed.** Idle Now is a start screen (goal, Start, Repeat last). A running session shows the state, elapsed time, a compact attended line, and Pomodoro. Stopping puts the recap and check-in on Now. The header is a recording line when healthy instead of four status pills, and Repeat last starts that session.
 
 - **Honest “Settled” when the model is guessing.** A quiet screen with no goal match no longer

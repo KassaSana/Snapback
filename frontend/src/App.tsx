@@ -163,7 +163,9 @@ export default function App() {
     useAttendedTargets({ setActionError: feedback.setActionError });
 
   const {
+    applyRecordingStatusEvent,
     recordingStatus,
+    recordingStatusUnconfirmed,
     refreshRecordingStatus,
     handlePausePrivately,
     handleResumeRecording,
@@ -400,7 +402,25 @@ export default function App() {
     refreshRecordingStatus,
     refreshPomodoroStatus,
   ]);
-  const privacy = usePrivacy(handleActivityDataDeleted);
+  const privacy = usePrivacy({
+    onActivityDataDeleted: handleActivityDataDeleted,
+    onPrivateModeChanged: refreshRecordingStatus,
+  });
+
+  // Roadmap 2.10. The other direction of the same coherence: a pause or resume from the
+  // header, the tray, or a lapsed deadline changes the private-mode setting natively, and the
+  // Settings toggle is a separate read of it. Re-read whenever the recording state moves, so
+  // the toggle cannot say "off" under a header saying "Paused privately". The initial answer
+  // is skipped: usePrivacy already loads itself on mount.
+  const previousRecordingState = useRef<string | null>(null);
+  const refreshPrivacySettings = privacy.refresh;
+  useEffect(() => {
+    const previous = previousRecordingState.current;
+    previousRecordingState.current = recordingStatus.state;
+    if (previous !== null && previous !== recordingStatus.state) {
+      void refreshPrivacySettings();
+    }
+  }, [recordingStatus.state, refreshPrivacySettings]);
   const dataImport = useDataImport();
 
   // Roadmap 2.12. Every input is state the app already tracks for its own reasons — the guide
@@ -462,6 +482,7 @@ export default function App() {
     refreshPomodoroStatus,
     refreshAttendedProgress,
     refreshRecordingStatus,
+    applyRecordingStatusEvent,
     refreshLatest: live.refreshLatest,
     refreshAppRules,
     refreshDeployStatus,
@@ -510,6 +531,7 @@ export default function App() {
         permissionSteps={permissionSteps}
         onOpenTechnicalDetails={openSettingsSection}
         recordingStatus={recordingStatus}
+        recordingStatusUnconfirmed={recordingStatusUnconfirmed}
         onPauseRecording={handlePausePrivately}
         onResumeRecording={handleResumeRecording}
         onResumeAlerts={handleResumeAlerts}
