@@ -360,6 +360,7 @@ export default function App() {
     deleteSession: handleDeleteSession,
     deleteStatus: sessionDeleteStatus,
     deletingSessionId,
+    displayedRange: reviewDisplayedRange,
     error: reviewError,
     exportStatus,
     exportSummary,
@@ -367,17 +368,25 @@ export default function App() {
     invalidateReview,
     loading: reviewLoading,
     range: reviewRange,
+    refreshReview,
     reflectionStatus,
     report: summaryReport,
     saveReflection: handleEditReflection,
     sessionHistory,
     setRange: setReviewRange,
+    staleInterval: reviewStaleInterval,
   } = useReviewWorkflow({
     active: surface === "review",
     onSessionDeleted: handleSessionDeleted,
   });
 
-  const reviewRangeLabelText = useMemo(() => reviewRangeLabel(reviewRange), [reviewRange]);
+  // Roadmap 10.11. The cards are labelled with the interval their data came from, not the
+  // one the buttons show as pressed. The two differ while a load is in flight and after one
+  // fails; the range bar is where that difference is explained.
+  const reviewRangeLabelText = useMemo(
+    () => reviewRangeLabel(reviewDisplayedRange),
+    [reviewDisplayedRange],
+  );
 
   // Roadmap 2.11. The cockpit's "recent goals" and Repeat last come from unfiltered history,
   // not the Review range — a user comparing last week should still be able to repeat yesterday.
@@ -691,8 +700,10 @@ export default function App() {
               loading={reviewLoading}
               range={reviewRange}
               onChange={setReviewRange}
+              showingLabel={reviewStaleInterval ? reviewRangeLabelText : null}
+              error={reviewError}
+              onRetry={() => void refreshReview()}
             />
-            {reviewError ? <p className="helper-text alert">{reviewError}</p> : null}
 
             <SummaryCard
               focusSummary={focusSummary}
@@ -701,7 +712,15 @@ export default function App() {
               rangeLabel={reviewRangeLabelText}
               report={summaryReport}
             />
-            <InsightsCard rangeLabel={reviewRangeLabelText} sessionHistory={sessionHistory} />
+            <InsightsCard
+              rangeLabel={reviewRangeLabelText}
+              sessionHistory={sessionHistory}
+              truncationNote={
+                summaryReport.sessionsTruncated
+                  ? `latest ${summaryReport.sessionLimit} sessions only`
+                  : null
+              }
+            />
 
             <AnalyticsCard
               analytics={analytics}

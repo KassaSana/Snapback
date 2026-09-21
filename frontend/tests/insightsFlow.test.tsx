@@ -11,6 +11,8 @@ const boundary = vi.hoisted(() => {
     deleteThrows: boolean;
     reflectionThrows: boolean;
     historyThrows: boolean;
+    /** Windows whose analytics load rejects (slice 5: failed range change). */
+    failWindows: Set<string>;
   } = {
     health: {},
     history: [],
@@ -20,6 +22,7 @@ const boundary = vi.hoisted(() => {
     deleteThrows: false,
     reflectionThrows: false,
     historyThrows: false,
+    failWindows: new Set(),
   };
 
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
@@ -55,6 +58,7 @@ const boundary = vi.hoisted(() => {
       case "get_focus_summary":
         return state.focusSummary;
       case "get_analytics":
+        if (state.failWindows.has(String(args?.window ?? ""))) throw new Error("range failed");
         return state.analytics;
       case "get_summary_report":
         return state.summary;
@@ -130,6 +134,7 @@ beforeEach(() => {
   boundary.state.deleteThrows = false;
   boundary.state.reflectionThrows = false;
   boundary.state.historyThrows = false;
+  boundary.state.failWindows = new Set();
 });
 
 afterEach(() => {
@@ -389,6 +394,57 @@ describe("Focus summary card", () => {
       expect(boundary.invoke).toHaveBeenCalledWith("get_focus_summary", { window: "7d" }),
     );
     expect(within(card).getByText(/No summary data for this range yet/i)).toBeInTheDocument();
+  });
+});
+
+describe("Review interval provenance", () => {
+  const summaryPill = () =>
+    within(screen.getByRole("heading", { name: "Summary" }).closest("section") as HTMLElement)
+      .getAllByText(/Last|All time|Since/)[0];
+
+  it("keeps cards labelled with the interval they hold when a range change fails, and Retry works", async () => {
+    boundary.state.history = [rawSummary("a", 50, 10, 0)];
+    renderApp("review");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Last 7 days" })).toBeEnabled());
+    expect(summaryPill()).toHaveTextContent("Last 7 days");
+
+    boundary.state.failWindows.add("30d");
+    fireEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
+    // The button is pressed, the load failed, and the cards still say what they show.
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Still showing Last 7 days/);
+    expect(screen.getByRole("button", { name: "Last 30 days" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(summaryPill()).toHaveTextContent("Last 7 days");
+
+    boundary.state.failWindows.clear();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(summaryPill()).toHaveTextContent("Last 30 days"));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("marks the live cards as outside the selected interval and surfaces the session cap", async () => {
+    boundary.state.history = [rawSummary("a", 50, 10, 0)];
+    boundary.state.summary = {
+      window: "7d",
+      sample_count: 3,
+      session_count: 600,
+      completed_session_count: 600,
+      session_limit: 500,
+      sessions_truncated: true,
+    };
+    renderApp("review");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Last 7 days" })).toBeEnabled());
+
+    expect(screen.getByText(/live · latest/)).toBeInTheDocument();
+    expect(screen.getByText(/live · this session/)).toBeInTheDocument();
+    expect(screen.getByText(/Recent Predictions and Context Timeline are live/)).toBeInTheDocument();
+    // The per-session chart reads the same capped list the report does, and says so.
+    const chart = screen
+      .getByRole("heading", { name: "Focus per session" })
+      .closest("section") as HTMLElement;
+    expect(within(chart).getByText(/latest 500 sessions only/)).toBeInTheDocument();
   });
 });
 

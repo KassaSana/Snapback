@@ -31,6 +31,13 @@ the note at the bottom.
   no longer changes the running session's mode; Start is what commits the choice, and "Keep
   this session" puts the form back to what is running.
 
+- **Review cards say which interval their numbers came from (10.11).** Picking a new time
+  range no longer relabels the numbers already on screen: each card's pill names the interval
+  it is actually showing, the range bar explains when that differs from the pressed button,
+  and a failed load offers Retry instead of leaving old data under a new name. Recent
+  Predictions and Context Timeline are marked as live views outside the selected range, and
+  the per-session chart says when it is showing only the latest 500 sessions.
+
 - **Now is a cockpit, not a card feed.** Idle Now is a start screen (goal, Start, Repeat last). A running session shows the state, elapsed time, a compact attended line, and Pomodoro. Stopping puts the recap and check-in on Now. The header is a recording line when healthy instead of four status pills, and Repeat last starts that session.
 
 - **Honest “Settled” when the model is guessing.** A quiet screen with no goal match no longer

@@ -10,6 +10,7 @@ import {
 } from "./api";
 import {
   readStoredReviewRange,
+  sameReviewRange,
   toReviewWindowRequest,
   writeStoredReviewRange,
   type ReviewRange,
@@ -71,6 +72,10 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
   const [focusSummary, setFocusSummary] = useState<FocusSummary>(EMPTY_FOCUS);
   const [report, setReport] = useState<SummaryReport>(EMPTY_REPORT);
   const [sessionHistory, setSessionHistory] = useState<SessionSummary[]>([]);
+  // Roadmap 10.11. The interval the data on screen was loaded for. It moves only when a load
+  // succeeds, so it can lag `range`: the user has picked a new interval and the cards still
+  // hold -- and must still be labelled with -- the old one. Null until the first load.
+  const [loadedRange, setLoadedRange] = useState<ReviewRange | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
@@ -119,6 +124,7 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
           setFocusSummary(nextFocus);
           setSessionHistory(nextHistory);
           setDailySummary(nextDaily);
+          setLoadedRange(requestedRange);
           loadedRequestKeyRef.current = key;
           setLoadedRequestKey(key);
           setLoading(false);
@@ -228,6 +234,15 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
     [],
   );
 
+  // What the cards describe. Before anything has loaded there is nothing to describe, so the
+  // selection stands in; afterwards it is always the interval the data really came from.
+  const displayedRange = loadedRange ?? range;
+  // True when the data on screen belongs to a different interval than the one selected --
+  // during a load, and indefinitely after a failed one. The label on every card comes from
+  // `displayedRange`, so this is for the range bar to say why the pills and the buttons
+  // disagree, not for anything to relabel.
+  const staleInterval = loadedRange !== null && !sameReviewRange(loadedRange, range);
+
   return {
     analytics,
     dailySummary,
@@ -235,6 +250,7 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
     deleteSession,
     deleteStatus,
     deletingSessionId,
+    displayedRange,
     error,
     exportStatus,
     exportSummary,
@@ -243,6 +259,7 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
     loading:
       active && (loading || (!error && loadedRequestKey !== reviewRequestKey(range, generation))),
     range,
+    staleInterval,
     reflectionStatus,
     refreshReview,
     report,

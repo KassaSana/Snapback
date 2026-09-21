@@ -13,6 +13,15 @@ type ReviewRangeBarProps = {
   loading?: boolean;
   range: ReviewRange;
   onChange: (range: ReviewRange) => void;
+  /**
+   * Roadmap 10.11. The interval the cards below are actually showing, when it is not the
+   * one selected: a load in progress, or one that failed. Said here, once, so the cards can
+   * keep the honest label and the user can see why it differs from the pressed button.
+   */
+  showingLabel?: string | null;
+  /** The last load failed; the cards hold the previous interval. */
+  error?: string | null;
+  onRetry?: () => void;
 };
 
 export const ReviewRangeBar = memo(function ReviewRangeBar({
@@ -20,6 +29,9 @@ export const ReviewRangeBar = memo(function ReviewRangeBar({
   loading = false,
   range,
   onChange,
+  showingLabel = null,
+  error = null,
+  onRetry,
 }: ReviewRangeBarProps) {
   const [customDate, setCustomDate] = useState(
     range.preset === "custom" ? range.since : todayIsoDate(),
@@ -78,9 +90,26 @@ export const ReviewRangeBar = memo(function ReviewRangeBar({
           </label>
         ) : null}
       </div>
+      {error ? (
+        <p className="helper-text alert" role="alert">
+          {error}
+          {showingLabel ? ` Still showing ${showingLabel}.` : ""}{" "}
+          {onRetry ? (
+            <button type="button" className="link-button" onClick={onRetry}>
+              Retry
+            </button>
+          ) : null}
+        </p>
+      ) : showingLabel ? (
+        <p className="helper-text" role="status">
+          Showing {showingLabel} until this loads.
+        </p>
+      ) : null}
       <p className="helper-text">
-        Every card below uses this exact interval. Windows are rolling until calendar-day
-        boundaries land in a future release.
+        Summary, Focus per session, the app breakdown, and Daily trend use this interval; each
+        card's pill names the interval its numbers came from. Recent Predictions and Context
+        Timeline are live views and are not limited to it. Windows are rolling; attendance
+        against a plan is the one figure that follows the calendar, and says so.
       </p>
     </section>
   );

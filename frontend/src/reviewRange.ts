@@ -36,6 +36,11 @@ export const REVIEW_RANGE_LABELS: Record<ReviewRangePreset, string> = {
   custom: "Custom",
 };
 
+export function sameReviewRange(a: ReviewRange, b: ReviewRange): boolean {
+  if (a.preset !== b.preset) return false;
+  return a.preset !== "custom" || b.preset !== "custom" || a.since === b.since;
+}
+
 export function reviewRangeLabel(range: ReviewRange): string {
   if (range.preset === "custom") {
     return `Since ${range.since}`;

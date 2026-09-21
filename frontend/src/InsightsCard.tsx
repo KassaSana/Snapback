@@ -242,7 +242,15 @@ function SessionManagementList({
 export const InsightsCard = memo(function InsightsCard({
   rangeLabel,
   sessionHistory,
-}: Pick<InsightsCardProps, "rangeLabel" | "sessionHistory">) {
+  truncationNote = null,
+}: Pick<InsightsCardProps, "rangeLabel" | "sessionHistory"> & {
+  /**
+   * Roadmap 10.11. Set when the session list behind this chart hit the backend's cap, so
+   * "All time" over the chart cannot quietly mean "the latest 500". Comes from the summary
+   * report, which reads the same capped list.
+   */
+  truncationNote?: string | null;
+}) {
   const aggregates = useMemo(() => computeInsightsAggregates(sessionHistory), [sessionHistory]);
   const chronological = useMemo(() => toChronological(sessionHistory), [sessionHistory]);
   return (
@@ -258,7 +266,10 @@ export const InsightsCard = memo(function InsightsCard({
       ) : (
         <>
           <FocusTrendChart summaries={chronological} />
-          <p className="insights-caption">Avg focus score (0–100) per session · oldest → newest</p>
+          <p className="insights-caption">
+            Avg focus score (0–100) per session · oldest → newest
+            {truncationNote ? ` · ${truncationNote}` : ""}
+          </p>
           <p className="helper-text">
             {Math.round(aggregates.avgDeepFocusPct)}% deep focus · {aggregates.totalSnapbacks}{" "}
             snapbacks across {aggregates.sessionCount} completed sessions

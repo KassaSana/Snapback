@@ -3845,6 +3845,22 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   and **7.12** makes those queries bounded; implement through **14.4**, not another set of
   cross-card callbacks in `App.tsx`.
 
+  **Interval provenance landed 2026-09-21** (Astra review slice 5). The shared range, the
+  request-generation guard, and the "Last …" labels were already in place; what was not is
+  that a card's pill came from the *selected* range, so pressing "Last 30 days" relabelled
+  the 7-day numbers on screen for as long as the load ran — and forever if it failed. The
+  workflow now carries `loadedRange` beside the data and exposes `displayedRange` /
+  `staleInterval` (`useReviewWorkflow.ts:useReviewWorkflow`); every pill reads the loaded
+  interval, and the range bar says "Showing Last 7 days until this loads" or, on failure,
+  "Still showing Last 7 days" with a Retry that re-asks for the pressed selection. Recent
+  Predictions and Context Timeline are marked *live* and the bar's "every card below uses
+  this exact interval" promise is corrected to name which cards do and which do not. The
+  per-session chart now shows the summary report's 500-session cap, since it reads the same
+  capped list. Hook tests pin stale-during-load, stale-after-failure, Retry, and an older
+  response never overwriting a newer one; App tests pin the pill, the alert, and the live
+  markers. **Still open:** the Recent Predictions / Context Timeline move under a selected
+  session (2.9) and any Advanced relocation are product decisions, not done here.
+
 - **10.12 — CODE DONE 2026-08-11; the Windows desktop smoke stays open.** `S/M`
   Opened 2026-08-05. The shared placement helper and its test already support a display whose
   origin is not `(0,0)`, but Windows production always asks `SPI_GETWORKAREA` for the primary

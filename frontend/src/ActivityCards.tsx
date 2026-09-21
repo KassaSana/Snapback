@@ -35,8 +35,11 @@ export function ActivityCards({
       <section className="card history-card">
         <div className="card-header">
           <h2>Recent Predictions</h2>
-          <span className="pill">latest {historyLimit}</span>
+          <span className="pill">live · latest {historyLimit}</span>
         </div>
+        <p className="helper-text">
+          The newest predictions as they arrive, whatever time range is selected above.
+        </p>
         <ul className="history-list">
           {predictionHistory.length === 0 ? (
             <li className="history-empty">No predictions yet.</li>
@@ -65,10 +68,11 @@ export function ActivityCards({
       <section className="card timeline-card">
         <div className="card-header">
           <h2>Context Timeline</h2>
-          <span className="pill">session trail</span>
+          <span className="pill">live · this session</span>
         </div>
         <p className="helper-text">
-          Where you were working during this session — apps, files, and parsed summaries.
+          Where you were working during this session — apps, files, and parsed summaries. Not
+          limited to the time range selected above.
         </p>
         {!sessionId ? (
           <p className="helper-text">Start a session to record context snapshots.</p>
