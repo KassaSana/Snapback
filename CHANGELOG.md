@@ -24,6 +24,13 @@ the note at the bottom.
   Settings toggle keep each other current. When the app cannot be reached to confirm, the
   header says so beside the last state it knew rather than presenting it as current.
 
+- **Starting a different session tells the truth about both halves (2.11).** If the running
+  session stops but the replacement cannot start, the card now shows the stopped session and
+  its recap instead of a session that no longer exists, and the start form works straight
+  away rather than after a reload. Choosing a mode or goal while preparing the next session
+  no longer changes the running session's mode; Start is what commits the choice, and "Keep
+  this session" puts the form back to what is running.
+
 - **Now is a cockpit, not a card feed.** Idle Now is a start screen (goal, Start, Repeat last). A running session shows the state, elapsed time, a compact attended line, and Pomodoro. Stopping puts the recap and check-in on Now. The header is a recording line when healthy instead of four status pills, and Repeat last starts that session.
 
 - **Honest “Settled” when the model is guessing.** A quiet screen with no goal match no longer

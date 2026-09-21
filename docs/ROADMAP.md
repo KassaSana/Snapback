@@ -2458,6 +2458,22 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   how two figures that must agree stop agreeing. Running/Paused itself is already shown, from
   7.23's `sessionStatusLabel`.
 
+  **Switch and draft repairs landed 2026-09-21** (Astra review slice 4). Three defects in
+  the guarded switch, each with a regression case in
+  `frontend/tests/sessionCockpitFlow.test.tsx`: (1) the successful `stop_session` response
+  was discarded, so a failed replacement start left a running-session card over a row
+  storage had completed — the stop is now applied before the start is attempted, and a
+  failed start lands in the ordinary stopped state with its recap; (2) the card's
+  `switching` flag never reset, so after a switch-then-Stop the start form's submit stayed
+  disabled until remount — it now resets whenever the session id or activity changes;
+  (3) the cockpit's mode select called `set_focus_mode`, which natively rewrites the
+  *live* policy as well as the default, so browsing modes for the next session was
+  reclassifying the current one — the select is now a draft
+  (`useSession.ts:setDraftFocusMode`) committed by Start (`start_session` sets the live
+  mode, then the default is persisted), and "Keep this session" restores the draft to the
+  running session's goal and mode. The wizard's "Default focus mode" keeps the persisting
+  `handleFocusModeChange`, whose failure is now reported instead of swallowed.
+
 - **2.12 — DONE 2026-08-11.** `M`
   Opened 2026-08-05. `PermissionWizard` disappears once capture is available. It explains OS
   permission and default mode, but never teaches the product loop: choose a goal, start, read

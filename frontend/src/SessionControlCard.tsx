@@ -24,13 +24,16 @@ import {
 
 type SessionControlCardProps = {
   focusMode: FocusMode;
-  handleFocusModeChange: (mode: FocusMode) => void;
+  /** Draft only: the mode the next session starts with. Start commits it; nothing else does. */
+  setDraftFocusMode: (mode: FocusMode) => void;
   handleStartSession: () => void;
   /** Start last session: fills the form and starts in one declaration. */
   handleStartNamedSession: (goal: string, mode: FocusMode) => void | Promise<void>;
   handleStopSession: () => void;
   /** Roadmap 2.11's guarded switch: stops the running session, then starts the typed one. */
-  handleSwitchSession: () => void;
+  handleSwitchSession: () => void | Promise<boolean>;
+  /** "Keep this session": puts the draft back to the running session's goal and mode. */
+  cancelSwitch: () => void;
   sessionGoal: string;
   sessionId: string | null;
   sessionRecord: SessionRecord | null;
@@ -51,11 +54,12 @@ type SessionControlCardProps = {
 
 export const SessionControlCard = memo(function SessionControlCard({
   focusMode,
-  handleFocusModeChange,
+  setDraftFocusMode,
   handleStartSession,
   handleStartNamedSession,
   handleStopSession,
   handleSwitchSession,
+  cancelSwitch,
   sessionGoal,
   sessionId,
   sessionRecord,
@@ -81,6 +85,13 @@ export const SessionControlCard = memo(function SessionControlCard({
   );
 
   const sessionActive = sessionRecord?.status === "ACTIVE";
+  // The switch interaction ends with the session it was about: a successful switch changes
+  // the id, a Stop (or a replacement start that failed after the stop) ends the activity.
+  // Left set, `switchable` -- which requires an active session -- kept the submit button
+  // disabled on the ordinary start form until the card remounted.
+  useEffect(() => {
+    setSwitching(false);
+  }, [sessionId, sessionActive]);
   const validation = validateSessionGoal(sessionGoal, pristine);
   // While a session runs, the form is only reachable through the guarded switch, so the
   // gate is the same validation with the live session no longer disqualifying it.
@@ -109,7 +120,7 @@ export const SessionControlCard = memo(function SessionControlCard({
   const applyGoal = (goal: string, mode: FocusMode) => {
     setPristine(false);
     setSessionGoal(goal);
-    handleFocusModeChange(mode);
+    setDraftFocusMode(mode);
     setShowSuggestions(false);
     setHighlightedIndex(-1);
   };
@@ -204,7 +215,10 @@ export const SessionControlCard = memo(function SessionControlCard({
             <button
               type="button"
               className="link-button"
-              onClick={() => setSwitching((value) => !value)}
+              onClick={() => {
+                if (switching) cancelSwitch();
+                setSwitching(!switching);
+              }}
               aria-expanded={switching}
               disabled={sessionPending}
             >
@@ -287,9 +301,7 @@ export const SessionControlCard = memo(function SessionControlCard({
             <span>Focus mode</span>
             <select
               value={focusMode}
-              onChange={(event) =>
-                void handleFocusModeChange(event.target.value as FocusMode)
-              }
+              onChange={(event) => setDraftFocusMode(event.target.value as FocusMode)}
               disabled={sessionPending}
               aria-describedby="focus-mode-hint"
             >

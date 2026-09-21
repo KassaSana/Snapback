@@ -235,7 +235,9 @@ export default function App() {
   const {
     clearActivitySession,
     focusMode,
+    cancelSwitch,
     handleFocusModeChange,
+    setDraftFocusMode,
     handleLabel,
     handleSaveReflection,
     handleSkipReflection,
@@ -623,7 +625,8 @@ export default function App() {
         <div data-alert-region="session">
         <SessionControlCard
           focusMode={focusMode}
-          handleFocusModeChange={handleFocusModeChange}
+          setDraftFocusMode={setDraftFocusMode}
+          cancelSwitch={cancelSwitch}
           handleStartSession={handleStartSession}
           handleStartNamedSession={handleStartNamedSession}
           handleStopSession={handleStopSession}

@@ -74,6 +74,16 @@ export const useSession = ({
     void refreshContextTimeline(active.sessionId);
   }, [refreshContextTimeline]);
 
+  // Best-effort and silent: by the time this runs `start_session` has already made the mode
+  // the live policy, so the only thing a failure loses is the *default* for next time.
+  const commitDefaultFocusMode = useCallback(async (mode: FocusMode) => {
+    try {
+      await api.setFocusMode(mode);
+    } catch {
+      // The running session is unaffected; hydrate reads the default again next launch.
+    }
+  }, []);
+
   const handleLabel = useCallback(
     async (label: FocusLabel, source: LabelSource = "manual", notes?: string) => {
       if (!sessionId) {
@@ -131,6 +141,12 @@ export const useSession = ({
         );
         resetTimelineRefreshGate();
         void refreshContextTimeline(record.sessionId);
+        // The draft is committed by Start, not by the select: `start_session` already made
+        // `mode` the live policy, and this remembers it as the default for next time. It is
+        // the only place the cockpit writes the default -- picking a mode while preparing a
+        // replacement session used to change the *running* session's policy on the spot.
+        // Best-effort: the session is running under the right mode either way.
+        void commitDefaultFocusMode(mode);
       } catch {
         setActionError("Could not start session. Check capture permissions and try again.");
       } finally {
@@ -141,12 +157,45 @@ export const useSession = ({
         setSessionPending(false);
       }
     },
-    [captureReadiness, clearSessionLiveSignals, refreshContextTimeline, resetTimelineRefreshGate, setActionError],
+    [
+      captureReadiness,
+      clearSessionLiveSignals,
+      commitDefaultFocusMode,
+      refreshContextTimeline,
+      resetTimelineRefreshGate,
+      setActionError,
+    ],
   );
 
   const handleStartSession = useCallback(async () => {
     await handleStartNamedSession(sessionGoal, focusMode);
   }, [focusMode, handleStartNamedSession, sessionGoal]);
+
+  // The stopped state, from the record the backend returned. Shared by Stop and by the half
+  // of a switch that succeeded: once `stop_session` has answered, the session is over in
+  // storage, and the UI has to say so whatever happens next.
+  const applyStoppedSession = useCallback(
+    async (record: SessionRecord) => {
+      setSessionRecord(record);
+      clearSessionLiveSignals();
+      const sessionRecap = await api.getSessionRecap(record.sessionId);
+      setRecap(sessionRecap);
+      setSurveyPending(true);
+      setReflectionPending(true);
+      setReflectionSaved(false);
+      setLabelStatus("Automatic session label saved. How did this session feel overall?");
+      setLabelStatusWarning(false);
+      resetTimelineRefreshGate();
+      void refreshContextTimeline(record.sessionId);
+    },
+    [
+      clearSessionLiveSignals,
+      refreshContextTimeline,
+      resetTimelineRefreshGate,
+      setLabelStatus,
+      setLabelStatusWarning,
+    ],
+  );
 
   const handleStopSession = useCallback(async () => {
     if (!sessionId || inFlight.current) {
@@ -156,34 +205,15 @@ export const useSession = ({
     inFlight.current = true;
     setSessionPending(true);
     try {
-      const record = await api.stopSession(sessionId);
-      setSessionRecord(record);
-      clearSessionLiveSignals();
-      const sessionRecap = await api.getSessionRecap(sessionId);
-      setRecap(sessionRecap);
-      setSurveyPending(true);
-      setReflectionPending(true);
-      setReflectionSaved(false);
-      setLabelStatus("Automatic session label saved. How did this session feel overall?");
-      setLabelStatusWarning(false);
+      await applyStoppedSession(await api.stopSession(sessionId));
       setActionError(null);
-      resetTimelineRefreshGate();
-      void refreshContextTimeline(sessionId);
     } catch {
       setActionError("Could not stop session or load recap.");
     } finally {
       inFlight.current = false;
       setSessionPending(false);
     }
-  }, [
-    clearSessionLiveSignals,
-    refreshContextTimeline,
-    resetTimelineRefreshGate,
-    sessionId,
-    setActionError,
-    setLabelStatus,
-    setLabelStatusWarning,
-  ]);
+  }, [applyStoppedSession, sessionId, setActionError]);
 
   /**
    * Roadmap 2.11's guarded "start a different session".
@@ -193,22 +223,29 @@ export const useSession = ({
    * a new one begins. If the stop fails the switch stops there — starting anyway would leave
    * two sessions the user believes are one.
    */
-  const handleSwitchSession = useCallback(async () => {
+  const handleSwitchSession = useCallback(async (): Promise<boolean> => {
     const goal = sessionGoal.trim();
     if (!goal || !sessionId || inFlight.current) {
-      return;
+      return false;
     }
 
     inFlight.current = true;
     setSessionPending(true);
+    let stopped: SessionRecord;
     try {
-      await api.stopSession(sessionId);
+      stopped = await api.stopSession(sessionId);
     } catch {
       setActionError("Could not stop the current session, so it is still running.");
       inFlight.current = false;
       setSessionPending(false);
-      return;
+      return false;
     }
+    // Applied before the start is attempted: storage has already completed this session, and
+    // a UI still showing it ACTIVE would be describing a row that no longer is. The response
+    // used to be discarded here, so a failed replacement start left a running-session card
+    // over a stopped session until the next hydrate.
+    setSessionRecord(stopped);
+    clearSessionLiveSignals();
 
     try {
       const record = await api.startSession(goal, focusMode);
@@ -222,15 +259,27 @@ export const useSession = ({
       );
       resetTimelineRefreshGate();
       void refreshContextTimeline(record.sessionId);
+      void commitDefaultFocusMode(focusMode);
+      return true;
     } catch {
-      // The old session really did stop, so say so rather than implying nothing happened.
+      // The old session really did stop, so say so rather than implying nothing happened --
+      // and land in the ordinary stopped state, recap and all, since that is what it is.
       setActionError("Stopped the previous session, but could not start the new one.");
+      try {
+        await applyStoppedSession(stopped);
+      } catch {
+        // The record is already applied; the recap is the part that failed to load.
+      }
+      return false;
     } finally {
       inFlight.current = false;
       setSessionPending(false);
     }
   }, [
+    applyStoppedSession,
     captureReadiness,
+    clearSessionLiveSignals,
+    commitDefaultFocusMode,
     focusMode,
     refreshContextTimeline,
     resetTimelineRefreshGate,
@@ -238,6 +287,15 @@ export const useSession = ({
     sessionId,
     setActionError,
   ]);
+
+  // Roadmap 2.11. "Keep this session": the draft goes back to describing the running session.
+  // Nothing native was touched while it was open, so there is nothing to undo -- this only
+  // stops the form from showing a goal and mode the session never had.
+  const cancelSwitch = useCallback(() => {
+    if (!sessionRecord) return;
+    setSessionGoal(sessionRecord.goal);
+    setFocusMode(normalizeFocusMode(sessionRecord.focusMode, focusMode));
+  }, [focusMode, sessionRecord]);
 
   // Roadmap 2.14. Saves against the session that just ended, not a live one -- by the time
   // this prompt is on screen there is no active session, and `sessionId` still names the right
@@ -263,14 +321,29 @@ export const useSession = ({
     setReflectionPending(false);
   }, []);
 
-  const handleFocusModeChange = useCallback(async (mode: FocusMode) => {
+  // The cockpit's select. Form state only: it names the mode the *next* session starts with,
+  // and Start is what commits it. While a replacement is being drafted this used to call
+  // `set_focus_mode`, which natively rewrites the live policy as well as the default -- so
+  // browsing modes for the next session was silently reclassifying the current one.
+  const setDraftFocusMode = useCallback((mode: FocusMode) => {
     setFocusMode(mode);
-    try {
-      await api.setFocusMode(mode);
-    } catch {
-      // Keep local selection even if backend update fails.
-    }
   }, []);
+
+  // The explicit default editor (the permission wizard's "Default focus mode"). This one is
+  // meant to persist, and does so immediately. It also moves the draft, since the draft
+  // starts from the default. A failed write is reported rather than swallowed: a default
+  // that did not save is a setting the user believes they changed.
+  const handleFocusModeChange = useCallback(
+    async (mode: FocusMode) => {
+      setFocusMode(mode);
+      try {
+        await api.setFocusMode(mode);
+      } catch {
+        setActionError("Could not save the default focus mode.");
+      }
+    },
+    [setActionError],
+  );
 
   const handleSkipSurvey = useCallback(() => {
     setSurveyPending(false);
@@ -294,9 +367,11 @@ export const useSession = ({
   );
 
   return {
+    cancelSwitch,
     clearActivitySession,
     focusMode,
     handleFocusModeChange,
+    setDraftFocusMode,
     handleLabel,
     handleSaveReflection,
     handleSkipReflection,

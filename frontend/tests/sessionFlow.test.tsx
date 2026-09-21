@@ -152,19 +152,30 @@ describe("Session start/stop flow", () => {
     );
   });
 
-  it("persists focus mode changes through the settings command", async () => {
+  it("commits the drafted focus mode through Start, not through the select", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Session Control" });
 
+    // The select is a draft: choosing a mode writes nothing.
     const select = screen.getByLabelText("Focus mode") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "recovery" } });
+    expect(select.value).toBe("recovery");
+    expect(boundary.invoke).not.toHaveBeenCalledWith("set_focus_mode", expect.anything());
 
+    // Start is the commit: the session opens in that mode and it becomes the default.
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
     await waitFor(() =>
-      expect(boundary.invoke).toHaveBeenCalledWith("set_focus_mode", {
-        mode: "recovery",
+      expect(boundary.invoke).toHaveBeenCalledWith("start_session", {
+        goal: "Write tests",
+        focusMode: "recovery",
       }),
     );
-    expect(select.value).toBe("recovery");
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("set_focus_mode", { mode: "recovery" }),
+    );
   });
 
   it("does not start a session when the goal is empty", async () => {
