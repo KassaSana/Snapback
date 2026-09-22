@@ -134,31 +134,36 @@ not a few tens of megabytes.
 ### Read latency, p50 (p95), against that database
 
 Every one of these runs under `storage_mutex_` — the same lock the engine takes to persist.
+Measured after **14.13** made the window predicates index-seekable; the "before" column for the
+two queries that changed is in that item.
 
-| query | day | 7d | 30d | 90d |
+The Review presets are **today / 7d / 30d / all** (`frontend/src/reviewRange.ts`). `all` passes
+no cutoff at all, so it is the unfiltered scan and 14.13 did not change it. The 90-day column
+below is not a preset — it is there because it is the retention limit, and so it is the shape
+of the most expensive thing the storage layer can be asked for.
+
+| query | day | 7d | 30d | 90d (= retention limit) |
 | --- | --- | --- | --- | --- |
-| `storage.cpp:Storage::prediction_stats` | 476 ms (491) | 784 ms (799) | 1,974 ms (1,991) | **5,168 ms** (5,214) |
-| `storage.cpp:Storage::hourly_focus_buckets` | 226 ms (232) | 316 ms (322) | 684 ms (685) | 1,674 ms (1,692) |
-| `storage.cpp:Storage::recent_session_summaries` | 1,118 ms (1,137) | 1,094 ms (1,101) | 1,091 ms (1,129) | 1,105 ms (1,119) |
-| `storage.cpp:Storage::daily_summary` | 90 ms (95) | 549 ms (558) | 2,297 ms (2,303) | **6,867 ms** (6,925) |
-
-At the realistic 60% duty cycle each falls roughly with the row count — 90-day
-`prediction_stats` 3,055 ms, `daily_summary` 4,074 ms, `hourly_focus_buckets` 988 ms,
-`recent_session_summaries` 649 ms — so the shape is the same and only the constant moves.
+| `storage.cpp:Storage::prediction_stats` | 55 ms (56) | 435 ms (438) | 1,921 ms (1,953) | **5,867 ms** (5,901) |
+| `storage.cpp:Storage::hourly_focus_buckets` | 18 ms (19) | 152 ms (155) | 669 ms (675) | 1,994 ms (2,046) |
+| `storage.cpp:Storage::recent_session_summaries` | 1,088 ms (1,102) | 1,101 ms (1,123) | 1,077 ms (1,100) | 1,069 ms (1,091) |
+| `storage.cpp:Storage::daily_summary` | 99 ms (103) | 543 ms (549) | 2,307 ms (2,319) | **6,830 ms** (6,840) |
 
 **Three things this says that reading the code did not.**
 
-1. **The Review surfaces cost seconds, not milliseconds, on a mature database, and they hold
-   `storage_mutex_` while doing it.** A 90-day Review is the worst case and it is not close to
-   free. This is the contention **14.1** asks to have measured before deciding whether to build
-   a separate read lane; it is the single-threaded half of that measurement, and "immaterial"
-   is not what it says.
+1. **Cost is now proportional to the window, and it was not before.** Until 14.13 every one of
+   these read the whole table whichever window was asked for, so `day` on a mature database
+   cost nearly what `30d` did. It now costs what a day should.
 2. **`recent_session_summaries` is flat across every window** — about 1.1 s whether it is
-   answering for one day or ninety. It is bounded by the 500-session cap and by per-session
-   work, not by the window, so 180 sessions cost 6 ms each. A window filter that does not make
-   the query cheaper is worth a look on its own.
-3. **`daily_summary` overtakes `prediction_stats`** past 30 days despite being the cheapest
-   query at one day. Its per-day recursive axis is what grows.
+   answering for one day or ninety, and 14.13 did not touch it because it does not filter on
+   `predictions` at all. It is bounded by the 500-session cap and by per-session work, so 180
+   sessions cost 6 ms each. A window filter that does not make the query cheaper is the next
+   thing here worth reading.
+3. **The wide windows still cost seconds, and they hold `storage_mutex_` while doing it.**
+   `daily_summary` at the retention limit is 6.8 s and overtakes `prediction_stats` past 30
+   days; its per-day recursive axis is what grows. This is the contention **14.1** asks to have
+   measured before deciding whether to build a separate read lane, and "immaterial" is not what
+   it says.
 
 ### Not measured yet
 

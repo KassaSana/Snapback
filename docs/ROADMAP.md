@@ -1701,9 +1701,11 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   The 1.5 MB per attended hour estimate was right (1.47 MB measured). The number nobody had is
   the steady state: **792 MB at the retention limit** for a heavy user, 473 MB at a realistic
-  duty cycle. And the reads are not cheap — 90-day `prediction_stats` is **5.2 s**,
-  `daily_summary` **6.9 s**, both under `storage_mutex_`. See **14.1**, which those numbers
-  speak directly to, and **14.12**, which they opened.
+  duty cycle. And the reads are not cheap at the retention limit — `prediction_stats` and
+  `daily_summary` are both **seconds**, under `storage_mutex_`. See **14.1**, which those
+  numbers speak directly to, and **14.12** and **14.13**, which they opened. The table in
+  `testing_strategy.md` was re-measured after 14.13 and is the current one; the figures this
+  item was written against are quoted in 14.13 as its "before".
 
   **Still missing, and why this item is not closed.** Each needs instrumentation or a running
   app: `storage_mutex_` hold time p50/p95 and engine persist-phase wait (no timing hook exists
@@ -1729,8 +1731,52 @@ kept here; already-deep modules and completed performance work were rejected dur
   Recorded here rather than folded into 7.33 because the fix is not to undo it: the three
   commands want overlapping slices of one aggregate, so the answer is to compute it once per
   window and share it, which is a question about the command layer's shape and not about any
-  one of them. **Sequence with 14.1** — if the read lane lands, measure again before building
-  a cache, because a cheaper lock changes what redundancy costs.
+  one of them.
+
+  *Reassessed 2026-09-22, after **14.13**.* The figures above were taken when every window read
+  the whole table. On the presets the product actually offers, three calls now cost **165 ms**
+  (`today`) and **1.3 s** (`7d`), not 15.5 s. That is no longer an obvious build — a cache
+  carries invalidation, and the three commands derive their cutoffs milliseconds apart, so a
+  memo keyed on the exact cutoff would never hit and one keyed on `(window, since)` would hand
+  two of the three an answer computed for a slightly different instant. **Left `proposed` on
+  purpose.** Sequence behind **14.1**: if the read lane lands, measure a third time, because a
+  cheaper lock changes what redundancy costs again.
+
+- **14.13 — Window predicates read the whole table.** `in progress` `S` `performance`
+  Opened 2026-09-22 while sizing **14.12**, by profiling the fixture **14.11** built rather
+  than by reading the SQL. Every bounded read on `predictions` spelled its window
+  `WHERE (?1 IS NULL OR timestamp >= ?1)` — one statement serving both the windowed and the
+  whole-history caller. A bound parameter inside an `OR` is not sargable, so SQLite could not
+  use `idx_predictions_ts` and **full-scanned `predictions` whichever window was asked for**.
+  Cost was proportional to the database, not to the question. `EXPLAIN QUERY PLAN` said
+  `SCAN predictions` for a one-day window over 1.9 M rows.
+
+  `storage.cpp:Storage::predictions_since` already built two SQL strings for exactly this
+  reason and said so in a comment; the aggregates simply had not followed it.
+
+  **Landed** for the three `predictions` readers — the `prediction_stats` scalar aggregate,
+  its gaps-and-islands stretch query, and `hourly_focus_buckets`. Each now builds the seekable
+  spelling when a cutoff is present and omits the clause entirely when it is not. Measured on
+  the 90-day ceiling fixture: `prediction_stats` on `today` **476 ms → 55 ms** (8.7x),
+  `hourly_focus_buckets` **226 ms → 18 ms** (12.8x), `7d` 1.8x and 2.1x. `30d` is unchanged
+  (a third of the table; seek and scan cost the same) and `all` passes no cutoff, so it is the
+  same plain scan it always was. A hypothetical 90-day window is ~13% slower than the old
+  scan, which is the expected shape of an index seek that touches every row — it is not a
+  preset (`reviewRange.ts` offers today/7d/30d/all) and the retention limit means `all` and
+  `90d` are the same question. The 12,000-row parity test pins every field, so no answer moved.
+
+  `ANALYZE` was tried and rejected as the fix: `sqlite_stat1` carries per-index average row
+  counts, not a value histogram, so the planner still chooses the seek for a whole-table bound.
+  There is nothing to tune — the two spellings are the answer.
+
+  **Remaining, and deliberately unmeasured.** Six queries over `sessions` and
+  `context_snapshots` still use the same idiom
+  (`(?N IS NULL OR started_at >= ?N)`, `storage.cpp:Storage::recent_session_summaries` among
+  them). They were left alone because this repo's rule is measure first and they have not been:
+  `sessions` is thousands of rows where `predictions` is millions, and
+  `recent_session_summaries` measured **flat across every window**, which says its cost is
+  per-session work rather than the scan. Fix them when a measurement asks for it, not because
+  the pattern matches.
 
 ---
 
