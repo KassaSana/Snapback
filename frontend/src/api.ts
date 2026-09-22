@@ -29,7 +29,6 @@ import {
   mapSession,
   mapSessionRecap,
   mapSessionSummary,
-  mapSetupSteps,
   mapSnapbackPayload,
   mapTrainFromExportResult,
   mapTrainingDeployStatus,
@@ -75,17 +74,13 @@ export type PermissionStatus = {
   setupSteps: string[];
 };
 
-export type CaptureFailurePayload = {
-  reason: string;
-  message: string;
-  setupSteps: string[];
-};
-
-export type OverlayFailurePayload = {
-  reason: string;
-  message: string;
-};
-
+/**
+ * Roadmap 11.13. `CaptureFailurePayload` and `OverlayFailurePayload` were deleted with the
+ * `capture-failed` and `overlay-failed` listeners: nothing native ever emitted either name.
+ * Capture failure arrives on `getHealth` instead -- `captureFailed`, `captureFailureReason`,
+ * and the permission message and steps -- which is the path that was always doing the work.
+ * This type stays because Roadmap 9.6 owns the `persistence-failed` emitter it waits for.
+ */
 export type PersistenceFailurePayload = {
   reason: string;
   message: string;
@@ -889,23 +884,6 @@ export const api = {
       handler({
         elapsedMs: Number(raw.elapsedMs ?? 0),
         logTail: String(raw.logTail ?? ""),
-      });
-    }),
-  onCaptureFailed: (handler: (payload: CaptureFailurePayload) => void) =>
-    listen<Record<string, unknown>>("capture-failed", (event) => {
-      const raw = event.payload;
-      handler({
-        reason: String(raw.reason ?? ""),
-        message: String(raw.message ?? ""),
-        setupSteps: mapSetupSteps(raw),
-      });
-    }),
-  onOverlayFailed: (handler: (payload: OverlayFailurePayload) => void) =>
-    listen<Record<string, unknown>>("overlay-failed", (event) => {
-      const raw = event.payload;
-      handler({
-        reason: String(raw.reason ?? ""),
-        message: String(raw.message ?? ""),
       });
     }),
   onPersistenceFailed: (handler: (payload: PersistenceFailurePayload) => void) =>

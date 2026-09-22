@@ -33,7 +33,9 @@ storage before platform smoke tests are involved.
 - `fixtures/feature_parity/scenarios.json` and `golden.json` pin all 31 feature values by
   name and position.
 - `fixtures/ipc_commands.json`, native registration, and frontend calls pin the IPC command
-  set; dispatcher tests cover argument validation and error envelopes.
+  set; dispatcher tests cover argument validation and error envelopes. The same fixture's
+  `events` block pins host-to-frontend events against `src/app/events.hpp`, so a listener with
+  no emitter — and an emit site that names an event with a raw string — fail the build.
 - Storage fixtures cover new, historical, malformed, downgraded, and large databases.
 - Ranked-mutex and concurrency tests protect the capture/engine/storage lock boundaries.
 

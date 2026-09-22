@@ -4557,24 +4557,46 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   Note for the next flake: the first run's log was lost because the job was re-run before it
   was read, and GitHub does not keep the superseded attempt. Read the log first, then re-run.
 
-- **11.13 — Events are outside the IPC contract, and two listeners have no emitter.** `S`
-  Opened 2026-09-22. `tests/test_ipc_contract.cpp` proves the command set three ways — the
+- **11.13 — DONE 2026-09-22. Events were outside the IPC contract, and four listeners had no
+  emitter.** `S`
+  Opened 2026-09-22. `tests/test_ipc_contract.cpp` proved the command set three ways — the
   registry equals the fixture, the frontend's invokes are a subset, and a pinned count — and
-  proves nothing about events. `frontend/src/api.ts` subscribes to `capture-failed` and
-  `overlay-failed`; no native code emits either name. Capture failure reaches the UI anyway,
-  through `health` polling (`state.cpp:AppState::health` sets `capture_failed` and the
-  status word), so that listener is dead code beside a working path; overlay failure has no
-  path at all. Two further listeners without an emitter are owned elsewhere and not repeated
-  here: `persistence-failed` is **9.6**'s event and `label-hotkey` is **12.6**'s. Four dead
-  subscriptions accumulated because nothing could notice.
+  proved nothing about events. `frontend/src/api.ts` subscribed to `capture-failed` and
+  `overlay-failed`; no native code emitted either name. Capture failure reaches the UI anyway,
+  through `health` polling (`state.cpp:AppState::health` sets `capture_failure_reason` and the
+  status word), so that listener was dead code beside a working path. `persistence-failed` is
+  **9.6**'s event and `label-hotkey` is **12.6**'s; both items record on purpose that the
+  frontend scaffolding shipped ahead of the native half. Four dead subscriptions accumulated
+  because nothing could notice.
 
-  Add an `events` list to `fixtures/ipc_commands.json` naming every event the frontend may
-  subscribe to; check it against the native emit names the way the command test checks the
-  registry (`main.cpp` and `state.cpp` are the only emitters), and make the frontend's
-  `listen(...)` names a subset of it, so a listener without an emitter fails the build. Then
-  either emit `capture-failed`/`overlay-failed` or delete `onCaptureFailed`/`onOverlayFailed`
-  and their `useAppEffects.ts` subscriptions; deletion is the smaller change and loses nothing
-  the health path does not already carry.
+  **What landed.** [`src/app/events.hpp`](../src/app/events.hpp) is to events what the command
+  registry is to commands: nine named constants and a `kAll` array. Every emit site spells its
+  name from it — the engine tick's hook (renamed `emit_to_frontend`, so the guard below cannot
+  confuse it with `persistence_test_hook`), `AppState::emit_event`, and `main.cpp`'s
+  `emit(w, …)` for `alert_action`. `fixtures/ipc_commands.json` became an object with
+  `commands` and `events`, and `events` has two lists: `emitted`, pinned to `kAll` both ways,
+  and `planned`, which maps an event to the roadmap item that owes it an emitter. Four new
+  contract cases: emitted set equals the fixture; no emit site names an event with a raw
+  string; every frontend `listen(...)` is emitted or claimed by a `planned` owner; a `planned`
+  event that gains an emitter must move. `onCaptureFailed`/`onOverlayFailed`, their
+  `useAppEffects.ts` subscriptions, `useHealth.ts`'s appliers, and the `CaptureFailurePayload`
+  and `OverlayFailurePayload` types on **both** sides were deleted — the C++ structs had a
+  `to_json` and no producer.
+
+  **A second hole, found by testing the guard rather than by reading it.** The existing
+  frontend-invoke check used `invoke(?:<[^>]*>)?\("`, a bracket class that stops at the first
+  `>` and therefore cannot cross `invoke<Record<string, unknown>>(`. It was matching **12 of
+  73** invoke names — a subset test passing on a twelfth of the surface for as long as it has
+  existed. The new listener pattern was written the same way and was caught the same day only
+  because the guard was deliberately fed a listener nothing emits and did not fail. Both
+  patterns are now anchored to the line instead. Local suite 730/730.
+
+  **Adjacent, not fixed here.** `HealthStatus::overlay_failure_reason` and
+  `persistence_failure_reason` are declared, serialized, and read by the frontend, but no
+  native code ever assigns either — so deleting the `overlay-failed` event did not remove a
+  path the health poll was carrying; there was never a path. The persistence one is **9.6**'s
+  concrete gap, already named there. The overlay one belongs to whoever picks up overlay
+  failure reporting and is recorded here because nothing else records it.
 
 ---
 

@@ -1,5 +1,7 @@
 #include "app/state.hpp"
 
+#include "app/events.hpp"
+
 #include <chrono>
 #include <algorithm>
 #include <limits>
@@ -697,16 +699,16 @@ void AppState::set_emit_hook(EmitHook hook) {
 }
 
 void AppState::emit_event(const char* event, const std::string& json_payload) {
-    EmitHook hook;
+    EmitHook emit_to_frontend;
     ActivityEpoch epoch = 0;
     {
         // Copy out and call unlocked, as the tick does: the hook only queues a UI closure,
         // but nothing here should depend on that staying true.
         std::lock_guard lock(mutex_);
-        hook = emit_hook_;
+        emit_to_frontend = emit_hook_;
         epoch = activity_epoch_.load(std::memory_order_acquire);
     }
-    if (hook) hook(event, json_payload, epoch);
+    if (emit_to_frontend) emit_to_frontend(event, json_payload, epoch);
 }
 
 void AppState::stop_engine() noexcept {
@@ -1556,7 +1558,7 @@ RecordingStatus AppState::recording_status() {
 // get_recording_status returns, so the page applies it instead of asking again.
 RecordingStatus AppState::announce_recording_status() {
     RecordingStatus status = recording_status();
-    emit_event("recording-status", dump_json(nlohmann::json(status)));
+    emit_event(events::kRecordingStatus, dump_json(nlohmann::json(status)));
     return status;
 }
 
@@ -2083,7 +2085,7 @@ bool AppState::engine_tick() {
     //   1) drain + classify under mutex_ (in-memory only), collecting persist jobs;
     //   2) flush them under storage_mutex_ in ONE transaction, after releasing mutex_;
     //   3) queue epoch-tagged events holding no lock (the hook hops to the UI thread).
-    EmitHook hook;
+    EmitHook emit_to_frontend;
     std::function<void(const char*)> persistence_test_hook;
     std::optional<PredictionRecord> pred_to_emit;
     std::optional<SnapbackPayload> snap_to_emit;
@@ -2197,7 +2199,7 @@ bool AppState::engine_tick() {
             pomodoro_route = alert_route_unlocked(AlertEvent::Pomodoro);
             pomodoro_alert_id = issue_alert_id_unlocked(AlertEvent::Pomodoro, pomodoro_route);
         }
-        hook = emit_hook_;
+        emit_to_frontend = emit_hook_;
         persistence_test_hook = persistence_test_hook_;
         if (prediction_dirty_) {
             pred_to_emit = latest_prediction_;
@@ -2212,7 +2214,7 @@ bool AppState::engine_tick() {
         // before main installs the emit hook; marking emitted with a null hook permanently
         // suppressed the overlay for that snapback (the payload stayed for restore, but no
         // event ever reached the webview or native overlay).
-        if (hook && latest_snapback_ && !snapback_emitted_) {
+        if (emit_to_frontend && latest_snapback_ && !snapback_emitted_) {
             snap_to_emit = *latest_snapback_;
             snap_route = latest_snapback_route_;
             snapback_generation = snapback_generation_;
@@ -2319,15 +2321,16 @@ bool AppState::engine_tick() {
         }
     }
 
-    if (!hook) return drain_truncated;
+    if (!emit_to_frontend) return drain_truncated;
     if (idle_edge == IdleTransition::WentIdle) {
-        hook("idle", "{\"idle\":true}", tick_activity_epoch);
+        emit_to_frontend(events::kIdle, "{\"idle\":true}", tick_activity_epoch);
     }
     if (idle_edge == IdleTransition::WokeUp) {
-        hook("idle", "{\"idle\":false}", tick_activity_epoch);
+        emit_to_frontend(events::kIdle, "{\"idle\":false}", tick_activity_epoch);
     }
     if (pred_to_emit) {
-        hook("prediction", dump_json(nlohmann::json(*pred_to_emit)), tick_activity_epoch);
+        emit_to_frontend(events::kPrediction, dump_json(nlohmann::json(*pred_to_emit)),
+                         tick_activity_epoch);
     }
     if (snap_to_emit) {
         // Roadmap 2.16. The route rides on the payload so the delivery layer reads a flag
@@ -2336,7 +2339,7 @@ bool AppState::engine_tick() {
         auto payload = nlohmann::json(*snap_to_emit);
         payload["delivery"] = nlohmann::json(snap_route);
         payload["alertId"] = snap_alert_id;
-        hook("snapback", dump_json(payload), tick_activity_epoch);
+        emit_to_frontend(events::kSnapback, dump_json(payload), tick_activity_epoch);
     }
     if (pomodoro_to_emit) {
         // Roadmap 2.16. Annotated, never suppressed. This event is dual-purpose: it is also
@@ -2346,28 +2349,28 @@ bool AppState::engine_tick() {
         auto payload = nlohmann::json(*pomodoro_to_emit);
         payload["delivery"] = nlohmann::json(pomodoro_route);
         payload["alertId"] = pomodoro_alert_id;
-        hook("pomodoro", dump_json(payload), tick_activity_epoch);
+        emit_to_frontend(events::kPomodoro, dump_json(payload), tick_activity_epoch);
     }
     if (hyper_to_emit) {
         // The in-app copy stays detailed: the preview mode governs what a *lock screen* may
         // say, and this string is rendered inside the app. main.cpp picks the native wording
         // from the route when it raises a toast.
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
-        hook("hyperfocus",
-             dump_json(nlohmann::json{{"message", note.body},
-                                      {"minutes", *hyper_to_emit},
-                                      {"alertId", hyper_alert_id},
-                                      {"delivery", nlohmann::json(hyper_route)}}),
-             tick_activity_epoch);
+        emit_to_frontend(events::kHyperfocus,
+                         dump_json(nlohmann::json{{"message", note.body},
+                                                  {"minutes", *hyper_to_emit},
+                                                  {"alertId", hyper_alert_id},
+                                                  {"delivery", nlohmann::json(hyper_route)}}),
+                         tick_activity_epoch);
     }
     if (untracked_to_emit) {
         const auto note = build_untracked_work_notification(*untracked_to_emit);
-        hook("untracked_work",
-             dump_json(nlohmann::json{{"message", note.body},
-                                      {"minutes", *untracked_to_emit},
-                                      {"alertId", untracked_alert_id},
-                                      {"delivery", nlohmann::json(untracked_route)}}),
-             tick_activity_epoch);
+        emit_to_frontend(events::kUntrackedWork,
+                         dump_json(nlohmann::json{{"message", note.body},
+                                                  {"minutes", *untracked_to_emit},
+                                                  {"alertId", untracked_alert_id},
+                                                  {"delivery", nlohmann::json(untracked_route)}}),
+                         tick_activity_epoch);
     }
     return drain_truncated;
 }

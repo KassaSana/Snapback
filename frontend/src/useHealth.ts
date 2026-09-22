@@ -2,9 +2,7 @@ import { useCallback, useState } from "react";
 
 import {
   api,
-  type CaptureFailurePayload,
   type ClassifierStatus,
-  type OverlayFailurePayload,
   type PersistenceFailurePayload,
 } from "./api";
 import { summarizeAppHealth } from "./healthHints";
@@ -66,20 +64,6 @@ export const useHealth = () => {
     setModelDeploymentDegraded(health.modelDeployment.state === "degraded");
   }, [applyClassifierStatus]);
 
-  const applyCaptureFailure = useCallback((payload: CaptureFailurePayload) => {
-    setCaptureFailed(true);
-    setCaptureRunning(false);
-    setCaptureStalled(false);
-    setCaptureFailureReason(payload.reason);
-    setPermissionMessage(payload.message);
-    setPermissionSteps(payload.setupSteps);
-    setHealthStatus("offline");
-  }, []);
-
-  const applyOverlayFailure = useCallback((payload: OverlayFailurePayload) => {
-    setOverlayFailureReason(payload.message);
-  }, []);
-
   const applyPersistenceFailure = useCallback((payload: PersistenceFailurePayload) => {
     setPersistenceFailureReason(payload.message);
     setHealthStatus("degraded");
@@ -128,9 +112,7 @@ export const useHealth = () => {
 
   return {
     activeWindowAvailable,
-    applyCaptureFailure,
     applyClassifierStatus,
-    applyOverlayFailure,
     applyPersistenceFailure,
     captureEventsDropped,
     captureFailed,

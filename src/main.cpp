@@ -26,6 +26,7 @@
 #include "app/acceptance_harness.hpp"
 #include "app/commands.hpp"
 #include "app/data_import.hpp"
+#include "app/events.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/ipc_shim.hpp"
 #include "app/webview_origin.hpp"
@@ -462,7 +463,7 @@ int main(int argc, char** argv) {
                 // Handed to the frontend, which owns what a surface is. This side says which
                 // destination was chosen and stops there; teaching main.cpp about React routes
                 // would put the same decision in two places that cannot both be right.
-                emit(w, "alert_action",
+                emit(w, events::kAlertAction,
                      dump_alert_action_event(action, alert_id));
                 break;
             case AlertAction::None:
@@ -609,7 +610,7 @@ int main(int argc, char** argv) {
             // copied the summary, which may name a file or a project, into OS notification
             // history. Hence the default is now the overlay alone, with "both" one
             // preference away.
-            if (ev == "snapback") {
+            if (ev == events::kSnapback) {
                 try {
                     const auto parsed = nlohmann::json::parse(payload);
                     const auto snap = parsed.get<SnapbackPayload>();
@@ -634,7 +635,7 @@ int main(int argc, char** argv) {
             // The hyperfocus nudge defaults to a toast and no overlay: an overlay here would
             // interrupt exactly the deep work the guardrail is trying to protect. Roadmap
             // 2.16 makes that a preference rather than a rule, so it is read, not assumed.
-            if (ev == "hyperfocus") {
+            if (ev == events::kHyperfocus) {
                 try {
                     const auto parsed = nlohmann::json::parse(payload);
                     const auto minutes = parsed.at("minutes").get<std::uint64_t>();

@@ -87,6 +87,14 @@ downgrade cannot write rows a later build considers malformed.
 `webview.bind()`, exposing each command as a browser function. Tests build the same registry
 against an in-memory `AppState` and invoke real handlers by name (`test_command_registry`);
 the IPC contract test compares the registry's names to `fixtures/ipc_commands.json`.
+
+Host-to-frontend **events** are held to the same contract (Roadmap 11.13).
+[`src/app/events.hpp`](../src/app/events.hpp) is the registry: every emit site spells its name
+from a constant there, and the contract test pins that set to the fixture's `events.emitted`,
+refuses a raw string literal at an emit site, and requires every `listen(...)` in
+`frontend/src/api.ts` to be either emitted or listed under `events.planned` with the roadmap
+item that owns the missing emitter. Before this, four listeners existed for names nothing
+emitted.
 `src/app/ipc_shim.hpp` injects
 `window.__snapback` before page scripts run:
 

@@ -593,14 +593,6 @@ void from_json(const json& j, GoalCategory& v) {
 
 // ---- Failure payloads ------------------------------------------------------
 
-void to_json(json& j, const CaptureFailurePayload& v) {
-    j = json{{"reason", v.reason}, {"message", v.message}, {"setupSteps", v.setup_steps}};
-}
-
-void to_json(json& j, const OverlayFailurePayload& v) {
-    j = json{{"reason", v.reason}, {"message", v.message}};
-}
-
 void to_json(json& j, const PersistenceFailurePayload& v) {
     j = json{{"reason", v.reason}, {"message", v.message}};
 }

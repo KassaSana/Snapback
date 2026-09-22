@@ -702,16 +702,11 @@ struct DiagnosticsSnapshot {
     std::vector<std::string> recent_logs;
 };
 
-// CaptureFailurePayload / OverlayFailurePayload / PersistenceFailurePayload.
-struct CaptureFailurePayload {
-    std::string reason;
-    std::string message;
-    std::vector<std::string> setup_steps;
-};
-struct OverlayFailurePayload {
-    std::string reason;
-    std::string message;
-};
+// Roadmap 11.13. `CaptureFailurePayload` and `OverlayFailurePayload` lived here with no
+// emitter and no reader on either side; they were deleted with the `capture-failed` and
+// `overlay-failed` listeners. Capture failure reaches the UI on `get_health`
+// (`state.cpp:AppState::health` sets `capture_failure_reason`), which is the working path the
+// event duplicated. This one stays because **9.6** owns the emitter it is still waiting for.
 struct PersistenceFailurePayload {
     std::string reason;
     std::string message;
@@ -800,8 +795,6 @@ void to_json(json& j, const SummaryExportResult& v);
 void to_json(json& j, const DiagnosticsSnapshot& v);
 void to_json(json& j, const GoalCategory& v);
 void from_json(const json& j, GoalCategory& v);
-void to_json(json& j, const CaptureFailurePayload& v);
-void to_json(json& j, const OverlayFailurePayload& v);
 void to_json(json& j, const PersistenceFailurePayload& v);
 void to_json(json& j, const LabelHotkeyPayload& v);
 void to_json(json& j, const FocusTargetResult& v);

@@ -174,9 +174,7 @@ export default function App() {
 
   const {
     activeWindowAvailable,
-    applyCaptureFailure,
     applyClassifierStatus,
-    applyOverlayFailure,
     applyPersistenceFailure,
     captureEventsDropped,
     captureFailed,
@@ -501,8 +499,6 @@ export default function App() {
     sessionId,
     sessionStatus: sessionRecord?.status ?? null,
     refreshContextTimeline: live.refreshContextTimeline,
-    applyCaptureFailure,
-    applyOverlayFailure,
     applyPersistenceFailure,
     handlePrediction: live.handlePrediction,
     handleSnapback: live.handleSnapback,

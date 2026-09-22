@@ -2,8 +2,6 @@ import { useEffect, useRef } from "react";
 
 import {
   api,
-  type CaptureFailurePayload,
-  type OverlayFailurePayload,
   type PomodoroStatus,
   type PredictionRecord,
   type RecordingStatus,
@@ -36,8 +34,6 @@ type UseAppEffectsArgs = {
 
   refreshContextTimeline: (sid?: string | null) => void | Promise<void>;
 
-  applyCaptureFailure: (payload: CaptureFailurePayload) => void;
-  applyOverlayFailure: (payload: OverlayFailurePayload) => void;
   applyPersistenceFailure: (payload: { reason: string; message: string }) => void;
 
   handlePrediction: (record: PredictionRecord | null, activeSessionId?: string | null) => void;
@@ -73,8 +69,6 @@ export const useAppEffects = ({
   sessionId,
   sessionStatus,
   refreshContextTimeline,
-  applyCaptureFailure,
-  applyOverlayFailure,
   applyPersistenceFailure,
   handlePrediction,
   handleSnapback,
@@ -162,16 +156,6 @@ export const useAppEffects = ({
   useEffect(() => {
     const unsubs: Array<Promise<() => void>> = [];
     unsubs.push(
-      api.onCaptureFailed((payload) => {
-        applyCaptureFailure(payload);
-      }),
-    );
-    unsubs.push(
-      api.onOverlayFailed((payload) => {
-        applyOverlayFailure(payload);
-      }),
-    );
-    unsubs.push(
       api.onPersistenceFailed((payload) => {
         applyPersistenceFailure(payload);
       }),
@@ -244,8 +228,6 @@ export const useAppEffects = ({
       void Promise.all(unsubs).then((handlers) => handlers.forEach((off) => off()));
     };
   }, [
-    applyCaptureFailure,
-    applyOverlayFailure,
     applyPersistenceFailure,
     handleHyperfocus,
     handleUntrackedWork,

@@ -12,6 +12,7 @@
 #include "app/async_command_runner.hpp"
 #include "app/command_dispatch.hpp"
 #include "app/data_import.hpp"
+#include "app/events.hpp"
 #include "app/file_dialog.hpp"
 #include "app/frontend_assets.hpp"
 #include "app/open_url.hpp"
@@ -543,7 +544,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
                            training_cancel_requested->load(std::memory_order_acquire);
                 },
                 [&state](const training_deploy::TrainingProgress& progress) {
-                    state.emit_event("training-progress",
+                    state.emit_event(events::kTrainingProgress,
                                      dump_json(json{{"elapsedMs", progress.elapsed_ms},
                                                     {"logTail", progress.log_tail}}));
                 });
