@@ -1286,6 +1286,14 @@ internals, and the benchmark harness.
   proportional to input volume. **0.3** proved live macOS delivery and **11.3** starts after a
   normalized event already exists; neither tests this boundary.
 
+  **Windows mouse-speed conversion landed 2026-09-21** (Astra review slice 6). `mouse_proc`
+  now measures movement with a steady-clock duration instead of reusing the millisecond event
+  timestamp. The pure translation seam widens coordinates before subtraction, floors a zero or
+  invalid interval, and clamps non-finite or out-of-range speeds before converting to the
+  `CaptureEvent` `uint32_t` field. Tests cover ordinary movement, equal timestamps, large
+  displacement, and the signed coordinate extremes. The remaining 7.27 work is the
+  cross-platform event contract and provider-boundary work described below.
+
   Introduce pure per-platform translation fixtures against one documented event contract:
   one click per button-down, explicit wheel semantics, consistent speed units, and identical
   key/button classification. No raw callback or device-read loop may launch a child process;

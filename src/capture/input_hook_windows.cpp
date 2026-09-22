@@ -8,7 +8,7 @@
 #include "capture/input_context.hpp"
 
 #include <atomic>
-#include <cmath>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <windows.h>
@@ -37,7 +37,7 @@ namespace {
 InputCallback g_on_event;
 std::atomic<DWORD> g_hook_thread_id{0};
 POINT g_last_mouse_pos{};
-double g_last_mouse_ts = 0.0;
+std::chrono::steady_clock::time_point g_last_mouse_time{};
 bool g_have_last_mouse = false;
 
 double now_secs() {
@@ -115,18 +115,17 @@ LRESULT CALLBACK mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
         if (info) {
             ev.mouse_x = info->pt.x;
             ev.mouse_y = info->pt.y;
-            if (wparam == WM_MOUSEMOVE && g_have_last_mouse) {
-                const double dx = static_cast<double>(info->pt.x - g_last_mouse_pos.x);
-                const double dy = static_cast<double>(info->pt.y - g_last_mouse_pos.y);
-                const double dt = (ev.timestamp_secs - g_last_mouse_ts) > 1e-6
-                                      ? ev.timestamp_secs - g_last_mouse_ts
-                                      : 1e-6;
-                ev.mouse_speed = static_cast<std::uint32_t>(
-                    std::sqrt(dx * dx + dy * dy) / dt);
-            }
             if (wparam == WM_MOUSEMOVE) {
+                const auto mouse_time = std::chrono::steady_clock::now();
+                if (g_have_last_mouse) {
+                    const double elapsed_secs =
+                        std::chrono::duration<double>(mouse_time - g_last_mouse_time).count();
+                    ev.mouse_speed = detail::mouse_speed_for_points(
+                        info->pt.x, info->pt.y, g_last_mouse_pos.x, g_last_mouse_pos.y,
+                        elapsed_secs);
+                }
                 g_last_mouse_pos = info->pt;
-                g_last_mouse_ts = ev.timestamp_secs;
+                g_last_mouse_time = mouse_time;
                 g_have_last_mouse = true;
             }
         }
@@ -156,6 +155,7 @@ public:
         g_cached_context.reset();
         g_cached_hwnd = nullptr;
         g_have_last_mouse = false;
+        g_last_mouse_time = {};
         refresh_context(false);
         HHOOK keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard_proc, nullptr, 0);
         HHOOK mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, mouse_proc, nullptr, 0);

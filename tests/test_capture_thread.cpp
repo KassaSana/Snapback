@@ -12,6 +12,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <thread>
 
 #include "capture/capture_thread.hpp"
@@ -150,6 +152,19 @@ TEST_CASE("input context fails closed when the foreground window changes") {
     CHECK_FALSE(detail::context_matches_foreground(&other_window, &captured_window, true));
     CHECK_FALSE(detail::context_matches_foreground(nullptr, &captured_window, true));
     CHECK_FALSE(detail::context_matches_foreground(&captured_window, &captured_window, false));
+}
+
+TEST_CASE("Windows mouse speed translation stays bounded across timestamp and coordinate extremes") {
+    constexpr std::uint32_t kMaxSpeed = std::numeric_limits<std::uint32_t>::max();
+
+    CHECK(detail::mouse_speed_for_points(110, 204, 100, 200, 0.5) == 21);
+    // The old synthetic 1us denominator turns this ordinary-sized warp into 5 billion
+    // pixels/second, beyond uint32_t, before the callback narrows it.
+    CHECK(detail::mouse_speed_for_points(5000, 0, 0, 0, 0.0) == kMaxSpeed);
+    CHECK(detail::mouse_speed_for_points(2'000'000'000, 0, 0, 0, 1.0) == 2'000'000'000U);
+    CHECK(detail::mouse_speed_for_points(std::numeric_limits<std::int32_t>::max(), 0,
+                                         std::numeric_limits<std::int32_t>::min(), 0,
+                                         4'294'967'295.0) == 1);
 }
 
 #if defined(_WIN32)
