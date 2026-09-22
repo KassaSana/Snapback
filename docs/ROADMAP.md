@@ -4902,6 +4902,12 @@ kept here; already-deep modules and completed performance work were rejected dur
   already run on the command worker (`CommandRegistry` async policy); what remains is the
   heartbeat proof and any further job-id model revisit noted above.
 
+  *Progress 2026-09-21:* model-file ownership now uses the training gate across promotion,
+  reload, rollback, and deployment-cleanup retry. Conflicting synchronous commands return a
+  clear busy error instead of touching a worker's transaction files; the command-registry
+  regression holds the training job before asserting all three refusals. Cancellation and
+  shutdown still release the same gate through the owned worker policy.
+
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `M`
   `performance`
   Opened 2026-08-05. `main.cpp` blocks on `Storage::open()` before the webview is constructed.

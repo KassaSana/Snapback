@@ -220,6 +220,42 @@ TEST_CASE("personal export reserves deletion exclusion before it reaches the wor
     CHECK(std::filesystem::exists(reply.at("outputPath").get<std::string>()));
 }
 
+TEST_CASE("model file commands refuse while training owns deployment files") {
+    App app;
+    const auto* train_command = app.registry.find("train_from_export");
+    REQUIRE(train_command != nullptr);
+    REQUIRE(train_command->async.has_value());
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    REQUIRE(app.runner.submit([&] {
+        entered.set_value();
+        release_future.wait();
+    }));
+    REQUIRE(entered.get_future().wait_for(std::chrono::seconds(1)) ==
+            std::future_status::ready);
+
+    std::promise<std::string> resolved;
+    auto resolved_future = resolved.get_future();
+    const auto& policy = *train_command->async;
+    detail::dispatch_single_flight(
+        [&](std::function<void()> job) { return app.runner.submit(std::move(job)); },
+        [&](std::string result) { resolved.set_value(std::move(result)); },
+        train_command->handler, "[{}]", "", policy.gate, policy.busy_message,
+        policy.on_claimed);
+
+    for (const char* command : {"reload_classifier_model", "rollback_classifier_model",
+                                "retry_model_deployment_cleanup"}) {
+        CAPTURE(command);
+        CHECK_THROWS_WITH(app.registry.call(command),
+                          "model deployment is in progress; wait for it to finish");
+    }
+
+    release.set_value();
+    REQUIRE(resolved_future.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+}
+
 TEST_CASE("cancel_training is developer-gated and, when open, reports nothing to cancel") {
     // ADR-0006: Release builds refuse unless SNAPBACK_DEV_TRAINING is set; Debug builds
     // allow. The test binary can be either, so it accepts the gate's refusal as one of the
