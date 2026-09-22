@@ -12,7 +12,7 @@ is encryption at rest required for v1?
 
 ## Context
 
-`snapback.db` (default under the per-user data directory) is an **unencrypted SQLite** file
+`focoflow.db` (default under the per-user data directory) is an **unencrypted SQLite** file
 holding window titles, app names, session goals, behavioural features, and derived scores.
 Exports (`VACUUM INTO`, CSV, support bundle) copy the same material to paths the user
 chooses. Release builds are **network-silent** ([ADR-0002](0002-v1-supports-windows-and-macos.md),
@@ -44,7 +44,7 @@ ADR if pursued.
 | Adversary | Capability assumed | What Snapback defends |
 |-----------|-------------------|------------------------|
 | **Network attacker** | Can reach the internet; cannot break TLS to Snapback | **Out of scope for v1 app** — release builds do not open outbound connections for product features (8.10). |
-| **Other software as the same OS user** | Can read/write user-owned files, inject input, scrape the screen | **Partially mitigated:** Unix private directory modes (`private_dir.cpp`); Windows relies on user profile ACLs. **Not mitigated:** a malicious or compromised app running as the user can read `snapback.db` and exports. |
+| **Other software as the same OS user** | Can read/write user-owned files, inject input, scrape the screen | **Partially mitigated:** Unix private directory modes (`private_dir.cpp`); Windows relies on user profile ACLs. **Not mitigated:** a malicious or compromised app running as the user can read `focoflow.db` and exports. |
 | **Physical access, unlocked session** | Can use the app, read the DB, read notifications/overlay | **User responsibility:** OS login, screen lock, Snapback's lock-screen notification redaction setting. |
 | **Another OS account on the same machine** | Separate login | **Mitigated on Unix** when data dir is `0700`; **Windows** depends on profile isolation — treated as best-effort, not a v1 guarantee. |
 

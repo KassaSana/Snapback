@@ -1342,6 +1342,29 @@ internals, and the benchmark harness.
   **7.24**, and preferably **14.2**; Linux may begin with a truthful unsupported/stub state if
   its desktop-session contract is deferred beyond v1.
 
+- **7.33 — Two "longest focused stretch" tiles, two computations, and one of them
+  truncates.** `S`
+  Opened 2026-09-22. `frontend/src/FocusSummaryCard.tsx` and `frontend/src/SummaryCard.tsx`
+  both show a tile labelled `FOCUS_STRETCH_LABEL`. The first comes from `get_focus_summary` →
+  `state.cpp:AppState::focus_summary_for_window`, which materialises the newest
+  `state.hpp:kFocusSummaryMaxSamples` (50,000) prediction rows under `storage_mutex_` and folds
+  them in C++ (`focus_summary.hpp:summarize_predictions`). The second comes from
+  `storage.cpp:Storage::prediction_stats`, which computes the same stretch in SQL over the whole
+  window. Predictions persist at most once per second, and only while a session is attended
+  and receiving input (`state.cpp:AppState::compute_event`), so 50,000 rows is roughly
+  fourteen attended hours: on a 7-day or 90-day window the C++ tile reports the longest run
+  inside the newest fourteen hours and nothing in the result says so. The cap was added on
+  2026-09-17 (see **14.8**'s progress note) to bound the lock hold; it traded a stall for a
+  wrong number.
+
+  Serve the focus summary from the SQL aggregate and delete the C++ materialisation.
+  `summarize_predictions` stays only as the test reference it already is in
+  `tests/test_storage.cpp` (**10.13**'s parity check feeds it per session). Remove
+  `kFocusSummaryMaxSamples`. Acceptance: both tiles read the same value from the same query for
+  the same window, and a fixture with a 20-hour focused run that began 30 hours ago reports 20
+  hours on a 7-day window. FWD-02's digest, and the day-timeline lane deferred on 2026-09-22,
+  must consume this single implementation rather than introduce a third.
+
 ### Decisions — do not code these yet
 
 - **7.7 — DONE 2026-08-03.** Settled by
@@ -2285,6 +2308,22 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   Cover subframes, redirects, `file:` path aliases, navigation races, and user-initiated
   external links. Align the external opener with **2.8**'s no-shell platform adapters and the
   security policy with **8.5**.
+
+- **8.15 — "Delete all activity" leaves goal text in the frontend's `localStorage`.** `S`
+  Opened 2026-09-22. `frontend/src/sessionCockpit.ts` keeps session presets under
+  `SESSION_PRESETS_KEY` and justifies the home in its own comment: presets "are derived from
+  goals the database already holds", so losing them is a non-event. After
+  `state.cpp:AppState::delete_all_activity_data` the database holds no goals and the argument
+  inverts: the presets are now the only copy of user-typed goal strings — which
+  [ADR-0009](adr/0009-local-first-threat-model.md) ranks second in sensitivity, behind titles —
+  and they survive the erase **8.12** promised covers every app-owned copy.
+
+  Clear the key from `frontend/src/usePrivacy.ts` after the native deletion resolves (the
+  `onActivityDataDeleted` seam is already there) and name saved session presets in the
+  deletion message so the user is told what went. In the same pass, list every other
+  `localStorage` key (onboarding, appearance, review range) and record per key whether it is a
+  preference or activity; only activity is deleted, and the classification is written down
+  next to the key so the next key added has to pick a side.
 
 ---
 
@@ -3603,6 +3642,13 @@ small; the tier is large because nobody has walked that path yet.
   belongs to **10.14**. This is a human-readable portable archive. **9.14** separately owns a
   database snapshot suitable for lossless restore.
 
+- **9.18 — DONE 2026-09-22.** `XS` `SECURITY.md` at the repository root gives
+  [ADR-0009](adr/0009-local-first-threat-model.md)'s scope a public address: what the threat
+  model covers, what it explicitly does not (same-user local software, encryption at rest),
+  which builds receive fixes, and how to report privately. Issue and pull-request templates
+  were considered alongside it and rejected for a sole-author repository whose CI already
+  enforces the one contribution rule that matters; see [Decided not to build](#decided-not-to-build-2026-09-22).
+
 ---
 
 ## Tier 10 — Frontend & UX
@@ -4493,6 +4539,25 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   Note for the next flake: the first run's log was lost because the job was re-run before it
   was read, and GitHub does not keep the superseded attempt. Read the log first, then re-run.
 
+- **11.13 — Events are outside the IPC contract, and two listeners have no emitter.** `S`
+  Opened 2026-09-22. `tests/test_ipc_contract.cpp` proves the command set three ways — the
+  registry equals the fixture, the frontend's invokes are a subset, and a pinned count — and
+  proves nothing about events. `frontend/src/api.ts` subscribes to `capture-failed` and
+  `overlay-failed`; no native code emits either name. Capture failure reaches the UI anyway,
+  through `health` polling (`state.cpp:AppState::health` sets `capture_failed` and the
+  status word), so that listener is dead code beside a working path; overlay failure has no
+  path at all. Two further listeners without an emitter are owned elsewhere and not repeated
+  here: `persistence-failed` is **9.6**'s event and `label-hotkey` is **12.6**'s. Four dead
+  subscriptions accumulated because nothing could notice.
+
+  Add an `events` list to `fixtures/ipc_commands.json` naming every event the frontend may
+  subscribe to; check it against the native emit names the way the command test checks the
+  registry (`main.cpp` and `state.cpp` are the only emitters), and make the frontend's
+  `listen(...)` names a subset of it, so a listener without an emitter fails the build. Then
+  either emit `capture-failed`/`overlay-failed` or delete `onCaptureFailed`/`onOverlayFailed`
+  and their `useAppEffects.ts` subscriptions; deletion is the smaller change and loses nothing
+  the health path does not already carry.
+
 ---
 
 ## Tier 12 — Documentation truth
@@ -4579,6 +4644,22 @@ later moved.
   append-only, so the fix was not to drop the Darwin-dev claim — it was to make the
   citation resolve by restating the fact inline, then drop the exemption so the guard stops
   normalising an unresolvable path.
+
+- **12.8 — Move the Done archive and the postmortems out of this file.** `S` `decision`
+  Opened 2026-09-22. This file is about 5,000 lines and is at once the backlog, the changelog,
+  and the postmortem record. An open proposal and an accepted item have the same shape in it,
+  which is how commit 907517d landed eleven unverified items — several on premises the code
+  contradicts — as siblings of accepted work, and how a later reader would have taken them for
+  plans. That commit was reverted on 2026-09-22; the structure that let it read as decided is
+  still here.
+
+  The header's rule stands: **there is no second backlog**, and this is not a proposal for
+  one. Open items stay in this file, each carrying an explicit status word (`proposed`,
+  `accepted`, `in progress`) so a fresh finding cannot be mistaken for a plan. The
+  [Done archive](#done-archive), and the DONE entries kept because their explanation still
+  teaches, move to sibling files in `docs/` that this file links to. `scripts/check_doc_paths.py`,
+  `scripts/check_doc_symbols.py`, and `scripts/check_dead_headers.py` run over all of them.
+  Decide before the next audit pass, because every audit so far has appended here.
 
 ---
 
@@ -4990,6 +5071,81 @@ kept here; already-deep modules and completed performance work were rejected dur
     probes; `focus_summary_for_window` caps and reverses its prediction sample.
   Still under lock by design until extraction: settings fsync (`commit_settings_unlocked`)
   and ONNX reload (singleton shared with the tick).
+
+- **14.11 — Publish measured budgets before any scaling work starts.** `S` `performance`
+  Opened 2026-09-22. **14.1**, **14.5**, **14.7**, and **9.10** each begin with "measure
+  first", and none has a number yet. The one harness that exists cannot supply them:
+  `benchmarks/bench_snapback.cpp` runs SQLite in memory with a fixed timestamp and inserts a
+  prediction on every other event, so it measures neither on-disk WAL cost nor the real
+  cadence. That cadence is the fact to start from: `state.cpp:AppState::compute_event`
+  persists a prediction at most once per second, only while a session is attended, not idle,
+  and receiving input, and every persisted prediction carries one `feature_snapshots` row.
+  The ceiling is therefore 3,600 + 3,600 rows per attended hour — roughly 1.5 MB — and the
+  realistic figure is well under it, because a second with no input writes nothing. Nothing
+  about that justifies compaction (see [Decided not to build](#decided-not-to-build-2026-09-22));
+  what it justifies is knowing the actual number.
+
+  Measure on a real host with a real database and write the results into
+  `docs/testing_strategy.md` with the host named: prediction rows per attended hour and
+  database bytes per day over a week; wall time of `storage.cpp:Storage::prediction_stats`,
+  `storage.cpp:Storage::hourly_focus_buckets`, and the session-history reads against a 90-day
+  on-disk fixture generated at the real cadence; `storage_mutex_` hold time on UI commands and
+  engine persist-phase wait, p50 and p95, plus how often the `storage.hpp:kSqliteBusyTimeoutMs`
+  wait is actually hit; idle CPU and wakeups per second with no session; ring high-water mark
+  and `captureEventsDropped` over a working day. Counters that need a running app go through
+  `get_diagnostics` (`state.cpp:AppState::diagnostics`). **No CI ceiling:** hosted runners are
+  too noisy for one, and a flaky performance gate gets disabled within a month and then lies
+  by omission. Closing **14.1** or **14.5** "with the numbers" means the numbers are here.
+
+---
+
+## Decided not to build (2026-09-22)
+
+Recorded so the next time one of these is proposed the answer is a paragraph read, not a
+debate. Each was checked against the code before being rejected, and "a comparable product
+has it" was not treated as evidence. Deferred is different from rejected: a day-timeline lane
+on Review is deferred, not rejected — it waits on **7.33** so it is drawn over one correct
+stretch computation, and on FWD-02 so Review is reshaped once.
+
+- **Blocking apps or sites.** Snapback reflects; it does not block. The principle is now
+  stated in [`ARCHITECTURE.md`](ARCHITECTURE.md); a Block rule forces the verdict
+  ([ADR-0004](adr/0004-verdict-and-opinion.md)) and never touches the window. A proposal to
+  add blocking is a proposal for a different product and needs its own ADR.
+- **Full-text search (FTS5) over context history.** FTS5 is not compiled in —
+  `CMakeLists.txt` builds the amalgamation with no `SQLITE_ENABLE_FTS5` — and titles live only
+  in `context_snapshots`, written on foreground change plus a 30-second checkpoint, so the
+  table is thousands of rows a week, not millions. If search is ever wanted it is a `LIKE`;
+  the "return to what you were doing" promise is already the snapback restore target.
+- **A localhost HTTP API or MCP server.** A loopback listener is still a listener; **8.10**
+  and [ADR-0009](adr/0009-local-first-threat-model.md) promise a release build that opens no
+  sockets. The honest alternative is the documented schema plus the existing exports
+  (**9.14**, **9.16**). Reversing this is a new ADR with a threat-model delta, not a feature.
+- **Compacting consecutive identical predictions into runs.** The premise was per-event
+  persistence; the cadence is at most one row per second while attended (**14.11**).
+  `feature_snapshots` is written 1:1 with `predictions` and is the training export, and
+  `focus_momentum` feeds the model from stored scores
+  ([ADR-0004](adr/0004-verdict-and-opinion.md)), so runs would discard exactly what the model
+  consumes.
+- **Auto-update, or evaluating a packager for it, ahead of an ADR.** An update check is a
+  network call. Until an ADR amends the network-silent rule the evaluation has nothing to be
+  measured against; revisit when FWD-06 is scheduled.
+- **Reading browser URLs through UI Automation before 8.11 exists.** URLs are more sensitive
+  than titles, the read is per-browser-version brittle, and the domain field's value is
+  asserted, not shown. Not before scoped capture rules can redact what it would capture.
+- **A fourth, always-on-top "Now" surface.** [ADR-0003](adr/0003-three-surface-dashboard.md)
+  fixes three surfaces; the overlay already owns the glanceable moment the product needs.
+  There is no evidence users keep the full window open to watch the hero.
+- **Generating the IPC contract from the fixture.** `tests/test_ipc_contract.cpp` already
+  checks registry equals fixture and frontend invokes are a subset; **14.3** covers the
+  remaining shape drift. A generator adds a build step to save two type declarations per
+  command.
+- **Performance ceilings asserted in CI.** Hosted runners are too noisy and the harness
+  measures in-memory SQLite. Publish numbers (**14.11**); do not gate on them.
+- **Auto-proposed or auto-detected sessions.** Decided in
+  [ADR-0005](adr/0005-a-session-is-declared-and-attended.md); **2.7**'s untracked-work nudge
+  asks and never starts a session. Reopen only with new evidence, and as a decision.
+- **Issue and pull-request templates.** Sole-author repository; CI already enforces the one
+  contribution rule that matters. `SECURITY.md` was the part worth doing (**9.18**).
 
 ---
 

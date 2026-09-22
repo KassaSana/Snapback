@@ -2,6 +2,21 @@
 
 This document describes the current native application.
 
+## Principles
+
+**Snapback reflects; it does not block.** Every intervention the product makes is a mirror
+held up to the user: a verdict on the hero, a snapback card offering the way back to the work
+they left, a nudge to take a break or to start a session. Nothing prevents an app from
+opening, a site from loading, or a session from continuing. A Block rule in `app_rules`
+forces the verdict to `DISTRACTED` ([ADR-0004](adr/0004-verdict-and-opinion.md)); it does not
+touch the window. This is a position, not a gap. Blockers compete on enforcement, and
+enforcement is what users learn to route around; Snapback competes on recovery, which only
+works while the user trusts that the app is describing them rather than fighting them. A
+proposal to add blocking is a proposal for a different product and needs its own ADR. The same
+stance is why a session is declared rather than detected
+([ADR-0005](adr/0005-a-session-is-declared-and-attended.md)) and why the untracked-work nudge
+asks instead of acting.
+
 ## Runtime shape
 
 ```
