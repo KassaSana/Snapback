@@ -369,6 +369,20 @@ TEST_CASE("rollback_model swaps the deployed model and quality metadata") {
     CHECK(read_text(app_data.path / "model.onnx.previous") == "old-model");
 }
 
+TEST_CASE("rollback_model preserves current metadata when the rollback target has none") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model.onnx.previous", "old-model");
+    write_text(app_data.path / "model_quality.json", "{\"metric\":\"cv_accuracy\",\"score\":0.9}");
+
+    const auto result = training_deploy::rollback_model(app_data.path);
+    CHECK(result.at("success").get<bool>());
+    CHECK(read_text(app_data.path / "model.onnx") == "old-model");
+    CHECK_FALSE(std::filesystem::exists(app_data.path / "model_quality.json"));
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.9") !=
+          std::string::npos);
+}
+
 TEST_CASE("training_deploy rejects invalid configured repo") {
     TempDir app_data;
     TempDir not_repo;

@@ -414,7 +414,7 @@ void recover_model_deployment_impl(const std::filesystem::path& app_data_dir) {
 
 bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
     const std::filesystem::path& candidate_model,
-    const nlohmann::json& quality_metadata) {
+    const std::optional<nlohmann::json>& quality_metadata) {
     if (!std::filesystem::is_regular_file(candidate_model)) return false;
     std::filesystem::create_directories(app_data_dir);
     try {
@@ -434,13 +434,13 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
         std::filesystem::remove(paths.staged_model);
         return false;
     }
-    {
+    if (quality_metadata) {
         std::ofstream quality_file(paths.staged_quality, std::ios::trunc);
         if (!quality_file) {
             std::filesystem::remove(paths.staged_model);
             return false;
         }
-        auto metadata = quality_metadata;
+        auto metadata = *quality_metadata;
         metadata["modelId"] = *identity;
         quality_file << metadata.dump(2);
         quality_file.flush();
@@ -482,7 +482,9 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
             std::filesystem::rename(paths.deployed_quality, paths.backup_quality);
         }
         std::filesystem::rename(paths.staged_model, paths.deployed_model);
-        std::filesystem::rename(paths.staged_quality, paths.deployed_quality);
+        if (quality_metadata) {
+            std::filesystem::rename(paths.staged_quality, paths.deployed_quality);
+        }
         write_file_checked(paths.committed, "committed\n");
     } catch (...) {
         if (std::filesystem::is_regular_file(paths.marker)) {
@@ -565,7 +567,8 @@ bool deploy_model_candidate(const std::filesystem::path& app_data_dir,
     if (!quality.accepted || quality.metric.empty()) return false;
     return sync_trained_model_to_app_dir(
         app_data_dir, candidate_model,
-        nlohmann::json{{"metric", quality.metric}, {"score", quality.candidate_score}});
+        std::optional<nlohmann::json>(
+            nlohmann::json{{"metric", quality.metric}, {"score", quality.candidate_score}}));
 }
 
 ModelQualityDecision evaluate_model_quality(
@@ -636,9 +639,17 @@ nlohmann::json rollback_model(const std::filesystem::path& app_data_dir) {
         throw std::runtime_error("No previous model is available to restore.");
     }
 
-    swap_optional_file(current, previous);
-    swap_optional_file(app_data_dir / "model_quality.json",
-                       app_data_dir / "model_quality.json.previous");
+    std::optional<nlohmann::json> previous_quality;
+    const auto previous_quality_path = app_data_dir / "model_quality.json.previous";
+    if (std::filesystem::is_regular_file(previous_quality_path)) {
+        previous_quality = parse_json_object(previous_quality_path);
+        if (!previous_quality) {
+            throw std::runtime_error("Previous model quality metadata is invalid.");
+        }
+    }
+    if (!sync_trained_model_to_app_dir(app_data_dir, previous, previous_quality)) {
+        throw std::runtime_error("Could not restore the previous model as a matching pair.");
+    }
     const auto identity = OnnxModel::model_id_for_path(current);
     return nlohmann::json{{"success", true},
                           {"message", "Previous model restored. Reloading classifier."},

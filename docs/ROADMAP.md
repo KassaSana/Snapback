@@ -4908,6 +4908,10 @@ kept here; already-deep modules and completed performance work were rejected dur
   regression holds the training job before asserting all three refusals. Cancellation and
   shutdown still release the same gate through the owned worker policy.
 
+  *Progress 2026-09-21:* rollback now goes through the same staged, journaled pair promotion
+  as a new model. Its regression covers an optional rollback metadata file and verifies the
+  current model's metadata remains available as the next rollback target.
+
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `M`
   `performance`
   Opened 2026-08-05. `main.cpp` blocks on `Storage::open()` before the webview is constructed.
