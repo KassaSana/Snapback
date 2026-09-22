@@ -27,6 +27,8 @@
 //   SNAPBACK_BUDGET_ATTENDED_HOURS attended hours per day           (default 6)
 //   SNAPBACK_BUDGET_DUTY_PCT       percent of attended seconds that saw input (default 100)
 //   SNAPBACK_BUDGET_QUERY_REPS     timed repetitions per query      (default 25)
+//   SNAPBACK_BUDGET_CONCURRENT_SECS seconds per concurrency phase   (default 10)
+//   SNAPBACK_BUDGET_READERS        reader threads in that phase     (default 2)
 //   SNAPBACK_BUDGET_KEEP           1 to leave the generated database on disk
 //
 // The default is the **ceiling**: every attended second writes. Run it again with
@@ -41,14 +43,18 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
+#include <atomic>
+#include <mutex>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "bench_util.hpp"
 
 #include "storage/storage.hpp"
 #include "types.hpp"
+#include "util/ranked_mutex.hpp"
 
 using namespace snapback;
 using namespace snapback::bench;
@@ -193,12 +199,105 @@ Stats time_query(std::size_t reps, Fn&& body) {
 
 }  // namespace
 
+// --- Roadmap 14.1: what a report costs the writer ------------------------------------------
+//
+// 14.1 proposes a separate SQLite read lane and then forbids building it from structure
+// alone: measure the largest reads running *concurrently with persistence* first, and close
+// the item with the numbers if the result is immaterial. This is that measurement.
+//
+// The shape mirrors `AppState` exactly, because a benchmark of a different shape would answer
+// a different question: one `Storage`, one `RankedMutex` at `LockRank::Storage` around every
+// use of it, a writer persisting at the engine's real cadence, and readers issuing the
+// heaviest Review queries. WAL already allows a concurrent reader and writer at the SQLite
+// level -- the serialization being measured here is ours, not SQLite's, which is precisely
+// what a read lane would remove.
+//
+// The figure that matters is the **comparison**: the same writer, measured alone and then
+// under load. An absolute persist latency says nothing about contention on its own.
+struct WriterResult {
+    // Time blocked on the storage lock, which is the quantity 14.1 names: "measure writer
+    // delay". Kept apart from the write itself, because the two answer different questions --
+    // a slow write is SQLite's cost and a long wait is ours, and only the second is what a
+    // separate read lane would remove.
+    Stats wait;
+    Stats write;
+    std::size_t writes{};
+    double wall_ms{};
+};
+
+// One tick's worth of persistence: a prediction and its feature row, which is what
+// `AppState::compute_event` writes at most once per attended second.
+void persist_one(Storage& storage, const std::string& session_id, const FeatureVector& features,
+                 std::int64_t timestamp_ms) {
+    PredictionRecord record;
+    record.session_id = session_id;
+    record.focus_score = 72.0;
+    record.distraction_risk = 0.28;
+    record.focus_state = "PRODUCTIVE";
+    record.thrash_score = 0.1;
+    record.drift_score = 0.2;
+    record.goal_alignment = 0.7;
+    record.timestamp_ms = timestamp_ms;
+    record.model_id = "heuristic:bench";
+    storage.insert_prediction(record);
+    storage.insert_feature_snapshot(session_id, features);
+}
+
+// Runs a paced writer, taking the shared lock per persist exactly as the engine does. Called
+// twice: once with nothing else running, once with the readers going.
+//
+// **Paced, not flat out**, and the first draft of this file got that wrong in a way worth
+// recording. A writer with no pacing does tens of thousands of persists a second when it is
+// alone and a few dozen when a reader holds the lock, so the two phases take different
+// numbers of samples and the comparison degenerates into a throughput ratio that says more
+// about the benchmark than about the engine. The engine persists at most once per second and
+// spends the rest of its time asleep; what it wants to know is how long *one* persist waits
+// when a report is in flight. Fixed attempts at a fixed interval measure that.
+WriterResult run_writer(Storage& storage, RankedMutex& storage_lock, const std::string& session_id,
+                        std::int64_t base_ms, std::size_t attempts, std::int64_t interval_ms) {
+    FeatureVector features;
+    std::vector<double> waits_us;
+    std::vector<double> writes_us;
+    waits_us.reserve(attempts);
+    writes_us.reserve(attempts);
+
+    WriterResult out;
+    const auto started = Clock::now();
+    Timer total;
+    for (std::size_t i = 0; i < attempts; ++i) {
+        // sleep_until, not sleep_for: after a persist that waited four seconds the next
+        // attempt is due immediately, and a relative sleep would let one stall push the
+        // whole schedule back and quietly shorten the phase.
+        std::this_thread::sleep_until(started + std::chrono::milliseconds(
+                                                    static_cast<std::int64_t>(i) * interval_ms));
+        Timer waiting;
+        std::unique_lock<RankedMutex> lock(storage_lock);
+        waits_us.push_back(waiting.elapsed_us());
+        Timer writing;
+        persist_one(storage, session_id, features,
+                    base_ms + static_cast<std::int64_t>(i) * 1000);
+        writes_us.push_back(writing.elapsed_us());
+        lock.unlock();
+        ++out.writes;
+    }
+    out.wall_ms = total.elapsed_ms();
+    out.wait = summarize(std::move(waits_us), out.wall_ms);
+    out.write = summarize(std::move(writes_us), out.wall_ms);
+    return out;
+}
+
 int main() {
     try {
         const auto days = env_size("SNAPBACK_BUDGET_DAYS", 90);
         const auto attended_hours = env_size("SNAPBACK_BUDGET_ATTENDED_HOURS", 6);
         const auto duty_pct = std::min<std::size_t>(100, env_size("SNAPBACK_BUDGET_DUTY_PCT", 100));
         const auto reps = env_size("SNAPBACK_BUDGET_QUERY_REPS", 25);
+        const auto concurrent_secs = env_size("SNAPBACK_BUDGET_CONCURRENT_SECS", 10);
+        const auto reader_count = env_size("SNAPBACK_BUDGET_READERS", 2);
+        // Ten a second: faster than the engine's real cadence of at most one, so a ten-second
+        // phase takes a hundred samples instead of ten, and still slow enough that the writer
+        // is idle between attempts the way the engine is.
+        constexpr std::int64_t kWriterIntervalMs = 100;
 
         const auto dir = std::filesystem::temp_directory_path() /
                          ("snapback_budget_" + std::to_string(
@@ -266,6 +365,88 @@ int main() {
                             }));
                 std::cout << '\n';
             }
+
+            // --- Concurrency: the writer alone, then under report load (14.1) ----------
+            std::cout << "Writer delay under concurrent reads (Roadmap 14.1)" "\n"
+                      << "  one Storage behind one LockRank::Storage mutex, exactly as" "\n"
+                      << "  AppState holds it; readers issue the heaviest Review queries." "\n\n";
+
+            RankedMutex storage_lock{LockRank::Storage};
+            const auto writer_session =
+                storage->create_session("Concurrency measurement", FocusMode::Normal);
+            const std::int64_t writer_base_ms = now_ms - 60 * 1000;
+            const auto attempts = concurrent_secs * 1000 / kWriterIntervalMs;
+
+            reset_lock_metrics();
+            const auto solo = run_writer(*storage, storage_lock, writer_session.session_id,
+                                         writer_base_ms, attempts, kWriterIntervalMs);
+            const auto solo_metrics = lock_metrics(LockRank::Storage);
+
+            std::atomic<bool> readers_stop{false};
+            std::atomic<std::uint64_t> reads_done{0};
+            std::vector<std::thread> readers;
+            reset_lock_metrics();
+            for (std::size_t i = 0; i < reader_count; ++i) {
+                readers.emplace_back([&, i] {
+                    // Staggered windows, so the readers are not all served the same page
+                    // cache and one of them is always doing the expensive thing.
+                    const std::optional<std::int64_t> cutoff{
+                        now_ms - static_cast<std::int64_t>(1 + (i % 3) * 6) * 24 * 60 * 60 * 1000};
+                    while (!readers_stop.load(std::memory_order_relaxed)) {
+                        {
+                            std::lock_guard lock(storage_lock);
+                            g_sink += storage->prediction_stats(cutoff).sample_count;
+                        }
+                        {
+                            std::lock_guard lock(storage_lock);
+                            g_sink += storage->daily_summary(now_ms, *cutoff).size();
+                        }
+                        {
+                            std::lock_guard lock(storage_lock);
+                            g_sink += storage->recent_session_summaries(500, cutoff).size();
+                        }
+                        reads_done.fetch_add(3, std::memory_order_relaxed);
+                    }
+                });
+            }
+            const auto loaded =
+                run_writer(*storage, storage_lock, writer_session.session_id,
+                           writer_base_ms + 10 * 60 * 1000, attempts, kWriterIntervalMs);
+            readers_stop.store(true, std::memory_order_relaxed);
+            for (auto& reader : readers) reader.join();
+            const auto loaded_metrics = lock_metrics(LockRank::Storage);
+
+            const auto ms = [](double microseconds) { return microseconds / 1000.0; };
+            std::cout << std::fixed << std::setprecision(2)
+                      << "  persists            " << solo.writes << " each, one every "
+                      << kWriterIntervalMs << " ms" "\n"
+                      << "  readers             " << reader_count << " thread(s), "
+                      << reads_done.load() << " queries" "\n\n"
+                      << "  wait for the lock   solo            under reads" "\n"
+                      << "    p50               " << std::setw(8) << ms(solo.wait.p50_us)
+                      << " ms   " << std::setw(8) << ms(loaded.wait.p50_us) << " ms" "\n"
+                      << "    p95               " << std::setw(8) << ms(solo.wait.p95_us)
+                      << " ms   " << std::setw(8) << ms(loaded.wait.p95_us) << " ms" "\n"
+                      << "    max               " << std::setw(8) << ms(solo.wait.max_us)
+                      << " ms   " << std::setw(8) << ms(loaded.wait.max_us) << " ms" "\n"
+                      << "  the write itself    " << std::setw(8) << ms(solo.write.p95_us)
+                      << " ms   " << std::setw(8) << ms(loaded.write.p95_us)
+                      << " ms  (p95; SQLite's cost, not ours)" "\n\n"
+                      << "  storage lock, solo    acquisitions=" << solo_metrics.acquisitions
+                      << " contended=" << solo_metrics.contended
+                      << " wait max=" << solo_metrics.max_wait_us << "us" "\n"
+                      << "  storage lock, loaded  acquisitions=" << loaded_metrics.acquisitions
+                      << " contended=" << loaded_metrics.contended
+                      << " wait max=" << loaded_metrics.max_wait_us << "us" "\n"
+                      << "  (the same instrument the app reports through get_diagnostics, so" "\n"
+                      << "   a figure here and one from a support bundle are comparable)" "\n\n"
+                      // 14.1 asks for dropped-event risk, and the ring is what converts a
+                      // stall into a loss: the capture thread keeps pushing while the engine
+                      // is blocked, and CaptureThread::kCapacity is 65,536 events.
+                      << "  dropped-event risk  the longest stall above is "
+                      << ms(loaded.wait.max_us) / 1000.0 << " s of capture queued behind it;" "\n"
+                      << "                      at 50 events/s that is "
+                      << (ms(loaded.wait.max_us) / 1000.0 * 50.0) << " of 65536 ring slots" "\n\n";
         }
 
         // --- Footprint, after the connection closed and the WAL checkpointed -----------
