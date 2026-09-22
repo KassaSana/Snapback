@@ -4912,6 +4912,11 @@ kept here; already-deep modules and completed performance work were rejected dur
   as a new model. Its regression covers an optional rollback metadata file and verifies the
   current model's metadata remains available as the next rollback target.
 
+  *Progress 2026-09-21:* classifier provenance now follows the producer of the persisted
+  prediction: a failed loaded ONNX model reports the heuristic identity until a later ONNX
+  inference succeeds. The ONNX regression checks backend, degraded status, and identity across
+  both sides of that transition.
+
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `M`
   `performance`
   Opened 2026-08-05. `main.cpp` blocks on `Storage::open()` before the webview is constructed.

@@ -157,7 +157,10 @@ std::uint64_t Classifier::inference_failures() const {
 
 std::string Classifier::model_id() const {
 #if defined(SNAPBACK_ONNX)
-    if (const auto& identity = OnnxModel::instance().model_id()) return *identity;
+    const auto& model = OnnxModel::instance();
+    if (model.loaded() && !model.last_inference_failed()) {
+        if (const auto& identity = model.model_id()) return *identity;
+    }
 #endif
     return "heuristic:" + std::string(kFeatureContractId);
 }

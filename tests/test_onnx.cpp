@@ -170,11 +170,13 @@ TEST_CASE("ONNX backend loads the fixture, runs it, and falls back to heuristic 
     CHECK(clf.backend() == "heuristic");
     CHECK(clf.inference_degraded());
     CHECK(clf.inference_failures() == 1);
+    CHECK(clf.model_id() == "heuristic:" + std::string(kFeatureContractId));
 
     // The next successful inference restores it.
     CHECK(clf.predict(features, FocusMode::Normal).focus_score >= 0.0);
     CHECK(clf.backend() == "onnx");
     CHECK_FALSE(clf.inference_degraded());
+    CHECK(clf.model_id().find("onnx:") == 0);
 }
 #endif
 
