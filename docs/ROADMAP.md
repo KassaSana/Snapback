@@ -1742,41 +1742,18 @@ kept here; already-deep modules and completed performance work were rejected dur
   purpose.** Sequence behind **14.1**: if the read lane lands, measure a third time, because a
   cheaper lock changes what redundancy costs again.
 
-- **14.13 — Window predicates read the whole table.** `in progress` `S` `performance`
-  Opened 2026-09-22 while sizing **14.12**, by profiling the fixture **14.11** built rather
-  than by reading the SQL. Every bounded read on `predictions` spelled its window
-  `WHERE (?1 IS NULL OR timestamp >= ?1)` — one statement serving both the windowed and the
-  whole-history caller. A bound parameter inside an `OR` is not sargable, so SQLite could not
-  use `idx_predictions_ts` and **full-scanned `predictions` whichever window was asked for**.
-  Cost was proportional to the database, not to the question. `EXPLAIN QUERY PLAN` said
-  `SCAN predictions` for a one-day window over 1.9 M rows.
+- **14.14 — The same idiom over `sessions`, unmeasured.** `proposed` `S` `performance`
+  Carved out of **14.13** when it closed, 2026-09-22, so a finished item would not carry open
+  work. Six queries still spell their window `(?N IS NULL OR started_at >= ?N)` —
+  `storage.cpp:Storage::recent_session_summaries` among them — which is the idiom 14.13 proved
+  costs a full scan on `predictions`.
 
-  `storage.cpp:Storage::predictions_since` already built two SQL strings for exactly this
-  reason and said so in a comment; the aggregates simply had not followed it.
-
-  **Landed** for the three `predictions` readers — the `prediction_stats` scalar aggregate,
-  its gaps-and-islands stretch query, and `hourly_focus_buckets`. Each now builds the seekable
-  spelling when a cutoff is present and omits the clause entirely when it is not. Measured on
-  the 90-day ceiling fixture: `prediction_stats` on `today` **476 ms → 55 ms** (8.7x),
-  `hourly_focus_buckets` **226 ms → 18 ms** (12.8x), `7d` 1.8x and 2.1x. `30d` is unchanged
-  (a third of the table; seek and scan cost the same) and `all` passes no cutoff, so it is the
-  same plain scan it always was. A hypothetical 90-day window is ~13% slower than the old
-  scan, which is the expected shape of an index seek that touches every row — it is not a
-  preset (`reviewRange.ts` offers today/7d/30d/all) and the retention limit means `all` and
-  `90d` are the same question. The 12,000-row parity test pins every field, so no answer moved.
-
-  `ANALYZE` was tried and rejected as the fix: `sqlite_stat1` carries per-index average row
-  counts, not a value histogram, so the planner still chooses the seek for a whole-table bound.
-  There is nothing to tune — the two spellings are the answer.
-
-  **Remaining, and deliberately unmeasured.** Six queries over `sessions` and
-  `context_snapshots` still use the same idiom
-  (`(?N IS NULL OR started_at >= ?N)`, `storage.cpp:Storage::recent_session_summaries` among
-  them). They were left alone because this repo's rule is measure first and they have not been:
-  `sessions` is thousands of rows where `predictions` is millions, and
-  `recent_session_summaries` measured **flat across every window**, which says its cost is
-  per-session work rather than the scan. Fix them when a measurement asks for it, not because
-  the pattern matches.
+  **Do not fix them because the pattern matches.** `sessions` is thousands of rows where
+  `predictions` is millions, and `recent_session_summaries` measured *flat across every
+  window*, which says its cost is per-session work rather than the scan — the same change
+  there would buy nothing and would be reported as a win. The bar is a measurement on the
+  90-day fixture ([`benchmarks/bench_budgets.cpp`](../benchmarks/bench_budgets.cpp)) showing
+  one of them is scan-bound. 14.13's remedy and its guard are both ready to copy if it is.
 
 ---
 
@@ -1957,3 +1934,4 @@ still answer "is 9.15 done?" without opening it.
 | 5.5 (2026-08-24) | 8.13 (2026-08-07) | 13.3 |
 | 5.7 | 9.1 (2026-07-25) | 13.4 |
 | 5.8 | 9.2 (2026-07-22) | 13.7 (2026-08-07) |
+|  |  | 14.13 (2026-09-22) |

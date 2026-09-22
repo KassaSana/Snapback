@@ -1843,6 +1843,55 @@ TEST_CASE("a large database still serves the hot queries from an index") {
         fixture.session_ids.front() + "'"));
 }
 
+TEST_CASE("the windowed prediction reads plan as a seek and the whole-history ones as a scan") {
+    // Roadmap 14.13. `(?1 IS NULL OR timestamp >= ?1)` and a bare `timestamp >= ?1` return
+    // identical rows, so the 12,000-row parity test below passes either way and the 8.7x these
+    // spellings bought is invisible to every value assertion in this file. The query plan is
+    // the only place the claim lives, which is what makes this the guard and not a nicety.
+    //
+    // Planned from the same builders production runs, for the reason the prune constants give
+    // at the top of `storage.hpp`: planning a copy would assert only that *some* indexable
+    // statement over `predictions` is possible, and that was already true while all three of
+    // these full-scanned.
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+
+    LargeFixture fixture;
+    fixture.seed(*storage);
+    // An empty table is planned structurally, which cannot tell "the planner will use this
+    // index" from "the planner has no reason not to". Real counts are the state the claim is
+    // about.
+    storage->analyze_for_test();
+
+    // The assertion is that the window reaches the index as a bound, not that a particular
+    // index is chosen: the scalar and hourly reads seek `idx_predictions_ts`, while the
+    // stretch query partitions by session and SQLite prefers a skip-scan of
+    // `idx_predictions_session_ts` bounded by the same timestamp. Both are sargable and both
+    // stop being so the moment the predicate goes back inside an `OR`, which is the fact worth
+    // pinning. Naming an index here would instead fail the next time the planner legitimately
+    // picks the other one.
+    const auto window_bounds_the_scan = [&](const std::string& sql) {
+        for (const auto& step : storage->query_plan(sql)) {
+            if (step.find("predictions USING INDEX") == std::string::npos) continue;
+            if (step.find("timestamp>") != std::string::npos) return true;
+        }
+        return false;
+    };
+
+    // With a cutoff, the window is a bound on the index. This is the assertion that fails if
+    // the non-sargable spelling comes back.
+    CHECK(window_bounds_the_scan(prediction_stats_sql(true)));
+    CHECK(window_bounds_the_scan(longest_focus_stretch_sql(true)));
+    CHECK(window_bounds_the_scan(hourly_focus_buckets_sql(true)));
+
+    // Without one, deliberately not: `all` touches every row, where a seek measured ~13%
+    // slower than the plain scan. Unifying these back onto one indexed spelling would look
+    // like a cleanup and cost the whole-history caller, so that half is pinned too.
+    CHECK_FALSE(window_bounds_the_scan(prediction_stats_sql(false)));
+    CHECK_FALSE(window_bounds_the_scan(longest_focus_stretch_sql(false)));
+    CHECK_FALSE(window_bounds_the_scan(hourly_focus_buckets_sql(false)));
+}
+
 TEST_CASE("batched aggregation over a large database matches the per-session path") {
     // 7.12 replaced 1 + 5N round trips with three queries and proved parity on a database of
     // a few rows. Parity on four rows does not exercise the window function's partitioning,

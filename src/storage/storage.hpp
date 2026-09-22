@@ -77,6 +77,27 @@ inline constexpr const char* kPruneFeatureSnapshotsBatchSql =
     "DELETE FROM feature_snapshots WHERE id IN (SELECT id FROM feature_snapshots "
     "WHERE timestamp < ?1 ORDER BY timestamp, id LIMIT ?2)";
 
+// The windowed reads over `predictions`, built here so a test can plan the statements
+// production actually runs.
+//
+// Roadmap 14.13 is the same shape of claim as 5.5 above, one indirection further: these
+// statements are built rather than constant, because the window is spelled two ways. With a
+// cutoff the predicate is a bare `timestamp >= ?N` so SQLite can seek `idx_predictions_ts`;
+// with none the clause is omitted entirely, which leaves the whole-history caller the plain
+// scan that is genuinely cheapest for it. The single statement these replaced —
+// `(?N IS NULL OR timestamp >= ?N)` — reads as the tidier SQL and is the reason every window
+// cost the whole database: a bound parameter inside an `OR` is not sargable, so the planner
+// scanned `predictions` whether the caller asked for one day or ninety.
+//
+// Both halves are visible only in a query plan. The rows, and therefore every value-based
+// test, are identical either way, so a test planning its own copy of the SQL would sail
+// through the exact regression these exist to catch.
+std::string prediction_stats_sql(bool with_cutoff);
+// `?1` is the run-gap bound every caller binds and `?2` the optional cutoff, so the
+// always-bound parameter keeps a fixed index and only the optional one moves.
+std::string longest_focus_stretch_sql(bool with_cutoff);
+std::string hourly_focus_buckets_sql(bool with_cutoff);
+
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
     std::size_t context_snapshots_deleted = 0;

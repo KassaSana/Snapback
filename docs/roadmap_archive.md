@@ -3824,3 +3824,52 @@ entry above is the record of what shipped.
     `scripts/check_doc_symbols.py`, and `scripts/check_dead_headers.py` run over all of them.
     Decide before the next audit pass, because every audit so far has appended here.
 
+### Tier 14 architecture leverage (2026-09-22)
+
+- **14.13 — DONE 2026-09-22. Window predicates read the whole table.** `S` `performance`
+  Opened 2026-09-22 while sizing **14.12**, by profiling the fixture **14.11** built rather
+  than by reading the SQL. Every bounded read on `predictions` spelled its window
+  `WHERE (?1 IS NULL OR timestamp >= ?1)` — one statement serving both the windowed and the
+  whole-history caller. A bound parameter inside an `OR` is not sargable, so SQLite could not
+  use `idx_predictions_ts` and **full-scanned `predictions` whichever window was asked for**.
+  Cost was proportional to the database, not to the question. `EXPLAIN QUERY PLAN` said
+  `SCAN predictions` for a one-day window over 1.9 M rows.
+
+  `storage.cpp:Storage::predictions_since` already built two SQL strings for exactly this
+  reason and said so in a comment; the aggregates simply had not followed it.
+
+  **Landed** for the three `predictions` readers — the `prediction_stats` scalar aggregate,
+  its gaps-and-islands stretch query, and `hourly_focus_buckets`. Each now builds the seekable
+  spelling when a cutoff is present and omits the clause entirely when it is not. Measured on
+  the 90-day ceiling fixture: `prediction_stats` on `today` **476 ms → 55 ms** (8.7x),
+  `hourly_focus_buckets` **226 ms → 18 ms** (12.8x), `7d` 1.8x and 2.1x. `30d` is unchanged
+  (a third of the table; seek and scan cost the same) and `all` passes no cutoff, so it is the
+  same plain scan it always was. A hypothetical 90-day window is ~13% slower than the old
+  scan, which is the expected shape of an index seek that touches every row — it is not a
+  preset (`reviewRange.ts` offers today/7d/30d/all) and the retention limit means `all` and
+  `90d` are the same question. The 12,000-row parity test pins every field, so no answer moved.
+
+  `ANALYZE` was tried and rejected as the fix: `sqlite_stat1` carries per-index average row
+  counts, not a value histogram, so the planner still chooses the seek for a whole-table bound.
+  There is nothing to tune — the two spellings are the answer.
+
+  **Guarded, which is the half that makes this closable.** The three statements are built by
+  `storage.hpp:prediction_stats_sql`, `storage.hpp:longest_focus_stretch_sql` and
+  `storage.hpp:hourly_focus_buckets_sql`, named for the same reason the retention DELETEs are:
+  `tests/test_storage.cpp` plans the strings production runs, not a copy of them. Every
+  value-based test in the suite passes with the `OR` idiom restored — including the parity
+  test — so without this the 8.7x could be undone in a one-line "cleanup" with a green run.
+  Confirmed by doing exactly that before trusting it: the plan assertion fails, the parity
+  test still passes.
+
+  The guard asserts that **the window reaches the index as a bound**, not that a named index
+  is chosen, and writing it corrected a detail this item had wrong. The scalar and hourly
+  reads do seek `idx_predictions_ts`; the stretch query does not — partitioned by session, it
+  is served by a skip-scan of `idx_predictions_session_ts` bounded by the same timestamp
+  (`SEARCH predictions USING INDEX idx_predictions_session_ts (ANY(session_id) AND
+  timestamp>?)`). Both are sargable, both stop being so the moment the predicate goes back
+  inside an `OR`, and pinning the index name instead would fail the next time the planner
+  legitimately picks the other one.
+
+  The six queries over `sessions` and `context_snapshots` that still use the idiom were
+  deliberately left, and moved to **14.14** rather than closed with this item.

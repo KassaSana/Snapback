@@ -1816,25 +1816,70 @@ std::size_t Storage::count_statements_for_test(const std::function<void()>& body
     return count;
 }
 
+// Roadmap 14.13. See the declarations in `storage.hpp` for why each of these is built in
+// two spellings rather than written once with `(?N IS NULL OR timestamp >= ?N)`, and why the
+// difference is visible only in a query plan. `predictions_since` already built two strings
+// for exactly this reason; these three had not followed it.
+//
+// `ANALYZE` was tried instead and rejected: `sqlite_stat1` carries per-index average row
+// counts, not a value histogram, so the planner still picks the seek for a whole-table bound.
+// The two spellings are the answer, not a tuning knob.
+std::string prediction_stats_sql(bool with_cutoff) {
+    return std::string(
+               "SELECT COUNT(*), COALESCE(AVG(focus_score), 0), "
+               "COALESCE(MAX(focus_score), 0), "
+               "COALESCE(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END), 0) "
+               "FROM predictions") +
+           (with_cutoff ? " WHERE timestamp >= ?1" : "");
+}
+
+std::string longest_focus_stretch_sql(bool with_cutoff) {
+    return std::string(
+               "WITH ordered AS ("
+               "  SELECT session_id, ROW_NUMBER() OVER w AS rn,"
+               "         (focus_state = 'DISTRACTED') AS distracted,"
+               "         LAG(focus_state = 'DISTRACTED') OVER w AS prev_distracted,"
+               "         CAST(ROUND((timestamp -"
+               "              LAG(timestamp) OVER w) / 1000.0) AS INTEGER) AS gap"
+               "  FROM predictions") +
+           (with_cutoff ? " WHERE timestamp >= ?2" : "") +
+           "  WINDOW w AS (PARTITION BY session_id ORDER BY timestamp ASC, id ASC)"
+           "), marked AS ("
+           "  SELECT session_id, rn, distracted, gap,"
+           "         CASE WHEN distracted = 1 OR prev_distracted IS NULL"
+           "                   OR prev_distracted = 1"
+           "                   OR gap IS NULL OR gap < 0 OR gap > ?1"
+           "              THEN 1 ELSE 0 END AS is_break"
+           "  FROM ordered"
+           "), grouped AS ("
+           "  SELECT session_id, distracted, gap, is_break,"
+           "         SUM(is_break) OVER (PARTITION BY session_id ORDER BY rn"
+           "                             ROWS UNBOUNDED PRECEDING) AS run_id"
+           "  FROM marked"
+           ") "
+           "SELECT COALESCE(MAX(total), 0) FROM ("
+           "  SELECT SUM(CASE WHEN is_break = 1 THEN 0 ELSE gap END) AS total"
+           "  FROM grouped WHERE distracted = 0 GROUP BY session_id, run_id)";
+}
+
+std::string hourly_focus_buckets_sql(bool with_cutoff) {
+    return std::string(
+               "SELECT CAST(strftime('%H', timestamp / 1000.0, 'unixepoch', 'localtime')"
+               "            AS INTEGER) AS hour,"
+               "       COUNT(*), AVG(focus_score),"
+               "       CAST(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END) AS REAL)"
+               "         / COUNT(*) "
+               "FROM predictions WHERE ") +
+           (with_cutoff ? "timestamp >= ?1 AND " : "") +
+           "      strftime('%H', timestamp / 1000.0, 'unixepoch', 'localtime')"
+           "      IS NOT NULL "
+           "GROUP BY hour ORDER BY hour ASC";
+}
+
 Storage::PredictionStats Storage::prediction_stats(const std::optional<std::int64_t>& cutoff_ms) {
     PredictionStats out;
     {
-        // Roadmap 14.13. The window is spelled as two statements rather than one with
-        // `(?1 IS NULL OR timestamp >= ?1)`. That idiom reads as the tidier SQL and is the
-        // reason this query cost the whole database on every window: a bound parameter inside
-        // an OR makes the predicate non-sargable, so SQLite cannot use `idx_predictions_ts`
-        // and full-scans `predictions` whether the caller asked for one day or ninety.
-        // `predictions_since` already built two strings for exactly this reason.
-        const char* sql =
-            cutoff_ms ? "SELECT COUNT(*), COALESCE(AVG(focus_score), 0), "
-                        "COALESCE(MAX(focus_score), 0), "
-                        "COALESCE(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END), 0) "
-                        "FROM predictions WHERE timestamp >= ?1"
-                      : "SELECT COUNT(*), COALESCE(AVG(focus_score), 0), "
-                        "COALESCE(MAX(focus_score), 0), "
-                        "COALESCE(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END), 0) "
-                        "FROM predictions";
-        Stmt stmt(db_, sql);
+        Stmt stmt(db_, prediction_stats_sql(cutoff_ms.has_value()).c_str());
         if (cutoff_ms) stmt.bind(1, *cutoff_ms);
         if (stmt.step_row()) {
             out.sample_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
@@ -1871,45 +1916,7 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::int6
     // sessions seconds apart are still two pieces of work, and a run that spans them reports a
     // stretch of focus the user never had.
     {
-        // Roadmap 14.13, as above. The run-gap bound is `?1` in both spellings and the
-        // cutoff is `?2`, so the parameter a caller always binds keeps a fixed index and only
-        // the optional one moves.
-        const char* head =
-            cutoff_ms ? "WITH ordered AS ("
-                        "  SELECT session_id, ROW_NUMBER() OVER w AS rn,"
-                        "         (focus_state = 'DISTRACTED') AS distracted,"
-                        "         LAG(focus_state = 'DISTRACTED') OVER w AS prev_distracted,"
-                        "         CAST(ROUND((timestamp -"
-                        "              LAG(timestamp) OVER w) / 1000.0) AS INTEGER) AS gap"
-                        "  FROM predictions WHERE timestamp >= ?2"
-                        "  WINDOW w AS (PARTITION BY session_id ORDER BY timestamp ASC, id ASC)"
-                      : "WITH ordered AS ("
-                        "  SELECT session_id, ROW_NUMBER() OVER w AS rn,"
-                        "         (focus_state = 'DISTRACTED') AS distracted,"
-                        "         LAG(focus_state = 'DISTRACTED') OVER w AS prev_distracted,"
-                        "         CAST(ROUND((timestamp -"
-                        "              LAG(timestamp) OVER w) / 1000.0) AS INTEGER) AS gap"
-                        "  FROM predictions"
-                        "  WINDOW w AS (PARTITION BY session_id ORDER BY timestamp ASC, id ASC)";
-        const std::string sql =
-            std::string(head) +
-            "), marked AS ("
-            "  SELECT session_id, rn, distracted, gap,"
-            "         CASE WHEN distracted = 1 OR prev_distracted IS NULL"
-            "                   OR prev_distracted = 1"
-            "                   OR gap IS NULL OR gap < 0 OR gap > ?1"
-            "              THEN 1 ELSE 0 END AS is_break"
-            "  FROM ordered"
-            "), grouped AS ("
-            "  SELECT session_id, distracted, gap, is_break,"
-            "         SUM(is_break) OVER (PARTITION BY session_id ORDER BY rn"
-            "                             ROWS UNBOUNDED PRECEDING) AS run_id"
-            "  FROM marked"
-            ") "
-            "SELECT COALESCE(MAX(total), 0) FROM ("
-            "  SELECT SUM(CASE WHEN is_break = 1 THEN 0 ELSE gap END) AS total"
-            "  FROM grouped WHERE distracted = 0 GROUP BY session_id, run_id)";
-        Stmt stmt(db_, sql.c_str());
+        Stmt stmt(db_, longest_focus_stretch_sql(cutoff_ms.has_value()).c_str());
         stmt.bind(1, static_cast<std::int64_t>(kFocusRunGapSecs));
         if (cutoff_ms) stmt.bind(2, *cutoff_ms);
         if (stmt.step_row()) {
@@ -1927,20 +1934,7 @@ std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
     // local time through the same C library `localtime` that local_hour_from_rfc3339 calls, so
     // the two agree including across a DST boundary. A timestamp SQLite cannot parse yields
     // NULL and is dropped, which is what the C++ loop's `hour < 0 || hour >= 24` did.
-    // Roadmap 14.13: two spellings so the windowed one can seek `idx_predictions_ts`.
-    const std::string sql =
-        std::string(
-            "SELECT CAST(strftime('%H', timestamp / 1000.0, 'unixepoch', 'localtime')"
-            "            AS INTEGER) AS hour,"
-            "       COUNT(*), AVG(focus_score),"
-            "       CAST(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END) AS REAL)"
-            "         / COUNT(*) "
-            "FROM predictions WHERE ") +
-        (cutoff_ms ? "timestamp >= ?1 AND " : "") +
-        "      strftime('%H', timestamp / 1000.0, 'unixepoch', 'localtime')"
-        "      IS NOT NULL "
-        "GROUP BY hour ORDER BY hour ASC";
-    Stmt stmt(db_, sql.c_str());
+    Stmt stmt(db_, hourly_focus_buckets_sql(cutoff_ms.has_value()).c_str());
     if (cutoff_ms) stmt.bind(1, *cutoff_ms);
     std::vector<AnalyticsHour> hourly;
     while (stmt.step_row()) {
