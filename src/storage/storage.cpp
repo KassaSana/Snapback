@@ -59,6 +59,52 @@ constexpr std::array<std::string_view, 31> kFeatureColumns = {
     throw std::runtime_error(std::string(action) + ": " + msg);
 }
 
+// The counting busy handler. Roadmap 14.11.
+//
+// `PRAGMA busy_timeout` and `sqlite3_busy_handler` are the same slot -- installing one
+// replaces the other -- so counting the waits means owning the wait. The schedule below is
+// SQLite's own documented one (`sqliteDefaultBusyCallback`), reproduced so the *behaviour*
+// is unchanged and only the counting is new: back off 1, 2, 5, 10, 15, 20, 25, 25, 25, 50,
+// 50, then 100 ms a time, and stop at kSqliteBusyTimeoutMs in total.
+//
+// Returning 1 means "retry"; returning 0 hands the caller SQLITE_BUSY, which is the outcome
+// that costs the engine a drained batch.
+int counting_busy_handler(void* raw_stats, int attempts) {
+    static constexpr int kDelaysMs[] = {1, 2, 5, 10, 15, 20, 25, 25, 25, 50, 50, 100};
+    static constexpr int kElapsedMs[] = {0, 1, 3, 8, 18, 33, 53, 78, 103, 128, 178, 228};
+    static constexpr int kSteps = static_cast<int>(sizeof(kDelaysMs) / sizeof(kDelaysMs[0]));
+
+    auto* stats = static_cast<SqliteBusyStats*>(raw_stats);
+    int delay_ms = 0;
+    int elapsed_ms = 0;
+    if (attempts < kSteps) {
+        delay_ms = kDelaysMs[attempts];
+        elapsed_ms = kElapsedMs[attempts];
+    } else {
+        // Past the table, SQLite keeps retrying at the last interval.
+        delay_ms = kDelaysMs[kSteps - 1];
+        elapsed_ms = kElapsedMs[kSteps - 1] + delay_ms * (attempts - (kSteps - 1));
+    }
+    if (elapsed_ms + delay_ms > kSqliteBusyTimeoutMs) {
+        delay_ms = kSqliteBusyTimeoutMs - elapsed_ms;
+    }
+    if (stats) {
+        stats->waits.fetch_add(1, std::memory_order_relaxed);
+        const auto waited = static_cast<std::uint64_t>(std::max(0, elapsed_ms + delay_ms));
+        auto seen = stats->max_wait_ms.load(std::memory_order_relaxed);
+        while (waited > seen &&
+               !stats->max_wait_ms.compare_exchange_weak(seen, waited,
+                                                         std::memory_order_relaxed)) {
+        }
+    }
+    if (delay_ms <= 0) {
+        if (stats) stats->exhausted.fetch_add(1, std::memory_order_relaxed);
+        return 0;
+    }
+    sqlite3_sleep(delay_ms);
+    return 1;
+}
+
 void exec(sqlite3* db, const char* sql) {
     char* raw_error = nullptr;
     if (sqlite3_exec(db, sql, nullptr, nullptr, &raw_error) != SQLITE_OK) {
@@ -355,10 +401,9 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         // corrupt the DB) — the right trade for local focus telemetry.
         exec(storage.db_, "PRAGMA journal_mode = WAL;");
         exec(storage.db_, "PRAGMA synchronous = NORMAL;");
-        // Wait briefly on SQLITE_BUSY instead of failing the first contended BEGIN.
-        // See kSqliteBusyTimeoutMs.
-        exec(storage.db_,
-             ("PRAGMA busy_timeout = " + std::to_string(kSqliteBusyTimeoutMs)).c_str());
+        // Wait briefly on SQLITE_BUSY instead of failing the first contended BEGIN, and
+        // count how often that happens. See kSqliteBusyTimeoutMs and install_busy_handler.
+        storage.install_busy_handler();
         // Bigger page cache, in-memory temp tables, and memory-mapped I/O speed up the
         // read/export/recap queries and reduce checkpoint stalls. cache_size is negative =
         // kibibytes (~8 MB); mmap_size is bytes (256 MB).
@@ -422,8 +467,7 @@ std::optional<Storage> Storage::open_memory() {
         // both so the in-memory and on-disk paths behave identically for tests.
         exec(storage.db_, "PRAGMA journal_mode = WAL;");
         exec(storage.db_, "PRAGMA synchronous = NORMAL;");
-        exec(storage.db_,
-             ("PRAGMA busy_timeout = " + std::to_string(kSqliteBusyTimeoutMs)).c_str());
+        storage.install_busy_handler();
         exec(storage.db_, "PRAGMA cache_size = -8000;");
         exec(storage.db_, "PRAGMA temp_store = MEMORY;");
         // Empty path: an in-memory database has no file to back up, and nothing to lose.
@@ -1254,7 +1298,9 @@ Storage::~Storage() {
 }
 
 Storage::Storage(Storage&& other) noexcept
-    : db_(other.db_), stmt_cache_(std::move(other.stmt_cache_)) {
+    : db_(other.db_),
+      stmt_cache_(std::move(other.stmt_cache_)),
+      busy_(std::move(other.busy_)) {
     other.db_ = nullptr;
     other.stmt_cache_.clear();
 }
@@ -1265,6 +1311,7 @@ Storage& Storage::operator=(Storage&& other) noexcept {
         if (db_) sqlite3_close(db_);
         db_ = other.db_;
         stmt_cache_ = std::move(other.stmt_cache_);
+        busy_ = std::move(other.busy_);
         other.db_ = nullptr;
         other.stmt_cache_.clear();
     }
@@ -2914,6 +2961,20 @@ PruneSummary Storage::prune_to_retention(int retention_days) {
 
 void Storage::vacuum() {
     exec(db_, "VACUUM");
+}
+
+void Storage::install_busy_handler() {
+    if (!busy_) busy_ = std::make_unique<SqliteBusyStats>();
+    sqlite3_busy_handler(db_, counting_busy_handler, busy_.get());
+}
+
+SqliteBusySnapshot Storage::busy_stats() const {
+    SqliteBusySnapshot out;
+    if (!busy_) return out;
+    out.waits = busy_->waits.load(std::memory_order_relaxed);
+    out.exhausted = busy_->exhausted.load(std::memory_order_relaxed);
+    out.max_wait_ms = busy_->max_wait_ms.load(std::memory_order_relaxed);
+    return out;
 }
 
 std::vector<std::string> Storage::index_names() {

@@ -10,6 +10,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 #include <sqlite3.h>
@@ -2674,6 +2675,105 @@ TEST_CASE("a timestamp that never parsed stops outliving retention") {
     CHECK(reopened->recent_predictions(10).empty());
     // The session is untouched: retention collects telemetry, not the user's history.
     CHECK(reopened->get_session(session_id).has_value());
+}
+
+namespace {
+
+// A second connection to the same file, holding the write lock for as long as it is alive.
+// This is the shape of the real contention kSqliteBusyTimeoutMs exists for: a backup tool or
+// an inspector with an open transaction, not another copy of the app.
+class ForeignWriteLock {
+public:
+    explicit ForeignWriteLock(const std::filesystem::path& db_path) {
+        REQUIRE(sqlite3_open(db_path.string().c_str(), &db_) == SQLITE_OK);
+        REQUIRE(sqlite3_exec(db_, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) == SQLITE_OK);
+    }
+    ~ForeignWriteLock() { release(); }
+
+    void release() {
+        if (!db_) return;
+        sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+        sqlite3_close(db_);
+        db_ = nullptr;
+    }
+
+private:
+    sqlite3* db_ = nullptr;
+};
+
+}  // namespace
+
+TEST_CASE("a write that waits out a foreign lock is counted and still succeeds") {
+    // Roadmap 14.11. The figure nobody had: how often kSqliteBusyTimeoutMs is reached. A
+    // write that waited 400 ms and then succeeded looks, from every other vantage point in
+    // the process, exactly like one that never waited -- same rows, same return.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("planned", FocusMode::Normal);
+    REQUIRE(storage->busy_stats().waits == 0);
+
+    ForeignWriteLock foreign(storage->database_path());
+    // Released well inside the 500 ms budget, so the handler has to spin a few times and
+    // then succeed -- the "pressure, not failure" case.
+    std::thread releaser([&foreign] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        foreign.release();
+    });
+    storage->insert_prediction(prediction(session.session_id, 61.0, 0.2, "PRODUCTIVE"));
+    releaser.join();
+
+    const auto stats = storage->busy_stats();
+    CHECK(stats.waits > 0);
+    CHECK(stats.exhausted == 0);
+    CHECK(stats.max_wait_ms > 0);
+    CHECK(stats.max_wait_ms <= static_cast<std::uint64_t>(kSqliteBusyTimeoutMs));
+}
+
+TEST_CASE("a write that exhausts the busy timeout is counted separately") {
+    // The other half, and the one that costs the engine a drained batch (7.12). Publishing
+    // only this number would make the problem look binary; publishing only the waits above
+    // would hide the failure. They are two counters for that reason.
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("planned", FocusMode::Normal);
+
+    ForeignWriteLock foreign(storage->database_path());
+    const auto started = std::chrono::steady_clock::now();
+    CHECK_THROWS(storage->insert_prediction(prediction(session.session_id, 61.0, 0.2, "PRODUCTIVE")));
+    const auto waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - started)
+                               .count();
+
+    const auto stats = storage->busy_stats();
+    CHECK(stats.exhausted > 0);
+    CHECK(stats.waits > 0);
+    CHECK(stats.max_wait_ms == static_cast<std::uint64_t>(kSqliteBusyTimeoutMs));
+    // The point of owning the handler is that the behaviour did not change: the caller still
+    // waits out kSqliteBusyTimeoutMs before failing, rather than failing on the first BUSY.
+    CHECK(waited_ms >= kSqliteBusyTimeoutMs / 2);
+}
+
+TEST_CASE("the busy counters survive moving the Storage that owns them") {
+    // SQLite holds a raw pointer to these counters and `open` returns by value, so the
+    // address has to outlive every move. An inline member would dangle here -- and would
+    // pass every test that never contends, which is most of them.
+    TempDir temp;
+    auto opened = Storage::open(temp.path);
+    REQUIRE(opened.has_value());
+    Storage storage = std::move(*opened);
+    const auto session = storage.create_session("planned", FocusMode::Normal);
+
+    ForeignWriteLock foreign(storage.database_path());
+    std::thread releaser([&foreign] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));
+        foreign.release();
+    });
+    storage.insert_prediction(prediction(session.session_id, 61.0, 0.2, "PRODUCTIVE"));
+    releaser.join();
+
+    CHECK(storage.busy_stats().waits > 0);
 }
 
 TEST_CASE("the retention delete can use the timestamp index") {

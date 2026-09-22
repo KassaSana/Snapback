@@ -4,8 +4,11 @@
 // through the SQLite C API. The DB filename stays focoflow.db for install compatibility.
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -28,6 +31,23 @@ inline constexpr std::size_t kVacuumMinDeletedRows = 500;
 // milliseconds covers a backup tool or inspector briefly opening the file; a sustained
 // external writer still fails, but ordinary contention no longer loses a drained slice.
 inline constexpr int kSqliteBusyTimeoutMs = 500;
+
+// How often that timeout is actually reached. Roadmap 14.11 named this as one of the four
+// figures nothing measured, and it cannot be read off anything else: a write that waited
+// 400 ms and then succeeded is indistinguishable, from the outside, from one that never
+// waited at all.
+//
+// `waits` counts busy handler invocations -- the pressure. `exhausted` counts the times the
+// handler gave up and the caller saw SQLITE_BUSY -- the failure, which for the engine means
+// a drained persistence batch discarded (7.12). The first is the leading indicator of the
+// second, and publishing only the second would make the problem look binary.
+struct SqliteBusySnapshot {
+    std::uint64_t waits{};
+    std::uint64_t exhausted{};
+    // The longest a single statement spent inside the handler, in milliseconds. Bounded by
+    // kSqliteBusyTimeoutMs by construction, so a value at the bound means "gave up".
+    std::uint64_t max_wait_ms{};
+};
 
 // Roadmap 7.22. The copy taken immediately before a schema migration alters the database,
 // named for the version it was taken *from* so a user with two upgrades behind them can tell
@@ -97,6 +117,14 @@ std::string prediction_stats_sql(bool with_cutoff);
 // always-bound parameter keeps a fixed index and only the optional one moves.
 std::string longest_focus_stretch_sql(bool with_cutoff);
 std::string hourly_focus_buckets_sql(bool with_cutoff);
+
+// The live counters behind SqliteBusySnapshot. Atomic because a read connection and the
+// engine's writer can both be inside the handler at once.
+struct SqliteBusyStats {
+    std::atomic<std::uint64_t> waits{0};
+    std::atomic<std::uint64_t> exhausted{0};
+    std::atomic<std::uint64_t> max_wait_ms{0};
+};
 
 struct PruneSummary {
     std::size_t predictions_deleted = 0;
@@ -526,6 +554,9 @@ public:
     PruneSummary prune_to_retention(int retention_days = kDefaultRetentionDays);
     void vacuum();
 
+    // Busy-wait counters for this connection, for `get_diagnostics` and the benchmarks.
+    SqliteBusySnapshot busy_stats() const;
+
     // Test seam: index names in the current schema, sorted. A dropped index is a silent
     // perf regression — the query still returns correct rows, just via a full scan — so
     // it needs an explicit assertion to be catchable.
@@ -587,6 +618,9 @@ private:
     // Prepare-once / reset-on-reuse cache for hot statements (per-tick inserts). Returns a
     // statement owned by stmt_cache_; wrap it in the borrowed Stmt ctor to bind + step.
     sqlite3_stmt* cached_stmt(const char* sql);
+    // Installs the counting busy handler. Called on every writable connection, after the
+    // PRAGMAs, because it replaces what `PRAGMA busy_timeout` would have set.
+    void install_busy_handler();
     void ensure_active_session(const std::string& session_id);
     // The same question without the throw, for callers whose honest answer to "not active"
     // is to do nothing rather than to fail.
@@ -595,6 +629,13 @@ private:
 
     sqlite3* db_ = nullptr;
     std::unordered_map<std::string, sqlite3_stmt*> stmt_cache_;
+    // Heap-allocated, and that is load-bearing rather than incidental: `open` returns a
+    // Storage by value and SQLite holds a raw pointer to these counters, so the address has
+    // to survive every move. An inline member would be a dangling pointer the first time the
+    // returned object moved -- and it would still pass every test that never contends.
+    //
+    // Both move operations below must carry it, per the warning on `migrate`.
+    std::unique_ptr<SqliteBusyStats> busy_;
 };
 
 }  // namespace snapback
