@@ -266,7 +266,8 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     // kept. It used to return null, which left the UI able to say only "deleted" or "failed"
     // for an operation that can half-succeed.
     registry.add("delete_all_activity_data",
-             [&state, training_export_active, training_active, summary_export_active](
+             [&state, training_export_active, training_active, summary_export_active,
+              personal_export_active](
                  const json&) {
         if (training_export_active->load(std::memory_order_acquire)) {
             throw std::runtime_error(
@@ -283,6 +284,10 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         if (training_active->load(std::memory_order_acquire)) {
             throw std::runtime_error(
                 "training is in progress; wait for it to finish before deleting activity");
+        }
+        if (personal_export_active->load(std::memory_order_acquire)) {
+            throw std::runtime_error(
+                "personal data export is in progress; wait for it to finish before deleting activity");
         }
         return json(state.delete_all_activity_data());
     });

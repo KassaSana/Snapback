@@ -2168,6 +2168,12 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   and uninstall behaviour remains **9.5**'s. Four new C++ cases and one frontend module;
   suite **390 pass**. The original finding follows.
 
+  *Follow-up 2026-09-21:* `delete_all_activity_data` now observes the same
+  `personal_export_active` gate that reserves `export_my_data` before its worker job is queued.
+  Deletion is refused for the queued and running export window, and the command-registry
+  regression verifies the accepted export still completes with a valid output path. Export
+  cancellation and atomic publication remain under **14.6**.
+
 - **8.12 (original finding) — Make “Delete all activity” cover every app-owned copy of that
   activity.** `M`
   Opened 2026-08-05. `delete_activity_exports()` removes only `exports/training` and

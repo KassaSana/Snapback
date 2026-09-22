@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <future>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -177,6 +178,46 @@ TEST_CASE("the slow commands are registered with a worker policy and the fast on
     // report the other as busy (see dispatch_single_flight).
     CHECK(app.registry.find("train_from_export")->async->gate !=
           app.registry.find("export_training_data")->async->gate);
+}
+
+TEST_CASE("personal export reserves deletion exclusion before it reaches the worker") {
+    App app;
+    // Deletion remains available before an export is accepted.
+    (void)app.registry.call("delete_all_activity_data");
+
+    const auto* export_command = app.registry.find("export_my_data");
+    REQUIRE(export_command != nullptr);
+    REQUIRE(export_command->async.has_value());
+
+    std::promise<void> entered;
+    std::promise<void> release;
+    auto release_future = release.get_future().share();
+    REQUIRE(app.runner.submit([&] {
+        entered.set_value();
+        release_future.wait();
+    }));
+    REQUIRE(entered.get_future().wait_for(std::chrono::seconds(1)) ==
+            std::future_status::ready);
+
+    std::promise<std::string> resolved;
+    auto resolved_future = resolved.get_future();
+    const auto& policy = *export_command->async;
+    detail::dispatch_single_flight(
+        [&](std::function<void()> job) { return app.runner.submit(std::move(job)); },
+        [&](std::string result) { resolved.set_value(std::move(result)); },
+        export_command->handler, "[{}]", "", policy.gate, policy.busy_message,
+        policy.on_claimed);
+
+    CHECK_THROWS_WITH(
+        app.registry.call("delete_all_activity_data"),
+        "personal data export is in progress; wait for it to finish before deleting activity");
+
+    release.set_value();
+    REQUIRE(resolved_future.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
+    const auto reply = json::parse(resolved_future.get());
+    CHECK_FALSE(reply.contains(detail::kErrorKey));
+    CHECK(reply.at("sessionCount") == 0);
+    CHECK(std::filesystem::exists(reply.at("outputPath").get<std::string>()));
 }
 
 TEST_CASE("cancel_training is developer-gated and, when open, reports nothing to cancel") {
