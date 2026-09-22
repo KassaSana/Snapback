@@ -2844,7 +2844,8 @@ both are true as of their own date.
   model covers, what it explicitly does not (same-user local software, encryption at rest),
   which builds receive fixes, and how to report privately. Issue and pull-request templates
   were considered alongside it and rejected for a sole-author repository whose CI already
-  enforces the one contribution rule that matters; see [Decided not to build](#decided-not-to-build-2026-09-22).
+  enforces the one contribution rule that matters; see
+  [Decided not to build](ROADMAP.md#decided-not-to-build-2026-09-22).
 
 ### Tier 10 — Frontend & UX — lifted from the live backlog 2026-09-22
 
@@ -3825,6 +3826,69 @@ entry above is the record of what shipped.
     Decide before the next audit pass, because every audit so far has appended here.
 
 ### Tier 14 architecture leverage (2026-09-22)
+
+- **14.11 — DONE 2026-09-22. Publish measured budgets before any scaling work starts.** `S` `performance`
+
+  Opened 2026-09-22. **14.1**, **14.5**, **14.7**, and **9.10** each begin with "measure
+  first", and none had a number. The one harness that existed could not supply them:
+  `benchmarks/bench_snapback.cpp` runs SQLite in memory with a fixed timestamp and inserts a
+  prediction on every other event, so it measures neither on-disk WAL cost nor the real
+  cadence. That cadence is the fact to start from: `state.cpp:AppState::compute_event`
+  persists a prediction at most once per second, only while a session is attended, not idle,
+  and receiving input, and every persisted prediction carries one `feature_snapshots` row.
+  The ceiling is therefore 3,600 + 3,600 rows per attended hour — roughly 1.5 MB — and the
+  realistic figure is well under it, because a second with no input writes nothing. Nothing
+  about that justifies compaction (see [Decided not to build](ROADMAP.md#decided-not-to-build-2026-09-22));
+  what it justifies is knowing the actual number.
+
+  **Landed.** [`benchmarks/bench_budgets.cpp`](../benchmarks/bench_budgets.cpp) writes a real
+  on-disk database at the real cadence across the full 90-day retention window and then reads
+  it the way the app does. Results are in
+  [`testing_strategy.md`](testing_strategy.md#measured-budgets) with the host named, at both
+  the ceiling and a 60% duty cycle. **No CI ceiling**, for the reason this item already gave.
+
+  The 1.5 MB per attended hour estimate was right (1.47 MB measured). The number nobody had is
+  the steady state: **792 MB at the retention limit** for a heavy user, 473 MB at a realistic
+  duty cycle. And the reads are not cheap at the retention limit — `prediction_stats` and
+  `daily_summary` are both **seconds**, under `storage_mutex_`. See **14.1**, which those
+  numbers speak directly to, and **14.12** and **14.13**, which they opened. The table in
+  `testing_strategy.md` was re-measured after 14.13 and is the current one; the figures this
+  item was written against are quoted in 14.13 as its "before".
+
+  **The four instrumented figures, landed.** Each needed a hook that did not exist, and the
+  hooks ship in Release on purpose: the figures that settle **14.1** and **14.5** come from a
+  real install over a real working day, and the only way out of one is the support bundle.
+
+  - **Lock hold and wait.** `ranked_mutex.hpp:lock_metrics` instruments every acquisition of
+    every rank, which is why it covers all thirty-odd `storage_mutex_` sites with no
+    call-site edits and no site quietly uncounted. Log-scale histogram, so a percentile is an
+    **upper bound** and the exact tail is the maximum beside it — stated on the type and
+    pinned by a test, because a report that implied otherwise would be worse than a coarse
+    one. Contention is counted exactly, by a try_lock fast path failing, which also keeps an
+    uncontended acquisition to one clock read. Cost on `bench_hotpaths`: inside run-to-run
+    noise at the 1.9 µs scale of a health read.
+  - **SQLite busy waits.** `storage.cpp:Storage::busy_stats`, behind a `sqlite3_busy_handler`
+    that reproduces SQLite's own delay schedule so the behaviour is unchanged and only the
+    counting is new. Two counters: `waits` is pressure, `exhausted` is the discarded
+    persistence batch 7.12 cares about. Publishing only the second would make the problem look
+    binary.
+  - **Idle CPU and wakeups.** [`bench_idle.cpp`](../benchmarks/bench_idle.cpp): **124 ms of
+    CPU over 60 s, 0.21% of one core, 9.02 wakeups/second**. The rate is not a discovery —
+    `state.hpp:kEngineTickIntervalMs` is 100 — but what those wakeups cost was the number
+    nobody had. Recorded, not fixed; a poll interval is a product decision and 0.21% of a core
+    is not obviously worth one.
+  - **Ring high-water.** `capture_thread.hpp:ring_high_water`, one comparison on the producer
+    side. `captureEventsDropped` only moves once the ring has already overflowed, which makes
+    it a report of damage rather than of headroom.
+
+  All four reach `get_diagnostics` as `RuntimeMetrics` on `HealthStatus`, so a user's support
+  bundle carries them. **Ring high-water and `captureEventsDropped` over a working day** is
+  the one thing this item asked for that no code can supply: the counters exist and what is
+  missing is a day of real use. That closes with a bundle, not with a commit.
+
+  And the measurement those numbers were for landed with them: **14.1**'s concurrency phase,
+  which found a writer wait going from 0.04 ms alone to 29 s under report load. It is recorded
+  in 14.1, which stays open, because what to do about it is a decision and not a finding.
 
 - **14.13 — DONE 2026-09-22. Window predicates read the whole table.** `S` `performance`
   Opened 2026-09-22 while sizing **14.12**, by profiling the fixture **14.11** built rather

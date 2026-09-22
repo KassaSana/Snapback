@@ -1441,6 +1441,33 @@ kept here; already-deep modules and completed performance work were rejected dur
   with the numbers and keep one connection. If it reproduces contention, introduce the read
   lane, pin snapshot/after-delete semantics, and require the benchmark to show the gain.
 
+  **Measured 2026-09-22** ([`bench_budgets.cpp`](../benchmarks/bench_budgets.cpp), 90-day
+  ceiling fixture, 200 persists at 100 ms against two reader threads; full table and caveats
+  in [`testing_strategy.md`](testing_strategy.md#what-a-report-in-flight-costs-a-persist)).
+  The writer's wait for `storage_mutex_` went from a **0.04 ms** worst case alone to a
+  **29,191 ms** worst case under reads. It **reproduces contention**, so the first branch of
+  the paragraph above does not apply and this item does not close here.
+
+  What the numbers do *not* yet say is that the read lane is the answer, which is why this is
+  recorded rather than acted on:
+
+  - **It is a tail, not a load.** Seven of 200 persists ever found the lock held; p50 and p95
+    are unchanged at 0.00 ms. A reader lane would remove the seven. Nothing here says the
+    other 193 cost anything.
+  - **29 s is not one query.** `daily_summary` at the retention limit is 6.8 s, so the worst
+    wait is four of them: `std::mutex` has no fairness guarantee, and two readers looping with
+    no think time can pass the lock between themselves while a writer waits. A fair lock, or
+    simply the cheaper reads **14.13** already landed, would move that number without a second
+    connection. Both are smaller changes than a read lane and neither has been measured.
+  - **Dropped events are not the risk.** 29 s of capture at 50 events/s is ~1,460 of 65,536
+    ring slots, so the buffer absorbs it. The cost is unpersisted work and a UI waiting, not
+    lost input — which is a different argument than the one this item was opened on.
+
+  The next measurement, before any code: the same phase with a realistic reader (one Review
+  load, five commands, then idle) rather than a hot loop, and against the cheaper post-14.13
+  reads. Deciding between "read lane", "fairer lock", "cheaper queries" and "nothing" is
+  Kassa's call, and this item stays `accepted` and open until it is made.
+
 - **14.2 — Make one synchronous engine cycle the production test seam.** `proposed` `M`
 
   `engine_tick()` owns the real drain → idle/pomodoro → compute → persist → emit sequence,
@@ -1677,44 +1704,6 @@ kept here; already-deep modules and completed performance work were rejected dur
   Still under lock by design until extraction: settings fsync (`commit_settings_unlocked`)
   and ONNX reload (singleton shared with the tick).
 
-- **14.11 — Publish measured budgets before any scaling work starts.** `in progress` `S` `performance`
-  *Progress 2026-09-22: the storage and footprint numbers are published; four instrumented
-  figures remain, named below. Item stays open until they are there.*
-
-  Opened 2026-09-22. **14.1**, **14.5**, **14.7**, and **9.10** each begin with "measure
-  first", and none had a number. The one harness that existed could not supply them:
-  `benchmarks/bench_snapback.cpp` runs SQLite in memory with a fixed timestamp and inserts a
-  prediction on every other event, so it measures neither on-disk WAL cost nor the real
-  cadence. That cadence is the fact to start from: `state.cpp:AppState::compute_event`
-  persists a prediction at most once per second, only while a session is attended, not idle,
-  and receiving input, and every persisted prediction carries one `feature_snapshots` row.
-  The ceiling is therefore 3,600 + 3,600 rows per attended hour — roughly 1.5 MB — and the
-  realistic figure is well under it, because a second with no input writes nothing. Nothing
-  about that justifies compaction (see [Decided not to build](#decided-not-to-build-2026-09-22));
-  what it justifies is knowing the actual number.
-
-  **Landed.** [`benchmarks/bench_budgets.cpp`](../benchmarks/bench_budgets.cpp) writes a real
-  on-disk database at the real cadence across the full 90-day retention window and then reads
-  it the way the app does. Results are in
-  [`testing_strategy.md`](testing_strategy.md#measured-budgets) with the host named, at both
-  the ceiling and a 60% duty cycle. **No CI ceiling**, for the reason this item already gave.
-
-  The 1.5 MB per attended hour estimate was right (1.47 MB measured). The number nobody had is
-  the steady state: **792 MB at the retention limit** for a heavy user, 473 MB at a realistic
-  duty cycle. And the reads are not cheap at the retention limit — `prediction_stats` and
-  `daily_summary` are both **seconds**, under `storage_mutex_`. See **14.1**, which those
-  numbers speak directly to, and **14.12** and **14.13**, which they opened. The table in
-  `testing_strategy.md` was re-measured after 14.13 and is the current one; the figures this
-  item was written against are quoted in 14.13 as its "before".
-
-  **Still missing, and why this item is not closed.** Each needs instrumentation or a running
-  app: `storage_mutex_` hold time p50/p95 and engine persist-phase wait (no timing hook exists
-  inside the lock; query wall time bounds it but is not it); how often
-  `storage.hpp:kSqliteBusyTimeoutMs` is hit (needs a `sqlite3_busy_handler` counter); idle CPU
-  and wakeups per second with no session; ring high-water mark and `captureEventsDropped` over
-  a working day, through `get_diagnostics` (`state.cpp:AppState::diagnostics`). Closing
-  **14.1** or **14.5** "with the numbers" still means all of the numbers are here.
-
 - **14.12 — One Review load computes `prediction_stats` three times.** `proposed` `S` `performance`
   Opened 2026-09-22, by **14.11**'s measurement rather than by reading. `useReviewWorkflow.ts`
   fires five commands in parallel for one Review load, and three of them —
@@ -1934,4 +1923,5 @@ still answer "is 9.15 done?" without opening it.
 | 5.5 (2026-08-24) | 8.13 (2026-08-07) | 13.3 |
 | 5.7 | 9.1 (2026-07-25) | 13.4 |
 | 5.8 | 9.2 (2026-07-22) | 13.7 (2026-08-07) |
+|  |  | 14.11 (2026-09-22) |
 |  |  | 14.13 (2026-09-22) |

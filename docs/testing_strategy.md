@@ -135,7 +135,8 @@ not a few tens of megabytes.
 
 Every one of these runs under `storage_mutex_` — the same lock the engine takes to persist.
 Measured after **14.13** made the window predicates index-seekable; the "before" column for the
-two queries that changed is in that item.
+two queries that changed is in that item. Re-run on 2026-09-22 alongside the concurrency
+measurement below and unchanged within noise, so the figures are one database's, not two.
 
 The Review presets are **today / 7d / 30d / all** (`frontend/src/reviewRange.ts`). `all` passes
 no cutoff at all, so it is the unfiltered scan and 14.13 did not change it. The 90-day column
@@ -165,19 +166,89 @@ of the most expensive thing the storage layer can be asked for.
    measured before deciding whether to build a separate read lane, and "immaterial" is not what
    it says.
 
-### Not measured yet
+### What a report in flight costs a persist
 
-Named so nobody reads the table above as complete. Each needs instrumentation or a running app,
-neither of which this benchmark is:
+`storage_mutex_` serializes every storage-backed UI report against the engine's persist
+phase. **14.1** proposes a separate read lane and forbids building it from structure alone,
+so `benchmarks/bench_budgets.cpp` now runs the heaviest Review queries concurrently with a
+paced writer, in the shape `state.cpp:AppState::health` and the engine really use: one
+`Storage`, one lock, two reader threads, 200 persists at 100 ms intervals.
 
-- **`storage_mutex_` hold time, p50/p95, and engine persist-phase wait.** There is no timing
-  hook inside the lock. The table above is single-threaded query wall time, which bounds the
-  hold but is not the same measurement, and it is not labelled as if it were.
-- **How often the `storage.hpp:kSqliteBusyTimeoutMs` wait is hit.** Needs a
-  `sqlite3_busy_handler` counter; nothing counts it today.
-- **Idle CPU and wakeups per second with no session**, and **ring high-water mark and
-  `captureEventsDropped` over a working day.** Both need the running app over real time, read
-  through `get_diagnostics` (`state.cpp:AppState::diagnostics`), not a benchmark binary.
+| writer's wait for the lock | alone | with two readers |
+| --- | --- | --- |
+| p50 | 0.00 ms | 0.00 ms |
+| p95 | 0.00 ms | 0.00 ms |
+| **max** | **0.04 ms** | **29,191 ms** |
+| the write itself (p95) | 0.67 ms | 0.20 ms |
+
+**Read this as a tail, not an average.** Seven of 200 persists ever found the lock held.
+The other 193 took it for free, which is why p50 and p95 do not move at all — an average, or
+a p95-only report, would have called this immaterial and been exactly wrong. What happened to
+the seven is that one waited **29 seconds**.
+
+Three things that number is, and one it is not:
+
+- It is **not one long query's duration**. `daily_summary` at the retention limit is 6.8 s,
+  and 29 s is four of them. `RankedMutex` wraps a `std::mutex`, which offers no fairness
+  guarantee, so under continuous read load a waiting writer can be passed over repeatedly
+  while two readers hand the lock back and forth.
+- The readers here are **heavier than a real Review load**, which issues five commands once
+  and then stops. They loop with no think time. The number is a worst case, not a typical one.
+- **Dropped events are not the risk.** 29 s of capture at 50 events/s is ~1,460 of the ring's
+  65,536 slots (`capture_thread.hpp:kCapacity`), so the buffer absorbs it.
+  What is at risk is 29 s of unpersisted work and a UI that cannot get an answer.
+
+The lock instrument reports a longer worst wait than the writer saw — 37.4 s against 29.2 s —
+because it counts every rank-`Storage` acquisition, including readers waiting on each other.
+Both figures are of the same run; they measure different waiters.
+
+### Lock hold and wait, in the running app
+
+`ranked_mutex.hpp:lock_metrics` instruments every acquisition of every rank, and
+`state.cpp:AppState::runtime_metrics` folds the figures into `get_health`, so they travel in
+a support bundle from a real install rather than only from a benchmark.
+
+**Percentiles here are histogram bucket upper bounds, never measured values.** `p95 <= 512us`
+is what the data supports; the exact tail is the maximum beside it. Anything that renders one
+has to say `<=`.
+
+Idle, over 60 s with the engine and capture thread running and no session
+(`benchmarks/bench_idle.cpp`):
+
+| | measured |
+| --- | --- |
+| CPU | 124 ms — **0.21% of one core**, 2.06 ms per wall second |
+| engine wakeups | 542 — **9.02/s**, 229 µs of CPU each |
+| `State` lock | 1,086 acquisitions, 0 contended, hold p50 ≤ 0 µs, p95 ≤ 7 µs, max 97 µs |
+| `Storage` lock | 2 acquisitions, 0 contended, max hold 12 µs |
+| ring high-water | 0 of 65,536 slots |
+| SQLite busy waits / exhausted | 0 / 0 |
+
+The wakeup rate is not a discovery — `state.hpp:kEngineTickIntervalMs` is 100, so the loop
+wakes ten times a second whether or not anything is happening. What those wakeups cost is the
+figure nobody had. **Recorded, not fixed:** a poll interval is a product decision, and 0.21%
+of a core is not obviously one worth spending a change on.
+
+One caveat the benchmark states itself: its input hook is a silent fake, so no OS-level hook
+or message-pump cost is in that figure. It is what the *engine* costs when idle, not what the
+*product* costs. And `GetProcessTimes` counts in ~15.6 ms scheduler ticks, so a 20 s window
+reports zero CPU; the run above is 60 s for that reason.
+
+### SQLite busy waits
+
+`storage.cpp:Storage::busy_stats` counts both halves, through a `sqlite3_busy_handler` that
+reproduces SQLite's own delay schedule so only the counting is new: `waits` is the pressure
+(the handler ran at all) and `exhausted` is the failure (`SQLITE_BUSY` reached the caller,
+which for the engine means a discarded persistence batch). Both are zero in every run above —
+nothing external contends for the file here, which is the expected result and the reason the
+counter exists in the field rather than in a benchmark.
+
+### Still not measured
+
+- **Ring high-water and `captureEventsDropped` over a working day.** The counters exist and
+  ship on `get_health`; what is missing is a day of real use to read them from. This one
+  closes with a support bundle, not with code.
+- **The real input hook's idle cost**, per the caveat above.
 
 ## Deliberate coverage boundaries
 
