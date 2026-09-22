@@ -1886,6 +1886,7 @@ namespace {
 struct ReferenceStats {
     std::size_t sample_count{};
     double avg_focus_score{};
+    double peak_focus_score{};
     std::size_t distracted_count{};
     std::uint64_t longest_focus_secs{};
     std::vector<AnalyticsHour> hourly;
@@ -1919,6 +1920,7 @@ ReferenceStats fold_in_cpp(const std::vector<PredictionRecord>& predictions) {
     for (const auto& prediction : predictions) {
         ++out.sample_count;
         out.avg_focus_score += prediction.focus_score;
+        out.peak_focus_score = std::max(out.peak_focus_score, prediction.focus_score);
         if (prediction.focus_state == "DISTRACTED") {
             ++out.distracted_count;
         }
@@ -1962,6 +1964,10 @@ TEST_CASE("SQL prediction aggregates match the C++ fold they replaced, at 12,000
         CHECK(actual.sample_count == expected.sample_count);
         CHECK(actual.sample_count > 0);
         CHECK(actual.avg_focus_score == doctest::Approx(expected.avg_focus_score));
+        // Roadmap 7.33. The peak moved into this query so the Review focus summary can be
+        // served from it; without this line the new column could return anything.
+        CHECK(actual.peak_focus_score == doctest::Approx(expected.peak_focus_score));
+        CHECK(actual.peak_focus_score >= actual.avg_focus_score);
         CHECK(actual.distracted_count == expected.distracted_count);
         CHECK(actual.longest_focus_secs == expected.longest_focus_secs);
         CHECK(actual.longest_focus_secs > 0);

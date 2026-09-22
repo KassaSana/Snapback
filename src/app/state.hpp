@@ -68,12 +68,6 @@ inline constexpr std::int64_t kEngineBacklogTickIntervalMs = 1;
 // but the loop above runs every millisecond while it lasts, hence the throttle.
 inline constexpr std::int64_t kEngineBacklogLogIntervalMs = 30'000;
 
-// Upper bound on rows materialised for a Review focus-summary window. Uncapped scans held
-// storage_mutex_ across every prediction in the retention window; a mature install can keep
-// tens of thousands of rows. The newest N still feed averages and the streak math once
-// reversed to chronological order.
-inline constexpr std::size_t kFocusSummaryMaxSamples = 50'000;
-
 class AppState {
 public:
     // `logger` and `clock` are both optional (default null) so existing call sites keep
@@ -144,8 +138,6 @@ public:
         const std::string& session_id, const std::optional<std::string>& done,
         const std::optional<std::string>& next_step);
     std::vector<PredictionRecord> prediction_history(std::size_t limit);
-    // Aggregate the most recent `limit` predictions into recap stats (avg/peak/streak).
-    FocusSummary focus_summary(std::size_t limit = 200);
     std::vector<SessionSummary> session_history(std::size_t limit);
     // Erases every app-owned copy of the user's activity and reports what happened to each.
     //

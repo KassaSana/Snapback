@@ -1146,23 +1146,31 @@ std::vector<PredictionRecord> AppState::prediction_history(std::size_t limit) {
     return storage_.recent_predictions(limit);
 }
 
-FocusSummary AppState::focus_summary(std::size_t limit) {
-    std::lock_guard lock(storage_mutex_);
-    auto rows = storage_.recent_predictions(limit);
-    std::reverse(rows.begin(), rows.end());
-    return summarize_predictions(rows);
-}
-
 FocusSummary AppState::focus_summary_for_window(const std::string& window,
                                                 const std::optional<std::string>& since) {
     const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
-    std::lock_guard lock(storage_mutex_);
-    // Newest-first from SQL, then reverse: summarize_predictions measures streak gaps
-    // between chronological neighbours. Cap the materialisation so a 90-day window cannot
-    // hold storage_mutex_ across an unbounded scan on the UI command path.
-    auto rows = storage_.predictions_since(cutoff, kFocusSummaryMaxSamples);
-    std::reverse(rows.begin(), rows.end());
-    return summarize_predictions(rows);
+    // Roadmap 7.33. The same aggregate `summary_report` reads, over the same cutoff, so the
+    // two "Longest focus" tiles agree by construction rather than by coincidence. This used
+    // to materialise the newest 50,000 rows and fold them with `summarize_predictions`; at
+    // one prediction per attended second that is about fourteen hours, so a 7-day window
+    // silently reported the longest run inside the newest fourteen. One query answers the
+    // lock-hold worry the cap was reaching for without trading a stall for a wrong number.
+    Storage::PredictionStats stats;
+    {
+        std::lock_guard lock(storage_mutex_);
+        stats = storage_.prediction_stats(cutoff);
+    }
+    FocusSummary summary;
+    summary.sample_count = stats.sample_count;
+    summary.avg_focus_score = stats.avg_focus_score;
+    summary.peak_focus_score = stats.peak_focus_score;
+    summary.distracted_samples = stats.distracted_count;
+    summary.distracted_fraction =
+        stats.sample_count == 0 ? 0.0
+                                : static_cast<double>(stats.distracted_count) /
+                                      static_cast<double>(stats.sample_count);
+    summary.longest_focus_secs = stats.longest_focus_secs;
+    return summary;
 }
 
 std::vector<SessionSummary> AppState::session_history_for_window(

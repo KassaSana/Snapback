@@ -285,6 +285,7 @@ public:
     struct PredictionStats {
         std::size_t sample_count{};
         double avg_focus_score{};
+        double peak_focus_score{};
         std::size_t distracted_count{};
         // Roadmap 10.13. The **duration** of the longest unbroken focused stretch, in seconds.
         // Replaced a count of consecutive non-DISTRACTED rows shown as "Best streak": rows are
@@ -380,12 +381,16 @@ public:
     std::vector<PredictionRecord> recent_predictions(std::size_t limit);
     // Returns predictions at or after `cutoff` (or all predictions when the cutoff is
     // absent), newest first. The timestamp range stays in SQL so idx_predictions_ts can
-    // serve analytics windows without silently dropping older rows. When `limit` is set,
-    // only that many newest rows are returned — focus-summary callers must reverse to
-    // chronological order before aggregating streaks.
+    // serve analytics windows without silently dropping older rows.
+    //
+    // Roadmap 7.33 removed the `limit` this used to take. Its only caller capped the Review
+    // focus summary at the newest 50,000 rows and folded them in C++, which reported the
+    // longest focused stretch inside roughly the newest fourteen attended hours whatever
+    // window was asked for. `prediction_stats` answers that in SQL over every row; what is
+    // left here reads rows back for the parity test that pins the aggregate against
+    // `summarize_predictions`.
     std::vector<PredictionRecord> predictions_since(
-        const std::optional<std::int64_t>& cutoff_ms = std::nullopt,
-        std::optional<std::size_t> limit = std::nullopt);
+        const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
     void insert_feature_snapshot(const std::string& session_id, const FeatureVector& f);
 
     // Labels (one-tap feedback)

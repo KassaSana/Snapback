@@ -1821,6 +1821,7 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::int6
     {
         Stmt stmt(db_,
                   "SELECT COUNT(*), COALESCE(AVG(focus_score), 0), "
+                  "COALESCE(MAX(focus_score), 0), "
                   "COALESCE(SUM(CASE WHEN focus_state = 'DISTRACTED' THEN 1 ELSE 0 END), 0) "
                   "FROM predictions WHERE (?1 IS NULL OR timestamp >= ?1)");
         if (cutoff_ms) {
@@ -1831,7 +1832,8 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::int6
         if (stmt.step_row()) {
             out.sample_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 0));
             out.avg_focus_score = sqlite3_column_double(stmt.get(), 1);
-            out.distracted_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 2));
+            out.peak_focus_score = sqlite3_column_double(stmt.get(), 2);
+            out.distracted_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 3));
         }
     }
 
@@ -2403,8 +2405,8 @@ std::vector<PredictionRecord> Storage::recent_predictions(std::size_t limit) {
 }
 
 std::vector<PredictionRecord> Storage::predictions_since(
-    const std::optional<std::int64_t>& cutoff_ms, std::optional<std::size_t> limit) {
-    std::string sql = cutoff_ms
+    const std::optional<std::int64_t>& cutoff_ms) {
+    const std::string sql = cutoff_ms
                           ? "SELECT session_id, focus_score, distraction_risk, focus_state, "
                             "thrash_score, drift_score, goal_alignment, timestamp, model_id, "
                             "state_source "
@@ -2414,9 +2416,6 @@ std::vector<PredictionRecord> Storage::predictions_since(
                             "thrash_score, drift_score, goal_alignment, timestamp, model_id, "
                             "state_source "
                             "FROM predictions ORDER BY timestamp DESC";
-    if (limit) {
-        sql += " LIMIT " + std::to_string(*limit);
-    }
     Stmt stmt(db_, sql.c_str());
     if (cutoff_ms) stmt.bind(1, *cutoff_ms);
     std::vector<PredictionRecord> rows;

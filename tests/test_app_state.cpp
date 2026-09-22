@@ -1299,17 +1299,88 @@ TEST_CASE("AppState binds Pomodoro to an active session and exposes transition e
     CHECK(stopped.completed_work_intervals == 0);
 }
 
-TEST_CASE("AppState focus_summary aggregates persisted predictions") {
+TEST_CASE("AppState focus_summary_for_window aggregates persisted predictions") {
     auto state = make_state();
     auto session = state->start_session("Write tests", FocusMode::Deep);
     // Drive a few events far enough apart to clear the 1s prediction throttle.
     for (int i = 0; i < 4; ++i) {
         AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0 + i * 2.0));
     }
-    const auto summary = state->focus_summary(100);
+    const auto summary = state->focus_summary_for_window("day");
     CHECK(summary.sample_count >= 1);
     CHECK(summary.avg_focus_score >= 0.0);
     CHECK(summary.peak_focus_score >= summary.avg_focus_score);
+    state->stop_session(session.session_id);
+}
+
+TEST_CASE("AppState focus summary reports the whole window, not the newest rows") {
+    // Roadmap 7.33. `focus_summary_for_window` used to materialise the newest 50,000
+    // predictions and fold them in C++. Predictions persist at most once per attended second,
+    // so that ceiling is about fourteen hours: on a 7-day window the "Longest focus" tile
+    // reported the longest run inside the newest fourteen hours and said nothing about it,
+    // while the tile beside it -- served by the same SQL aggregate this now uses -- reported
+    // the right number for the same window.
+    //
+    // The fixture is built so the two answers differ. An old twenty-hour run sits outside the
+    // newest 50,000 rows; the rows that displace it form a run of their own that is shorter,
+    // so a truncating implementation returns a plausible number rather than zero.
+    auto state = make_state();
+    auto session = state->start_session("Long stretch", FocusMode::Deep);
+
+    const std::int64_t now_ms = static_cast<std::int64_t>(std::time(nullptr)) * 1000;
+    constexpr std::int64_t kHourMs = 60 * 60 * 1000;
+
+    // Twenty hours of focus, 40h ago to 20h ago, sampled a minute apart (inside the 120s run
+    // gap bound). 1,200 gaps x 60s = exactly 72,000 seconds.
+    const std::int64_t old_run_start = now_ms - 40 * kHourMs;
+    for (int i = 0; i <= 1200; ++i) {
+        AppStateTestAccess::insert_prediction_at(*state, session.session_id,
+                                                 old_run_start + i * 60 * 1000);
+    }
+
+    // 50,001 newer rows at the real one-per-second cadence, ending now. They are more than the
+    // old cap on their own, so under the old code nothing older than these was ever seen.
+    const std::int64_t recent_start = now_ms - 50'000 * 1000;
+    for (int i = 0; i <= 50'000; ++i) {
+        AppStateTestAccess::insert_prediction_at(*state, session.session_id,
+                                                 recent_start + i * 1000);
+    }
+
+    const auto summary = state->focus_summary_for_window("7d");
+    CHECK(summary.sample_count == 51'202);  // 1,201 + 50,001
+    CHECK(summary.longest_focus_secs == 20 * 60 * 60);
+
+    // What the truncated fold actually returned here, recorded so the failure is recognisable:
+    // 49,999 seconds -- the newest block's own run, thirteen hours and change, reported for a
+    // seven-day window as if it were the answer. Nothing about it looks wrong.
+    CHECK(summary.longest_focus_secs > 50'000);
+
+    state->stop_session(session.session_id);
+}
+
+TEST_CASE("Both longest-focus tiles read the same number for the same window") {
+    // Roadmap 7.33. `FocusSummaryCard` (get_focus_summary) and `SummaryCard` (get_summary_report)
+    // both render FOCUS_STRETCH_LABEL. They disagreed because they were two computations; this
+    // pins them to one. A window is named on both sides so the shared cutoff is exercised too.
+    auto state = make_state();
+    auto session = state->start_session("Agreement", FocusMode::Deep);
+
+    const std::int64_t now_ms = static_cast<std::int64_t>(std::time(nullptr)) * 1000;
+    for (int i = 0; i < 90; ++i) {
+        AppStateTestAccess::insert_prediction_at(*state, session.session_id,
+                                                 now_ms - (90 - i) * 60 * 1000);
+    }
+
+    for (const char* window : {"day", "7d", "30d", "all"}) {
+        CAPTURE(window);
+        const auto summary = state->focus_summary_for_window(window);
+        const auto report = state->summary_report(window);
+        CHECK(summary.longest_focus_secs == report.longest_focus_secs);
+        CHECK(summary.sample_count == report.sample_count);
+        CHECK(summary.avg_focus_score == doctest::Approx(report.avg_focus_score));
+        CHECK(summary.distracted_fraction == doctest::Approx(report.distracted_fraction));
+    }
+
     state->stop_session(session.session_id);
 }
 

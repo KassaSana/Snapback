@@ -557,12 +557,13 @@ export const api = {
     const rows = await invoke<Record<string, unknown>[]>("get_prediction_history", { limit });
     return rows.map(mapPrediction);
   },
-  getFocusSummary: async (range?: ReviewWindowRequest | { limit?: number }) => {
-    const args =
-      range && "window" in range
-        ? { window: range.window, since: range.since }
-        : { limit: (range as { limit?: number } | undefined)?.limit ?? 200 };
-    const raw = await invoke<Record<string, unknown>>("get_focus_summary", args);
+  // Roadmap 7.33. Window-only. The `limit` form used to reach a second native computation
+  // of the same "Longest focus" tile; both now read one SQL aggregate over the whole window.
+  getFocusSummary: async (range: ReviewWindowRequest = { window: "day" }) => {
+    const raw = await invoke<Record<string, unknown>>("get_focus_summary", {
+      window: range.window,
+      since: range.since,
+    });
     return mapFocusSummary(raw);
   },
   getRecordingStatus: async () => {

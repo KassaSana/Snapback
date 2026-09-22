@@ -228,7 +228,7 @@ TEST_CASE("app state respects its own lock order") {
     (void)state->active_session();
     (void)state->latest_prediction();
     (void)state->prediction_history(5);
-    (void)state->focus_summary(20);
+    (void)state->focus_summary_for_window("day");
     (void)state->context_timeline(session.session_id, 5);
     (void)state->session_history(5);
     (void)state->analytics();

@@ -3,7 +3,14 @@
 // Turns a batch of prediction rows into the numbers a daily/weekly recap shows: average
 // focus, how much time read as distracted, the peak, and the longest unbroken focus run.
 // Pure over the input vector — no storage, no clock — so the recap logic is unit-testable
-// independent of the DB. Storage aggregate queries + the frontend view are follow-ups.
+// independent of the DB.
+//
+// Roadmap 7.33. `summarize_predictions` is no longer on any production path: both "Longest
+// focus" tiles now read `storage.cpp:Storage::prediction_stats`, one SQL aggregate over
+// every row in the window. This stays as the **reference implementation** the parity test in
+// `tests/test_storage.cpp` folds rows through to pin that SQL — which is the job it was
+// already doing, and how the SQL's factor-of-two error was caught. `FocusSummary` itself is
+// still the wire type the `get_focus_summary` command returns.
 #pragma once
 
 #include <algorithm>

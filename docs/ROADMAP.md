@@ -1342,28 +1342,46 @@ internals, and the benchmark harness.
   **7.24**, and preferably **14.2**; Linux may begin with a truthful unsupported/stub state if
   its desktop-session contract is deferred beyond v1.
 
-- **7.33 — Two "longest focused stretch" tiles, two computations, and one of them
-  truncates.** `S`
+- **7.33 — DONE 2026-09-22. Two "longest focused stretch" tiles, two computations, and one of
+  them truncated.** `S`
   Opened 2026-09-22. `frontend/src/FocusSummaryCard.tsx` and `frontend/src/SummaryCard.tsx`
-  both show a tile labelled `FOCUS_STRETCH_LABEL`. The first comes from `get_focus_summary` →
-  `state.cpp:AppState::focus_summary_for_window`, which materialises the newest
-  `state.hpp:kFocusSummaryMaxSamples` (50,000) prediction rows under `storage_mutex_` and folds
-  them in C++ (`focus_summary.hpp:summarize_predictions`). The second comes from
+  both show a tile labelled `FOCUS_STRETCH_LABEL`. The first came from `get_focus_summary` →
+  `state.cpp:AppState::focus_summary_for_window`, which materialised the newest 50,000
+  prediction rows under `storage_mutex_` and folded them in C++
+  (`focus_summary.hpp:summarize_predictions`). The second comes from
   `storage.cpp:Storage::prediction_stats`, which computes the same stretch in SQL over the whole
   window. Predictions persist at most once per second, and only while a session is attended
   and receiving input (`state.cpp:AppState::compute_event`), so 50,000 rows is roughly
-  fourteen attended hours: on a 7-day or 90-day window the C++ tile reports the longest run
-  inside the newest fourteen hours and nothing in the result says so. The cap was added on
+  fourteen attended hours: on a 7-day or 90-day window the C++ tile reported the longest run
+  inside the newest fourteen hours and nothing in the result said so. The cap was added on
   2026-09-17 (see **14.8**'s progress note) to bound the lock hold; it traded a stall for a
-  wrong number.
+  wrong number. **Kept here rather than archived because that trade is the lesson**: a bound
+  placed on the wrong layer does not degrade the answer, it replaces it with a plausible one.
 
-  Serve the focus summary from the SQL aggregate and delete the C++ materialisation.
-  `summarize_predictions` stays only as the test reference it already is in
-  `tests/test_storage.cpp` (**10.13**'s parity check feeds it per session). Remove
-  `kFocusSummaryMaxSamples`. Acceptance: both tiles read the same value from the same query for
-  the same window, and a fixture with a 20-hour focused run that began 30 hours ago reports 20
-  hours on a 7-day window. FWD-02's digest, and the day-timeline lane deferred on 2026-09-22,
-  must consume this single implementation rather than introduce a third.
+  **What landed.** `focus_summary_for_window` now reads `Storage::prediction_stats` over the
+  same cutoff `summary_report` already passes it, so the two tiles agree by construction rather
+  than by coincidence. `prediction_stats` gained a `peak_focus_score` column
+  (`COALESCE(MAX(focus_score), 0)` in the scan that was already computing count and average, so
+  no second query); `distracted_fraction` is derived. The cap constant is gone, and so is the
+  `limit` overload of `AppState::focus_summary` and the `limit` parameter of
+  `storage.cpp:Storage::predictions_since` — both existed only to serve it, and the frontend
+  always sent a window. `frontend/src/api.ts`'s `getFocusSummary` takes a `ReviewWindowRequest`
+  only. `summarize_predictions` has no production caller left and stays as the reference the
+  **10.13** parity check folds rows through; its header says so.
+
+  **Tests.** `tests/test_app_state.cpp` gained the acceptance fixture — a 20-hour focused run
+  from 40h to 20h ago, displaced by 50,001 newer rows at the real one-per-second cadence —
+  which reports 72,000 seconds on a `7d` window. It was run against the old implementation
+  before the change: it returned **49,999 seconds**, the newest block's own run, which is the
+  shape of this defect. A second case pins `focus_summary_for_window` and `summary_report` to
+  the same numbers across `day`/`7d`/`30d`/`all`, and `tests/test_storage.cpp`'s parity check
+  covers the new peak column. Local suite 727/727.
+
+  **One semantic change.** The C++ fold truncated each endpoint to whole seconds; the SQL
+  rounds each gap. The SQL is now the single definition, so sub-second differences from the
+  old tile are expected. FWD-02's digest, and the day-timeline lane deferred on 2026-09-22,
+  consume this implementation rather than introduce a third.
+
 
 ### Decisions — do not code these yet
 

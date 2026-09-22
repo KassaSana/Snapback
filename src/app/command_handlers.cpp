@@ -87,12 +87,12 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     registry.add("get_prediction_history", [&state](const json& a) {
         return json(state.prediction_history(detail::clamp_limit(a, 8)));
     });
+    // Roadmap 7.33. One window, one aggregate. The `limit` form this used to accept was a
+    // second computation of the same tile and had no caller; the frontend always sends a
+    // window.
     registry.add("get_focus_summary", [&state](const json& a) {
-        if (a.contains("window")) {
-            return json(state.focus_summary_for_window(a.at("window").get<std::string>(),
-                                                        detail::opt_string(a, "since")));
-        }
-        return json(state.focus_summary(detail::clamp_limit(a, 200)));
+        return json(state.focus_summary_for_window(a.at("window").get<std::string>(),
+                                                   detail::opt_string(a, "since")));
     });
 
     // --- Session lifecycle ---
