@@ -383,6 +383,25 @@ TEST_CASE("rollback_model preserves current metadata when the rollback target ha
           std::string::npos);
 }
 
+TEST_CASE("rollback_model leaves both pairs unchanged when metadata promotion is blocked") {
+    TempDir app_data;
+    write_text(app_data.path / "model.onnx", "new-model");
+    write_text(app_data.path / "model.onnx.previous", "old-model");
+    write_text(app_data.path / "model_quality.json", "{\"metric\":\"cv_accuracy\",\"score\":0.9}");
+    write_text(app_data.path / "model_quality.json.previous",
+               "{\"metric\":\"cv_accuracy\",\"score\":0.8}");
+    // A locked-file-shaped directory at the backup boundary makes the journaled promotion
+    // fail before it can publish a new live pair, while the old two-swap rollback ignored it.
+    write_text(app_data.path / "model_quality.json.previous.deploy-backup" / "locked", "x");
+
+    CHECK_THROWS(training_deploy::rollback_model(app_data.path));
+    CHECK(read_text(app_data.path / "model.onnx") == "new-model");
+    CHECK(read_text(app_data.path / "model.onnx.previous") == "old-model");
+    CHECK(read_text(app_data.path / "model_quality.json").find("0.9") != std::string::npos);
+    CHECK(read_text(app_data.path / "model_quality.json.previous").find("0.8") !=
+          std::string::npos);
+}
+
 TEST_CASE("training_deploy rejects invalid configured repo") {
     TempDir app_data;
     TempDir not_repo;

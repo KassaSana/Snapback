@@ -10,9 +10,12 @@
 #include <optional>
 #include <string>
 
+#include "app/state.hpp"
+#include "app_state_test_access.hpp"
 #include "engine/classifier.hpp"
 #include "engine/features.hpp"
 #include "engine/onnx_model.hpp"
+#include "storage/storage.hpp"
 
 using namespace snapback;
 
@@ -177,6 +180,39 @@ TEST_CASE("ONNX backend loads the fixture, runs it, and falls back to heuristic 
     CHECK(clf.backend() == "onnx");
     CHECK_FALSE(clf.inference_degraded());
     CHECK(clf.model_id().find("onnx:") == 0);
+}
+#endif
+
+#if defined(SNAPBACK_ONNX)
+TEST_CASE("effective ONNX provenance reaches the persisted prediction row") {
+    const auto temp = make_temp_dir();
+
+    struct TempDirGuard {
+        ~TempDirGuard() { OnnxModel::instance().reset_for_tests(); }
+    } guard;
+
+    const auto model = temp / "model.onnx";
+    std::filesystem::copy_file(std::filesystem::path(SNAPBACK_FIXTURES_DIR) / "model.onnx",
+                               model);
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), temp);
+    REQUIRE(state.reload_classifier_model().backend == "onnx");
+
+    state.start_session("persist model provenance", FocusMode::Normal);
+    CaptureEvent event;
+    event.event_type = EventType::KeyPress;
+    event.timestamp_secs = 1.0;
+    event.app_name = "Cursor";
+    event.window_title = "classifier.cpp";
+    AppStateTestAccess::process_event(state, event);
+
+    const auto latest = state.latest_prediction();
+    REQUIRE(latest.has_value());
+    const auto stored = state.prediction_history(1);
+    REQUIRE(stored.size() == 1);
+    CHECK(latest->model_id.find("onnx:") == 0);
+    CHECK(stored.front().model_id == latest->model_id);
 }
 #endif
 
