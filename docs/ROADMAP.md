@@ -264,6 +264,7 @@ Then, on top of honest features:
 | --- | --- | --- |
 | Weekly focus story / digest | FWD-02 (M) | Composition of existing queries + episodes; needs AUD-08's cap honesty for any "all time" claim |
 | "All time" cap honesty | AUD-08 (S) | Do together with the digest — same surfaces |
+| Day-timeline lane for Review | CR-01 (M) | The digest's picture; composition over predictions, attended spans, and episodes (**10.15**). Sequence with AUD-20 so Review is reshaped once |
 | Snapback recovery upgrade | FWD-04 (M) | Builds on AUD-01; episode-outcome logging here is deliberately *before* Phase 3, because it produces the labels Phase 3 trains on |
 
 **Exit criterion:** `ctest` green with a regenerated `fixtures/feature_parity/golden.json`, and
@@ -1480,6 +1481,32 @@ internals, and the benchmark harness.
   **7.3 is now done, which changes the shape of applying this.** There is an ordered
   migration list to append to, so converting a column's storage type is a migration rather
   than a rewrite — the mechanism is no longer part of the cost.
+
+- **7.30 — May the app propose a session it detected, or only record one the user
+  declared?** `decision`
+  Opened 2026-09-22 by [CR-06](competitive_review.md). Rize finds focus sessions by watching;
+  [ADR-0005](adr/0005-a-session-is-declared-and-attended.md) says a session is declared. The
+  `untracked_work` alert already detects a stretch of work with no session. The narrow
+  question: may that alert offer "make this a session", and if accepted, does the resulting
+  row carry attendance credit for time that was never declared? Answering yes changes what
+  `session_spans` means for every downstream number, which is why it is a decision and not a
+  button.
+
+- **7.31 — Snapback does not block, and nothing says so.** `decision`
+  Opened 2026-09-22 by [CR-06](competitive_review.md). Cold Turkey, Freedom, Opal, and Rize
+  block apps and sites; Snapback's Block rule forces a `DISTRACTED` verdict and never
+  prevents anything. Staying a mirror rather than a wall is the coherent position — a blocker
+  competes on enforcement, this product competes on recovery — but it is held only by
+  omission. Write it down (an ADR paragraph, or a sentence in ADR-0004's consequences) so the
+  next "add blocking" idea is a doc read rather than a debate.
+
+- **7.32 — A local API or MCP server versus the network-silent promise.** `decision`
+  Opened 2026-09-22 by [CR-06](competitive_review.md). ActivityWatch and screenpipe expose
+  localhost APIs and screenpipe ships an MCP server, which is how other tools get at the
+  data. **8.10** promises a release build that opens no sockets, and a loopback listener is
+  still a listener. If the answer is ever yes it is a new ADR with its own threat-model
+  delta; the cheap honest alternative today is a documented schema plus the existing exports
+  (**9.14**, **9.16**).
 
 ### Product gaps
 
@@ -4732,6 +4759,82 @@ below still determine whether, where, and how the retraining loop should operate
 - **12.5 — DONE 2026-07-23.** Moved to the [Done archive](#done-archive). `test_local.sh`
   and `run_benchmarks.sh` are real ports (verified by running them on this Mac), and
   `scripts/README.md` says which of the eleven scripts run where.
+
+- **2.20 — Read the browser address bar on Windows through UI Automation.** `M`
+  Opened 2026-09-22 by [CR-09](competitive_review.md). Browser extensions are deferred
+  (FWD-10), so Windows has no URL or domain field and **8.11** cannot match on one. Timing
+  and screenpipe read the accessibility tree instead: the address bar of Chromium-based
+  browsers and Firefox is reachable through `IUIAutomation` without an extension. macOS
+  already enriches tabs through Accessibility, so this is the missing half of **7.27**'s
+  domain field. Read it in the same foreground-change path as the title, never per input
+  event, and treat a failed read as "no domain", not as an empty string.
+
+- **4.14 — Evaluate Velopack before writing FWD-06's update check by hand.** `S` to evaluate
+  Opened 2026-09-22 by [CR-10](competitive_review.md). Velopack turns compiler output into an
+  installer, delta updates, and a self-updating portable build on Windows, macOS, and Linux,
+  with C++ bindings, which would also absorb parts of **0.4b** and **3.3**. The constraint is
+  **8.10**: any check must be opt-in and its network behaviour written into the ADR FWD-06
+  needs anyway. Outcome of this item is a paragraph in that ADR, not code.
+
+- **4.15 — Publish idle CPU and database growth per hour, and assert a ceiling.** `S`
+  Opened 2026-09-22 by [CR-11](competitive_review.md). screenpipe states its CPU and disk
+  budget on its front page; Snapback has a harness and a scheduled benchmark job but no
+  user-facing number. Add both figures to `docs/benchmarking.md` and fail the benchmark job
+  above a ceiling. This is also the measurement **14.10** needs before it can be decided.
+
+- **9.17 — Issue and pull-request templates, and a security policy.** `XS`
+  Opened 2026-09-22 by [CR-12](competitive_review.md). The repository has neither. It matters
+  the day the release is public — Phase 1's "before strangers install" — and the security
+  policy is where [ADR-0009](adr/0009-local-first-threat-model.md)'s scope gets a public
+  address.
+
+- **10.15 — A day-timeline lane on Review.** `M`
+  Opened 2026-09-22 by [CR-01](competitive_review.md). Every comparator opens its review on a
+  horizontal strip of the day; Review here is cards plus the per-session context list in
+  `frontend/src/ActivityCards.tsx`. The strip is composition over data already persisted:
+  verdict per prediction, attended spans, snapback episodes
+  (`storage.hpp:list_snapback_episodes`), and Pomodoro phases, with attended spans as a second
+  lane in ManicTime's parallel-timeline style. Do it as FWD-02's picture and inside AUD-20's
+  reshaping, so Review is split once. The read must aggregate in SQL (the **7.12** rule): a
+  strip that loops over rows pays in capture fidelity.
+
+- **10.16 — Search over context history.** `M`
+  Opened 2026-09-22 by [CR-03](competitive_review.md). Titles and parsed context are stored
+  per prediction and the SQLite amalgamation already includes FTS5. A "find the thing I was
+  working on" box on Review is the most literal form of the product's promise. New command,
+  so `src/app/command_handlers.cpp`, `fixtures/ipc_commands.json` (and its count in
+  `tests/test_ipc_contract.cpp`), `frontend/src/api.ts`, and `frontend/demo/backend.ts` move
+  together. The index is a migration (`storage.hpp:kSchemaVersion`); redacted titles must
+  never reach it, which is **8.11**'s boundary.
+
+- **10.17 — A compact, always-on-top Now mode.** `M`
+  Opened 2026-09-22 by [CR-04](competitive_review.md). Rize and Timing are glanceable from a
+  menu-bar popover; a running session here is watched from the full window.
+  [ADR-0003](adr/0003-three-surface-dashboard.md)'s own description of Now — goal, state
+  word, elapsed time, one action — fits a small pill. The overlay already owns per-platform
+  geometry and always-on-top behaviour; what is new is a window-size command and a frontend
+  layout that drops everything but the hero.
+
+- **14.9 — Generate the IPC contract from `fixtures/ipc_commands.json`.** `M`
+  Opened 2026-09-22 by [CR-07](competitive_review.md). `AGENTS.md` lists four places a
+  command must be added and relies on the contract tests to catch the one forgotten.
+  Tauri-shaped repositories generate the TypeScript client from the command definitions.
+  Give the fixture argument and result shapes, generate the TypeScript command types and a
+  C++ name table from it, and turn the count assertion into "the generated files are fresh".
+  `frontend/demo/backend.ts` still needs a hand-written body per command; what it can no
+  longer do is disagree with the native side about a name or a shape.
+
+- **14.10 — Measure prediction rows per hour; decide whether to store runs.** `S` to measure,
+  then `decision`
+  Opened 2026-09-22 by [CR-08](competitive_review.md). A prediction is persisted per input
+  event (`storage.hpp:insert_prediction`), so row count follows typing cadence, and the
+  roadmap already worries about weekly `sample_count` and about Review reads contending with
+  the persist phase on the shared storage mutex. ActivityWatch merges consecutive identical
+  events; screenpipe captures only on change. Measure first (**4.15**). If rows dominate,
+  the shape is a run table (verdict, start, end, count) that Review reads, with per-event
+  rows kept for training export — but `focus_momentum` feeds the model from stored scores
+  ([ADR-0004](adr/0004-verdict-and-opinion.md)), so what may be dropped is a decision, not
+  a refactor.
 
 ---
 
