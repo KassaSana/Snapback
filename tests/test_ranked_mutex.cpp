@@ -6,6 +6,7 @@
 #include "doctest_wrapper.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -200,6 +201,117 @@ TEST_CASE("ranked mutex supports try_lock") {
     REQUIRE(mutex.try_lock());
     mutex.unlock();
     CHECK(recorder.empty());
+}
+
+TEST_CASE("lock metric buckets are powers of two and the top one saturates") {
+    // The bucket arithmetic is the whole reason a percentile read off this histogram is an
+    // upper bound rather than a value, so it is pinned directly instead of only through the
+    // timing cases below, which cannot be exact about anything.
+    CHECK(lock_bucket_for_us(0) == 0);
+    CHECK(lock_bucket_for_us(1) == 1);
+    CHECK(lock_bucket_for_us(2) == 2);
+    CHECK(lock_bucket_for_us(3) == 2);
+    CHECK(lock_bucket_for_us(4) == 3);
+    CHECK(lock_bucket_for_us(1023) == 10);
+    CHECK(lock_bucket_for_us(1024) == 11);
+
+    CHECK(lock_bucket_upper_us(0) == 0);
+    CHECK(lock_bucket_upper_us(1) == 1);
+    CHECK(lock_bucket_upper_us(10) == 1023);
+
+    // Anything past the top bucket lands in it rather than indexing past the array or
+    // wrapping to a small bucket, which would report a multi-second hold as a fast one.
+    const int top = kLockHistogramBuckets - 1;
+    CHECK(lock_bucket_for_us(1ull << 40) == top);
+    CHECK(lock_bucket_for_us(~0ull) == top);
+}
+
+TEST_CASE("a held lock records its hold time and an uncontended acquisition") {
+    reset_lock_metrics();
+    RankedMutex mutex{LockRank::Storage};
+    {
+        std::lock_guard lock(mutex);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    const auto metrics = lock_metrics(LockRank::Storage);
+    CHECK(metrics.acquisitions == 1);
+    CHECK(metrics.contended == 0);
+    // Deliberately loose: a loaded machine can stretch a 20 ms sleep but cannot shorten it,
+    // so the lower bound is the only side that is safe to assert.
+    CHECK(metrics.max_hold_us >= 10000);
+    CHECK(metrics.total_hold_us >= 10000);
+    CHECK(metrics.hold_p50_us >= 10000);
+    // Nothing waited, so the wait histogram is empty rather than zero-valued.
+    CHECK(metrics.max_wait_us == 0);
+    CHECK(metrics.wait_p95_us == 0);
+    reset_lock_metrics();
+}
+
+TEST_CASE("a blocked acquisition records a wait and counts as contended") {
+    reset_lock_metrics();
+    RankedMutex mutex{LockRank::Storage};
+    std::atomic<bool> holding{false};
+
+    std::thread holder([&] {
+        std::lock_guard lock(mutex);
+        holding.store(true, std::memory_order_release);
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    });
+    // Waiting for the flag is what makes this deterministic: without it the second thread can
+    // win the lock outright and the test asserts on a contention that never happened.
+    while (!holding.load(std::memory_order_acquire)) std::this_thread::yield();
+    {
+        std::lock_guard lock(mutex);
+    }
+    holder.join();
+
+    const auto metrics = lock_metrics(LockRank::Storage);
+    CHECK(metrics.acquisitions == 2);
+    CHECK(metrics.contended == 1);
+    CHECK(metrics.max_wait_us > 0);
+    CHECK(metrics.wait_p95_us > 0);
+    reset_lock_metrics();
+}
+
+TEST_CASE("a percentile is a bucket bound and the outlier survives in the maximum") {
+    // The property that makes these figures reportable: p95 over twenty samples is the
+    // nineteenth, so one slow acquisition must not move it -- and must still be visible, which
+    // is what max_hold_us is for. A report that showed only percentiles would hide it.
+    reset_lock_metrics();
+    RankedMutex mutex{LockRank::Storage};
+    for (int i = 0; i < 19; ++i) {
+        std::lock_guard lock(mutex);
+    }
+    {
+        std::lock_guard lock(mutex);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    const auto metrics = lock_metrics(LockRank::Storage);
+    CHECK(metrics.acquisitions == 20);
+    CHECK(metrics.max_hold_us >= 10000);
+    CHECK(metrics.hold_p50_us < 1000);
+    CHECK(metrics.hold_p95_us < metrics.max_hold_us);
+    reset_lock_metrics();
+}
+
+TEST_CASE("lock metrics are kept per rank") {
+    reset_lock_metrics();
+    RankedMutex state{LockRank::State};
+    RankedMutex storage{LockRank::Storage};
+    {
+        std::lock_guard state_lock(state);
+        std::lock_guard storage_lock(storage);
+    }
+    {
+        std::lock_guard storage_lock(storage);
+    }
+
+    CHECK(lock_metrics(LockRank::State).acquisitions == 1);
+    CHECK(lock_metrics(LockRank::Storage).acquisitions == 2);
+    CHECK(lock_metrics(LockRank::ActivityBoundary).acquisitions == 0);
+    reset_lock_metrics();
 }
 
 TEST_CASE("app state respects its own lock order") {
