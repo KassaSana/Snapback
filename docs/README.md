@@ -12,7 +12,8 @@ session notes and parallel TODO lists do not belong in the repository.
 - [Architecture](ARCHITECTURE.md) — current runtime shape, module boundaries, threading,
   storage, IPC, and platform seams.
 - [Roadmap](ROADMAP.md) — the six-month phase sequence, then ordered open work and release
-  blockers. The only backlog.
+  blockers. The only backlog, and it carries **open work only**: every item names a status
+  (`proposed`, `accepted`, `in progress`) and completed items move to the archive below.
 
 ## Engineering references
 
@@ -31,8 +32,9 @@ session notes and parallel TODO lists do not belong in the repository.
 - [Astra review](ASTRA_REVIEW.md) — a read-only source review (organized 2026-09-19) that
   reconciles the audit and roadmap into twelve proposed correctness slices. Reference
   material only; slices become work when triaged into [`ROADMAP.md`](ROADMAP.md).
-- [Roadmap archive](roadmap_archive.md) — completed roadmap items, kept for history.
-  Deliberately stale as of each entry's completion date.
+- [Roadmap archive](roadmap_archive.md) — completed roadmap items and the `(original
+  finding)` history of items that closed, kept for history and indexed by id from
+  [`ROADMAP.md`](ROADMAP.md). Deliberately stale as of each entry's completion date.
 
 The root [README](../README.md), [frontend README](../frontend/README.md), and
 [scripts README](../scripts/README.md) remain short entry points for their own audiences.

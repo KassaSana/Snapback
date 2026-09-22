@@ -88,6 +88,7 @@ jobs:
           python3 scripts/check_unit_test_wiring.py --verbose
           python3 scripts/check_no_bom.py
           python3 scripts/check_scripts_documented.py
+          python3 scripts/check_roadmap_status.py --verbose
           python3 scripts/check_dead_headers.py --verbose
 
   # ---------------------------------------------------------------------------

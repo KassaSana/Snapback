@@ -37,6 +37,13 @@ Naming a tool in prose is fine. Claiming it wrote the code is not.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) is the **only** backlog. No parallel TODO lists, no
   session notes checked into the tree. A `docs/scratch/` directory existed once; it went
   stale, contradicted the accepted record, and was deleted.
+- **It holds open work only, and every item names a status.** `proposed` is the default: a
+  finding, however well evidenced, that nobody has agreed to build. `accepted` needs a citable
+  agreement — a row in the roadmap's own "Start here" sequence, or a release blocker in an ADR.
+  `in progress` means part of it landed. Promoting an item is a deliberate edit, never a side
+  effect of writing it persuasively. Completed items move to
+  [`docs/roadmap_archive.md`](docs/roadmap_archive.md); `scripts/check_roadmap_status.py`
+  enforces both rules.
 - Items tagged **`decision`** must not be implemented until an ADR exists. This rule was
   written after two "fixes" were made and then reverted because the reasoning behind the
   original shape was nowhere on disk.
