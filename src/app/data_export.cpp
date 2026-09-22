@@ -148,19 +148,25 @@ std::string render_archive_episodes(const std::vector<SnapbackEpisode>& episodes
     // capture is the raw material.
     if (episodes.empty()) return {};
     std::ostringstream out;
-    out << "#### Interruptions\n\n";
-    out << "| Left at | Came back | Away for | Returned to |\n";
-    out << "| --- | --- | --- | --- |\n";
-    for (const auto& episode : episodes) {
-        out << "| " << escape_table_cell(ts_text_or_unknown(episode.started_at_ms))
-            << " | " << escape_table_cell(ts_text(episode.ended_at_ms))
-            << " | " << duration_seconds(episode.duration_secs)
-            << " | "
-            << escape_table_cell(or_placeholder(
-                   episode.file_hint.empty() ? episode.app_name : episode.file_hint, "unknown"))
-            << " |\n";
-    }
-    out << "\n";
+    out << render_archive_episode_table_header();
+    for (const auto& episode : episodes) out << render_archive_episode_row(episode);
+    return out.str();
+}
+
+std::string render_archive_episode_table_header() {
+    return "#### Interruptions\n\n| Left at | Came back | Away for | Returned to |\n"
+           "| --- | --- | --- | --- |\n";
+}
+
+std::string render_archive_episode_row(const SnapbackEpisode& episode) {
+    std::ostringstream out;
+    out << "| " << escape_table_cell(ts_text_or_unknown(episode.started_at_ms))
+        << " | " << escape_table_cell(ts_text(episode.ended_at_ms))
+        << " | " << duration_seconds(episode.duration_secs)
+        << " | "
+        << escape_table_cell(or_placeholder(
+               episode.file_hint.empty() ? episode.app_name : episode.file_hint, "unknown"))
+        << " |\n";
     return out.str();
 }
 
@@ -186,8 +192,18 @@ std::string render_archive_footer(const PersonalArchiveExport& totals) {
     out << "- Windows captured: " << totals.window_count << "\n";
     out << "- Interruptions: " << totals.episode_count << "\n";
     if (totals.truncated()) {
-        out << "- **Omitted:** " << totals.omitted_sessions << " session(s) and "
-            << totals.omitted_windows << " window(s) were left out of this file.\n";
+        out << "- **Omitted:** ";
+        bool first = true;
+        const auto omission = [&out, &first](std::size_t count, const char* noun) {
+            if (count == 0) return;
+            if (!first) out << ", ";
+            out << count << ' ' << noun;
+            first = false;
+        };
+        omission(totals.omitted_sessions, "session(s)");
+        omission(totals.omitted_windows, "window(s)");
+        omission(totals.omitted_episodes, "interruption(s)");
+        out << " were left out of this file.\n";
     } else {
         out << "- Nothing was left out.\n";
     }

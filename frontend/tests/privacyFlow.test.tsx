@@ -64,6 +64,7 @@ beforeEach(() => {
     episodeCount: 0,
     omittedSessions: 0,
     omittedWindows: 0,
+    omittedEpisodes: 0,
     truncated: false,
     checksum: "0000000000000000",
   };
@@ -195,6 +196,7 @@ describe("legible data export", () => {
       episodeCount: 0,
       omittedSessions: 0,
       omittedWindows: 0,
+      omittedEpisodes: 0,
       truncated: false,
       checksum: "0000000000000000",
     };
@@ -219,6 +221,7 @@ describe("legible data export", () => {
       episodeCount: 1,
       omittedSessions: 0,
       omittedWindows: 5,
+      omittedEpisodes: 0,
       truncated: true,
       checksum: "0000000000000000",
     };

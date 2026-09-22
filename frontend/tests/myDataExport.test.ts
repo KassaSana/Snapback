@@ -10,6 +10,7 @@ const result = (over: Partial<MyDataExportResult> = {}): MyDataExportResult => (
   episodeCount: 7,
   omittedSessions: 0,
   omittedWindows: 0,
+  omittedEpisodes: 0,
   truncated: false,
   checksum: "deadbeefdeadbeef",
   ...over,
@@ -51,6 +52,12 @@ const result = (over: Partial<MyDataExportResult> = {}): MyDataExportResult => (
   assert.ok(message.includes("3 sessions"));
   assert.ok(message.includes("42 captured windows"));
   assert.ok(message.includes(" and "));
+}
+
+{
+  const episodes = result({ omittedEpisodes: 4, truncated: true });
+  const message = myDataExportMessage(episodes);
+  assert.ok(message.includes("4 interruptions could not be included"));
 }
 
 // Singulars, because "1 sessions" undermines a sentence whose job is to be believed.

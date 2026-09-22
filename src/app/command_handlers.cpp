@@ -486,6 +486,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
                         {"episodeCount", result.episode_count},
                         {"omittedSessions", result.omitted_sessions},
                         {"omittedWindows", result.omitted_windows},
+                        {"omittedEpisodes", result.omitted_episodes},
                         {"checksum", result.checksum},
                         {"truncated", result.truncated()}};
         },

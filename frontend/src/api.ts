@@ -378,6 +378,8 @@ export type MyDataExportResult = {
    */
   omittedSessions: number;
   omittedWindows: number;
+  /** Roadmap 9.16 follow-up. Per-session interruption pagination omissions. */
+  omittedEpisodes: number;
   /** Derived from the two counts above, never stored on its own. */
   truncated: boolean;
   /** Body checksum, also written into the file, so a cut-short copy is detectable. */
@@ -739,6 +741,7 @@ export const api = {
       episodeCount: Number(raw.episodeCount ?? 0),
       omittedSessions: Number(raw.omittedSessions ?? 0),
       omittedWindows: Number(raw.omittedWindows ?? 0),
+      omittedEpisodes: Number(raw.omittedEpisodes ?? 0),
       truncated: Boolean(raw.truncated),
       checksum: typeof raw.checksum === "string" ? raw.checksum : "",
     } satisfies MyDataExportResult;

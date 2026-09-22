@@ -416,6 +416,19 @@ public:
     std::vector<SnapbackEpisode> list_snapback_episodes(const std::string& session_id,
                                                         std::size_t limit);
 
+    struct EpisodeCursor {
+        std::int64_t sort_timestamp_ms{};
+        std::int64_t id{};
+    };
+    struct EpisodePage {
+        std::vector<SnapbackEpisode> rows;
+        EpisodeCursor next;  // the last row's stable sort key; meaningless when empty
+    };
+    EpisodePage snapback_episodes_after(
+        const std::string& session_id,
+        const std::optional<EpisodeCursor>& after,
+        std::size_t limit);
+
     // Context snapshots (the "where you left off" timeline).
     void save_context_snapshot(const std::string& session_id, const ContextSnapshotDto& snap);
     std::vector<ContextSnapshotDto> list_context_snapshots(const std::string& session_id,

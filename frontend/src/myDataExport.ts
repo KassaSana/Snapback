@@ -33,6 +33,7 @@ export function myDataExportMessage(result: MyDataExportResult): string {
   const omissions: string[] = [];
   if (result.omittedSessions > 0) omissions.push(plural(result.omittedSessions, "session"));
   if (result.omittedWindows > 0) omissions.push(plural(result.omittedWindows, "captured window"));
+  if (result.omittedEpisodes > 0) omissions.push(plural(result.omittedEpisodes, "interruption"));
   return `Wrote ${contents} to ${result.outputPath}. ${omissions.join(" and ")} could not be included.`;
 }
 

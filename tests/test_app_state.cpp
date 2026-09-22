@@ -3570,6 +3570,43 @@ TEST_CASE("the ownership export contains every session and window, past the old 
     CHECK(markdown.find("goal 204") != std::string::npos);
 }
 
+TEST_CASE("the ownership export contains every interruption past the old episode cap") {
+    // Roadmap 9.16. The old exporter fetched at most 10,000 episodes for one session. Legacy
+    // rows have no start time, so this also pins the stable id tie-breaker when 10,001 episodes
+    // share the same return timestamp.
+    TempDir temp_db;
+    auto storage = Storage::open(temp_db.path);
+    REQUIRE(storage.has_value());
+    const auto session = storage->create_session("many interruptions", FocusMode::Normal);
+    {
+        Storage::Transaction txn(*storage);
+        for (std::size_t i = 0; i < 10001; ++i) {
+            SnapbackEpisode episode;
+            episode.session_id = session.session_id;
+            episode.summary = "episode " + std::to_string(i);
+            episode.app_name = "Cursor";
+            episode.file_hint = "episode " + std::to_string(i);
+            episode.ended_at_ms = ms("2026-07-30T09:12:00Z");
+            episode.duration_secs = 60;
+            REQUIRE(storage->insert_snapback_episode(episode));
+        }
+        txn.commit();
+    }
+
+    AppState state(std::move(*storage), temp_db.path);
+    TempDir out;
+    const auto exported = state.export_personal_data(out.path, /*page_size=*/7);
+
+    CHECK(exported.session_count == 1);
+    CHECK(exported.episode_count == 10001);
+    CHECK(exported.omitted_episodes == 0);
+    CHECK_FALSE(exported.truncated());
+
+    const auto markdown = read_file(exported.output_path);
+    CHECK(count_occurrences(markdown, "| episode 0 |") == 1);
+    CHECK(count_occurrences(markdown, "| episode 10000 |") == 1);
+}
+
 TEST_CASE("the export states what it holds and can be told from a truncated file") {
     // Roadmap 9.16's manifest. "Include exact exported/omitted counts per record type plus a
     // small manifest/checksum so a partial or interrupted file is distinguishable from a valid
@@ -3612,6 +3649,9 @@ TEST_CASE("an omitted record type cannot be reported as a complete export") {
     CHECK(report.truncated());
     report.omitted_windows = 0;
     report.omitted_sessions = 1;
+    CHECK(report.truncated());
+    report.omitted_sessions = 0;
+    report.omitted_episodes = 1;
     CHECK(report.truncated());
 }
 

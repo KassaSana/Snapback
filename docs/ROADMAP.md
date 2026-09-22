@@ -2174,6 +2174,13 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   regression verifies the accepted export still completes with a valid output path. Export
   cancellation and atomic publication remain under **14.6**.
 
+  *Follow-up 2026-09-21:* the remaining 10,000-episode cap is gone. Episodes now use a
+  stable keyset cursor on their effective timestamp plus row id, so equal-timestamp legacy
+  rows cannot be skipped or repeated. The export count and footer now carry the same
+  per-record omission shape as sessions and windows, and the regression exports 10,001
+  interruptions through a page size of 7. Export cancellation and atomic publication remain
+  under **14.6**.
+
 - **8.12 (original finding) — Make “Delete all activity” cover every app-owned copy of that
   activity.** `M`
   Opened 2026-08-05. `delete_activity_exports()` removes only `exports/training` and

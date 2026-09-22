@@ -1330,21 +1330,33 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
             session.record = std::move(summary.record);
             session.recap = std::move(summary.recap);
 
-            std::vector<SnapbackEpisode> episodes;
             std::size_t window_total = 0;
             {
                 std::lock_guard lock(storage_mutex_);
-                // Roadmap 2.15's episodes. Bounded per session by their nature — an
-                // interruption is a rare event, not a per-second sample — so they are read in
-                // one go rather than paged.
-                episodes = storage_.list_snapback_episodes(session_id, 10000);
                 window_total = storage_.count_context_snapshots(session_id);
             }
-            session.episodes = episodes;
 
             emit(render_archive_session_header(session, ++index));
-            emit(render_archive_episodes(session.episodes));
-            result.episode_count += session.episodes.size();
+            std::optional<Storage::EpisodeCursor> episode_cursor;
+            bool wrote_episode_header = false;
+            for (;;) {
+                Storage::EpisodePage episode_page;
+                {
+                    std::lock_guard lock(storage_mutex_);
+                    episode_page =
+                        storage_.snapback_episodes_after(session_id, episode_cursor, page_size);
+                }
+                if (episode_page.rows.empty()) break;
+                if (!wrote_episode_header) {
+                    emit(render_archive_episode_table_header());
+                    wrote_episode_header = true;
+                }
+                for (const auto& episode : episode_page.rows) {
+                    emit(render_archive_episode_row(episode));
+                    ++result.episode_count;
+                }
+                episode_cursor = episode_page.next;
+            }
             ++result.session_count;
 
             if (window_total == 0) {

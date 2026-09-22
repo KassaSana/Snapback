@@ -2562,6 +2562,46 @@ std::vector<SnapbackEpisode> Storage::list_snapback_episodes(const std::string& 
     return rows;
 }
 
+Storage::EpisodePage Storage::snapback_episodes_after(
+    const std::string& session_id, const std::optional<EpisodeCursor>& after,
+    std::size_t limit) {
+    // The old export used LIMIT 10000 with no continuation, silently dropping later
+    // interruptions. Keyset pagination keeps equal timestamps distinct with the row id.
+    Stmt stmt(db_,
+              "SELECT session_id, summary, timestamp, started_at, duration_secs, app_name, "
+              "file_hint, id, COALESCE(started_at, timestamp) "
+              "FROM snapback_events WHERE session_id = ?1 "
+              "AND (?2 IS NULL OR COALESCE(started_at, timestamp) > ?2 "
+              "OR (COALESCE(started_at, timestamp) = ?2 AND id > ?3)) "
+              "ORDER BY COALESCE(started_at, timestamp) ASC, id ASC LIMIT ?4");
+    stmt.bind(1, session_id);
+    if (after) {
+        stmt.bind(2, after->sort_timestamp_ms);
+        stmt.bind(3, after->id);
+    } else {
+        stmt.bind_null(2);
+        stmt.bind_null(3);
+    }
+    stmt.bind(4, static_cast<std::int64_t>(limit));
+
+    EpisodePage page;
+    while (stmt.step_row()) {
+        SnapbackEpisode episode;
+        episode.session_id = column_text(stmt.get(), 0);
+        episode.summary = column_text(stmt.get(), 1);
+        episode.ended_at_ms = sqlite3_column_int64(stmt.get(), 2);
+        episode.started_at_ms = column_opt_ms(stmt.get(), 3);
+        episode.duration_secs =
+            static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
+        episode.app_name = column_text(stmt.get(), 5);
+        episode.file_hint = column_text(stmt.get(), 6);
+        page.next.sort_timestamp_ms = sqlite3_column_int64(stmt.get(), 8);
+        page.next.id = sqlite3_column_int64(stmt.get(), 7);
+        page.rows.push_back(std::move(episode));
+    }
+    return page;
+}
+
 void Storage::save_context_snapshot(const std::string& session_id,
                                     const ContextSnapshotDto& snap) {
     Stmt stmt(db_, cached_stmt(

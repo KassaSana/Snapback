@@ -21,6 +21,7 @@ const successFor = (command: string): Json => {
         episodeCount: 2,
         omittedSessions: 0,
         omittedWindows: 0,
+        omittedEpisodes: 0,
         truncated: false,
         checksum: "abc",
       };

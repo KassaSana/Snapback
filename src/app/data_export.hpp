@@ -65,13 +65,14 @@ struct PersonalArchiveExport {
     // must not be reintroducible without saying which record type it applies to.
     std::size_t omitted_sessions = 0;
     std::size_t omitted_windows = 0;
+    std::size_t omitted_episodes = 0;
     // A checksum of the document body, also written into the file's own footer. It exists so
     // a truncated or interrupted file is distinguishable from a valid empty one — the item's
     // requirement — not as tamper protection, which it is not.
     std::string checksum;
 
     [[nodiscard]] bool truncated() const {
-        return omitted_sessions > 0 || omitted_windows > 0;
+        return omitted_sessions > 0 || omitted_windows > 0 || omitted_episodes > 0;
     }
 };
 
@@ -86,6 +87,8 @@ std::string render_archive_session_header(const PersonalArchiveSession& session,
                                           std::size_t index_from_one);
 // The interruptions table, or an empty string when there were none.
 std::string render_archive_episodes(const std::vector<SnapbackEpisode>& episodes);
+std::string render_archive_episode_table_header();
+std::string render_archive_episode_row(const SnapbackEpisode& episode);
 // The header row of the windows table. Emitted once per session that has any.
 std::string render_archive_window_table_header();
 // One window row. Called per row so a page of them never accumulates.
