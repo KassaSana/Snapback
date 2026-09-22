@@ -117,6 +117,18 @@ public:
     std::optional<SessionRecord> get_session(const std::string& session_id);
     HealthStatus health() const;
     DiagnosticsSnapshot diagnostics() const;
+    // Iterations of the engine tick loop since start. Paired with process CPU time it is the
+    // idle-cost figure 14.11 asks for; alone it is close to a constant, by design.
+    std::uint64_t engine_wakeups() const {
+        return engine_wakeups_.load(std::memory_order_relaxed);
+    }
+    // The capture ring's deepest occupancy so far, in events. `capture_events_dropped` on
+    // HealthStatus says the ring overflowed; this says how much margin there was before it
+    // did, which is the half a capacity question needs.
+    std::size_t capture_ring_high_water() const { return capture_.ring_high_water(); }
+    // Busy-wait counters for the engine's storage connection. Takes storage_mutex_, so it is
+    // a diagnostic call and not something to put on a hot path.
+    SqliteBusySnapshot storage_busy_stats() const;
     std::optional<PredictionRecord> latest_prediction() const;
     std::optional<SessionRecord> active_session() const;
 
@@ -607,6 +619,10 @@ private:
     EmitHook emit_hook_;
     std::thread engine_thread_;
     std::atomic<bool> engine_running_{false};
+    // ROADMAP 14.11, the idle-cost figure. One per iteration of the tick loop, which at
+    // kEngineTickIntervalMs is ten a second whether or not there is a session -- the count
+    // is the denominator for the CPU time beside it, not an interesting number on its own.
+    std::atomic<std::uint64_t> engine_wakeups_{0};
     // The tick only submits work. This owned worker deletes bounded batches while recording
     // is inactive and is cancelled/joined with the engine during shutdown.
     std::mutex maintenance_mutex_;

@@ -633,6 +633,7 @@ void AppState::start_engine_impl(InputHook* hook) {
             int shutdown_failures = 0;
             constexpr int kMaxShutdownFailures = 64;
             do {
+                engine_wakeups_.fetch_add(1, std::memory_order_relaxed);
                 bool tick_failed = false;
                 try {
                     backlog = engine_tick();
@@ -1040,6 +1041,11 @@ HealthStatus AppState::health() const {
     h.model_deployment = live->model_deployment;
     h.developer_tools_enabled = developer_tools_enabled();
     return h;
+}
+
+SqliteBusySnapshot AppState::storage_busy_stats() const {
+    std::lock_guard lock(storage_mutex_);
+    return storage_.busy_stats();
 }
 
 DiagnosticsSnapshot AppState::diagnostics() const {

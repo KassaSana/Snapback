@@ -63,6 +63,9 @@ public:
     }
 
     std::uint64_t events_dropped() const { return dropped_.load(std::memory_order_relaxed); }
+    // The ring's deepest occupancy so far. `events_dropped()` says the buffer overflowed;
+    // this says how close it came before it did, which is the half a capacity decision needs.
+    std::size_t ring_high_water() const { return buffer_.high_water(); }
     bool running() const { return running_.load(std::memory_order_relaxed); }
     bool failed() const { return failed_.load(std::memory_order_acquire); }
     bool input_observed() const {

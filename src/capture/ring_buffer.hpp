@@ -29,11 +29,21 @@ public:
     bool push(T value) {
         const std::size_t head = head_.load(std::memory_order_relaxed);
         const std::size_t next = (head + 1) & kMask;
-        if (next == tail_.load(std::memory_order_acquire)) {
+        const std::size_t tail = tail_.load(std::memory_order_acquire);
+        if (next == tail) {
             return false;  // full
         }
         slots_[head] = std::move(value);
         head_.store(next, std::memory_order_release);
+        // ROADMAP 14.11. `capture_events_dropped` only moves once the ring has already
+        // overflowed, which makes it a report of damage rather than of headroom: a run that
+        // peaked at 65,000 of 65,536 slots and one that never passed ten look identical.
+        // The occupancy is free here -- both ends were just loaded -- and this is the
+        // producer, the only thread that writes it, so a plain load/store is enough.
+        const std::size_t occupancy = (next - tail) & kMask;
+        if (occupancy > high_water_.load(std::memory_order_relaxed)) {
+            high_water_.store(occupancy, std::memory_order_relaxed);
+        }
         return true;
     }
 
@@ -53,6 +63,10 @@ public:
     // without consuming the event that would answer it. Only meaningful on the consumer
     // thread: the producer can make a false reading true a moment later, which is harmless
     // here (the next tick sees it) and is why this is not used for correctness decisions.
+    // The deepest this ring has ever been, in events. Read from any thread; it can be one
+    // push stale, which is immaterial for a high-water mark.
+    std::size_t high_water() const { return high_water_.load(std::memory_order_relaxed); }
+
     bool has_pending() const {
         return tail_.load(std::memory_order_relaxed) != head_.load(std::memory_order_acquire);
     }
@@ -68,6 +82,10 @@ private:
     // cache lines. Adjacent atomics would share a line and ping-pong it between the two
     // threads on every push/pop (false sharing); 64 bytes is the common x86/ARM line size.
     alignas(64) std::atomic<std::size_t> head_{0};  // written by producer only
+    // Producer-written like head_, so it shares that cache line on purpose: putting it on
+    // its own would cost a third line to no benefit, and pairing it with tail_ would
+    // reintroduce exactly the false sharing the alignment above exists to prevent.
+    std::atomic<std::size_t> high_water_{0};
     alignas(64) std::atomic<std::size_t> tail_{0};  // written by consumer only
 };
 

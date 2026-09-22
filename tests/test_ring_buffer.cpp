@@ -56,3 +56,29 @@ TEST_CASE("RingBuffer is FIFO-correct and race-free under concurrent producer/co
     CHECK_FALSE(torn.load());               // every slot was consistent (no publish race)
     CHECK(received.load() == kCount);        // every value arrived exactly once, in order
 }
+
+TEST_CASE("the ring remembers how deep it ever got, not just that it overflowed") {
+    // ROADMAP 14.11. `capture_events_dropped` only moves after the ring has already
+    // overflowed, so it reports damage rather than headroom -- a run that peaked one slot
+    // short of full and one that never passed two look identical through it. The high-water
+    // mark is what turns "we never dropped an event" into a statement about margin.
+    RingBuffer<Item, 8> buffer;
+    CHECK(buffer.high_water() == 0);
+
+    for (int i = 0; i < 5; ++i) REQUIRE(buffer.push(Item{static_cast<std::uint64_t>(i), 0}));
+    CHECK(buffer.high_water() == 5);
+
+    // Draining does not lower it: the mark answers "how close did this ever come", and a
+    // figure that decayed back to the current depth would report a quiet moment as headroom
+    // the run never had.
+    for (int i = 0; i < 5; ++i) REQUIRE(buffer.pop().has_value());
+    CHECK(buffer.high_water() == 5);
+
+    // A power-of-two ring holds Capacity - 1 items -- the slot that would make head meet
+    // tail is what distinguishes full from empty -- so the mark tops out there and the
+    // failed push leaves it alone rather than counting an event that was never stored.
+    for (int i = 0; i < 7; ++i) REQUIRE(buffer.push(Item{static_cast<std::uint64_t>(i), 0}));
+    CHECK(buffer.high_water() == 7);
+    CHECK_FALSE(buffer.push(Item{99, 0}));
+    CHECK(buffer.high_water() == 7);
+}

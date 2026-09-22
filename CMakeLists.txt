@@ -89,6 +89,7 @@ add_library(snapback_core STATIC
   src/snapback/overlay_common.cpp
   src/app/tray_common.cpp
   src/util/private_dir.cpp
+  src/util/process_cpu.cpp
   src/util/durable_file.cpp
   src/util/subprocess.cpp
   src/app/webview_origin.cpp
@@ -294,6 +295,11 @@ if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_budget_benchmarks benchmarks/bench_budgets.cpp)
   target_include_directories(snapback_budget_benchmarks PRIVATE benchmarks tests)
   target_link_libraries(snapback_budget_benchmarks PRIVATE snapback_app)
+
+  # What the engine costs while idle: 14.11's wakeups-per-second and idle-CPU figures.
+  add_executable(snapback_idle_benchmarks benchmarks/bench_idle.cpp)
+  target_include_directories(snapback_idle_benchmarks PRIVATE benchmarks tests)
+  target_link_libraries(snapback_idle_benchmarks PRIVATE snapback_app)
 endif()
 
 # --- the desktop app (later phases) ---
