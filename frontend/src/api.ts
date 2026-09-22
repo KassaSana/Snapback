@@ -113,6 +113,49 @@ export type ModelDeploymentHealth = {
   rollbackAvailable: boolean;
 };
 
+/** Roadmap 14.11. What the process costs itself, carried on health so it travels in the
+ *  support bundle. Engineering figures, not user-facing ones: nothing renders these today.
+ *
+ *  The `...P50Us` / `...P95Us` fields are histogram bucket **upper bounds**, not measured
+ *  values (see `ranked_mutex.hpp`). Anything that ever displays one has to say "<=". The
+ *  exact tail is the `...Max...` field beside it. */
+export type RuntimeMetrics = {
+  engineWakeups: number;
+  processCpuMs: number;
+  captureRingHighWater: number;
+  captureRingCapacity: number;
+  storageLockAcquisitions: number;
+  storageLockContended: number;
+  storageLockHoldP50Us: number;
+  storageLockHoldP95Us: number;
+  storageLockMaxHoldUs: number;
+  storageLockWaitP95Us: number;
+  storageLockMaxWaitUs: number;
+  sqliteBusyWaits: number;
+  sqliteBusyExhausted: number;
+  sqliteBusyMaxWaitMs: number;
+};
+
+/** The all-zero value, for the placeholder health a surface renders before the first
+ *  get_diagnostics returns. Named rather than spelled out at each use so a field added above
+ *  cannot be forgotten in one of them. */
+export const EMPTY_RUNTIME_METRICS: RuntimeMetrics = {
+  engineWakeups: 0,
+  processCpuMs: 0,
+  captureRingHighWater: 0,
+  captureRingCapacity: 0,
+  storageLockAcquisitions: 0,
+  storageLockContended: 0,
+  storageLockHoldP50Us: 0,
+  storageLockHoldP95Us: 0,
+  storageLockMaxHoldUs: 0,
+  storageLockWaitP95Us: 0,
+  storageLockMaxWaitUs: 0,
+  sqliteBusyWaits: 0,
+  sqliteBusyExhausted: 0,
+  sqliteBusyMaxWaitMs: 0,
+};
+
 export type HealthStatus = {
   status: string;
   captureRunning: boolean;
@@ -127,6 +170,7 @@ export type HealthStatus = {
   permissions: PermissionStatus;
   classifier: ClassifierStatus;
   modelDeployment: ModelDeploymentHealth;
+  runtime: RuntimeMetrics;
   developerToolsEnabled: boolean;
 };
 

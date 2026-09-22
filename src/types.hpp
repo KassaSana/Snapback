@@ -275,6 +275,44 @@ struct ModelDeploymentHealth {
     bool rollback_available{};
 };
 
+// RuntimeMetrics — what the process is costing itself. Roadmap 14.11.
+//
+// These are engineering figures, not user-facing ones, and they are here rather than in a
+// developer-only surface for one reason: the numbers that settle 14.1 and 14.5 have to come
+// from a real install over a real working day, and the only path out of one is the support
+// bundle, which carries `HealthStatus` already. A figure that exists only in a benchmark
+// answers a question nobody asked.
+//
+// Percentiles are **upper bounds** read off a histogram (see `ranked_mutex.hpp`), never exact
+// values. The field names say `_p95_us` and the bound is what the number means; the exact
+// tail is the `max_*` beside it. Anything that renders these must say "<=" or it is lying.
+struct RuntimeMetrics {
+    // The engine tick loop wakes at kEngineTickIntervalMs whether or not there is anything to
+    // do, so this is close to a constant. It is the denominator for the CPU figure, not an
+    // interesting number alone.
+    std::uint64_t engine_wakeups{};
+    // User + kernel milliseconds for the whole process since it started. 0 where the platform
+    // call failed, or where the process has not yet burned one scheduler tick.
+    std::uint64_t process_cpu_ms{};
+    // How deep the capture ring ever got, against what it holds. `capture_events_dropped`
+    // above says it overflowed; this says how much margin there was before it did.
+    std::uint64_t capture_ring_high_water{};
+    std::uint64_t capture_ring_capacity{};
+    // storage_mutex_, which every storage-backed UI report and the engine's persist phase
+    // share. Contention here is what 14.1 is about.
+    std::uint64_t storage_lock_acquisitions{};
+    std::uint64_t storage_lock_contended{};
+    std::uint64_t storage_lock_hold_p50_us{};
+    std::uint64_t storage_lock_hold_p95_us{};
+    std::uint64_t storage_lock_max_hold_us{};
+    std::uint64_t storage_lock_wait_p95_us{};
+    std::uint64_t storage_lock_max_wait_us{};
+    // SQLITE_BUSY pressure and failure. An exhausted wait is a discarded persistence batch.
+    std::uint64_t sqlite_busy_waits{};
+    std::uint64_t sqlite_busy_exhausted{};
+    std::uint64_t sqlite_busy_max_wait_ms{};
+};
+
 // HealthStatus — nests PermissionStatus + ClassifierStatus as objects.
 struct HealthStatus {
     std::string status;
@@ -290,6 +328,7 @@ struct HealthStatus {
     PermissionStatus permissions;
     ClassifierStatus classifier;
     ModelDeploymentHealth model_deployment;
+    RuntimeMetrics runtime;
     // ADR-0006 / roadmap 13.7. True in Debug, or Release with SNAPBACK_DEV_TRAINING set.
     bool developer_tools_enabled{};
 };
@@ -764,6 +803,8 @@ void to_json(json& j, const ClassifierStatus& v);
 void from_json(const json& j, ClassifierStatus& v);
 void to_json(json& j, const ModelDeploymentHealth& v);
 void from_json(const json& j, ModelDeploymentHealth& v);
+void to_json(json& j, const RuntimeMetrics& v);
+void from_json(const json& j, RuntimeMetrics& v);
 void to_json(json& j, const HealthStatus& v);
 void from_json(const json& j, HealthStatus& v);
 void to_json(json& j, const SnapbackPayload& v);

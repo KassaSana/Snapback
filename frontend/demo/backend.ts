@@ -239,6 +239,24 @@ export class DemoBackend {
       persistenceFailureReason: null,
       captureEventsDropped: 0,
       captureStalled: false,
+      // Roadmap 14.11. Zeroed rather than invented: the demo has no engine thread, no lock
+      // and no SQLite, so any other value here would be a number that never happened.
+      runtime: {
+        engineWakeups: 0,
+        processCpuMs: 0,
+        captureRingHighWater: 0,
+        captureRingCapacity: 0,
+        storageLockAcquisitions: 0,
+        storageLockContended: 0,
+        storageLockHoldP50Us: 0,
+        storageLockHoldP95Us: 0,
+        storageLockMaxHoldUs: 0,
+        storageLockWaitP95Us: 0,
+        storageLockMaxWaitUs: 0,
+        sqliteBusyWaits: 0,
+        sqliteBusyExhausted: 0,
+        sqliteBusyMaxWaitMs: 0,
+      },
       lastPredictionAgeSecs: latest ? Math.round((this.now() - latest.timestampMs) / 1000) : null,
       predictionSuppressionReason: "none",
       permissions: {

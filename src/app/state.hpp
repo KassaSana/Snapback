@@ -126,9 +126,13 @@ public:
     // HealthStatus says the ring overflowed; this says how much margin there was before it
     // did, which is the half a capacity question needs.
     std::size_t capture_ring_high_water() const { return capture_.ring_high_water(); }
-    // Busy-wait counters for the engine's storage connection. Takes storage_mutex_, so it is
-    // a diagnostic call and not something to put on a hot path.
+    // Busy-wait counters for the engine's storage connection. Lock-free on purpose; see the
+    // definition for why a diagnostic must not queue behind the contention it measures.
     SqliteBusySnapshot storage_busy_stats() const;
+    // Everything 14.11 asked for, in one struct, taking no locks. Folded into `health()` so
+    // it travels in the support bundle, which is the only way a real install's numbers reach
+    // anyone who can act on them.
+    RuntimeMetrics runtime_metrics() const;
     std::optional<PredictionRecord> latest_prediction() const;
     std::optional<SessionRecord> active_session() const;
 

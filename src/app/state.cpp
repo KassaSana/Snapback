@@ -25,6 +25,7 @@
 #include "engine/focus_modes.hpp"
 #include "engine/onnx_model.hpp"
 #include "snapback/focus_window.hpp"
+#include "util/process_cpu.hpp"
 #include "util/text.hpp"
 #include "util/time.hpp"
 
@@ -1039,12 +1040,43 @@ HealthStatus AppState::health() const {
     h.classifier.onnx_runtime_enabled = live->classifier.onnx_runtime_enabled;
     h.classifier.model_path = live->classifier.model_path;
     h.model_deployment = live->model_deployment;
+    h.runtime = runtime_metrics();
     h.developer_tools_enabled = developer_tools_enabled();
     return h;
 }
 
+RuntimeMetrics AppState::runtime_metrics() const {
+    // Roadmap 14.11. Every figure here is a relaxed atomic read or an OS call; nothing on
+    // this path takes a lock, because `health()` is what a stalled app is asked for and a
+    // diagnostic that blocks is no diagnostic.
+    RuntimeMetrics out;
+    out.engine_wakeups = engine_wakeups();
+    out.process_cpu_ms = process_cpu_ms();
+    out.capture_ring_high_water = static_cast<std::uint64_t>(capture_ring_high_water());
+    out.capture_ring_capacity = static_cast<std::uint64_t>(CaptureThread::kCapacity);
+
+    const auto storage_lock = lock_metrics(LockRank::Storage);
+    out.storage_lock_acquisitions = storage_lock.acquisitions;
+    out.storage_lock_contended = storage_lock.contended;
+    out.storage_lock_hold_p50_us = storage_lock.hold_p50_us;
+    out.storage_lock_hold_p95_us = storage_lock.hold_p95_us;
+    out.storage_lock_max_hold_us = storage_lock.max_hold_us;
+    out.storage_lock_wait_p95_us = storage_lock.wait_p95_us;
+    out.storage_lock_max_wait_us = storage_lock.max_wait_us;
+
+    const auto busy = storage_busy_stats();
+    out.sqlite_busy_waits = busy.waits;
+    out.sqlite_busy_exhausted = busy.exhausted;
+    out.sqlite_busy_max_wait_ms = busy.max_wait_ms;
+    return out;
+}
+
 SqliteBusySnapshot AppState::storage_busy_stats() const {
-    std::lock_guard lock(storage_mutex_);
+    // Deliberately without storage_mutex_. The counters are atomics at a stable address that
+    // nothing reassigns for this AppState's lifetime, so the read is safe -- and taking the
+    // lock would mean a diagnostics read could queue behind a multi-second query, which is
+    // the exact pathology these numbers exist to expose. A diagnostic that participates in
+    // the contention it is measuring reports on itself.
     return storage_.busy_stats();
 }
 

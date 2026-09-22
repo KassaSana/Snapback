@@ -18,6 +18,7 @@ import type {
   ExportTrainingResult,
   FocusSummary,
   HealthStatus,
+  RuntimeMetrics,
   ModelDeploymentHealth,
   PermissionStatus,
   PomodoroPhase,
@@ -273,6 +274,28 @@ export function mapModelDeploymentHealth(raw: Record<string, unknown>): ModelDep
   };
 }
 
+export function mapRuntimeMetrics(raw: Record<string, unknown>): RuntimeMetrics {
+  // One reader for every field, because a counter that fails to map reads as 0 on this side
+  // and a 0 contention count is indistinguishable from good news.
+  const num = (camel: string, snake: string): number => Number(raw[snake] ?? raw[camel] ?? 0);
+  return {
+    engineWakeups: num("engineWakeups", "engine_wakeups"),
+    processCpuMs: num("processCpuMs", "process_cpu_ms"),
+    captureRingHighWater: num("captureRingHighWater", "capture_ring_high_water"),
+    captureRingCapacity: num("captureRingCapacity", "capture_ring_capacity"),
+    storageLockAcquisitions: num("storageLockAcquisitions", "storage_lock_acquisitions"),
+    storageLockContended: num("storageLockContended", "storage_lock_contended"),
+    storageLockHoldP50Us: num("storageLockHoldP50Us", "storage_lock_hold_p50_us"),
+    storageLockHoldP95Us: num("storageLockHoldP95Us", "storage_lock_hold_p95_us"),
+    storageLockMaxHoldUs: num("storageLockMaxHoldUs", "storage_lock_max_hold_us"),
+    storageLockWaitP95Us: num("storageLockWaitP95Us", "storage_lock_wait_p95_us"),
+    storageLockMaxWaitUs: num("storageLockMaxWaitUs", "storage_lock_max_wait_us"),
+    sqliteBusyWaits: num("sqliteBusyWaits", "sqlite_busy_waits"),
+    sqliteBusyExhausted: num("sqliteBusyExhausted", "sqlite_busy_exhausted"),
+    sqliteBusyMaxWaitMs: num("sqliteBusyMaxWaitMs", "sqlite_busy_max_wait_ms"),
+  };
+}
+
 export function mapHealth(raw: Record<string, unknown>): HealthStatus {
   return {
     status: String(raw.status ?? "offline"),
@@ -309,6 +332,7 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
         (raw.modelDeployment as Record<string, unknown>) ??
         {},
     ),
+    runtime: mapRuntimeMetrics((raw.runtime as Record<string, unknown>) ?? {}),
     developerToolsEnabled: Boolean(
       raw.developer_tools_enabled ?? raw.developerToolsEnabled ?? false,
     ),

@@ -146,6 +146,9 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     h.classifier.onnx_runtime_enabled = false;
     h.developer_tools_enabled = true;
     h.model_deployment.state = "ok";
+    h.runtime.engine_wakeups = 4200;
+    h.runtime.storage_lock_hold_p95_us = 511;
+    h.runtime.sqlite_busy_exhausted = 2;
 
     json j = h;
     CHECK(j.contains("captureRunning"));
@@ -172,6 +175,54 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
     CHECK(back.classifier.backend == "heuristic");
     CHECK(back.developer_tools_enabled);
     CHECK(back.model_deployment.state == "ok");
+    CHECK(back.runtime.engine_wakeups == 4200);
+    CHECK(back.runtime.storage_lock_hold_p95_us == 511);
+    CHECK(back.runtime.sqlite_busy_exhausted == 2);
+}
+
+TEST_CASE("RuntimeMetrics round-trips every field it publishes") {
+    // Roadmap 14.11. These are the numbers a user's support bundle carries out of a real
+    // install, and a field that serialises but does not parse back is a field that silently
+    // reads as zero on the other side -- which for a contention counter is indistinguishable
+    // from good news. Every one is set to something distinct so a copy-paste slip between
+    // two similarly named keys fails here.
+    RuntimeMetrics metrics;
+    metrics.engine_wakeups = 1;
+    metrics.process_cpu_ms = 2;
+    metrics.capture_ring_high_water = 3;
+    metrics.capture_ring_capacity = 4;
+    metrics.storage_lock_acquisitions = 5;
+    metrics.storage_lock_contended = 6;
+    metrics.storage_lock_hold_p50_us = 7;
+    metrics.storage_lock_hold_p95_us = 8;
+    metrics.storage_lock_max_hold_us = 9;
+    metrics.storage_lock_wait_p95_us = 10;
+    metrics.storage_lock_max_wait_us = 11;
+    metrics.sqlite_busy_waits = 12;
+    metrics.sqlite_busy_exhausted = 13;
+    metrics.sqlite_busy_max_wait_ms = 14;
+
+    json j = metrics;
+    CHECK(j["engineWakeups"] == 1);
+    CHECK(j["captureRingCapacity"] == 4);
+    CHECK(j["storageLockHoldP95Us"] == 8);
+    CHECK(j["sqliteBusyMaxWaitMs"] == 14);
+
+    const auto back = j.get<RuntimeMetrics>();
+    CHECK(back.engine_wakeups == 1);
+    CHECK(back.process_cpu_ms == 2);
+    CHECK(back.capture_ring_high_water == 3);
+    CHECK(back.capture_ring_capacity == 4);
+    CHECK(back.storage_lock_acquisitions == 5);
+    CHECK(back.storage_lock_contended == 6);
+    CHECK(back.storage_lock_hold_p50_us == 7);
+    CHECK(back.storage_lock_hold_p95_us == 8);
+    CHECK(back.storage_lock_max_hold_us == 9);
+    CHECK(back.storage_lock_wait_p95_us == 10);
+    CHECK(back.storage_lock_max_wait_us == 11);
+    CHECK(back.sqlite_busy_waits == 12);
+    CHECK(back.sqlite_busy_exhausted == 13);
+    CHECK(back.sqlite_busy_max_wait_ms == 14);
 }
 
 TEST_CASE("SessionRecord optional timestamps round-trip as null when absent") {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { api, type DiagnosticsSnapshot } from "./api";
+import { api, EMPTY_RUNTIME_METRICS, type DiagnosticsSnapshot } from "./api";
 
 const emptyDiagnostics: DiagnosticsSnapshot = {
   version: "0.0.0-dev",
@@ -13,6 +13,7 @@ const emptyDiagnostics: DiagnosticsSnapshot = {
     persistenceFailureReason: null,
     captureEventsDropped: 0,
     captureStalled: false,
+    runtime: EMPTY_RUNTIME_METRICS,
     lastPredictionAgeSecs: null,
     predictionSuppressionReason: "not_recorded",
     permissions: {

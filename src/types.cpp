@@ -220,6 +220,41 @@ void from_json(const json& j, ModelDeploymentHealth& v) {
     v.rollback_available = get_or<bool>(j, "rollbackAvailable", false);
 }
 
+// ---- RuntimeMetrics --------------------------------------------------------
+
+void to_json(json& j, const RuntimeMetrics& v) {
+    j = json{{"engineWakeups", v.engine_wakeups},
+             {"processCpuMs", v.process_cpu_ms},
+             {"captureRingHighWater", v.capture_ring_high_water},
+             {"captureRingCapacity", v.capture_ring_capacity},
+             {"storageLockAcquisitions", v.storage_lock_acquisitions},
+             {"storageLockContended", v.storage_lock_contended},
+             {"storageLockHoldP50Us", v.storage_lock_hold_p50_us},
+             {"storageLockHoldP95Us", v.storage_lock_hold_p95_us},
+             {"storageLockMaxHoldUs", v.storage_lock_max_hold_us},
+             {"storageLockWaitP95Us", v.storage_lock_wait_p95_us},
+             {"storageLockMaxWaitUs", v.storage_lock_max_wait_us},
+             {"sqliteBusyWaits", v.sqlite_busy_waits},
+             {"sqliteBusyExhausted", v.sqlite_busy_exhausted},
+             {"sqliteBusyMaxWaitMs", v.sqlite_busy_max_wait_ms}};
+}
+void from_json(const json& j, RuntimeMetrics& v) {
+    v.engine_wakeups = get_or<std::uint64_t>(j, "engineWakeups", 0);
+    v.process_cpu_ms = get_or<std::uint64_t>(j, "processCpuMs", 0);
+    v.capture_ring_high_water = get_or<std::uint64_t>(j, "captureRingHighWater", 0);
+    v.capture_ring_capacity = get_or<std::uint64_t>(j, "captureRingCapacity", 0);
+    v.storage_lock_acquisitions = get_or<std::uint64_t>(j, "storageLockAcquisitions", 0);
+    v.storage_lock_contended = get_or<std::uint64_t>(j, "storageLockContended", 0);
+    v.storage_lock_hold_p50_us = get_or<std::uint64_t>(j, "storageLockHoldP50Us", 0);
+    v.storage_lock_hold_p95_us = get_or<std::uint64_t>(j, "storageLockHoldP95Us", 0);
+    v.storage_lock_max_hold_us = get_or<std::uint64_t>(j, "storageLockMaxHoldUs", 0);
+    v.storage_lock_wait_p95_us = get_or<std::uint64_t>(j, "storageLockWaitP95Us", 0);
+    v.storage_lock_max_wait_us = get_or<std::uint64_t>(j, "storageLockMaxWaitUs", 0);
+    v.sqlite_busy_waits = get_or<std::uint64_t>(j, "sqliteBusyWaits", 0);
+    v.sqlite_busy_exhausted = get_or<std::uint64_t>(j, "sqliteBusyExhausted", 0);
+    v.sqlite_busy_max_wait_ms = get_or<std::uint64_t>(j, "sqliteBusyMaxWaitMs", 0);
+}
+
 // ---- HealthStatus ----------------------------------------------------------
 
 void to_json(json& j, const HealthStatus& v) {
@@ -232,6 +267,7 @@ void to_json(json& j, const HealthStatus& v) {
              {"permissions", v.permissions},
              {"classifier", v.classifier},
              {"modelDeployment", v.model_deployment},
+             {"runtime", v.runtime},
              {"developerToolsEnabled", v.developer_tools_enabled}};
     if (v.last_prediction_age_secs) {
         j["lastPredictionAgeSecs"] = *v.last_prediction_age_secs;
@@ -260,6 +296,7 @@ void from_json(const json& j, HealthStatus& v) {
     v.permissions = get_or<PermissionStatus>(j, "permissions", {});
     v.classifier = get_or<ClassifierStatus>(j, "classifier", {});
     v.model_deployment = get_or<ModelDeploymentHealth>(j, "modelDeployment", {});
+    v.runtime = get_or<RuntimeMetrics>(j, "runtime", {});
     v.developer_tools_enabled = get_or<bool>(j, "developerToolsEnabled", false);
 }
 
