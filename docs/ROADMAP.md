@@ -2327,21 +2327,40 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   external links. Align the external opener with **2.8**'s no-shell platform adapters and the
   security policy with **8.5**.
 
-- **8.15 — "Delete all activity" leaves goal text in the frontend's `localStorage`.** `S`
-  Opened 2026-09-22. `frontend/src/sessionCockpit.ts` keeps session presets under
-  `SESSION_PRESETS_KEY` and justifies the home in its own comment: presets "are derived from
+- **8.15 — DONE 2026-09-22. "Delete all activity" left goal text in the frontend's
+  `localStorage`.** `S`
+  Opened 2026-09-22. `frontend/src/sessionCockpit.ts` kept session presets under
+  `SESSION_PRESETS_KEY` and justified the home in its own comment: presets "are derived from
   goals the database already holds", so losing them is a non-event. After
   `state.cpp:AppState::delete_all_activity_data` the database holds no goals and the argument
-  inverts: the presets are now the only copy of user-typed goal strings — which
+  inverts: the presets were then the only copy of user-typed goal strings — which
   [ADR-0009](adr/0009-local-first-threat-model.md) ranks second in sensitivity, behind titles —
-  and they survive the erase **8.12** promised covers every app-owned copy.
+  and they survived the erase **8.12** promised covers every app-owned copy. **Kept here rather
+  than archived for the shape of the mistake**: the comment's reasoning was correct when it was
+  written and was invalidated by a feature added later, without anything connecting the two.
 
-  Clear the key from `frontend/src/usePrivacy.ts` after the native deletion resolves (the
-  `onActivityDataDeleted` seam is already there) and name saved session presets in the
-  deletion message so the user is told what went. In the same pass, list every other
-  `localStorage` key (onboarding, appearance, review range) and record per key whether it is a
-  preference or activity; only activity is deleted, and the classification is written down
-  next to the key so the next key added has to pick a side.
+  **What landed.** [`frontend/src/browserStorage.ts`](../frontend/src/browserStorage.ts) holds
+  all six `snapback.*` keys with a classification and a stated reason next to each: `activity`
+  (a copy of what the user did — deleted) or `preference` (a setting or a "seen it" flag —
+  kept, because erasing activity is not resetting the app, which is what the native side's
+  `retained` list already says). Only `sessionPresets` is activity. The six modules that owned
+  a key literal now re-export it from there, so a key cannot exist without a classification.
+  `usePrivacy.ts` calls `clearActivityStorage()` after the native erase resolves — same
+  ordering rule as the native path, authoritative copy first — and
+  `activityDeletion.ts:activityDeletionMessage` takes what was cleared and names it, so the
+  headline reads "…was deleted, including your saved session presets."
+
+  **The list is enforced, not maintained.** `frontend/tests/browserStorage.test.ts` walks
+  `src/` and fails on any `snapback.*` literal with no row, in both directions. It was checked
+  by adding an unclassified key, which it named. That is what makes "the next key added has to
+  pick a side" true rather than a hope — a written-down convention would have been the same
+  kind of promise the `sessionCockpit.ts` comment already was. A `removeItem` that throws is
+  deliberately **not** reported as cleared: claiming an erase that did not happen is the
+  failure **8.12** exists to prevent, and a small surface does not earn an exception.
+
+  `tests/privacyFlow.test.tsx` gained a case asserting the key is gone from storage and the
+  appearance preference is not, and its existing case was the thing that caught the changed
+  headline. Local frontend suite 192 component cases plus the pure-module runner; C++ 730/730.
 
 ---
 

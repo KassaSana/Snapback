@@ -33,17 +33,35 @@ export function mapActivityDeletionResult(raw: unknown): ActivityDeletionResult 
   };
 }
 
-/** The headline the Privacy card shows. */
-export function activityDeletionMessage(result: ActivityDeletionResult): string {
+/**
+ * The headline the Privacy card shows.
+ *
+ * `alsoCleared` names browser-side copies the native result cannot know about (Roadmap 8.15):
+ * `localStorage` belongs to this side of the bridge, so the native side reports nothing about
+ * it, and an erase that silently left goal text behind in it was the defect. They are named
+ * rather than merely deleted, because "all activity" is a claim the user has to be able to
+ * check against what they can still see in the app.
+ */
+export function activityDeletionMessage(
+  result: ActivityDeletionResult,
+  alsoCleared: readonly string[] = [],
+): string {
+  const also = alsoCleared.length > 0 ? `, including ${joinList(alsoCleared)}` : "";
   if (result.complete) {
-    return "All locally collected activity data was deleted.";
+    return `All locally collected activity data was deleted${also}.`;
   }
   const count = result.failed.length;
   return (
-    `Most of your activity data was deleted, but ${count} ` +
+    `Most of your activity data was deleted${also}, but ${count} ` +
     `${count === 1 ? "item" : "items"} could not be removed. ` +
     `Your recorded sessions are gone; these copies remain: ${result.failed.join("; ")}.`
   );
+}
+
+/** "a", "a and b", "a, b and c" -- so the sentence above reads as a sentence. */
+function joinList(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 /** Whether that headline is good news, so the card can style it honestly. */

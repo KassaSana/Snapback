@@ -168,7 +168,10 @@ export type SessionPreset = {
 };
 
 
-export const SESSION_PRESETS_KEY = "snapback.sessionPresets";
+// The literal, and whether the erase touches it, live in browserStorage.ts so a
+// key cannot exist without a classification (Roadmap 8.15).
+export { SESSION_PRESETS_KEY } from "./browserStorage";
+import { SESSION_PRESETS_KEY } from "./browserStorage";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 

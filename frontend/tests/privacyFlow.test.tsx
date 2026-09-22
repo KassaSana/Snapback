@@ -111,9 +111,38 @@ describe("privacy controls", () => {
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("delete_all_activity_data"),
     );
+    // Roadmap 8.15. The headline names the browser-side copy too. This assertion used to read
+    // "All locally collected activity data was deleted." while `snapback.sessionPresets` --
+    // goal text the user typed, and the only copy left once the database is cleared -- was
+    // still sitting in localStorage. The sentence was the part that made that a defect rather
+    // than an omission.
     expect(
-      await screen.findByText("All locally collected activity data was deleted."),
+      await screen.findByText(
+        "All locally collected activity data was deleted, including your saved session presets.",
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("clears saved session presets along with the native data", async () => {
+    // The claim above, checked against storage rather than against the sentence.
+    globalThis.localStorage.setItem(
+      "snapback.sessionPresets",
+      JSON.stringify([{ id: "p1", goal: "Draft the migration plan", focusMode: "DEEP" }]),
+    );
+    globalThis.localStorage.setItem("snapback.appearance", "dark");
+
+    renderApp("settings", "privacy");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete all activity data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm permanent deletion" }));
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("delete_all_activity_data"),
+    );
+
+    await waitFor(() =>
+      expect(globalThis.localStorage.getItem("snapback.sessionPresets")).toBeNull(),
+    );
+    // Erasing activity is not resetting the app: the preference survives.
+    expect(globalThis.localStorage.getItem("snapback.appearance")).toBe("dark");
   });
 });
 

@@ -26,7 +26,10 @@ export const ONBOARDING_STEPS = [
 
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
-export const ONBOARDING_DONE_KEY = "snapback.onboardingJourneyComplete";
+// The literal, and whether the erase touches it, live in browserStorage.ts so a
+// key cannot exist without a classification (Roadmap 8.15).
+export { ONBOARDING_DONE_KEY } from "./browserStorage";
+import { ONBOARDING_DONE_KEY } from "./browserStorage";
 
 export type OnboardingCopy = {
   title: string;

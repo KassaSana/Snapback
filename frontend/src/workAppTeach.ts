@@ -11,7 +11,10 @@
 import type { AppRuleRecord, ContextSnapshot } from "./api";
 import { getAppRuleForName } from "./useAppRules";
 
-export const WORK_APP_TEACH_DONE_KEY = "snapback.workAppTeachComplete";
+// The literal, and whether the erase touches it, live in browserStorage.ts so a
+// key cannot exist without a classification (Roadmap 8.15).
+export { WORK_APP_TEACH_DONE_KEY } from "./browserStorage";
+import { WORK_APP_TEACH_DONE_KEY } from "./browserStorage";
 
 export const WORK_APP_TEACH_LIMIT = 5;
 

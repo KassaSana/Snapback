@@ -37,6 +37,7 @@ export default defineConfig({
         "src/myDataExport.ts",
         "src/focusStreak.ts",
         "src/workAppTeach.ts",
+        "src/browserStorage.ts",
       ],
       thresholds: {
         statements: 76,

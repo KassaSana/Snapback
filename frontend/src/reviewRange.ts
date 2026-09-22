@@ -15,7 +15,10 @@ export type ReviewWindowRequest = {
   since?: string;
 };
 
-export const REVIEW_RANGE_STORAGE_KEY = "snapback.reviewRange";
+// The literal, and whether the erase touches it, live in browserStorage.ts so a
+// key cannot exist without a classification (Roadmap 8.15).
+export { REVIEW_RANGE_STORAGE_KEY } from "./browserStorage";
+import { REVIEW_RANGE_STORAGE_KEY } from "./browserStorage";
 
 export const REVIEW_RANGE_PRESETS: Array<Exclude<ReviewRangePreset, "custom">> = [
   "today",

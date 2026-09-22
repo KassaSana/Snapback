@@ -4,7 +4,10 @@
 
 export type AppearanceMode = "system" | "light" | "dark";
 
-export const APPEARANCE_STORAGE_KEY = "snapback.appearance";
+// The literal, and whether the erase touches it, live in browserStorage.ts so a
+// key cannot exist without a classification (Roadmap 8.15).
+export { APPEARANCE_STORAGE_KEY } from "./browserStorage";
+import { APPEARANCE_STORAGE_KEY } from "./browserStorage";
 export const APPEARANCE_ATTRIBUTE = "data-appearance";
 
 const VALID: AppearanceMode[] = ["system", "light", "dark"];

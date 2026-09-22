@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, type PrivacySettings } from "./api";
+import { clearActivityStorage } from "./browserStorage";
 import { myDataExportMessage } from "./myDataExport";
 import {
   activityDeletionIsWarning,
@@ -136,6 +137,11 @@ export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UseP
     setDeletionRetained(null);
     try {
       const result = await api.deleteAllActivityData();
+      // Roadmap 8.15. The browser's own copies, cleared here because the native side cannot
+      // reach them. Sequenced after the native erase for the same reason the native one does
+      // the database before the exports: the authoritative copy goes first, and a failure on
+      // this side must not be able to prevent it.
+      const alsoCleared = clearActivityStorage();
       try {
         await onActivityDataDeleted?.();
       } catch {
@@ -145,7 +151,7 @@ export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UseP
       // Roadmap 8.12. The message is derived from what the native side reported rather than
       // fixed: the operation can legitimately half-succeed, and a flat "deleted" over a
       // partial result is the specific claim this item exists to stop.
-      setDeletionStatus(activityDeletionMessage(result));
+      setDeletionStatus(activityDeletionMessage(result, alsoCleared));
       setDeletionWarning(activityDeletionIsWarning(result));
       setDeletionRetained(activityDeletionRetainedNote(result));
     } catch {
