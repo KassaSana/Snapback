@@ -3603,8 +3603,10 @@ TEST_CASE("the ownership export contains every interruption past the old episode
     CHECK_FALSE(exported.truncated());
 
     const auto markdown = read_file(exported.output_path);
-    CHECK(count_occurrences(markdown, "| episode 0 |") == 1);
-    CHECK(count_occurrences(markdown, "| episode 10000 |") == 1);
+    for (std::size_t i = 0; i < 10001; ++i) {
+        CAPTURE(i);
+        CHECK(count_occurrences(markdown, "| episode " + std::to_string(i) + " |") == 1);
+    }
 }
 
 TEST_CASE("the export states what it holds and can be told from a truncated file") {

@@ -164,11 +164,14 @@ TEST_CASE("ONNX backend loads the fixture, runs it, and falls back to heuristic 
     CHECK(clf.backend() == "onnx");
     CHECK_FALSE(clf.inference_degraded());
 
-    // A rejected output while the model stays loaded: the backend reported is the one that
-    // made the prediction (the heuristic), and the status says why.
-    CHECK_FALSE(OnnxModel::instance()
-                    .accept_output(std::array<double, 4>{0.0, 0.0, 0.0, 0.0})
-                    .has_value());
+    // An actual Run() through the classifier with a non-finite input makes the fixture return
+    // unusable weights. The backend reported is the one that made the prediction (the
+    // heuristic), and the status says why; calling accept_output directly would not cover the
+    // prediction-to-provenance path.
+    auto failed_features = features;
+    failed_features.values[0] = std::numeric_limits<double>::quiet_NaN();
+    const auto fallback_scores = clf.predict(failed_features, FocusMode::Normal);
+    CHECK_FALSE(fallback_scores.focus_state.empty());
     CHECK(OnnxModel::instance().loaded());
     CHECK(clf.backend() == "heuristic");
     CHECK(clf.inference_degraded());
