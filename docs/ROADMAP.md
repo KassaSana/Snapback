@@ -4839,6 +4839,13 @@ kept here; already-deep modules and completed performance work were rejected dur
   deadline-aware wake (idle CPU when quiet) and diagnostics, not re-bounding the drain. The
   paragraph above that describes an unbounded `while (next_event())` is historical.
 
+  *Progress 2026-09-21:* shutdown now joins the capture producer before allowing an empty queue
+  to end the engine loop, so a final callback cannot land after the consumer exits. Healthy
+  shutdown drains every time-limited slice; only consecutive failed ticks have a bounded
+  termination path. Regression coverage fills the ring while forcing the 128-event checkpoint
+  and publishes one final event during the stop barrier. Deadline-aware wake and diagnostics
+  remain open.
+
 - **14.6 — Move long-running commands behind owned, cancellable jobs.** `L`
   Opened 2026-08-05. Webview bindings run on the UI thread. Training waits in `std::system()`
   for the Python process, and full training/personal exports execute directly inside bound

@@ -625,20 +625,21 @@ void AppState::start_engine_impl(InputHook* hook) {
             // flips has a stale `false` from before the events arrived, and would exit over a
             // full queue -- which is precisely what CI caught on macOS.
             bool backlog = false;
-            // Ticks spent draining after a stop was requested. A tick that throws reports no
-            // backlog but also drains nothing, so without this a permanently failing tick over
-            // a non-empty ring would spin here and shutdown would never complete. The whole
-            // ring is kEngineDrainBudget * 32 events, so this cannot cut a healthy drain short.
-            int shutdown_ticks = 0;
-            constexpr int kMaxShutdownTicks = 64;
+            // A failed tick is a no-progress attempt from shutdown's point of view. Bound only
+            // consecutive failures, so a healthy drain keeps going regardless of how many
+            // time-limited slices the full ring needs.
+            int shutdown_failures = 0;
+            constexpr int kMaxShutdownFailures = 64;
             do {
+                bool tick_failed = false;
                 try {
                     backlog = engine_tick();
                 } catch (const std::exception& error) {
                     // A tick that threw may still have left events in the ring (budget cut)
                     // even though its computed jobs were discarded. Ask the ring so ordinary
-                    // operation keeps draining; shutdown still exits via kMaxShutdownTicks
+                    // operation keeps draining; shutdown still exits after repeated failures
                     // when every retry keeps throwing over a non-empty queue.
+                    tick_failed = true;
                     backlog = capture_.has_pending_events();
                     try {
                         std::ostringstream message;
@@ -649,6 +650,7 @@ void AppState::start_engine_impl(InputHook* hook) {
                         // unhandled exception on this thread.
                     }
                 } catch (...) {
+                    tick_failed = true;
                     backlog = capture_.has_pending_events();
                     try {
                         log().error("engine tick failed: unknown exception");
@@ -659,7 +661,18 @@ void AppState::start_engine_impl(InputHook* hook) {
                 // Checked before sleeping so a stop with an empty queue exits now rather than
                 // waiting out a tick interval nobody is waiting for.
                 const bool stopping = !engine_running_.load(std::memory_order_relaxed);
-                if (stopping && ++shutdown_ticks >= kMaxShutdownTicks) break;
+                if (stopping && tick_failed) {
+                    if (++shutdown_failures >= kMaxShutdownFailures) {
+                        try {
+                            log().error("engine shutdown stopped after repeated tick failures");
+                        } catch (...) {
+                            // Keep the thread boundary intact even if the logger fails.
+                        }
+                        break;
+                    }
+                } else {
+                    shutdown_failures = 0;
+                }
                 // Only the shutdown path consults the ring. Pacing stays on `backlog` alone:
                 // an ordinary tick usually leaves a few events queued behind it, and treating
                 // that as urgent would run the loop at 1 ms forever for a handful of
@@ -697,9 +710,12 @@ void AppState::emit_event(const char* event, const std::string& json_payload) {
 }
 
 void AppState::stop_engine() noexcept {
-    engine_running_.store(false, std::memory_order_relaxed);
     signal_maintenance([this] { maintenance_stopping_.store(true, std::memory_order_release); });
+    // The engine must not treat an empty ring as final until the producer has joined. A hook
+    // can be between its empty check and its last callback; stopping it first makes the later
+    // queue check a real quiescence barrier.
     capture_.stop();
+    engine_running_.store(false, std::memory_order_relaxed);
     if (engine_thread_.joinable()) engine_thread_.join();
     if (maintenance_thread_.joinable()) maintenance_thread_.join();
     close_open_span_on_shutdown();

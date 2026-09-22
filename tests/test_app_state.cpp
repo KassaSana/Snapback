@@ -124,6 +124,51 @@ private:
     std::atomic<bool> emitted_{false};
 };
 
+// Advances the monotonic reading at every call so each engine drain reaches its time budget
+// at the first clock checkpoint. This makes a full-ring shutdown exercise time-limited slices
+// deterministically rather than relying on how expensive the classifier is on the test host.
+class TimeBudgetClock final : public Clock {
+public:
+    std::int64_t steady_ms() const override {
+        return steady_reads_.fetch_add(20, std::memory_order_relaxed);
+    }
+
+    std::int64_t wall_ms() const override { return 1'700'000'000'000; }
+
+private:
+    mutable std::atomic<std::int64_t> steady_reads_{0};
+};
+
+// Publishes its final event only after stop() has been requested and held open long enough for
+// an engine that already saw the stop flag to exit. Shutdown must join this producer first.
+class FinalPublicationHook final : public InputHook {
+public:
+    void run(InputCallback on_event, const std::atomic<bool>&) override {
+        started_.store(true, std::memory_order_release);
+        while (!release_final_.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        CaptureEvent event;
+        event.event_type = EventType::KeyPress;
+        event.timestamp_secs = 1.0;
+        event.app_name = "Cursor";
+        event.window_title = "state.cpp - Snapback";
+        on_event(std::move(event));
+    }
+
+    void stop() noexcept override {
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        release_final_.store(true, std::memory_order_release);
+    }
+
+    bool started() const { return started_.load(std::memory_order_acquire); }
+
+private:
+    std::atomic<bool> started_{false};
+    std::atomic<bool> release_final_{false};
+};
+
 // Pushes events as fast as it can for `duration`, the way a user holding down a key or
 // dragging the mouse does. The ring fills and starts dropping, which is the point: the engine
 // then never observes an empty buffer, which is the condition an unbounded drain never exits.
@@ -3089,29 +3134,41 @@ TEST_CASE("a truncated drain still runs the rest of the tick") {
     state->stop_session(session.session_id);
 }
 
-TEST_CASE("shutdown finishes the backlog instead of discarding it") {
-    // The unbounded drain always left the ring empty, so a stop persisted everything the user
-    // had done. A bounded drain must not quietly lose the tail: the engine loop keeps ticking
-    // while a backlog remains, which terminates because stop_engine stops the producer first.
-    auto state = make_state();
-    const auto session = state->start_session("drain on the way out", FocusMode::Normal);
+TEST_CASE("shutdown drains a full ring across time-limited slices") {
+    // A healthy shutdown must not stop after a fixed number of ticks: the time budget below
+    // forces every slice to stop after 128 events, while the ring contains 65,535.
+    TimeBudgetClock clock;
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    AppState state(std::move(*storage), std::filesystem::path{}, nullptr, &clock);
+    const auto session = state.start_session("drain on the way out", FocusMode::Normal);
 
-    BurstHook hook(kEngineDrainBudget + 512);  // ~25 s of event time, > one tick's budget
+    BurstHook hook(CaptureThread::kCapacity - 1);
+    fill_capture_ring(state, hook);
+    state.start_engine_for_test(&hook);
+    state.stop_engine();
+
+    CHECK_FALSE(AppStateTestAccess::capture_has_pending(state));
+    state.stop_session(session.session_id);
+}
+
+TEST_CASE("shutdown drains a final publication after the producer is asked to stop") {
+    // The producer publishes only after stop() has been called. The consumer may not use an
+    // empty queue as its exit condition until that producer has joined.
+    auto state = make_state();
+    const auto session = state->start_session("final publication", FocusMode::Normal);
+
+    FinalPublicationHook hook;
     state->start_engine_for_test(&hook);
-    for (int attempt = 0; attempt < 5000 && !hook.emitted(); ++attempt) {
+    for (int attempt = 0; attempt < 5000 && !hook.started(); ++attempt) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    REQUIRE(hook.emitted());
+    REQUIRE(hook.started());
 
     state->stop_engine();
 
     CHECK_FALSE(AppStateTestAccess::capture_has_pending(*state));
-    // One tick's worth of those events spans ~20 s of event time and the throttle allows one
-    // prediction per second, so a shutdown that stopped after a single slice would leave about
-    // 20. Everything drained is ~25.
-    const auto persisted = AppStateTestAccess::storage(*state).recent_predictions(1000).size();
-    CHECK(persisted >= 24);
-
+    CHECK_FALSE(AppStateTestAccess::storage(*state).recent_predictions(1000).empty());
     state->stop_session(session.session_id);
 }
 
