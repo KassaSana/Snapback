@@ -287,6 +287,13 @@ if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_hotpath_benchmarks benchmarks/bench_hotpaths.cpp)
   target_include_directories(snapback_hotpath_benchmarks PRIVATE benchmarks tests)
   target_link_libraries(snapback_hotpath_benchmarks PRIVATE snapback_app)
+
+  # ROADMAP 14.11: measured budgets. Unlike the two above it writes a real on-disk database at
+  # the real persistence cadence across the full retention window, because the WAL cost and the
+  # cadence are exactly what an in-memory harness cannot report. Minutes, not seconds, to run.
+  add_executable(snapback_budget_benchmarks benchmarks/bench_budgets.cpp)
+  target_include_directories(snapback_budget_benchmarks PRIVATE benchmarks tests)
+  target_link_libraries(snapback_budget_benchmarks PRIVATE snapback_app)
 endif()
 
 # --- the desktop app (later phases) ---

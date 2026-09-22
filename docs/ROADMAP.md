@@ -2358,9 +2358,9 @@ swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding th
   deliberately **not** reported as cleared: claiming an erase that did not happen is the
   failure **8.12** exists to prevent, and a small surface does not earn an exception.
 
-  `tests/privacyFlow.test.tsx` gained a case asserting the key is gone from storage and the
-  appearance preference is not, and its existing case was the thing that caught the changed
-  headline. Local frontend suite 192 component cases plus the pure-module runner; C++ 730/730.
+  `frontend/tests/privacyFlow.test.tsx` gained a case asserting the key is gone from storage
+  and the appearance preference is not, and its existing case was the thing that caught the
+  changed headline. Local frontend suite 192 component cases plus the pure-module runner; C++ 730/730.
 
 ---
 
@@ -5132,8 +5132,11 @@ kept here; already-deep modules and completed performance work were rejected dur
   and ONNX reload (singleton shared with the tick).
 
 - **14.11 — Publish measured budgets before any scaling work starts.** `S` `performance`
+  *Progress 2026-09-22: the storage and footprint numbers are published; four instrumented
+  figures remain, named below. Item stays open until they are there.*
+
   Opened 2026-09-22. **14.1**, **14.5**, **14.7**, and **9.10** each begin with "measure
-  first", and none has a number yet. The one harness that exists cannot supply them:
+  first", and none had a number. The one harness that existed could not supply them:
   `benchmarks/bench_snapback.cpp` runs SQLite in memory with a fixed timestamp and inserts a
   prediction on every other event, so it measures neither on-disk WAL cost nor the real
   cadence. That cadence is the fact to start from: `state.cpp:AppState::compute_event`
@@ -5144,17 +5147,44 @@ kept here; already-deep modules and completed performance work were rejected dur
   about that justifies compaction (see [Decided not to build](#decided-not-to-build-2026-09-22));
   what it justifies is knowing the actual number.
 
-  Measure on a real host with a real database and write the results into
-  `docs/testing_strategy.md` with the host named: prediction rows per attended hour and
-  database bytes per day over a week; wall time of `storage.cpp:Storage::prediction_stats`,
-  `storage.cpp:Storage::hourly_focus_buckets`, and the session-history reads against a 90-day
-  on-disk fixture generated at the real cadence; `storage_mutex_` hold time on UI commands and
-  engine persist-phase wait, p50 and p95, plus how often the `storage.hpp:kSqliteBusyTimeoutMs`
-  wait is actually hit; idle CPU and wakeups per second with no session; ring high-water mark
-  and `captureEventsDropped` over a working day. Counters that need a running app go through
-  `get_diagnostics` (`state.cpp:AppState::diagnostics`). **No CI ceiling:** hosted runners are
-  too noisy for one, and a flaky performance gate gets disabled within a month and then lies
-  by omission. Closing **14.1** or **14.5** "with the numbers" means the numbers are here.
+  **Landed.** [`benchmarks/bench_budgets.cpp`](../benchmarks/bench_budgets.cpp) writes a real
+  on-disk database at the real cadence across the full 90-day retention window and then reads
+  it the way the app does. Results are in
+  [`testing_strategy.md`](testing_strategy.md#measured-budgets) with the host named, at both
+  the ceiling and a 60% duty cycle. **No CI ceiling**, for the reason this item already gave.
+
+  The 1.5 MB per attended hour estimate was right (1.47 MB measured). The number nobody had is
+  the steady state: **792 MB at the retention limit** for a heavy user, 473 MB at a realistic
+  duty cycle. And the reads are not cheap — 90-day `prediction_stats` is **5.2 s**,
+  `daily_summary` **6.9 s**, both under `storage_mutex_`. See **14.1**, which those numbers
+  speak directly to, and **14.12**, which they opened.
+
+  **Still missing, and why this item is not closed.** Each needs instrumentation or a running
+  app: `storage_mutex_` hold time p50/p95 and engine persist-phase wait (no timing hook exists
+  inside the lock; query wall time bounds it but is not it); how often
+  `storage.hpp:kSqliteBusyTimeoutMs` is hit (needs a `sqlite3_busy_handler` counter); idle CPU
+  and wakeups per second with no session; ring high-water mark and `captureEventsDropped` over
+  a working day, through `get_diagnostics` (`state.cpp:AppState::diagnostics`). Closing
+  **14.1** or **14.5** "with the numbers" still means all of the numbers are here.
+
+- **14.12 — One Review load computes `prediction_stats` three times.** `S` `performance`
+  Opened 2026-09-22, by **14.11**'s measurement rather than by reading. `useReviewWorkflow.ts`
+  fires five commands in parallel for one Review load, and three of them —
+  `state.cpp:AppState::analytics`, `state.cpp:AppState::summary_report`, and
+  `state.cpp:AppState::focus_summary_for_window` — independently run
+  `storage.cpp:Storage::prediction_stats` over the **same cutoff**, each taking
+  `storage_mutex_` to do it. At the measured 90-day cost of 5.2 s that is ~15.5 s of lock-held
+  work for one number computed three times, inside a load whose other two commands add a
+  further ~8 s.
+
+  Two of those three call sites predate 2026-09-22; **7.33** added the third, deliberately and
+  correctly — the implementation it replaced returned a *wrong* stretch on any window past
+  about fourteen attended hours, and a right answer computed redundantly is the better defect.
+  Recorded here rather than folded into 7.33 because the fix is not to undo it: the three
+  commands want overlapping slices of one aggregate, so the answer is to compute it once per
+  window and share it, which is a question about the command layer's shape and not about any
+  one of them. **Sequence with 14.1** — if the read lane lands, measure again before building
+  a cache, because a cheaper lock changes what redundancy costs.
 
 ---
 
