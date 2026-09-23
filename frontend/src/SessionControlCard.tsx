@@ -89,9 +89,18 @@ export const SessionControlCard = memo(function SessionControlCard({
   // the id, a Stop (or a replacement start that failed after the stop) ends the activity.
   // Left set, `switchable` -- which requires an active session -- kept the submit button
   // disabled on the ordinary start form until the card remounted.
-  useEffect(() => {
+  //
+  // Reset during render, not in an effect. An effect runs after the commit that showed the
+  // new session, so for that gap the card displayed "running" or "completed" beside a stale
+  // switch form, and a click on "Start a different session" landing in it was undone when
+  // the effect caught up. That gap is what made sessionCockpitFlow fail about half the time
+  // under a loaded test run. React's "adjusting state when a prop changes" pattern closes it.
+  const switchScope = `${sessionId ?? ""}|${sessionActive}`;
+  const [switchScopeSeen, setSwitchScopeSeen] = useState(switchScope);
+  if (switchScope !== switchScopeSeen) {
+    setSwitchScopeSeen(switchScope);
     setSwitching(false);
-  }, [sessionId, sessionActive]);
+  }
   const validation = validateSessionGoal(sessionGoal, pristine);
   // While a session runs, the form is only reachable through the guarded switch, so the
   // gate is the same validation with the live session no longer disqualifying it.
