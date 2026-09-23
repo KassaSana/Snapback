@@ -1463,10 +1463,27 @@ kept here; already-deep modules and completed performance work were rejected dur
     ring slots, so the buffer absorbs it. The cost is unpersisted work and a UI waiting, not
     lost input — which is a different argument than the one this item was opened on.
 
-  The next measurement, before any code: the same phase with a realistic reader (one Review
-  load, five commands, then idle) rather than a hot loop, and against the cheaper post-14.13
-  reads. Deciding between "read lane", "fairer lock", "cheaper queries" and "nothing" is
-  Kassa's call, and this item stays `accepted` and open until it is made.
+  **Measured again 2026-09-22, with a realistic reader** (`bench_budgets.cpp:review_load`:
+  the five Review commands in order on one thread, as the bridge really runs them, over the
+  7-day preset, then 5 s of think time, for 60 s; post-14.13 queries; same host and fixture).
+  The writer's worst wait is **7,618 ms** against one person reading Review, beside 0.00 ms
+  alone and 65,851 ms against the hot loop. p50 and p95 are still 0.00 ms in every column:
+  about **one persist per Review load** is stalled, and it is stalled for seconds.
+
+  - **The writer waits out most of a load, not one query.** One load takes 4.1 s (p50) and
+    its longest command, `get_analytics`, held the lock 5.1 s; the worst wait is 1.48× that
+    hold. The reader releases between commands and `std::mutex` lets it reacquire before the
+    writer runs. A lock that hands over at a command boundary would cap the wait at one hold;
+    a read connection would remove it; cheaper `get_analytics` reads would shrink both.
+  - **The hot-loop figure is not a stable bound.** It was 29.2 s in the first run and 65.9 s
+    in this one: two unfair readers can starve the writer for as long as they run. It stays
+    in the table as what an unfair lock permits, not as a cost of Review.
+  - **Dropped events remain not the risk:** 7.6 s is ~381 of 65,536 ring slots.
+
+  Full table in [`testing_strategy.md`](testing_strategy.md#what-a-report-in-flight-costs-a-persist).
+  The measurement this item asked for is done. What remains is the decision — "read lane",
+  "fairer lock" (hand-off at command boundaries), "cheaper `get_analytics`" or "nothing" — which
+  is Kassa's call; this item stays `accepted` and open until it is made.
 
 - **14.2 — Make one synchronous engine cycle the production test seam.** `proposed` `M`
 

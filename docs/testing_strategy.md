@@ -170,37 +170,63 @@ of the most expensive thing the storage layer can be asked for.
 
 `storage_mutex_` serializes every storage-backed UI report against the engine's persist
 phase. **14.1** proposes a separate read lane and forbids building it from structure alone,
-so `benchmarks/bench_budgets.cpp` now runs the heaviest Review queries concurrently with a
-paced writer, in the shape `state.cpp:AppState::health` and the engine really use: one
-`Storage`, one lock, two reader threads, 200 persists at 100 ms intervals.
+so `benchmarks/bench_budgets.cpp` runs Review's reads concurrently with a paced writer (one
+persist every 100 ms), in the shape `state.cpp:AppState::health` and the engine really use:
+one `Storage`, one lock. It runs the writer three times, against three loads:
 
-| writer's wait for the lock | alone | with two readers |
-| --- | --- | --- |
-| p50 | 0.00 ms | 0.00 ms |
-| p95 | 0.00 ms | 0.00 ms |
-| **max** | **0.04 ms** | **29,191 ms** |
-| the write itself (p95) | 0.67 ms | 0.20 ms |
+- **alone** â€” the baseline;
+- **one Review reader** â€” `bench_budgets.cpp:review_load`: the five commands
+  `useReviewWorkflow.ts` issues for one load, in order, on one thread, over the 7-day preset
+  Review opens on, then 5 s of think time, for 60 s. One thread because none of the five is
+  registered `add_async`, so the bridge runs them inline on the webview's thread and a
+  `Promise.all` over them is sequential in fact. Each command takes and releases the lock
+  once, at the granularity `state.cpp` uses;
+- **two hot readers** â€” the heaviest queries looping with no think time. A bound, not a
+  workload.
 
-**Read this as a tail, not an average.** Seven of 200 persists ever found the lock held.
-The other 193 took it for free, which is why p50 and p95 do not move at all — an average, or
-a p95-only report, would have called this immaterial and been exactly wrong. What happened to
-the seven is that one waited **29 seconds**.
+| writer's wait for the lock | alone | one Review reader | two hot readers |
+| --- | --- | --- | --- |
+| persists | 100 | 600 | 100 |
+| p50 | 0.00 ms | 0.00 ms | 0.00 ms |
+| p95 | 0.00 ms | 0.00 ms | 0.00 ms |
+| **max** | **0.00 ms** | **7,618 ms** | **65,851 ms** |
+| the write itself (p95) | 1.65 ms | 0.42 ms | 0.12 ms |
 
-Three things that number is, and one it is not:
+The Review reader completed **6 loads** in the minute. One load takes **4.1 s** at p50 and
+7.7 s at worst; the longest single command held the lock for **5.1 s**
+(`get_analytics`, which holds it across four reads).
 
-- It is **not one long query's duration**. `daily_summary` at the retention limit is 6.8 s,
-  and 29 s is four of them. `RankedMutex` wraps a `std::mutex`, which offers no fairness
-  guarantee, so under continuous read load a waiting writer can be passed over repeatedly
-  while two readers hand the lock back and forth.
-- The readers here are **heavier than a real Review load**, which issues five commands once
-  and then stops. They loop with no think time. The number is a worst case, not a typical one.
-- **Dropped events are not the risk.** 29 s of capture at 50 events/s is ~1,460 of the ring's
-  65,536 slots (`capture_thread.hpp:kCapacity`), so the buffer absorbs it.
-  What is at risk is 29 s of unpersisted work and a UI that cannot get an answer.
+**The middle column is the answer to 14.1, and it is a tail, not a load.** Six of 630
+acquisitions of the storage lock were contended in that phase â€” about one per Review load.
+Every other persist took the lock for free, which is why p50 and p95 do not move in any
+column; an average, or a p95-only report, would call all three immaterial and be wrong. What
+happens is narrower: **each Review load stalls about one persist, by up to 7.6 s.**
 
-The lock instrument reports a longer worst wait than the writer saw — 37.4 s against 29.2 s —
-because it counts every rank-`Storage` acquisition, including readers waiting on each other.
-Both figures are of the same run; they measure different waiters.
+Three things that 7.6 s is:
+
+- **Longer than any one command.** The worst wait is **1.48Ã—** the longest single hold. The
+  reader releases the lock between commands, but `RankedMutex` wraps a `std::mutex`, which
+  promises no fairness, and the releasing thread reacquires before the waiting writer is
+  scheduled. The writer sat out most of a whole load, not one query of it. A lock that handed
+  over at a command boundary would bound the wait at one hold (5.1 s here); a read connection
+  would remove it. Those are different fixes, and this number is what tells them apart.
+- **Not a dropped-event risk.** 7.6 s at 50 events/s is ~381 of the ring's 65,536 slots
+  (`capture_thread.hpp:kCapacity`); the hot-loop ceiling is ~3,293. The buffer absorbs both.
+  What is at stake is seconds of unpersisted work, and â€” because the UI's other storage reads
+  queue on the same lock â€” seconds in which nothing else backed by storage can answer.
+- **Measured on the ceiling fixture.** 90 days with every attended second written; a
+  duty-cycled day holds fewer rows and reads proportionally faster over a window.
+
+**The hot-loop column is unstable, which is itself the finding.** The first run of the same
+phase (commit `b54fa83`) recorded a 29,191 ms worst wait; this one, 65,851 ms. Two readers
+passing an unfair lock between themselves can starve a writer for as long as they keep
+running, so the ceiling has no ceiling: it scales with the run, not with a query. Keep it as
+the bound on what an unfair lock permits, and do not quote it as what Review costs.
+
+The lock instrument reports a slightly longer worst wait than the writer saw in the hot phase
+â€” 67.2 s against 65.9 s â€” because it counts every rank-`Storage` acquisition, including
+readers waiting on each other. Both figures are of the same run; they measure different
+waiters.
 
 ### Lock hold and wait, in the running app
 
