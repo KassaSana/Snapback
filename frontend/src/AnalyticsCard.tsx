@@ -8,6 +8,7 @@ import {
   hourBars,
   referenceLines,
 } from "./analyticsChart";
+import { ChartDataTable } from "./ChartDataTable";
 import { productiveSessionsHelperText } from "./focusStreak";
 import { getAppRuleForName, ruleKindLabel } from "./useAppRules";
 
@@ -44,7 +45,7 @@ export const AnalyticsCard = memo(function AnalyticsCard({
               className="insights-chart"
               viewBox="0 0 480 150"
               role="img"
-              aria-label={`Average focus by hour of day, on a fixed 0 to ${CHART_MAX_SCORE} scale`}
+              aria-label={`Average focus by hour of day, on a fixed 0 to ${CHART_MAX_SCORE} scale; data table below`}
             >
               {references.map((reference) => (
                 <g key={reference.score}>
@@ -102,6 +103,15 @@ export const AnalyticsCard = memo(function AnalyticsCard({
             <p className="insights-caption">
               Average focus by hour of day, 0–100. Ticks below the line are hours with no data.
             </p>
+            <ChartDataTable
+              caption={`Focus by hour, ${rangeLabel}`}
+              nameHeader="Hour"
+              rows={bars.map((bar) => ({
+                key: String(bar.hour),
+                name: bar.name,
+                detail: bar.detail,
+              }))}
+            />
             <p className="helper-text">
               {analytics.sampleCount} prediction samples ·{" "}
               {productiveSessionsHelperText(analytics.productiveSessionStreak)}

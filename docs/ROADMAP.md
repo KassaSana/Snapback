@@ -1218,11 +1218,17 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
     it now wraps the section and is a CSS subgrid, so the cards keep the surface grid's
     columns (`frontend/tests/settingsNavFlow.test.tsx`).
 
+  - **The Review charts have a data view.** All three are `<svg role="img">`, which hides
+    each bar's `<title>` from assistive tech, so their numbers were unreachable without sight
+    and a mouse. Each now has a closed-by-default "Show data" disclosure holding a real table
+    (`frontend/src/ChartDataTable.tsx`), built from the same bar arrays the chart draws, with
+    `name`/`detail` fields on the bar types so the table and the tooltip cannot disagree
+    (`frontend/tests/chartDataTables.test.tsx`). Checked in the demo in light and dark.
+
   Still open: the checks listed above (the card grid by keyboard, overlay focus,
   screen-reader labels on the score/state tiles, states distinguishable without colour,
-  overlay reduced-motion and contrast); keyboard access or a data view for the Review charts,
-  which carry detail only in SVG titles today (`ASTRA_REVIEW.md`); and zoom and short-window
-  checks shared with **10.10**.
+  overlay reduced-motion and contrast), and zoom and short-window checks shared with
+  **10.10**.
 
 - **10.6 — No C++ coverage measurement at all.** `proposed` `M`
   The frontend can measure coverage; the C++ side cannot. Given how many bugs in Tiers 5/7

@@ -41,6 +41,9 @@ export type HourBar = {
   hasData: boolean;
   /** Accessible/tooltip text. Carries the sample count and distraction rate, not just a score. */
   label: string;
+  /** The two halves of `label`, for the chart's data table (Roadmap 10.3): the hour, and the rest. */
+  name: string;
+  detail: string;
 };
 
 /** Where a reference line sits, for the fixed 0/50/100 axis. */
@@ -78,21 +81,26 @@ export function hourBars(hourly: readonly AnalyticsHour[]): HourBar[] {
         height: CHART.emptyTickHeight,
         hasData: false,
         label: `${formatHour(hour)} · no data`,
+        name: formatHour(hour),
+        detail: "no data",
       };
     }
     const score = Math.min(CHART_MAX_SCORE, Math.max(0, entry.avgFocusScore));
     const scaled = (score / CHART_MAX_SCORE) * CHART.plotHeight;
     const height = scaled === 0 ? CHART.zeroBarHeight : scaled;
+    const detail =
+      `focus ${Math.round(score)} of 100 · ` +
+      `${entry.sampleCount} ${entry.sampleCount === 1 ? "sample" : "samples"} · ` +
+      `${Math.round(Math.min(1, Math.max(0, entry.distractedFraction)) * 100)}% distracted`;
     return {
       hour,
       x,
       y: CHART.baselineY - height,
       height,
       hasData: true,
-      label:
-        `${formatHour(hour)} · focus ${Math.round(score)} of 100 · ` +
-        `${entry.sampleCount} ${entry.sampleCount === 1 ? "sample" : "samples"} · ` +
-        `${Math.round(Math.min(1, Math.max(0, entry.distractedFraction)) * 100)}% distracted`,
+      label: `${formatHour(hour)} · ${detail}`,
+      name: formatHour(hour),
+      detail,
     };
   });
 }

@@ -1,6 +1,7 @@
 import { memo } from "react";
 
 import type { DailySummary } from "./api";
+import { ChartDataTable } from "./ChartDataTable";
 import type { ReviewRangePreset } from "./reviewRange";
 import {
   TREND_CHART,
@@ -56,7 +57,7 @@ export const DailyTrendCard = memo(function DailyTrendCard({
                 className="insights-chart"
                 viewBox="0 0 480 150"
                 role="img"
-                aria-label={`Deep work per day inside attended time, last ${rangeDays} days`}
+                aria-label={`Deep work per day inside attended time, last ${rangeDays} days; data table below`}
               >
                 {references.map((reference) => (
                   <g key={reference.secs}>
@@ -135,6 +136,11 @@ export const DailyTrendCard = memo(function DailyTrendCard({
                 Deep work per day (solid) inside attended time (light). Ticks below the line are
                 days with nothing recorded.
               </p>
+              <ChartDataTable
+                caption={`Deep work per day, ${rangeLabel}`}
+                nameHeader="Day"
+                rows={bars.map((bar) => ({ key: bar.day, name: bar.name, detail: bar.detail }))}
+              />
             </>
           ) : null}
           {daysWithData < 3 && showChart ? (

@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from "react";
 
 import { formatScore, type SessionSummary } from "./api";
+import { ChartDataTable } from "./ChartDataTable";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
@@ -51,7 +52,7 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
       className="insights-chart"
       viewBox={`0 0 ${w} ${h}`}
       role="img"
-      aria-label="Average focus score by session, oldest to newest"
+      aria-label="Average focus score by session, oldest to newest; data table below"
     >
       {/* Recessive reference lines: baseline (0) and a dashed midline (50). */}
       <line x1={padX} y1={baseline} x2={w - padX} y2={baseline} className="chart-baseline" />
@@ -270,6 +271,15 @@ export const InsightsCard = memo(function InsightsCard({
             Avg focus score (0–100) per session · oldest → newest
             {truncationNote ? ` · ${truncationNote}` : ""}
           </p>
+          <ChartDataTable
+            caption="Average focus by session, oldest to newest"
+            nameHeader="Session"
+            rows={chronological.map((summary, index) => ({
+              key: summary.record.sessionId || String(index),
+              name: summary.recap.goal || "Session",
+              detail: `focus ${Math.round(summary.recap.avgFocusScore)}`,
+            }))}
+          />
           <p className="helper-text">
             {Math.round(aggregates.avgDeepFocusPct)}% deep focus · {aggregates.totalSnapbacks}{" "}
             snapbacks across {aggregates.sessionCount} completed sessions

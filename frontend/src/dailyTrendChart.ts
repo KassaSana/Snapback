@@ -73,6 +73,9 @@ export type DayBar = {
   weekdayInitial: string;
   /** Accessible/tooltip text. Durations in h/m, the sample count named as samples. */
   label: string;
+  /** The two halves of `label`, for the chart's data table (Roadmap 10.3): the day, and the rest. */
+  name: string;
+  detail: string;
 };
 
 export type TrendReference = { secs: number; y: number; label: string };
@@ -175,12 +178,18 @@ export function dayBars(
         hasData: false,
         weekdayInitial,
         label: `${dayLabel(key)} · no data`,
+        name: dayLabel(key),
+        detail: "no data",
       };
     }
     daysWithData += 1;
     const attendedHeight = scaled(entry.attendedSecs);
     const deepHeight = scaled(entry.deepFocusSecs);
     const samples = `${entry.sampleCount} ${entry.sampleCount === 1 ? "sample" : "samples"}`;
+    const detail =
+      `attended ${formatFocusStretch(entry.attendedSecs)} · ` +
+      `deep ${formatFocusStretch(entry.deepFocusSecs)} · ` +
+      `avg focus ${Math.round(entry.avgFocusScore)} (${samples})`;
     return {
       day: key,
       x,
@@ -191,10 +200,9 @@ export function dayBars(
       deepHeight,
       hasData: true,
       weekdayInitial,
-      label:
-        `${dayLabel(key)} · attended ${formatFocusStretch(entry.attendedSecs)} · ` +
-        `deep ${formatFocusStretch(entry.deepFocusSecs)} · ` +
-        `avg focus ${Math.round(entry.avgFocusScore)} (${samples})`,
+      label: `${dayLabel(key)} · ${detail}`,
+      name: dayLabel(key),
+      detail,
     };
   });
 

@@ -1498,6 +1498,53 @@ h1 {
   color: var(--muted);
 }
 
+/* Roadmap 10.3 — each Review chart's numbers as a table, behind a native disclosure. */
+.chart-data {
+  margin-top: 6px;
+  font-size: 0.78rem;
+}
+
+.chart-data > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.chart-data > summary:hover {
+  color: var(--ink);
+}
+
+.chart-data table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 4px;
+}
+
+.chart-data caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 4px;
+}
+
+.chart-data th,
+.chart-data td {
+  text-align: left;
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--border);
+  font-weight: 400;
+}
+
+.chart-data thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.chart-data tbody th {
+  white-space: nowrap;
+  color: var(--ink);
+}
+
 @media (max-width: 640px) {
   .insight-tiles {
     grid-template-columns: repeat(2, 1fr);
