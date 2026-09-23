@@ -1229,10 +1229,22 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
     `name`/`detail` fields on the bar types so the table and the tooltip cannot disagree
     (`frontend/tests/chartDataTables.test.tsx`). Checked in the demo in light and dark.
 
-  Still open: the checks listed above (the card grid by keyboard, overlay focus,
-  screen-reader labels on the score/state tiles, states distinguishable without colour,
-  overlay reduced-motion and contrast), and zoom and short-window checks shared with
-  **10.10**.
+  - **An audit pass over Now and Review in the demo** (accessibility tree, tab order,
+    colour-coded elements). Passed as they are: the hero states its verdict in words and
+    hides its dot as decoration, the session tiles are labelled, the verdict buttons carry
+    `aria-label`s, and no click handler sits on an element a keyboard cannot reach. Fixed:
+    Recent Predictions read out "61.0 41.0%" with the risk level only in the chip's colour; it
+    now says "Focus score 61.0, Distraction risk 41.0%, medium risk" through visually hidden
+    text, with the level on hover (`frontend/tests/predictionHistoryLabels.test.tsx`). And the
+    goal field's suggestion list announced nothing: it is now a full ARIA combobox, with
+    `aria-expanded` and `aria-activedescendant` following the arrow keys.
+
+  Still open: the snapback overlay's focus, reduced-motion and contrast (native code on both
+  platforms, not reachable from the web demo); zoom and short-window checks shared with
+  **10.10**; and one design decision — **the risk chip's level is still colour-only on
+  screen** (amber vs green for 41% vs 38%). A screen reader now hears it, but a sighted user
+  who cannot tell the colours apart does not see it. A visible cue (a word, an icon, a
+  pattern) changes the card's look, so it is Kassa's call.
 
 - **10.6 — No C++ coverage measurement at all.** `proposed` `M`
   The frontend can measure coverage; the C++ side cannot. Given how many bugs in Tiers 5/7

@@ -476,13 +476,21 @@ describe("session cockpit", () => {
     expect(options).toHaveLength(2);
     expect(options[0]).toHaveTextContent("Ship the overlay");
 
-    // Arrow down highlights the first suggestion
+    // Roadmap 10.3: the field says it is a combobox with an open list.
+    expect(input).toHaveAttribute("role", "combobox");
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).toHaveAttribute("aria-controls", dropdown.id);
+
+    // Arrow down highlights the first suggestion, and names it as the active option
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(options[0]).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", options[0].id);
 
     // Enter applies the highlighted suggestion
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input).toHaveValue("Ship the overlay");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
     expect((screen.getByLabelText("Focus mode") as HTMLSelectElement).value).toBe("deep");
 
     // Clicking a suggestion item directly

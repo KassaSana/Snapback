@@ -3,6 +3,7 @@ import {
   formatPercent,
   formatScore,
   formatTime,
+  riskLabel,
   riskLevel,
   type AppRuleKind,
   type AppRuleRecord,
@@ -53,10 +54,23 @@ export function ActivityCards({
                   <p className="history-time">{formatTime(entry.timestampMs)}</p>
                   <p className="history-session">{focusStateLabel(entry.focusState)}</p>
                 </div>
+                {/* Roadmap 10.3. Both numbers were bare, and the risk level lived only in the
+                    chip's colour class: a screen reader heard "61.0 41.0%". The hidden words
+                    say what each number is and carry the level the colour shows. */}
                 <div className="history-metrics">
-                  <span className="history-score">{formatScore(entry.focusScore)}</span>
-                  <span className={`history-risk risk-${riskLevel(entry.distractionRisk)}`}>
+                  <span className="history-score">
+                    <span className="visually-hidden">Focus score </span>
+                    {formatScore(entry.focusScore)}
+                  </span>
+                  <span
+                    className={`history-risk risk-${riskLevel(entry.distractionRisk)}`}
+                    title={riskLabel(entry.distractionRisk)}
+                  >
+                    <span className="visually-hidden">Distraction risk </span>
                     {formatPercent(entry.distractionRisk)}
+                    <span className="visually-hidden">
+                      , {riskLabel(entry.distractionRisk).toLowerCase()}
+                    </span>
                   </span>
                 </div>
               </li>
@@ -142,4 +156,3 @@ export function ActivityCards({
     </>
   );
 }
-

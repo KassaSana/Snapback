@@ -83,6 +83,7 @@ export const SessionControlCard = memo(function SessionControlCard({
     () => filterGoalSuggestions(recentGoals, presets, sessionGoal),
     [recentGoals, presets, sessionGoal],
   );
+  const suggestionsOpen = showSuggestions && suggestions.length > 0;
 
   const sessionActive = sessionRecord?.status === "ACTIVE";
   // The switch interaction ends with the session it was about: a successful switch changes
@@ -271,11 +272,21 @@ export const SessionControlCard = memo(function SessionControlCard({
                 onKeyDown={handleGoalKeyDown}
                 aria-invalid={Boolean(validation.message)}
                 aria-describedby={validation.message ? "session-goal-error" : undefined}
+                // Roadmap 10.3. The arrow keys already moved a highlight through the
+                // suggestions, but nothing told assistive tech which one, or that a list was
+                // open: the rest of the ARIA combobox pattern the list half was built for.
+                role="combobox"
                 aria-autocomplete="list"
-                aria-controls="goal-suggestions-list"
+                aria-expanded={suggestionsOpen}
+                aria-controls={suggestionsOpen ? "goal-suggestions-list" : undefined}
+                aria-activedescendant={
+                  suggestionsOpen && highlightedIndex >= 0
+                    ? `goal-suggestion-${highlightedIndex}`
+                    : undefined
+                }
                 disabled={sessionPending}
               />
-              {showSuggestions && suggestions.length > 0 && (
+              {suggestionsOpen && (
                 <ul
                   id="goal-suggestions-list"
                   className="goal-suggestions-dropdown"
