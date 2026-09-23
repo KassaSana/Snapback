@@ -12,9 +12,7 @@ and [docs/PACKAGING.md](docs/PACKAGING.md) documents the order to cut a release 
 
 ## [Unreleased]
 
-Everything below has landed on `master` and is **not in any published release**. The first
-release tag will be **`v0.3.0`** (9.13): the orphaned `v0.2.0` git tag is left in place; see
-the note at the bottom.
+Landed on `master` since `v0.3.0` and **not in a published release yet**.
 
 ### Added
 
@@ -37,6 +35,41 @@ the note at the bottom.
   and a failed load offers Retry instead of leaving old data under a new name. Recent
   Predictions and Context Timeline are marked as live views outside the selected range, and
   the per-session chart says when it is showing only the latest 500 sessions.
+
+- **The permission dialog behaves as a dialog (10.3).** It takes keyboard focus when it opens,
+  keeps Tab inside it, leaves the dashboard behind it inert, and hands focus back when it
+  closes. In a short window or at large text it scrolls, so every button stays reachable.
+  Settings sections now contain their own controls, so a screen reader announces them.
+
+- **Every Review chart has its numbers as a table (10.3).** "Show data" under each chart opens
+  the same values the bars are drawn from, so they can be read by a screen reader or reached
+  from the keyboard.
+
+### Fixed
+
+- **Opening Review no longer holds back the engine (14.1).** A Review load is five reads in a
+  row, and a save that arrived during one used to wait for all five, taking the prediction and
+  any snapback alert with it. The save now goes ahead between reads, so it waits for at most
+  the one in progress.
+
+- **Installing from the ZIP works at all (9.4).** `scripts/install_windows_package.ps1` passed
+  `<extracted-root>\*` to `Copy-Item -LiteralPath` — the one parameter that does not expand a
+  wildcard. It looked for a file literally named `*`, found none, and copied nothing, so every
+  install died on the script's own "Installed package is missing snapback.exe" check. It now
+  enumerates the extracted root and copies each entry literally, which also avoids `-Path`
+  reading a `[` in the temp path as a character class. CI validates the ZIP but never installs
+  it, which is how a script that could not have worked once went unnoticed; 9.4 carries the
+  smoke test.
+
+---
+
+## [0.3.0] — 2026-08-29
+
+The first published release: a GitHub release with an unsigned Windows installer and ZIP,
+built by the release workflow. What follows is this file's `[Unreleased]` section as it stood
+at the `v0.3.0` tag.
+
+### Added
 
 - **Now is a cockpit, not a card feed.** Idle Now is a start screen (goal, Start, Repeat last). A running session shows the state, elapsed time, a compact attended line, and Pomodoro. Stopping puts the recap and check-in on Now. The header is a recording line when healthy instead of four status pills, and Repeat last starts that session.
 
@@ -263,15 +296,6 @@ the note at the bottom.
 
 ### Fixed
 
-- **Installing from the ZIP works at all (9.4).** `scripts/install_windows_package.ps1` passed
-  `<extracted-root>\*` to `Copy-Item -LiteralPath` — the one parameter that does not expand a
-  wildcard. It looked for a file literally named `*`, found none, and copied nothing, so every
-  install died on the script's own "Installed package is missing snapback.exe" check. It now
-  enumerates the extracted root and copies each entry literally, which also avoids `-Path`
-  reading a `[` in the temp path as a character class. CI validates the ZIP but never installs
-  it, which is how a script that could not have worked once went unnoticed; 9.4 carries the
-  smoke test.
-
 - **The release workflow can actually produce an installer.** Every `Release` run since the
   workflow was written failed at the same step: `iexpress.exe` exits 1 on the GitHub-hosted
   Windows image and prints nothing else. The `v0.3.0` tag push died there, with the ZIP and all
@@ -480,8 +504,8 @@ the note at the bottom.
 
 A `v0.2.0` tag exists and points at commit `ba4050f`, but **that commit is not reachable from
 `master` or any other branch** — history was rewritten underneath it, leaving the tag
-orphaned. `master` has moved hundreds of commits past it and still declares version
-`0.2.0`. (`git rev-list --count v0.2.0..master` gives the exact figure; it is deliberately
+orphaned. `master` moved hundreds of commits past it while still declaring version `0.2.0`,
+until `v0.3.0` (above) became the first published release. (`git rev-list --count v0.2.0..master` gives the exact figure; it is deliberately
 not written down here, because a number that changes with every commit is wrong the moment
 it is committed -- this one sat at "361" for 94 commits.)
 

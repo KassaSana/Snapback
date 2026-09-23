@@ -235,7 +235,7 @@ Task ids are permanent. Verify commands assume the local build directory; see
 
 | Item | Audit | Notes |
 | --- | --- | --- |
-| Cut Windows v0.3.0 | FWD-01 | Tier 9 checklist below; decide signing (0.4b) as ship-unsigned-with-caveat vs. wait — recommend ship with caveat, sign in v0.4 |
+| ~~Cut Windows v0.3.0~~ | FWD-01 | **Done 2026-08-29** — published unsigned (installer + ZIP); the SmartScreen caveat is in the README; signing stays 0.4b |
 | Auto-update check | FWD-06 (S-M) | Native-side fetch; depends on AUD-03 (the "download" link is an external link) |
 | Notification budget & quiet hours | FWD-05 (S-M) | Retention insurance *before* strangers install; pure settings-surface work |
 | `winget` manifest | FWD-06 rider (S) | Only once signing lands; otherwise defer to v0.4 |
@@ -243,6 +243,10 @@ Task ids are permanent. Verify commands assume the local build directory; see
 **Exit criterion:** a public GitHub release v0.3.0 exists with an installable Windows package
 built by the release workflow, and a fresh machine installs it and records a session. Also
 covers the dangling-`v0.2.0`-tag cleanup the changelog warns about (9.13).
+
+*Status 2026-09-22:* the release half is met — `v0.3.0` was published 2026-08-29 by the
+release workflow, and 9.13 is done. The fresh-machine install-and-record half has no recorded
+result; it is the same manual check as **P0-09**.
 
 **Why before the data work:** every Phase 2+ decision improves with even ten real users'
 feedback, and the release machinery is the closest-to-done big item in the repo.
@@ -320,8 +324,8 @@ differentiator-diluting or sequenced behind evidence of demand.
 
 ### Open questions blocking expansion
 
-- [ ] Ship v0.3.0 unsigned with a documented SmartScreen caveat, or wait for code signing
-      (0.4b)? — blocks Phase 1 expansion.
+- [x] Ship v0.3.0 unsigned with a documented SmartScreen caveat, or wait for code signing
+      (0.4b)? — **shipped unsigned 2026-08-29**; the caveat is in the README.
 - [ ] What does the Python trainer do with `is_pseudo_productive` (column 31)? Drop, train on,
       or derive from labels? (AUD-11) — blocks Phase 2 expansion.
 - [ ] Does the app run long enough unattended to soak-test P0-09's attended-minutes check

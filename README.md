@@ -38,8 +38,11 @@ The desktop app is gated behind `SNAPBACK_BUILD_APP=ON`; the headless core build
 and tests without it.
 
 What has changed, and what is not in a release yet, is in [CHANGELOG.md](CHANGELOG.md).
-**Nothing has shipped as a published release yet.** The first tag will be **`v0.3.0`**; an
-older `v0.2.0` tag points at a commit no longer on any branch and is not the release baseline.
+The latest release is **[`v0.3.0`](https://github.com/KassaSana/Snapback/releases/tag/v0.3.0)**
+(2026-08-29): a Windows installer and ZIP. **They are not code-signed yet** ([Roadmap 0.4b](docs/ROADMAP.md)),
+so Windows SmartScreen warns on first run; choose *More info → Run anyway* only for a file you
+downloaded from that release page. An older `v0.2.0` tag points at a commit no longer on any
+branch and is not a release.
 
 ## Layout
 
