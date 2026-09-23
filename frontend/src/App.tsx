@@ -768,6 +768,12 @@ export default function App() {
           id={settingsPanelId(settingsSection)}
           aria-labelledby={settingsTabId(settingsSection)}
         >
+        {/*
+          Roadmap 10.3. The panel holds the section's controls, not only its heading: it used
+          to close after the blurb, so the settings themselves were siblings of an empty
+          tabpanel. It is a subgrid (styles.css), so the cards keep the surface grid's columns.
+        */}
+        <div className="settings-section-intro">
           <h2 className="settings-section-title">
             {SETTINGS_SECTION_LABELS[settingsSection]}
           </h2>
@@ -945,6 +951,7 @@ export default function App() {
             </details>
           </>
         )}
+        </div>
           </>
         )}
       </main>

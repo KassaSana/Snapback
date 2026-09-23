@@ -115,6 +115,21 @@ describe("Settings second-level navigation", () => {
     expect(sectionTab("General")).toHaveAttribute("aria-controls", "settings-panel-general");
   });
 
+  // Roadmap 10.3. The panel used to close after its heading and blurb, so every control in
+  // the section was a sibling of an empty tabpanel.
+  it("puts the section's controls inside its tabpanel", async () => {
+    render(<App />);
+    await openSettings();
+
+    const panel = document.getElementById("settings-panel-general");
+    expect(panel).not.toBeNull();
+    expect(panel).toContainElement(screen.getByRole("heading", { name: "Getting started" }));
+
+    fireEvent.click(sectionTab("Privacy & permissions"));
+    const privacy = document.getElementById("settings-panel-privacy");
+    expect(privacy).toContainElement(await screen.findByRole("heading", { name: "Permissions" }));
+  });
+
   // The item requires support instructions ("open Settings → Privacy") to keep working after
   // the reorganisation. A link that silently landed on General would be worse than no link.
   it("opens the section named by a deep link", async () => {

@@ -1198,13 +1198,31 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   the app still has to exit through its run loop. WebKitGTK-driven clicks remain; WKWebView
   stays on step 1 because it exposes no equivalent automation endpoint.
 
-- **10.3 — Accessibility has never been assessed.** `proposed` `M`
+- **10.3 — Accessibility has never been assessed.** `in progress` `M`
   No audit has been done. Specifically worth checking: keyboard navigation through the card
   grid; focus management when the snapback overlay appears (it steals attention by design —
   does it trap focus?); screen-reader labelling of the score/state tiles; whether the
   distraction states are distinguishable without color; and whether the always-on-top
   overlay respects reduced-motion and OS contrast settings. A focus tool that fights
   assistive tech is a bad look.
+
+  *Progress 2026-09-22 — the two defects `ASTRA_REVIEW.md` named for this item:*
+  - **The permission wizard now does what its `aria-modal` says.** Focus moves to the primary
+    action on open, the page behind is `inert`, Tab and Shift+Tab wrap inside, and focus
+    returns on close (`frontend/src/PermissionWizard.tsx`). Escape is deliberately unbound:
+    "Skip for now" records the first-run acknowledgement permanently, and a stray keypress
+    should not end onboarding for good. The backdrop scrolls, so at a 1100×480 window every
+    button is reachable (checked in a browser, as well as in
+    `frontend/tests/permissionWizardFocus.test.tsx`).
+  - **Settings' tabpanel holds its controls.** It used to close after the heading and blurb;
+    it now wraps the section and is a CSS subgrid, so the cards keep the surface grid's
+    columns (`frontend/tests/settingsNavFlow.test.tsx`).
+
+  Still open: the checks listed above (the card grid by keyboard, overlay focus,
+  screen-reader labels on the score/state tiles, states distinguishable without colour,
+  overlay reduced-motion and contrast); keyboard access or a data view for the Review charts,
+  which carry detail only in SVG titles today (`ASTRA_REVIEW.md`); and zoom and short-window
+  checks shared with **10.10**.
 
 - **10.6 — No C++ coverage measurement at all.** `proposed` `M`
   The frontend can measure coverage; the C++ side cannot. Given how many bugs in Tiers 5/7
