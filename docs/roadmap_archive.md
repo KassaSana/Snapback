@@ -3937,3 +3937,25 @@ entry above is the record of what shipped.
 
   The six queries over `sessions` and `context_snapshots` that still use the idiom were
   deliberately left, and moved to **14.14** rather than closed with this item.
+
+- **14.14 — CLOSED 2026-09-22, not built. The same idiom over `sessions`.** `S` `performance`
+  Carved out of **14.13** when it closed, 2026-09-22, so a finished item would not carry open
+  work. Six queries still spell their window `(?N IS NULL OR started_at >= ?N)` —
+  `storage.cpp:Storage::recent_session_summaries` among them — which is the idiom 14.13 proved
+  costs a full scan on `predictions`.
+
+  **Do not fix them because the pattern matches.** `sessions` is thousands of rows where
+  `predictions` is millions, and `recent_session_summaries` measured *flat across every
+  window*, which says its cost is per-session work rather than the scan — the same change
+  there would buy nothing and would be reported as a win. The bar is a measurement on the
+  90-day fixture ([`benchmarks/bench_budgets.cpp`](../benchmarks/bench_budgets.cpp)) showing
+  one of them is scan-bound. 14.13's remedy and its guard are both ready to copy if it is.
+
+  *Measured 2026-09-22, bar not met.* The first reading of "flat across every window" was the
+  benchmark fixture's, which dated every session to the moment of generation; on a fixture
+  that dates them properly `recent_session_summaries` goes 286 ms → 1,076 ms from `day` to
+  `90d`, `productive_session_streak` 7 ms → 1,030 ms, and `context_app_counts` 5 ms → 63 ms
+  ([`testing_strategy.md`](testing_strategy.md#read-latency-p50-p95-against-that-database)).
+  They scale with the window, so the idiom's scan of `sessions` (180 rows) is not what they
+  cost; the per-session join into `predictions` is, and it already seeks
+  `idx_predictions_session_ts`. By this item's own rule, nothing to change, and it closes unbuilt.
