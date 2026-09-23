@@ -180,6 +180,7 @@ picking the wrong one is the most common way to fetch the right numbers for the 
 | --- | --- | --- | --- |
 | `SessionRecap` | `get_session_recap` | **One session** | How did *that* session go — duration, attended `active_secs`, avg focus, distraction spikes, deep-focus % |
 | `SessionSummary` | `get_session_history` | **One session, plus its record** | `SessionRecord` + `SessionRecap` — the shape one row of the history list needs |
+| `FocusCurvePoint` | `get_session_focus_curve` | **One session, over its own span** | That session's focus folded into up to 240 equal time slices — the curve the Review session explorer draws (Roadmap 2.9) |
 | `FocusSummary` | `get_focus_summary` | **A batch of predictions** | Pure aggregation over prediction rows: avg, peak, distracted fraction, longest unbroken focused stretch. No storage, no clock — `src/engine/focus_summary.hpp` is unit-testable on a vector |
 | `AnalyticsSummary` | `get_analytics` | **A time window, by shape** | The chart data — hourly buckets and top apps, plus a session streak |
 | `SummaryReport` | `get_summary_report` | **A time window, by total** | The Review headline — session counts, focus seconds, distracted fraction, attended vs planned |

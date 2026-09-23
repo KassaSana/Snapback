@@ -118,6 +118,16 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     registry.add("get_session_recap", [&state](const json& a) {
         return json(state.session_recap(a.at("sessionId").get<std::string>()));
     });
+    // Roadmap 2.9. `buckets` defaults to 60 and is capped at 240: a curve drawn in a card
+    // gains nothing from more slices than it has pixels, and the cap bounds the result.
+    registry.add("get_session_focus_curve", [&state](const json& a) {
+        std::size_t buckets = 60;
+        if (a.contains("buckets") && !a.at("buckets").is_null()) {
+            buckets = a.at("buckets").get<std::size_t>();
+        }
+        buckets = (std::min)(buckets, std::size_t{240});
+        return json(state.session_focus_curve(a.at("sessionId").get<std::string>(), buckets));
+    });
     registry.add("get_session_history", [&state](const json& a) {
         if (a.contains("window")) {
             return json(state.session_history_for_window(a.at("window").get<std::string>(),

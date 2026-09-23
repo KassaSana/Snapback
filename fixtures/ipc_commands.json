@@ -13,6 +13,7 @@
     "get_active_session",
     "submit_label",
     "get_session_recap",
+    "get_session_focus_curve",
     "get_session_history",
     "get_pomodoro_status",
     "start_pomodoro",

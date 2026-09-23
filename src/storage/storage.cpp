@@ -1995,6 +1995,35 @@ std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
     return hourly;
 }
 
+std::vector<FocusCurvePoint> Storage::session_focus_curve(const std::string& session_id,
+                                                          std::size_t buckets) {
+    if (buckets == 0) return {};
+    // Integer arithmetic throughout: `(timestamp - lo) * n / (span + 1)` lands the first
+    // prediction in slice 0 and the last in slice n - 1, and the +1 keeps a one-prediction
+    // session from dividing by zero.
+    Stmt stmt(db_,
+              "WITH bounds AS ("
+              "  SELECT MIN(timestamp) AS lo, MAX(timestamp) AS hi"
+              "  FROM predictions WHERE session_id = ?1"
+              ") "
+              "SELECT (p.timestamp - b.lo) * ?2 / (b.hi - b.lo + 1) AS slice,"
+              "       MIN(p.timestamp), COUNT(*), AVG(p.focus_score) "
+              "FROM predictions p, bounds b "
+              "WHERE p.session_id = ?1 AND b.lo IS NOT NULL "
+              "GROUP BY slice ORDER BY slice ASC");
+    stmt.bind(1, session_id);
+    stmt.bind(2, static_cast<std::int64_t>(buckets));
+    std::vector<FocusCurvePoint> curve;
+    while (stmt.step_row()) {
+        FocusCurvePoint point;
+        point.start_ms = sqlite3_column_int64(stmt.get(), 1);
+        point.sample_count = static_cast<std::size_t>(sqlite3_column_int64(stmt.get(), 2));
+        point.avg_focus_score = sqlite3_column_double(stmt.get(), 3);
+        curve.push_back(point);
+    }
+    return curve;
+}
+
 std::vector<DailySummaryDay> Storage::daily_summary(std::int64_t now_ms, std::int64_t since_ms) {
     // Keyed by "YYYY-MM-DD"; std::map keeps the days ascending, and the four queries below
     // merge into it so the statement count stays constant regardless of range (7.12).

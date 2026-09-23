@@ -240,13 +240,14 @@ TEST_CASE("IPC contract: every frontend listener has an emitter or a named owner
     }
 }
 
-TEST_CASE("IPC contract: canonical set has 74 handler commands") {
+TEST_CASE("IPC contract: canonical set has 75 handler commands") {
     // 61 -> 65 with Roadmap 9.14's import path; 66 with Roadmap 2.8; 68 with Roadmap 10.14 file
     // dialogs; 71 with Roadmap 2.16's alert snooze, resume, and delivery preferences; 72 with
     // the daily focus series behind the Review trend surfaces; 73 with cancel_training once
     // a run could actually be stopped (Roadmap 14.6); 74 is the test-build-only acceptance
-    // verdict sink that proves the page crossed the real webview bridge (Roadmap 10.1).
-    CHECK(load_expected_commands().size() == 74);
+    // verdict sink that proves the page crossed the real webview bridge (Roadmap 10.1); 75
+    // with the session explorer's per-session focus curve (Roadmap 2.9).
+    CHECK(load_expected_commands().size() == 75);
 }
 
 

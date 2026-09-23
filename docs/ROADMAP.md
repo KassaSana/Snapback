@@ -805,7 +805,7 @@ No open items. Completed work is in the [archive](roadmap_archive.md).
 
 ## Tier 2 — Product & ML depth
 
-- **2.9 — Turn session history into a real session explorer.** `proposed` `M/L`
+- **2.9 — Turn session history into a real session explorer.** `in progress` `M/L`
   Opened 2026-08-05. Past sessions currently appear chiefly inside the destructive "Delete a
   session" area, history is capped at 20, and the context timeline is tied to the current
   session. The app records the detail needed to explain a workday, but Review cannot answer
@@ -818,6 +818,26 @@ No open items. Completed work is in the [archive](roadmap_archive.md).
   deliberate start flow rather than begin recording on selection. Do not load the entire
   database into the browser. This needs per-session query commands and should follow **7.16**
   and align with **14.3**'s command contract.
+
+  *Progress 2026-09-22 — first version, scoped with Kassa after comparing Rize, Timing,
+  ActivityWatch and Session, which all browse history as a list or timeline with a detail
+  panel and none of which lead with search:*
+  - **A Sessions card on Review** (`frontend/src/SessionExplorerCard.tsx`) lists the range's
+    sessions newest first, grouped by day. Choosing one opens its detail: mode and times,
+    attended time, average focus, deep-work share, snapbacks, the reflection, a focus curve
+    with its data table, and the apps it was spent in.
+  - **One new native command,** `get_session_focus_curve`: that session's predictions folded
+    into up to 240 equal slices of its own span, one grouped statement over
+    `idx_predictions_session_ts`. Context comes from the existing per-session
+    `get_context_timeline` (first 500 rows, said so when capped).
+  - **"Start this again"** fills the start form on Now and goes there; nothing records until
+    Start (ADR-0005), and it is disabled while a session runs. **Delete** is in the detail
+    behind a confirmation; Session management keeps its own delete and reflection editing.
+  - Tests: `frontend/tests/sessionExplorerFlow.test.tsx`, and the storage slicing in
+    `tests/test_storage.cpp`.
+
+  Still open from the item as written: goal/app/date search, mode/verdict filters, paging past
+  a range's 500-session cap, and labels (with **2.17**).
 
 
 - **2.17 — Give feedback an authoritative, editable label ledger.** `proposed` `M/L`

@@ -13,6 +13,7 @@ import { InsightsCard, SessionManagementCard } from "./InsightsCard";
 import { FocusStateHero } from "./FocusStateHero";
 import { SignalsCard } from "./SignalsCard";
 import { RulesCard } from "./RulesCard";
+import { SessionExplorerCard } from "./SessionExplorerCard";
 import { SettingsCard } from "./SettingsCard";
 import { SummaryCard } from "./SummaryCard";
 import { PermissionsCard } from "./PermissionsCard";
@@ -716,6 +717,21 @@ export default function App() {
                   ? `latest ${summaryReport.sessionLimit} sessions only`
                   : null
               }
+            />
+
+            {/* Roadmap 2.9. "Start this again" fills the start form on Now and goes there; the
+                session still begins only when the user presses Start (ADR-0005). */}
+            <SessionExplorerCard
+              sessionHistory={sessionHistory}
+              rangeLabel={reviewRangeLabelText}
+              sessionActive={sessionActive}
+              onStartAgain={(goal, mode) => {
+                setSessionGoal(goal);
+                setDraftFocusMode(mode);
+                setSurface("now");
+              }}
+              deletingSessionId={deletingSessionId}
+              onDeleteSession={handleDeleteSession}
             />
 
             <AnalyticsCard

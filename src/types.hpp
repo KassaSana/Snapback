@@ -663,6 +663,15 @@ struct AnalyticsHour {
     double distracted_fraction{};
 };
 
+// Roadmap 2.9. One slice of a single session's focus over its own duration, for the Review
+// session explorer. `start_ms` is the first prediction in the slice, not a computed boundary,
+// so a slice that exists always has a real instant to show.
+struct FocusCurvePoint {
+    std::int64_t start_ms{};
+    std::size_t sample_count{};
+    double avg_focus_score{};
+};
+
 struct AnalyticsApp {
     std::string app_name;
     std::size_t window_count{};
@@ -827,6 +836,7 @@ void from_json(const json& j, AppSettings& v);
 void to_json(json& j, const PrivacySettings& v);
 void to_json(json& j, const ActivityDeletionResult& v);
 void to_json(json& j, const AnalyticsHour& v);
+void to_json(json& j, const FocusCurvePoint& v);
 void to_json(json& j, const AnalyticsApp& v);
 void to_json(json& j, const AnalyticsSummary& v);
 void to_json(json& j, const SummaryReport& v);

@@ -357,6 +357,13 @@ public:
     std::vector<AnalyticsHour> hourly_focus_buckets(
         const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
 
+    // Roadmap 2.9. One session's predictions folded into at most `buckets` equal slices of the
+    // time between its first and last prediction, ascending, omitting empty slices. One
+    // grouped statement over `idx_predictions_session_ts`, so the cost is the session's own
+    // rows and never the table's. An unknown session, or one with no predictions, is empty.
+    std::vector<FocusCurvePoint> session_focus_curve(const std::string& session_id,
+                                                     std::size_t buckets);
+
     // How many of the most recently *completed* sessions, counting back from the newest, have
     // an average focus score at or above `min_avg_focus`. Stops at the first one that does
     // not, which is what makes it a streak rather than a count. Only the newest `limit`

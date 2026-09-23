@@ -148,6 +148,9 @@ public:
     // then dismisses the snapback.
     FocusTargetResult restore_snapback_target();
     SessionRecap session_recap(const std::string& session_id);
+    // Roadmap 2.9. The session explorer's focus curve; see Storage::session_focus_curve.
+    std::vector<FocusCurvePoint> session_focus_curve(const std::string& session_id,
+                                                     std::size_t buckets);
 
     // Roadmap 2.14. Saves the optional end-of-session reflection. nullopt result means no such
     // session. Either field may be nullopt to leave (or clear) that answer.

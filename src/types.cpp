@@ -565,6 +565,12 @@ void to_json(json& j, const AnalyticsHour& v) {
              {"distractedFraction", v.distracted_fraction}};
 }
 
+void to_json(json& j, const FocusCurvePoint& v) {
+    j = json{{"startMs", v.start_ms},
+             {"sampleCount", v.sample_count},
+             {"avgFocusScore", v.avg_focus_score}};
+}
+
 void to_json(json& j, const AnalyticsApp& v) {
     j = json{{"appName", v.app_name}, {"windowCount", v.window_count}};
 }

@@ -441,6 +441,13 @@ export type AnalyticsHour = {
   distractedFraction: number;
 };
 
+/** Roadmap 2.9. One slice of a single session's focus over its own duration. */
+export type FocusCurvePoint = {
+  startMs: number;
+  sampleCount: number;
+  avgFocusScore: number;
+};
+
 export type AnalyticsApp = {
   appName: string;
   windowCount: number;
@@ -707,6 +714,17 @@ export const api = {
   getSessionRecap: async (sessionId: string) => {
     const raw = await invoke<Record<string, unknown>>("get_session_recap", { sessionId });
     return mapSessionRecap(raw);
+  },
+  getSessionFocusCurve: async (sessionId: string, buckets = 60): Promise<FocusCurvePoint[]> => {
+    const rows = await invoke<Record<string, unknown>[]>("get_session_focus_curve", {
+      sessionId,
+      buckets,
+    });
+    return rows.map((row) => ({
+      startMs: Number(row.startMs ?? 0),
+      sampleCount: Number(row.sampleCount ?? 0),
+      avgFocusScore: Number(row.avgFocusScore ?? 0),
+    }));
   },
   getSessionHistory: async (range?: ReviewWindowRequest | { limit?: number }) => {
     const args =

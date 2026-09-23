@@ -2848,3 +2848,62 @@ TEST_CASE("migration keeps a genuine NULL and floors an unparseable value to the
     REQUIRE(broken->ended_at_ms.has_value());  // still completed, rather than resurrected
     CHECK(*broken->ended_at_ms == ms("1970-01-01T00:00:00Z"));
 }
+
+// Roadmap 2.9. The session explorer's curve: one session's predictions, in time order, folded
+// into equal slices of that session's own span, and nothing from any other session.
+TEST_CASE("session_focus_curve slices one session's span and ignores every other session") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const std::int64_t start = ms("2026-09-22T09:00:00Z");
+    // Predictions are written only to the active session, so each session writes while it is
+    // the active one. A row from another session inside the same span must not land in any
+    // slice.
+    const auto other = storage->create_session("Another goal", FocusMode::Normal);
+    auto stray = prediction(other.session_id, 99.0, 0.9, "DISTRACTED");
+    stray.timestamp_ms = start + 5 * 60'000;
+    storage->insert_prediction(stray);
+
+    const auto session = storage->create_session("Write the explorer", FocusMode::Deep);
+    // Ten minutes, one prediction a minute: focus 10, 20, ... 100.
+    for (int minute = 0; minute < 10; ++minute) {
+        auto p = prediction(session.session_id, 10.0 * (minute + 1), 0.2, "PRODUCTIVE");
+        p.timestamp_ms = start + minute * 60'000;
+        storage->insert_prediction(p);
+    }
+
+    SUBCASE("two slices split the span in half, in time order") {
+        const auto curve = storage->session_focus_curve(session.session_id, 2);
+        REQUIRE(curve.size() == 2);
+        CHECK(curve[0].start_ms == start);
+        CHECK(curve[0].sample_count == 5);
+        CHECK(curve[0].avg_focus_score == doctest::Approx(30.0));  // 10..50
+        CHECK(curve[1].start_ms == start + 5 * 60'000);
+        CHECK(curve[1].sample_count == 5);
+        CHECK(curve[1].avg_focus_score == doctest::Approx(80.0));  // 60..100
+    }
+
+    SUBCASE("more slices than predictions gives one point per prediction, never an empty one") {
+        const auto curve = storage->session_focus_curve(session.session_id, 60);
+        REQUIRE(curve.size() == 10);
+        std::size_t total = 0;
+        for (std::size_t i = 0; i < curve.size(); ++i) {
+            CHECK(curve[i].sample_count >= 1);
+            if (i > 0) CHECK(curve[i].start_ms > curve[i - 1].start_ms);
+            total += curve[i].sample_count;
+        }
+        CHECK(total == 10);
+    }
+
+    SUBCASE("a single prediction is one slice, and no predictions or zero slices is empty") {
+        const auto lone = storage->create_session("One reading", FocusMode::Normal);
+        auto p = prediction(lone.session_id, 42.0, 0.2, "PRODUCTIVE");
+        p.timestamp_ms = start;
+        storage->insert_prediction(p);
+        const auto curve = storage->session_focus_curve(lone.session_id, 60);
+        REQUIRE(curve.size() == 1);
+        CHECK(curve[0].avg_focus_score == doctest::Approx(42.0));
+
+        CHECK(storage->session_focus_curve("no-such-session", 60).empty());
+        CHECK(storage->session_focus_curve(session.session_id, 0).empty());
+    }
+}

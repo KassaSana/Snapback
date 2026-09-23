@@ -499,6 +499,32 @@ export class DemoBackend {
         if (!session) throw new Error("No such session");
         return this.recapOf(session);
       }
+      case "get_session_focus_curve": {
+        // The native slicing (Storage::session_focus_curve), over the demo's rows.
+        const id = String(args.sessionId);
+        const buckets = Math.min(240, Math.max(0, Number(args.buckets ?? 60)));
+        const rows = this.data.predictions
+          .filter((p) => p.sessionId === id)
+          .sort((a, b) => a.timestampMs - b.timestampMs);
+        if (rows.length === 0 || buckets === 0) return [];
+        const lo = rows[0].timestampMs;
+        const span = rows[rows.length - 1].timestampMs - lo + 1;
+        const slices = new Map<number, { startMs: number; sampleCount: number; sum: number }>();
+        for (const row of rows) {
+          const slice = Math.floor(((row.timestampMs - lo) * buckets) / span);
+          const entry = slices.get(slice) ?? { startMs: row.timestampMs, sampleCount: 0, sum: 0 };
+          entry.sampleCount += 1;
+          entry.sum += row.focusScore;
+          slices.set(slice, entry);
+        }
+        return [...slices.entries()]
+          .sort(([a], [b]) => a - b)
+          .map(([, s]) => ({
+            startMs: s.startMs,
+            sampleCount: s.sampleCount,
+            avgFocusScore: s.sum / s.sampleCount,
+          }));
+      }
       case "get_session_history":
         return this.sessionsIn(range).map((session) => ({
           record: this.sessionJson(session),
