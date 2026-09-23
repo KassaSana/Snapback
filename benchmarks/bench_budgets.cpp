@@ -109,6 +109,7 @@ std::string human_bytes(double bytes) {
 struct Generated {
     std::size_t predictions{};
     std::size_t feature_snapshots{};
+    std::size_t context_snapshots{};
     std::size_t sessions{};
     std::size_t attended_seconds{};
     double generate_ms{};
@@ -166,10 +167,33 @@ Generated generate(Storage& storage, std::size_t days, std::size_t attended_hour
                 ++out.predictions;
                 ++out.feature_snapshots;
             }
-            storage.close_session_span(session.session_id,
-                                       block_start +
-                                           static_cast<std::int64_t>(block_seconds) * 1000);
+            // Title history, at the rate the engine writes it: a row on every foreground
+            // change plus a 30-second checkpoint. One row every 24 s models a checkpoint and
+            // a switch every two minutes -- thousands of rows a week, as the roadmap's FTS5
+            // entry states -- so `context_app_counts` reads a table rather than an empty one.
+            constexpr const char* kApps[] = {"Code.exe", "chrome.exe", "Slack.exe",
+                                             "WindowsTerminal.exe", "Figma.exe", "Notion.exe"};
+            ContextSnapshotDto snap;
+            for (std::size_t second = 0; second < block_seconds; second += 24) {
+                snap.app_name = kApps[static_cast<std::size_t>(roll(rng)) % std::size(kApps)];
+                snap.window_title = "measured budgets - " + snap.app_name;
+                snap.timestamp_ms = block_start + static_cast<std::int64_t>(second) * 1000;
+                storage.save_context_snapshot(session.session_id, snap);
+                ++out.context_snapshots;
+            }
+            const std::int64_t block_end =
+                block_start + static_cast<std::int64_t>(block_seconds) * 1000;
+            storage.close_session_span(session.session_id, block_end);
             storage.end_session(session.session_id);
+            // `create_session` and `end_session` stamp the wall clock, which put all 180
+            // sessions inside the last few seconds. Every `sessions`-windowed read then
+            // matched the whole history whatever window it was asked for, and read as
+            // "flat across windows" -- a property of the fixture, not of the query. The
+            // session has to sit where its predictions and spans already do.
+            storage.execute_for_test("UPDATE sessions SET started_at = " +
+                                     std::to_string(block_start) +
+                                     ", ended_at = " + std::to_string(block_end) +
+                                     " WHERE session_id = '" + session.session_id + "'");
         }
         txn.commit();
 
@@ -451,6 +475,27 @@ int main() {
                             time_query(reps, [&] {
                                 g_sink += storage->daily_summary(now_ms, window.cutoff_ms).size();
                             }));
+                // The other four reads a Review load makes, with the arguments `review_load`
+                // passes. Without them `get_analytics`' hold cannot be attributed to a query,
+                // and 14.14 asks for exactly these two `sessions`-window sites to be measured
+                // before either is touched.
+                print_stats(std::string("context_app_counts ") + window.name, reps,
+                            time_query(reps, [&] {
+                                g_sink += storage->context_app_counts(200, 200, cutoff).size();
+                            }));
+                print_stats(std::string("session_streak ") + window.name, reps,
+                            time_query(reps, [&] {
+                                g_sink += storage->productive_session_streak(200, 70.0, cutoff);
+                            }));
+                print_stats(std::string("session_window_totals ") + window.name, reps,
+                            time_query(reps, [&] {
+                                g_sink += storage->session_window_totals(500, window.cutoff_ms)
+                                              .session_count;
+                            }));
+                print_stats(std::string("attended_secs_since ") + window.name, reps,
+                            time_query(reps, [&] {
+                                g_sink += storage->attended_secs_since(now_ms, cutoff);
+                            }));
                 std::cout << '\n';
             }
 
@@ -486,6 +531,9 @@ int main() {
             // point at different fixes -- a fairer lock and a read lane respectively.
             std::vector<double> load_us;
             double worst_hold_us[kReviewCommandCount]{};
+            // Every hold, not only the worst: a maximum over a handful of loads cannot say
+            // whether a command is slow or one load was unlucky.
+            std::vector<double> hold_samples_us[kReviewCommandCount];
             reset_lock_metrics();
             std::thread review_reader([&] {
                 while (!review_stop.load(std::memory_order_relaxed)) {
@@ -494,6 +542,7 @@ int main() {
                     load_us.push_back(timing.total_us);
                     for (std::size_t i = 0; i < kReviewCommandCount; ++i) {
                         worst_hold_us[i] = std::max(worst_hold_us[i], timing.held_us[i]);
+                        hold_samples_us[i].push_back(timing.held_us[i]);
                     }
                     review_loads.fetch_add(1, std::memory_order_relaxed);
                     // Slept in slices so the phase can end during think time instead of
@@ -572,8 +621,15 @@ int main() {
                       << ms(review_load_stats.max_us) << " ms" "\n"
                       << "                      longest single command hold "
                       << ms(worst_hold_us[worst_command]) << " ms ("
-                      << kReviewCommands[worst_command] << ")" "\n"
-                      << "  the hot loop        " << reader_count << " thread(s), "
+                      << kReviewCommands[worst_command] << ")" "\n";
+            for (std::size_t i = 0; i < kReviewCommandCount; ++i) {
+                const auto hold = summarize(std::move(hold_samples_us[i]), reviewed.wall_ms);
+                std::cout << "                        " << std::left << std::setw(20)
+                          << kReviewCommands[i] << std::right << " holds p50 " << std::setw(9)
+                          << ms(hold.p50_us) << " ms, max " << std::setw(9) << ms(hold.max_us)
+                          << " ms" "\n";
+            }
+            std::cout << "  the hot loop        " << reader_count << " thread(s), "
                       << reads_done.load() << " queries, no think time" "\n"
                       << "  the writer          one persist every " << kWriterIntervalMs
                       << " ms throughout" "\n\n"
@@ -638,6 +694,7 @@ int main() {
                   << "  attended seconds    " << generated.attended_seconds << '\n'
                   << "  predictions         " << generated.predictions << '\n'
                   << "  feature_snapshots   " << generated.feature_snapshots << '\n'
+                  << "  context_snapshots   " << generated.context_snapshots << '\n'
                   << "  rows/attended hour  " << std::setprecision(0)
                   << static_cast<double>(generated.predictions + generated.feature_snapshots) /
                          attended_hour_count
@@ -656,7 +713,7 @@ int main() {
                   << std::setprecision(1)
                   << static_cast<double>(settled.total_bytes()) /
                          static_cast<double>(std::max<std::size_t>(1, generated.predictions))
-                  << " (prediction + its feature row)\n\n";
+                  << " (prediction + its feature row, title history amortized)\n\n";
 
         if (env_flag("SNAPBACK_BUDGET_KEEP")) {
             std::cout << "Kept: " << dir.string() << '\n';

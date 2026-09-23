@@ -131,12 +131,24 @@ The per-attended-hour figure confirms the estimate 14.11 was opened with (~1.5 M
 steady-state total is the number nobody had: a heavy user's database settles near **0.8 GB**,
 not a few tens of megabytes.
 
+The table above was taken before the fixture wrote any title history. With one
+`context_snapshots` row every 24 attended seconds (81,000 rows over the 90 days) the ceiling
+database is **805 MB** closed instead of 788–791 MB, about 2% more — titles are a rounding
+error beside the per-second prediction and feature rows.
+
 ### Read latency, p50 (p95), against that database
 
 Every one of these runs under `storage_mutex_` — the same lock the engine takes to persist.
 Measured after **14.13** made the window predicates index-seekable; the "before" column for the
 two queries that changed is in that item. Re-run on 2026-09-22 alongside the concurrency
 measurement below and unchanged within noise, so the figures are one database's, not two.
+
+**Correction, 2026-09-22.** Until then the fixture dated every *prediction* correctly but
+stamped every *session* with the wall clock at generation, so all 180 sessions fell inside
+every window. Rows that filter on `predictions.timestamp` were unaffected. Rows that filter on
+`sessions.started_at` measured the whole history for every window, and read as flat across
+windows — a property of the fixture, not of the query. `recent_session_summaries` below is
+re-measured on the corrected fixture, and the rows after it are new.
 
 The Review presets are **today / 7d / 30d / all** (`frontend/src/reviewRange.ts`). `all` passes
 no cutoff at all, so it is the unfiltered scan and 14.13 did not change it. The 90-day column
@@ -147,19 +159,26 @@ of the most expensive thing the storage layer can be asked for.
 | --- | --- | --- | --- | --- |
 | `storage.cpp:Storage::prediction_stats` | 55 ms (56) | 435 ms (438) | 1,921 ms (1,953) | **5,867 ms** (5,901) |
 | `storage.cpp:Storage::hourly_focus_buckets` | 18 ms (19) | 152 ms (155) | 669 ms (675) | 1,994 ms (2,046) |
-| `storage.cpp:Storage::recent_session_summaries` | 1,088 ms (1,102) | 1,101 ms (1,123) | 1,077 ms (1,100) | 1,069 ms (1,091) |
+| `storage.cpp:Storage::recent_session_summaries` | 286 ms (358) | 372 ms (405) | 578 ms (619) | 1,076 ms (1,156) |
 | `storage.cpp:Storage::daily_summary` | 99 ms (103) | 543 ms (549) | 2,307 ms (2,319) | **6,830 ms** (6,840) |
+| `storage.cpp:Storage::productive_session_streak` | 7 ms (8) | 78 ms (79) | 345 ms (390) | 1,030 ms (1,093) |
+| `storage.cpp:Storage::context_app_counts` | 5 ms (6) | 10 ms (11) | 22 ms (25) | 63 ms (65) |
+
+`storage.cpp:Storage::session_window_totals` and `storage.cpp:Storage::attended_secs_since`
+are under 0.1 ms in every window and are left out of the table for that reason.
 
 **Three things this says that reading the code did not.**
 
 1. **Cost is now proportional to the window, and it was not before.** Until 14.13 every one of
    these read the whole table whichever window was asked for, so `day` on a mature database
    cost nearly what `30d` did. It now costs what a day should.
-2. **`recent_session_summaries` is flat across every window** — about 1.1 s whether it is
-   answering for one day or ninety, and 14.13 did not touch it because it does not filter on
-   `predictions` at all. It is bounded by the 500-session cap and by per-session work, so 180
-   sessions cost 6 ms each. A window filter that does not make the query cheaper is the next
-   thing here worth reading.
+2. **The `sessions`-windowed reads scale with the window too** — once the fixture dates its
+   sessions (see the correction above). `productive_session_streak` grows 150× from `day` to
+   `90d` and `context_app_counts` 12×. Their `(?N IS NULL OR started_at >= ?N)` spelling costs
+   a scan of `sessions`, which is 180 rows; the work is the per-session join into
+   `predictions`, which already seeks `idx_predictions_session_ts`. So **14.14**'s bar is not
+   met: rewriting the idiom would buy nothing. `recent_session_summaries` has a ~0.29 s floor
+   at `day` (two sessions) that the row counts do not explain; it is recorded, not diagnosed.
 3. **The wide windows still cost seconds, and they hold `storage_mutex_` while doing it.**
    `daily_summary` at the retention limit is 6.8 s and overtakes `prediction_stats` past 30
    days; its per-day recursive axis is what grows. This is the contention **14.1** asks to have
@@ -174,57 +193,74 @@ so `benchmarks/bench_budgets.cpp` runs Review's reads concurrently with a paced 
 persist every 100 ms), in the shape `state.cpp:AppState::health` and the engine really use:
 one `Storage`, one lock. It runs the writer three times, against three loads:
 
-- **alone** â€” the baseline;
-- **one Review reader** â€” `bench_budgets.cpp:review_load`: the five commands
+- **alone** — the baseline;
+- **one Review reader** — `bench_budgets.cpp:review_load`: the five commands
   `useReviewWorkflow.ts` issues for one load, in order, on one thread, over the 7-day preset
   Review opens on, then 5 s of think time, for 60 s. One thread because none of the five is
   registered `add_async`, so the bridge runs them inline on the webview's thread and a
   `Promise.all` over them is sequential in fact. Each command takes and releases the lock
   once, at the granularity `state.cpp` uses;
-- **two hot readers** â€” the heaviest queries looping with no think time. A bound, not a
+- **two hot readers** — the heaviest queries looping with no think time. A bound, not a
   workload.
+
+Measured on the corrected fixture (sessions dated to their blocks; see the correction under
+read latency). The first publication of this table, commit `89d931d`, ran on the old one and
+overstated the Review column by the ~2 s of whole-history session reads it could not window.
 
 | writer's wait for the lock | alone | one Review reader | two hot readers |
 | --- | --- | --- | --- |
 | persists | 100 | 600 | 100 |
 | p50 | 0.00 ms | 0.00 ms | 0.00 ms |
 | p95 | 0.00 ms | 0.00 ms | 0.00 ms |
-| **max** | **0.00 ms** | **7,618 ms** | **65,851 ms** |
-| the write itself (p95) | 1.65 ms | 0.42 ms | 0.12 ms |
+| **max** | **0.06 ms** | **2,551 ms** | **40,577 ms** |
+| the write itself (p95) | 3.42 ms | 0.53 ms | 0.15 ms |
 
-The Review reader completed **6 loads** in the minute. One load takes **4.1 s** at p50 and
-7.7 s at worst; the longest single command held the lock for **5.1 s**
-(`get_analytics`, which holds it across four reads).
+**Where one Review load's time goes.** Seven loads in the minute; one load takes **2.55 s**
+(p50; max 2.58 s), and it is five lock holds laid end to end:
 
-**The middle column is the answer to 14.1, and it is a tail, not a load.** Six of 630
-acquisitions of the storage lock were contended in that phase â€” about one per Review load.
+| command | hold p50 (max) | what it holds the lock for |
+| --- | --- | --- |
+| `get_analytics` | 682 ms (704) | `prediction_stats` 441 + `hourly_focus_buckets` 149 + `productive_session_streak` 78 + `context_app_counts` 10 |
+| `get_daily_summary` | 593 ms (606) | `daily_summary` |
+| `get_summary_report` | 449 ms (469) | `prediction_stats` 441 + `context_app_counts` ~10; the other two reads are under 0.1 ms |
+| `get_focus_summary` | 433 ms (442) | `prediction_stats` |
+| `get_session_history` | 377 ms (395) | `recent_session_summaries` |
+
+The per-command holds sum to the load time (2,534 ms against 2,552 ms), and each matches the
+read-latency table's 7-day column, so nothing here is unaccounted for. **The same
+`prediction_stats` over the same window is ~1.3 s of the 2.55 s** — three commands compute it
+independently. That is **14.12**, and on this fixture it is the largest single share of a load.
+
+**The middle column is the answer to 14.1, and it is a tail, not a load.** Eight of 635
+acquisitions of the storage lock were contended in that phase — about one per Review load.
 Every other persist took the lock for free, which is why p50 and p95 do not move in any
 column; an average, or a p95-only report, would call all three immaterial and be wrong. What
-happens is narrower: **each Review load stalls about one persist, by up to 7.6 s.**
+happens is narrower: **each Review load stalls about one persist, and that persist waits out
+the whole load.**
 
-Three things that 7.6 s is:
-
-- **Longer than any one command.** The worst wait is **1.48Ã—** the longest single hold. The
-  reader releases the lock between commands, but `RankedMutex` wraps a `std::mutex`, which
-  promises no fairness, and the releasing thread reacquires before the waiting writer is
-  scheduled. The writer sat out most of a whole load, not one query of it. A lock that handed
-  over at a command boundary would bound the wait at one hold (5.1 s here); a read connection
-  would remove it. Those are different fixes, and this number is what tells them apart.
-- **Not a dropped-event risk.** 7.6 s at 50 events/s is ~381 of the ring's 65,536 slots
-  (`capture_thread.hpp:kCapacity`); the hot-loop ceiling is ~3,293. The buffer absorbs both.
-  What is at stake is seconds of unpersisted work, and â€” because the UI's other storage reads
-  queue on the same lock â€” seconds in which nothing else backed by storage can answer.
+- **The wait is the load, not a query.** The worst wait is **2,551 ms** against a
+  **2,552 ms** median load and a longest single hold of 704 ms (3.62×). The reader releases
+  the lock between commands, but `RankedMutex` wraps a `std::mutex`, which promises no
+  fairness, and the releasing thread reacquires before the waiting writer is scheduled. Every
+  run so far has shown the same shape — worst wait ≈ one whole load — on both fixtures.
+  This separates the fixes: a lock that handed over at command boundaries would bound the
+  wait at one hold (~0.7 s); computing `prediction_stats` once per load would shorten the
+  load by ~0.9 s; a read connection would remove the wait.
+- **Not a dropped-event risk.** 2.55 s at 50 events/s is ~128 of the ring's 65,536 slots
+  (`capture_thread.hpp:kCapacity`); the hot-loop ceiling is ~2,029. The buffer absorbs both.
+  What is at stake is seconds of unpersisted work, and — because the UI's other storage reads
+  queue on the same lock — seconds in which nothing else backed by storage can answer.
 - **Measured on the ceiling fixture.** 90 days with every attended second written; a
   duty-cycled day holds fewer rows and reads proportionally faster over a window.
 
-**The hot-loop column is unstable, which is itself the finding.** The first run of the same
-phase (commit `b54fa83`) recorded a 29,191 ms worst wait; this one, 65,851 ms. Two readers
-passing an unfair lock between themselves can starve a writer for as long as they keep
-running, so the ceiling has no ceiling: it scales with the run, not with a query. Keep it as
-the bound on what an unfair lock permits, and do not quote it as what Review costs.
+**The hot-loop column is unstable, which is itself the finding.** Four runs of the same phase
+have recorded worst waits of 29.2 s, 65.9 s, 11.2 s and 40.6 s. Two readers passing an unfair
+lock between themselves can starve a writer for as long as they keep running, so the ceiling
+has no ceiling: it scales with the run, not with a query. Keep it as the bound on what an
+unfair lock permits, and do not quote it as what Review costs.
 
 The lock instrument reports a slightly longer worst wait than the writer saw in the hot phase
-â€” 67.2 s against 65.9 s â€” because it counts every rank-`Storage` acquisition, including
+— 41.0 s against 40.6 s — because it counts every rank-`Storage` acquisition, including
 readers waiting on each other. Both figures are of the same run; they measure different
 waiters.
 

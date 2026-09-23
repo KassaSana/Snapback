@@ -1465,25 +1465,32 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   **Measured again 2026-09-22, with a realistic reader** (`bench_budgets.cpp:review_load`:
   the five Review commands in order on one thread, as the bridge really runs them, over the
-  7-day preset, then 5 s of think time, for 60 s; post-14.13 queries; same host and fixture).
-  The writer's worst wait is **7,618 ms** against one person reading Review, beside 0.00 ms
-  alone and 65,851 ms against the hot loop. p50 and p95 are still 0.00 ms in every column:
-  about **one persist per Review load** is stalled, and it is stalled for seconds.
+  7-day preset, then 5 s of think time, for 60 s; post-14.13 queries; same host). Corrected the
+  same day: the first publication (`89d931d`: 7,618 ms, a 4.1 s load) ran on a fixture that
+  dated every session to the moment of generation, so session-windowed reads read the whole
+  history. On the corrected fixture the writer's worst wait is **2,551 ms** against one person
+  reading Review, beside 0.06 ms alone and 40,577 ms against the hot loop. p50 and p95 are
+  0.00 ms in every column: about **one persist per Review load** is stalled, by seconds.
 
-  - **The writer waits out most of a load, not one query.** One load takes 4.1 s (p50) and
-    its longest command, `get_analytics`, held the lock 5.1 s; the worst wait is 1.48× that
-    hold. The reader releases between commands and `std::mutex` lets it reacquire before the
-    writer runs. A lock that hands over at a command boundary would cap the wait at one hold;
-    a read connection would remove it; cheaper `get_analytics` reads would shrink both.
-  - **The hot-loop figure is not a stable bound.** It was 29.2 s in the first run and 65.9 s
-    in this one: two unfair readers can starve the writer for as long as they run. It stays
-    in the table as what an unfair lock permits, not as a cost of Review.
-  - **Dropped events remain not the risk:** 7.6 s is ~381 of 65,536 ring slots.
+  - **The stalled persist waits out the whole load.** One load is **2.55 s** of five lock
+    holds end to end; the worst wait equals it (2,551 against 2,552 ms), 3.62× the longest
+    single hold (`get_analytics`, 704 ms). The reader releases between commands and
+    `std::mutex` lets it reacquire before the writer runs. Every run, on both fixtures, has
+    shown worst wait ≈ one load.
+  - **What each option buys, in this run's numbers.** A lock that hands over at command
+    boundaries: worst wait ~2.55 s → ~0.7 s (one hold). Computing `prediction_stats` once per
+    load (**14.12**): the load, and so the wait, ~2.55 s → ~1.7 s. Both together: ~0.7 s,
+    unchanged by 14.12, because the longest hold is `get_analytics` and it keeps its one
+    `prediction_stats`. A read connection: ~0. Nothing: a few seconds, once per Review load.
+  - **The hot-loop figure is not a stable bound.** Four runs: 29.2 s, 65.9 s, 11.2 s, 40.6 s.
+    It stays in the table as what an unfair lock permits, not as a cost of Review.
+  - **Dropped events remain not the risk:** 2.55 s is ~128 of 65,536 ring slots.
 
-  Full table in [`testing_strategy.md`](testing_strategy.md#what-a-report-in-flight-costs-a-persist).
-  The measurement this item asked for is done. What remains is the decision — "read lane",
-  "fairer lock" (hand-off at command boundaries), "cheaper `get_analytics`" or "nothing" — which
-  is Kassa's call; this item stays `accepted` and open until it is made.
+  Full tables, including the per-command breakdown, in
+  [`testing_strategy.md`](testing_strategy.md#what-a-report-in-flight-costs-a-persist). The
+  measurement this item asked for is done. What remains is the decision — "read lane",
+  "fairer hand-off", "compute `prediction_stats` once" (14.12) or "nothing" — which is Kassa's
+  call; this item stays `accepted` and open until it is made.
 
 - **14.2 — Make one synchronous engine cycle the production test seam.** `proposed` `M`
 
@@ -1748,6 +1755,12 @@ kept here; already-deep modules and completed performance work were rejected dur
   purpose.** Sequence behind **14.1**: if the read lane lands, measure a third time, because a
   cheaper lock changes what redundancy costs again.
 
+  *Measured inside a load 2026-09-22* (**14.1**'s per-command breakdown, corrected fixture,
+  7-day preset). The three calls are **~1.3 s of a 2.55 s Review load** — the largest single
+  share of it, and so the largest share of the persist wait 14.1 found. Still `proposed`: this
+  makes it one of 14.1's options with a price on it, not a separate build, and the cache
+  objection above is unchanged.
+
 - **14.14 — The same idiom over `sessions`, unmeasured.** `proposed` `S` `performance`
   Carved out of **14.13** when it closed, 2026-09-22, so a finished item would not carry open
   work. Six queries still spell their window `(?N IS NULL OR started_at >= ?N)` —
@@ -1760,6 +1773,16 @@ kept here; already-deep modules and completed performance work were rejected dur
   there would buy nothing and would be reported as a win. The bar is a measurement on the
   90-day fixture ([`benchmarks/bench_budgets.cpp`](../benchmarks/bench_budgets.cpp)) showing
   one of them is scan-bound. 14.13's remedy and its guard are both ready to copy if it is.
+
+  *Measured 2026-09-22, bar not met.* The first reading of "flat across every window" was the
+  benchmark fixture's, which dated every session to the moment of generation; on a fixture
+  that dates them properly `recent_session_summaries` goes 286 ms → 1,076 ms from `day` to
+  `90d`, `productive_session_streak` 7 ms → 1,030 ms, and `context_app_counts` 5 ms → 63 ms
+  ([`testing_strategy.md`](testing_strategy.md#read-latency-p50-p95-against-that-database)).
+  They scale with the window, so the idiom's scan of `sessions` (180 rows) is not what they
+  cost; the per-session join into `predictions` is, and it already seeks
+  `idx_predictions_session_ts`. By this item's own rule, nothing to change. Left open only so
+  Kassa can archive it.
 
 ---
 
