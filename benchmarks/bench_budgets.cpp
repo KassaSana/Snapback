@@ -58,6 +58,7 @@
 #include "storage/storage.hpp"
 #include "types.hpp"
 #include "util/ranked_mutex.hpp"
+#include "util/writer_priority.hpp"
 
 using namespace snapback;
 using namespace snapback::bench;
@@ -308,7 +309,7 @@ struct ReviewLoadTiming {
 };
 
 ReviewLoadTiming review_load(Storage& storage, RankedMutex& storage_lock, std::int64_t now_ms,
-                             std::int64_t cutoff_ms) {
+                             std::int64_t cutoff_ms, const WriterPriority* gate = nullptr) {
     const std::optional<std::int64_t> cutoff{cutoff_ms};
     ReviewLoadTiming timing;
     Timer whole_load;
@@ -316,6 +317,8 @@ ReviewLoadTiming review_load(Storage& storage, RankedMutex& storage_lock, std::i
     // exactly the opening a fair lock would hand to a waiting writer, which is why the holds
     // are timed individually -- a wait longer than the longest hold cannot be one command's.
     const auto held = [&](std::size_t index, auto&& body) {
+        // With a gate, exactly what the five `AppState` commands do before their lock.
+        if (gate != nullptr) gate->yield_to_writers();
         std::unique_lock<RankedMutex> lock(storage_lock);
         Timer holding;
         body();
@@ -361,7 +364,8 @@ ReviewLoadTiming review_load(Storage& storage, RankedMutex& storage_lock, std::i
 // spends the rest of its time asleep; what it wants to know is how long *one* persist waits
 // when a report is in flight. Fixed attempts at a fixed interval measure that.
 WriterResult run_writer(Storage& storage, RankedMutex& storage_lock, const std::string& session_id,
-                        std::int64_t base_ms, std::size_t attempts, std::int64_t interval_ms) {
+                        std::int64_t base_ms, std::size_t attempts, std::int64_t interval_ms,
+                        WriterPriority* gate = nullptr) {
     FeatureVector features;
     std::vector<double> waits_us;
     std::vector<double> writes_us;
@@ -378,7 +382,11 @@ WriterResult run_writer(Storage& storage, RankedMutex& storage_lock, const std::
         std::this_thread::sleep_until(started + std::chrono::milliseconds(
                                                     static_cast<std::int64_t>(i) * interval_ms));
         Timer waiting;
+        // With a gate, exactly what `AppState::engine_tick` does around its persist lock.
+        std::optional<WriterPriority::Announce> announce;
+        if (gate != nullptr) announce.emplace(*gate);
         std::unique_lock<RankedMutex> lock(storage_lock);
+        if (announce) announce->release();
         waits_us.push_back(waiting.elapsed_us());
         Timer writing;
         persist_one(storage, session_id, features,
@@ -523,49 +531,72 @@ int main() {
             // One thread, because the five commands are synchronous and share the webview's
             // thread; a load and then think time, because a person reads the page they
             // opened rather than reloading it as fast as it will answer.
-            std::atomic<bool> review_stop{false};
-            std::atomic<std::uint64_t> review_loads{0};
-            // How long one load takes end to end. Without it the writer's worst wait is a
-            // number with nothing to compare it to; with it, "the writer waited out a whole
-            // load" and "the writer waited out one query" are distinguishable, and those two
-            // point at different fixes -- a fairer lock and a read lane respectively.
-            std::vector<double> load_us;
-            double worst_hold_us[kReviewCommandCount]{};
-            // Every hold, not only the worst: a maximum over a handful of loads cannot say
-            // whether a command is slow or one load was unlucky.
-            std::vector<double> hold_samples_us[kReviewCommandCount];
-            reset_lock_metrics();
-            std::thread review_reader([&] {
-                while (!review_stop.load(std::memory_order_relaxed)) {
-                    const auto timing = review_load(*storage, storage_lock, now_ms,
-                                                    review_cutoff_ms);
-                    load_us.push_back(timing.total_us);
-                    for (std::size_t i = 0; i < kReviewCommandCount; ++i) {
-                        worst_hold_us[i] = std::max(worst_hold_us[i], timing.held_us[i]);
-                        hold_samples_us[i].push_back(timing.held_us[i]);
-                    }
-                    review_loads.fetch_add(1, std::memory_order_relaxed);
-                    // Slept in slices so the phase can end during think time instead of
-                    // holding the run open for one last full idle period.
-                    for (std::size_t waited = 0;
-                         waited < review_idle_ms && !review_stop.load(std::memory_order_relaxed);
-                         waited += 50) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                    }
+            //
+            // Run twice: as the lock behaves by itself, and with `WriterPriority` wired the
+            // way `AppState` wires it. Same database, same host, same run, so the difference
+            // between the two is the gate and nothing else.
+            struct ReviewPhase {
+                WriterResult writer;
+                std::uint64_t loads{};
+                // How long one load takes end to end. Without it the writer's worst wait is
+                // a number with nothing to compare it to; with it, "the writer waited out a
+                // whole load" and "the writer waited out one query" are distinguishable.
+                Stats load;
+                double worst_hold_us[kReviewCommandCount]{};
+                // Every hold, not only the worst: a maximum over a handful of loads cannot
+                // say whether a command is slow or one load was unlucky.
+                std::vector<double> hold_samples_us[kReviewCommandCount];
+                LockMetricsSnapshot metrics;
+                std::size_t worst_command() const {
+                    return static_cast<std::size_t>(
+                        std::max_element(std::begin(worst_hold_us), std::end(worst_hold_us)) -
+                        std::begin(worst_hold_us));
                 }
-            });
-            const auto reviewed =
-                run_writer(*storage, storage_lock, writer_session.session_id,
-                           writer_base_ms + 10 * 60 * 1000, review_attempts, kWriterIntervalMs);
-            review_stop.store(true, std::memory_order_relaxed);
-            review_reader.join();
-            const auto review_metrics = lock_metrics(LockRank::Storage);
-            // Safe to read unsynchronized: the only writer was the thread just joined.
-            const auto review_load_stats = summarize(std::move(load_us), reviewed.wall_ms);
-            const auto worst_command =
-                static_cast<std::size_t>(std::max_element(std::begin(worst_hold_us),
-                                                          std::end(worst_hold_us)) -
-                                         std::begin(worst_hold_us));
+            };
+            const auto review_phase = [&](WriterPriority* gate, std::int64_t base_ms) {
+                ReviewPhase out;
+                std::atomic<bool> stop{false};
+                std::vector<double> load_us;
+                reset_lock_metrics();
+                std::thread reader([&] {
+                    while (!stop.load(std::memory_order_relaxed)) {
+                        const auto timing =
+                            review_load(*storage, storage_lock, now_ms, review_cutoff_ms, gate);
+                        load_us.push_back(timing.total_us);
+                        for (std::size_t i = 0; i < kReviewCommandCount; ++i) {
+                            out.worst_hold_us[i] = std::max(out.worst_hold_us[i], timing.held_us[i]);
+                            out.hold_samples_us[i].push_back(timing.held_us[i]);
+                        }
+                        ++out.loads;
+                        // Slept in slices so the phase can end during think time instead of
+                        // holding the run open for one last full idle period.
+                        for (std::size_t waited = 0;
+                             waited < review_idle_ms && !stop.load(std::memory_order_relaxed);
+                             waited += 50) {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                        }
+                    }
+                });
+                out.writer = run_writer(*storage, storage_lock, writer_session.session_id, base_ms,
+                                        review_attempts, kWriterIntervalMs, gate);
+                stop.store(true, std::memory_order_relaxed);
+                reader.join();
+                out.metrics = lock_metrics(LockRank::Storage);
+                // Safe to read unsynchronized: the only writer was the thread just joined.
+                out.load = summarize(std::move(load_us), out.writer.wall_ms);
+                return out;
+            };
+            auto unfair = review_phase(nullptr, writer_base_ms + 10 * 60 * 1000);
+            WriterPriority gate;
+            auto gated = review_phase(&gate, writer_base_ms + 20 * 60 * 1000);
+
+            const auto& reviewed = unfair.writer;
+            const auto review_loads = unfair.loads;
+            const auto& review_metrics = unfair.metrics;
+            const auto& review_load_stats = unfair.load;
+            const auto& worst_hold_us = unfair.worst_hold_us;
+            auto& hold_samples_us = unfair.hold_samples_us;
+            const auto worst_command = unfair.worst_command();
 
             // --- Phase 3: the ceiling, readers looping with no think time --------------
             std::atomic<bool> readers_stop{false};
@@ -597,7 +628,7 @@ int main() {
             }
             const auto loaded =
                 run_writer(*storage, storage_lock, writer_session.session_id,
-                           writer_base_ms + 20 * 60 * 1000, attempts, kWriterIntervalMs);
+                           writer_base_ms + 30 * 60 * 1000, attempts, kWriterIntervalMs);
             readers_stop.store(true, std::memory_order_relaxed);
             for (auto& reader : readers) reader.join();
             const auto loaded_metrics = lock_metrics(LockRank::Storage);
@@ -613,7 +644,7 @@ int main() {
                           << std::setw(12) << c << " ms" "\n";
             };
             std::cout << std::fixed << std::setprecision(2)
-                      << "  the Review reader   " << review_loads.load()
+                      << "  the Review reader   " << review_loads
                       << " load(s) of five commands, " << review_idle_ms
                       << " ms think time between" "\n"
                       << "                      one load takes p50 "
@@ -682,6 +713,27 @@ int main() {
                       << (ms(reviewed.wait.max_us) / 1000.0 * 50.0) << " of 65536 ring slots"
                       << " (hot-loop ceiling: "
                       << (ms(loaded.wait.max_us) / 1000.0 * 50.0) << ")" "\n\n";
+
+            // The same Review phase with the gate `AppState` now uses (14.1). The claim to
+            // check is the bound: a persist waits for the command in progress, not the load,
+            // so its worst wait should come out at or under the longest single hold.
+            const auto gated_worst = gated.worst_command();
+            std::cout << "  with writer priority (util/writer_priority.hpp, as AppState wires it)" "\n"
+                      << "    Review reader     " << gated.loads << " load(s); one load takes p50 "
+                      << ms(gated.load.p50_us) << " ms, max " << ms(gated.load.max_us) << " ms" "\n"
+                      << "                      longest single command hold "
+                      << ms(gated.worst_hold_us[gated_worst]) << " ms ("
+                      << kReviewCommands[gated_worst] << ")" "\n"
+                      << "    writer's wait     n=" << gated.writer.writes << "  p50 "
+                      << ms(gated.writer.wait.p50_us) << " ms  p95 " << ms(gated.writer.wait.p95_us)
+                      << " ms  max " << ms(gated.writer.wait.max_us) << " ms" "\n"
+                      << "    worst wait / longest hold  "
+                      << (ms(gated.writer.wait.max_us) /
+                          std::max(1.0, ms(gated.worst_hold_us[gated_worst])))
+                      << "x  (<=1 means the gate held: no persist sat out a whole load)" "\n"
+                      << "    storage lock      acquisitions=" << gated.metrics.acquisitions
+                      << " contended=" << gated.metrics.contended
+                      << " wait max=" << gated.metrics.max_wait_us << "us" "\n\n";
         }
 
         // --- Footprint, after the connection closed and the WAL checkpointed -----------

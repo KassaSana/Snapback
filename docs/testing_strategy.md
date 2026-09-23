@@ -253,6 +253,36 @@ the whole load.**
 - **Measured on the ceiling fixture.** 90 days with every attended second written; a
   duty-cycled day holds fewer rows and reads proportionally faster over a window.
 
+**With the writer let through first (14.1's fix).** `util/writer_priority.hpp` is the gate
+`AppState` now uses: the engine announces its persist while it waits for the lock, and each
+of the five Review commands yields to an announced persist before taking the lock. The
+benchmark runs the Review phase twice in one run, without and with the gate, so the
+comparison has one database, one host, and one machine state. That run was noisier than the
+table above (holds 25–30% longer, and one 3.8 s `get_session_history` outlier), so its absolute
+figures are higher; the comparison between its two columns is the point.
+
+| same run, 7-day Review reader | lock as it was | with writer priority |
+| --- | --- | --- |
+| Review loads in 60 s | 6 | 7 |
+| one load, p50 (max) | 3,704 ms (7,436) | 3,242 ms (3,439) |
+| longest single command hold | 3,802 ms | 861 ms |
+| writer's wait, p95 | 0.00 ms | 428 ms |
+| **writer's wait, max** | **7,423 ms** | **845 ms** |
+| worst wait ÷ longest hold | 1.95× | **0.98×** |
+| contended acquisitions | 6 of 630 | 64 of 635 |
+
+**The bound holds: no persist sat out a whole load.** The worst wait is under the longest
+single hold, which is the most a gate at command boundaries can promise, since the command
+already holding the lock finishes first.
+
+The p95 and the contended count **went up, and that is the fix working, not a cost of it.**
+The writer persists every 100 ms. Without the gate, one persist per load blocks and the ~35
+persists due during that load cannot even be attempted until it gets through, so they queue
+behind it and are timed as uncontended once it does. Their lateness is real but invisible to
+a lock-wait figure. With the gate the writer gets in at every command boundary, so the waits
+are spread across up to five short ones per load instead of one long one. A lock-wait p95 of
+428 ms against a schedule that used to slip by seconds is the trade this item asked for.
+
 **The hot-loop column is unstable, which is itself the finding.** Four runs of the same phase
 have recorded worst waits of 29.2 s, 65.9 s, 11.2 s and 40.6 s. Two readers passing an unfair
 lock between themselves can starve a writer for as long as they keep running, so the ceiling

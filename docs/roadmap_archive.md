@@ -3959,3 +3959,86 @@ entry above is the record of what shipped.
   They scale with the window, so the idiom's scan of `sessions` (180 rows) is not what they
   cost; the per-session join into `predictions` is, and it already seeks
   `idx_predictions_session_ts`. By this item's own rule, nothing to change, and it closes unbuilt.
+
+- **14.1 — CLOSED 2026-09-22: writer priority, not a read lane. Benchmark a separate SQLite query lane.** `M` `performance`
+
+  The immutable live snapshot removed state-lock contention, but every storage-backed UI
+  report still takes `storage_mutex_`, the same seam the engine uses to persist. WAL already
+  permits concurrent readers and a writer. A deep `ActivityQueries` module owning a read
+  connection could hide reporting SQL and let the engine's `Storage` connection remain the
+  sole writer.
+
+  **Do not implement from structure alone.** First extend the month-scale benchmark to run
+  the largest session-history/analytics/summary reads concurrently with persistence and
+  measure writer delay and dropped-event risk. If the result is immaterial, close this item
+  with the numbers and keep one connection. If it reproduces contention, introduce the read
+  lane, pin snapshot/after-delete semantics, and require the benchmark to show the gain.
+
+  **Measured 2026-09-22** ([`bench_budgets.cpp`](../benchmarks/bench_budgets.cpp), 90-day
+  ceiling fixture, 200 persists at 100 ms against two reader threads; full table and caveats
+  in [`testing_strategy.md`](testing_strategy.md#what-a-report-in-flight-costs-a-persist)).
+  The writer's wait for `storage_mutex_` went from a **0.04 ms** worst case alone to a
+  **29,191 ms** worst case under reads. It **reproduces contention**, so the first branch of
+  the paragraph above does not apply and this item does not close here.
+
+  What the numbers do *not* yet say is that the read lane is the answer, which is why this is
+  recorded rather than acted on:
+
+  - **It is a tail, not a load.** Seven of 200 persists ever found the lock held; p50 and p95
+    are unchanged at 0.00 ms. A reader lane would remove the seven. Nothing here says the
+    other 193 cost anything.
+  - **29 s is not one query.** `daily_summary` at the retention limit is 6.8 s, so the worst
+    wait is four of them: `std::mutex` has no fairness guarantee, and two readers looping with
+    no think time can pass the lock between themselves while a writer waits. A fair lock, or
+    simply the cheaper reads **14.13** already landed, would move that number without a second
+    connection. Both are smaller changes than a read lane and neither has been measured.
+  - **Dropped events are not the risk.** 29 s of capture at 50 events/s is ~1,460 of 65,536
+    ring slots, so the buffer absorbs it. The cost is unpersisted work and a UI waiting, not
+    lost input — which is a different argument than the one this item was opened on.
+
+  **Measured again 2026-09-22, with a realistic reader** (`bench_budgets.cpp:review_load`:
+  the five Review commands in order on one thread, as the bridge really runs them, over the
+  7-day preset, then 5 s of think time, for 60 s; post-14.13 queries; same host). Corrected the
+  same day: the first publication (`89d931d`: 7,618 ms, a 4.1 s load) ran on a fixture that
+  dated every session to the moment of generation, so session-windowed reads read the whole
+  history. On the corrected fixture the writer's worst wait is **2,551 ms** against one person
+  reading Review, beside 0.06 ms alone and 40,577 ms against the hot loop. p50 and p95 are
+  0.00 ms in every column: about **one persist per Review load** is stalled, by seconds.
+
+  - **The stalled persist waits out the whole load.** One load is **2.55 s** of five lock
+    holds end to end; the worst wait equals it (2,551 against 2,552 ms), 3.62× the longest
+    single hold (`get_analytics`, 704 ms). The reader releases between commands and
+    `std::mutex` lets it reacquire before the writer runs. Every run, on both fixtures, has
+    shown worst wait ≈ one load.
+  - **What each option buys, in this run's numbers.** A lock that hands over at command
+    boundaries: worst wait ~2.55 s → ~0.7 s (one hold). Computing `prediction_stats` once per
+    load (**14.12**): the load, and so the wait, ~2.55 s → ~1.7 s. Both together: ~0.7 s,
+    unchanged by 14.12, because the longest hold is `get_analytics` and it keeps its one
+    `prediction_stats`. A read connection: ~0. Nothing: a few seconds, once per Review load.
+  - **The hot-loop figure is not a stable bound.** Four runs: 29.2 s, 65.9 s, 11.2 s, 40.6 s.
+    It stays in the table as what an unfair lock permits, not as a cost of Review.
+  - **Dropped events remain not the risk:** 2.55 s is ~128 of 65,536 ring slots.
+
+  Full tables, including the per-command breakdown, in
+  [`testing_strategy.md`](testing_strategy.md#what-a-report-in-flight-costs-a-persist). The
+  measurement this item asked for is done. What remains is the decision — "read lane",
+  "fairer hand-off", "compute `prediction_stats` once" (14.12) or "nothing".
+
+  **Decided and landed 2026-09-22: the fairer hand-off.** Kassa handed the choice over, and
+  the smallest change that removes the measured mechanism was chosen.
+  [`writer_priority.hpp`](../src/util/writer_priority.hpp) is a gate beside `storage_mutex_`,
+  not a new lock. `engine_tick` announces its persist while it waits, and the five Review
+  commands (`analytics`, `summary_report`, `focus_summary_for_window`,
+  `session_history_for_window`, `daily_summary`) yield to it before taking the lock. The same
+  benchmark run, without and with the gate: the writer's worst wait went from **7,423 ms**
+  (1.95× the longest hold: a whole load) to **845 ms** (0.98×: at most the command in
+  progress). `tests/test_writer_priority.cpp` pins the ordering itself, and the full suite
+  passes unmodified.
+
+  **Why not the read lane.** It removes the last ~0.7–0.9 s at the price of a second
+  connection, snapshot and after-delete semantics to pin, and an **M**-sized change; the gate
+  is a small header plus nine lines in `state.cpp`, and reverts cleanly. **Why not 14.12 alone.** It shortens the load, but
+  the persist would still sit out all of the shorter load. It stays `proposed` on its own
+  merits. **Reopen** if a support bundle's `Storage` lock `max_wait_us` (on `get_health`)
+  shows multi-second waits in the field, since the gate bounds the wait at one command and a
+  wide window's single command can itself be seconds (`daily_summary` over 90 days is ~7 s).

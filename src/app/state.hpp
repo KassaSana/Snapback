@@ -35,6 +35,7 @@
 #include "util/clock.hpp"
 #include "util/logger.hpp"
 #include "util/ranked_mutex.hpp"
+#include "util/writer_priority.hpp"
 
 namespace snapback {
 
@@ -559,6 +560,11 @@ private:
     // emissions carry activity_epoch_ and validate it in the dispatched UI closure.
     mutable RankedMutex activity_boundary_mutex_{LockRank::ActivityBoundary};
     mutable RankedMutex storage_mutex_{LockRank::Storage};
+    // Roadmap 14.1. The engine's persist announces itself here while it waits for
+    // storage_mutex_, and the Review commands yield to it before taking the lock, so a
+    // persist waits out at most the command in progress rather than a whole five-command
+    // Review load. See util/writer_priority.hpp for why the mutex alone does not do this.
+    mutable WriterPriority storage_priority_;
     Storage storage_;
     std::filesystem::path app_data_dir_;
     Logger* logger_ = nullptr;

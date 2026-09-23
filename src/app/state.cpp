@@ -1197,6 +1197,7 @@ FocusSummary AppState::focus_summary_for_window(const std::string& window,
     // lock-hold worry the cap was reaching for without trading a stall for a wrong number.
     Storage::PredictionStats stats;
     {
+        storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
         std::lock_guard lock(storage_mutex_);
         stats = storage_.prediction_stats(cutoff);
     }
@@ -1216,6 +1217,7 @@ FocusSummary AppState::focus_summary_for_window(const std::string& window,
 std::vector<SessionSummary> AppState::session_history_for_window(
     const std::string& window, const std::optional<std::string>& since) {
     const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
+    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     return storage_.recent_session_summaries(500, cutoff);
 }
@@ -1725,6 +1727,7 @@ void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
 AnalyticsSummary AppState::analytics(const std::string& window,
                                      const std::optional<std::string>& since) const {
     const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
+    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     AnalyticsSummary summary;
     const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff);
@@ -1769,6 +1772,7 @@ DailySummary AppState::daily_summary(const std::string& window,
         since_ms = *cutoff;
     }
 
+    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     out.days = const_cast<Storage&>(storage_).daily_summary(out.generated_at_ms, since_ms);
     return out;
@@ -1787,6 +1791,7 @@ SummaryReport AppState::summary_report(const std::string& window,
         snapshot = settings_;
     }
 
+    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     SummaryReport report;
     report.window = window;
@@ -2292,7 +2297,11 @@ bool AppState::engine_tick() {
             return drain_truncated;
         }
         if (!jobs.empty() || !span_transitions.empty() || snap_to_emit) {
+            // Roadmap 14.1. Announced only while waiting: once the lock is held, a reader
+            // blocks on the mutex for exactly the write, and yielding would add nothing.
+            WriterPriority::Announce announce(storage_priority_);
             std::lock_guard lock(storage_mutex_);
+            announce.release();
             // Resolve each boundary before BEGIN. Even a BEGIN failure therefore leaves the
             // retry carrying the original Storage-clock instant rather than a fresh "now".
             for (auto& transition : span_transitions) {

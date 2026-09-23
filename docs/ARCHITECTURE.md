@@ -67,6 +67,14 @@ enough block into dropped events. That is why the history and analytics read pat
 aggregate in SQL rather than looping over sessions (Roadmap 7.12): the cost of a
 query here is paid in capture fidelity, not just latency.
 
+The storage mutex is not fair, and a Review load is five commands back to back on the UI
+thread, so without help the reader retakes the lock between commands and a waiting persist
+sits out the whole load. The engine also emits only after it persists, so the alert waits
+with it. `util/writer_priority.hpp` closes that: the persist announces itself while it
+waits, and the Review commands yield to it before taking the lock, so a persist waits for
+at most the command in progress (Roadmap 14.1). There is still one connection. A separate
+read connection was measured against this and not built.
+
 ## Schema versioning
 
 `focoflow.db` carries its schema version in `PRAGMA user_version`, and `Storage::migrate()`
