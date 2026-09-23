@@ -1259,9 +1259,16 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
     goal field's suggestion list announced nothing: it is now a full ARIA combobox, with
     `aria-expanded` and `aria-activedescendant` following the arrow keys.
 
+  - **Zoom and short windows, checked 2026-09-23** in the demo at 550×380 (an 1100×760
+    window at 200% zoom) and at 320×640 (the WCAG reflow width), every surface and every
+    Settings section, with all disclosures open: nothing extends past the viewport, nothing
+    sits in an `overflow: hidden` clip, and the page never scrolls sideways — cards stack,
+    the session explorer drops to one column, the chart tables wrap. Keyboard focus is visible
+    throughout: the components with their own `:focus-visible` rule draw the accent outline,
+    and the rest draw the browser's ring, which no rule suppresses. No change was needed.
+
   Still open: the snapback overlay's focus, reduced-motion and contrast (native code on both
-  platforms, not reachable from the web demo); zoom and short-window checks shared with
-  **10.10**; and one design decision — **the risk chip's level is still colour-only on
+  platforms, not reachable from the web demo); and one design decision — **the risk chip's level is still colour-only on
   screen** (amber vs green for 41% vs 38%). A screen reader now hears it, but a sighted user
   who cannot tell the colours apart does not see it. A visible cue (a word, an icon, a
   pattern) changes the card's look, so it is Kassa's call.
