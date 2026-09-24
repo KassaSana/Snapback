@@ -8,7 +8,9 @@
 #include <chrono>
 #include <filesystem>
 #include <future>
+#include <initializer_list>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -60,6 +62,18 @@ struct App {
     }
     ~App() { runner.shutdown(); }
 };
+
+std::set<std::string> keys(const json& value) {
+    std::set<std::string> result;
+    for (auto it = value.begin(); it != value.end(); ++it) result.insert(it.key());
+    return result;
+}
+
+void check_keys(const json& value, std::initializer_list<const char*> expected) {
+    REQUIRE(value.is_object());
+    const std::set<std::string> wanted(expected.begin(), expected.end());
+    CHECK(keys(value) == wanted);
+}
 
 }  // namespace
 
@@ -143,6 +157,46 @@ TEST_CASE("the real handler table runs a session through start, get, and stop") 
 
     app.registry.call("stop_session", {{"sessionId", id}});
     CHECK(app.registry.call("get_active_session").is_null());
+}
+
+TEST_CASE("real command results keep the frontend's camelCase contract") {
+    App app;
+    check_keys(app.registry.call("get_recording_status"),
+               {"state", "privatePauseRemainingMs", "alertSnoozeRemainingMs"});
+
+    const auto settings = app.registry.call("get_settings");
+    CHECK(settings.contains("defaultFocusMode"));
+    CHECK(settings.contains("idleThresholdSecs"));
+    check_keys(settings.at("pomodoro"),
+               {"workMs", "shortBreakMs", "longBreakMs", "intervalsBeforeLongBreak",
+                "autoStartNextPhase"});
+
+    check_keys(app.registry.call("get_analytics"),
+               {"sampleCount", "avgFocusScore", "productiveSessionStreak", "hourly",
+                "topApps"});
+    const auto report = app.registry.call("get_summary_report");
+    CHECK(report.at("window") == "day");  // absent argument uses the Review default
+    check_keys(report,
+               {"window", "generatedAtMs", "sessionCount", "completedSessionCount",
+                "focusSeconds", "sessionLimit", "sessionsTruncated", "sampleCount",
+                "avgFocusScore", "distractedFraction", "longestFocusSecs", "topContextApp",
+                "attendedSeconds", "plannedMins"});
+    CHECK(app.registry.call("get_daily_summary").at("window") == "7d");
+
+    const auto started = app.registry.call("start_session", {{"goal", "Contract check"}});
+    const auto id = started.at("sessionId").get<std::string>();
+    check_keys(started, {"sessionId", "goal", "status", "focusMode", "startedAtMs",
+                         "endedAtMs", "reflectionDone", "reflectionNextStep"});
+    CHECK(started.at("focusMode") == "normal");  // absent argument uses the native default
+    const auto stopped = app.registry.call("stop_session", {{"sessionId", id}});
+    CHECK(stopped.at("status") == "COMPLETED");
+    const auto history = app.registry.call("get_session_history");
+    REQUIRE(history.is_array());
+    REQUIRE_FALSE(history.empty());
+    check_keys(history.at(0), {"record", "recap"});
+    check_keys(history.at(0).at("recap"),
+               {"sessionId", "goal", "durationSecs", "activeSecs", "avgFocusScore",
+                "avgDistractionRisk", "snapbackCount", "thrashSpikes", "deepFocusPct"});
 }
 
 TEST_CASE("dismiss_snapback dismisses the native card through the injected hook") {

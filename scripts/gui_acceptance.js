@@ -27,6 +27,12 @@
       var health = await window.__snapback.invoke("get_health");
       assert(health && typeof health === "object", "health did not return an object");
       assert(typeof health.status === "string", "health.status is missing");
+      var settings = await window.__snapback.invoke("get_settings");
+      assert(typeof settings.defaultFocusMode === "string", "settings mode casing drifted");
+      assert(typeof settings.pomodoro.workMs === "number", "pomodoro casing drifted");
+      var report = await window.__snapback.invoke("get_summary_report");
+      assert(report.window === "day", "summary default window drifted");
+      assert(typeof report.sessionCount === "number", "summary casing drifted");
     });
 
     await check("start-session", async function () {
@@ -42,6 +48,13 @@
       assert(sessionId, "start-session did not produce an id");
       var stopped = await window.__snapback.invoke("stop_session", { sessionId: sessionId });
       assert(stopped && stopped.status === "COMPLETED", "session did not stop cleanly");
+      var history = await window.__snapback.invoke("get_session_history");
+      assert(Array.isArray(history), "history did not return an array");
+      var entry = history.find(function (item) {
+        return item.record && item.record.sessionId === sessionId;
+      });
+      assert(entry, "stopped session was missing from history");
+      assert(typeof entry.recap.durationSecs === "number", "recap casing drifted");
     });
 
     await check("async-export", async function () {

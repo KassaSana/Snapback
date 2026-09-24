@@ -1222,6 +1222,11 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   the app still has to exit through its run loop. WebKitGTK-driven clicks remain; WKWebView
   stays on step 1 because it exposes no equivalent automation endpoint.
 
+  *Progress 2026-09-24:* the page-side acceptance script now checks Settings and summary
+  result casing and defaults, then reads the stopped session back through history. This
+  covers payloads crossing the real bridge in addition to command resolution. The
+  WebKitGTK-driven click slice remains open.
+
 - **10.3 — Accessibility has never been assessed.** `in progress` `M`
   No audit has been done. Specifically worth checking: keyboard navigation through the card
   grid; focus management when the snapback overlay appears (it steals attention by design —
@@ -1534,6 +1539,10 @@ kept here; already-deep modules and completed performance work were rejected dur
   `apiMappers.ts`); a generated TypeScript manifest, or per-command result-shape assertions
   in the registry tests, would close that. The registry is also where 14.6's "slow" marking
   now lives, as the async policy.
+
+  *Progress 2026-09-24:* registry tests now pin the actual Settings, recording, analytics,
+  summary, and session-history response keys plus representative default arguments through
+  real handlers. Expand this to the remaining mapped commands before closing the item.
 
 - **14.4 — Move frontend invalidation into workflow modules.** `in progress` `M`
 
