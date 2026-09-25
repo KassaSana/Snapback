@@ -2428,22 +2428,22 @@ FocusLabel Storage::save_auto_session_label(const std::string& session_id) {
     //
     // The existing label wins rather than the newer inference: it is the one the user was
     // shown, and re-deriving a verdict they have already seen is a silent revision.
-    {
-        Stmt existing(db_,
-                      "SELECT label FROM labels WHERE session_id = ?1 AND source = ?2 "
-                      "ORDER BY id ASC LIMIT 1");
-        existing.bind(1, session_id);
-        existing.bind(2, std::string(label_source_as_str(LabelSource::Auto)));
-        if (existing.step_row()) {
-            return static_cast<FocusLabel>(sqlite3_column_int(existing.get(), 0));
-        }
-    }
+    if (const auto existing = session_auto_label(session_id)) return *existing;
 
     const SessionRecap session_recap = recap(session_id);
     const FocusLabel label = infer_session_label(session_recap);
     insert_label(session_id, label, label_source_as_str(LabelSource::Auto),
                  std::string("inferred from session recap"));
     return label;
+}
+
+std::optional<FocusLabel> Storage::session_auto_label(const std::string& session_id) {
+    Stmt stmt(db_,
+              "SELECT label FROM labels WHERE session_id = ?1 AND source = 'auto' "
+              "ORDER BY id ASC LIMIT 1");
+    stmt.bind(1, session_id);
+    if (!stmt.step_row()) return std::nullopt;
+    return static_cast<FocusLabel>(sqlite3_column_int(stmt.get(), 0));
 }
 
 void Storage::insert_prediction(const PredictionRecord& p) {

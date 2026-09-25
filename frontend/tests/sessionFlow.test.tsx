@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the native boundary so the real api.ts + useSession run end to end.
 const boundary = vi.hoisted(() => {
-  const state: { health: Record<string, unknown>; settings: Record<string, unknown> } = {
+  const state: { health: Record<string, unknown>; settings: Record<string, unknown>; autoLabel: string | null; autoLabelError: boolean } = {
     health: {},
     settings: {},
+    autoLabel: "PRODUCTIVE",
+    autoLabelError: false,
   };
 
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
@@ -36,6 +38,9 @@ const boundary = vi.hoisted(() => {
         };
       case "get_session_recap":
         return { session_id: "sess-42", goal: "Write tests", duration_secs: 1800 };
+      case "get_session_auto_label":
+        if (state.autoLabelError) throw new Error("label read failed");
+        return state.autoLabel;
       case "get_analytics":
       case "get_focus_summary":
         return {};
@@ -82,6 +87,8 @@ beforeEach(() => {
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
   boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.autoLabel = "PRODUCTIVE";
+  boundary.state.autoLabelError = false;
 });
 
 afterEach(() => {
@@ -189,6 +196,17 @@ describe("Session start/stop flow", () => {
     expect(boundary.invoke).not.toHaveBeenCalledWith("start_session", expect.anything());
   });
 
+  it("uses destination headings and puts session controls before live feedback", async () => {
+    render(<App />);
+    const controls = await screen.findByRole("heading", { name: "Session Control" });
+    const feedback = screen.getByRole("heading", { name: "Focus state" });
+    expect(controls.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    expect(screen.getByRole("heading", { name: "Review your sessions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeInTheDocument();
+  });
+
   it("stops an active session and shows it completed", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Session Control" });
@@ -205,6 +223,23 @@ describe("Session start/stop flow", () => {
       expect(boundary.invoke).toHaveBeenCalledWith("stop_session", { sessionId: "sess-42" }),
     );
     expect(await screen.findByText("completed")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Keep Productive" })).toBeInTheDocument();
+    expect(screen.getByText(/Automatic label: Productive/)).toBeInTheDocument();
+  });
+
+  it("does not claim a saved label when the lookup fails", async () => {
+    boundary.state.autoLabelError = true;
+    render(<App />);
+    await screen.findByRole("heading", { name: "Session Control" });
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await screen.findByText("running");
+    fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
+    expect(await screen.findByText(/Automatic label unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Skip check-in" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Keep automatic label/ })).toBeNull();
   });
 
   it("defers a completed-session Review refresh while Review is hidden", async () => {

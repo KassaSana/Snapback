@@ -771,10 +771,17 @@ h1 {
   color: var(--ink);
 }
 
-.ghost-button:hover,
-.primary-button:hover,
-.secondary-button:hover {
+.ghost-button:hover:not(:disabled),
+.primary-button:hover:not(:disabled),
+.secondary-button:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
 .button-row {
@@ -1409,7 +1416,7 @@ h1 {
 /* Insights card */
 .insight-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 8px;
   margin: 4px 0 12px;
 }
@@ -1795,11 +1802,12 @@ h1 {
   outline-offset: 2px;
 }
 
-/* Roadmap 10.3. The tabpanel now wraps the section's cards, so it inherits the surface grid's
-   columns rather than becoming one full-width cell that stacks them. */
+/* Keep Settings cards at one consistent, readable width. */
 .settings-section {
   display: grid;
-  grid-template-columns: subgrid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 880px;
+  width: 100%;
 }
 
 .settings-section-intro {
@@ -2023,6 +2031,7 @@ h1 {
 
 .grid-review > .review-range-bar,
 .grid-review > .review-overview,
+.grid-review > .session-chart-card,
 .grid-review > .timeline-card,
 .grid-review > .session-management-card,
 .grid-review > .helper-text {

@@ -430,6 +430,7 @@ public:
     // Infers and saves an automatic session label on stop.
     static FocusLabel infer_session_label(const SessionRecap& recap);
     FocusLabel save_auto_session_label(const std::string& session_id);
+    std::optional<FocusLabel> session_auto_label(const std::string& session_id);
 
     // Predictions + feature snapshots (write path from the engine tick)
     void insert_prediction(const PredictionRecord& p);

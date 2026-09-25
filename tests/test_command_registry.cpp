@@ -157,6 +157,8 @@ TEST_CASE("the real handler table runs a session through start, get, and stop") 
 
     app.registry.call("stop_session", {{"sessionId", id}});
     CHECK(app.registry.call("get_active_session").is_null());
+    CHECK(app.registry.call("get_session_auto_label", {{"sessionId", id}}) == "PRODUCTIVE");
+    CHECK(app.registry.call("get_session_auto_label", {{"sessionId", "missing"}}).is_null());
 }
 
 TEST_CASE("real command results keep the frontend's camelCase contract") {

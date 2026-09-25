@@ -32,6 +32,7 @@ const DEMO_PATH_NOTE = "unavailable in the browser demo";
 export class DemoBackend {
   private data: DemoDataset;
   private activeSessionId: string | null = null;
+  private autoLabels = new Map<string, string>();
   private nextRuleId = 4;
   private counter = 0;
 
@@ -472,6 +473,22 @@ export class DemoBackend {
         session.endedAtMs = this.now();
         session.attendedSecs = Math.round((session.endedAtMs - session.startedAtMs) / 1000);
         if (this.activeSessionId === session.sessionId) this.activeSessionId = null;
+        if (!this.autoLabels.has(session.sessionId)) {
+          const recap = this.recapOf(session);
+          const risk = Number(recap.avgDistractionRisk);
+          const spikes = Number(recap.thrashSpikes);
+          const deep = Number(recap.deepFocusPct);
+          this.autoLabels.set(
+            session.sessionId,
+            deep >= 50 && risk < 0.35
+              ? "DEEP_FOCUS"
+              : risk >= 0.6 || spikes >= 3
+                ? "DISTRACTED"
+                : deep < 25 && spikes >= 1
+                  ? "PSEUDO_PRODUCTIVE"
+                  : "PRODUCTIVE",
+          );
+        }
         return this.sessionJson(session);
       }
       case "get_session": {
@@ -499,6 +516,8 @@ export class DemoBackend {
         if (!session) throw new Error("No such session");
         return this.recapOf(session);
       }
+      case "get_session_auto_label":
+        return this.autoLabels.get(String(args.sessionId)) ?? null;
       case "get_session_focus_curve": {
         // The native slicing (Storage::session_focus_curve), over the demo's rows.
         const id = String(args.sessionId);

@@ -42,6 +42,7 @@ export const useSession = ({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [focusMode, setFocusMode] = useState<FocusMode>("normal");
   const [recap, setRecap] = useState<SessionRecap | null>(null);
+  const [autoLabel, setAutoLabel] = useState<FocusLabel | null>(null);
   const [surveyPending, setSurveyPending] = useState(false);
   // Roadmap 2.14. Tracks only whether *this* end-of-session prompt is still open. Skipping and
   // saving both close it; neither is remembered past the session it belongs to.
@@ -130,6 +131,7 @@ export const useSession = ({
         setSessionId(record.sessionId);
         setSessionGoal(record.goal);
         setRecap(null);
+        setAutoLabel(null);
         // Drop live cards from the previous generation immediately; the native epoch bump
         // rejects most stale dispatches, and this clears anything already painted.
         clearSessionLiveSignals();
@@ -178,12 +180,16 @@ export const useSession = ({
     async (record: SessionRecord) => {
       setSessionRecord(record);
       clearSessionLiveSignals();
-      const sessionRecap = await api.getSessionRecap(record.sessionId);
+      const [sessionRecap, savedLabel] = await Promise.all([
+        api.getSessionRecap(record.sessionId),
+        api.getSessionAutoLabel(record.sessionId).catch(() => null),
+      ]);
       setRecap(sessionRecap);
+      setAutoLabel(savedLabel);
       setSurveyPending(true);
       setReflectionPending(true);
       setReflectionSaved(false);
-      setLabelStatus("Automatic session label saved. How did this session feel overall?");
+      setLabelStatus(savedLabel ? `Automatic label: ${focusStateLabel(savedLabel)}.` : null);
       setLabelStatusWarning(false);
       resetTimelineRefreshGate();
       void refreshContextTimeline(record.sessionId);
@@ -253,6 +259,7 @@ export const useSession = ({
       setSessionId(record.sessionId);
       setSessionGoal(record.goal);
       setRecap(null);
+      setAutoLabel(null);
       setSurveyPending(false);
       setActionError(
         captureReadiness ? sessionStartCaptureWarning(captureReadiness) : null,
@@ -347,15 +354,16 @@ export const useSession = ({
 
   const handleSkipSurvey = useCallback(() => {
     setSurveyPending(false);
-    setLabelStatus("Kept automatic session label.");
+    setLabelStatus(autoLabel ? `Kept automatic label: ${focusStateLabel(autoLabel)}.` : "Skipped check-in.");
     setLabelStatusWarning(false);
-  }, [setLabelStatus, setLabelStatusWarning]);
+  }, [autoLabel, setLabelStatus, setLabelStatusWarning]);
 
   const clearActivitySession = useCallback(() => {
     setSessionGoal("");
     setSessionRecord(null);
     setSessionId(null);
     setRecap(null);
+    setAutoLabel(null);
     setSurveyPending(false);
     resetTimelineRefreshGate();
     void refreshContextTimeline(null);
@@ -367,6 +375,7 @@ export const useSession = ({
   );
 
   return {
+    autoLabel,
     cancelSwitch,
     clearActivitySession,
     focusMode,

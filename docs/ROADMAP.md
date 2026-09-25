@@ -839,6 +839,10 @@ No open items. Completed work is in the [archive](roadmap_archive.md).
   Still open from the item as written: goal/app/date search, mode/verdict filters, paging past
   a range's 500-session cap, and labels (with **2.17**).
 
+  *Progress 2026-09-25:* The Windows QA polish pass moves the existing Sessions explorer
+  ahead of the charts on Review. The same bounded history and selected-session detail remain;
+  search, filters, pagination, and the editable label ledger remain open.
+
 
 - **2.17 — Give feedback an authoritative, editable label ledger.** `proposed` `M/L`
   Opened 2026-08-05. Auto labels, the end-session check-in, and live verdict corrections all
@@ -1310,6 +1314,14 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   surface switching; single-column layout checked at 700px. This is frontend evidence only:
   the running native/C++ soak task was not touched.
 
+  *Progress 2026-09-25:* The Windows QA pass gives each surface an accurate heading, moves
+  Now's session controls above live feedback, leads Review with Summary and Sessions, and
+  gives its session chart full width. Settings cards use one consistent measure; disabled
+  primary actions have a distinct non-hover state. The stopped-session check-in reads and
+  names the stored automatic label, with an honest unavailable state. Cross-surface session
+  duration displays now share the seconds-aware formatter. Visual snapshot, contrast, and
+  native overlay coverage listed below remain open.
+
   Remaining: automated light/dark visual snapshots for **all three surfaces and the native
   overlay**, comprehensive contrast assertions coordinated with **10.3**, and a native
   window/overlay smoke check after the ongoing soak is finished. Repo-wide Prettier cleanup
@@ -1344,6 +1356,11 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   response never overwriting a newer one; App tests pin the pill, the alert, and the live
   markers. **Still open:** the Recent Predictions / Context Timeline move under a selected
   session (2.9) and any Advanced relocation are product decisions, not done here.
+
+  *Progress 2026-09-25:* Custom now sends local midnight as a whole-second UTC timestamp,
+  matching the native Review parser. Time-zone regression coverage pins the conversion; the
+  shared range's existing loading and stale-data behavior is unchanged. Moving the live views
+  under a selected session and any Advanced relocation remain open.
 
 - **10.14 — ADAPTER LANDED 2026-08-14; the export half stays open.** `in progress` `M`
   What landed: the owned native seam — `pick_open_file` / `pick_save_file` over Win32 Common

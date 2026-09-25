@@ -1348,12 +1348,14 @@ TEST_CASE("Storage::save_auto_session_label writes an AUTO label from recap") {
     REQUIRE(storage.has_value());
 
     auto session = storage->create_session("Auto label", FocusMode::Normal);
+    CHECK_FALSE(storage->session_auto_label(session.session_id).has_value());
     storage->insert_prediction(prediction(session.session_id, 90.0, 0.10, "DEEP_FOCUS"));
     storage->insert_prediction(prediction(session.session_id, 85.0, 0.15, "DEEP_FOCUS"));
     storage->end_session(session.session_id);
 
     const FocusLabel label = storage->save_auto_session_label(session.session_id);
     CHECK(label == FocusLabel::DeepFocus);
+    CHECK(storage->session_auto_label(session.session_id) == FocusLabel::DeepFocus);
 
     TempDir temp;
     const auto exported =

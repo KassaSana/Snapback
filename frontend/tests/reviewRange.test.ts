@@ -39,6 +39,17 @@ assert.equal(
   new Date(2026, 7, 1, 0, 0, 0).getTime(),
 );
 assert.match(customRangeSinceInstant("2026-08-01"), /Z$/);
+assert.match(customRangeSinceInstant("2026-08-01"), /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+const originalTz = process.env.TZ;
+for (const zone of ["America/New_York", "Asia/Tokyo", "Europe/London"]) {
+  process.env.TZ = zone;
+  const picked = "2026-11-01";
+  const instant = customRangeSinceInstant(picked);
+  assert.equal(Date.parse(instant), new Date(`${picked}T00:00:00`).getTime());
+  assert.match(instant, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+}
+if (originalTz === undefined) delete process.env.TZ;
+else process.env.TZ = originalTz;
 // Garbage falls back to the old literal rather than sending "Invalid Date" over the bridge;
 // the C++ edge then rejects it with a clear error.
 assert.equal(customRangeSinceInstant("not-a-date"), "not-a-dateT00:00:00Z");

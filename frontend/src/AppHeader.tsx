@@ -4,8 +4,10 @@ import { summarizePermissions } from "./healthHints";
 import { settingsHealthBadge, type SettingsSection } from "./settingsSections";
 import { RecordingStatusCard } from "./RecordingStatusCard";
 import type { RecordingStatus } from "./api";
+import type { Surface } from "./SurfaceNav";
 
 type AppHeaderProps = {
+  surface: Surface;
   activeWindowAvailable: boolean;
   captureFailed: boolean;
   captureProbeConfirmed: boolean;
@@ -30,6 +32,7 @@ type AppHeaderProps = {
 };
 
 export const AppHeader = memo(function AppHeader({
+  surface,
   activeWindowAvailable,
   captureFailed,
   captureProbeConfirmed,
@@ -80,13 +83,25 @@ export const AppHeader = memo(function AppHeader({
     <header className="app-header">
       <div>
         <p className="eyebrow">Snapback</p>
-        <h1>{sessionActive ? "Session in progress" : "What are you working on?"}</h1>
+        <h1>
+          {surface === "review"
+            ? "Review your sessions"
+            : surface === "settings"
+              ? "Settings"
+              : sessionActive
+                ? "Session in progress"
+                : "What are you working on?"}
+        </h1>
         <p className="subtitle">
-          {sessionActive
-            ? activeGoal
-              ? `Working on ${activeGoal}.`
-              : "Recording your focus."
-            : "Name a goal and start."}
+          {surface === "review"
+            ? "See how your sessions went."
+            : surface === "settings"
+              ? "Choose how Snapback works for you."
+              : sessionActive
+                ? activeGoal
+                  ? `Working on ${activeGoal}.`
+                  : "Recording your focus."
+                : "Name a goal and start."}
         </p>
       </div>
       <div className="status-stack">

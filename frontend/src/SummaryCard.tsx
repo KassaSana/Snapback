@@ -5,12 +5,6 @@ import type { FocusSummary, SummaryReport } from "./api";
 
 import { Tile } from "./InsightsCard";
 
-const formatDuration = (seconds: number) => {
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-};
-
 const formatMinutes = (mins: number): string => {
   const hours = Math.floor(mins / 60);
   const rest = mins % 60;
@@ -35,8 +29,8 @@ export const SummaryCard = memo(function SummaryCard({
   const hasHistory = report.sampleCount > 0 || report.completedSessionCount > 0;
   // Roadmap 2.19. Attended can be worth showing even when prediction history is empty —
   // spans are the plan's actuals, and a quiet morning with a target still has a comparison.
-  const attendedMins = Math.floor(report.attendedSeconds / 60);
-  const showAttended = attendedMins > 0 || report.plannedMins > 0 || hasHistory;
+  const attendedSeconds = report.attendedSeconds;
+  const showAttended = attendedSeconds > 0 || report.plannedMins > 0 || hasHistory;
   // Attendance is compared against a daily or weekly plan, so for those two presets the
   // backend measures it over the local calendar day / week while every other tile on this
   // card uses the rolling window the range pill names. Say which period this figure covers
@@ -73,11 +67,11 @@ export const SummaryCard = memo(function SummaryCard({
           <div className="insight-tiles">
             {showAttended ? (
               <Tile
-                value={formatMinutes(attendedMins)}
+                value={formatFocusStretch(attendedSeconds)}
                 label="Attended"
                 detail={[
                   report.plannedMins > 0
-                    ? `of ${formatMinutes(report.plannedMins)} planned (${Math.round((attendedMins / report.plannedMins) * 100)}%)`
+                    ? `of ${formatMinutes(report.plannedMins)} planned (${Math.round((attendedSeconds / (report.plannedMins * 60)) * 100)}%)`
                     : "measured, not scored",
                   attendedPeriod,
                 ]
@@ -86,7 +80,7 @@ export const SummaryCard = memo(function SummaryCard({
               />
             ) : null}
             <Tile
-              value={formatDuration(report.focusSeconds)}
+              value={formatFocusStretch(report.focusSeconds)}
               label="Session time"
               detail={sessionDetail("completed, start to end")}
             />

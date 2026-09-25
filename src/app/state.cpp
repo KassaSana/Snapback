@@ -1159,6 +1159,11 @@ SessionRecap AppState::session_recap(const std::string& session_id) {
     return storage_.recap(session_id);
 }
 
+std::optional<FocusLabel> AppState::session_auto_label(const std::string& session_id) {
+    std::lock_guard lock(storage_mutex_);
+    return storage_.session_auto_label(session_id);
+}
+
 std::vector<FocusCurvePoint> AppState::session_focus_curve(const std::string& session_id,
                                                           std::size_t buckets) {
     // A Review read, so it yields to a waiting persist like the other five (14.1).

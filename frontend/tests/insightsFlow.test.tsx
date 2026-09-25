@@ -439,7 +439,7 @@ describe("Review interval provenance", () => {
 
     expect(screen.getByText(/live · latest/)).toBeInTheDocument();
     expect(screen.getByText(/live · this session/)).toBeInTheDocument();
-    expect(screen.getByText(/Recent Predictions and Context Timeline are live/)).toBeInTheDocument();
+    expect(screen.getByText(/Predictions and Context Timeline are live/)).toBeInTheDocument();
     // The per-session chart reads the same capped list the report does, and says so.
     const chart = screen
       .getByRole("heading", { name: "Focus per session" })

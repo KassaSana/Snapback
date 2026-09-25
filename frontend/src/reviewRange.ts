@@ -56,7 +56,9 @@ export function reviewRangeLabel(range: ReviewRange): string {
 // zone. `new Date("YYYY-MM-DDT00:00:00")` (no zone suffix) is local time by spec.
 export function customRangeSinceInstant(since: string): string {
   const local = new Date(`${since}T00:00:00`);
-  return Number.isNaN(local.getTime()) ? `${since}T00:00:00Z` : local.toISOString();
+  return Number.isNaN(local.getTime())
+    ? `${since}T00:00:00Z`
+    : local.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 export function toReviewWindowRequest(range: ReviewRange): ReviewWindowRequest {

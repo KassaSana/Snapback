@@ -2,7 +2,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SummaryCard } from "../src/SummaryCard";
-import type { SummaryReport } from "../src/api";
+import { SessionReviewCards } from "../src/SessionReviewCards";
+import type { SessionRecap, SummaryReport } from "../src/api";
 
 // Roadmap 2.19 Review half. The Summary card is where planned-versus-actual lands so it
 // follows 10.11's shared range instead of inventing a second date control.
@@ -93,6 +94,19 @@ describe("SummaryCard attended comparison", () => {
 });
 
 describe("SummaryCard session time", () => {
+  it("shows seconds for a short session and short attended time", () => {
+    render(
+      <SummaryCard
+        exportStatus={null}
+        onExport={() => {}}
+        rangeLabel="Last 24h"
+        report={baseReport({ focusSeconds: 46, attendedSeconds: 46, plannedMins: 0 })}
+      />,
+    );
+    expect(screen.getAllByText("46s")).toHaveLength(2);
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
   it("labels completed-session wall clock as session time, not focus time", () => {
     // The value is started-to-ended of completed sessions, idle and distracted stretches
     // included. Calling it "Focus time" claimed a measurement the model never made.
@@ -116,4 +130,32 @@ describe("SummaryCard session time", () => {
     );
     expect(screen.getAllByText(/latest 500 sessions only/)).toHaveLength(2);
   });
+});
+
+it("uses the same seconds-aware display in the stopped-session recap", () => {
+  const recap: SessionRecap = {
+    sessionId: "short",
+    goal: "Test",
+    durationSecs: 46,
+    activeSecs: 46,
+    avgFocusScore: 0,
+    avgDistractionRisk: 0,
+    snapbackCount: 0,
+    thrashSpikes: 0,
+    deepFocusPct: 0,
+  };
+  render(
+    <SessionReviewCards
+      autoLabel={null}
+      handleLabel={() => {}}
+      handleSkipSurvey={() => {}}
+      recap={recap}
+      surveyPending={false}
+      reflectionPending={false}
+      reflectionSaved={false}
+      handleSaveReflection={() => {}}
+      handleSkipReflection={() => {}}
+    />,
+  );
+  expect(screen.getByText("46s")).toBeInTheDocument();
 });

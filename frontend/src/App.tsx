@@ -233,6 +233,7 @@ export default function App() {
 
   const {
     clearActivitySession,
+    autoLabel,
     focusMode,
     cancelSwitch,
     handleFocusModeChange,
@@ -528,6 +529,7 @@ export default function App() {
       />
 
       <AppHeader
+        surface={surface}
         activeWindowAvailable={activeWindowAvailable}
         captureFailed={captureFailed}
         captureProbeConfirmed={captureProbeConfirmed}
@@ -592,6 +594,27 @@ export default function App() {
           />
         )}
 
+        <div data-alert-region="session">
+          <SessionControlCard
+            focusMode={focusMode}
+            setDraftFocusMode={setDraftFocusMode}
+            cancelSwitch={cancelSwitch}
+            handleStartSession={handleStartSession}
+            handleStartNamedSession={handleStartNamedSession}
+            handleStopSession={handleStopSession}
+            handleSwitchSession={handleSwitchSession}
+            sessionGoal={sessionGoal}
+            sessionId={sessionId}
+            sessionPending={sessionPending}
+            sessionRecord={sessionRecord}
+            sessionStatusLabel={liveSessionStatusLabel}
+            setSessionGoal={setSessionGoal}
+            recentGoals={cockpitRecentGoals}
+            untrackedNote={live.untrackedNote}
+            dismissUntrackedNote={live.clearUntrackedNote}
+          />
+        </div>
+
         <FocusStateHero
           goal={sessionRecord?.goal ?? null}
           hyperfocusNote={live.hyperfocusNote}
@@ -628,29 +651,9 @@ export default function App() {
           />
         ) : null}
 
-        <div data-alert-region="session">
-        <SessionControlCard
-          focusMode={focusMode}
-          setDraftFocusMode={setDraftFocusMode}
-          cancelSwitch={cancelSwitch}
-          handleStartSession={handleStartSession}
-          handleStartNamedSession={handleStartNamedSession}
-          handleStopSession={handleStopSession}
-          handleSwitchSession={handleSwitchSession}
-          sessionGoal={sessionGoal}
-          sessionId={sessionId}
-          sessionPending={sessionPending}
-          sessionRecord={sessionRecord}
-          sessionStatusLabel={liveSessionStatusLabel}
-          setSessionGoal={setSessionGoal}
-          recentGoals={cockpitRecentGoals}
-          untrackedNote={live.untrackedNote}
-          dismissUntrackedNote={live.clearUntrackedNote}
-        />
-        </div>
-
         {nowMode === "stopped" ? (
           <SessionReviewCards
+            autoLabel={autoLabel}
             handleLabel={handleLabel}
             handleSkipSurvey={handleSkipSurvey}
             recap={recap}
@@ -709,16 +712,6 @@ export default function App() {
               rangeLabel={reviewRangeLabelText}
               report={summaryReport}
             />
-            <InsightsCard
-              rangeLabel={reviewRangeLabelText}
-              sessionHistory={sessionHistory}
-              truncationNote={
-                summaryReport.sessionsTruncated
-                  ? `latest ${summaryReport.sessionLimit} sessions only`
-                  : null
-              }
-            />
-
             {/* Roadmap 2.9. "Start this again" fills the start form on Now and goes there; the
                 session still begins only when the user presses Start (ADR-0005). */}
             <SessionExplorerCard
@@ -732,6 +725,16 @@ export default function App() {
               }}
               deletingSessionId={deletingSessionId}
               onDeleteSession={handleDeleteSession}
+            />
+
+            <InsightsCard
+              rangeLabel={reviewRangeLabelText}
+              sessionHistory={sessionHistory}
+              truncationNote={
+                summaryReport.sessionsTruncated
+                  ? `latest ${summaryReport.sessionLimit} sessions only`
+                  : null
+              }
             />
 
             <AnalyticsCard

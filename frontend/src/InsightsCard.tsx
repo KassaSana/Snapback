@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 
 import { formatScore, type SessionSummary } from "./api";
 import { ChartDataTable } from "./ChartDataTable";
+import { formatFocusStretch } from "./focusStreak";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
@@ -136,7 +137,7 @@ function SessionManagementList({
               <span className="rules-pattern">{label}</span>
               <p className="rules-note">
                 {formatTime(summary.record.startedAtMs)} ·{" "}
-                {Math.round(summary.recap.durationSecs / 60)} min · focus{" "}
+                {formatFocusStretch(summary.recap.durationSecs)} · focus{" "}
                 {formatScore(summary.recap.avgFocusScore)}
               </p>
             </div>

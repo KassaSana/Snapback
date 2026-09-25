@@ -1,9 +1,11 @@
 import { memo } from "react";
+import { formatFocusStretch } from "./focusStreak";
 
-import { formatScore, type FocusLabel, type SessionRecap } from "./api";
+import { focusStateLabel, formatScore, type FocusLabel, type SessionRecap } from "./api";
 import { SessionReflectionCard } from "./SessionReflectionCard";
 
 type SessionReviewCardsProps = {
+  autoLabel: FocusLabel | null;
   handleLabel: (label: FocusLabel, source?: "manual" | "hotkey" | "survey" | "auto") => void | Promise<void>;
   handleSkipSurvey: () => void;
   recap: SessionRecap | null;
@@ -17,6 +19,7 @@ type SessionReviewCardsProps = {
 };
 
 export const SessionReviewCards = memo(function SessionReviewCards({
+  autoLabel,
   handleLabel,
   handleSkipSurvey,
   recap,
@@ -35,7 +38,9 @@ export const SessionReviewCards = memo(function SessionReviewCards({
             <span className="pill">end of session</span>
           </div>
           <p className="helper-text">
-            We saved an automatic label from your recap. Override it if your gut says different.
+            {autoLabel
+              ? `Automatic label: ${focusStateLabel(autoLabel)}. Choose a different label if this feels wrong.`
+              : "Automatic label unavailable. Choose a label, or skip this check-in."}
           </p>
           <div className="button-row feedback-row">
             <button className="secondary-button" onClick={() => void handleLabel("DEEP_FOCUS", "survey")}>
@@ -54,7 +59,7 @@ export const SessionReviewCards = memo(function SessionReviewCards({
               Distracted
             </button>
             <button className="ghost-button" onClick={handleSkipSurvey}>
-              Keep automatic label
+              {autoLabel ? `Keep ${focusStateLabel(autoLabel)}` : "Skip check-in"}
             </button>
           </div>
         </section>
@@ -85,10 +90,10 @@ export const SessionReviewCards = memo(function SessionReviewCards({
               */}
               <p className="meta-label">{recap.activeSecs === null ? "Duration" : "Attended"}</p>
               <p className="meta-value">
-                {Math.round((recap.activeSecs ?? recap.durationSecs) / 60)} min
+                {formatFocusStretch(recap.activeSecs ?? recap.durationSecs)}
               </p>
               {recap.activeSecs !== null && recap.activeSecs < recap.durationSecs && (
-                <p className="meta-sub">of {Math.round(recap.durationSecs / 60)} min open</p>
+                <p className="meta-sub">of {formatFocusStretch(recap.durationSecs)} open</p>
               )}
             </div>
             <div>

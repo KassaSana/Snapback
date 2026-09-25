@@ -106,10 +106,9 @@ export const ReviewRangeBar = memo(function ReviewRangeBar({
         </p>
       ) : null}
       <p className="helper-text">
-        Summary, Focus per session, the app breakdown, and Daily trend use this interval; each
-        card's pill names the interval its numbers came from. Recent Predictions and Context
-        Timeline are live views and are not limited to it. Windows are rolling; attendance
-        against a plan is the one figure that follows the calendar, and says so.
+        Summary, charts, and sessions use this range. Predictions and Context Timeline are
+        live. Presets are rolling windows; planned attendance uses the calendar period shown
+        beside it.
       </p>
     </section>
   );
