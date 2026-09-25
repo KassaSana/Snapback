@@ -382,9 +382,9 @@ describe("session cockpit", () => {
     // The running session is untouched: no live/default mode write, and its card still says
     // what it was started with.
     expect(boundary.invoke).not.toHaveBeenCalledWith("set_focus_mode", expect.anything());
-    const metrics = card.querySelector(".metrics") as HTMLElement;
+    const metrics = card.querySelector(".session-live") as HTMLElement;
     expect(within(metrics).getByText("Write tests")).toBeInTheDocument();
-    expect(within(metrics).getByText("Normal")).toBeInTheDocument();
+    expect(within(metrics).getByText("Normal mode")).toBeInTheDocument();
 
     fireEvent.click(within(card).getByRole("button", { name: "Keep this session" }));
     await waitFor(() =>

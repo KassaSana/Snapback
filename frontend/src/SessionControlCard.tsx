@@ -172,7 +172,7 @@ export const SessionControlCard = memo(function SessionControlCard({
 
   return (
     <section className="card session-card">
-      <div className="card-header">
+      <div className="card-header session-card-header">
         <h2>Session Control</h2>
         <span className="session-status">{sessionStatusLabel}</span>
       </div>
@@ -192,21 +192,18 @@ export const SessionControlCard = memo(function SessionControlCard({
 
       {sessionActive && (
         <div className="session-live">
-          <div className="metrics">
-            <div className="metric">
+          <div className="session-live-overview">
+            <div className="session-live-goal">
               <p className="metric-label">Working on</p>
               <p className="metric-value">{sessionRecord?.goal || "--"}</p>
+              <p className="session-live-mode">
+                {FOCUS_MODE_LABELS[normalizeFocusMode(sessionRecord?.focusMode || focusMode)]} mode
+              </p>
             </div>
-            <div className="metric">
+            <div className="session-live-timer">
               <p className="metric-label">Elapsed</p>
               <p className="metric-value" aria-label="Elapsed session time">
                 {formatElapsed(sessionRecord?.startedAtMs, nowMs)}
-              </p>
-            </div>
-            <div className="metric">
-              <p className="metric-label">Mode</p>
-              <p className="metric-value">
-                {FOCUS_MODE_LABELS[normalizeFocusMode(sessionRecord?.focusMode || focusMode)]}
               </p>
             </div>
           </div>

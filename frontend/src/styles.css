@@ -480,6 +480,9 @@ h1 {
 }
 
 .surface-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   appearance: none;
   border: 0;
   background: transparent;
@@ -487,13 +490,19 @@ h1 {
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--muted);
-  padding: 10px 2px 13px;
+  padding: 12px 8px 14px;
   border-radius: 0;
   border-bottom: 2px solid transparent;
   cursor: pointer;
   transition:
     background 0.18s ease,
     color 0.18s ease;
+}
+
+.surface-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
 }
 
 .surface-tab:hover {
@@ -624,6 +633,10 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.card-header h2 {
+  margin: 0;
 }
 
 .pill {
@@ -1899,7 +1912,66 @@ h1 {
 
 .session-live {
   display: grid;
-  gap: 10px;
+  gap: 22px;
+}
+
+.session-card-header {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.session-live-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(170px, auto);
+  align-items: center;
+  gap: 24px;
+  padding-top: 8px;
+}
+
+.session-live-goal .metric-value {
+  font-family: var(--font-serif);
+  font-size: clamp(1.6rem, 3vw, 2rem);
+  line-height: 1.25;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.session-live-mode {
+  display: inline-block;
+  margin: 12px 0 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.session-live-timer {
+  border-left: 1px solid var(--border);
+  padding-left: 24px;
+}
+
+.session-live-timer .metric-value {
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.settings-section select {
+  min-height: 40px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+}
+
+:where(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .helper-error {
@@ -1992,6 +2064,29 @@ h1 {
 
 .review-range-bar {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px 24px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review-range-bar > .helper-text,
+.review-range-help {
+  grid-column: 1 / -1;
+}
+
+.review-range-help summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.review-range-help .helper-text {
+  max-width: 80ch;
+  line-height: 1.5;
 }
 
 .review-range-controls {
@@ -2184,6 +2279,21 @@ h1 {
    onto a second row inside the pill, the strip scrolls sideways as one intentional
    row. Tabs keep full names — no shrinking to fit. */
 @media (max-width: 560px) {
+  .session-live-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .session-live-timer {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    padding: 14px 0 0;
+  }
+
+  .review-range-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .app {
     padding: 20px 18px 40px;
   }

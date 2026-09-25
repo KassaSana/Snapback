@@ -17,6 +17,12 @@ const LABELS: Record<Surface, string> = {
   settings: "Settings",
 };
 
+const ICON_PATHS: Record<Surface, string> = {
+  now: "M9 5 19 12 9 19Z",
+  review: "M5 19V13M12 19V5M19 19V9",
+  settings: "M4 7h16M4 17h16M9 4v6M15 14v6",
+};
+
 export function surfaceTabId(surface: Surface): string {
   return `surface-tab-${surface}`;
 }
@@ -67,6 +73,18 @@ export const SurfaceNav = memo(function SurfaceNav({ active, onChange }: Props) 
               className={selected ? "surface-tab surface-tab-active" : "surface-tab"}
               onClick={() => onChange(surface)}
             >
+              <svg
+                className="surface-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={ICON_PATHS[surface]} />
+              </svg>
               {LABELS[surface]}
             </button>
           );

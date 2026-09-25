@@ -1341,6 +1341,19 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   second Start action, leaves one small correction control during work, and puts healthy
   technical details in Advanced. Actionable failure routes remain visible.
 
+  *Progress 2026-09-25:* A reference-informed layout pass gives the active session goal
+  the main column, a separate tabular timer, and a compact mode label. Navigation adds
+  decorative icons without changing tab names or keyboard behavior. Review's range controls
+  share a compact row, with interval explanations in a disclosure; loading and failure
+  messages stay visible. Settings selects use the shared appearance tokens and larger hit
+  areas. Card heading margins and keyboard focus outlines are consistent.
+  Verified in the Windows desktop app with isolated QA data: entered and started a real
+  session, observed live readings, changed appearance, stopped it, and read its stored recap
+  and Review entry. Light Now, Review, and Settings and dark Now and Settings screenshots
+  were captured. All 747 native cases passed; frontend unit scripts, the corrected session
+  workflow test, typecheck, lint (existing warnings), and production build passed. Automated
+  snapshots and comprehensive contrast coverage remain open.
+
   Remaining: automated light/dark visual snapshots for **all three surfaces and the native
   overlay**, comprehensive contrast assertions coordinated with **10.3**, and a native
   window/overlay smoke check after the ongoing soak is finished. Repo-wide Prettier cleanup

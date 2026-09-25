@@ -105,11 +105,14 @@ export const ReviewRangeBar = memo(function ReviewRangeBar({
           Showing {showingLabel} until this loads.
         </p>
       ) : null}
-      <p className="helper-text">
-        Summary, charts, and sessions use this range. A selected session’s insight and
-        context describe that session. Presets are rolling windows; planned attendance uses
-        the calendar period shown beside it.
-      </p>
+      <details className="review-range-help">
+        <summary>How this range works</summary>
+        <p className="helper-text">
+          Summary, charts, and sessions use this range. A selected session’s insight and
+          context describe that session. Presets are rolling windows; planned attendance uses
+          the calendar period shown beside it.
+        </p>
+      </details>
     </section>
   );
 });
