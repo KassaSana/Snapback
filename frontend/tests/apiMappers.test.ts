@@ -19,11 +19,17 @@ import {
   mapPrediction,
   mapSettings,
   mapSession,
+  mapSessionLongestSnapback,
   mapSetupSteps,
   mapSnapbackPayload,
   mapTrainFromExportResult,
   mapTrainingDeployStatus,
 } from "../src/apiMappers";
+
+assert.deepEqual(mapSessionLongestSnapback({ durationSecs: 360, returnAppName: "Code" }), {
+  durationSecs: 360,
+  returnAppName: "Code",
+});
 
 const healthSnake = mapHealth({
   status: "online",

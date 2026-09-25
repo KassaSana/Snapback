@@ -843,6 +843,12 @@ No open items. Completed work is in the [archive](roadmap_archive.md).
   ahead of the charts on Review. The same bounded history and selected-session detail remain;
   search, filters, pagination, and the editable label ledger remain open.
 
+  *Progress 2026-09-25:* Review now selects the newest completed session in its loaded range
+  and shows its longest recorded snapback detour, with a return destination only when recorded.
+  The selected session's context timeline lives in its detail instead of the range-wide story;
+  live prediction history moves to Settings → Advanced. These reads add no schema migration.
+  Search, filters, pagination, and the label ledger remain open.
+
 
 - **2.17 — Give feedback an authoritative, editable label ledger.** `proposed` `M/L`
   Opened 2026-08-05. Auto labels, the end-session check-in, and live verdict corrections all
@@ -1331,6 +1337,10 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   at desktop, 700px, and 375px widths, with tighter phone spacing and wrapped report metrics;
   native-window and automated visual coverage remain open.
 
+  *Progress 2026-09-25:* The first session-story pass removes idle Now's Ready card and
+  second Start action, leaves one small correction control during work, and puts healthy
+  technical details in Advanced. Actionable failure routes remain visible.
+
   Remaining: automated light/dark visual snapshots for **all three surfaces and the native
   overlay**, comprehensive contrast assertions coordinated with **10.3**, and a native
   window/overlay smoke check after the ongoing soak is finished. Repo-wide Prettier cleanup
@@ -1363,13 +1373,15 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   per-session chart now shows the summary report's 500-session cap, since it reads the same
   capped list. Hook tests pin stale-during-load, stale-after-failure, Retry, and an older
   response never overwriting a newer one; App tests pin the pill, the alert, and the live
-  markers. **Still open:** the Recent Predictions / Context Timeline move under a selected
-  session (2.9) and any Advanced relocation are product decisions, not done here.
+  markers. The live views' placement was resolved by the first session-story iteration below.
 
   *Progress 2026-09-25:* Custom now sends local midnight as a whole-second UTC timestamp,
   matching the native Review parser. Time-zone regression coverage pins the conversion; the
-  shared range's existing loading and stale-data behavior is unchanged. Moving the live views
-  under a selected session and any Advanced relocation remain open.
+  shared range's existing loading and stale-data behavior is unchanged.
+
+  *Progress 2026-09-25:* Recent Predictions moved to Advanced diagnostics, and the context
+  timeline now reads the session selected in Review. Its insight and detail retain the label
+  of the loaded range while a different range is loading or has failed.
 
 - **10.14 — ADAPTER LANDED 2026-08-14; the export half stays open.** `in progress` `M`
   What landed: the owned native seam — `pick_open_file` / `pick_save_file` over Win32 Common

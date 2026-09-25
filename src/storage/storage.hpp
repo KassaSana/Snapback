@@ -477,6 +477,8 @@ public:
     // interruptions that were counted, and nothing can reconstruct their detail.
     std::vector<SnapbackEpisode> list_snapback_episodes(const std::string& session_id,
                                                         std::size_t limit);
+    // Longest recorded detour for a session; earliest start and row id break ties.
+    std::optional<SnapbackEpisode> longest_snapback_episode(const std::string& session_id);
 
     struct EpisodeCursor {
         std::int64_t sort_timestamp_ms{};

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppEffects } from "./useAppEffects";
 
-import { ActivityCards } from "./ActivityCards";
+import { PredictionHistoryCard } from "./ActivityCards";
 import { AnalyticsCard } from "./AnalyticsCard";
 import { DailyTrendCard } from "./DailyTrendCard";
 import { DiagnosticsCard } from "./DiagnosticsCard";
@@ -22,6 +22,7 @@ import { PermissionWizard } from "./PermissionWizard";
 import { AttendedTargetsCard } from "./AttendedTargetsCard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
+import { SessionTechnicalDetails } from "./SessionTechnicalDetails";
 import { recentGoals } from "./sessionCockpit";
 import { sessionStatusLabel } from "./sessionStatus";
 import { nowSurfaceMode } from "./nowSurface";
@@ -31,7 +32,7 @@ import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
 import { useHealth } from "./useHealth";
-import { HISTORY_LIMIT, useLiveData } from "./useLiveData";
+import { useLiveData } from "./useLiveData";
 import { useCockpitHistory } from "./useCockpitHistory";
 import { useAppearance } from "./useAppearance";
 import { ReviewRangeBar } from "./ReviewRangeBar";
@@ -73,7 +74,6 @@ import {
   settingsTabId,
   type SettingsSection,
 } from "./settingsSections";
-import type { FocusLabel } from "./api";
 
 export default function App() {
   // Which surface is showing (ADR-0003). Defaults to Now: it is the 95% case, and the
@@ -242,7 +242,6 @@ export default function App() {
     handleSaveReflection,
     handleSkipReflection,
     handleSkipSurvey,
-    handleStartNamedSession,
     handleStartSession,
     handleStopSession,
     handleSwitchSession,
@@ -600,7 +599,6 @@ export default function App() {
             setDraftFocusMode={setDraftFocusMode}
             cancelSwitch={cancelSwitch}
             handleStartSession={handleStartSession}
-            handleStartNamedSession={handleStartNamedSession}
             handleStopSession={handleStopSession}
             handleSwitchSession={handleSwitchSession}
             sessionGoal={sessionGoal}
@@ -615,28 +613,26 @@ export default function App() {
           />
         </div>
 
-        <FocusStateHero
-          goal={sessionRecord?.goal ?? null}
-          hyperfocusNote={live.hyperfocusNote}
-          labelStatus={feedback.labelStatus}
-          onConfirmVerdict={() => {
-            const state = live.prediction?.focusState as FocusLabel | undefined;
-            if (state) void handleLabel(state, "manual", `agreed:${state}`);
-          }}
-          onCorrectVerdict={(label) => {
-            // Record what the classifier said alongside the correction: agreement rate is
-            // only computable if we know what was being corrected. `notes` is free text
-            // and already exists, so this needs no schema change — a dedicated
-            // `predicted_state` column is the proper fix once 7.3 lands migrations.
-            const predicted = live.prediction?.focusState ?? "unknown";
-            void handleLabel(label, "manual", `corrected:${predicted}`);
-          }}
-          onDismissSnapback={live.handleDismissSnapback}
-          onRestoreSnapbackTarget={live.handleRestoreSnapbackTarget}
-          prediction={live.prediction}
-          sessionActive={sessionActive}
-          snapbackNote={live.snapbackNote}
-        />
+        {sessionActive && (
+          <FocusStateHero
+            goal={sessionRecord?.goal ?? null}
+            hyperfocusNote={live.hyperfocusNote}
+            labelStatus={feedback.labelStatus}
+            onCorrectVerdict={(label) => {
+              // Record what the classifier said alongside the correction: agreement rate is
+              // only computable if we know what was being corrected. `notes` is free text
+              // and already exists, so this needs no schema change — a dedicated
+              // `predicted_state` column is the proper fix once 7.3 lands migrations.
+              const predicted = live.prediction?.focusState ?? "unknown";
+              void handleLabel(label, "manual", `corrected:${predicted}`);
+            }}
+            onDismissSnapback={live.handleDismissSnapback}
+            onRestoreSnapbackTarget={live.handleRestoreSnapbackTarget}
+            prediction={live.prediction}
+            sessionActive={sessionActive}
+            snapbackNote={live.snapbackNote}
+          />
+        )}
 
         {nowMode === "running" ? (
           <WorkAppTeachCard
@@ -718,6 +714,8 @@ export default function App() {
               sessionHistory={sessionHistory}
               rangeLabel={reviewRangeLabelText}
               sessionActive={sessionActive}
+              appRules={appRules}
+              onCreateAppRule={handleCreateQuickRule}
               onStartAgain={(goal, mode) => {
                 setSessionGoal(goal);
                 setDraftFocusMode(mode);
@@ -748,16 +746,6 @@ export default function App() {
               dailySummary={dailySummary}
               rangePreset={reviewRange.preset}
               rangeLabel={reviewRangeLabelText}
-            />
-
-            <ActivityCards
-              appRules={appRules}
-              contextTimeline={live.contextTimeline}
-              historyLimit={HISTORY_LIMIT}
-              onCreateAppRule={handleCreateQuickRule}
-              predictionHistory={live.predictionHistory}
-              refreshContextTimeline={live.refreshContextTimeline}
-              sessionId={sessionId}
             />
 
             <SessionManagementCard
@@ -962,6 +950,8 @@ export default function App() {
             <details className="settings-disclosure">
               <summary>Logs and diagnostics</summary>
               <DiagnosticsCard />
+              <SessionTechnicalDetails sessionId={sessionId} sessionRecord={sessionRecord} />
+              <PredictionHistoryCard predictionHistory={live.predictionHistory} />
             </details>
 
             <details className="settings-disclosure">

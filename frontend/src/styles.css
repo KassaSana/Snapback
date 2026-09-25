@@ -1605,6 +1605,23 @@ h1 {
   font-size: 0.85rem;
 }
 
+.session-insight {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-tint);
+  border-radius: 0 8px 8px 0;
+}
+
+.session-insight h4 {
+  margin: 0 0 5px;
+}
+
+.session-insight p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .session-detail-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));

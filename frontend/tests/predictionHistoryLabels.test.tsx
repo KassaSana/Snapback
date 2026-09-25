@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ActivityCards } from "../src/ActivityCards";
+import { PredictionHistoryCard } from "../src/ActivityCards";
 import type { PredictionRecord } from "../src/api";
 
 // Roadmap 10.3. Recent Predictions showed two bare numbers per row, and the risk level lived
@@ -27,13 +27,7 @@ const prediction = (distractionRisk: number): PredictionRecord => ({
 describe("Recent Predictions without colour", () => {
   it("names each number and states the risk level in words", () => {
     render(
-      <ActivityCards
-        contextTimeline={[]}
-        historyLimit={8}
-        predictionHistory={[prediction(0.41)]}
-        refreshContextTimeline={() => {}}
-        sessionId={null}
-      />,
+      <PredictionHistoryCard predictionHistory={[prediction(0.41)]} />,
     );
     const row = screen.getByRole("listitem");
 

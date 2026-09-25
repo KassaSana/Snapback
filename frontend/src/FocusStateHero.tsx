@@ -31,7 +31,6 @@ type Props = {
   goal: string | null;
   hyperfocusNote: string | null;
   labelStatus: string | null;
-  onConfirmVerdict: () => void;
   onCorrectVerdict: (label: FocusLabel) => void;
   onDismissSnapback: () => void;
   onRestoreSnapbackTarget?: () => void;
@@ -44,7 +43,6 @@ export function FocusStateHero({
   goal,
   hyperfocusNote,
   labelStatus,
-  onConfirmVerdict,
   onCorrectVerdict,
   onDismissSnapback,
   onRestoreSnapbackTarget,
@@ -143,11 +141,9 @@ export function FocusStateHero({
       {idle || waiting ? null : (
         <VerdictFeedback
           disabled={!sessionActive}
-          onConfirm={onConfirmVerdict}
           onCorrect={onCorrectVerdict}
           predictedState={prediction?.focusState ?? null}
           status={labelStatus}
-          uncertain={uncertain}
         />
       )}
     </section>

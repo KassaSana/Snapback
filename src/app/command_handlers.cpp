@@ -132,6 +132,12 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         buckets = (std::min)(buckets, std::size_t{240});
         return json(state.session_focus_curve(a.at("sessionId").get<std::string>(), buckets));
     });
+    registry.add("get_session_longest_snapback", [&state](const json& a) {
+        const auto episode = state.session_longest_snapback(a.at("sessionId").get<std::string>());
+        if (!episode) return json(nullptr);
+        return json{{"durationSecs", episode->duration_secs},
+                    {"returnAppName", episode->app_name}};
+    });
     registry.add("get_session_history", [&state](const json& a) {
         if (a.contains("window")) {
             return json(state.session_history_for_window(a.at("window").get<std::string>(),

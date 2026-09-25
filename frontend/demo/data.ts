@@ -85,6 +85,7 @@ export type DemoDataset = {
   sessions: DemoSession[];
   predictions: DemoPrediction[];
   contexts: DemoContext[];
+  episodes: { sessionId: string; durationSecs: number; returnAppName: string; startedAtMs: number }[];
 };
 
 type WorkKind = {
@@ -181,6 +182,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
   const sessions: DemoSession[] = [];
   const predictions: DemoPrediction[] = [];
   const contexts: DemoContext[] = [];
+  const episodes: DemoDataset["episodes"] = [];
 
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
@@ -216,6 +218,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
       const wallSecs = Math.round((effectiveEnd - startedAtMs) / 1000);
 
       let snapbackCount = 0;
+      let detourStart: number | null = null;
       let sampleIndex = 0;
       let score = kind.centre + (random() - 0.5) * 10;
 
@@ -228,7 +231,17 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
 
         const rounded = Math.round(score);
         const state = focusStateFor(rounded);
-        if (state === "DISTRACTED") snapbackCount += 1;
+        if (state === "DISTRACTED" && detourStart === null) detourStart = t;
+        if (state !== "DISTRACTED" && detourStart !== null) {
+          episodes.push({
+            sessionId,
+            durationSecs: Math.round((t - detourStart) / 1000),
+            returnAppName: kind.apps[0].app,
+            startedAtMs: detourStart,
+          });
+          snapbackCount += 1;
+          detourStart = null;
+        }
 
         const onTask = state !== "DISTRACTED";
         const source =
@@ -301,5 +314,5 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
 
   predictions.sort((a, b) => a.timestampMs - b.timestampMs);
   contexts.sort((a, b) => a.timestampMs - b.timestampMs);
-  return { sessions, predictions, contexts };
+  return { sessions, predictions, contexts, episodes };
 }

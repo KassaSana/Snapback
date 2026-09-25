@@ -10,12 +10,14 @@ const boundary = vi.hoisted(() => {
     health: Record<string, unknown>;
     rules: Record<string, unknown>[];
     timeline: Record<string, unknown>[];
+    history: Record<string, unknown>[];
   } = {
     activeSession: null,
     analytics: { avg_focus_score: 80, sample_count: 10, productive_session_streak: 2, hourly: [], top_apps: [] },
     health: {},
     rules: [],
     timeline: [],
+    history: [],
   };
   let nextId = 1;
 
@@ -45,13 +47,16 @@ const boundary = vi.hoisted(() => {
         return null;
       }
       case "get_prediction_history":
+      case "get_session_focus_curve":
         return [];
+      case "get_session_longest_snapback":
+        return null;
       case "get_context_timeline":
         return state.timeline;
       case "get_analytics":
         return state.analytics;
       case "get_session_history":
-        return [];
+        return state.history;
       case "get_summary_report":
         return { total_attended_minutes: 0, session_count: 0 };
       case "get_focus_summary":
@@ -108,6 +113,7 @@ beforeEach(() => {
   boundary.state.health = healthyCaptureRunning();
   boundary.state.rules = [];
   boundary.state.timeline = [];
+  boundary.state.history = [];
   boundary.state.activeSession = null;
   boundary.state.analytics = { avg_focus_score: 80, sample_count: 10, productive_session_streak: 2, hourly: [], top_apps: [] };
 });
@@ -168,13 +174,15 @@ describe("App rules add/delete flow", () => {
   });
 
   it("creates an allow rule with one click from the context timeline", async () => {
-    boundary.state.activeSession = {
+    const session = {
       session_id: "session-123",
       goal: "Code review",
-      status: "ACTIVE",
+      status: "COMPLETED",
       focus_mode: "normal",
       started_at_ms: Date.parse("2026-08-14T00:00:00Z"),
+      ended_at_ms: Date.parse("2026-08-14T01:00:00Z"),
     };
+    boundary.state.history = [{ record: session, recap: { session_id: "session-123", goal: "Code review" } }];
     boundary.state.timeline = [
       {
         timestampMs: Date.parse("2026-08-14T00:05:00Z"),
@@ -185,7 +193,7 @@ describe("App rules add/delete flow", () => {
     ];
 
     renderApp("review");
-    expect(await screen.findByText("Slack")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "+ Allow" })).toBeInTheDocument();
 
 
     const allowBtn = screen.getByRole("button", { name: "+ Allow" });

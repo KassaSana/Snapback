@@ -22,6 +22,15 @@ const boundary = vi.hoisted(() => {
         return state.health;
       case "refresh_permissions":
         return (state.health.permissions as Record<string, unknown>) ?? {};
+      case "get_active_session":
+        return {
+          session_id: "active-session",
+          goal: "Finish auth.ts",
+          status: "ACTIVE",
+          focus_mode: "normal",
+          started_at_ms: Date.parse("2026-09-25T09:00:00Z"),
+          ended_at_ms: null,
+        };
       case "dismiss_snapback":
         return null;
       case "restore_snapback_target":

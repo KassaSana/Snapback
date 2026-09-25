@@ -779,6 +779,45 @@ TEST_CASE("an episode is written once, however many times it is offered") {
     CHECK(storage->recap(session.session_id).snapback_count == 2);
 }
 
+TEST_CASE("longest snapback is scoped to one session and breaks duration ties by start") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto first = storage->create_session("first", FocusMode::Normal);
+    const auto other = storage->create_session("other", FocusMode::Normal);
+    CHECK_FALSE(storage->longest_snapback_episode(first.session_id).has_value());
+
+    SnapbackEpisode episode;
+    episode.session_id = first.session_id;
+    episode.app_name = "Editor";
+    episode.started_at_ms = ms("2026-07-30T09:10:00Z");
+    episode.ended_at_ms = ms("2026-07-30T09:12:00Z");
+    episode.duration_secs = 120;
+    REQUIRE(storage->insert_snapback_episode(episode));
+
+    auto longer = episode;
+    longer.started_at_ms = ms("2026-07-30T09:20:00Z");
+    longer.ended_at_ms = ms("2026-07-30T09:24:00Z");
+    longer.duration_secs = 240;
+    longer.app_name = "Browser";
+    REQUIRE(storage->insert_snapback_episode(longer));
+
+    auto tie = longer;
+    tie.started_at_ms = ms("2026-07-30T09:05:00Z");
+    tie.ended_at_ms = ms("2026-07-30T09:09:00Z");
+    tie.app_name = "Writing app";
+    REQUIRE(storage->insert_snapback_episode(tie));
+
+    auto unrelated = longer;
+    unrelated.session_id = other.session_id;
+    unrelated.duration_secs = 900;
+    REQUIRE(storage->insert_snapback_episode(unrelated));
+
+    const auto selected = storage->longest_snapback_episode(first.session_id);
+    REQUIRE(selected.has_value());
+    CHECK(selected->duration_secs == 240);
+    CHECK(selected->app_name == "Writing app");
+}
+
 TEST_CASE("a legacy database is migrated and then stamped current") {
     // The 7.3 gap in one test: an on-disk database from an older schema (no model_id, no
     // user_version) must come out of open() both upgraded *and* versioned, so the next

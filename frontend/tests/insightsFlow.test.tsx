@@ -411,7 +411,8 @@ describe("Review interval provenance", () => {
     boundary.state.failWindows.add("30d");
     fireEvent.click(screen.getByRole("button", { name: "Last 30 days" }));
     // The button is pressed, the load failed, and the cards still say what they show.
-    expect(await screen.findByRole("alert")).toHaveTextContent(/Still showing Last 7 days/);
+    const rangeBar = screen.getByRole("heading", { name: "Time range" }).closest("section") as HTMLElement;
+    expect(await within(rangeBar).findByRole("alert")).toHaveTextContent(/Still showing Last 7 days/);
     expect(screen.getByRole("button", { name: "Last 30 days" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -421,10 +422,10 @@ describe("Review interval provenance", () => {
     boundary.state.failWindows.clear();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(summaryPill()).toHaveTextContent("Last 30 days"));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(within(rangeBar).queryByRole("alert")).toBeNull();
   });
 
-  it("marks the live cards as outside the selected interval and surfaces the session cap", async () => {
+  it("keeps Review free of live feeds and surfaces the session cap", async () => {
     boundary.state.history = [rawSummary("a", 50, 10, 0)];
     boundary.state.summary = {
       window: "7d",
@@ -437,9 +438,8 @@ describe("Review interval provenance", () => {
     renderApp("review");
     await waitFor(() => expect(screen.getByRole("button", { name: "Last 7 days" })).toBeEnabled());
 
-    expect(screen.getByText(/live · latest/)).toBeInTheDocument();
-    expect(screen.getByText(/live · this session/)).toBeInTheDocument();
-    expect(screen.getByText(/Predictions and Context Timeline are live/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Recent Predictions" })).not.toBeInTheDocument();
+    expect(screen.getByText(/selected session’s insight and context describe that session/)).toBeInTheDocument();
     // The per-session chart reads the same capped list the report does, and says so.
     const chart = screen
       .getByRole("heading", { name: "Focus per session" })

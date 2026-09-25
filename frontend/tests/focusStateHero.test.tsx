@@ -30,7 +30,6 @@ function renderHero(overrides: Overrides = {}) {
     goal: null,
     hyperfocusNote: null,
     labelStatus: null,
-    onConfirmVerdict: vi.fn(),
     onCorrectVerdict: vi.fn(),
     onDismissSnapback: vi.fn(),
     prediction: prediction(),
@@ -124,7 +123,7 @@ describe("FocusStateHero", () => {
     expect(screen.queryByText("Deep work")).not.toBeInTheDocument();
     expect(screen.getByText("I cannot tell whether this is work.")).toBeInTheDocument();
     expect(screen.getByText(/quiet screen looks the same/)).toBeInTheDocument();
-    expect(screen.getByText("Were you actually working?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "This reading is wrong" })).toHaveTextContent("Wrong?");
   });
 
   it("drops the caveat once the goal corroborates the verdict", () => {
@@ -145,13 +144,6 @@ describe("FocusStateHero", () => {
 
     expect(screen.getByText("Distracted")).toBeInTheDocument();
     expect(screen.queryByText(/quiet screen looks the same/)).not.toBeInTheDocument();
-  });
-
-  it("records agreement with one click", () => {
-    const props = renderHero();
-
-    fireEvent.click(screen.getByRole("button", { name: "This reading is right" }));
-    expect(props.onConfirmVerdict).toHaveBeenCalledTimes(1);
   });
 
   it("asks what the state really was before recording a disagreement", () => {

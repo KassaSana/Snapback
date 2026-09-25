@@ -14,10 +14,14 @@ import {
   api,
   formatScore,
   formatTime,
+  type AppRuleKind,
+  type AppRuleRecord,
   type ContextSnapshot,
   type FocusCurvePoint,
+  type SessionLongestSnapback,
   type SessionSummary,
 } from "./api";
+import { ContextTimeline } from "./ActivityCards";
 import { ChartDataTable } from "./ChartDataTable";
 import { formatFocusStretch } from "./focusStreak";
 import { FOCUS_MODE_LABELS, normalizeFocusMode, type FocusMode } from "./sessionCockpit";
@@ -31,18 +35,23 @@ type SessionExplorerCardProps = {
   /** True while a session is running: "Start this again" then has nowhere safe to go. */
   sessionActive: boolean;
   onStartAgain: (goal: string, mode: FocusMode) => void;
+  appRules?: AppRuleRecord[];
+  onCreateAppRule?: (appName: string, kind: AppRuleKind) => void | Promise<void>;
   deletingSessionId?: string | null;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
 };
 
 type Detail =
-  | { state: "loading" }
-  | { state: "error" }
+  | { state: "loading"; sessionId?: string }
+  | { state: "error"; sessionId: string }
   | {
       state: "ready";
+      sessionId: string;
       curve: FocusCurvePoint[];
       apps: { appName: string; count: number }[];
       contextRows: number;
+      context: ContextSnapshot[];
+      longestSnapback: SessionLongestSnapback | null;
     };
 
 const dayKey = (ms: number | null) => {
@@ -62,10 +71,12 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
   rangeLabel,
   sessionActive,
   onStartAgain,
+  appRules,
+  onCreateAppRule,
   deletingSessionId,
   onDeleteSession,
 }: SessionExplorerCardProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<{ rangeLabel: string; id: string } | null>(null);
   const [detail, setDetail] = useState<Detail>({ state: "loading" });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -84,16 +95,23 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
     return groups;
   }, [sessionHistory]);
 
-  // A selection the range no longer contains (a new range, or a deletion) shows nothing.
-  const selected = sessionHistory.find((s) => s.record.sessionId === selectedId) ?? null;
+  const completed = days
+    .flatMap((day) => day.sessions)
+    .find((s) => s.record.status === "COMPLETED");
+  const selected =
+    sessionHistory.find(
+      (s) => s.record.sessionId === selection?.id && selection.rangeLabel === rangeLabel,
+    ) ??
+    completed ??
+    null;
+  const selectedId = selected?.record.sessionId ?? null;
 
   // Resetting here rather than in the loading effect: the effect then only talks to the
   // backend, and the panel never shows a previous session's detail under a new heading.
   const select = (id: string) => {
-    const next = id === selectedId ? null : id;
-    setSelectedId(next);
+    setSelection({ rangeLabel, id });
     setConfirmingDelete(false);
-    if (next) setDetail({ state: "loading" });
+    setDetail({ state: "loading", sessionId: id });
   };
 
   useEffect(() => {
@@ -102,21 +120,36 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
     Promise.all([
       api.getSessionFocusCurve(selectedId),
       api.getContextTimeline(selectedId, CONTEXT_SAMPLE_LIMIT),
+      api.getSessionLongestSnapback(selectedId),
     ])
-      .then(([curve, context]: [FocusCurvePoint[], ContextSnapshot[]]) => {
-        if (!current) return;
-        const counts = new Map<string, number>();
-        for (const row of context) {
-          if (row.appName) counts.set(row.appName, (counts.get(row.appName) ?? 0) + 1);
-        }
-        const apps = [...counts.entries()]
-          .map(([appName, count]) => ({ appName, count }))
-          .sort((a, b) => b.count - a.count || a.appName.localeCompare(b.appName))
-          .slice(0, 5);
-        setDetail({ state: "ready", curve, apps, contextRows: context.length });
-      })
+      .then(
+        ([curve, context, longestSnapback]: [
+          FocusCurvePoint[],
+          ContextSnapshot[],
+          SessionLongestSnapback | null,
+        ]) => {
+          if (!current) return;
+          const counts = new Map<string, number>();
+          for (const row of context) {
+            if (row.appName) counts.set(row.appName, (counts.get(row.appName) ?? 0) + 1);
+          }
+          const apps = [...counts.entries()]
+            .map(([appName, count]) => ({ appName, count }))
+            .sort((a, b) => b.count - a.count || a.appName.localeCompare(b.appName))
+            .slice(0, 5);
+          setDetail({
+            state: "ready",
+            sessionId: selectedId,
+            curve,
+            apps,
+            contextRows: context.length,
+            context,
+            longestSnapback,
+          });
+        },
+      )
       .catch(() => {
-        if (current) setDetail({ state: "error" });
+        if (current) setDetail({ state: "error", sessionId: selectedId });
       });
     return () => {
       current = false;
@@ -169,7 +202,9 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
           {selected ? (
             <SessionDetail
               summary={selected}
-              detail={detail}
+              detail={detail.sessionId === selectedId ? detail : { state: "loading" }}
+              appRules={appRules}
+              onCreateAppRule={onCreateAppRule}
               sessionActive={sessionActive}
               onStartAgain={onStartAgain}
               confirmingDelete={confirmingDelete}
@@ -191,6 +226,8 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
 function SessionDetail({
   summary,
   detail,
+  appRules,
+  onCreateAppRule,
   sessionActive,
   onStartAgain,
   confirmingDelete,
@@ -200,6 +237,8 @@ function SessionDetail({
 }: {
   summary: SessionSummary;
   detail: Detail;
+  appRules?: AppRuleRecord[];
+  onCreateAppRule?: (appName: string, kind: AppRuleKind) => void | Promise<void>;
   sessionActive: boolean;
   onStartAgain: (goal: string, mode: FocusMode) => void;
   confirmingDelete: boolean;
@@ -218,6 +257,27 @@ function SessionDetail({
         {FOCUS_MODE_LABELS[mode]} · {formatTime(record.startedAtMs)}
         {record.endedAtMs != null ? ` – ${formatTime(record.endedAtMs)}` : " · still running"}
       </p>
+
+      <div className="session-insight">
+        <h4>One thing to notice</h4>
+        {detail.state === "loading" ? (
+          <p role="status">Loading this session’s insight…</p>
+        ) : detail.state === "error" ? (
+          <p>Could not load this session’s insight.</p>
+        ) : detail.longestSnapback === null ? (
+          <p>No snapback interruption was recorded in this session.</p>
+        ) : detail.longestSnapback.durationSecs === 0 ? (
+          <p>A snapback interruption was recorded, but its duration is unavailable.</p>
+        ) : (
+          <p>
+            Your longest recorded detour lasted{" "}
+            {formatFocusStretch(detail.longestSnapback.durationSecs)}.
+            {detail.longestSnapback.returnAppName
+              ? ` You returned to ${detail.longestSnapback.returnAppName}.`
+              : ""}
+          </p>
+        )}
+      </div>
 
       <dl className="session-detail-stats">
         <div>
@@ -306,6 +366,11 @@ function SessionDetail({
               </p>
             </>
           )}
+          <ContextTimeline
+            appRules={appRules}
+            contextTimeline={detail.context}
+            onCreateAppRule={onCreateAppRule}
+          />
         </>
       )}
 

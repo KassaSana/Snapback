@@ -28,6 +28,7 @@ import {
   mapSettings,
   mapSession,
   mapSessionRecap,
+  mapSessionLongestSnapback,
   mapSessionSummary,
   mapSnapbackPayload,
   mapTrainFromExportResult,
@@ -205,6 +206,12 @@ export type SessionRecap = {
   snapbackCount: number;
   thrashSpikes: number;
   deepFocusPct: number;
+};
+
+export type SessionLongestSnapback = {
+  durationSecs: number;
+  /** The app the user returned to, not the app that caused the detour. */
+  returnAppName: string;
 };
 
 // Roadmap 9.14. What a candidate file turned out to be, so the confirmation can state both
@@ -727,6 +734,11 @@ export const api = {
       sampleCount: Number(row.sampleCount ?? 0),
       avgFocusScore: Number(row.avgFocusScore ?? 0),
     }));
+  },
+  getSessionLongestSnapback: async (sessionId: string): Promise<SessionLongestSnapback | null> => {
+    const raw = await invoke<Record<string, unknown> | null>("get_session_longest_snapback", { sessionId });
+    if (!raw) return null;
+    return mapSessionLongestSnapback(raw);
   },
   getSessionHistory: async (range?: ReviewWindowRequest | { limit?: number }) => {
     const args =

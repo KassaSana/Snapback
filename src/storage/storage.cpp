@@ -2647,6 +2647,24 @@ std::vector<SnapbackEpisode> Storage::list_snapback_episodes(const std::string& 
     return rows;
 }
 
+std::optional<SnapbackEpisode> Storage::longest_snapback_episode(const std::string& session_id) {
+    Stmt stmt(db_,
+              "SELECT session_id, summary, timestamp, started_at, duration_secs, app_name, "
+              "file_hint FROM snapback_events WHERE session_id = ?1 "
+              "ORDER BY duration_secs DESC, COALESCE(started_at, timestamp) ASC, id ASC LIMIT 1");
+    stmt.bind(1, session_id);
+    if (!stmt.step_row()) return std::nullopt;
+    SnapbackEpisode episode;
+    episode.session_id = column_text(stmt.get(), 0);
+    episode.summary = column_text(stmt.get(), 1);
+    episode.ended_at_ms = sqlite3_column_int64(stmt.get(), 2);
+    episode.started_at_ms = column_opt_ms(stmt.get(), 3);
+    episode.duration_secs = static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
+    episode.app_name = column_text(stmt.get(), 5);
+    episode.file_hint = column_text(stmt.get(), 6);
+    return episode;
+}
+
 Storage::EpisodePage Storage::snapback_episodes_after(
     const std::string& session_id, const std::optional<EpisodeCursor>& after,
     std::size_t limit) {

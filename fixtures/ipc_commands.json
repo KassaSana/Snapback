@@ -15,6 +15,7 @@
     "get_session_recap",
     "get_session_auto_label",
     "get_session_focus_curve",
+    "get_session_longest_snapback",
     "get_session_history",
     "get_pomodoro_status",
     "start_pomodoro",

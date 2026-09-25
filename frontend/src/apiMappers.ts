@@ -29,6 +29,7 @@ import type {
   PrivacySettings,
   PredictionRecord,
   SessionRecap,
+  SessionLongestSnapback,
   SessionRecord,
   SessionSummary,
   SnapbackPayload,
@@ -410,6 +411,13 @@ export function mapSessionRecap(raw: Record<string, unknown>): SessionRecap {
     snapbackCount: Number(raw.snapback_count ?? raw.snapbackCount ?? 0),
     thrashSpikes: Number(raw.thrash_spikes ?? raw.thrashSpikes ?? 0),
     deepFocusPct: Number(raw.deep_focus_pct ?? raw.deepFocusPct ?? 0),
+  };
+}
+
+export function mapSessionLongestSnapback(raw: Record<string, unknown>): SessionLongestSnapback {
+  return {
+    durationSecs: Number(raw.duration_secs ?? raw.durationSecs ?? 0),
+    returnAppName: String(raw.return_app_name ?? raw.returnAppName ?? ""),
   };
 }
 

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 
-import { formatTime, type SessionRecord } from "./api";
+import type { SessionRecord } from "./api";
 import {
   FOCUS_MODES,
   FOCUS_MODE_HINT,
@@ -27,8 +27,6 @@ type SessionControlCardProps = {
   /** Draft only: the mode the next session starts with. Start commits it; nothing else does. */
   setDraftFocusMode: (mode: FocusMode) => void;
   handleStartSession: () => void;
-  /** Start last session: fills the form and starts in one declaration. */
-  handleStartNamedSession: (goal: string, mode: FocusMode) => void | Promise<void>;
   handleStopSession: () => void;
   /** Roadmap 2.11's guarded switch: stops the running session, then starts the typed one. */
   handleSwitchSession: () => void | Promise<boolean>;
@@ -56,7 +54,6 @@ export const SessionControlCard = memo(function SessionControlCard({
   focusMode,
   setDraftFocusMode,
   handleStartSession,
-  handleStartNamedSession,
   handleStopSession,
   handleSwitchSession,
   cancelSwitch,
@@ -354,21 +351,6 @@ export const SessionControlCard = memo(function SessionControlCard({
                   ? "Stop and start this one"
                   : "Start session"}
             </button>
-            {!sessionActive && recentGoals.length > 0 && (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => {
-                  const last = recentGoals[0];
-                  applyGoal(last.goal, last.focusMode);
-                  void handleStartNamedSession(last.goal, last.focusMode);
-                }}
-                disabled={sessionPending}
-                title={`Start a session for ${recentGoals[0].goal} right away`}
-              >
-                Start last session
-              </button>
-            )}
             {validateSessionGoal(sessionGoal).valid && (
               <button
                 type="button"
@@ -453,30 +435,6 @@ export const SessionControlCard = memo(function SessionControlCard({
         </form>
       )}
 
-      {/*
-        Roadmap 2.11. The session UUID is support-desk detail, not the headline it used to be.
-        It stays reachable and copyable — a support instruction that says "send us your session
-        id" must still work — but it no longer occupies the space where elapsed time belongs.
-      */}
-      <details className="technical-details">
-        <summary>Technical details</summary>
-        <div className="meta">
-          <div>
-            <p className="meta-label">Session ID</p>
-            <p className="meta-value">
-              <code>{sessionId || "--"}</code>
-            </p>
-          </div>
-          <div>
-            <p className="meta-label">Started</p>
-            <p className="meta-value">{formatTime(sessionRecord?.startedAtMs ?? null)}</p>
-          </div>
-          <div>
-            <p className="meta-label">Ended</p>
-            <p className="meta-value">{formatTime(sessionRecord?.endedAtMs ?? null)}</p>
-          </div>
-        </div>
-      </details>
     </section>
   );
 });

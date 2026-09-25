@@ -106,9 +106,9 @@ export const ReviewRangeBar = memo(function ReviewRangeBar({
         </p>
       ) : null}
       <p className="helper-text">
-        Summary, charts, and sessions use this range. Predictions and Context Timeline are
-        live. Presets are rolling windows; planned attendance uses the calendar period shown
-        beside it.
+        Summary, charts, and sessions use this range. A selected session’s insight and
+        context describe that session. Presets are rolling windows; planned attendance uses
+        the calendar period shown beside it.
       </p>
     </section>
   );

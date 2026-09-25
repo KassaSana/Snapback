@@ -544,6 +544,12 @@ export class DemoBackend {
             avgFocusScore: s.sum / s.sampleCount,
           }));
       }
+      case "get_session_longest_snapback": {
+        const episodes = this.data.episodes
+          .filter((episode) => episode.sessionId === String(args.sessionId))
+          .sort((a, b) => b.durationSecs - a.durationSecs || a.startedAtMs - b.startedAtMs);
+        return episodes[0] ?? null;
+      }
       case "get_session_history":
         return this.sessionsIn(range).map((session) => ({
           record: this.sessionJson(session),
@@ -555,6 +561,7 @@ export class DemoBackend {
         this.data.sessions = this.data.sessions.filter((s) => s.sessionId !== id);
         this.data.predictions = this.data.predictions.filter((p) => p.sessionId !== id);
         this.data.contexts = this.data.contexts.filter((c) => c.sessionId !== id);
+        this.data.episodes = this.data.episodes.filter((episode) => episode.sessionId !== id);
         return this.data.sessions.length < before;
       }
 
@@ -775,6 +782,7 @@ export class DemoBackend {
         this.data.sessions = [];
         this.data.predictions = [];
         this.data.contexts = [];
+        this.data.episodes = [];
         this.activeSessionId = null;
         return {
           deleted: ["sessions", "predictions", "context snapshots"],

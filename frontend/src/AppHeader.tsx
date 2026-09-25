@@ -150,15 +150,7 @@ export const AppHeader = memo(function AppHeader({
               </button>
             </div>
           </>
-        ) : (
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => onOpenTechnicalDetails(badge.section)}
-          >
-            Technical details
-          </button>
-        )}
+        ) : null}
       </div>
     </header>
   );

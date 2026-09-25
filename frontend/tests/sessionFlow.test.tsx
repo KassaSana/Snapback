@@ -131,7 +131,7 @@ describe("Session start/stop flow", () => {
     // Scoped to the Session Control card, because the health pill also says "running" and an
     // unscoped query would pass on the wrong element — reporting capture health as if it were
     // session state.
-    expect(await screen.findByText("sess-42")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Focus state" })).toBeInTheDocument();
     const sessionCard = (await screen.findByRole("heading", { name: "Session Control" }))
       .closest("section") as HTMLElement;
     expect(within(sessionCard).getByText("running")).toBeInTheDocument();
@@ -199,7 +199,12 @@ describe("Session start/stop flow", () => {
   it("uses destination headings and puts session controls before live feedback", async () => {
     render(<App />);
     const controls = await screen.findByRole("heading", { name: "Session Control" });
-    const feedback = screen.getByRole("heading", { name: "Focus state" });
+    expect(screen.queryByRole("heading", { name: "Focus state" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+      target: { value: "Write tests" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+    const feedback = await screen.findByRole("heading", { name: "Focus state" });
     expect(controls.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     expect(screen.getByRole("heading", { name: "Review your sessions" })).toBeInTheDocument();

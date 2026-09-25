@@ -248,7 +248,7 @@ describe("session cockpit", () => {
     expect(startedSessions()).toBe(1);
   });
 
-  it("offers recent goals as chips and Start last session starts that session", async () => {
+  it("offers recent goals as chips and starts only after the primary action", async () => {
     boundary.state.history = [
       historyRow("Ship the overlay", "deep"),
       historyRow("Answer email", "normal"),
@@ -256,9 +256,11 @@ describe("session cockpit", () => {
 
     render(<App />);
     const card = await sessionCard();
-    await within(card).findByRole("button", { name: "Start last session" });
-
-    fireEvent.click(within(card).getByRole("button", { name: "Start last session" }));
+    const recent = await within(card).findByRole("button", { name: "Ship the overlay" });
+    expect(within(card).queryByRole("button", { name: "Start last session" })).not.toBeInTheDocument();
+    fireEvent.click(recent);
+    expect(startedSessions()).toBe(0);
+    fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
 
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("start_session", {
@@ -310,7 +312,7 @@ describe("session cockpit", () => {
     expect(pinned()).toEqual(["Ship the overlay · Normal"]);
   });
 
-  it("leads with elapsed time and keeps the session id as technical detail", async () => {
+  it("leads with elapsed time and keeps the session id in Advanced", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date(Date.parse("2026-07-11T00:12:34Z")));
 
@@ -326,8 +328,11 @@ describe("session cockpit", () => {
     expect(within(card).getByLabelText("Elapsed session time")).toHaveTextContent("12m 34s");
 
     // The UUID is still reachable for support, but is no longer the headline.
-    const details = within(card).getByText("Technical details").closest("details") as HTMLElement;
-    expect(within(details).getByText("sess-42")).toBeInTheDocument();
+    expect(within(card).queryByText("Technical details")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Advanced" }));
+    fireEvent.click(screen.getByText("Logs and diagnostics"));
+    expect(screen.getByText("sess-42")).toBeInTheDocument();
   });
 
   it("guards switching sessions and stops the old one before starting the new", async () => {
@@ -501,4 +506,3 @@ describe("session cockpit", () => {
     expect(input).toHaveValue("Answer email");
   });
 });
-

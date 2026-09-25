@@ -1172,6 +1172,12 @@ std::vector<FocusCurvePoint> AppState::session_focus_curve(const std::string& se
     return storage_.session_focus_curve(session_id, buckets);
 }
 
+std::optional<SnapbackEpisode> AppState::session_longest_snapback(const std::string& session_id) {
+    storage_priority_.yield_to_writers();
+    std::lock_guard lock(storage_mutex_);
+    return storage_.longest_snapback_episode(session_id);
+}
+
 std::optional<SessionRecord> AppState::save_session_reflection(
     const std::string& session_id, const std::optional<std::string>& done,
     const std::optional<std::string>& next_step) {

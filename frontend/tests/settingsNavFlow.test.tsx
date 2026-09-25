@@ -188,7 +188,7 @@ describe("Settings second-level navigation", () => {
   });
 
   // The single badge that replaced the header's permanent classifier/model/quality fields.
-  it("replaces the header engineering fields with one badge that opens the details", async () => {
+  it("hides healthy diagnostics in the header and keeps them in Advanced", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: "Settings" });
 
@@ -198,7 +198,9 @@ describe("Settings second-level navigation", () => {
     expect(screen.queryByText(/ONNX runtime/i)).not.toBeInTheDocument();
     expect(screen.queryByText("All systems normal")).not.toBeInTheDocument();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Technical details" }));
+    expect(screen.queryByRole("button", { name: "Technical details" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+    fireEvent.click(sectionTab("Advanced"));
     expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute(
       "aria-selected",
       "true",

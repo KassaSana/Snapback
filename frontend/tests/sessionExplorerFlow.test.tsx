@@ -7,6 +7,7 @@ const boundary = vi.hoisted(() => {
   const state = {
     history: [] as Record<string, unknown>[],
     failDetail: false,
+    episodes: {} as Record<string, Record<string, unknown> | null>,
   };
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
     switch (cmd) {
@@ -24,6 +25,8 @@ const boundary = vi.hoisted(() => {
               { app_name: "chrome.exe", timestamp_ms: 3 },
             ]
           : [];
+      case "get_session_longest_snapback":
+        return state.episodes[String(args?.sessionId)] ?? null;
       case "get_health":
         return {
           status: "online",
@@ -107,6 +110,7 @@ beforeEach(() => {
   boundary.invoke.mockClear();
   boundary.state.history = [];
   boundary.state.failDetail = false;
+  boundary.state.episodes = {};
 });
 
 afterEach(() => {
@@ -114,6 +118,45 @@ afterEach(() => {
 });
 
 describe("Session explorer", () => {
+  it("starts with the latest completed session and changes its insight with selection", async () => {
+    boundary.state.episodes = {
+      b: { durationSecs: 360, returnAppName: "Code.exe" },
+      a: { durationSecs: 120, returnAppName: "Writer" },
+    };
+    render(
+      <SessionExplorerCard
+        sessionHistory={sessions}
+        rangeLabel="Last 7 days"
+        sessionActive={false}
+        onStartAgain={() => {}}
+      />,
+    );
+    const newest = screen.getByRole("region", { name: "Session: Review the PR" });
+    expect(await within(newest).findByText(/longest recorded detour lasted 6m/)).toHaveTextContent(
+      "You returned to Code.exe.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Write the explorer/ }));
+    const earlier = screen.getByRole("region", { name: "Session: Write the explorer" });
+    expect(await within(earlier).findByText(/longest recorded detour lasted 2m/)).toHaveTextContent(
+      "You returned to Writer.",
+    );
+    expect(within(earlier).getByText("Context Timeline")).toBeInTheDocument();
+    expect(screen.queryByText(/distracting app/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the loaded range label until new session data arrives", async () => {
+    const view = render(
+      <SessionExplorerCard sessionHistory={sessions} rangeLabel="Last 7 days" sessionActive={false} onStartAgain={() => {}} />,
+    );
+    expect(screen.getByRole("region", { name: "Session: Review the PR" })).toBeInTheDocument();
+    view.rerender(
+      <SessionExplorerCard sessionHistory={[sessions[0]]} rangeLabel="Last 30 days" sessionActive={false} onStartAgain={() => {}} />,
+    );
+    expect(screen.getByText("Last 30 days")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Session: Write the explorer" })).toBeInTheDocument();
+    expect(await screen.findByText("No snapback interruption was recorded in this session.")).toBeInTheDocument();
+  });
+
   it("lists sessions newest first, one group per day", () => {
     render(
       <SessionExplorerCard
@@ -123,11 +166,12 @@ describe("Session explorer", () => {
         onStartAgain={() => {}}
       />,
     );
-    const rows = screen.getAllByRole("button", { pressed: false });
+    const rows = screen.getAllByRole("button", { name: /Review the PR|Write the explorer/ });
     expect(rows[0]).toHaveTextContent("Review the PR");
     expect(rows[1]).toHaveTextContent("Write the explorer");
     expect(rows[1]).toHaveTextContent("Deep · 50m · focus 71");
-    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(2);
+    expect(rows[0]).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelectorAll(".session-explorer-day h3")).toHaveLength(2);
   });
 
   it("opens a session's detail: stats, reflection, its own curve and where it was spent", async () => {
@@ -159,7 +203,7 @@ describe("Session explorer", () => {
     fireEvent.click(within(detail).getByText("Show data"));
     expect(within(detail).getByRole("table")).toHaveTextContent("focus 82 of 100 · 90 samples");
 
-    const apps = within(detail).getAllByRole("listitem");
+    const apps = within(detail.querySelector(".session-detail-apps") as HTMLElement).getAllByRole("listitem");
     expect(apps[0]).toHaveTextContent("Code.exe2 samples");
     expect(apps[1]).toHaveTextContent("chrome.exe1 sample");
   });
