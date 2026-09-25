@@ -805,7 +805,7 @@ export default function App() {
             Roadmap 2.12's "resumable from Help". Safe to offer unconditionally because
             replaying the guide creates nothing — it reads state and points at controls.
           */}
-          <section className="card">
+          <section className="settings-help">
             <div className="card-header">
               <h2>Getting started</h2>
             </div>

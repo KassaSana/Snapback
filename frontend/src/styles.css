@@ -4,32 +4,32 @@
 :root,
 :root[data-appearance="light"] {
   color-scheme: light;
-  --ink: #0e1116;
-  --muted: #5f6b7a;
-  --accent: #f06b4c;
-  --accent-soft: #f7b07a;
-  --surface: #f6f1ec;
-  --surface-strong: #ffffff;
-  --surface-alt: #fce8d9;
-  --shadow: 0 8px 24px rgba(21, 22, 26, 0.08);
-  --radius: 18px;
-  --on-accent: #29150e;
+  --ink: #242923;
+  --muted: #626b64;
+  --accent: #c65d44;
+  --accent-soft: #e0a28c;
+  --surface: #f3f1eb;
+  --surface-strong: #fffefa;
+  --surface-alt: #f5e8de;
+  --shadow: 0 2px 10px rgba(34, 40, 35, 0.035);
+  --radius: 12px;
+  --on-accent: #ffffff;
   --scrim: rgba(14, 17, 22, 0.55);
   --text: var(--ink);
   --text-muted: var(--muted);
-  --canvas: #f5efe8;
-  --canvas-stop-1: #f7e5d6;
-  --canvas-stop-2: #ffe8d2;
-  --canvas-stop-3: #fdf8f3;
-  --canvas-stop-4: #f1e3d4;
-  --border: rgba(14, 17, 22, 0.12);
-  --border-strong: rgba(14, 17, 22, 0.3);
+  --canvas: #f8f6f0;
+  --canvas-stop-1: #f8f6f0;
+  --canvas-stop-2: #f8f6f0;
+  --canvas-stop-3: #f8f6f0;
+  --canvas-stop-4: #f8f6f0;
+  --border: rgba(36, 41, 35, 0.13);
+  --border-strong: rgba(36, 41, 35, 0.32);
   --card: var(--surface-strong);
   --control-bg: var(--surface-strong);
-  --control-border: rgba(14, 17, 22, 0.14);
-  --nav-shell: rgba(255, 255, 255, 0.55);
-  --settings-nav-shell: rgba(255, 255, 255, 0.4);
-  --glow-accent: rgba(240, 107, 76, 0.35);
+  --control-border: rgba(36, 41, 35, 0.2);
+  --nav-shell: transparent;
+  --settings-nav-shell: transparent;
+  --glow-accent: rgba(198, 93, 68, 0.18);
   --error-bg: #fff1ee;
   --error-border: #f3b5a8;
   --error-text: #8a2f1f;
@@ -54,41 +54,35 @@
   --chart-axis: var(--muted);
   --log-bg: #15181d;
   --log-text: #e6edf3;
-  --accent-tint: rgba(240, 107, 76, 0.1);
-  --accent-border: rgba(240, 107, 76, 0.35);
-  /* Roadmap 8.10. System stacks, not webfonts. The named families are still listed first, so
-     anyone who happens to have them installed keeps the intended look, but nothing is ever
-     fetched: the app must render identically online and offline, and "Nothing leaves this
-     device" has to be true on first launch as well as afterwards. */
-  --font-sans:
-    "Space Grotesk", "Sora", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
-  --font-serif:
-    "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman",
-    serif;
+  --accent-tint: rgba(198, 93, 68, 0.1);
+  --accent-border: rgba(198, 93, 68, 0.35);
+  /* Roadmap 8.10. Use system fonts so first launch renders without a network request. */
+  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
 }
 
 :root[data-color-scheme="dark"] {
   color-scheme: dark;
-  --ink: #e8eaed;
-  --muted: #9aa3af;
-  --accent: #f58b72;
-  --accent-soft: #f7b07a;
-  --surface: #1c2028;
-  --surface-strong: #252a33;
-  --surface-alt: #3a2a24;
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  --canvas: #12151b;
-  --canvas-stop-1: #2a211c;
-  --canvas-stop-2: #2b241f;
-  --canvas-stop-3: #15181f;
-  --canvas-stop-4: #1a1512;
-  --border: rgba(232, 234, 237, 0.12);
-  --border-strong: rgba(232, 234, 237, 0.28);
-  --control-border: rgba(232, 234, 237, 0.18);
-  --nav-shell: rgba(37, 42, 51, 0.85);
-  --settings-nav-shell: rgba(37, 42, 51, 0.7);
-  --glow-accent: rgba(245, 139, 114, 0.28);
+  --ink: #ebece5;
+  --muted: #b0b8ae;
+  --accent: #e29a80;
+  --accent-soft: #ebbaa6;
+  --surface: #202722;
+  --surface-strong: #262e28;
+  --surface-alt: #3c332c;
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  --on-accent: #20251f;
+  --canvas: #171d19;
+  --canvas-stop-1: #171d19;
+  --canvas-stop-2: #171d19;
+  --canvas-stop-3: #171d19;
+  --canvas-stop-4: #171d19;
+  --border: rgba(235, 236, 229, 0.13);
+  --border-strong: rgba(235, 236, 229, 0.34);
+  --control-border: rgba(235, 236, 229, 0.22);
+  --nav-shell: transparent;
+  --settings-nav-shell: transparent;
+  --glow-accent: rgba(226, 154, 128, 0.14);
   --error-bg: #3a1f1c;
   --error-border: #7a3f36;
   --error-text: #ffb4a8;
@@ -109,8 +103,8 @@
   --chart-midline: rgba(232, 234, 237, 0.1);
   --log-bg: #0d1014;
   --log-text: #d8dee9;
-  --accent-tint: rgba(245, 139, 114, 0.14);
-  --accent-border: rgba(245, 139, 114, 0.4);
+  --accent-tint: rgba(226, 154, 128, 0.14);
+  --accent-border: rgba(226, 154, 128, 0.4);
 }
 
 *,
@@ -123,19 +117,25 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   color: var(--text);
-  background: linear-gradient(135deg, var(--canvas), var(--canvas-stop-3));
+  background: var(--canvas);
   min-height: 100vh;
 }
 
 .app {
-  max-width: 1150px;
+  max-width: 1190px;
   margin: 0 auto;
-  padding: 24px 24px 32px;
+  padding: 32px 32px 64px;
   position: relative;
 }
 
 .app:has(.grid-now) {
-  padding: 20px 24px 8px;
+  padding-bottom: 48px;
+}
+
+.app:has(.grid-now) .app-header,
+.app:has(.grid-now) .surface-nav {
+  max-width: 880px;
+  margin-inline: auto;
 }
 
 .app-header {
@@ -167,16 +167,18 @@ body {
 
 .eyebrow {
   text-transform: uppercase;
-  letter-spacing: 0.24em;
-  font-size: 0.7rem;
-  color: var(--muted);
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
   margin: 0 0 12px;
 }
 
 h1 {
   margin: 0 0 8px;
-  font-size: clamp(1.6rem, 2.6vw, 2.1rem);
-  line-height: 1.15;
+  font-size: clamp(2rem, 3vw, 2.75rem);
+  line-height: 1.08;
+  font-weight: 600;
   font-family: var(--font-serif);
 }
 
@@ -184,6 +186,8 @@ h1 {
   margin: 0;
   max-width: 480px;
   color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.5;
 }
 
 .status-stack {
@@ -212,10 +216,11 @@ h1 {
 }
 
 .recording-status-header {
-  background: var(--surface-strong);
-  padding: 10px 16px;
-  border-radius: 18px;
-  box-shadow: var(--shadow);
+  background: transparent;
+  padding: 4px 14px;
+  border-left: 1px solid var(--border-strong);
+  border-radius: 0;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -457,22 +462,21 @@ h1 {
   }
 }
 
-/* Surface navigation (ADR-0003). Sits between the header and the panel, using the same
-   pill vocabulary as .status-pill so it reads as part of the existing design rather than
-   a bolted-on tab bar. */
+/* Surface navigation (ADR-0003). A clear baseline connects the tabs to the panel below. */
 .surface-nav {
-  margin-top: 32px;
+  margin-top: 28px;
+  border-bottom: 1px solid var(--border);
   position: relative;
   z-index: 1;
 }
 
 .surface-nav > div[role="tablist"] {
   display: inline-flex;
-  gap: 4px;
-  padding: 4px;
+  gap: 24px;
+  padding: 0;
   background: var(--nav-shell);
-  border-radius: 999px;
-  box-shadow: var(--shadow);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .surface-tab {
@@ -483,8 +487,9 @@ h1 {
   font-size: 0.95rem;
   font-weight: 500;
   color: var(--muted);
-  padding: 9px 22px;
-  border-radius: 999px;
+  padding: 10px 2px 13px;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
   cursor: pointer;
   transition:
     background 0.18s ease,
@@ -496,9 +501,10 @@ h1 {
 }
 
 .surface-tab-active {
-  background: var(--surface-strong);
+  background: transparent;
   color: var(--ink);
   font-weight: 600;
+  border-bottom-color: var(--accent);
 }
 
 /* Keyboard focus must stay visible — the active tab has no other affordance. */
@@ -512,10 +518,10 @@ h1 {
 }
 
 .grid {
-  margin-top: 28px;
+  margin-top: 24px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 22px;
+  gap: 20px;
   position: relative;
   z-index: 1;
 }
@@ -526,8 +532,8 @@ h1 {
   max-width: 720px;
   width: 100%;
   margin-inline: auto;
-  gap: 16px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 20px;
 }
 
 /* A wide desktop window is not a phone: let the cockpit breathe rather than pinning a
@@ -540,7 +546,7 @@ h1 {
 }
 
 .grid-now .card {
-  padding: 16px 20px;
+  padding: 24px 28px;
   gap: 12px;
 }
 
@@ -552,6 +558,7 @@ h1 {
   background: var(--surface-strong);
   padding: 24px;
   border-radius: var(--radius);
+  border: 1px solid var(--border);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
@@ -657,13 +664,18 @@ h1 {
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 16px;
+  gap: 0;
 }
 
 .metric {
-  background: var(--surface);
-  padding: 16px;
-  border-radius: 14px;
+  background: transparent;
+  padding: 12px 16px;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.metric:last-child {
+  border-right: 0;
 }
 
 .metric-label {
@@ -763,7 +775,7 @@ h1 {
 .primary-button {
   background: var(--accent);
   color: var(--on-accent);
-  box-shadow: 0 10px 20px var(--accent-border);
+  box-shadow: none;
 }
 
 .secondary-button {
@@ -1417,33 +1429,38 @@ h1 {
 .insight-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-  gap: 8px;
+  gap: 0;
   margin: 4px 0 12px;
 }
 
 .insight-tile {
-  background: var(--surface);
-  border-radius: 12px;
-  padding: 10px 12px;
-  text-align: center;
+  background: transparent;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px 16px;
+  text-align: left;
+}
+
+.insight-tile:last-child {
+  border-right: 0;
 }
 
 .insight-tile-value {
   margin: 0;
-  font-size: 1.4rem;
+  font-size: 1.75rem;
   font-weight: 700;
   color: var(--ink);
 }
 
 .insight-tile-label {
   margin: 2px 0 0;
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   color: var(--muted);
 }
 
 .insight-tile .meta-sub {
   margin: 4px 0 0;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   line-height: 1.3;
 }
 
@@ -1560,8 +1577,8 @@ h1 {
 }
 
 .session-explorer-row[aria-pressed="true"] {
-  background: var(--surface-strong);
-  border-color: var(--border-strong);
+  background: var(--accent-tint);
+  border-color: var(--accent-border);
 }
 
 .session-explorer-row:focus-visible {
@@ -1765,10 +1782,10 @@ h1 {
 .settings-nav > div[role="tablist"] {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 3px;
+  gap: 20px;
+  padding: 0;
   background: var(--settings-nav-shell);
-  border-radius: 999px;
+  border-radius: 0;
 }
 
 .settings-tab {
@@ -1776,11 +1793,12 @@ h1 {
   border: 0;
   background: transparent;
   font-family: var(--font-sans);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   font-weight: 500;
   color: var(--muted);
-  padding: 6px 16px;
-  border-radius: 999px;
+  padding: 6px 2px 9px;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
   cursor: pointer;
   transition:
     background 0.18s ease,
@@ -1792,9 +1810,10 @@ h1 {
 }
 
 .settings-tab-active {
-  background: var(--surface-strong);
+  background: transparent;
   color: var(--ink);
   font-weight: 600;
+  border-bottom-color: var(--accent);
 }
 
 .settings-tab:focus-visible {
@@ -1817,6 +1836,29 @@ h1 {
 .settings-section-title {
   margin: 0 0 2px;
   font-size: 1rem;
+}
+
+.settings-help {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-help .card-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.settings-help .helper-text {
+  flex: 1 1 340px;
+  margin: 0;
+}
+
+.settings-help .secondary-button {
+  flex: 0 0 auto;
 }
 
 /* Training, raw signals, and logs: present, one click away, closed until asked for. */
@@ -1876,9 +1918,9 @@ h1 {
 }
 
 .chip {
-  background: var(--accent-tint);
-  border: 1px solid var(--accent-border);
-  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
   color: inherit;
   cursor: pointer;
   font-size: 0.76rem;
@@ -2125,6 +2167,55 @@ h1 {
    onto a second row inside the pill, the strip scrolls sideways as one intentional
    row. Tabs keep full names — no shrinking to fit. */
 @media (max-width: 560px) {
+  .app {
+    padding: 20px 18px 40px;
+  }
+
+  .app-header {
+    gap: 12px;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+
+  .status-stack {
+    gap: 6px 12px;
+  }
+
+  .recording-status-header {
+    border-left: 0;
+    padding: 0;
+  }
+
+  .surface-nav {
+    margin-top: 18px;
+  }
+
+  .grid,
+  .grid-now {
+    margin-top: 16px;
+  }
+
+  .grid-now .card,
+  .grid-review .card {
+    padding: 18px;
+  }
+
+  .insight-tile,
+  .metric {
+    padding-inline: 10px;
+  }
+
+  .insight-tile:nth-child(2n),
+  .metric:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .metric-value {
+    font-size: 1.35rem;
+  }
+
   .settings-nav > div[role="tablist"] {
     display: flex;
     flex-wrap: nowrap;

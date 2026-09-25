@@ -69,7 +69,7 @@ export const SettingsCard = memo(function SettingsCard({
   return (
     <section className="card config-card">
       <div className="card-header">
-        <h2>Settings</h2>
+        <h2>Preferences</h2>
         <span className="pill">{supported ? "available" : "platform default"}</span>
       </div>
       <label className="toggle-row">

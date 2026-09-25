@@ -1322,6 +1322,15 @@ the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser 
   duration displays now share the seconds-aware formatter. Visual snapshot, contrast, and
   native overlay coverage listed below remain open.
 
+  *Progress 2026-09-25:* A browser walkthrough of idle and active Now, Review, and Settings
+  prompted a visual pass across light and dark appearances. The shell now uses aligned
+  navigation, a quieter canvas, stronger headings, and restrained card borders. Review's
+  summary and Now's live metrics use aligned values with separators for faster comparison;
+  Settings places the walkthrough in a compact help row and names its controls Preferences.
+  The three surfaces and their data behavior are unchanged. The sample-data demo was checked
+  at desktop, 700px, and 375px widths, with tighter phone spacing and wrapped report metrics;
+  native-window and automated visual coverage remain open.
+
   Remaining: automated light/dark visual snapshots for **all three surfaces and the native
   overlay**, comprehensive contrast assertions coordinated with **10.3**, and a native
   window/overlay smoke check after the ongoing soak is finished. Repo-wide Prettier cleanup
