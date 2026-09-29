@@ -29,7 +29,7 @@ const summary = (
     goal: "g",
     durationSecs: 0,
     // null = attended time was never measured, which is what every session predating
-    // Roadmap 7.23 looks like. These fixtures exercise focus metrics, not durations.
+    // Looks like. These fixtures exercise focus metrics, not durations.
     activeSecs: null,
     avgFocusScore: focus,
     avgDistractionRisk: 0,
@@ -64,7 +64,7 @@ assert.equal(focusBarHeightPct(150), 100);
 assert.equal(focusBarHeightPct(-5), 0);
 assert.equal(focusBarHeightPct(42), 42);
 
-// Row label (Roadmap 7.6): the recap's goal wins, then the record's, then a placeholder —
+// Row label: the recap's goal wins, then the record's, then a placeholder —
 // never an empty accessible name on a permanently destructive button.
 const labelled = summary("a", 0, 0, 0);
 assert.equal(sessionRowLabel(labelled), "g");

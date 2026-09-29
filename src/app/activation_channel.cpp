@@ -44,17 +44,10 @@ std::int64_t clamp_timeout(std::int64_t timeout_ms) {
     return timeout_ms > kActivationTimeoutMs ? kActivationTimeoutMs : timeout_ms;
 }
 
-// The path the channel id is computed from.
-//
-// `weakly_canonical` rather than `canonical` because the data directory may legitimately not
-// exist yet on the losing side of a first-run race, and `canonical` throws on a missing path --
-// which would turn "the app is already running" into a crash.
+// weakly_canonical, not canonical: the data directory may not exist yet on the losing side.
 std::string canonical_key(const std::filesystem::path& data_dir) {
-    // Lexically first, then physically. `weakly_canonical` resolves only the part of the path
-    // that exists, so a `..` hop through a directory that was never created is left for the
-    // platform to interpret -- and macOS and Windows do not interpret it the same way, which
-    // made two spellings of one directory two channels on exactly one OS. Collapsing `..` and
-    // `.` before the call removes the disagreement instead of documenting it.
+    // Collapse `.`/`..` lexically first; weakly_canonical leaves them in non-existent parts,
+    // and platforms interpret those differently.
     std::error_code ignored;
     const auto normalized = data_dir.lexically_normal();
     auto resolved = std::filesystem::weakly_canonical(normalized, ignored);
@@ -88,15 +81,8 @@ std::wstring pipe_name_wide(const std::filesystem::path& data_dir) {
     return std::wstring(narrow.begin(), narrow.end());  // ASCII by construction
 }
 
-// A security descriptor granting the calling user, and nobody else, access to the pipe.
-//
-// Named pipes are otherwise readable by every account on the machine, and their default DACL
-// also admits Administrators. This endpoint's only power is "raise a window", which is not
-// dangerous -- but it is reachable by name from any session on the box, and a per-user app
-// with a machine-wide control surface is the kind of detail 8.13 exists to stop shipping.
-//
-// SDDL rather than SetEntriesInAcl: one string and one call, against roughly forty lines of
-// ACL assembly with three allocation failure paths that would never be exercised.
+// A security descriptor granting only the current user access to the pipe (the default DACL
+// admits every account). SDDL: one string instead of ACL assembly.
 bool current_user_descriptor(PSECURITY_DESCRIPTOR* out) {
     HANDLE token = nullptr;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
@@ -121,13 +107,8 @@ bool current_user_descriptor(PSECURITY_DESCRIPTOR* out) {
                                                                 nullptr) != 0;
 }
 
-// One read or write on an overlapped handle, with a deadline.
-//
-// The handle is FILE_FLAG_OVERLAPPED, so a plain ReadFile/WriteFile against it is not "the
-// blocking version" -- it is undefined, because the OVERLAPPED the API needs is missing. The
-// deadline is why it is worth the extra shape at all: without one, a client that connects and
-// then says nothing pins the listener thread forever, and the app looks fine right up until
-// the second launch that needed it.
+// One read or write on an overlapped handle, with a deadline, so a silent client cannot pin the
+// listener thread.
 bool overlapped_io(HANDLE handle, HANDLE event, bool writing, void* buffer, DWORD size,
                    DWORD* transferred, DWORD timeout_ms) {
     OVERLAPPED overlapped{};
@@ -349,12 +330,8 @@ bool fill_address(sockaddr_un& address, const std::string& path) {
     return true;
 }
 
-// Whether the process on the other end of `fd` belongs to the user running this one.
-//
-// The socket is already 0600 inside a 0700 directory, so this is the second lock on the same
-// door -- deliberately, because the temp-directory fallback above puts the socket somewhere
-// this process does not own the permissions of. A check that is redundant on the common path
-// and load-bearing on the rare one is worth its ten lines.
+// Whether the peer is the current user. Redundant with the 0600 socket on the common path, but
+// the temp-directory fallback needs it.
 bool peer_is_current_user(int fd) {
 #if defined(__APPLE__)
     uid_t peer_uid = 0;
@@ -476,12 +453,8 @@ std::optional<ActivationListener> ActivationListener::start(const std::filesyste
     impl->listen_fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
     if (impl->listen_fd < 0) return std::nullopt;
 
-    // Stale-endpoint recovery, and the one decision here that is only safe because of where it
-    // is called from. A crash leaves the socket file behind and bind() then fails with
-    // EADDRINUSE; unlinking it is correct **because this process already holds the exclusive
-    // instance lock**, which is the proof that no live owner is bound to it. Unlinking on the
-    // weaker evidence of "it looked stale" is how a second database owner gets in -- exactly
-    // what 9.8's lock exists to prevent.
+    // Stale socket from a crash: unlinking is safe only because this process holds the instance
+    // lock, which proves no live owner is bound to it.
     std::error_code ignored;
     std::filesystem::remove(impl->endpoint, ignored);
 

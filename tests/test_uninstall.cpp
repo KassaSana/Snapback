@@ -1,4 +1,4 @@
-// Roadmap 9.5. What uninstall removes, and the promise behind the choice.
+// What uninstall removes, and the promise behind the choice.
 #include "doctest_wrapper.hpp"
 
 #include <algorithm>

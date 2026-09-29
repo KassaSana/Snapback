@@ -50,16 +50,8 @@ std::chrono::system_clock::time_point unix_time(double seconds) {
             std::chrono::duration<double>(seconds))};
 }
 
-// Roadmap 7.24. `calendar_secs` must be WALL-CLOCK epoch seconds, never the monotonic
-// `timestamp_secs`. Every production backend stamps events from an uptime clock
-// (GetTickCount64 on Windows, steady_clock elsewhere), and feeding that to a calendar
-// function derived hour_of_day and day_of_week from how long the machine had been up —
-// making two of the 31 model inputs depend on the last reboot rather than on when the user
-// worked. The fixtures never caught it because they feed epoch-shaped values directly.
-//
-// UTC is kept deliberately. It is what the deployed model was trained against and what
-// golden.json pins; switching to local time changes the meaning of an input and needs a
-// retrain and a model version bump, not a quiet edit here. See 7.16.
+// `calendar_secs` must be wall-clock epoch seconds, never the monotonic timestamp. UTC is
+// deliberate: it is what the model was trained on; changing it needs a retrain.
 void fill_time_fields(FeatureVector& out, double calendar_secs) {
     const std::time_t tt = std::chrono::system_clock::to_time_t(unix_time(calendar_secs));
     std::tm tm{};
@@ -75,10 +67,7 @@ void fill_time_fields(FeatureVector& out, double calendar_secs) {
 }  // namespace
 
 void FeatureExtractor::ingest(const CaptureEvent& ev) {
-    // Cheap, per-event bookkeeping only: push into the rolling windows, trim, and track
-    // current app / break state. Deliberately does NOT run extract() — callers that only
-    // need a prediction occasionally (the engine throttles to ~1/sec) ingest every event
-    // but extract on demand, so the O(window) scan runs ~1/sec instead of per event.
+    // Per-event bookkeeping only; extract() runs on demand (~1/s), not per event.
     const double now = ev.timestamp_secs;
     // Remember the most recent wall clock seen. Calendar features describe when the user was
     // working, so they follow the newest event rather than when extract() happened to run.
@@ -86,7 +75,7 @@ void FeatureExtractor::ingest(const CaptureEvent& ev) {
     // Seed the session origin from the first event of the session (see begin_session).
     // The first event is the earliest moment the event clock and the session agree on.
     if (awaiting_session_start_) {
-        // Back-dated for a resumed session (Roadmap 7.25), zero for a fresh one.
+        // Back-dated for a resumed session, zero for a fresh one.
         session_start_secs_ = now - pending_session_backdate_secs_;
         last_break_secs_ = now;  // The break clock starts now, even on a resume.
         awaiting_session_start_ = false;
@@ -99,10 +88,7 @@ void FeatureExtractor::ingest(const CaptureEvent& ev) {
         if (!last_break_secs_) last_break_secs_ = now;
     }
 
-    // Store a compact, string-free record in the rolling windows: interning app_name to a
-    // small id (once, here) means the two deque copies + the unique-apps set no longer
-    // allocate/copy strings per event. Distinct ids map 1:1 to distinct names, so
-    // unique_apps_5min is unchanged.
+    // App names are interned to small ids so the windows store no strings.
     const WindowedEvent we{ev.event_type, now, ev.mouse_speed, ev.idle_duration_ms,
                            intern_app(ev.app_name)};
     events_30s_.push_back(we);

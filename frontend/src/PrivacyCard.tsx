@@ -18,7 +18,7 @@ type PrivacyCardProps = {
   setExclusionInput: (value: string) => void;
   settings: PrivacySettings | null;
   deletionStatus: string | null;
-  /** Roadmap 8.12. True when the erasure was partial, so it is not styled as success. */
+  /** True when the erasure was partial, so it is not styled as success. */
   deletionWarning?: boolean;
   /** What "delete activity" deliberately kept, always shown alongside the outcome. */
   deletionRetained?: string | null;
@@ -100,7 +100,7 @@ export const PrivacyCard = memo(function PrivacyCard({
           ))
         )}
       </ul>
-      {/* Roadmap 7.6. Inspecting comes before destroying, so this sits above the danger zone:
+      {/* Inspecting comes before destroying, so this sits above the danger zone:
           the user should be able to look at what was collected before deciding to delete it. */}
       {onOpenDataFolder ? (
         <div className="privacy-inspect-zone">

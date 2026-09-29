@@ -40,7 +40,7 @@ export const focusBarHeightPct = (avgFocusScore: number): number =>
   Math.max(0, Math.min(100, avgFocusScore));
 
 /**
- * How a session is named in the delete list (Roadmap 7.6). Also the accessible name of its
+ * How a session is named in the delete list. Also the accessible name of its
  * delete button, so a destructive control never reads as a bare "Delete" — the user is
  * about to permanently remove one specific session and the button must say which.
  *

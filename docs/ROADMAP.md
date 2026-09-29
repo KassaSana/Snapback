@@ -625,7 +625,7 @@ internals, and the benchmark harness.
   The original finding was:
 
   `timestamp_hour()` (since removed; see the correction above) sliced characters 11–12 out of strings built by
-  `now_rfc3339()` (`state.cpp:now_rfc3339`), which uses `gmtime_r`/`gmtime_s` and appends `Z` — UTC.
+  `now_rfc3339()` (state.cpp as it stood then), which uses `gmtime_r`/`gmtime_s` and appends `Z` — UTC.
   So `AnalyticsHour::hour` is a UTC hour rendered as the user's hour. In US Pacific that is
   an 8-hour lie: "you focus best at 14:00" means 06:00 local.
 

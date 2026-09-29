@@ -9,21 +9,9 @@
 
 namespace snapback {
 
-// Roadmap 10.11. Maps the Review surface's shared range to the epoch-millisecond cutoff every
-// bounded query understands. These presets are rolling windows ("the last 7 x 24 hours"), not
-// calendar ranges — 7.16 (integer-ms time) made calendar semantics *possible*, and
-// Storage::daily_summary is the one consumer that snaps its cutoff to a local midnight; the
-// scalar queries deliberately stay rolling so "7d" means the same thing it always has.
-//
-// ADR-0007 moved this from RFC3339 text to milliseconds, which removes a conversion at each of
-// the eight query call sites rather than adding one here. `since` is the exception and stays a
-// string on the way in: it is the one value that arrives from outside -- the Review range the
-// user picked, crossing the IPC boundary -- so it is parsed here, at the edge, exactly once.
-//
-// A `since` that will not parse is now an error instead of a silent whole-history query. That
-// is a deliberate behaviour change: `std::optional` has no room to say "the caller asked for a
-// window and I could not work out which", and answering with every row ever recorded is the
-// least honest way to not know.
+// Maps the Review range to an epoch-ms cutoff. Presets are rolling windows, not calendar ranges
+// (only Storage::daily_summary snaps to local midnight). `since` arrives as text from the UI
+// and is parsed here once; an unparseable `since` is an error, not a whole-history query.
 inline std::optional<std::int64_t> review_window_cutoff(
     const std::string& window, const std::optional<std::string>& since,
     std::int64_t (*cutoff_days)(int)) {

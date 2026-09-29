@@ -24,12 +24,8 @@ constexpr wchar_t kClassName[] = L"SnapbackOverlayWindow";
 constexpr UINT_PTR kDismissTimerId = 1;
 constexpr UINT kAutoDismissMs = 9000;  // self-dismiss; also click-to-dismiss
 
-// Roadmap 10.12. Per-monitor DPI, resolved at runtime.
-//
-// `GetDpiForMonitor` lives in Shcore.dll (Windows 8.1+) and `GetDpiForWindow` in User32
-// (Windows 10 1607+). Both are loaded dynamically rather than link-time so the binary still
-// starts on an older Windows, where the fallback is the system DPI — which is exactly what the
-// overlay used to assume everywhere.
+// Per-monitor DPI. GetDpiForMonitor (Shcore, 8.1+) and GetDpiForWindow (1607+) are loaded
+// dynamically so older Windows falls back to the system DPI.
 UINT monitor_dpi(HMONITOR monitor) {
     using GetDpiForMonitorFn = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
     static GetDpiForMonitorFn get_dpi_for_monitor = [] {
@@ -48,8 +44,7 @@ UINT monitor_dpi(HMONITOR monitor) {
         }
     }
 
-    // System DPI. Correct on a single-monitor machine and on any pre-8.1 Windows, and no worse
-    // than what this code did before per-monitor DPI existed here.
+    // System DPI fallback.
     HDC screen = GetDC(nullptr);
     const UINT dpi = screen ? static_cast<UINT>(GetDeviceCaps(screen, LOGPIXELSX))
                             : static_cast<UINT>(kOverlayBaseDpi);
@@ -57,11 +52,8 @@ UINT monitor_dpi(HMONITOR monitor) {
     return dpi > 0 ? dpi : static_cast<UINT>(kOverlayBaseDpi);
 }
 
-// The monitor the card belongs on, following choose_overlay_monitor's policy.
-//
-// MONITOR_DEFAULTTONULL, deliberately: the point is to learn whether there *is* a valid
-// foreground monitor, and MONITOR_DEFAULTTONEAREST would answer "yes" by silently substituting
-// the primary one — collapsing the fallback chain into its last step.
+// The monitor the card belongs on (choose_overlay_monitor's policy). MONITOR_DEFAULTTONULL, so
+// a missing foreground monitor is detectable rather than silently replaced by the nearest.
 HMONITOR target_monitor() {
     HWND foreground = GetForegroundWindow();
     HMONITOR from_window =
@@ -99,9 +91,7 @@ OverlayRect placement() {
                             static_cast<int>(monitor_dpi(monitor)));
     }
 
-    // The monitor vanished between the snapback firing and this call — an unplugged dock is
-    // the ordinary way that happens. Fall back to the primary work area rather than placing
-    // the card on a display that no longer exists.
+    // The monitor vanished (e.g. undocked); fall back to the primary work area.
     RECT work{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
     return overlay_rect({work.left, work.top},
@@ -118,7 +108,7 @@ std::wstring to_wide(const std::string& s) {
     return w;
 }
 
-// Roadmap 2.16. Defined below WindowsOverlay, declared here because overlay_proc runs first.
+// Defined below WindowsOverlay; declared here because overlay_proc uses it.
 void overlay_action_clicked();
 
 // The card text is owned as a heap wstring pointed to by GWLP_USERDATA, so WM_PAINT can
@@ -137,9 +127,7 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             SetBkMode(dc, TRANSPARENT);
             SetTextColor(dc, RGB(235, 235, 245));
             auto* text = reinterpret_cast<std::wstring*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-            // Roadmap 10.12. The inner padding scales too. Fixed pixels here would leave the
-            // text crowded into the corner of a card that doubled in size at 200%, which is the
-            // same "fixed pixels ignore per-monitor DPI" complaint one level down.
+            // The inner padding scales with DPI too.
             const int dpi = static_cast<int>(monitor_dpi(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)));
             const ScreenPoint card{rc.right - rc.left, rc.bottom - rc.top};
             const OverlayRect action = overlay_action_rect(card, dpi);
@@ -148,9 +136,7 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             pad.left += scale_for_dpi(20, dpi);
             pad.top += scale_for_dpi(18, dpi);
             pad.right -= scale_for_dpi(20, dpi);
-            // Roadmap 2.16. The text stops above the button rather than beside it. A long
-            // window title wrapping under "Take me back" would put unreadable text behind a
-            // control the user is being invited to click.
+            // Text stops above the button so long titles never wrap behind it.
             pad.bottom = action.y - scale_for_dpi(8, dpi);
             if (text) {
                 DrawTextW(dc, text->c_str(), -1, &pad, DT_WORDBREAK | DT_NOPREFIX);
@@ -177,8 +163,7 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             }
             return 0;
         case WM_LBUTTONUP: {
-            // Roadmap 2.16. "Take me back" inside its region; dismiss anywhere else, which is
-            // what a click on this card has always meant and what people already expect.
+            // "Take me back" inside its region; dismiss anywhere else.
             RECT client{};
             GetClientRect(hwnd, &client);
             const ScreenPoint size{client.right - client.left, client.bottom - client.top};
@@ -192,10 +177,7 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             }
             return 0;
         }
-        // Roadmap 10.12. The card is visible and has just crossed onto a display with a
-        // different scale — dragged, or the user changed the setting underneath it. Windows
-        // hands over the rectangle it wants in the *new* DPI; ignoring it is what leaves a card
-        // at half or double size until it is dismissed and shown again.
+        // Moved to a display with a different scale: apply the rectangle Windows suggests.
         case WM_DPICHANGED: {
             const RECT* suggested = reinterpret_cast<const RECT*>(lparam);
             if (suggested) {
@@ -236,9 +218,8 @@ public:
         SetWindowLongPtrW(hwnd_, GWLP_USERDATA,
                           reinterpret_cast<LONG_PTR>(new std::wstring(to_wide(overlay_text(payload)))));
 
-        // Roadmap 10.12. Top-right of the *target* monitor's work area, sized for that
-        // monitor's DPI. SWP_NOACTIVATE stays: better placement must not start stealing the
-        // user's keyboard target, which is the one thing this window has always got right.
+        // Top-right of the target monitor, sized for its DPI. SWP_NOACTIVATE: never steal
+        // focus.
         const OverlayRect rect = placement();
         SetWindowPos(hwnd_, HWND_TOPMOST, rect.x, rect.y, rect.width, rect.height,
                      SWP_NOACTIVATE);
@@ -261,10 +242,8 @@ public:
         on_action_ = std::move(on_action);
     }
 
-    // Roadmap 2.16. The card's "Take me back" region was clicked. Hides first, then acts:
-    // restore_snapback_target raises another application's window, and leaving a TOPMOST card
-    // floating over the window the user just asked to return to is not returning them to it.
-    // The act/dismiss ordering itself lives in settle_overlay_action, where it is tested.
+    // Hide first, then act: a topmost card must not float over the window being restored. The
+    // act/dismiss ordering lives in settle_overlay_action.
     void action_clicked() {
         if (hwnd_) ShowWindow(hwnd_, SW_HIDE);
         settle_overlay_action(on_action_, on_dismiss_);

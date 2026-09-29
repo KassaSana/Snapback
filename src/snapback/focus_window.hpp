@@ -1,14 +1,7 @@
-// Window activation helper for context recovery. Roadmap 2.8 ("Take me back").
-//
-// When a Snapback fires, the app knows the previous focused context (app_name and
-// window_title). This interface raises that window to the foreground on the user's
-// request.
-//
-// Like reveal_path.hpp, this follows strict rules:
+// Raise the previously focused window ("Take me back").
 //   1. Never start a shell.
-//   2. Refuse empty or nonsensical input with an honest result rather than guessing.
-//   3. Window activation is non-throwing; OS-level focus-stealing restrictions are
-//      treated as an ordinary result.
+//   2. Refuse empty or nonsensical input with a clear result.
+//   3. Non-throwing; OS focus-stealing restrictions are an ordinary result.
 #pragma once
 
 #include <string>

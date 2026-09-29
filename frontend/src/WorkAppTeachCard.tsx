@@ -18,9 +18,7 @@ export const WorkAppTeachCard = memo(function WorkAppTeachCard({
   onCreateAppRule,
   onDismiss,
 }: Props) {
-  // Apps the user skipped this visit without writing a rule. Not persisted: a later
-  // session that sees the same window should be allowed to ask again, unless they
-  // dismissed the whole card.
+  // Skipped this visit only, not persisted.
   const [skipped, setSkipped] = useState<string[]>([]);
 
   const candidates = useMemo(() => {

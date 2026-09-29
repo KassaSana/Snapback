@@ -1,17 +1,6 @@
-// The only door to AppState's private test seams. ROADMAP 7.14.
-//
-// Those three methods used to be public, which meant the shipping binary exported an API
-// telling anyone reading the header that `process_event_for_test` was a supported way to feed
-// the engine. It was not. `AppState` grants this struct friendship and nothing else, so the
-// seams are reachable from tests and from nowhere else.
-//
-// Why they still exist at all: their production caller is the engine *tick thread*, not a
-// method. Driving idle or pomodoro transitions through public API would mean starting the
-// engine and waiting out real durations — the sleep-based testing 11.4's clock exists to
-// avoid. `start_pomodoro_for_test` was the one the clock did make redundant, and it is gone;
-// a test now sets a `ManualClock` and calls the real `start_pomodoro()`.
-//
-// This header lives under tests/ so it is not part of the shipping tree.
+// The only door to AppState's private test seams (AppState befriends this struct alone). They
+// exist because their production caller is the engine tick thread; driving them through public
+// API would mean running the engine and waiting. Lives under tests/.
 #pragma once
 
 #include <cstdint>
@@ -61,7 +50,7 @@ struct AppStateTestAccess {
     }
 
     // One synchronous turn of the real engine tick — the same function the engine thread
-    // runs, not a reimplementation. Roadmap 7.23 needed it because session pause/resume is
+    // runs, not a reimplementation. needed it because session pause/resume is
     // driven by the tick's idle edges, so testing it through `update_idle_for_test` alone
     // would exercise the detector and skip everything that acts on it. Points the same way
     // as 14.2.
@@ -92,7 +81,7 @@ struct AppStateTestAccess {
         return state.maintenance_paused_.load(std::memory_order_acquire);
     }
 
-    // Whether the session currently has an attended span open (Roadmap 7.23). Reaches
+    // Whether the session currently has an attended span open. Reaches
     // through to the owned Storage because AppState deliberately exposes no such getter —
     // "is a span open" is internal bookkeeping, not something a UI should ask.
     //
@@ -171,7 +160,7 @@ struct AppStateTestAccess {
         state.persistence_test_hook_ = nullptr;
     }
 
-    // The *live* focus mode driving the classifier right now (Roadmap 7.25). Not the same
+    // The *live* focus mode driving the classifier right now. Not the same
     // thing as `settings().default_focus_mode`, which is only what the next session starts
     // with — the difference is precisely the bug: a restarted Deep session used to come back
     // being classified under Normal's threshold with nothing on screen saying so.
@@ -180,7 +169,7 @@ struct AppStateTestAccess {
         return state.focus_mode_;
     }
 
-    // Roadmap 2.15's episodes, read back through the owned Storage. AppState exposes no
+    // Episodes, read back through the owned Storage. AppState exposes no
     // getter yet — 2.9 and 10.11 own the surface that will show them — but the rows have to be
     // assertable now, because the whole point of the item is that a write nobody could observe
     // was missing for the entire life of the project.

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 2.9. The session explorer against the mocked native boundary: the list, the detail
+// The session explorer against the mocked native boundary: the list, the detail
 // it loads per session, and the two actions that must not do more than they say.
 const boundary = vi.hoisted(() => {
   const state = {

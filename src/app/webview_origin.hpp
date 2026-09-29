@@ -1,20 +1,7 @@
-// Which document is allowed to drive the native command bridge. Roadmap 8.14.
-//
-// **8.4 locks down the URL the app navigates to. 8.3 constrains what the bundled page may
-// load. Neither survives a later top-level navigation.** `kIpcShim` is installed with
-// `webview.init()`, whose own comment says it runs before page scripts on *every* navigation,
-// and every command is bound onto the global object. A page reached by a redirect, or by a
-// Help link somebody adds next year, therefore inherits `delete_all_activity_data`,
-// `export_my_data`, `set_privacy_exclusions`, and the training commands — the entire
-// privileged surface, granted to whatever happens to be loaded.
-//
-// **CSP is not the check.** It governs what resources a trusted document may pull in; it says
-// nothing about which document owns the native bindings. The item is explicit about not
-// confusing the two, and it would be an easy confusion to make, because 8.3 already added a
-// CSP and it looks like it is about the same thing.
-//
-// The rules live here as pure functions so they can be tested without a webview, and so the
-// answer to "may this document call native code" is one function rather than a habit.
+// Which document may drive the native command bridge. The shim runs on every navigation and
+// every command is bound globally, so a redirected page would otherwise inherit the whole
+// privileged surface. CSP does not answer this: it limits what a trusted document loads, not
+// which document owns the bindings. Pure functions, testable without a webview.
 
 #pragma once
 
@@ -33,19 +20,12 @@ enum class NavigationDecision {
     Block,
 };
 
-// Canonicalizes a document URL for comparison.
-//
-// Lowercases the scheme, drops query and fragment, and collapses `.`/`..` inside a `file:`
-// path. That last part is the one that matters: `file:///app/frontend/../frontend/index.html`
-// and `file:///app/frontend/index.html` are the same document, and a comparison that misses
-// it is a comparison an attacker only has to spell differently to defeat.
+// Canonicalizes a document URL: lowercase scheme, no query or fragment, `.`/`..` collapsed in
+// file: paths (so a differently spelled path cannot bypass the comparison).
 std::string canonical_document_url(const std::string& url);
 
-// True when `url` is the one document allowed to invoke native commands.
-//
-// `debug_build` additionally admits loopback, and *only* loopback: the dev server is how the
-// app is developed against Vite, and 8.8 already established that build-time gate for the
-// webview's debug surface. A release build admits nothing but the packaged file.
+// True when `url` is the one document allowed to invoke native commands. `debug_build` also
+// admits loopback (the Vite dev server); release admits only the packaged file.
 bool is_trusted_document(const std::string& url, const std::string& trusted_url,
                          bool debug_build);
 
@@ -53,17 +33,9 @@ bool is_trusted_document(const std::string& url, const std::string& trusted_url,
 NavigationDecision classify_navigation(const std::string& target,
                                        const std::string& trusted_url, bool debug_build);
 
-// A per-launch capability token.
-//
-// The enforcement mechanism, given that the webview facade exposes no navigation-intercept
-// hook. The shim runs before page scripts on every navigation, checks its own document
-// against the trusted URL, and hands the token to the page's bridge *only* if it matches.
-// Every native command requires the token back. An untrusted document therefore has the bound
-// functions on its global object and no way to call them successfully — it never sees the
-// token, because the shim decided before the page ran a single line.
-//
-// Random per launch rather than fixed: a constant in the binary is a constant an attacker can
-// read out of the binary.
+// A per-launch capability token. The shim checks its own document before page scripts run and
+// hands the token over only if trusted; every command requires it. Random per launch, so it
+// cannot be read out of the binary.
 std::string generate_capability_token();
 
 }  // namespace snapback

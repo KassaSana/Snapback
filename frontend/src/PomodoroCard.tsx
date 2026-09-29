@@ -36,8 +36,7 @@ export const PomodoroCard = memo(function PomodoroCard({
   onSaveConfig,
 }: PomodoroCardProps) {
   const [draft, setDraft] = useState(pomodoroConfig);
-  // Sync from the server when the *values* change, not when hydrate returns a new object
-  // with the same numbers. A settings refresh during an edit used to wipe the draft.
+  // Sync when the values change, not on every new object, so a refresh cannot wipe a draft.
   useEffect(() => {
     setDraft(pomodoroConfig);
   }, [
@@ -50,9 +49,7 @@ export const PomodoroCard = memo(function PomodoroCard({
   const { running, paused, awaitingAcknowledgement, phase, completedWorkIntervals, remainingMs } =
     pomodoroStatus;
 
-  // Roadmap 2.13. Three states read as "not counting down" and mean different things, so the
-  // countdown says which: paused is the user's choice, awaiting is a finished phase holding
-  // for them, and a stopped timer has no time to show at all.
+  // Paused (the user's choice), awaiting (a finished phase holding), and stopped differ.
   const remainingText = !running
     ? "--:--"
     : awaitingAcknowledgement

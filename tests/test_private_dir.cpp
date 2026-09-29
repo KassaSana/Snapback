@@ -90,7 +90,7 @@ TEST_CASE("exposure means any bit outside the owner's, including execute") {
 // --- The fallback rule, which is testable on every platform -------------------------------
 
 TEST_CASE("no profile directory fails closed instead of choosing a shared path") {
-    // Roadmap 8.13. This is the defect with the widest blast radius. Both platforms used to
+    // This is the defect with the widest blast radius. Both platforms used to
     // end `return temp_directory_path() / "snapback"` -- the same predictable path for every
     // account, inside a directory every local account can write to. The user got a working app
     // that quietly recorded their window titles somewhere anyone could read, and nothing said

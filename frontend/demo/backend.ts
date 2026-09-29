@@ -1,14 +1,10 @@
-// The in-memory backend the hosted demo talks to, in place of the C++ engine.
+// The in-memory backend the hosted demo talks to, in place of the C++ engine. Handlers return
+// the raw camelCase shapes src/apiMappers.ts expects.
 //
-// Every handler returns the *raw* shape `src/apiMappers.ts` expects: the camelCase keys the
-// native side sends.
-//
-// Two rules this file follows, because a demo that lies is worse than no demo:
-//
-//   1. Aggregates are computed from the same generated rows the timeline shows. Review and Now
-//      cannot disagree, which is the exact class of bug 10.13 and 10.11 were opened for.
-//   2. Anything that would touch a real disk (exports, file pickers, support bundles, training)
-//      reports honestly that it is unavailable here rather than faking a file path.
+//   1. Aggregates are computed from the same generated rows the timeline shows, so Review and
+//      Now agree.
+//   2. Anything that would touch a real disk (exports, pickers, bundles, training) reports that
+//      it is unavailable rather than faking a path.
 
 import {
   buildDataset,
@@ -240,8 +236,7 @@ export class DemoBackend {
       persistenceFailureReason: null,
       captureEventsDropped: 0,
       captureStalled: false,
-      // Roadmap 14.11. Zeroed rather than invented: the demo has no engine thread, no lock
-      // and no SQLite, so any other value here would be a number that never happened.
+      // Zeroed: the demo has no engine thread, lock, or SQLite.
       runtime: {
         engineWakeups: 0,
         processCpuMs: 0,
@@ -287,10 +282,7 @@ export class DemoBackend {
   }
 
   private unavailable(): Json {
-    // A demo that reports a successful export is worse than one that refuses: the
-    // frontend maps a resolved value to a success message, so anything that would
-    // touch a real disk rejects here instead of returning a shape the UI could
-    // read as "wrote 0 sessions, complete history".
+    // Reject rather than resolve: the frontend reads a resolved value as success.
     throw new Error("This writes a file, so it is disabled in the browser demo.");
   }
 
@@ -611,11 +603,9 @@ export class DemoBackend {
       }
 
       case "get_daily_summary": {
-        // Mirrors the native command: one row per local calendar day, ascending, empty days
-        // omitted. Focused/deep are run gaps between consecutive qualifying samples (both
-        // endpoints must qualify, gaps over 120s are breaks) — with the demo's exact 2-minute
-        // spacing every in-run gap counts as 120s. Attended, session, and snapback counts
-        // land on the session's start day; demo sessions never cross midnight.
+        // Mirrors the native command: one row per local day, ascending, empty days omitted.
+        // Focused/deep are run gaps (both endpoints qualify, >120s breaks); demo sessions never
+        // cross midnight.
         const windowName = typeof range?.window === "string" ? range.window : "7d";
         const start = this.rangeStart(range);
         const localDay = (ms: number) => {
@@ -870,9 +860,7 @@ export class DemoBackend {
       case "cancel_data_import":
         return { cancelled: true, pending: false };
 
-      // Everything that would write to, read from, or open a real file rejects
-      // rather than resolving: the frontend reads a resolved value as success, so a
-      // fake shape here becomes "Exported 0 sessions, complete history".
+      // File-touching commands reject; a resolved fake would read as success.
       case "export_support_bundle":
       case "export_my_data":
       case "export_summary_report":
@@ -882,9 +870,8 @@ export class DemoBackend {
       case "cancel_training":
       case "set_training_repo_path":
         return this.unavailable();
-      // Read-only probes whose UI already renders a refusal faithfully: inspect and
-      // stage show the message verbatim in a warning tone, and a file dialog that
-      // never opened is a cancellation, not an error — the caller no-ops on it.
+      // The UI already renders these refusals faithfully (a dialog that never opened is a
+      // cancel).
       case "inspect_data_import":
         return {
           acceptable: false,

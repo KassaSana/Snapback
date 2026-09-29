@@ -11,10 +11,7 @@
 namespace snapback {
 namespace {
 
-// ROADMAP 7.15: every literal that used to sit inline in this file now has a name and a
-// role in engine/classifier_tuning.hpp. Read that file to understand the model; read this
-// one to understand the arithmetic. The extraction changed no value — the feature-parity
-// golden fixture is what proves that.
+// Constants and their roles live in engine/classifier_tuning.hpp; this file is arithmetic.
 using namespace snapback::tuning;
 
 double clamp(double value, double lo, double hi) {
@@ -115,9 +112,8 @@ PredictionScores Classifier::predict(const FeatureVector& features,
                                      const std::vector<AppRuleRecord>& rules,
                                      const std::vector<GoalCategory>& categories) const {
 #if defined(SNAPBACK_ONNX)
-    // The model supplies class probabilities; the user's Block/Allow rules, goal alignment,
-    // and thrash/drift come from here and apply to both backends. Previously this branch
-    // passed zeros and `false`, so a deployed model silently ignored user configuration.
+    // The model supplies probabilities; user rules, goal alignment, and thrash/drift apply to
+    // both backends.
     if (auto probas = OnnxModel::instance().infer_probabilities(features)) {
         return blend_model_output(
             *probas, compute_context_signals(features, session_goal, rules, categories), mode);
@@ -128,10 +124,7 @@ PredictionScores Classifier::predict(const FeatureVector& features,
 
 std::string Classifier::backend() const {
 #if defined(SNAPBACK_ONNX)
-    // The backend that produced the *last* prediction, not the one that was configured. A
-    // loaded model whose last Run() failed or returned an unusable row fell back to the
-    // heuristic for that prediction, and health should say so rather than report "onnx"
-    // over heuristic numbers.
+    // The backend that produced the last prediction, which may be the heuristic fallback.
     const auto& model = OnnxModel::instance();
     if (model.loaded() && !model.last_inference_failed()) return "onnx";
 #endif
@@ -240,11 +233,8 @@ PredictionScores apply_focus_guardrails(PredictionScores scores,
                                         double drift,
                                         bool personal_block,
                                         FocusMode mode) {
-    // Policy may only demote a state toward distraction, never promote one (ADR-0004).
-    // The scores stay untouched — they are the model's opinion, and focus_score feeds back
-    // into focus_momentum, so editing them here would leak policy into the model's own
-    // inputs. Each branch records which rule decided the verdict; the first that fires
-    // wins the attribution, in the same order the old combined condition checked them.
+    // Policy may only demote toward distraction (ADR-0004). Scores are left untouched (they
+    // feed focus_momentum). The first rule that fires is recorded as state_source.
     if (scores.distraction_risk >= risk_threshold(mode)) {
         scores.focus_state = "DISTRACTED";
         scores.state_source = "risk";
@@ -255,10 +245,7 @@ PredictionScores apply_focus_guardrails(PredictionScores scores,
         scores.focus_state = "DISTRACTED";
         scores.state_source = "block";
     } else if (drift >= tuning::policy::kDriftPseudo && scores.focus_state == "PRODUCTIVE") {
-        // Only PRODUCTIVE demotes: the drift rule exists to tell real productivity from
-        // pseudo-productivity. It has no authority over DEEP_FOCUS (deliberate exemption —
-        // deep evidence outweighs churn) and must not soften DISTRACTED, which the old
-        // `!= "DEEP_FOCUS"` condition did (ROADMAP 7.18).
+        // Only PRODUCTIVE demotes; DEEP_FOCUS is exempt and DISTRACTED is never softened.
         scores.focus_state = "PSEUDO_PRODUCTIVE";
         scores.state_source = "drift";
     }

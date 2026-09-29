@@ -7,7 +7,7 @@ import {
   NO_DESTINATION,
 } from "../src/alertDestination";
 
-// Roadmap 2.16's action-routing half: where a clicked native alert lands in the app.
+// Action-routing half: where a clicked native alert lands in the app.
 
 {
   // The wire format is not ours to choose. These strings must match alert_action_as_str in

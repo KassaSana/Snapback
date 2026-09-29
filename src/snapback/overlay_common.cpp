@@ -1,10 +1,5 @@
-// Platform-neutral overlay helpers (compiled into snapback_core so tests can reach them
-// without pulling in Win32 or AppKit). The only concrete Overlay window today is
-// overlay_windows.cpp; the macOS panel that consumes cocoa_origin_y() is Roadmap 3.1.
-//
-// cocoa_origin_y() is deliberately *not* guarded on __APPLE__: keeping it unconditional
-// means the Windows and Linux CI hosts run its tests too, so a mistake in the one piece of
-// macOS placement logic that can be tested at all cannot hide until someone opens a Mac.
+// Platform-neutral overlay helpers, compiled into snapback_core so tests reach them.
+// cocoa_origin_y() is unguarded so every CI host tests it.
 #include "snapback/overlay.hpp"
 
 #include <algorithm>
@@ -31,10 +26,7 @@ int scale_for_dpi(int design_units, int dpi) {
 OverlayRect overlay_rect(ScreenPoint work_pos, ScreenPoint work_size, int dpi) {
     const int margin = scale_for_dpi(kScreenMargin, dpi);
 
-    // Shrink to fit before placing. A card wider than the screen cannot be positioned into
-    // view, so clamping the *size* first is what keeps the placement below meaningful.
-    // `std::max(1, ...)` keeps a degenerate work area from producing a zero or negative extent,
-    // which SetWindowPos would take literally.
+    // Shrink to fit before placing; max(1, ...) avoids a zero or negative extent.
     const int max_width = std::max(1, work_size.x - 2 * margin);
     const int max_height = std::max(1, work_size.y - 2 * margin);
     const int width = std::min(scale_for_dpi(kOverlayWidth, dpi), max_width);
@@ -58,10 +50,8 @@ ScreenPoint top_right_position(ScreenPoint monitor_pos, ScreenPoint monitor_size
 }
 
 int cocoa_origin_y(int work_area_top, int top_down_y, int window_height) {
-    // Walk down from the work area's top edge by the requested gap, then down again by the
-    // window's own height, because Cocoa names a window by its bottom edge rather than its
-    // top one. Subtracting only top_down_y is the classic version of this bug: it hangs the
-    // card one window-height above where it belongs.
+    // Down from the work area's top by the gap, then by the window's height: Cocoa positions by
+    // the bottom edge.
     return work_area_top - top_down_y - window_height;
 }
 
@@ -70,10 +60,8 @@ OverlayRect overlay_action_rect(ScreenPoint card_size, int dpi) {
     const int width = scale_for_dpi(kOverlayActionWidth, dpi);
     const int height = scale_for_dpi(kOverlayActionHeight, dpi);
 
-    // Clamped to the card rather than allowed to hang off it. `overlay_rect` above already
-    // shrinks the whole card to fit a small panel at 200%, so a button sized from the
-    // unshrunken constants can be wider than the card it lives in -- and a hit region outside
-    // the window receives no clicks at all, which is a button that is simply dead.
+    // Clamped to the card (which may itself have been shrunk), or the region receives no
+    // clicks.
     const int fitted_width = std::min(width, std::max(1, card_size.x - 2 * inset));
     const int fitted_height = std::min(height, std::max(1, card_size.y - 2 * inset));
 

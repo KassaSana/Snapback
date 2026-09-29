@@ -28,7 +28,7 @@ assert.equal(
 );
 assert.equal(activityDeletionIsWarning(clean), false);
 
-// Roadmap 8.15. Browser-side copies the native result cannot know about are named, not merely
+// Browser-side copies the native result cannot know about are named, not merely
 // deleted: "all activity" is a claim the user checks against what they can still see, and
 // saved goal text reappearing in the session composer after an erase would contradict it.
 assert.equal(

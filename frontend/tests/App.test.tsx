@@ -148,7 +148,7 @@ describe("App first-run permission wizard", () => {
       },
     });
 
-  // Roadmap 10.9. Settings is four groups, and each card lives in exactly one of them. The
+  // Settings is four groups, and each card lives in exactly one of them. The
   // negative half is the point: before this item every one of these was on screen at once,
   // which is what made Settings read as an engineering console.
   it("groups the configuration cards into Settings sections", async () => {

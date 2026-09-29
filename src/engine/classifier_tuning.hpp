@@ -1,36 +1,11 @@
-// The heuristic classifier's tunable constants, named and sorted by what they are.
+// The heuristic classifier's tunable constants, grouped by role:
 //
-// ROADMAP 7.15. `classifier.cpp` carried roughly twenty bare literals — `0.45`, `4.0`,
-// `180.0`, `0.65` — with only two of them named. That is not merely untidy. Two open items
-// cannot be answered while the numbers are anonymous:
+//   `Policy`  what counts as distracted.
+//   `Scale`   normalisers from raw counts/durations to 0..1 (claims about behaviour).
+//   `Weight`  linear-blend coefficients -- the part a trained model replaces.
+//   `Shape`   how the class scores are carved from one another; not independent dials.
 //
-//   * **1.2** asks what a user-facing "distraction sensitivity" control should tune. That is
-//     unanswerable until someone can say which numbers are *policy* (a judgement call a user
-//     might reasonably want to move) and which are *structural* (change them and the score
-//     stops meaning what it meant).
-//   * **2.3** replaces some of these with a trained model and keeps others as the blend layer
-//     around it. Which is which was tribal knowledge living in one commit message.
-//
-// So the organising principle here is **role, not location**. Each constant below is one of:
-//
-//   `Policy`      — a decision about what counts as distracted. Survives 2.3: a model
-//                   predicts a focus class, it does not decide that thrashing means the user
-//                   is distracted. This group is 1.2's answer space.
-//   `Scale`       — a normaliser turning a raw count or duration into 0..1. Encodes a claim
-//                   about human behaviour ("four app switches in 30s is as thrashy as it
-//                   gets"). Survives 2.3 only as feature engineering.
-//   `Weight`      — the coefficients of a linear blend. **This is what 2.3 replaces.** A
-//                   trained model learns these; nothing else in this file is learnable.
-//   `Shape`       — how the four class scores are carved out of one another, and how goal
-//                   alignment bends them. Structural: these are not independent dials, and
-//                   moving one silently changes what the others mean.
-//
-// **On provenance: there is none, and that is the finding.** Every value here arrived in the
-// port commit (`1cffcb9 refactor: C++`) with no derivation, no fitting procedure, and no
-// recorded rationale — git history goes no further back for this file. They are hand-tuned
-// numbers that have never been validated against labelled data. The comments below say what
-// each value *does*; where a comment would have to invent why the value is what it is, it
-// says so instead. Naming them does not make them right, it makes them arguable.
+// The values are hand-tuned and have never been validated against labelled data.
 #pragma once
 
 #include <array>
@@ -44,26 +19,21 @@ constexpr bool sums_to_one(double sum) { return abs_diff(sum, 1.0) < 1e-9; }
 
 // --- Policy: what counts as distracted ------------------------------------------------
 //
-// The mode-dependent risk thresholds are deliberately NOT here — `risk_threshold()` lives in
-// `types.hpp` because it is part of the FocusMode contract rather than the classifier's
-// internals, and storage.cpp reasons about it too. 1.2 will need to consider both together.
+// The mode-dependent risk thresholds live in types.hpp (risk_threshold()), as part of the
+// FocusMode contract.
 namespace policy {
 
-// Thrash at or above this forces DISTRACTED regardless of the model's opinion. Note 0.3 is
-// the ceiling thrash can reach without context-switch counts, which is what made two focus
-// states unreachable in 0.3 — the threshold was never the problem, its inputs were.
+// Thrash at or above this forces DISTRACTED regardless of the model.
 constexpr double kThrashDistracted = 0.75;
 
-// Drift at or above this demotes PRODUCTIVE to PSEUDO_PRODUCTIVE. Only PRODUCTIVE: policy
-// is demote-only (ADR-0004), so the rule has no authority over DEEP_FOCUS or DISTRACTED.
+// Drift at or above this demotes PRODUCTIVE (only) to PSEUDO_PRODUCTIVE (ADR-0004).
 constexpr double kDriftPseudo = 0.55;
 
 }  // namespace policy
 
 // --- Scale: raw units -> 0..1 -----------------------------------------------------------
 //
-// Each of these is the value at which a signal is treated as fully saturated. They are
-// claims about behaviour, and every one is a guess.
+// The value at which each signal saturates.
 namespace scale {
 
 // Context switches. Three different windows saturate at three different counts, and nothing
@@ -79,7 +49,7 @@ constexpr double kUniqueAppsSpan = 5.0;
 // Keystroke interval standard deviation, in seconds, at which typing reads as chaotic.
 constexpr double kKeystrokeChaosFull = 1.2;
 
-// Seconds in the current app before it counts as fully "settled" / no longer "just arrived".
+// Seconds in the current app before it counts as fully settled.
 constexpr double kSettledSeconds = 180.0;   // deep_work_score
 constexpr double kJustArrivedSeconds = 120.0;  // distracted accumulator
 
@@ -103,10 +73,7 @@ constexpr double kSteadyTypingUnknown = 0.3;
 
 // --- Weight: the linear blends ----------------------------------------------------------
 //
-// These are the learnable parameters. Each group that must be a convex combination is
-// static_asserted to sum to 1, which is the property that keeps its score in 0..1 without
-// relying on the clamp — and which a future edit to a single weight would otherwise break
-// silently, rescaling the score rather than reweighting it.
+// Groups that must be convex combinations are static_asserted to sum to 1.
 namespace weight {
 
 // thrash_score: how much of "thrashing" is short-window switching vs long-window vs variety.
@@ -134,11 +101,9 @@ static_assert(sums_to_one(kDeepSettled + kDeepSteadyTyping + kDeepLowSwitch + kD
                           kDeepMomentum),
               "deep_work_score weights must be a convex combination");
 
-// The distracted accumulator. Deliberately NOT a convex combination: it sums to 0.80 with a
-// negative term, then gets clamped. So a maximally-distracted-looking sample cannot reach
-// 1.0 from behaviour alone — entertainment context and goal misalignment carry the rest.
-// Whether that ceiling is intentional is unknown; it is preserved here because changing it
-// changes every stored prediction's meaning.
+// The distracted accumulator: not convex (sums to 0.80 with a negative term, then clamped), so
+// behaviour alone cannot reach 1.0. Preserved because changing it changes every stored
+// prediction's meaning.
 constexpr double kDistractedThrash = 0.30;
 constexpr double kDistractedIdle = 0.15;
 constexpr double kDistractedLowKeystrokes = 0.10;
@@ -159,26 +124,20 @@ constexpr double kDriftContextWork = 1.0;           // IDE or productivity
 constexpr double kDriftContextBrowserOrComms = 0.85;
 constexpr double kDriftContextUnknown = 0.4;
 
-// Goal alignment enters as a bias around the 0.5 midpoint: aligned work pushes drift and
-// distraction down, misaligned work pushes them up. The two multipliers differ and nothing
-// records why distraction should be more goal-sensitive than drift.
+// Goal alignment biases drift and distraction around the 0.5 midpoint.
 constexpr double kGoalBiasMidpoint = 0.5;
 constexpr double kGoalBiasOnDrift = 0.25;
 constexpr double kGoalBiasOnDistracted = 0.35;
 
-// How much thrash adds to distraction_risk on top of the model's DISTRACTED probability.
-// This is the one place a context signal edits a *score* rather than a state. ADR-0004 kept
-// it on the opinion side of the line: thrash is behavioral evidence feeding the estimate,
-// not a policy rule overriding it.
+// How much thrash adds to distraction_risk on top of the model's DISTRACTED probability --
+// evidence feeding the estimate, not a policy override (ADR-0004).
 constexpr double kThrashRiskBump = 0.15;
 
 // Pseudo-productive is drift that distraction has not already claimed.
 constexpr double kPseudoDistractedDiscount = 0.6;
 
-// Whatever probability mass is left after distracted and pseudo splits between PRODUCTIVE
-// and DEEP_FOCUS by the deep-work score. The same constant on both sides is what makes it a
-// split rather than two independent scores: deep takes 0.65 * deep_work of the remainder and
-// productive takes the rest.
+// Mass left after distracted and pseudo splits between PRODUCTIVE and DEEP_FOCUS by the
+// deep-work score (deep takes 0.65 * deep_work of it).
 constexpr double kDeepShareOfRemaining = 0.65;
 
 }  // namespace shape
@@ -190,11 +149,9 @@ constexpr double kDeepShareOfRemaining = 0.65;
 inline constexpr std::array<const char*, 4> kStateLabels = {"DISTRACTED", "PSEUDO_PRODUCTIVE",
                                                             "PRODUCTIVE", "DEEP_FOCUS"};
 
-// focus_score is the probability-weighted average of these per-class levels, so a
-// confidently-DEEP_FOCUS row can carry a high score while guardrails have overridden the
-// state to DISTRACTED. That is deliberate, not a contradiction (ADR-0004, née 7.7): the
-// score is the model's opinion, the state is the policy verdict, and `state_source` records
-// which rule made them disagree.
+// focus_score is the probability-weighted average of these levels, so it can be high while a
+// guardrail overrides the state to DISTRACTED: the score is the model's opinion, the state the
+// policy verdict, and `state_source` records which rule decided (ADR-0004).
 inline constexpr std::array<double, 4> kFocusLevels = {25.0, 50.0, 75.0, 100.0};
 
 }  // namespace snapback::tuning

@@ -1,4 +1,4 @@
-// Every native command, registered into a CommandRegistry (Roadmap 14.3). Webview-free:
+// Every native command, registered into a CommandRegistry. Webview-free:
 // the same function builds the registry the app binds and the one the tests invoke.
 #pragma once
 

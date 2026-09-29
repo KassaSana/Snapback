@@ -76,10 +76,7 @@ bool reveal_existing_directory(const std::filesystem::path& dir) {
     pid_t pid = 0;
     if (posix_spawnp(&pid, argv[0], nullptr, nullptr, argv.data(), environ) != 0) return false;
 
-    // Reaped rather than abandoned, or the zombie outlives the click. The wait is bounded in
-    // practice because xdg-open hands the URL to the desktop's opener and exits; a desktop
-    // whose opener blocks would block this handler, which is one more reason Linux is post-v1
-    // (ADR-0002) and gets the simple version.
+    // Reaped so no zombie outlives the click; xdg-open hands off and exits.
     int status = 0;
     if (waitpid(pid, &status, 0) < 0) return false;
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;

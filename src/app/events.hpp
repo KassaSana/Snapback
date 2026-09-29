@@ -1,19 +1,9 @@
-// Host->frontend event names. Roadmap 11.13.
+// Host->frontend event names. Every emit site uses a constant from here, and `kAll` is what the
+// IPC contract test compares against fixtures/ipc_commands.json (which also rejects raw string
+// literals at emit sites).
 //
-// Commands have had a registry, a fixture, and a three-way contract test since 7.12; events
-// had none of that, and four `listen(...)` calls in `frontend/src/api.ts` accumulated for
-// names no native code ever emitted. Nothing could notice, because the emit sites were string
-// literals scattered across three translation units and the only list of them was whatever a
-// reader could grep.
-//
-// This header is that list. Every emit site spells its name from a constant here, `kAll` is
-// the set the IPC contract test compares against `fixtures/ipc_commands.json`, and the test
-// also refuses a raw string literal at an emit call site -- otherwise a new event could be
-// emitted without ever appearing in `kAll`, which is the hole the constants alone would leave.
-//
-// Adding an event: add the constant, add it to `kAll`, add it to the fixture's `events.emitted`
-// list, and add the `listen(...)` on the frontend. The contract test names whichever of those
-// four you forgot.
+// Adding an event: add the constant, add it to `kAll`, add it to the fixture's
+// `events.emitted`, and add the frontend `listen(...)`.
 #pragma once
 
 #include <array>

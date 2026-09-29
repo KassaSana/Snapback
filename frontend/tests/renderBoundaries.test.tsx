@@ -11,7 +11,7 @@ import { useSession } from "../src/useSession";
 
 afterEach(() => cleanup());
 
-// Roadmap 2.16. Hoisted deliberately. An inline object literal would be a fresh identity on
+// Hoisted deliberately. An inline object literal would be a fresh identity on
 // every parent render, so SettingsCard's memo would miss and this suite would fail on its own
 // fixture rather than on a real regression -- which is exactly the defect it is here to catch.
 const STABLE_ALERTS = {
@@ -60,7 +60,7 @@ describe("prediction render boundaries", () => {
     } as AutostartStatus;
     const onStart = vi.fn();
     const onStop = vi.fn();
-    // Roadmap 2.13's controls, declared out here for the same reason as the two above: a
+    // Controls, declared out here for the same reason as the two above: a
     // callback recreated per render would defeat the memo boundary this test measures.
     const onPause = vi.fn();
     const onResume = vi.fn();

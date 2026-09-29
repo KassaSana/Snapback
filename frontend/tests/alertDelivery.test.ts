@@ -1,4 +1,4 @@
-// Roadmap 2.16. Reading the delivery route the engine attaches to an alert event.
+// Reading the delivery route the engine attaches to an alert event.
 import assert from "node:assert/strict";
 
 import {

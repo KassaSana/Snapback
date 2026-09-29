@@ -55,18 +55,14 @@ function normalizePomodoroPhase(value: unknown): PomodoroPhase {
     : "work";
 }
 
-// ADR-0007. `null` means "no such moment" and must survive as null -- a session with no
-// `endedAtMs` is still running, and coercing that to 0 would date it to 1970 and report it as
-// finished. Number(null) is 0, so the null check cannot be folded into the conversion.
+// null means "no such moment" (ADR-0007) and must stay null; Number(null) is 0.
 function toMsOrNull(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const ms = Number(value);
   return Number.isFinite(ms) ? ms : null;
 }
 
-// Roadmap 2.16. Channels arrive as an array of names, so an unknown one from a newer build is
-// dropped rather than taking the whole object down with it -- the same tolerance the native
-// from_json has, for the same reason.
+// Unknown channel names from a newer build are dropped, as the native from_json does.
 function mapAlertChannels(raw: unknown, fallback: AlertChannel[]): AlertChannel[] {
   if (!Array.isArray(raw)) return fallback;
   return ALERT_CHANNELS.filter((channel) => raw.includes(channel));
@@ -396,8 +392,7 @@ export function mapSessionRecap(raw: Record<string, unknown>): SessionRecap {
     sessionId: String(raw.sessionId ?? ""),
     goal: String(raw.goal ?? ""),
     durationSecs: Number(raw.durationSecs ?? 0),
-    // Not `?? 0`: null and absent both mean "not measured", and collapsing them to 0 would
-    // report every pre-7.23 session as fully unattended.
+    // Not `?? 0`: null means "not measured".
     activeSecs: activeSecsOf(raw),
     avgFocusScore: Number(raw.avgFocusScore ?? 0),
     avgDistractionRisk: Number(raw.avgDistractionRisk ?? 0),

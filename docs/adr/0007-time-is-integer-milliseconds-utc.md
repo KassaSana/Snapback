@@ -19,11 +19,11 @@ Nothing here was theorized; each fact below was checked against the tree on 2026
 (`storage.cpp:migrate_baseline_schema`, plus `created_at`/`updated_at` on `app_rules`)
 and one stores it as `REAL` Unix seconds (`feature_snapshots.timestamp`, `storage.cpp:migrate_baseline_schema`).
 This is not a style difference; the code pays for it. `retention_cutoff_rfc3339` and
-`retention_cutoff_unix_secs` (`storage.cpp:retention_cutoff_unix_secs`, `storage.cpp:retention_cutoff_rfc3339`) exist as a matched pair for no reason
+`retention_cutoff_unix_secs` (storage.cpp as it stood on 2026-08-19) exist as a matched pair for no reason
 other than expressing one instant in two storage formats.
 
 **Ordering is undefined at the resolution the app writes.** `AppState::rfc3339_at` takes a
-`std::time_t` and formats `%Y-%m-%dT%H:%M:%SZ` (`state.cpp:rfc3339_at`) — there is no sub-second
+`std::time_t` and formats `%Y-%m-%dT%H:%M:%SZ` (state.cpp as it stood on 2026-08-19) — there is no sub-second
 field to lose, because none is ever produced. Two sessions started in the same wall-clock
 second tie under `ORDER BY started_at DESC` and come back in an arbitrary order. This is
 already worked around in the test suite via `Storage::backdate_session_for_test`, and it is

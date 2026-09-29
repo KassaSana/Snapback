@@ -1,9 +1,5 @@
-// The rolling signal breakdown — thrash %, drift %, goal fit, focus state, risk level.
-//
-// Lives on the Settings surface next to Diagnostics (ADR-0003), not on Now. These lines
-// exist to debug the classifier, and while a session is running they compete with the one
-// thing that matters. Same content as before, demoted rather than deleted: it is genuinely
-// useful when the classifier does something surprising.
+// The rolling signal breakdown (thrash, drift, goal fit, state, risk). On Settings next to
+// Diagnostics (ADR-0003): it is for debugging the classifier.
 
 type Props = {
   signals: string[];

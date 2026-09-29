@@ -1,14 +1,6 @@
-// A yes/no fact that is expensive to establish and slow to change, remembered for a while.
-//
-// The motivating case is `check_capture_permissions` on Linux, which asks whether xdotool is
-// installed by running `command -v xdotool` through std::system — a fork plus an exec of
-// /bin/sh on the command worker thread. Three callers reach it (the 5-second health poll,
-// recording_status, refresh_permissions), so the app was spawning a shell several times a
-// minute to re-learn something that changes roughly once per install. The hot-path benchmark
-// found it the hard way: 250,000 iterations became 250,000 processes.
-//
-// Reads go through `Clock::steady_ms()` rather than the real clock so the TTL is tested with
-// a ManualClock at the scale it runs at (ROADMAP 11.4), not with sleeps.
+// A yes/no fact that is expensive to establish and slow to change, cached for a TTL (e.g. "is
+// xdotool installed", which costs a shell spawn). Uses Clock::steady_ms() so tests drive the
+// TTL with a ManualClock.
 #pragma once
 
 #include <cstdint>

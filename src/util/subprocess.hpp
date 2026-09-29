@@ -1,23 +1,9 @@
-// Run a child process from an argv array, wait on it with a timeout, and kill it.
+// Run a child process from an argv array, with a timeout and kill. No shell: each argument is
+// its own argv element. Output goes to one file (or nowhere); stdin is /dev/null.
 //
-// This replaced std::system in the training path. std::system was three problems in one
-// call: it runs a shell, so every user-controlled path had to be quoted against the shell's
-// grammar (the repo path once executed `$(...)` because it was double-quoted); it blocks the
-// calling thread until the child exits, so a training run of several minutes had no way to
-// yield to shutdown; and on Windows a GUI process calling it flashes a console window.
-//
-// Here the program and each argument occupy their own argv element -- a path is data, never
-// program text, the same rule reveal_path.hpp states for its spawn. The child's stdout and
-// stderr go to one file (or nowhere); stdin is /dev/null so a child that reads it fails
-// rather than waiting on a terminal the app does not have.
-//
-// Killing a child must kill what it spawned: `py -3` is a launcher that execs python.exe and
-// waits, so terminating the launcher alone would orphan the training run. Windows puts the
-// child in a Job object with KILL_ON_JOB_CLOSE; POSIX gives it its own process group and
-// signals the group.
-//
-// POSIX spawns with posix_spawnp, never fork(): the app forks with a capture thread running
-// and a SQLite connection open, and a forked child inherits locks it must never touch.
+// Killing must kill descendants (`py -3` execs python.exe): Windows uses a Job object with
+// KILL_ON_JOB_CLOSE, POSIX a process group. POSIX uses posix_spawnp, never fork(), since the
+// app has threads and an open SQLite connection.
 #pragma once
 
 #include <chrono>

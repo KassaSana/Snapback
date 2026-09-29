@@ -48,7 +48,7 @@ TEST_CASE("build_snapback_notification falls back gracefully with no summary") {
     CHECK(notification_payload_is_valid(n));
 }
 
-// Roadmap 2.16. Generic preview copy — what a lock screen is allowed to say.
+// Generic preview copy — what a lock screen is allowed to say.
 
 TEST_CASE("a generic preview names no app, title, file, or summary") {
     // Sentinels rather than realistic strings: a partial leak of "auth.ts" could coincidentally
@@ -114,7 +114,7 @@ TEST_CASE("a detailed preview is the copy this app already sent") {
 }
 
 TEST_CASE("the close-to-tray notice names nothing about the user's work") {
-    // Roadmap 9.15. It rides the same OS notification history and lock screen as everything
+    // It rides the same OS notification history and lock screen as everything
     // else here, so it holds to 2.16's rule even though it has no preview mode: the whole
     // content is that Snapback is still running. It also has to say where to stop it, or the
     // user who wanted to quit is left with a process and no instruction.

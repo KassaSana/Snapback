@@ -1,20 +1,6 @@
-// No-op Tray for platforms without a native implementation (macOS, Linux).
-//
-// Same gap as overlay_stub.cpp: tray.hpp promises a no-op fallback "so the build stays
-// green cross-platform", but `Tray::instance()` was only ever defined in
-// tray_windows.cpp, which CMake adds only under if(WIN32). Linking the desktop app off
-// Windows failed on the undefined symbol.
-//
-// The tray is pure convenience here (show-window / quit shortcuts), so a no-op costs the
-// user nothing they cannot do from the main window. Notifications are the part that
-// actually degrades: show_notification reports false so callers know the OS never saw it.
-// Every current caller treats a notification as a best-effort nudge and ignores the
-// result, which is why a false return is safe rather than a silent lie.
-//
-// macOS now has a real one (tray_macos.mm, ROADMAP 3.1); Linux is still to come
-// (ROADMAP 3.2, libappindicator). The guard excludes both platforms that define
-// Tray::instance() elsewhere, so adding a native backend cannot produce a duplicate
-// symbol even if CMake keeps listing this file.
+// No-op Tray for platforms without a native one (Linux). show_notification and install return
+// false so callers know nothing was shown and do not hide the window into a missing tray.
+// Guarded so it cannot collide with a native Tray::instance().
 #if !defined(_WIN32) && !defined(__APPLE__)
 
 #include "app/tray.hpp"
@@ -24,10 +10,7 @@ namespace {
 
 class NoopTray final : public Tray {
 public:
-    // Callbacks are stored, not wired: there is no menu to fire them. main.cpp keeps
-    // working because quitting and showing the window are both reachable from the UI.
-    // false for the same reason show_notification returns false: there is no icon here, and
-    // saying otherwise would let a caller hide its window into a tray that does not exist.
+    // Callbacks are stored, not wired: there is no menu. false: there is no icon.
     bool install(TrayCallbacks callbacks) override {
         callbacks_ = std::move(callbacks);
         return false;

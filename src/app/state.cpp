@@ -67,41 +67,14 @@ std::int64_t cutoff_unix_ms(int days_ago) {
     return duration_cast<milliseconds>(cutoff.time_since_epoch()).count();
 }
 
-// Roadmap 8.12. The artifact/privacy matrix, written down in one place because it was
-// previously spread across whichever call sites happened to remember.
+// What "delete all activity" removes, and what it deliberately keeps.
 //
-// **Activity-bearing** — a copy of what the user did, and therefore in scope for "delete all
-// activity":
+// Activity-bearing (deleted): exports/training, exports/summaries, exports/personal (contains
+// window titles verbatim), and focoflow.db.pre-v<N>.bak (full database copies from migrations).
 //
-//   exports/training   feature matrices derived from captured input
-//   exports/summaries  aggregate reports over sessions
-//   exports/personal   the readable archive; it contains window titles verbatim
-//   focoflow.db.pre-v<N>.bak   a *complete* copy of the database, written before each
-//                              migration (7.22) and kept indefinitely
-//
-// The last two were both missed. `exports/personal` is the worst of the omissions: it is the
-// most legible copy of the user's history that exists, and the command reported success while
-// leaving it on disk.
-//
-// **Configuration and diagnostics** — deliberately preserved, because erasing activity is not
-// the same request as resetting the app:
-//
-//   settings.json (+ .bak/.tmp)   the user's own choices
-//   model.onnx, model.onnx.previous, model_quality.json, training_repo.txt
-//   snapback.log and its rotations
-//   exports/support               diagnostics bundles
-//   snapback.lock
-//
-// The log is the one genuinely arguable entry, and it decides the support bundle with it. The
-// log records operational events, not captured content — no window titles, no keystrokes —
-// though it can name a session id, which is an identifier rather than activity. It is also the
-// file a user needs *most* right after using a destructive feature. A support bundle is a copy
-// of that log plus health and version, and its own privacy notice states that it contains no
-// database, session history, window titles, or captured input; classifying the bundle as
-// activity while keeping the log it was copied from would be incoherent. Both are kept, and
-// **reported as kept**, so the decision is visible rather than an omission someone has to read
-// the source to find. **8.5**'s threat model owns revisiting it, exactly as it owns the SQLite
-// free-page/WAL question this item defers to it.
+// Configuration and diagnostics (kept, and reported as kept): settings.json (+ .bak/.tmp),
+// model files, training_repo.txt, snapback.log and rotations, exports/support, snapback.lock.
+// The log holds operational events, not captured content, and a support bundle is a copy of it.
 
 // One activity-bearing target and the human name the result reports it under.
 struct ActivityArtifact {
@@ -117,9 +90,8 @@ std::vector<ActivityArtifact> activity_artifacts(const std::filesystem::path& ap
         {app_data_dir / "exports" / "personal", "personal data exports", true},
     };
 
-    // Enumerated rather than derived from the schema version: a database that has been through
-    // two upgrades has two backups, and a build that has since bumped kSchemaVersion would not
-    // know to look for the older one. Anything matching the shape gets removed.
+    // Matched by shape rather than derived from kSchemaVersion: several upgrades leave several
+    // backups.
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator(app_data_dir, error)) {
         const auto name = entry.path().filename().string();
@@ -141,9 +113,7 @@ const char* const kRetainedArtifacts[] = {
 
 }  // namespace
 
-// The threshold lives in two headers for layering reasons — types.hpp cannot include the
-// engine, and idle_detector.hpp must stay dependency-free — so the one place that owns both
-// asserts they agree. Without this, changing one default silently leaves the other behind.
+// The default lives in two headers for layering reasons; keep them in sync.
 static_assert(kDefaultIdleThresholdSecs * 1000 == kDefaultIdleThresholdMs,
               "AppSettings' default idle threshold must match the detector's");
 
@@ -155,8 +125,8 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
       clock_(clock),
       model_deployment_health_(std::move(model_deployment)) {
     if (!app_data_dir_.empty()) {
-        // Pass the logger: 7.19's whole point is that a settings file which failed to parse
-        // used to become defaults with nothing written anywhere.
+        // Pass the logger so a settings file that fails to parse is reported, not silently
+        // reset.
         settings_ = load_app_settings(app_data_dir_, &log());
     }
     // Hydrate persisted live values once at startup so the public live getters can treat
@@ -166,9 +136,8 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     focus_mode_ = settings_.default_focus_mode;
     idle_detector_.set_threshold_ms(settings_.idle_threshold_secs * 1000);
     context_tracker_.set_goal_categories(settings_.goal_categories);
-    // Roadmap 2.13. The timer's rhythm and its position, restored together. A deadline still
-    // in the future resumes; one that passed while the app was closed waits for the user
-    // rather than chaining through phases nobody was present for — see PomodoroTimer::restore.
+    // Restore rhythm and position together. A deadline that passed while closed waits for the
+    // user rather than chaining through phases; see PomodoroTimer::restore.
     pomodoro_ = PomodoroTimer(settings_.pomodoro);
     pomodoro_.restore(settings_.pomodoro_state, now_unix_ms(), steady_now_ms());
     hydrate_active_session_unlocked();
@@ -180,15 +149,8 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
 }
 
 void AppState::hydrate_active_session_unlocked() {
-    // Roadmap 7.25. A restart used to hydrate the active row and stop there: the session came
-    // back, but the *live state belonging to it* did not. Two consequences the user could see.
-    //
-    // The saved focus mode was replaced by the default. Focus mode sets the risk threshold and
-    // the hyperfocus window, so a Deep session silently continued under Normal's rules — the
-    // classifier answering a different question than the one the session was started to ask.
-    //
-    // And `seconds_since_session_start` restarted at zero while the recap beside it kept
-    // reporting hours: one session, two contradictory numbers, one of them a model input.
+    // Restore the live state that belongs to the hydrated session: its focus mode (which sets
+    // the risk threshold and hyperfocus window) and the extractor's session origin.
     if (!active_session_) return;
     focus_mode_ = focus_mode_from_string(active_session_->focus_mode);
     const auto elapsed = storage_.session_elapsed_secs(active_session_->session_id);
@@ -196,13 +158,8 @@ void AppState::hydrate_active_session_unlocked() {
 }
 
 void AppState::hydrate_session_attendance_unlocked() {
-    // Roadmap 7.23. A span still open when the process starts belongs to a process that never
-    // closed it — a crash, a kill, a power loss. Left alone it keeps counting to "now", so an
-    // app that crashed on Friday would report the weekend as attended.
-    //
-    // Attendance restarts from zero rather than being inherited: the previous stretch ended
-    // at whatever the database last saw, and whether the user is here *now* is a question the
-    // idle detector answers on the first tick, not one startup should assume.
+    // A span still open at startup was left by a crash; close it at the session's last activity
+    // so the downtime is not counted as attended. The idle detector decides attendance anew.
     session_attended_ = false;
     committed_session_attended_ = false;
     if (!active_session_) return;
@@ -220,10 +177,6 @@ AppState::~AppState() noexcept {
     stop_engine();
 }
 
-// ADR-0007. `rfc3339_at` and `now_rfc3339` collapse into this: one reading, in the one
-// representation. Formatting moved to `util/time.hpp`, where it belongs -- producing an
-// RFC3339 string is what you do at an edge that shows a person a time, not something a state
-// object does on the way to the database.
 std::int64_t AppState::now_unix_ms() const { return clock().wall_ms(); }
 
 AlertRoute AppState::alert_route_unlocked(AlertEvent event) const {
@@ -232,13 +185,9 @@ AlertRoute AppState::alert_route_unlocked(AlertEvent event) const {
 }
 
 std::int64_t AppState::issue_alert_id_unlocked(AlertEvent event, const AlertRoute& route) {
-    // Requires mutex_. Roadmap 2.16. An id is issued at the moment an alert is *emitted*, not
-    // when its route is computed: a route can be computed and then not emitted, and burning an
-    // id there would retire a click the user never had the chance to make.
-    //
-    // A route with no destination gets no id and clears the slot. That is what stops a click on
-    // a toast raised before quiet hours began from acting after them -- the alert that silenced
-    // it is also the alert that took its predecessor's claim away.
+    // Requires mutex_. Ids are issued at emit time, not route time, so an unemitted alert does
+    // not retire a click. A route with no destination clears the slot, which is what stops a
+    // pre-quiet-hours toast from acting later.
     if (!route.visible() || route.action == AlertAction::None) {
         actionable_alert_ids_[alert_event_index(event)] = 0;
         return 0;
@@ -267,9 +216,7 @@ bool AppState::claim_alert_action(AlertEvent event, std::int64_t alert_id) {
 }
 
 std::int64_t AppState::unix_ms_secs_ago(std::int64_t secs) const {
-    // Roadmap 7.23. A pause must be stamped when the user *stopped*, not when we noticed --
-    // the idle threshold means we notice five minutes late, and stamping "now" would credit
-    // those five minutes as attended on every single pause.
+    // Stamp a pause when the user stopped, not when the idle threshold noticed.
     if (secs <= 0) return now_unix_ms();
     return now_unix_ms() - secs * 1000;
 }
@@ -326,25 +273,15 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
         idle_foreground_context_.reset();
     }
 
-    // Roadmap 7.23 / ADR-0005. This is the action idle_detector.hpp has always documented
-    // ("5 minutes of no input pauses the session", "callers act on the edges, not the level")
-    // and never performed — until now the edges only emitted a UI event.
-    //
-    // Driven by the *level* rather than by `edge`, because attendance changes for reasons an
-    // idle edge cannot express. A process that crashed mid-session reopens with its span
-    // already closed by hydration and no edge on the way; an edge-driven rule would then wait
-    // for the user to go idle and come back before recording another second of attended time.
-    // Comparing "should there be an open span" against "is there one" covers the edges and
-    // those gaps with the same two lines.
-    //
-    // Recorded here rather than acted on here: this runs under mutex_, which is deliberately
-    // in-memory only, so engine_tick performs the write in its storage phase.
+    // Attendance follows the idle *level*, not the edge: a crash reopens with the span already
+    // closed and no edge on the way. Recorded here (under mutex_, in-memory only); engine_tick
+    // writes it in its storage phase.
     const bool should_attend = active_session_.has_value() && !now_idle;
     if (should_attend != session_attended_) {
         if (active_session_) {
-            // Keep the offset until phase 2 can resolve it against Storage's wall clock. Once
-            // resolved, the absolute boundary stays attached to this transition across every
-            // retry instead of sliding forward with the retry time.
+            // Resolved against Storage's clock in phase 2, then kept across retries so the
+            // boundary does
+            // not slide forward.
             pending_span_transitions_.push_back(PendingSpanTransition{
                 ++next_span_transition_id_, active_session_->session_id, should_attend,
                 should_attend ? 0 : idle_detector_.idle_for_ms(now_ms), std::nullopt});
@@ -352,12 +289,8 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
         session_attended_ = should_attend;
     }
 
-    // Roadmap 2.7 / ADR-0005. Watch for sustained work with no session running.
-    // Private mode means "do not record". Prompting someone to start recording while they
-    // have said that is the wrong direction entirely, so the timer does not advance — and it
-    // resets, so turning private mode off does not immediately fire a nudge earned while it
-    // was on. Excluded apps are the same promise scoped to one process: time in Slack must
-    // not earn a "start recording" prompt, and leaving Slack starts a fresh stretch.
+    // Untracked-work nudge (ADR-0005). Private mode and excluded apps reset the stretch rather
+    // than pause it, so leaving them starts fresh.
     const bool in_excluded_app =
         !last_capture_app_.empty() && app_matches_exclusion_unlocked(last_capture_app_);
     if (active_session_ || now_idle || settings_.private_mode || in_excluded_app) {
@@ -370,11 +303,9 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
         const auto minutes = (now_ms - *untracked_since_ms_) / (60 * 1000);
         const bool dismissal_active = now_unix_ms() < settings_.untracked_nudge_until_wall_ms;
         if (!dismissal_active && !untracked_latched_ && minutes >= kUntrackedNudgeMinutes) {
-            // Roadmap 2.16. Latched either way, for the same reason as the hyperfocus nudge:
-            // one stretch earns one prompt, and a quiet hour must not queue one up to fire the
-            // moment it ends. This nudge has no channel preference of its own -- see
-            // AlertEvent in app/alert_routing.hpp -- but exempting it from quiet hours and the
-            // snooze would make both of those a lie.
+            // Latched even when suppressed: one stretch earns one prompt, and quiet hours must
+            // not queue
+            // one to fire when they end.
             untracked_latched_ = true;
             if (alert_route_unlocked(AlertEvent::UntrackedWork).visible()) {
                 untracked_minutes_ = static_cast<std::uint64_t>(minutes);
@@ -386,22 +317,12 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     idle_ = now_idle;
     if (idle_ != was_idle) live_read_dirty_ = true;
 
-    // Hand the idle stretch to the feature extractor as the one IdleEnd event the training
-    // fixtures describe (fixtures/feature_parity: a single idle_end carrying the whole
-    // duration, no idle_start). The extractor has always reset its break clock on such an
-    // event and summed idle_duration_ms into idle_time_30s / idle_event_count_5min -- but
-    // nothing in production ever produced one, so minutes_since_last_break kept counting
-    // through every real break and the hyperfocus nudge could fire on someone who had just
-    // come back from lunch. Synthetic feature tests passed because they fed the event
-    // themselves.
-    //
-    // Stamped with the event clock, not the tick clock: the extractor's windows are trimmed
-    // against event timestamps, and the two clocks are different (GetTickCount64 vs
-    // steady_clock on Windows). Production passes the input that caused the edge because it
-    // now applies the wake transition before processing that input. The test seam can still
-    // drive the older two-call shape, in which compute_event recorded last_event_secs_ first.
-    // Ingested only while a session is running, matching the AFK freeze's rule that features
-    // exist for sessions.
+    // Hand the idle stretch to the feature extractor as one IdleEnd carrying the whole duration
+    // (the shape fixtures/feature_parity describes), so minutes_since_last_break resets on a
+    // real
+    // break. Stamped with the event clock, which the extractor's windows use. Only while a
+    // session
+    // is running.
     const double wake_event_secs = waking_event ? waking_event->timestamp_secs : last_event_secs_;
     if (edge == IdleTransition::WokeUp && active_session_ && wake_event_secs > 0.0) {
         CaptureEvent idle_end;
@@ -450,11 +371,8 @@ PomodoroStatus AppState::start_pomodoro() {
     return start_pomodoro_unlocked(steady_now_ms());
 }
 
-// Roadmap 2.13. Write the timer's position down after every change that moves it.
-//
-// Best-effort by design: a settings file that could not be written must not take the running
-// timer down with it. The user loses the ability to resume across a relaunch, which is the
-// feature; they do not lose the phase they are in, which is the session.
+// Write the timer position after every change. Best-effort: a failed save costs resume-on-
+// relaunch, never the running phase.
 void AppState::persist_pomodoro_unlocked() {
     if (app_data_dir_.empty()) return;
     AppSettings candidate = settings_;
@@ -467,8 +385,8 @@ void AppState::persist_pomodoro_unlocked() {
     }
 }
 
-// The five controls 2.13 asks for, all the same shape: move the timer, write it down, report
-// where it ended up. `apply` runs under mutex_ so status and snapshot describe one instant.
+// Move the timer, persist it, report it. `apply` runs under mutex_ so status and snapshot
+// describe one instant.
 PomodoroStatus AppState::mutate_pomodoro(const std::function<void(std::int64_t)>& apply) {
     std::lock_guard lock(mutex_);
     const auto now = steady_now_ms();
@@ -511,9 +429,7 @@ PomodoroStatus AppState::set_pomodoro_config(const PomodoroConfig& config) {
     std::lock_guard lock(mutex_);
     AppSettings candidate = settings_;
     candidate.pomodoro = config;
-    // A rhythm change takes effect on the phase after this one. Rebuilding the timer would
-    // restart the countdown the user is currently inside, which is not what changing a
-    // preference should do.
+    // Takes effect from the next phase; rebuilding the timer would restart the current one.
     commit_settings_unlocked(std::move(candidate), [this, config] {
         pomodoro_.set_config(config);
     });
@@ -526,12 +442,10 @@ PomodoroStatus AppState::stop_pomodoro() {
     return pomodoro_.status(steady_now_ms());
 }
 
-// Roadmap 2.19. Reads the plan from settings and the actuals from durable spans -- never
-// from session-open duration, prediction rows, or a classifier score, which are the three
-// numbers that look like attendance and are not.
+// Plan from settings, actuals from durable spans -- never from session duration, predictions,
+// or scores.
 AttendedProgress AppState::attended_progress() {
-    // Targets live under mutex_ with the rest of settings; the spans live behind
-    // storage_mutex_. Taken in LockRank order, and the settings copy is released before the
+    // Settings under mutex_, spans under storage_mutex_. Copy settings and release before the
     // storage read so a slow query does not hold the state lock.
     AppSettings snapshot;
     {
@@ -607,30 +521,17 @@ void AppState::start_engine_impl(InputHook* hook) {
     try {
         capture_.start(hook);
         engine_thread_ = std::thread([this] {
-            // True when the last tick stopped draining on a budget. The backlog is then worked
-            // off at full speed across short ticks rather than in one long critical section --
-            // the sleep below is what makes "bounded drain" a pause for other threads instead
-            // of a throughput ceiling.
-            //
-            // It is also part of the exit condition, not just the pacing: an unbounded drain
-            // always left the ring empty, so shutdown persisted everything captured. A bounded
-            // one does not, and stopping the moment the flag flips would silently discard
-            // whatever the last slice did not reach. stop_engine() stops the producer before
-            // joining this thread, so continuing while a backlog remains terminates -- the
-            // queue is finite and nothing is refilling it.
-            //
-            // A do-while, not a while: stop_engine() can flip the flag before this thread is
-            // ever scheduled, and a plain loop would then exit having drained nothing at all
-            // -- losing whatever capture queued in between. One tick always runs.
-            //
-            // The exit condition asks the ring rather than trusting `backlog`, which describes
-            // the tick that has already happened. A thread asleep between ticks when the flag
-            // flips has a stale `false` from before the events arrived, and would exit over a
-            // full queue -- which is precisely what CI caught on macOS.
+            // True when the last tick stopped on a budget; the backlog is then worked off
+            // across short
+            // ticks. On shutdown the loop keeps going while the ring still has events (the
+            // producer is
+            // already stopped, so it terminates). do-while so one tick always runs even if
+            // stop_engine()
+            // flipped the flag first. The exit check asks the ring, not `backlog`, which can be
+            // stale.
             bool backlog = false;
-            // A failed tick is a no-progress attempt from shutdown's point of view. Bound only
-            // consecutive failures, so a healthy drain keeps going regardless of how many
-            // time-limited slices the full ring needs.
+            // Bound consecutive failed ticks only, so a healthy drain of a full ring always
+            // finishes.
             int shutdown_failures = 0;
             constexpr int kMaxShutdownFailures = 64;
             do {
@@ -639,10 +540,7 @@ void AppState::start_engine_impl(InputHook* hook) {
                 try {
                     backlog = engine_tick();
                 } catch (const std::exception& error) {
-                    // A tick that threw may still have left events in the ring (budget cut)
-                    // even though its computed jobs were discarded. Ask the ring so ordinary
-                    // operation keeps draining; shutdown still exits after repeated failures
-                    // when every retry keeps throwing over a non-empty queue.
+                    // A tick that threw may have left events queued; ask the ring.
                     tick_failed = true;
                     backlog = capture_.has_pending_events();
                     try {
@@ -677,10 +575,9 @@ void AppState::start_engine_impl(InputHook* hook) {
                 } else {
                     shutdown_failures = 0;
                 }
-                // Only the shutdown path consults the ring. Pacing stays on `backlog` alone:
-                // an ordinary tick usually leaves a few events queued behind it, and treating
-                // that as urgent would run the loop at 1 ms forever for a handful of
-                // keystrokes.
+                // Only shutdown consults the ring. Pacing uses `backlog`, or a few leftover
+                // keystrokes would
+                // spin the loop at 1 ms.
                 if (stopping && !backlog && !capture_.has_pending_events()) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(
                     (backlog || stopping) ? kEngineBacklogTickIntervalMs
@@ -715,9 +612,7 @@ void AppState::emit_event(const char* event, const std::string& json_payload) {
 
 void AppState::stop_engine() noexcept {
     signal_maintenance([this] { maintenance_stopping_.store(true, std::memory_order_release); });
-    // The engine must not treat an empty ring as final until the producer has joined. A hook
-    // can be between its empty check and its last callback; stopping it first makes the later
-    // queue check a real quiescence barrier.
+    // Stop the producer first so the final empty-ring check is a real quiescence barrier.
     capture_.stop();
     engine_running_.store(false, std::memory_order_relaxed);
     if (engine_thread_.joinable()) engine_thread_.join();
@@ -726,13 +621,8 @@ void AppState::stop_engine() noexcept {
 }
 
 void AppState::close_open_span_on_shutdown() noexcept {
-    // Roadmap 7.23. A clean exit is the last moment we know the user was attending, so the
-    // span is closed here rather than left for the next launch's crash hydration to guess at.
-    // Closing it after the engine thread has joined means nothing can reopen it behind us.
-    //
-    // noexcept and best-effort: this runs on the shutdown path and from the destructor, where
-    // an escaping exception would call std::terminate over a bookkeeping write. A span left
-    // open by a failure here is exactly the case hydration already handles on next start.
+    // Close the open span on clean exit, after the engine has joined. noexcept and best-effort:
+    // a span left open here is what startup hydration already handles.
     try {
         std::lock_guard state_lock(mutex_);
         std::lock_guard store_lock(storage_mutex_);
@@ -762,19 +652,11 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
 
-    // Roadmap 7.25. **Persist first, mutate second.** This function used to change focus mode
-    // and reset the extractor, tracker, and Pomodoro *before* the storage write that can
-    // throw, so a failed insert left the old database session running underneath brand-new
-    // in-memory state — the app believing it was recording a session that does not exist.
-    // Everything above the release() below is undone as a unit on failure; everything after it
-    // is in-memory and cannot fail.
-    //
-    // Roadmap 7.23 / 7.20. Starting a session *replaces* a running one, and
-    // `Storage::create_session` completes it atomically. Its span has to close with it: an
-    // open span on a completed session keeps counting to "now" forever, so a session replaced
-    // weeks ago would report more attended time than it was ever open for. That close belongs
-    // inside the same savepoint — a rolled-back replacement must leave the old session both
-    // running *and* still attended.
+    // Persist first, mutate second: everything before release() below is undone as a unit on
+    // failure; everything after is in-memory and cannot fail. Replacing a running session
+    // closes
+    // its span inside the same savepoint, so a rolled-back replacement leaves the old session
+    // running and attended.
     const std::optional<std::string> replaced =
         active_session_ ? std::optional<std::string>(active_session_->session_id) : std::nullopt;
     maintenance_paused_.store(true, std::memory_order_release);
@@ -795,12 +677,8 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
         throw;
     }
 
-    // Committed; the session exists. Roadmap 7.25: a replaced session gets the same automatic
-    // label an explicitly stopped one does. Replacement used to complete the old row silently,
-    // so the only difference between "I pressed Stop" and "I started something else" was
-    // whether your finished session got a verdict. It stays outside the savepoint and stays
-    // best-effort for the reason the stop path does: a label that could not be written must
-    // not cost you the session it describes.
+    // A replaced session gets the same auto-label as a stopped one. Best-effort, outside the
+    // savepoint.
     if (replaced) save_auto_session_label_unlocked(*replaced);
 
     active_session_ = created;
@@ -809,36 +687,19 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     context_tracker_.reset();
     context_tracker_.set_goal_categories(settings_.goal_categories);
     pomodoro_.reset();
-    // A snapback names a window from the session that just ended, so it cannot survive into
-    // this one. The tracker is reset one line above, which is precisely what makes a surviving
-    // payload dangerous rather than merely stale: "Take me back" would raise the *previous*
-    // session's window and then run dismiss_recovery() against a tracker that never saw it.
-    //
-    // This could not happen while the tick drained the payload as it emitted; keeping it alive
-    // until the user acts is what made an unacted-on card outlive its session. The card is not
-    // reliably dismissed for us either -- the frontend does not clear it on a session change,
-    // and on Linux the stub overlay never fires the auto-dismiss callback at all.
+    // A snapback names a window from the previous session, and the tracker was just reset;
+    // "Take me back" must not act on it.
     clear_snapback_unlocked();
-    // Any span decision still pending belongs to the session this one replaces, and that
-    // session was just completed above. Draining it later would open a span on a COMPLETED
-    // row -- or, for a pause, back-date a close into a session that already has its own
-    // ending. The new session's attendance starts from the span opened with it.
+    // Pending span decisions belong to the session just completed.
     discard_pending_span_unlocked();
-    // Generation fence for queued UI emissions. Deletion already bumps this so a stale
-    // prediction/snapback dispatch cannot land after the row is gone; start and replace must
-    // do the same, or a tick that queued under the previous session can still paint its
-    // card (and raise its overlay) after the user has moved on. Persistence is not fenced
-    // here: jobs already drained still belong to the session they name.
+    // Fence queued UI emissions from the previous session. Persistence is not fenced: drained
+    // jobs still belong to the session they name.
     activity_epoch_.fetch_add(1, std::memory_order_release);
-    // Drop a pending emit only. The cached latest prediction may still name the previous
-    // session (delete_session tests and the live card rely on that) — the epoch bump is
-    // what stops it from being re-dispatched as a fresh event under this generation.
+    // Drop a pending emit only; the cached prediction may still name the previous session.
     prediction_dirty_ = false;
     session_attended_ = true;
     committed_session_attended_ = true;
-    // Pressing Start *is* input. Without this the detector can still be Idle from before the
-    // session existed, and the next tick would read "should not be attended" and immediately
-    // close the span that was just opened.
+    // Pressing Start is input; otherwise a stale Idle state would close the new span at once.
     idle_detector_.on_activity(steady_now_ms());
     last_prediction_secs_ = -1.0;
     reload_app_rules_unlocked();  // pick up any rules edited while idle
@@ -853,20 +714,15 @@ void AppState::stop_session() {
     if (active_session_) {
         const std::string session_id = active_session_->session_id;
         {
-            // Roadmap 7.25. Close the span before ending the session — once ended_at is set,
-            // "the span that is still open" stops being a meaningful thing to hold — and do
-            // both or neither, so a failure cannot leave a completed session still accruing
-            // attended time.
+            // Close the span and end the session together, so a failure cannot leave a
+            // completed session
+            // accruing attended time.
             Storage::Savepoint savepoint(storage_, "app_stop_session");
             storage_.close_session_span_now(session_id);
             storage_.end_session(session_id);
             savepoint.release();
         }
-        // Same drop the by-id overload makes, for the same AUD-04b reason: a span decision
-        // recorded before this Stop now names a session that has ended. Keyed on the id
-        // rather than dropped outright so the two overloads state the same rule -- here the
-        // session is the active one by construction, so the two forms agree, and stating it
-        // by id is what keeps them from drifting again.
+        // Same rule as the by-id overload: drop span decisions for the ended session.
         discard_pending_span_unlocked(session_id);
         save_auto_session_label_unlocked(session_id);
         session_attended_ = false;
@@ -901,15 +757,11 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
         record = storage_.stop_session(session_id);
         savepoint.release();
     }
-    // A decision recorded for this session before the Stop is now describing a session that
-    // no longer exists to attend. Dropped here rather than filtered at the write, so a
-    // stopped session cannot be re-attended by a tick that was already in flight. Stopping
-    // by id is allowed for a session that is not the active one, so this is keyed on the id
-    // rather than on the active-session branch below.
+    // Drop span decisions for this session so an in-flight tick cannot re-attend it. Keyed on
+    // the id because the stopped session need not be the active one.
     discard_pending_span_unlocked(session_id);
 
-    // Idempotent at the storage layer (7.25): a second Stop on an already-completed session
-    // returns the label already written rather than appending a second, contradictory one.
+    // Idempotent at the storage layer: a second Stop returns the existing label.
     save_auto_session_label_unlocked(session_id);
     if (active_session_ && active_session_->session_id == session_id) {
         pomodoro_.reset();
@@ -920,9 +772,8 @@ SessionRecord AppState::stop_session(const std::string& session_id) {
             [this] { maintenance_paused_.store(false, std::memory_order_release); });
         features_.reset_for_session(std::nullopt);
         context_tracker_.reset();
-        // Inside the active-session branch on purpose, unlike the pending-span drop above.
-        // Stopping *some other* session by id must not clear a payload that belongs to the
-        // session still running -- that would silently cancel a live snapback card.
+        // Only in the active-session branch: stopping another session must not cancel a live
+        // card.
         clear_snapback_unlocked();
         activity_epoch_.fetch_add(1, std::memory_order_release);
         prediction_dirty_ = false;
@@ -938,10 +789,8 @@ std::optional<SessionRecord> AppState::get_session(const std::string& session_id
 }
 
 bool AppState::delete_session(const std::string& session_id) {
-    // Same three locks and the same order as delete_all_activity_data, for the same reason:
-    // the activity boundary fences off-lock persistence in engine_tick(), so a tick already
-    // in flight cannot write rows back into a session between the delete and the state
-    // reset. Bumping the epoch also invalidates any event already queued for the UI.
+    // Same locks and order as delete_all_activity_data: the activity boundary fences in-flight
+    // persistence, and the epoch bump invalidates queued UI events.
     std::lock_guard state_lock(mutex_);
     std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
@@ -956,19 +805,15 @@ bool AppState::delete_session(const std::string& session_id) {
     // before this delete and drained after it names a row that is gone.
     discard_pending_span_unlocked(session_id);
 
-    // Deleting the session the engine is currently filling would otherwise leave the app
-    // pointing at a row that no longer exists — the next tick would try to persist against
-    // a missing foreign key, and the UI would keep rendering a session the user just
-    // erased. Reset exactly what stop_session() resets, plus the derived prediction state.
+    // Deleting the session being filled: reset what stop_session() resets, plus prediction
+    // state, so nothing persists against the missing row.
     if (active_session_ && active_session_->session_id == session_id) {
-        // Queued events were captured *for the session being erased*, so they go with it.
-        // Only in this branch: deleting some other session leaves a queue that belongs to the
-        // session the user is still running, and that queue must survive.
+        // Queued events belong to the erased session. Only here: another session's deletion
+        // must
+        // leave the live queue alone.
         capture_.discard_pending_events();
         pomodoro_.reset();
-        // Its spans went with the row, so there is nothing left to close and nothing to
-        // reconcile against. Leaving this true would make the next tick's level check see a
-        // change that is not there.
+        // Its spans went with the row; nothing left to close.
         session_attended_ = false;
         committed_session_attended_ = false;
         active_session_.reset();
@@ -1022,13 +867,8 @@ HealthStatus AppState::health() const {
         h.last_prediction_age_secs = static_cast<double>(std::max<std::int64_t>(
             0, steady_now_ms() - *live->last_prediction_at_ms)) / 1000.0;
     }
-    // AUD-19 / P0-08. Only the first two values mean "no prediction was computed":
-    // `is_private_event_unlocked` returns early in compute_event, and the AFK freeze bails
-    // before `classifier_.predict()`. Running without a session is deliberately *not*
-    // suppression — the Now surface previews live scores so the untracked nudge has something
-    // to react to before the user hits record. What the missing session costs is persistence
-    // (`persist()` early-returns on an empty session_id), so the value names that, rather than
-    // claiming a prediction the engine is in fact still producing.
+    // Only private mode and the AFK freeze skip prediction. Without a session predictions still
+    // run (the Now surface previews them); only persistence stops, so that is what's reported.
     h.prediction_suppression_reason = live->private_mode
                                           ? "private_mode"
                                           : live->idle ? "idle"
@@ -1046,9 +886,7 @@ HealthStatus AppState::health() const {
 }
 
 RuntimeMetrics AppState::runtime_metrics() const {
-    // Roadmap 14.11. Every figure here is a relaxed atomic read or an OS call; nothing on
-    // this path takes a lock, because `health()` is what a stalled app is asked for and a
-    // diagnostic that blocks is no diagnostic.
+    // Relaxed atomics and OS calls only: health() is what a stalled app is asked for.
     RuntimeMetrics out;
     out.engine_wakeups = engine_wakeups();
     out.process_cpu_ms = process_cpu_ms();
@@ -1072,11 +910,8 @@ RuntimeMetrics AppState::runtime_metrics() const {
 }
 
 SqliteBusySnapshot AppState::storage_busy_stats() const {
-    // Deliberately without storage_mutex_. The counters are atomics at a stable address that
-    // nothing reassigns for this AppState's lifetime, so the read is safe -- and taking the
-    // lock would mean a diagnostics read could queue behind a multi-second query, which is
-    // the exact pathology these numbers exist to expose. A diagnostic that participates in
-    // the contention it is measuring reports on itself.
+    // No storage_mutex_: the counters are atomics with a stable address, and a diagnostic must
+    // not queue behind the contention it measures.
     return storage_.busy_stats();
 }
 
@@ -1116,11 +951,8 @@ void AppState::dismiss_snapback() {
 }
 
 FocusTargetResult AppState::restore_snapback_target() {
-    // Read the target, attempt the activation, and only then decide what to keep. This used
-    // to clear the payload before calling focus_window(), so a failed activation -- the
-    // window closed, the platform stub, a title that no longer matches -- also destroyed the
-    // only copy of what the user was trying to get back to. The frontend then had nothing to
-    // retry against and no reason to show.
+    // Read the target, attempt activation, and only then decide what to keep, so a failed
+    // activation leaves something to retry.
     std::string app_name;
     std::string window_title;
     {
@@ -1140,12 +972,9 @@ FocusTargetResult AppState::restore_snapback_target() {
 
     {
         std::lock_guard lock(mutex_);
-        // The tracker leaves Recovering on both branches. dismiss_recovery() is its *only*
-        // exit, and a failed activation is still the user acting on the card; leaving it
-        // latched would silently disable every later snapback this session (the failure
-        // mode the suppression path in engine_tick documents). What differs is the payload:
-        // a successful return has nothing left to point at, a failed one keeps its target so
-        // "Take me back" can be tried again. The next snapback replaces it either way.
+        // The tracker leaves Recovering either way (dismiss_recovery() is its only exit). A
+        // failed
+        // activation keeps the payload so "Take me back" can be retried.
         if (result.ok) clear_snapback_unlocked();
         context_tracker_.dismiss_recovery(last_event_secs_);
         live_read_dirty_ = true;
@@ -1166,7 +995,7 @@ std::optional<FocusLabel> AppState::session_auto_label(const std::string& sessio
 
 std::vector<FocusCurvePoint> AppState::session_focus_curve(const std::string& session_id,
                                                           std::size_t buckets) {
-    // A Review read, so it yields to a waiting persist like the other five (14.1).
+    // A Review read: yields to a waiting persist.
     storage_priority_.yield_to_writers();
     std::lock_guard lock(storage_mutex_);
     return storage_.session_focus_curve(session_id, buckets);
@@ -1181,19 +1010,13 @@ std::optional<SnapbackEpisode> AppState::session_longest_snapback(const std::str
 std::optional<SessionRecord> AppState::save_session_reflection(
     const std::string& session_id, const std::optional<std::string>& done,
     const std::optional<std::string>& next_step) {
-    // Mixed: writes storage, then repairs in-memory state. Both locks, in LockRank order.
-    // storage_mutex_ alone would be enough to make the write safe and still leave the bug:
-    // active_session_ caches the row, so reflecting on the running session would keep serving
-    // a copy without the answer the user just saved until the next restart.
+    // Writes storage, then updates the cached active session. Both locks, in LockRank order.
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
     auto saved = storage_.save_session_reflection(session_id, done, next_step);
     if (saved && active_session_ && active_session_->session_id == session_id) {
         active_session_ = saved;
-        // Updating the cache is not enough on its own: active_session() is served from the
-        // published immutable snapshot, which is only rebuilt when this flag says the state
-        // behind it moved. Without it the UI shows the field empty right after the user
-        // filled it in, and keeps doing so until something unrelated dirties the snapshot.
+        // Republish the snapshot active_session() reads from.
         live_read_dirty_ = true;
         publish_live_read_unlocked();
     }
@@ -1208,15 +1031,10 @@ std::vector<PredictionRecord> AppState::prediction_history(std::size_t limit) {
 FocusSummary AppState::focus_summary_for_window(const std::string& window,
                                                 const std::optional<std::string>& since) {
     const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
-    // Roadmap 7.33. The same aggregate `summary_report` reads, over the same cutoff, so the
-    // two "Longest focus" tiles agree by construction rather than by coincidence. This used
-    // to materialise the newest 50,000 rows and fold them with `summarize_predictions`; at
-    // one prediction per attended second that is about fourteen hours, so a 7-day window
-    // silently reported the longest run inside the newest fourteen. One query answers the
-    // lock-hold worry the cap was reaching for without trading a stall for a wrong number.
+    // Same aggregate and cutoff as summary_report, so both "Longest focus" figures agree.
     Storage::PredictionStats stats;
     {
-        storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
+        storage_priority_.yield_to_writers();  // a waiting persist goes first
         std::lock_guard lock(storage_mutex_);
         stats = storage_.prediction_stats(cutoff);
     }
@@ -1236,7 +1054,7 @@ FocusSummary AppState::focus_summary_for_window(const std::string& window,
 std::vector<SessionSummary> AppState::session_history_for_window(
     const std::string& window, const std::optional<std::string>& since) {
     const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
-    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
+    storage_priority_.yield_to_writers();  // a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     return storage_.recent_session_summaries(500, cutoff);
 }
@@ -1255,20 +1073,13 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
     std::lock_guard activity_lock(activity_boundary_mutex_);
     std::lock_guard store_lock(storage_mutex_);
     activity_epoch_.fetch_add(1, std::memory_order_release);
-    // The epoch fences rows this tick was about to write; it does not touch what capture has
-    // already queued. Those events were recorded before the user asked for deletion, so a
-    // later tick filing them -- into a session started after this point, no less -- would put
-    // pre-deletion window titles back on disk. Deleting activity means deleting the activity
-    // still in flight too. (Bounded drop: see CaptureThread::discard_pending_events.)
+    // Drop events already queued: they were captured before the delete and must not be filed
+    // afterwards. (Bounded; see CaptureThread::discard_pending_events.)
     capture_.discard_pending_events();
 
     ActivityDeletionResult result;
 
-    // Roadmap 8.12. **The source first, then every replica.** This used to delete the exports
-    // first and throw on the first failure, so one stale file held open by another program
-    // meant the database was never cleared at all — the user asked to erase their history,
-    // was shown an error, and kept everything. The authoritative copy now goes first, and
-    // every replica is attempted regardless of what happened to the one before it.
+    // Database first, then every replica, each attempted regardless of earlier failures.
     storage_.delete_all_activity_data();
     result.deleted.emplace_back("your recorded sessions, predictions, and captured windows");
 
@@ -1283,9 +1094,7 @@ ActivityDeletionResult AppState::delete_all_activity_data() {
         if (error) {
             result.failed.emplace_back(std::string(artifact.label) + " (" + error.message() + ")");
         } else {
-            // Absence counts as removed: an export that was never created is not a copy of
-            // anything, and listing it as a failure would make an ordinary success read as a
-            // partial one.
+            // An export that never existed counts as removed.
             result.deleted.emplace_back(artifact.label);
         }
     }
@@ -1331,27 +1140,9 @@ ExportTrainingResult AppState::export_training_data(
 
 PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path& out_dir,
                                                      std::size_t page_size) {
-    // Roadmap 9.16. **The archive is streamed, not built.**
-    //
-    // This used to hard-cap at 200 sessions and 500 windows per session while the document
-    // itself said it contained "every session". Worse, the `truncated` flag it reported came
-    // from the session cap alone, so a file that dropped the 501st window of an included
-    // session was reported to the UI as complete. The user was told they were holding
-    // everything, twice, by two different mechanisms.
-    //
-    // Raising the caps is not the fix: a complete export of a long history is unbounded, and
-    // materializing it under `storage_mutex_` is the stall-becomes-dropped-events path 7.12
-    // exists to avoid. So rows are read a page at a time, each page under the lock, and each
-    // page is written and released before the next is fetched. Peak memory is one page, not
-    // one history.
-    //
-    // Pages are **keyset** cursors rather than OFFSET. OFFSET re-scans from the start on every
-    // page and, worse, silently skips or repeats rows when the table changes underneath it —
-    // the export would corrupt itself simply because the engine kept recording during it.
-    //
-    // Progress reporting, cancellation, and atomic temp -> final publication are deliberately
-    // **not** here: they belong to 14.6, and a half-built version of them would be harder to
-    // replace than none.
+    // Streamed, not built: rows are read a page at a time under the lock and written before
+    // the next page, so peak memory is one page. Keyset cursors rather than OFFSET, which skips
+    // or repeats rows while the engine keeps recording.
     if (page_size == 0) page_size = 1;
 
     PersonalArchive archive;
@@ -1457,9 +1248,7 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
         emit("No sessions have been recorded yet, so there is nothing here about you.\n");
     }
 
-    // Nothing is capped, so nothing is omitted. The fields are still computed rather than
-    // assumed zero, because `truncated()` is derived from them and a reintroduced cap must
-    // show up in the footer instead of being silently absorbed.
+    // Computed rather than assumed zero, so a reintroduced cap shows up in the footer.
     result.checksum = archive_checksum(body);
     out << render_archive_footer(result);
     if (!out) throw std::runtime_error("failed to write the data export");
@@ -1472,21 +1261,10 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
 
 void AppState::commit_settings_unlocked(AppSettings candidate,
                                         const std::function<void()>& publish) {
-    // Roadmap 7.26. **Persist the candidate, then commit and publish it.** Requires mutex_.
-    //
-    // Every setter used to mutate `settings_` — and in some cases live behaviour — *before*
-    // `save_app_settings` ran. If that write threw because the directory was read-only or the
-    // disk was full, IPC reported failure and the process kept the new behaviour anyway.
-    //
-    // The privacy case is what gives this teeth: a failed request to turn private mode **off**
-    // resumed recording while the UI said the change had failed. The user's belief about
-    // whether they were being recorded and the app's behaviour disagreed, in the direction
-    // that matters.
-    //
-    // The write goes first and takes a *copy*, so a throw here leaves both `settings_` and
-    // every live field exactly as they were. Nothing below it can fail: assignment of an
-    // already-constructed value, and a publish step whose only job is to copy committed
-    // settings into live state.
+    // Persist the candidate, then commit and publish it. Requires mutex_. The write takes a
+    // copy, so a throw leaves settings_ and every live field untouched -- e.g. a failed
+    // "private
+    // mode off" must not resume recording. Nothing after the write can fail.
     if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, candidate);
     settings_ = std::move(candidate);
     if (publish) publish();
@@ -1504,10 +1282,7 @@ bool AppState::claim_tray_close_notice() {
     if (settings_.tray_close_notice_shown) return false;
     AppSettings candidate = settings_;
     candidate.tray_close_notice_shown = true;
-    // Persist-before-mutate, like every other setter here (7.26). If the write throws, the flag
-    // stays false and the notice is shown again on the next close -- twice is a small
-    // annoyance, whereas returning true after failing to record it means the one explanation
-    // this feature gets is spent on a run nothing remembered.
+    // If the write throws, the notice shows again next close rather than being spent.
     commit_settings_unlocked(std::move(candidate), nullptr);
     return true;
 }
@@ -1523,8 +1298,7 @@ PrivacySettings AppState::privacy_settings() const {
 }
 
 void AppState::set_idle_threshold_secs(std::int64_t seconds) {
-    // Roadmap 7.23. Rejected before anything is mutated, so a bad value leaves both the live
-    // detector and settings.json exactly as they were.
+    // Validated before anything is mutated.
     if (seconds < kMinIdleThresholdSecs || seconds > kMaxIdleThresholdSecs) {
         throw std::runtime_error("idle threshold must be between " +
                                  std::to_string(kMinIdleThresholdSecs) + " and " +
@@ -1534,21 +1308,16 @@ void AppState::set_idle_threshold_secs(std::int64_t seconds) {
     AppSettings candidate = settings_;
     candidate.idle_threshold_secs = seconds;
     commit_settings_unlocked(std::move(candidate), [this, seconds] {
-        // Applied to the running detector, not just stored: a threshold that takes effect on
-        // the next launch is not a setting, it is a note to self. After the commit, so a
-        // failed save cannot leave the detector running on a value that was never written.
+        // Applied to the running detector, after the commit.
         idle_detector_.set_threshold_ms(seconds * 1000);
     });
 }
 
-// Roadmap 2.10. Lapses a timed pause whose deadline has passed, and reports whether it did.
-// Requires mutex_.
+// Lapses a timed pause whose deadline has passed; reports whether it did. Requires mutex_.
 bool AppState::lapse_private_pause_unlocked() {
     if (!settings_.private_mode || settings_.private_until_wall_ms == 0) return false;
     if (now_unix_ms() < settings_.private_until_wall_ms) return false;
-    // The deadline is the promise: when it passes, recording resumes and the setting must say
-    // so. Leaving private_mode true with a stale deadline would keep the app paused forever
-    // after one timed pause; clearing the deadline but not the mode would do the opposite.
+    // Clear the mode and the deadline together.
     AppSettings candidate = settings_;
     candidate.private_mode = false;
     candidate.private_until_wall_ms = 0;
@@ -1573,8 +1342,7 @@ RecordingStatus AppState::recording_status() {
         std::lock_guard lock(mutex_);
         lapse_private_pause_unlocked();
 
-        // Same sources health() reads, deliberately: two descriptions of whether capture works
-        // that can disagree is the defect 2.10 is about, one layer down.
+        // Same sources as health(), so the two cannot disagree.
         inputs.capture_failed = capture_.failed();
         inputs.private_mode = settings_.private_mode;
         inputs.has_active_session = active_session_.has_value();
@@ -1591,17 +1359,13 @@ RecordingStatus AppState::recording_status() {
 
     RecordingStatus status;
     status.state = derive_recording_state(inputs);
-    // The countdown is a fact about the *pause*, not about the state that outranked it. This
-    // used to be gated on `status.state == PausedPrivate`, which meant a timed pause running
-    // while capture was broken reported zero time left: Blocked outranks PausedPrivate, so the
-    // branch never ran even though the deadline was real and still approaching. The user would
-    // fix their permissions and find the countdown had apparently restarted.
+    // The countdown describes the pause even when a higher-priority state (e.g. Blocked) is
+    // shown.
     if (inputs.private_mode && private_until_wall_ms > 0) {
         const auto left = private_until_wall_ms - now_unix_ms();
         status.private_pause_remaining_ms = left > 0 ? left : 0;
     }
-    // Roadmap 2.16. Reported alongside `state`, never instead of it: a snooze is a fact about
-    // delivery, and the state it sits beside still says Recording.
+    // Reported alongside `state`: a snooze is about delivery, not recording.
     if (snoozed_until_wall_ms > 0) {
         const auto left = snoozed_until_wall_ms - now_unix_ms();
         status.alert_snooze_remaining_ms = left > 0 ? left : 0;
@@ -1609,12 +1373,8 @@ RecordingStatus AppState::recording_status() {
     return status;
 }
 
-// Every write that changes the answer to "am I being recorded?" announces the new answer.
-// The tray calls pause/snooze/resume directly on this object and the page never sees the
-// command, so without this the header keeps the state it last asked for until the next
-// session change -- "Paused privately" long after the tray resumed, or "Recording" during a
-// pause the user just started from the tray. The payload is the same shape
-// get_recording_status returns, so the page applies it instead of asking again.
+// Every write that changes "am I being recorded?" announces the new answer, since tray
+// actions bypass the page. Same shape as get_recording_status.
 RecordingStatus AppState::announce_recording_status() {
     RecordingStatus status = recording_status();
     emit_event(events::kRecordingStatus, dump_json(nlohmann::json(status)));
@@ -1627,21 +1387,17 @@ RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
         std::lock_guard lock(mutex_);
         AppSettings candidate = settings_;
         candidate.private_mode = true;
-        // 0 means indefinite, which is what the Settings toggle has always done. A timed pause
-        // stores the instant it ends rather than a duration, so closing the window does not
-        // restart the clock.
+        // 0 means indefinite. A timed pause stores its end instant, so closing the window does
+        // not
+        // restart it.
         candidate.private_until_wall_ms = minutes > 0 ? now_unix_ms() + minutes * 60 * 1000 : 0;
         commit_settings_unlocked(std::move(candidate), [] {});
     }
     return announce_recording_status();
 }
 
-// Roadmap 2.16. The tray's "Snooze alerts for 30 minutes", and its undo.
-//
-// Deliberately *not* modelled on lapse_private_pause_unlocked: an expired snooze needs no
-// repair write. route_alert already reads a passed deadline as lapsed, so a stale nonzero
-// value is inert, and rewriting settings.json from the engine tick to tidy a field nobody
-// reads would be churn on the user's disk for no observable difference.
+// Snooze and its undo. An expired snooze needs no repair write: route_alert already treats a
+// passed deadline as lapsed.
 RecordingStatus AppState::snooze_alerts_for(std::int64_t minutes) {
     if (minutes < 0) throw std::runtime_error("an alert snooze cannot be negative");
     if (minutes > kMaxAlertSnoozeMins) {
@@ -1671,9 +1427,7 @@ AppSettings AppState::set_alert_delivery(AlertDeliverySettings alerts) {
     }
     std::lock_guard lock(mutex_);
     AppSettings candidate = settings_;
-    // The deadline is carried over from the live settings, not taken from the caller. A
-    // Settings save is about preferences; the snooze belongs to the tray action that started
-    // it, and letting a form post overwrite it would make "Resume alerts" mean two things.
+    // The snooze deadline is kept from live settings; a Settings save must not overwrite it.
     alerts.snoozed_until_wall_ms = settings_.alerts.snoozed_until_wall_ms;
     candidate.alerts = std::move(alerts);
     commit_settings_unlocked(std::move(candidate), [] {});
@@ -1746,7 +1500,7 @@ void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
 AnalyticsSummary AppState::analytics(const std::string& window,
                                      const std::optional<std::string>& since) const {
     const auto cutoff = review_window_cutoff(window, since, cutoff_unix_ms);
-    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
+    storage_priority_.yield_to_writers();  // a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     AnalyticsSummary summary;
     const auto stats = const_cast<Storage&>(storage_).prediction_stats(cutoff);
@@ -1777,10 +1531,8 @@ DailySummary AppState::daily_summary(const std::string& window,
     out.window = window;
     out.generated_at_ms = now_unix_ms();
 
-    // Every request is bounded by the retention window: past it, predictions and snapshots
-    // are pruned, so a longer day axis would be rows of near-zeros plus an unbounded
-    // recursive CTE (the class of surprise AUD-08 documents). `capped` tells the UI the
-    // range was cut short rather than genuinely empty.
+    // Bounded by the retention window (older rows are pruned); `capped` says the range was cut
+    // short rather than empty.
     const std::int64_t retention_floor_ms =
         out.generated_at_ms
         - static_cast<std::int64_t>(kDefaultRetentionDays) * 24 * 60 * 60 * 1000;
@@ -1791,7 +1543,7 @@ DailySummary AppState::daily_summary(const std::string& window,
         since_ms = *cutoff;
     }
 
-    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
+    storage_priority_.yield_to_writers();  // a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     out.days = const_cast<Storage&>(storage_).daily_summary(out.generated_at_ms, since_ms);
     return out;
@@ -1801,16 +1553,14 @@ SummaryReport AppState::summary_report(const std::string& window,
                                        const std::optional<std::string>& since) const {
     const auto cutoff_opt = review_window_cutoff(window, since, cutoff_unix_ms);
 
-    // Roadmap 2.19. Targets live with settings; spans live in storage. Same lock discipline as
-    // attended_progress(): copy settings, release, then read storage so a slow query does not
-    // hold the state lock.
+    // Same lock discipline as attended_progress().
     AppSettings snapshot;
     {
         std::lock_guard lock(mutex_);
         snapshot = settings_;
     }
 
-    storage_priority_.yield_to_writers();  // Roadmap 14.1: a waiting persist goes first
+    storage_priority_.yield_to_writers();  // a waiting persist goes first
     std::lock_guard lock(storage_mutex_);
     SummaryReport report;
     report.window = window;
@@ -1825,8 +1575,6 @@ SummaryReport AppState::summary_report(const std::string& window,
             static_cast<double>(stats.distracted_count) / static_cast<double>(report.sample_count);
     }
 
-    // 0 is the epoch, which is before any session this app could have recorded. It used to be
-    // spelled "1970-01-01T00:00:00Z" for the same reason.
     const std::int64_t session_floor_ms = cutoff_opt.value_or(0);
     const auto totals = const_cast<Storage&>(storage_).session_window_totals(
         kSummarySessionLimit, session_floor_ms);
@@ -1837,9 +1585,7 @@ SummaryReport AppState::summary_report(const std::string& window,
     report.sessions_truncated = totals.limit_reached;
     const auto context_counts = const_cast<Storage&>(storage_).context_app_counts(
         kSummarySessionLimit, 200, cutoff_opt);
-    // Highest count wins, ties broken by the lexicographically smaller app name — same rule
-    // as before, but tracking the running best directly instead of re-looking-it-up, since
-    // the counts now arrive in a const map.
+    // Highest count wins; ties go to the lexicographically smaller name.
     std::size_t top_count = 0;
     for (const auto& [app, count] : context_counts) {
         if (report.top_context_app.empty() || count > top_count ||
@@ -1849,9 +1595,8 @@ SummaryReport AppState::summary_report(const std::string& window,
         }
     }
 
-    // Planned-versus-actual for the Review range. today/7d reuse the calendar day/week helpers
-    // so this card agrees with the Now surface; longer/custom ranges report attended only —
-    // there is no daily/weekly plan that matches those populations without inventing one.
+    // today/7d reuse the calendar day/week helpers so this agrees with the Now surface; other
+    // ranges report attended only.
     const auto now = report.generated_at_ms;
     if (window == "day" || window == "today") {
         report.attended_seconds =
@@ -1980,9 +1725,7 @@ PermissionStatus AppState::refresh_permissions() {
 }
 
 PermissionStatus AppState::request_permissions() {
-    // Prompt and re-probe without mutex_. The macOS dialog is modal and can take seconds;
-    // holding the state lock across it would stall the engine drain for the whole sheet.
-    // CaptureThread owns its own synchronisation for the fields the probe reads.
+    // Without mutex_: the macOS dialog is modal and can take seconds.
     request_capture_permissions();
     return check_capture_permissions(capture_.running(), capture_.input_observed());
 }
@@ -2155,8 +1898,7 @@ bool AppState::engine_tick() {
     AlertRoute pomodoro_route;
     AlertRoute hyper_route;
     AlertRoute untracked_route;
-    // Roadmap 2.16. Issued beside each route in phase 1 under mutex_, carried out to phase 3,
-    // which holds no lock. 0 means this alert is not clickable.
+    // Issued beside each route in phase 1, used in phase 3. 0 means not clickable.
     std::int64_t snap_alert_id = 0;
     std::int64_t pomodoro_alert_id = 0;
     std::int64_t hyper_alert_id = 0;
@@ -2166,9 +1908,7 @@ bool AppState::engine_tick() {
     std::optional<std::uint64_t> untracked_to_emit;
     std::vector<PersistJob> jobs;
     IdleTransition idle_edge = IdleTransition::None;
-    // Roadmap 7.23. The span write cannot happen in phase 1: that phase holds mutex_ and is
-    // deliberately in-memory only, so a disk write there would block every UI read. Phase 1
-    // decides *what* to record; phase 2 records it under storage_mutex_.
+    // Decided in phase 1, written in phase 2 under storage_mutex_.
     std::vector<PendingSpanTransition> span_transitions;
     // The tick only schedules retention. An owned worker performs bounded storage batches.
     bool prune_due = false;
@@ -2184,12 +1924,9 @@ bool AppState::engine_tick() {
         std::lock_guard lock(mutex_);
         tick_activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         bool had_input = false;
-        // Bounded on purpose. `while (capture_.next_event())` only ends when the consumer
-        // outruns the producer, so under sustained input this loop -- and mutex_ with it --
-        // was held for as long as the typing lasted, starving every command thread and
-        // deferring the idle poll, the persistence flush, and the UI emissions below.
-        // Leftover events stay in the ring (single consumer, so nobody else takes them) and
-        // are picked up by the next tick, which follows in kEngineBacklogTickIntervalMs.
+        // Bounded so sustained input cannot hold mutex_ indefinitely. Leftovers stay in the
+        // ring for
+        // the next tick.
         std::size_t drained = 0;
         const auto drain_started_ms = steady_now_ms();
         while (drained < kEngineDrainBudget) {
@@ -2198,42 +1935,34 @@ bool AppState::engine_tick() {
             ++drained;
             if (is_input_event(ev->event_type)) {
                 had_input = true;
-                // Apply the wake edge before compute_event so the event that caused it is not
-                // discarded by the AFK freeze. Preserve permitted context first: the focus
-                // event may have arrived earlier in this same drain, while an input event also
-                // carries a materialized snapshot when no separate focus edge was observed.
+                // Apply the wake edge before compute_event so the waking event is not dropped
+                // by the AFK
+                // freeze.
                 if (idle_) {
                     if (!is_private_event_unlocked(*ev)) idle_foreground_context_ = *ev;
                     idle_edge = update_idle_unlocked(steady_now_ms(), true, &*ev);
                 }
             }
             if (auto job = compute_event(*ev)) jobs.push_back(std::move(*job));
-            // The count budget is the primary bound and needs no clock, which keeps ticks
-            // driven by a ManualClock deterministic. This second bound covers the case where
-            // per-event work is heavy enough that 2,048 of them is already too long.
+            // The count budget needs no clock (keeps ManualClock ticks deterministic); this
+            // covers heavy
+            // per-event work.
             if (drained % kEngineDrainClockCheckStride == 0 &&
                 steady_now_ms() - drain_started_ms >= kEngineDrainBudgetMs) {
                 drain_truncated = true;
                 break;
             }
         }
-        // Spending the budget is not the same as leaving work behind: a burst of exactly
-        // kEngineDrainBudget events is fully consumed, and reporting a backlog for it would
-        // buy an extra 1 ms tick and a log line describing a queue that is empty. Ask the ring
-        // instead of inferring it from the counter.
+        // Ask the ring rather than inferring a backlog from the counter.
         if (drained >= kEngineDrainBudget && capture_.has_pending_events()) {
             drain_truncated = true;
         }
         if (drain_truncated) {
-            // Throttled: while a backlog lasts this tick runs every millisecond, and one line
-            // per tick would bury the log it is meant to explain. The decision is made here,
-            // under mutex_; the write happens after the lock is released, because the logger
-            // formats and writes to its sink synchronously and a slow disk would otherwise
-            // extend exactly the critical section this function exists to bound.
+            // Throttled. Decided under mutex_, written after release so a slow log sink does
+            // not extend
+            // the critical section.
             const auto log_now_ms = steady_now_ms();
-            // Not a zero sentinel: steady_ms() is relative to an arbitrary epoch, so 0 is a
-            // legitimate reading (ManualClock is routinely set to it), and comparing against
-            // it would log on every tick for as long as the clock sat there.
+            // 0 is a valid steady-clock reading, hence the optional.
             if (!last_drain_backlog_log_ms_ ||
                 log_now_ms - *last_drain_backlog_log_ms_ >= kEngineBacklogLogIntervalMs) {
                 last_drain_backlog_log_ms_ = log_now_ms;
@@ -2245,9 +1974,7 @@ bool AppState::engine_tick() {
         const auto now_ms = steady_now_ms();
         const auto final_idle_edge = update_idle_unlocked(now_ms, had_input);
         if (final_idle_edge != IdleTransition::None) idle_edge = final_idle_edge;
-        // Snapshot without consuming. A transaction failure must leave every transition in
-        // the queue, and an edge appended while phase 2 is writing must remain behind this
-        // batch for the next tick.
+        // Copy without consuming: a failed transaction must leave the queue intact.
         span_transitions.assign(pending_span_transitions_.begin(),
                                 pending_span_transitions_.end());
         if (now_ms - last_prune_steady_ms_.load(std::memory_order_acquire) >=
@@ -2256,8 +1983,7 @@ bool AppState::engine_tick() {
         }
         if (pomodoro_.poll(now_ms)) {
             pomodoro_to_emit = pomodoro_.status(now_ms);
-            // Roadmap 2.16. Computed here, under mutex_, because settings_ is guarded by it
-            // and phase 3 below holds no lock.
+            // Computed under mutex_ because settings_ needs it; phase 3 holds no lock.
             pomodoro_route = alert_route_unlocked(AlertEvent::Pomodoro);
             pomodoro_alert_id = issue_alert_id_unlocked(AlertEvent::Pomodoro, pomodoro_route);
         }
@@ -2267,15 +1993,9 @@ bool AppState::engine_tick() {
             pred_to_emit = latest_prediction_;
             prediction_dirty_ = false;
         }
-        // Emit once, but keep the payload: "Take me back" reads it when the user clicks,
-        // which is seconds after this tick. Draining here is what made restore a no-op --
-        // the card stayed on screen long after the field behind it was empty. The payload
-        // is cleared by dismiss/restore, or replaced by the next snapback.
-        //
-        // Only arm the one-shot emit when a listener can receive it. The engine starts
-        // before main installs the emit hook; marking emitted with a null hook permanently
-        // suppressed the overlay for that snapback (the payload stayed for restore, but no
-        // event ever reached the webview or native overlay).
+        // Emit once but keep the payload: "Take me back" reads it later. Only arm the one-shot
+        // once a
+        // listener exists; the engine starts before main installs the hook.
         if (emit_to_frontend && latest_snapback_ && !snapback_emitted_) {
             snap_to_emit = *latest_snapback_;
             snap_route = latest_snapback_route_;
@@ -2284,10 +2004,7 @@ bool AppState::engine_tick() {
         if (hyperfocus_minutes_) {
             hyper_to_emit = hyperfocus_minutes_;
             hyperfocus_minutes_.reset();
-            // Roadmap 2.16. Computed under mutex_, like the Pomodoro route above. The latch
-            // already refused to set the minutes at all when the route was suppressed, so this
-            // is always visible() -- what it carries that matters here is *which* channel and
-            // which preview mode.
+            // Computed under mutex_. Always visible here: the latch refused suppressed nudges.
             hyper_route = alert_route_unlocked(AlertEvent::Hyperfocus);
             hyper_alert_id = issue_alert_id_unlocked(AlertEvent::Hyperfocus, hyper_route);
         }
@@ -2316,8 +2033,7 @@ bool AppState::engine_tick() {
             return drain_truncated;
         }
         if (!jobs.empty() || !span_transitions.empty() || snap_to_emit) {
-            // Roadmap 14.1. Announced only while waiting: once the lock is held, a reader
-            // blocks on the mutex for exactly the write, and yielding would add nothing.
+            // Announced only while waiting for the lock.
             WriterPriority::Announce announce(storage_priority_);
             std::lock_guard lock(storage_mutex_);
             announce.release();
@@ -2346,9 +2062,8 @@ bool AppState::engine_tick() {
             txn.commit();
         }
     } catch (...) {
-        // Store timestamps only after releasing the storage and activity locks; taking the
-        // state lock inside either would invert the ranked order. The decisions themselves
-        // were never removed, so this only enriches them for the next attempt.
+        // Take the state lock only after releasing the storage and activity locks (ranked
+        // order).
         std::lock_guard lock(mutex_);
         for (const auto& attempted : span_transitions) {
             const auto pending = std::find_if(
@@ -2399,28 +2114,24 @@ bool AppState::engine_tick() {
                          tick_activity_epoch);
     }
     if (snap_to_emit) {
-        // Roadmap 2.16. The route rides on the payload so the delivery layer reads a flag
-        // instead of re-deriving policy. Always visible() here -- a suppressed snapback never
-        // reaches this block, it is dropped at the latch where it can also be acknowledged.
+        // The route rides on the payload so delivery reads a flag instead of re-deriving
+        // policy.
         auto payload = nlohmann::json(*snap_to_emit);
         payload["delivery"] = nlohmann::json(snap_route);
         payload["alertId"] = snap_alert_id;
         emit_to_frontend(events::kSnapback, dump_json(payload), tick_activity_epoch);
     }
     if (pomodoro_to_emit) {
-        // Roadmap 2.16. Annotated, never suppressed. This event is dual-purpose: it is also
-        // how the frontend's timer card learns the phase changed, so gating the emit on a
-        // delivery preference would freeze the card at 25:00 for anyone who turned Pomodoro
-        // alerts off. The alert is what the preference governs, not the state update.
+        // Never suppressed: the event also drives the timer card. The preference governs the
+        // alert.
         auto payload = nlohmann::json(*pomodoro_to_emit);
         payload["delivery"] = nlohmann::json(pomodoro_route);
         payload["alertId"] = pomodoro_alert_id;
         emit_to_frontend(events::kPomodoro, dump_json(payload), tick_activity_epoch);
     }
     if (hyper_to_emit) {
-        // The in-app copy stays detailed: the preview mode governs what a *lock screen* may
-        // say, and this string is rendered inside the app. main.cpp picks the native wording
-        // from the route when it raises a toast.
+        // In-app copy stays detailed; preview mode governs lock-screen wording, chosen in
+        // main.cpp.
         const auto note = build_hyperfocus_notification(*hyper_to_emit);
         emit_to_frontend(events::kHyperfocus,
                          dump_json(nlohmann::json{{"message", note.body},
@@ -2442,19 +2153,17 @@ bool AppState::engine_tick() {
 }
 
 std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& event) {
-    // Requires mutex_. Pure in-memory: advances features/classifier/tracker + latest_*,
-    // and returns the rows to write (nullopt if this event produced nothing to persist).
-    // No storage I/O — persistence happens later under storage_mutex_.
-    // Remember the foreground app even when the event is dropped: 2.7's untracked nudge
-    // consults it so excluded-app time cannot earn a "start recording" prompt.
+    // Requires mutex_. In-memory only: advances features/classifier/tracker and returns the
+    // rows
+    // to persist. The foreground app is remembered even for dropped events so excluded-app time
+    // cannot earn an untracked nudge.
     last_capture_app_ = event.app_name;
     if (is_private_event_unlocked(event)) return std::nullopt;
     last_event_secs_ = event.timestamp_secs;
 
-    // Foreground edges observed while AFK were deliberately excluded from the rolling
-    // windows. Preserve their context independently, then reconcile it exactly once after
-    // the wake transition and before the waking input is ingested/classified. This changes
-    // cached identity without inventing another focus event or counting the input twice.
+    // Foreground edges while AFK stay out of the rolling windows; keep their context to
+    // reconcile
+    // once after wake.
     if (idle_) idle_foreground_context_ = event;
     if (!idle_ && foreground_context_needs_resync_) {
         if (!idle_foreground_context_) idle_foreground_context_ = event;
@@ -2483,14 +2192,8 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
         // The tracker latches a snapback payload on the return-from-distraction edge;
         // drain it into the field the tick loop emits.
         if (auto snapback = context_tracker_.take_pending_snapback()) {
-            // Roadmap 2.15. This edge is also the only moment an episode exists as a fact, and
-            // until now it was shown once and dropped. `recap()` has counted
-            // `snapback_events` rows since the baseline schema and nothing ever wrote one, so
-            // the Snapback count every user saw was zero.
-            //
-            // The payload has a duration but no start: `rfc3339_secs_ago` turns it into one on
-            // the same clock as `ended_at`, so the two are comparable to each other and to the
-            // session's spans.
+            // Record the episode. Its start is derived from the duration on the same clock as
+            // `ended_at`.
             SnapbackEpisode episode;
             episode.session_id = active_session_->session_id;
             episode.summary = snapback->summary;
@@ -2502,9 +2205,9 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
                 unix_ms_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
             job.snapback_episode = std::move(episode);
 
-            // Roadmap 2.16. Whether this interruption is allowed to reach the user is decided
-            // here, at the latch, rather than at the emit block below -- because this is the
-            // only place that can also acknowledge it on the user's behalf.
+            // Delivery is decided at the latch, the only place that can also acknowledge a
+            // suppressed
+            // snapback.
             const auto route = alert_route_unlocked(AlertEvent::Snapback);
             if (route.visible()) {
                 latest_snapback_ = *snapback;
@@ -2513,22 +2216,13 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
                 ++snapback_generation_;
                 live_read_dirty_ = true;
             } else {
-                // The card will never be shown, so nobody can dismiss it -- and
-                // `dismiss_recovery` is the tracker's *only* exit from Recovering. Its two
-                // production callers are dismiss_snapback() and restore_snapback_target(),
-                // both of which are clicks on that card. Skip this and the tracker stays
-                // latched forever: the user's first quiet-hour snapback silently disables
-                // every snapback after it, including the ones next morning that nothing is
-                // suppressing. That failure is invisible to any test which only checks that
-                // the quiet-hour alert did not appear, so tests/test_app_state.cpp drives two
-                // cycles and asserts the second one still fires.
-                //
-                // The episode built above is still persisted. What was suppressed is the
-                // *alert*, not the recording -- silencing an intervention is not privacy mode.
-                //
-                // Dropping the payload also drops this snapback's "Take me back" target, since
-                // that is what restore_snapback_target() reads. Deliberate: a return target
-                // offered eight hours later points at work the user has long since left.
+                // A suppressed card can never be dismissed, and dismiss_recovery() is the
+                // tracker's only exit
+                // from Recovering; skipping this would disable every later snapback. The
+                // episode is still
+                // persisted (the alert was suppressed, not the recording); the stale restore
+                // target is
+                // dropped.
                 context_tracker_.dismiss_recovery(event.timestamp_secs);
                 log().info(std::string("alerts: snapback suppressed (") +
                            alert_suppression_as_str(route.suppressed_by) + ")");
@@ -2540,10 +2234,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
     // scored as "distracted" and idle minutes don't dilute the feature windows. Context
     // snapshots (window changes) still persist so the recovery timeline stays intact.
     if (idle_) {
-        // Roadmap 2.15: `|| job.snapback_episode`. An episode is produced on the same window
-        // change that usually produces a snapshot, but nothing guarantees both — the snapshot
-        // is suppressed for an unnamed window — and dropping the job here would silently lose
-        // the episode rather than defer it.
+        // Keep the job if it carries an episode even without a snapshot.
         if (job.context_snapshot || job.snapback_episode) return job;
         return std::nullopt;
     }
@@ -2570,13 +2261,9 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
         const auto minutes = static_cast<std::uint64_t>(features.minutes_since_last_break());
         if (evaluate_hyperfocus(focus_mode_, minutes)) {
             if (!hyperfocus_latched_) {
-                // Roadmap 2.16. The latch is set whether or not the nudge is delivered: one
-                // stretch earns one nudge, and a suppressed one is still that stretch's nudge.
-                // Latching only on delivery would make a quiet hour queue up a nudge to fire
-                // the moment it ended, which is the opposite of what the user asked for.
-                //
-                // No re-arm concern here, unlike the snapback path: this latch clears itself
-                // when a break drops minutes_since_last_break below the threshold.
+                // Latched even when suppressed, so quiet hours cannot queue a nudge. Clears
+                // when a break
+                // resets minutes_since_last_break.
                 hyperfocus_latched_ = true;
                 if (alert_route_unlocked(AlertEvent::Hyperfocus).visible()) {
                     hyperfocus_minutes_ = minutes;

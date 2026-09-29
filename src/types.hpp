@@ -24,17 +24,8 @@ namespace snapback {
 
 using json = nlohmann::json;
 
-// Serializes to JSON text without throwing on invalid UTF-8.
-//
-// App names and window titles come from the OS. On Windows they arrive through
-// WideCharToMultiByte and are well-formed; an X11 WM_NAME is arbitrary bytes. nlohmann's
-// default handler is error_handler_t::strict, which throws type_error.316 on the first
-// invalid byte -- so one program with a malformed title used to cost the user every event of
-// every tick while that window had focus. The engine thread's exception boundary keeps the
-// process alive through that, but it cannot deliver what the throw discarded.
-//
-// Replacing the offending bytes with U+FFFD degrades one title instead of dropping a tick.
-// Use this for anything whose strings originate outside the app.
+// Serializes to JSON text, replacing invalid UTF-8 with U+FFFD instead of throwing. Use for any
+// string that originates outside the app (e.g. X11 window titles are arbitrary bytes).
 inline std::string dump_json(const json& value) {
     return value.dump(-1, ' ', /*ensure_ascii=*/false, json::error_handler_t::replace);
 }
@@ -149,14 +140,11 @@ struct CaptureContext {
 // CaptureEvent — internal capture-to-engine record. snake_case wire.
 struct CaptureEvent {
     EventType event_type{EventType::KeyPress};
-    // MONOTONIC seconds, from an uptime clock (GetTickCount64 / steady_clock). Owns
-    // durations, ordering, debounce, and the rolling windows. It is NOT epoch time and must
-    // never be handed to a calendar function — Roadmap 7.24 exists because it was.
+    // MONOTONIC seconds from an uptime clock. Owns durations, ordering, and the rolling
+    // windows. Never pass it to a calendar function.
     double timestamp_secs{};
-    // WALL-CLOCK seconds since the Unix epoch, for calendar features (hour_of_day,
-    // day_of_week). Zero means "not supplied", in which case the extractor falls back to
-    // timestamp_secs — which is what the feature-parity fixtures rely on, since they feed
-    // epoch-shaped values through timestamp_secs directly.
+    // Wall-clock epoch seconds for calendar features. 0 means "not supplied": the extractor
+    // then falls back to timestamp_secs, which the feature-parity fixtures rely on.
     double wall_clock_secs{};
     std::string app_name;
     std::string window_title;
@@ -185,16 +173,11 @@ struct PredictionRecord {
     double thrash_score{};
     double drift_score{};
     double goal_alignment{0.5};
-    // ADR-0007: UTC milliseconds since the epoch. The `_ms` suffix is not decoration -- the
-    // rename is what makes a missed call site fail loudly. Keeping the name `timestamp` while
-    // changing string to number would compile in C++ and, worse, keep *working* in JavaScript,
-    // because `new Date(1785402000000)` is perfectly valid. A field that no longer exists is a
-    // reliable error; a field that silently means something else is not.
+    // UTC epoch milliseconds (ADR-0007).
     std::int64_t timestamp_ms{};
     std::string model_id{"heuristic:snapback-features-v1-31"};
     // Which rule decided focus_state (ADR-0004): 'model', 'risk', 'thrash', 'block', or
-    // 'drift'. nullopt on rows written before verdicts carried provenance; nothing can
-    // backfill those, so nullopt means "unknown", not "model".
+    // 'drift'. nullopt means unknown (rows written before provenance existed).
     std::optional<std::string> state_source;
 };
 
@@ -208,10 +191,8 @@ struct SessionRecord {
     // the schema keeps.
     std::optional<std::int64_t> started_at_ms;
     std::optional<std::int64_t> ended_at_ms;
-    // Roadmap 2.14. The user's own account of the session, kept deliberately apart from the
-    // focus label: a label is a training signal, this is a note to their future self. nullopt
-    // means the question was never answered — Skip is one click and must stay indistinguishable
-    // from never being asked, so it writes nothing rather than an empty string.
+    // The user's own end-of-session note, separate from the focus label. nullopt means
+    // unanswered; Skip writes nothing.
     std::optional<std::string> reflection_done;
     std::optional<std::string> reflection_next_step;
 };
@@ -222,9 +203,8 @@ struct SessionRecap {
     std::string goal;
     // Wall clock from start to end, including time the user was away.
     std::uint64_t duration_secs{};
-    // Time the user was actually present, summed from session_spans (Roadmap 7.23 /
-    // ADR-0005). Empty for sessions that predate span recording — meaning "never measured",
-    // not "zero", so a reader falls back to duration_secs instead of showing a fabricated 0.
+    // Time actually present, summed from session_spans (ADR-0005). nullopt means never measured
+    // (not zero), so readers fall back to duration_secs.
     std::optional<std::uint64_t> active_secs;
     double avg_focus_score{};
     double avg_distraction_risk{};
@@ -250,9 +230,8 @@ struct PermissionStatus {
 
 // ClassifierStatus.
 struct ClassifierStatus {
-    // The backend that made the most recent prediction, which is not always the one that
-    // is configured: a loaded model whose last inference failed hands that prediction to
-    // the heuristic, and `backend` says "heuristic" for it.
+    // The backend that made the most recent prediction; a failed ONNX inference falls back to
+    // the heuristic and reports "heuristic".
     std::string backend{"heuristic"};
     bool onnx_runtime_enabled{};
     std::optional<std::string> model_path;
@@ -263,10 +242,9 @@ struct ClassifierStatus {
     std::uint64_t inference_failures{};
 };
 
-// ModelDeploymentHealth — optional ONNX deployment recovery state. Roadmap 13.8.
-//
-// When cleanup debris cannot be removed at startup, the core app still opens on the heuristic
-// backend. This object names what was preserved and whether the user can retry or roll back.
+// Optional ONNX deployment recovery state. When cleanup debris cannot be removed at startup the
+// app still opens on the heuristic; this names what was preserved and whether retry or rollback
+// is available.
 struct ModelDeploymentHealth {
     std::string state{"ok"};  // "ok" | "degraded"
     std::optional<std::string> message;
@@ -275,21 +253,11 @@ struct ModelDeploymentHealth {
     bool rollback_available{};
 };
 
-// RuntimeMetrics — what the process is costing itself. Roadmap 14.11.
-//
-// These are engineering figures, not user-facing ones, and they are here rather than in a
-// developer-only surface for one reason: the numbers that settle 14.1 and 14.5 have to come
-// from a real install over a real working day, and the only path out of one is the support
-// bundle, which carries `HealthStatus` already. A figure that exists only in a benchmark
-// answers a question nobody asked.
-//
-// Percentiles are **upper bounds** read off a histogram (see `ranked_mutex.hpp`), never exact
-// values. The field names say `_p95_us` and the bound is what the number means; the exact
-// tail is the `max_*` beside it. Anything that renders these must say "<=" or it is lying.
+// What the process is costing itself, carried in HealthStatus so it reaches support bundles.
+// Percentiles are histogram upper bounds (see ranked_mutex.hpp), not exact values; the exact
+// tail is the max_* field.
 struct RuntimeMetrics {
-    // The engine tick loop wakes at kEngineTickIntervalMs whether or not there is anything to
-    // do, so this is close to a constant. It is the denominator for the CPU figure, not an
-    // interesting number alone.
+    // Tick-loop iterations; the denominator for the CPU figure.
     std::uint64_t engine_wakeups{};
     // User + kernel milliseconds for the whole process since it started. 0 where the platform
     // call failed, or where the process has not yet burned one scheduler tick.
@@ -298,8 +266,7 @@ struct RuntimeMetrics {
     // above says it overflowed; this says how much margin there was before it did.
     std::uint64_t capture_ring_high_water{};
     std::uint64_t capture_ring_capacity{};
-    // storage_mutex_, which every storage-backed UI report and the engine's persist phase
-    // share. Contention here is what 14.1 is about.
+    // storage_mutex_, shared by storage-backed UI reads and the engine's persist phase.
     std::uint64_t storage_lock_acquisitions{};
     std::uint64_t storage_lock_contended{};
     std::uint64_t storage_lock_hold_p50_us{};
@@ -329,31 +296,22 @@ struct HealthStatus {
     ClassifierStatus classifier;
     ModelDeploymentHealth model_deployment;
     RuntimeMetrics runtime;
-    // ADR-0006 / roadmap 13.7. True in Debug, or Release with SNAPBACK_DEV_TRAINING set.
+    // ADR-0006. True in Debug, or Release with SNAPBACK_DEV_TRAINING set.
     bool developer_tools_enabled{};
 };
 
-// SnapbackEpisode — one recorded distraction: the user left focused work and came back.
-//
-// Roadmap 2.15. The durable counterpart to SnapbackPayload, which is the transient thing the
-// overlay shows. The payload was emitted, displayed, and dropped; `recap()` has always counted
-// `snapback_events` rows, and nothing ever wrote one, so the Snapback count every user saw was
-// zero. This is what gets stored.
-//
-// `started_at` and `session_id` together identify an episode — a duplicate tick or a delivery
-// retry must not produce a second row (a UNIQUE index enforces it).
+// One recorded distraction: the user left focused work and came back. The durable counterpart
+// to SnapbackPayload. (session_id, started_at) is UNIQUE, so retries cannot double-count.
 struct SnapbackEpisode {
     std::string session_id;
     // The route back, exactly as it was offered to the user.
     std::string summary;
-    // Where they were before the distraction, not where they went. The distracting app is
-    // deliberately not recorded: this table answers "what was I doing", and storing the other
-    // half would make an interruption log into a browsing history.
+    // Where they were before the distraction. The distracting app is deliberately not stored,
+    // so this never becomes a browsing history.
     std::string app_name;
     std::string file_hint;
-    // nullopt where a pre-2.15 row never recorded a start. Optional rather than a sentinel
-    // instant, because the UNIQUE index over (session_id, started_at) relies on those rows
-    // being distinct from one another, which a shared stand-in value would break.
+    // nullopt for legacy rows with no start. Optional rather than a sentinel, because the
+    // UNIQUE index needs those rows to stay distinct.
     std::optional<std::int64_t> started_at_ms;  // when the distraction began
     std::int64_t ended_at_ms{};  // when they returned; the pre-existing `timestamp` column
     std::uint32_t duration_secs{};
@@ -417,30 +375,18 @@ struct GoalCategory {
     std::vector<std::string> keywords;
 };
 
-// Roadmap 7.23. Bounds on the AFK threshold the user may choose. The floor exists because a
-// few seconds of silence is ordinary thought, not absence, and a threshold under it would
-// shred one attended stretch into hundreds of spans. The ceiling exists because a threshold
-// long enough to cover a lunch break stops measuring attendance at all. Out-of-range values
-// are rejected rather than clamped: a rejected setting is visible, a clamped one is not.
+// Bounds on the user-chosen AFK threshold. Out-of-range values are rejected, not clamped.
 inline constexpr std::int64_t kDefaultIdleThresholdSecs = 300;
 inline constexpr std::int64_t kMinIdleThresholdSecs = 30;
 inline constexpr std::int64_t kMaxIdleThresholdSecs = 3600;
 
-// Roadmap 2.16. How long a tray snooze silences delivery, and the bound on any value that
-// reaches the setter. Thirty minutes is the item's own figure: long enough to finish the thing
-// that made you reach for the menu, short enough that forgetting about it costs you one
-// stretch rather than a day.
+// How long a tray snooze silences delivery, and the bound on any value reaching the setter.
 inline constexpr std::int64_t kDefaultAlertSnoozeMins = 30;
 inline constexpr std::int64_t kMaxAlertSnoozeMins = 24 * 60;
 inline constexpr int kMinutesPerDay = 1440;
 
-// Roadmap 2.16. Which channels one kind of interruption is allowed to use.
-//
-// Three independent flags rather than an enum over the eight combinations, because the item
-// requires "both" to be *expressible* while defaulting to one. An enum would have to either
-// spell out every pairing or quietly forbid the ones nobody thought of, and adding a fourth
-// channel later would multiply it again. `any() == false` is the honest spelling of "this
-// event does not interrupt me", which is a setting a user is entitled to choose.
+// Which channels one kind of interruption may use. Independent flags so any combination,
+// including none, is expressible.
 struct AlertChannels {
     bool in_app{};
     bool overlay{};
@@ -449,30 +395,20 @@ struct AlertChannels {
     bool any() const { return in_app || overlay || native; }
 };
 
-// Roadmap 2.16. How much a *native* notification is allowed to say.
-//
-// Only the native channel carries this axis, and that asymmetry is the point: the overlay is
-// drawn on the user's own unlocked screen and the in-app card is inside the app, but a native
-// toast is copied into OS notification history and rendered on a lock screen that someone
-// else may be reading over. Generic mode is what makes the app safe to run in a shared room.
+// How much a native notification may say. Only the native channel has this axis: toasts are
+// kept in OS history and shown on the lock screen.
 enum class AlertPreviewMode { Detailed, Generic };
 
-// Detailed is listed first so an unknown string falls back to it, matching FocusMode above.
-// The fallback direction is deliberate here too: an unreadable preference should leave the
-// product working as it always has, and a user who asked for Generic will notice it was not
-// honoured far sooner than one who silently stopped being told what they were distracted by.
+// Detailed first, so an unknown string falls back to it.
 NLOHMANN_JSON_SERIALIZE_ENUM(AlertPreviewMode, {
     {AlertPreviewMode::Detailed, "detailed"},
     {AlertPreviewMode::Generic, "generic"},
 })
 
-// Roadmap 2.16. When and how Snapback is allowed to interrupt.
+// When and how Snapback may interrupt.
 struct AlertDeliverySettings {
-    // One visible intervention per logical event, which is the item's rule. A snapback used to
-    // fire the overlay *and* a toast for the same moment; the overlay is a topmost,
-    // non-activating window, so it already reaches the user whether or not the app has focus,
-    // and the toast was duplication that additionally copied the summary -- which may name a
-    // file or a project -- into OS notification history. "Both" remains one checkbox away.
+    // One visible intervention per event: the overlay already reaches the user, and a toast
+    // would also copy the summary into OS history.
     AlertChannels snapback{false, true, false};
     // Native only, preserving today's behaviour. An overlay here would interrupt exactly the
     // deep work the hyperfocus guardrail exists to protect.
@@ -483,25 +419,15 @@ struct AlertDeliverySettings {
 
     AlertPreviewMode preview{AlertPreviewMode::Detailed};
 
-    // Local minutes since midnight, 0..1439 -- a reading, never an instant. See
-    // `local_minute_of_day_from_unix_ms` in util/time.hpp for why that distinction is
-    // load-bearing rather than pedantic.
-    //
-    // Off by default. A focus tool that ships with an opinion about when its user sleeps has
-    // decided something it was never asked to decide; the start and end below are only the
-    // values the toggle reveals, not a schedule anyone is being held to.
+    // Local minutes since midnight, 0..1439 -- a reading, not an instant (see
+    // local_minute_of_day_from_unix_ms). Off by default.
     bool quiet_hours_enabled{};
     std::int32_t quiet_hours_start_min{22 * 60};
     std::int32_t quiet_hours_end_min{7 * 60};
 
-    // Roadmap 2.16. Unix ms at which a tray snooze lapses; 0 when not snoozed. The same shape
-    // and the same reasoning as `private_until_wall_ms` below: the deadline is the promise, and
-    // storing a duration instead would restart the snooze every time the window closed.
-    //
-    // **This is not privacy mode.** Recording, prediction, and snapback-episode persistence all
-    // continue through a snooze; only delivery is silenced. 2.10's status model has to say both
-    // of those things at once, which is why this surfaces as its own field on RecordingStatus
-    // rather than as another RecordingState.
+    // Unix ms at which a tray snooze lapses; 0 when not snoozed. A deadline, not a duration, so
+    // closing the window does not restart it. Not privacy mode: recording continues, only
+    // delivery is silenced.
     std::int64_t snoozed_until_wall_ms{};
 };
 
@@ -512,44 +438,26 @@ struct AppSettings {
     bool private_mode{};
     std::vector<std::string> excluded_apps;
     std::vector<GoalCategory> goal_categories;
-    // Roadmap 7.23 / ADR-0005. How long without input before a session is treated as
-    // unattended and its active-time span pauses. Five minutes was inherited from
-    // kDefaultIdleThresholdMs and is a judgement about the user's working rhythm, not a
-    // constant of the system: reading and thinking look identical to a keyboard.
+    // Seconds without input before a session counts as unattended (ADR-0005).
     std::int64_t idle_threshold_secs{kDefaultIdleThresholdSecs};
-    // Roadmap 2.13. Phase lengths, long-break cadence, and whether the next phase begins on
-    // its own — a rhythm is a preference, and hardcoding 25/5/15 made it the app's opinion.
+    // Phase lengths, long-break cadence, and auto-start.
     PomodoroConfig pomodoro{};
-    // Roadmap 2.13. The running timer, written down so a relaunch resumes it. Settings is
-    // where this lives because it is already the app's atomically-written, fsync'd file; a
-    // second store for six fields would be a second thing that can half-write.
+    // The running timer, persisted so a relaunch resumes it.
     PomodoroSnapshot pomodoro_state{};
-    // Roadmap 2.19. Opt-in attended-minute targets, **0 meaning no target**. Off by default
-    // and deliberately so: a focus tool that ships with a quota has decided how much someone
-    // should work before meeting them.
+    // Opt-in attended-minute targets; 0 means no target.
     std::uint32_t attended_target_daily_mins{};
     std::uint32_t attended_target_weekly_mins{};
-    // Roadmap 2.10. Unix ms at which a *timed* privacy pause lapses; 0 when private mode is
-    // off or indefinite. Persisted so a pause means the same thing after a restart — the item
-    // requires exactly that, since a pause that quietly ended while the app was closed would
-    // resume recording without the user ever being told.
+    // Unix ms at which a timed privacy pause lapses; 0 when off or indefinite. Persisted so the
+    // pause survives a restart.
     std::int64_t private_until_wall_ms{};
-    // Roadmap 2.7. A dismissed missed-session prompt stays dismissed across a restart.
+    // A dismissed untracked-work prompt stays dismissed across a restart.
     std::int64_t untracked_nudge_until_wall_ms{};
-    // Roadmap 2.16. When and how an intervention is allowed to reach the user.
     AlertDeliverySettings alerts{};
-    // Roadmap 9.15. Whether the "closing left Snapback in the tray" explanation has been
-    // shown. The item asks for it **once**, so the fact has to survive a restart -- a
-    // process-lifetime bool would explain it again every launch, which is how a helpful
-    // one-time notice becomes the thing a user goes looking for a setting to turn off.
+    // Whether the one-time "closing left Snapback in the tray" notice has been shown.
     bool tray_close_notice_shown{};
 };
 
-// Roadmap 2.19. A plan and what actually happened, side by side.
-//
-// Minutes rather than seconds because that is the unit a target is set in, and reporting a
-// finer one would imply a precision the plan does not have. A target of 0 means "not set" —
-// the UI shows attendance without a bar rather than progress toward nothing.
+// A plan and what actually happened, in minutes. A target of 0 means "not set".
 struct AttendedProgress {
     std::uint32_t daily_target_mins{};
     std::uint64_t daily_actual_mins{};
@@ -557,13 +465,8 @@ struct AttendedProgress {
     std::uint64_t weekly_actual_mins{};
 };
 
-// What "Delete all activity" actually did. Roadmap 8.12.
-//
-// It used to return nothing, which meant the UI had exactly two things it could say —
-// "deleted" or "failed" — for an operation that can legitimately half-succeed: a stale export
-// held open by another program does not stop the database being cleared, and should not be
-// reported as if it did. Saying "permanently deleted" over a partial result is the specific
-// failure this structure exists to make impossible.
+// What "Delete all activity" did. The operation can half-succeed (e.g. an export held open by
+// another program), so each target is reported.
 struct ActivityDeletionResult {
     // Activity-bearing artifacts that are now gone. Absence counts as removed: an export that
     // was never created is not a copy of anything.
@@ -571,9 +474,7 @@ struct ActivityDeletionResult {
     // Activity-bearing artifacts that could not be removed, each with the reason. Non-empty
     // means the answer is "most of it", and the UI must say so.
     std::vector<std::string> failed;
-    // Classified as configuration and deliberately kept. Listed rather than omitted so the
-    // decision is visible to the person asking what remains, instead of being an unstated
-    // assumption they would have to read the source to discover.
+    // Configuration deliberately kept, listed so the decision is visible.
     std::vector<std::string> retained;
 
     [[nodiscard]] bool complete() const { return failed.empty(); }
@@ -583,17 +484,12 @@ struct PrivacySettings {
     bool private_mode{};
     std::vector<std::string> excluded_apps;
     bool local_only{true};
-    // Roadmap 2.10. When private mode was turned on for a fixed stretch, the wall-clock instant
-    // (unix ms) it lapses at; 0 when private mode is indefinite or off. Wall clock rather than
-    // monotonic for the same reason the Pomodoro deadline is: a timed pause has to mean the
-    // same thing after a restart, and the monotonic timeline begins again with the process.
+    // Wall-clock unix ms at which a timed privacy pause lapses; 0 when indefinite or off.
     std::int64_t private_until_wall_ms{};
 };
 
-// Roadmap 2.10. The single answer to "am I being recorded right now?".
-//
-// One model, derived in one place, so the header and the tray cannot disagree — the item is
-// explicit that two surfaces computing this separately is the defect, not the layout.
+// The single answer to "am I being recorded right now?", derived in one place so the header and
+// tray cannot disagree.
 enum class RecordingState {
     Blocked,        // capture cannot run at all: permissions, a failed hook
     PausedPrivate,  // the user said no, indefinitely or until private_until
@@ -619,13 +515,8 @@ struct RecordingStatus {
     // state is not PausedPrivate. The UI shows this rather than counting down on its own, so a
     // closed and reopened window cannot drift from the real deadline.
     std::int64_t private_pause_remaining_ms{};
-    // Roadmap 2.16. Remaining milliseconds of an alert snooze; 0 when not snoozed.
-    //
-    // Its own field rather than another RecordingState, and that is the point 2.16 insists on:
-    // a snooze silences interventions while recording, prediction, and episode persistence all
-    // continue. A state value would force the two facts into one slot and make "silenced" read
-    // as "not recording" -- exactly the confusion between an alert preference and privacy mode
-    // that the item forbids. `state` is untouched by a snooze.
+    // Remaining ms of an alert snooze; 0 when not snoozed. A separate field, not a state: a
+    // snooze silences alerts while recording continues.
     std::int64_t alert_snooze_remaining_ms{};
 };
 
@@ -639,15 +530,13 @@ struct RecordingInputs {
     bool idle{};
 };
 
-// Precedence, highest first, and each step is a promise the one below it cannot keep:
+// Precedence, highest first:
 //
-//   Blocked        — nothing can be observed, so no other answer is true.
-//   PausedPrivate  — the user said not to. Ranked above NoSession because it stays true when
-//                    they start a session, and a person checking this wants the strongest
-//                    reason recording is not happening, not the incidental one.
-//   NoSession      — nothing declared; capture may run but is attributed to nothing.
-//   PausedIdle     — declared and running, but they are away. 7.23 already owns this state.
-//   Recording      — everything else.
+//   Blocked        nothing can be observed.
+//   PausedPrivate  the user said not to (outranks NoSession: it stays true after Start).
+//   NoSession      nothing declared.
+//   PausedIdle     declared and running, but the user is away.
+//   Recording      everything else.
 constexpr RecordingState derive_recording_state(const RecordingInputs& in) noexcept {
     if (in.capture_failed || !in.capture_permitted) return RecordingState::Blocked;
     if (in.private_mode) return RecordingState::PausedPrivate;
@@ -663,9 +552,8 @@ struct AnalyticsHour {
     double distracted_fraction{};
 };
 
-// Roadmap 2.9. One slice of a single session's focus over its own duration, for the Review
-// session explorer. `start_ms` is the first prediction in the slice, not a computed boundary,
-// so a slice that exists always has a real instant to show.
+// One slice of a session's focus curve. `start_ms` is the slice's first prediction, so it is
+// always a real instant.
 struct FocusCurvePoint {
     std::int64_t start_ms{};
     std::size_t sample_count{};
@@ -690,10 +578,8 @@ struct SummaryReport {
     std::int64_t generated_at_ms{};
     std::size_t session_count{};
     std::size_t completed_session_count{};
-    // Summed wall-clock duration of the *completed* sessions in the window: started-to-ended,
-    // including any idle or distracted stretch inside them. It is not the model's focused
-    // time (that is longest_focus_secs' arithmetic, in DailySummaryDay::focused_secs) and not
-    // attended time (attended_seconds). The wire name is historical; the label is not.
+    // Summed start-to-end duration of completed sessions in the window, including idle and
+    // distracted stretches. Not focused time and not attended time.
     std::uint64_t focus_seconds{};
     // The session queries above read the newest `session_limit` sessions and filter those by
     // the window. `sessions_truncated` is set when that cap was binding, so "All time" can say
@@ -703,23 +589,18 @@ struct SummaryReport {
     std::size_t sample_count{};
     double avg_focus_score{};
     double distracted_fraction{};
-    // Roadmap 10.13. Seconds, not a row count. It was previously the number of consecutive
-    // non-DISTRACTED prediction rows, displayed as "Best streak" — a time-shaped label over a
-    // quantity that is not time.
+    // Seconds, not a row count.
     std::uint64_t longest_focus_secs{};
     std::string top_context_app;
-    // Roadmap 2.19 Review half. Durable attended seconds in the comparison window, and the
-    // matching plan in minutes when one applies (daily for today, weekly for 7d). Zero planned
-    // means "no target for this range" — not "target of zero minutes".
+    // Attended seconds in the window and the matching plan (daily for today, weekly for 7d); 0
+    // planned means no target for this range.
     std::uint64_t attended_seconds{};
     std::uint32_t planned_mins{};
 };
 
-// One local calendar day of the Review trend series. `day` is the bucketing key
-// ("YYYY-MM-DD" on the user's clock, per ADR-0007's rule that local time appears only when a
-// value is bucketed for a report). All second counts are durations, not row counts (10.13):
-// attended comes from session_spans clipped per day; focused/deep sum the gaps between
-// consecutive same-state predictions, the arithmetic behind longest_focus_secs.
+// One local calendar day of the Review trend series; `day` is "YYYY-MM-DD" on the user's clock
+// (ADR-0007). All counts are durations: attended from clipped session_spans, focused/deep from
+// gaps between consecutive same-state predictions.
 struct DailySummaryDay {
     std::string day;
     std::uint64_t attended_secs{};
@@ -750,11 +631,7 @@ struct DiagnosticsSnapshot {
     std::vector<std::string> recent_logs;
 };
 
-// Roadmap 11.13. `CaptureFailurePayload` and `OverlayFailurePayload` lived here with no
-// emitter and no reader on either side; they were deleted with the `capture-failed` and
-// `overlay-failed` listeners. Capture failure reaches the UI on `get_health`
-// (`state.cpp:AppState::health` sets `capture_failure_reason`), which is the working path the
-// event duplicated. This one stays because **9.6** owns the emitter it is still waiting for.
+// Reserved for the planned `persistence-failed` event (see fixtures/ipc_commands.json).
 struct PersistenceFailurePayload {
     std::string reason;
     std::string message;
@@ -769,13 +646,12 @@ struct LabelHotkeyPayload {
     std::optional<std::string> session_id;
 };
 
-// FocusTargetResult — Roadmap 2.8 ("Take me back").
+// "Take me back".
 struct FocusTargetResult {
     bool ok{false};
     std::string message;
 };
 
-// FileDialog types — Roadmap 10.14.
 struct FileDialogFilter {
     std::string name;
     std::string pattern;
@@ -796,8 +672,8 @@ struct FileDialogResult {
 };
 
 
-// ---------------------------------------------------------------------------
-// JSON (de)serialization — camelCase keys. Defined in types.cpp.
+// --------------------------------------------------------------------------- JSON
+// (de)serialization -- camelCase keys. Defined in types.cpp.
 // ---------------------------------------------------------------------------
 void to_json(json& j, const CaptureEvent& v);
 void to_json(json& j, const PredictionRecord& v);

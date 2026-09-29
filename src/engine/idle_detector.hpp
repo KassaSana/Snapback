@@ -1,13 +1,5 @@
-// Idle / AFK detection state machine. Roadmap 1.5.
-//
-// Pure logic, no OS deps: you feed it monotonic millisecond timestamps (the same
-// clock the capture path already stamps input with) and it tells you when the user
-// crossed from Active -> Idle or woke back up. The engine owns the wiring; this class
-// just owns the "have we heard input lately?" decision so it's trivially testable.
-//
-// There is no clock hidden inside this detector — `now`
-// is always passed in, exactly like storage's retention window. That keeps the state
-// machine deterministic in tests instead of racing a real wall clock.
+// Idle/AFK state machine. Pure: fed monotonic ms timestamps (`now` is always passed in), it
+// reports Active -> Idle and wake transitions. The engine owns the wiring.
 #pragma once
 
 #include <algorithm>
@@ -44,10 +36,8 @@ public:
         return IdleTransition::None;
     }
 
-    // How long the stretch that ended with the most recent WokeUp lasted, measured from the
-    // last input before it to the input that ended it (so it includes the threshold, not
-    // just the part after detection). The feature extractor's break bookkeeping wants this
-    // number on the IdleEnd event; 0 until the first wake.
+    // Length of the stretch that ended with the latest WokeUp, from the last input before it
+    // (threshold included). 0 until the first wake.
     [[nodiscard]] std::int64_t last_idle_duration_ms() const noexcept {
         return last_idle_duration_ms_;
     }
@@ -72,12 +62,8 @@ public:
     [[nodiscard]] IdleState state() const noexcept { return state_; }
     [[nodiscard]] std::int64_t threshold_ms() const noexcept { return threshold_ms_; }
 
-    // Change the threshold on a running detector (Roadmap 7.23 — the five minutes are a
-    // setting now, not a constant). The activity baseline is deliberately kept: shortening
-    // the threshold should be able to conclude the user is *already* idle on the next poll,
-    // which is what someone who just lowered it expects to happen. Raising it past the
-    // current gap does not retroactively wake an idle detector either — that is `on_activity`'s
-    // job, and only real input should claim the user is back.
+    // Change the threshold on a running detector. The activity baseline is kept, so a lower
+    // threshold can conclude "already idle" on the next poll; only real input wakes it.
     void set_threshold_ms(std::int64_t threshold_ms) noexcept { threshold_ms_ = threshold_ms; }
 
     // How long since the last input as of `now_ms` (0 before any activity is seen).

@@ -98,9 +98,7 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
   );
 }
 
-// Roadmap 7.6: "you may inspect and destroy what I collected." The two-step confirm matches
-// the Privacy card's danger zone — one click can never delete a session, because there is no
-// undo behind this button, and a mis-click costs the user data they cannot get back.
+// Two-step confirm: there is no undo.
 function SessionManagementList({
   onSaveReflection,
   onDelete,
@@ -247,7 +245,7 @@ export const InsightsCard = memo(function InsightsCard({
   truncationNote = null,
 }: Pick<InsightsCardProps, "rangeLabel" | "sessionHistory"> & {
   /**
-   * Roadmap 10.11. Set when the session list behind this chart hit the backend's cap, so
+   * Set when the session list behind this chart hit the backend's cap, so
    * "All time" over the chart cannot quietly mean "the latest 500". Comes from the summary
    * report, which reads the same capped list.
    */

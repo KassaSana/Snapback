@@ -1,16 +1,6 @@
-// Roadmap 11.7. The Windows Run-key round trip, run against a scratch key instead of the
-// shared one.
-//
-// The case this replaces wrote to the real
-// HKCU\Software\Microsoft\Windows\CurrentVersion\Run. Two things were wrong with that. It made
-// a passing suite depend on ambient machine state — writing that key is a textbook persistence
-// technique, so hardened environments refuse it, and ~33% of early Windows CI runs did. And a
-// crash between the write and the restore would leave the *test binary* registered to launch
-// at every login, which is exactly the accident 3.0 caused twice in two days on macOS and
-// Linux.
-//
-// Everything here happens under HKCU\Software\Snapback\test-<pid>-<n>, which this file
-// creates and deletes. It never names the real Run key.
+// The Windows Run-key round trip, under HKCU\Software\Snapback\test-<pid>-<n>, which this file
+// creates and deletes. It never names the real Run key (hardened hosts refuse writes to it, and
+// a crash mid-test would register the test binary at login).
 #include "doctest_wrapper.hpp"
 
 #if defined(_WIN32)
@@ -125,7 +115,7 @@ struct ScratchKey {
     std::wstring path;
 
     ScratchKey() {
-        // Roadmap 11.10. A crash or REQUIRE abort skips the destructor, so a previous
+        // A crash or REQUIRE abort skips the destructor, so a previous
         // process's test-<pid>-<n> can linger. Sweep only keys whose pid is gone — deleting
         // the SnapbackTests root would race a concurrent case still using it.
         sweep_stale_scratch_keys();
@@ -215,7 +205,7 @@ TEST_CASE("the production key path is the real Run key and is never written by t
 }
 
 TEST_CASE("scratch fixture sweeps keys left by a dead process") {
-    // Roadmap 11.10. Plant a leaf named for a pid that is not running, then construct a
+    // Plant a leaf named for a pid that is not running, then construct a
     // fixture. The sweep must remove the orphan and must not remove a leaf named for us —
     // that is the concurrent-case key a root delete would destroy.
     const auto stale_path =

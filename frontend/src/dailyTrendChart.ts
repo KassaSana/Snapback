@@ -1,15 +1,6 @@
-// Geometry and wording of the daily deep-work trend, as pure functions, for the same reason
-// analyticsChart.ts exists: the component suite cannot run everywhere, and chart geometry is
-// exactly the kind of thing that looks right and is wrong.
-//
-// The two rules inherited from that module: a *measured* zero is a visible sliver and "no
-// data" is a tick below the axis, never the same picture; and every label carries its true
-// unit (10.13) — the *Secs fields are durations, and the sample count is named as a count.
-//
-// The axis is minutes-shaped, not 0-100: unlike focus scores, daily attended time has no
-// natural maximum, so the scale is the range's largest day rounded up to a friendly step.
-// That is honest here because the bars are all the same measurement on the same scale —
-// the bug the fixed 0-100 axis fixed was *different* measurements normalized to the best one.
+// Geometry and wording of the daily trend, as pure functions. A measured zero is a visible
+// sliver and "no data" a tick below the axis; labels carry true units. The axis is minutes,
+// scaled to the range's largest day rounded up (daily time has no natural maximum).
 
 import type { DailySummaryDay } from "./api";
 import { formatFocusStretch } from "./focusStreak";
@@ -73,7 +64,7 @@ export type DayBar = {
   weekdayInitial: string;
   /** Accessible/tooltip text. Durations in h/m, the sample count named as samples. */
   label: string;
-  /** The two halves of `label`, for the chart's data table (Roadmap 10.3): the day, and the rest. */
+  /** The two halves of `label`, for the chart's data table: the day, and the rest. */
   name: string;
   detail: string;
 };

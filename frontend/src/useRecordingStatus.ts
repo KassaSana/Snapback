@@ -2,17 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type RecordingStatus } from "./api";
 
-// Roadmap 2.10. "blocked" is the safe initial value: before the first answer arrives, saying
-// nothing is being captured is the claim that cannot mislead.
+// "blocked" until the first answer: the claim that cannot mislead.
 const INITIAL_STATUS: RecordingStatus = {
   state: "blocked",
   privatePauseRemainingMs: 0,
   alertSnoozeRemainingMs: 0,
 };
 
-// How long after a native deadline to ask again. The backend lapses a timed pause on the read
-// that finds the deadline passed, so one refresh just after it converges; the slack covers
-// clock skew between the two sides' notions of "now".
+// How long after a native deadline to ask again (covers clock skew).
 export const DEADLINE_SLACK_MS = 250;
 
 /**
@@ -33,16 +30,11 @@ type UseRecordingStatusArgs = {
 
 export const useRecordingStatus = ({ setActionError }: UseRecordingStatusArgs) => {
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>(INITIAL_STATUS);
-  // True when the last attempt to confirm the state with the app failed. The displayed state
-  // is then the last answer we had, which is worth saying: "Recording" on a header that has
-  // not been able to ask for a while is a claim, not an observation.
+  // True when the last confirmation failed; the shown state is then the last known answer.
   const [unconfirmed, setUnconfirmed] = useState(false);
 
-  // Every answer is stamped by when it was *asked for*, and only the newest asked-for answer
-  // is applied. A pause click and a routine refresh can be in flight together; if the
-  // refresh was issued first but lands second, its "recording" must not overwrite the
-  // "pausedPrivate" the click already showed. Native events count as newest: they describe
-  // a change that happened after anything currently in flight was asked.
+  // Answers are stamped by when they were asked; only the newest is applied. Native events
+  // count as newest.
   const askedSeq = useRef(0);
   const appliedSeq = useRef(0);
   const apply = useCallback((seq: number, status: RecordingStatus) => {
@@ -70,8 +62,7 @@ export const useRecordingStatus = ({ setActionError }: UseRecordingStatusArgs) =
     }
   }, [ask]);
 
-  // Roadmap 2.10 / 2.16. The tray and the Settings toggle change the answer without a command
-  // from this side. The native side announces those; this is where the announcement lands.
+  // Tray and Settings changes are announced natively and land here.
   const applyRecordingStatusEvent = useCallback(
     (status: RecordingStatus) => {
       apply(++askedSeq.current, status);
@@ -79,9 +70,7 @@ export const useRecordingStatus = ({ setActionError }: UseRecordingStatusArgs) =
     [apply],
   );
 
-  // A timed pause or a snooze lapses on the backend's clock. Nothing else on this side runs at
-  // that moment, so schedule one refresh for just after the deadline; the answer it returns
-  // either carries the next deadline or none.
+  // Refresh once just after a pause or snooze deadline.
   useEffect(() => {
     const delay = nextRecordingDeadlineMs(recordingStatus);
     if (delay === null) return;
@@ -112,8 +101,7 @@ export const useRecordingStatus = ({ setActionError }: UseRecordingStatusArgs) =
     }
   }, [ask, setActionError]);
 
-  // Roadmap 2.16. Ends a snooze started from the tray. It returns the same RecordingStatus the
-  // pause commands do, so the card updates from one source rather than polling afterwards.
+  // Ends a tray snooze; returns the same RecordingStatus as the pause commands.
   const handleResumeAlerts = useCallback(async () => {
     try {
       await ask(api.resumeAlerts);

@@ -8,18 +8,8 @@ import {
   type SettingsSection,
 } from "../src/settingsSections";
 
-// ADR-0003 split the dashboard into Now / Review / Settings, so a card is only mounted
-// when its surface is showing. Tests that assert on a Review or Settings card must say so
-// — that is the behaviour, not an inconvenience: the old tests passed because everything
-// was rendered at once, which was the problem the ADR fixed.
-//
-// Roadmap 10.9 added a second level inside Settings for the same reason: General, Focus,
-// Privacy & permissions, and Advanced each mount only when selected, so a Settings test now
-// has to name its group. Same principle as the ADR — the grouping *is* the behaviour, and a
-// test that finds a privacy control while sitting on General would be asserting the flat
-// stream this item removed.
-//
-// Defaults to "now" so `renderApp()` matches what a user sees on launch.
+// Cards mount only when their surface (ADR-0003) and Settings group are showing, so tests must
+// name them. Defaults to "now", matching launch.
 export function renderApp(
   surface: Surface = "now",
   section: SettingsSection = DEFAULT_SETTINGS_SECTION,

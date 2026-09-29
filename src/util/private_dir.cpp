@@ -104,10 +104,8 @@ PrivateDirResult prepare_private_dir(const std::filesystem::path& dir) {
 
 #if !defined(_WIN32)
     if (!exists) {
-        // mkdir applies the mode as the directory comes into being. umask can only clear bits,
-        // and 0700 has none to clear beyond the owner's, so no umask can widen this. The
-        // alternative — create_directories then chmod — leaves the directory readable for the
-        // interval between the two calls.
+        // mkdir applies 0700 at creation; umask can only clear bits. chmod afterwards would
+        // leave a readable window.
         std::filesystem::create_directories(dir.parent_path(), ec);
         if (::mkdir(dir.string().c_str(), kPrivateDirMode) != 0) {
             result.reason = "could not create " + describe(dir);
@@ -157,8 +155,7 @@ PrivateDirResult prepare_private_dir(const std::filesystem::path& dir) {
         if (make_private(it->path(), error)) {
             result.repaired.push_back(describe(it->path()));
         } else {
-            // Reported, not swallowed: an entry we could not tighten must not be counted as
-            // protected. 8.13 is explicit that a partial repair has to say so.
+            // Reported, never counted as protected.
             result.unprotected.push_back(error);
         }
     }
@@ -183,11 +180,7 @@ DataDirChoice choose_data_dir(const std::filesystem::path& override_dir,
         return choice;
     }
 
-    // Roadmap 8.13. This used to be `<temp>/snapback` on both platforms — the same predictable
-    // path for every account, inside a directory every local account can write to. A user with
-    // no HOME (or no APPDATA) got a working app quietly recording their window titles
-    // somewhere anyone could read, with nothing said. There is no safe automatic answer, so
-    // there is no automatic answer.
+    // Fail closed: no safe automatic location without a home directory.
     choice.reason =
         "Snapback could not find your user profile directory, so it has nowhere private to "
         "keep your data. Set SNAPBACK_DATA_DIR to a directory only you can read, then restart.";

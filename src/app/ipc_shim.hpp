@@ -1,10 +1,6 @@
-// The JavaScript IPC shim injected into the webview before the app bundle loads.
-// webview.bind() exposes native commands, while this bridge gives the frontend a
-// typed invoke/listen surface and a host-to-frontend event bus.
-//
-// Roadmap 8.14. The shim also decides which document may call those commands: it runs on
-// every navigation before page scripts, checks the loaded URL against the one trusted
-// packaged document, and attaches the per-launch capability token only when they match.
+// The JavaScript IPC shim injected before the app bundle loads: a typed invoke/listen surface
+// and event bus over webview.bind(). It runs before page scripts on every navigation and hands
+// out the capability token only to the trusted packaged document.
 #pragma once
 
 #include <string>

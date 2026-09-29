@@ -17,7 +17,7 @@ import { MemoryStorage } from "./memoryStorage";
 
 // --- The registry is complete ------------------------------------------------------------
 //
-// Roadmap 8.15. The defect was a key nobody had classified, which therefore survived an erase
+// The defect was a key nobody had classified, which therefore survived an erase
 // that claimed to remove every app-owned copy of the user's activity. A list is only worth
 // having if it cannot fall behind the code, so this walks `src/` and fails on any `snapback.*`
 // literal without a row. That is what makes "the next key added has to pick a side" true

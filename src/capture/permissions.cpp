@@ -20,10 +20,8 @@ bool command_available(const char* command) {
     return std::system(probe.c_str()) == 0;
 }
 
-// Whether xdotool is installed changes about once per machine, but every health poll asked
-// again, and asking means forking a shell on the command worker. The pollers read through
-// this cache; request_capture_permissions() invalidates it so a user who just ran
-// `apt install xdotool` and clicked "check again" is not shown a 30-second-old "missing".
+// Cached so health polls do not fork a shell each time; request_capture_permissions()
+// invalidates it.
 CachedProbe& xdotool_probe() {
     static CachedProbe probe([] { return command_available("xdotool"); },
                              kCommandProbeTtlMs);
@@ -106,11 +104,7 @@ bool request_capture_permissions() {
     if (options) CFRelease(options);
     return trusted;
 #else
-    // Linux capture needs a desktop session and xdotool, not a permission grant — there is
-    // no dialog to raise, so report the current state instead of pretending we asked.
-    //
-    // The user clicked a button, so "current" has to mean now, not whatever the health
-    // poll cached up to kCommandProbeTtlMs ago.
+    // Linux needs a desktop session and xdotool, not a grant: report the current state, fresh.
     invalidate_permission_probe_cache();
     return check_capture_permissions(false).capture_available;
 #endif

@@ -74,9 +74,7 @@ export const usePomodoro = ({ setActionError }: UsePomodoroArgs) => {
     }
   }, [setActionError]);
 
-  // Roadmap 2.13. The five controls share one shape: call, take the status the backend
-  // actually reached, and report a failure in the user's terms. The backend treats a control
-  // that does not apply as a no-op rather than an error, so there is nothing to guard here.
+  // Call, take the status the backend reached, report failures in the user's terms.
   const runPomodoroAction = useCallback(
     async (action: () => Promise<PomodoroStatus>, failure: string) => {
       try {

@@ -9,23 +9,12 @@ import {
 } from "./api";
 import { VerdictFeedback } from "./VerdictFeedback";
 
-// The Now surface's primary element (ADR-0003).
+// The Now surface's primary element (ADR-0003). Leads with the focus state (the verdict) rather
+// than the score (the model's opinion, ADR-0004), and shows the evidence beside it so a wrong
+// answer looks wrong.
 //
-// Leads with the focus *state* rather than the score, and ADR-0004 made that the
-// permanent contract rather than sequencing caution: the state is the policy verdict —
-// the thing the app acts on — and the score is the model's opinion, demoted to the
-// evidence line. The two may disagree on purpose.
-//
-// One exception, display-only: a quiet screen with no goal match is a guess from
-// absence (classifier.cpp:deep_work_score). Printing "Deep work" there is unearned
-// confidence. The stored verdict is left alone so snapbacks and streaks do not change
-// meaning; only the word on this card becomes "Settled".
-//
-// The verdict is shown with its evidence, not on its own. An unexplained label is
-// unfalsifiable — you cannot tell a good guess from a lucky one — and the classifier is
-// hand-tuned thresholds that have never been evaluated against ground truth. Showing the
-// reasoning makes a wrong answer visibly wrong, and the rating control turns that into a
-// labelled example.
+// Display-only exception: a quiet screen with no goal match is a guess from absence, so "Deep
+// work" reads as "Settled" here; the stored verdict is unchanged.
 
 type Props = {
   goal: string | null;

@@ -1,19 +1,7 @@
-// The channel a losing second launch uses to ask the running instance to show itself.
-//
-// Roadmap 9.15. `single_instance.hpp` next door answers "may this process run?"; this answers
-// the question that comes immediately after a *no* — "then who does, and can they come to the
-// front?". Without it a second launch of a tray-resident app whose window is hidden prints to
-// a stderr stream a GUI process does not own and exits, which is indistinguishable from a
-// broken app.
-//
-// **This channel is owned by the instance lock, not merely adjacent to it.** Every operation
-// below assumes the caller's position relative to `SingleInstanceGuard` is already settled:
-// the listener is started only by a process that *holds* the lock, and a request is sent only
-// by a process that was *refused* it. Two of the decisions here are correct only under that
-// assumption, and both are called out where they are made.
-//
-// The pure parts -- the channel id and the endpoint-path arithmetic -- live in this header so
-// every platform's build can test them. Only the socket/pipe plumbing is per-platform.
+// How a second launch asks the running instance to show itself. The listener is started only by
+// the process holding SingleInstanceGuard, and requests are sent only by a process that was
+// refused it; two decisions below rely on that. Pure parts (channel id, endpoint path) live
+// here so every platform tests them.
 #pragma once
 
 #include <cstdint>
@@ -27,12 +15,8 @@
 
 namespace snapback {
 
-// What happened to an activation request.
-//
-// Five outcomes rather than a bool, for the same reason `AlertSuppression` carries a cause:
-// the caller has to decide between exiting silently and printing something, and "it did not
-// work" is not enough to decide with. `NoOwner` in particular is not a failure -- it is the
-// ordinary race where the owner exited between our lock attempt and our connect.
+// What happened to an activation request. NoOwner is not a failure: the owner exited between
+// our lock attempt and our connect.
 enum class ActivationResult {
     Activated,  // the owner acknowledged; it is raising its window
     NoOwner,    // nothing is listening on the endpoint
@@ -57,20 +41,11 @@ inline const char* activation_result_as_str(ActivationResult r) noexcept {
     }
 }
 
-// The longest an activation request may take before the caller gives up.
-//
-// 9.15 requires the window to surface "within one second". This is the ceiling on the
-// *failure* path, not the expected cost: an owner that is running answers in microseconds,
-// since the handler only queues work onto its UI thread. The budget exists so that a wedged
-// owner costs a second-and-a-half stare rather than a hang.
+// Ceiling on the failure path; a live owner answers in microseconds.
 inline constexpr std::int64_t kActivationTimeoutMs = 1500;
 
-// The protocol, such as it is. One line out, one line back.
-//
-// Versioned from the first commit because both ends are the same binary *today* and will not
-// be during an upgrade: a newly installed build can be launched while the previous one is
-// still the running owner. An owner that cannot parse the request must refuse it rather than
-// guess, and a version token is what makes that distinguishable from corruption.
+// One line out, one line back. Versioned because during an upgrade the two ends can be
+// different builds; an owner refuses what it cannot parse.
 inline constexpr const char* kActivationProtocolTag = "SNAPBACK-ACTIVATE";
 inline constexpr int kActivationProtocolVersion = 1;
 inline constexpr const char* kActivationAckOk = "OK";
@@ -78,13 +53,8 @@ inline constexpr const char* kActivationAckRefused = "REFUSED";
 
 namespace detail {
 
-// FNV-1a 64, rendered as 16 hex digits.
-//
-// Deliberately not shared with `data_export.cpp:archive_checksum`, which computes the same
-// function for a different purpose: that one is an integrity claim printed in a document a
-// user reads, this one is a naming scheme for an OS object. Coupling them would mean a future
-// change to either -- a stronger digest there, a shorter name here -- silently changing the
-// other. The five lines are cheaper than that coupling.
+// FNV-1a 64 as 16 hex digits. Not shared with data_export's archive_checksum on purpose:
+// different purposes that should be free to change independently.
 inline std::string fnv1a_hex(std::string_view text) {
     std::uint64_t hash = 1469598103934665603ULL;
     for (const unsigned char byte : text) {
@@ -99,18 +69,9 @@ inline std::string fnv1a_hex(std::string_view text) {
     return out.str();
 }
 
-// Where the Unix-domain socket lives, given how much room `sun_path` has.
-//
-// Pure and compiled everywhere, including Windows, precisely because this is the branch that
-// will never run on the machine that writes it: `sun_path` is 104 bytes on macOS and 108 on
-// Linux, and an app-data directory under a long home directory plus a deep container path can
-// exceed it. Bind then fails with a truncated path, which looks like a permissions problem and
-// is not one.
-//
-// The preferred home is inside the data directory: it is already `0700`, it is removed by
-// `--purge` along with everything else the app created, and it keeps the endpoint beside the
-// lock that owns it. The temp fallback gives that up and must therefore carry the channel id
-// in its name, since two data directories would otherwise collide in a shared directory.
+// Where the Unix socket lives, given sun_path's size (104 bytes on macOS, 108 on Linux).
+// Prefers the data directory (0700, removed by --purge); the temp fallback carries the channel
+// id so two data directories cannot collide.
 inline std::string unix_socket_path(const std::filesystem::path& data_dir,
                                     const std::string& channel_id,
                                     const std::filesystem::path& temp_dir,
@@ -128,13 +89,8 @@ inline std::string activation_request_line(const std::string& channel_id) {
            " " + channel_id + "\n";
 }
 
-// Whether a received line is a request this owner should honour.
-//
-// Three independent reasons to say no, all collapsed into one `false` because the sender
-// cannot act differently on any of them: wrong protocol (something else is talking to our
-// endpoint), wrong version (a build we do not understand), wrong channel id (a hash collision,
-// or a request meant for a different data directory). The owner refuses rather than guesses --
-// raising the window for a different database is worse than not raising it at all.
+// Whether a received line is a request this owner should honour: right protocol, version, and
+// channel id. Refuses rather than guesses.
 inline bool activation_request_matches(std::string_view line, const std::string& channel_id) {
     while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
         line.remove_suffix(1);
@@ -145,16 +101,10 @@ inline bool activation_request_matches(std::string_view line, const std::string&
 
 }  // namespace detail
 
-// A stable identifier for "the instance owning this data directory".
-//
-// Derived from the path rather than assigned, so the two processes agree without either
-// having written anything down -- the loser cannot read the owner's state, which is the whole
-// difficulty. `weakly_canonical` normalises `..`, a trailing separator, and (on Windows) case,
-// so `C:\Data\Snapback` and `c:\data\snapback\` are one channel and not two.
-//
-// A hash collision between two real data directories is not defended against by being
-// unlikely: the request carries the full id and the owner compares it, so a collision costs a
-// `Refused`, not a window raised for the wrong database.
+// Stable id for "the instance owning this data directory", derived from the path so both
+// processes agree without sharing state. weakly_canonical normalises `..`, trailing separators,
+// and (on Windows) case. The owner compares the full id, so a hash collision costs a Refused,
+// not a wrong window.
 std::string activation_channel_id(const std::filesystem::path& data_dir);
 
 // The platform endpoint the id resolves to: a named pipe on Windows, a socket path elsewhere.
@@ -165,18 +115,11 @@ std::string activation_endpoint_for(const std::filesystem::path& data_dir);
 // its old behaviour rather than pretending it succeeded.
 bool activation_channel_supported();
 
-// The owner's half. Start it *after* `SingleInstanceGuard` reports Acquired.
-//
-// `on_activate` runs on the listener's own thread, never on the caller's. It must therefore do
-// nothing but hand the work to the UI thread -- see `main.cpp`, which wraps it in
-// `webview::dispatch` for exactly this reason. Touching a window directly from here would be
-// the ordinary cross-thread UI bug, arriving only on the second launch and therefore rarely
-// on the developer's machine.
+// The owner's half; start it after SingleInstanceGuard reports Acquired. `on_activate` runs on
+// the listener thread and must only dispatch to the UI thread (see main.cpp).
 class ActivationListener {
 public:
-    // nullopt when the endpoint could not be created. The caller keeps running: an app that
-    // refused to start because a convenience channel failed would have traded a small annoyance
-    // for a total outage.
+    // nullopt when the endpoint could not be created; the caller keeps running.
     static std::optional<ActivationListener> start(const std::filesystem::path& data_dir,
                                                    std::function<void()> on_activate);
 
@@ -201,23 +144,15 @@ private:
 
 namespace detail {
 
-// Send one already-composed request to the endpoint of `data_dir` and read the ack.
-//
-// The request line is a parameter rather than derived inside, and that is the only reason the
-// refusal path is testable at all: `request_activation` computes the endpoint and the id from
-// the same path, so it can never disagree with itself, and nothing else in the product can
-// produce a request an owner should refuse. A test that cannot construct the wrong request
-// cannot prove the owner rejects it.
+// Send an already-composed request and read the ack. The request is a parameter so tests can
+// send one the owner must refuse.
 ActivationResult send_activation_request(const std::filesystem::path& data_dir,
                                          const std::string& request, std::int64_t timeout_ms);
 
 }  // namespace detail
 
-// The loser's half. Call it *after* `SingleInstanceGuard` reports AlreadyRunning.
-//
-// Blocking, with `timeout_ms` as a hard ceiling. It is called from a process that has opened
-// no database, started no capture, and installed no tray, so blocking the only thread it has
-// is the simplest correct thing it can do.
+// The loser's half; call after SingleInstanceGuard reports AlreadyRunning. Blocking, bounded by
+// `timeout_ms`.
 ActivationResult request_activation(const std::filesystem::path& data_dir,
                                     std::int64_t timeout_ms = kActivationTimeoutMs);
 

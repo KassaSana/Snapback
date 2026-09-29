@@ -13,7 +13,7 @@ using namespace snapback::launchd;
 
 namespace {
 
-// Roadmap 11.7's complaint about the Windows autostart test is that it writes the real
+// Complaint about the Windows autostart test is that it writes the real
 // machine's registry. The launchd backend takes its directory as an argument precisely so this
 // fixture can exist: nothing here can register the test binary to start at login.
 struct AgentDir {
@@ -127,7 +127,7 @@ TEST_CASE("install_agent overwrites a stale agent instead of appending to it") {
 
     const auto plist = read_file(agent_path(dir.path));
     CHECK(contains(plist, "/new/path/snapback"));
-    // The upgrade case from Roadmap 9.4: after reinstalling to a new location, the login item
+    // The upgrade case from after reinstalling to a new location, the login item
     // must not still name the deleted binary.
     CHECK_FALSE(contains(plist, "/old/path/snapback"));
 }

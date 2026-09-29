@@ -1,4 +1,4 @@
-// ROADMAP 11.6 — the lock order is now a property of the locks, so it can be tested.
+// The lock order is now a property of the locks, so it can be tested.
 //
 // Two things are under test here. The mechanism: does RankedMutex actually catch an
 // inversion, and is it still a working mutex? And the thing the mechanism exists for: does

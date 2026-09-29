@@ -51,13 +51,9 @@ export const PermissionWizard = memo(function PermissionWizard({
   const primaryRef = useRef<HTMLButtonElement>(null);
   const checkAgainRef = useRef<HTMLButtonElement>(null);
 
-  // Roadmap 10.3. `aria-modal` promises four things and none were implemented: focus moves in
-  // on open, the page behind stops taking input, Tab stays inside, and focus goes back on
-  // close. The first two and the last live here; Tab is `keepTabInside` below.
-  //
-  // Escape is deliberately not bound. The only way out is "Skip for now", which records the
-  // first-run acknowledgement permanently, and a stray Escape should not end onboarding for
-  // good.
+  // Modal behaviour: focus moves in on open, the page behind is inert, focus returns on close
+  // (Tab trapping is keepTabInside). Escape is not bound: "Skip for now" records the first-run
+  // acknowledgement permanently.
   useEffect(() => {
     if (!visible) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;

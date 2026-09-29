@@ -1,28 +1,10 @@
-// What Snapback costs while it is doing nothing. Roadmap 14.11.
+// What Snapback costs while doing nothing: a real AppState, engine thread, storage connection,
+// and capture thread, left idle with no session. Wakeups are ~constant by construction (the
+// tick runs every kEngineTickIntervalMs); the CPU time beside them is the figure. The input
+// hook is a silent fake, so this is the engine's idle cost, not the whole product's. No
+// threshold, no CI job.
 //
-// The item asks for "idle CPU and wakeups per second with no session", and those two have to
-// be read together or neither means anything. The wakeup count on its own is close to a
-// constant by construction: `kEngineTickIntervalMs` is 100, so the tick loop wakes ten times
-// a second whether or not a session exists, whether or not input is arriving, and whether or
-// not the last tick had anything to do. **That is the finding, not a defect this file fixes.**
-// What it costs to wake that often is the number nobody had.
-//
-// **What this measures.** A real `AppState` with a real engine thread, a real storage
-// connection, and the capture thread running -- started, left alone with no session for a
-// while, then stopped. Every number printed is of the same process over the same interval.
-//
-// **What it deliberately leaves out**, and why the figure is a floor rather than the whole
-// answer: the input hook is a silent fake, so none of the OS-level cost of a real
-// `WH_KEYBOARD_LL` hook and its message pump is here. That part cannot be measured without
-// the platform hook installed, which means a running app; 14.11 says so. A number from this
-// file is "what the engine costs when idle", not "what the product costs when idle", and the
-// two must not be quoted as though they were the same.
-//
-// There is no pass/fail threshold and no CI job, for the reason `bench_budgets.cpp` gives at
-// length: a hosted runner is too noisy to gate on, and a disabled gate lies by omission.
-//
-// Build: -DSNAPBACK_BUILD_BENCHMARKS=ON, target `snapback_idle_benchmarks`.
-// Env:
+// Build: -DSNAPBACK_BUILD_BENCHMARKS=ON, target `snapback_idle_benchmarks`. Env:
 //   SNAPBACK_IDLE_SECONDS  how long to sit idle before reporting (default 10)
 
 #include <atomic>
@@ -110,7 +92,7 @@ int main() {
                   << "  engine_tick_interval_ms=" << kEngineTickIntervalMs << "\n\n";
 
         // Heap-allocated: AppState embeds the 64K-slot capture ring (~5 MB), which is more
-        // than a default thread stack wants to hold (Roadmap 6.1).
+        // than a default thread stack wants to hold.
         auto state = std::make_unique<AppState>(std::move(*storage));
         SilentHook hook;
 

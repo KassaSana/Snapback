@@ -1,30 +1,12 @@
-// macOS overlay: a borderless, always-on-top, non-activating NSPanel card in the top-right.
-// Roadmap 3.1, and ADR-0002's choice of a native panel over a notification.
+// macOS overlay: a borderless, always-on-top, non-activating NSPanel in the top-right, driven
+// by the main run loop webview already runs.
 //
-// The panel is driven by the main thread's run loop, which webview already runs, so like
-// the Windows overlay it needs no loop of its own.
-//
-// Four decisions here are not obvious, and three of them are the difference between a card
-// that works and a card that is simply never seen:
-//
-// 1. NSWindowStyleMaskNonactivatingPanel, not a plain NSWindow. A snapback fires *while the
-//    user is typing somewhere else* — that is the entire premise — so a window that takes
-//    key status would eat the next keystroke. This is the analogue of Windows'
-//    WS_EX_NOACTIVATE, and orderFrontRegardless is the analogue of SW_SHOWNOACTIVATE.
-//
-// 2. hidesOnDeactivate stays NO. Panels default to hiding when their app is not frontmost,
-//    which for this app is almost always. Leaving the default would make the card visible
-//    only in the one situation where it is least needed.
-//
-// 3. NSWindowCollectionBehaviorFullScreenAuxiliary + CanJoinAllSpaces. Without them the
-//    card cannot draw over a full-screen app and does not follow the user across Spaces —
-//    a full-screen editor is a very normal place to be when a snapback fires.
-//
-// 4. The content view answers hitTest: with itself. The card's text is an NSTextField, and
-//    a subview that hit-tests first would swallow the click-to-dismiss. Dismissal is
-//    load-bearing rather than cosmetic: ContextTracker's Recovering state has exactly one
-//    exit (dismiss_recovery), so a card that shows but cannot be dismissed latches the
-//    state machine after the first snapback of a session.
+// 1. NonactivatingPanel, so the card never takes the keystroke the user is typing. 2.
+// hidesOnDeactivate = NO, or the card would hide whenever the app is not frontmost. 3.
+// FullScreenAuxiliary + CanJoinAllSpaces, so it draws over full-screen apps and follows
+//    Spaces.
+// 4. The content view hit-tests as itself, so the text field cannot swallow click-to-dismiss
+//    (dismissal is the tracker's only exit from Recovering).
 #if defined(__APPLE__)
 
 #include "snapback/overlay.hpp"
@@ -107,10 +89,8 @@ public:
         NSScreen* screen = [NSScreen mainScreen] ?: [[NSScreen screens] firstObject];
         if (screen) {
             const NSRect visible = screen.visibleFrame;
-            // monitor_pos.y is passed as 0 so top_right_position's y comes back as a pure
-            // distance *below* the work area's top edge, which is what cocoa_origin_y
-            // consumes. x needs no conversion: both spaces grow rightward from the same
-            // origin. visibleFrame, not frame, so the card clears the menu bar and Dock.
+            // monitor_pos.y = 0 so the y is a distance below the work area's top, which
+            // cocoa_origin_y takes. visibleFrame clears the menu bar and Dock.
             const ScreenPoint top_down =
                 top_right_position({static_cast<int>(NSMinX(visible)), 0},
                                    {static_cast<int>(NSWidth(visible)),
@@ -130,20 +110,15 @@ public:
     void dismiss() override {
         if (![NSThread isMainThread]) return;
 
-        // Idempotent on the AppKit side, but the callback must not be: firing on_dismiss_
-        // for an already-hidden card would clear app state the user never saw a card for.
-        // Both the timer and the click land here, which is why the guard is on the panel's
-        // visibility rather than on the caller.
+        // Fire on_dismiss_ only for a card that was actually visible.
         const bool was_visible = panel_ && panel_.isVisible;
         cancel_timer();
         [panel_ orderOut:nil];
         if (was_visible && on_dismiss_) on_dismiss_();
     }
 
-    // Roadmap 2.16. Stored, not yet wired: the NSPanel draws its text as one attributed
-    // string with no hit regions, so adding "Take me back" here is a panel-layout change
-    // rather than a callback change. Windows carries the feature today; this is where the
-    // macOS half attaches when that layout work happens.
+    // Stored, not wired: the panel has no hit regions yet. The web UI's "Take me back" covers
+    // it.
     void set_action_callback(std::function<bool()> on_action) override {
         on_action_ = std::move(on_action);
     }

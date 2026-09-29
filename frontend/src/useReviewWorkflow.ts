@@ -72,9 +72,7 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
   const [focusSummary, setFocusSummary] = useState<FocusSummary>(EMPTY_FOCUS);
   const [report, setReport] = useState<SummaryReport>(EMPTY_REPORT);
   const [sessionHistory, setSessionHistory] = useState<SessionSummary[]>([]);
-  // Roadmap 10.11. The interval the data on screen was loaded for. It moves only when a load
-  // succeeds, so it can lag `range`: the user has picked a new interval and the cards still
-  // hold -- and must still be labelled with -- the old one. Null until the first load.
+  // The interval the on-screen data was loaded for; moves only on a successful load.
   const [loadedRange, setLoadedRange] = useState<ReviewRange | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,11 +176,8 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
     }
   }, [range]);
 
-  // Roadmap 7.6. The native command is authoritative: once it returns, the row is gone from
-  // SQLite whether or not anything else here succeeds. So the local list is pruned first and
-  // unconditionally, before the refetch -- a failed `refreshReview` sets `error` and leaves
-  // the previous `sessionHistory` in place, which would otherwise keep a deleted session on
-  // screen after the delete succeeded.
+  // The native delete is authoritative, so prune the local list first and unconditionally,
+  // before the refetch (which may fail).
   const deleteSession = useCallback(
     async (sessionId: string) => {
       if (!sessionId) return;
@@ -198,13 +193,9 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
         try {
           await onSessionDeleted?.(sessionId);
         } catch {
-          // The row is already deleted natively. A failed best-effort refresh of the other
-          // surfaces must not tell the user their session still exists (same rule as
-          // usePrivacy's deleteAllActivityData).
+          // The row is already gone natively; a failed refresh must not suggest otherwise.
         }
-        // `delete_session` returns whether a row was actually removed, which distinguishes a
-        // real delete from a stale list entry. Both end with the row absent, so both prune --
-        // but calling the second one "deleted" would credit us with work SQLite didn't do.
+        // Both end with the row absent, but only a real removal is called "deleted".
         setDeleteStatus(removed ? "Session deleted." : "That session was already gone.");
       } catch {
         setDeleteError("Could not delete that session.");
@@ -237,10 +228,7 @@ export const useReviewWorkflow = ({ active, onSessionDeleted }: UseReviewWorkflo
   // What the cards describe. Before anything has loaded there is nothing to describe, so the
   // selection stands in; afterwards it is always the interval the data really came from.
   const displayedRange = loadedRange ?? range;
-  // True when the data on screen belongs to a different interval than the one selected --
-  // during a load, and indefinitely after a failed one. The label on every card comes from
-  // `displayedRange`, so this is for the range bar to say why the pills and the buttons
-  // disagree, not for anything to relabel.
+  // True when the on-screen data belongs to a different interval than the selected one.
   const staleInterval = loadedRange !== null && !sameReviewRange(loadedRange, range);
 
   return {

@@ -7,7 +7,7 @@ import { DailyTrendCard } from "../src/DailyTrendCard";
 import { localIsoDay } from "../src/dailyTrendChart";
 import { InsightsCard } from "../src/InsightsCard";
 
-// Roadmap 10.3. Each Review chart is `<svg role="img">`, which hides its per-bar titles from
+// Each Review chart is `<svg role="img">`, which hides its per-bar titles from
 // assistive tech. These pin the table that carries the same numbers: one reachable control,
 // a real table, and values that match what the bars are drawn from.
 

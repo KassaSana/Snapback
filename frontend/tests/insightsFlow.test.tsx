@@ -175,7 +175,7 @@ describe("Insights card", () => {
   });
 });
 
-// Roadmap 7.6. The native `delete_session` command has been tested since 2026-07-29; what was
+// The native `delete_session` command has been tested since 2026-07-29; what was
 // missing was any way for a user to reach it. These tests are about the reachable path.
 describe("Session deletion from Insights", () => {
   const goalSummary = (id: string, goal: string) => {
@@ -379,7 +379,7 @@ describe("Focus summary card", () => {
     expect(tiles.getByText("72")).toBeInTheDocument();
     expect(tiles.getByText("Peak focus 95")).toBeInTheDocument();
     expect(tiles.getByText(/15% of predictions were distracted/)).toBeInTheDocument();
-    // Roadmap 10.13. A duration, not a bare row count: 18 seconds reads as "18s". The tile
+    // A duration, not a bare row count: 18 seconds reads as "18s". The tile
     // used to show the number of consecutive non-distracted prediction rows under a
     // time-like label.
     expect(tiles.getByText("18s")).toBeInTheDocument();

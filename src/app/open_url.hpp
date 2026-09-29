@@ -1,8 +1,5 @@
-// Open an http/https/mailto URL in the system browser. Roadmap 8.14.
-//
-// The privileged webview must not navigate its main frame to remote content. External links
-// therefore leave through the OS opener, which has no native bridge. The URL is data, never
-// program text — same rule as reveal_path.hpp.
+// Open an http/https/mailto URL in the system browser. The privileged webview never navigates
+// to remote content. The URL is data, never program text (as in reveal_path.hpp).
 #pragma once
 
 #include <string>

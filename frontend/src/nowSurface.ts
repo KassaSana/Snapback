@@ -1,9 +1,4 @@
-// Now surface mode (ADR-0003).
-//
-// The tab is one job; the *screen* still has three shapes. Idle is a start form, running is
-// the session, and just-stopped is the recap of the session that just ended. Deriving that
-// here keeps App.tsx from growing a nest of `sessionActive && recap` checks that would drift
-// apart from the tests.
+// Now surface mode (ADR-0003): idle (start form), running (session), or just-stopped (recap).
 
 export const NOW_SURFACE_MODES = ["idle", "running", "stopped"] as const;
 

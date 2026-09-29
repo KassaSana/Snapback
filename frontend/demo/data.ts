@@ -1,12 +1,5 @@
-// The dataset behind the hosted demo.
-//
-// This directory is deliberately outside `src/`. The demo is a *second* entry point
-// (`demo.html`), never imported by `src/main.tsx`, so there is no build flag to get wrong and
-// no tree-shaking to trust: the desktop bundle cannot contain this code because nothing it
-// compiles refers to it. Being outside `src/` also keeps it out of the Vitest coverage
-// denominator without touching the exclusion list that `check_coverage_exclusions.py` guards.
-//
-// Everything here is invented. No real capture data is committed to this repository.
+// The dataset behind the hosted demo, all invented. Outside `src/` so the desktop bundle cannot
+// include it (nothing it compiles imports it) and it stays out of coverage.
 
 /** Deterministic PRNG, so the demo tells the same story to every visitor. */
 function mulberry32(seed: number): () => number {
@@ -212,7 +205,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
       const sessionId = `demo-${pad(counter)}`;
       const reflection = REFLECTIONS[counter % REFLECTIONS.length];
 
-      // Attended time is always less than wall clock: that gap is the point of 7.23.
+      // Attended time is always less than wall clock.
       const attendedFraction = 0.78 + random() * 0.18;
       const effectiveEnd = isLive ? now : endedAtMs;
       const wallSecs = Math.round((effectiveEnd - startedAtMs) / 1000);

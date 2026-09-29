@@ -34,9 +34,7 @@ std::optional<AppSettings> read_settings_file(const std::filesystem::path& path,
     try {
         return nlohmann::json::parse(in).get<AppSettings>();
     } catch (const std::exception& e) {
-        // Both a JSON syntax error and a type mismatch land here. Reporting the reason is
-        // the whole point of 7.19: the old code caught this and returned defaults, so a
-        // user whose settings reverted had nothing to look at.
+        // JSON syntax errors and type mismatches both land here; report the reason.
         error = e.what();
         return std::nullopt;
     }
@@ -98,17 +96,11 @@ void save_app_settings(const std::filesystem::path& app_data_dir,
         out << nlohmann::json(settings).dump(2) << '\n';
         out.flush();
 
-        // Check the stream *before* the rename. The old code checked only that the file
-        // opened, so a disk that filled up mid-write produced a truncated settings.json and
-        // a silent success. flush() forces the failure to surface here rather than in the
-        // destructor, where it would be discarded.
+        // Check the stream before the rename; flush() surfaces a full disk here.
         if (!out) throw std::runtime_error("failed to write settings temp file");
     }
 
-    // Roadmap 7.21. flush() above only reaches the OS page cache. Without a durable sync, a
-    // power loss after we report success can discard the temp — and after rename, the
-    // directory entry that makes it visible. Fail closed: a save we cannot flush must not
-    // claim to have succeeded.
+    // flush() only reaches the page cache. Fail closed if the save cannot be made durable.
     if (!durable_sync_file(temp)) {
         std::error_code ignored;
         std::filesystem::remove(temp, ignored);
@@ -120,9 +112,8 @@ void save_app_settings(const std::filesystem::path& app_data_dir,
     //    to what the user had; the new settings are simply not applied yet.
     std::error_code ec;
     if (std::filesystem::exists(path, ec) && !ec) {
-        // copy_over, not copy_file+overwrite_existing: the flag is ignored by libstdc++ on
-        // MinGW, and because this call reports through `ec` the failure would be silent —
-        // a stale backup that looks fine. See util/fs_replace.hpp (ROADMAP 11.8).
+        // copy_over, not copy_file + overwrite_existing (ignored by libstdc++ on MinGW); see
+        // util/fs_replace.hpp.
         copy_over(path, backup, ec);
         // A failed backup is not worth losing the save over — the rename below is still
         // atomic, so the user's new settings land either way. Only the recovery copy is lost.
@@ -138,8 +129,7 @@ void save_app_settings(const std::filesystem::path& app_data_dir,
         throw std::runtime_error("failed to replace settings.json");
     }
 
-    // Persist the directory entry that now names the new file. Syncing only the file leaves
-    // the rename itself vulnerable to the same power-loss window 7.21 exists to close.
+    // Sync the directory entry too, or the rename itself can be lost on power failure.
     if (!durable_sync_directory(app_data_dir)) {
         throw std::runtime_error("failed to flush settings directory to disk");
     }

@@ -23,7 +23,7 @@ TEST_CASE("tray_action_for returns None for unknown ids") {
 TEST_CASE("tray_menu_entries shows recording state and the matching privacy action") {
     RecordingStatus status{RecordingState::Recording, 0};
     const auto entries = tray_menu_entries(status);
-    REQUIRE(entries.size() == 7);  // 6 -> 7 with Roadmap 2.16's alert row
+    REQUIRE(entries.size() == 7);  // 6 -> 7 with alert row
 
     CHECK(std::string_view(entries[0].label) == "Status: Recording");
     CHECK(entries[0].command_id == kTrayCmdShow);
@@ -63,7 +63,7 @@ TEST_CASE("a separator's command id is inert") {
     }
 }
 
-// Roadmap 2.16. The alert row, which is deliberately not the recording row.
+// The alert row, which is deliberately not the recording row.
 
 TEST_CASE("tray_action_for maps the alert snooze ids") {
     CHECK(tray_action_for(kTrayCmdSnoozeAlerts) == TrayAction::SnoozeAlerts);
@@ -110,7 +110,7 @@ TEST_CASE("the alert row carries no countdown") {
     CHECK(label.find("min left") == std::string_view::npos);
 }
 
-// Roadmap 9.15 note. `Tray::install` now returns whether an icon really reached the
+// Note. `Tray::install` now returns whether an icon really reached the
 // notification area, and main.cpp turns close-to-tray on only when it says yes. There is no
 // case for it here on purpose: `Tray::instance()` is defined only in the `snapback` app target
 // (see CMakeLists.txt), so asserting on it would mean linking an OS singleton into every test

@@ -1,16 +1,6 @@
-// ROADMAP 11.4 — proving the injected clock actually reaches the engine.
-//
-// A seam that compiles but which production code bypasses is worse than no seam: it reads as
-// coverage while testing nothing. So these cases do not test `ManualClock` (which is trivial),
-// they test that **`AppState` reads time only through it** — that a stamped record carries the
-// injected wall time, and that a duration the engine measures follows the injected steady
-// clock.
-//
-// The payoff the item promised is the last case: durations at their real scale. The pomodoro
-// runs for 25 minutes and the prediction throttle for one second. No sleep-based test can wait
-// out the former, so before this seam that path was reachable only through `_for_test` methods
-// taking `now_ms` — which is 7.14's complaint, and removing them is 7.14's job now that this
-// exists.
+// Proves AppState reads time only through the injected clock: stamped records carry the
+// injected wall time, measured durations follow the injected steady clock, and durations run at
+// real scale (a 25-minute pomodoro, the one-second throttle) without sleeping.
 #include "doctest_wrapper.hpp"
 
 #include "time_literals.hpp"
@@ -178,7 +168,7 @@ TEST_CASE("SystemClock reports wall time with sub-second resolution") {
 }
 
 TEST_CASE("a wall-clock deadline AppState stores keeps its sub-second offset") {
-    // Roadmap 2.13's note said a stored deadline could land up to a second off the instant it
+    // Note said a stored deadline could land up to a second off the instant it
     // was computed from, because the wall reading was whole seconds scaled by 1000. It no
     // longer can, and this is the case that would fail if the scaling came back.
     //

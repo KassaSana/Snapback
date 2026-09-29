@@ -53,7 +53,7 @@ std::set<std::string> load_expected_commands() {
     return out;
 }
 
-// Roadmap 11.13. Events the binary actually emits, and events the frontend is allowed to
+// Events the binary actually emits, and events the frontend is allowed to
 // listen for ahead of an emitter because an open roadmap item owns the other half.
 std::set<std::string> load_emitted_events() {
     const auto fixture = load_fixture();
@@ -115,7 +115,7 @@ std::vector<std::string> raw_string_emit_sites() {
 }
 
 // The registry the app binds, built the way main.cpp builds it but against an in-memory
-// AppState (Roadmap 14.3). Names come from the real registration calls, so a handler that
+// AppState. Names come from the real registration calls, so a handler that
 // is registered under the wrong name, twice, or not at all fails here rather than in a
 // running window. The regex over commands.hpp that this replaced could not see a handler
 // at all, only the text that mentioned it.
@@ -183,7 +183,7 @@ TEST_CASE("IPC contract: frontend invoke names are a subset of the canonical set
 }
 
 TEST_CASE("IPC contract: the emitted event set matches the canonical fixture") {
-    // Roadmap 11.13. The commands had a registry, a fixture, and this test; events had none of
+    // The commands had a registry, a fixture, and this test; events had none of
     // the three, and four dead `listen(...)` calls accumulated because nothing could notice.
     // `events::kAll` is the registry's equivalent for events.
     const auto expected = load_emitted_events();
@@ -241,12 +241,12 @@ TEST_CASE("IPC contract: every frontend listener has an emitter or a named owner
 }
 
 TEST_CASE("IPC contract: canonical set has 77 handler commands") {
-    // 61 -> 65 with Roadmap 9.14's import path; 66 with Roadmap 2.8; 68 with Roadmap 10.14 file
-    // dialogs; 71 with Roadmap 2.16's alert snooze, resume, and delivery preferences; 72 with
+    // 61 -> 65 with import path; 66 with Roadmap 2.8; 68 with file
+    // dialogs; 71 with alert snooze, resume, and delivery preferences; 72 with
     // the daily focus series behind the Review trend surfaces; 73 with cancel_training once
-    // a run could actually be stopped (Roadmap 14.6); 74 is the test-build-only acceptance
-    // verdict sink that proves the page crossed the real webview bridge (Roadmap 10.1); 75
-    // with the session explorer's per-session focus curve (Roadmap 2.9).
+    // a run could actually be stopped; 74 is the test-build-only acceptance
+    // verdict sink that proves the page crossed the real webview bridge; 75
+    // with the session explorer's per-session focus curve.
     // 76 reads the saved automatic label for the end-of-session check-in; 77 reads the
     // selected session's longest snapback for Review.
     CHECK(load_expected_commands().size() == 77);

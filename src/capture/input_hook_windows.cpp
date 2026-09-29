@@ -44,10 +44,8 @@ double now_secs() {
     return static_cast<double>(GetTickCount64()) / 1000.0;
 }
 
-// Immutable foreground context is refreshed by the message loop's timer, outside the
-// low-level callbacks. The callbacks only copy this shared pointer and move the event into
-// the queue: no process lookup, UTF conversion, string copy, or allocation can block the
-// system-wide Windows input path.
+// Refreshed by the message loop's timer; the low-level callbacks only copy this pointer, so
+// nothing can block the system-wide input path.
 std::shared_ptr<const CaptureContext> g_cached_context;
 HWND g_cached_hwnd = nullptr;
 

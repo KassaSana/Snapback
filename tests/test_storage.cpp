@@ -122,7 +122,7 @@ TEST_CASE("storage session lifecycle keeps only one active session") {
 }
 
 TEST_CASE("storage keeps the previous session active when the replacement insert fails") {
-    // Roadmap 7.20. create_session closes the running session and inserts its replacement.
+    // Create_session closes the running session and inserts its replacement.
     // Before those two statements shared a transaction, a failing insert left the user with
     // no active session at all -- the outcome neither the caller nor the user ever asks for.
     TempDir temp;
@@ -272,7 +272,7 @@ TEST_CASE("storage persists prediction model identity and verdict provenance") {
 }
 
 TEST_CASE("session spans accumulate only attended time") {
-    // Roadmap 7.23 / ADR-0005. Two 10-minute spans an hour apart: elapsed is ~2h, attended
+    // ADR-0005. Two 10-minute spans an hour apart: elapsed is ~2h, attended
     // is 20 minutes. The gap is never counted rather than counted and later subtracted.
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -394,11 +394,11 @@ TEST_CASE("a backwards clock cannot make a span subtract time") {
 }
 
 TEST_CASE("a dangling span closes at the newest evidence across every source") {
-    // Roadmap 7.23. The end of a crashed session's span is unknowable, so it is set to the
+    // The end of a crashed session's span is unknowable, so it is set to the
     // last time the session recorded *anything* about the user. Two evidence tables are
     // seeded with the newest written first, so the query is proven to take the maximum rather
     // than whichever table it happens to read last. (`snapback_events` is the third source the
-    // query reads; nothing writes that table yet -- Roadmap 2.15 -- so it cannot be seeded
+    // query reads; nothing writes that table yet -- -- so it cannot be seeded
     // here. It is queried anyway so this keeps working the day 2.15 lands.)
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -506,7 +506,7 @@ TEST_CASE("deleting all activity deletes spans too") {
 }
 
 TEST_CASE("migrating an existing database backs it up first") {
-    // Roadmap 7.22. The transaction in migrate() already covers a migration that *fails*.
+    // The transaction in migrate() already covers a migration that *fails*.
     // This covers the case it cannot: one that succeeds and is wrong. The backup is the only
     // recovery path, so it must exist, carry the pre-migration data, and be openable.
     TempDir temp;
@@ -642,7 +642,7 @@ TEST_CASE("storage upgrades legacy predictions with heuristic model identity") {
     CHECK(newest->state_source == std::optional<std::string>("risk"));
 }
 
-// --- Schema versioning (Roadmap 7.3) -----------------------------------------------------
+// --- Schema versioning -----------------------------------------------------
 
 TEST_CASE("a fresh database is stamped with the current schema version") {
     auto storage = Storage::open_memory();
@@ -690,7 +690,7 @@ TEST_CASE("an unversioned database with a full schema is adopted, not rebuilt") 
 }
 
 TEST_CASE("a pre-2.15 snapback row survives the episode migration with no invented detail") {
-    // Roadmap 2.15 added columns to a table that already existed, so the migration has to
+    // Added columns to a table that already existed, so the migration has to
     // adopt rows written before it. Those rows are real interruptions -- they were counted --
     // and nothing can reconstruct when they began or how long they lasted. They come back with
     // empty detail rather than a plausible-looking zero start time.
@@ -903,16 +903,10 @@ TEST_CASE("refusing a newer database leaves it untouched") {
     CHECK(recovered->get_session(session_id).has_value());
 }
 
-// --- Pre-existing database fixtures (Roadmap 7.11) ---------------------------------------
+// --- Pre-existing database fixtures ---------------------------------------
 //
-// Every other test in this file starts from a database this build just created, which means
-// they all agree with themselves by construction. These start from a file some *other*
-// process left behind — the only shape that matters in the field, because the stable
-// focoflow.db filename means earlier installs' data is picked up.
-//
-// The fixtures are built in-process rather than committed as binary .db files on purpose: a
-// checked-in database cannot be code-reviewed, and it silently stops representing "what an
-// old build wrote" the moment someone regenerates it from a current build.
+// These start from a file another build left behind. Built in-process rather than committed as
+// binary .db files, which cannot be reviewed and drift when regenerated.
 
 namespace {
 
@@ -1066,7 +1060,7 @@ TEST_CASE("reopening a populated database preserves every table's contents") {
     CHECK(recap.avg_focus_score == doctest::Approx(80.0));
 }
 
-// --- Batched history/analytics queries (Roadmap 7.12) ------------------------------------
+// --- Batched history/analytics queries ------------------------------------
 
 namespace {
 
@@ -1133,7 +1127,7 @@ TEST_CASE("recent_session_summaries matches the per-session recap it replaces") 
     // Deliberately no assertion that `running` sorts first. started_at comes from
     // now_rfc3339(), which has whole-second resolution, so three sessions created in the
     // same second tie under ORDER BY started_at DESC and their relative order is undefined.
-    // That is ROADMAP 7.16's "ordering within a second is undefined" showing up in practice
+    // That is "ordering within a second is undefined" showing up in practice
     // — matching recent_sessions() above is the invariant that actually holds.
     CHECK(running.session_id != busy.session_id);
 }
@@ -1141,7 +1135,7 @@ TEST_CASE("recent_session_summaries matches the per-session recap it replaces") 
 TEST_CASE("recent_session_summaries keeps aggregates attached under same-second ties") {
     // The defect this guards: recent_session_summaries runs three queries that each
     // re-derive "the most recent N sessions". started_at has only second resolution
-    // (ROADMAP 7.16), so sessions created in one test body — or by a user starting and
+    //, so sessions created in one test body — or by a user starting and
     // stopping quickly — all tie. If two of those queries broke the tie differently, a
     // session would appear in the result with its aggregates silently zeroed.
     //
@@ -1247,7 +1241,7 @@ TEST_CASE("context_app_counts honours the session limit and skips blank app name
     storage->save_context_snapshot(newer.session_id, snapshot("", ts(2)));
 
     // Backdate the older session explicitly. Both were created in the same wall-clock
-    // second, and started_at has only second resolution (ROADMAP 7.16), so without this the
+    // second, and started_at has only second resolution, so without this the
     // LIMIT 1 below would pick between two tied rows arbitrarily and the test would flake.
     storage->backdate_session_for_test(older.session_id, ms("2020-01-01T00:00:00Z"));
 
@@ -1271,7 +1265,7 @@ TEST_CASE("context_app_counts filters by session start when given a cutoff") {
     CHECK(included.at("Cursor") == 1);
 }
 
-// --- Single-session deletion (Roadmap 7.6) -----------------------------------------------
+// --- Single-session deletion -----------------------------------------------
 
 TEST_CASE("delete_session removes the session and every row collected during it") {
     // Until this existed the only eraser was delete_all_activity_data, so removing one bad
@@ -1746,20 +1740,10 @@ TEST_CASE("export still succeeds on a writable destination") {
     CHECK(std::filesystem::is_regular_file(temp.path / "labels.csv"));
 }
 
-// --- ROADMAP 7.11: the large fixture -----------------------------------------------------
+// --- The large fixture -----------------------------------------------------
 //
-// Five of the six fixture shapes landed on 2026-07-29; this is the sixth, and it was left
-// open deliberately because it is the entry point for the questions 7.12 and 4.4 could not
-// ask. "Does the plan still use an index at scale" and "did the 10,000-row cap really go
-// away" cannot be asked of a database with four rows in it, and until now **no test in this
-// repo seeded more than a handful.**
-//
-// That matters most for 7.1. Its own write-up specified the regression test — *"seed >10,000
-// predictions across several days, assert the weekly sample_count exceeds 10,000, watch it
-// go red against today's code"* — and 7.1 was marked DONE without it ever being written. The
-// fix is real (the window is in SQL now), but nothing pinned it, so a future change could
-// reintroduce a cap and every existing test would still pass. Every test seeds far fewer
-// than 10,000 rows, which is precisely what made the original bug structurally invisible.
+// Enough rows (well over 10,000, across days) to ask scale questions: does the plan still use
+// an index, and is there no hidden row cap.
 namespace {
 
 // Builds a database with more rows than any cap the code has ever had. Sessions are spread
@@ -1886,7 +1870,7 @@ TEST_CASE("a large database still serves the hot queries from an index") {
 }
 
 TEST_CASE("the windowed prediction reads plan as a seek and the whole-history ones as a scan") {
-    // Roadmap 14.13. `(?1 IS NULL OR timestamp >= ?1)` and a bare `timestamp >= ?1` return
+    // `(?1 IS NULL OR timestamp >= ?1)` and a bare `timestamp >= ?1` return
     // identical rows, so the 12,000-row parity test below passes either way and the 8.7x these
     // spellings bought is invisible to every value assertion in this file. The query plan is
     // the only place the claim lives, which is what makes this the guard and not a nicety.
@@ -1970,7 +1954,7 @@ TEST_CASE("batched aggregation over a large database matches the per-session pat
 
 namespace {
 
-// The C++ fold that Roadmap 7.12 moved into SQL, kept here as the reference implementation the
+// The C++ fold that moved into SQL, kept here as the reference implementation the
 // new queries are compared against. Not a rewrite of the SQL in another language: this is the
 // code that used to run in `AppState::analytics` and `AppState::summary_report`, so a
 // disagreement means the move changed an answer the user was already being shown.
@@ -1991,7 +1975,7 @@ ReferenceStats fold_in_cpp(const std::vector<PredictionRecord>& predictions) {
         std::size_t distracted{};
     };
     std::array<Bucket, 24> buckets{};
-    // Roadmap 10.13. The focused stretch is a duration now, and its reference implementation is
+    // The focused stretch is a duration now, and its reference implementation is
     // the production one -- `summarize_predictions` -- rather than a second copy of the gap
     // rule, which would only prove the test agrees with itself.
     //
@@ -2036,7 +2020,7 @@ ReferenceStats fold_in_cpp(const std::vector<PredictionRecord>& predictions) {
 }  // namespace
 
 TEST_CASE("SQL prediction aggregates match the C++ fold they replaced, at 12,000 rows") {
-    // Roadmap 7.12. The point of the fixture is that these numbers cannot be checked by
+    // The point of the fixture is that these numbers cannot be checked by
     // inspection: 12,000 rows across 60 sessions and 20 days is where a wrong GROUP BY, a
     // silently truncated CAST, or a local-hour conversion that disagrees with the C library
     // shows up as a plausible number rather than an obvious one.
@@ -2055,7 +2039,7 @@ TEST_CASE("SQL prediction aggregates match the C++ fold they replaced, at 12,000
         CHECK(actual.sample_count == expected.sample_count);
         CHECK(actual.sample_count > 0);
         CHECK(actual.avg_focus_score == doctest::Approx(expected.avg_focus_score));
-        // Roadmap 7.33. The peak moved into this query so the Review focus summary can be
+        // The peak moved into this query so the Review focus summary can be
         // served from it; without this line the new column could return anything.
         CHECK(actual.peak_focus_score == doctest::Approx(expected.peak_focus_score));
         CHECK(actual.peak_focus_score >= actual.avg_focus_score);
@@ -2082,7 +2066,7 @@ TEST_CASE("SQL prediction aggregates match the C++ fold they replaced, at 12,000
 }
 
 TEST_CASE("the SQL productive-session streak matches the recap loop it replaced") {
-    // Roadmap 7.12. The loop counted leading *completed* sessions whose recap average was at
+    // The loop counted leading *completed* sessions whose recap average was at
     // or above the bar, skipping running ones and stopping at the first one below.
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -2118,7 +2102,7 @@ TEST_CASE("the SQL productive-session streak matches the recap loop it replaced"
 }
 
 TEST_CASE("SQL session-window totals match the summary loop they replaced") {
-    // Roadmap 7.12. The cap applies to recency before the window filter, which is what makes
+    // The cap applies to recency before the window filter, which is what makes
     // this worth pinning: applying them the other way round is an easy and invisible change.
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -2163,7 +2147,7 @@ TEST_CASE("SQL session-window totals match the summary loop they replaced") {
 }
 
 TEST_CASE("the analytics aggregates run in a bounded number of queries") {
-    // Roadmap 7.12's actual acceptance boundary. Correctness parity above says the answers
+    // Actual acceptance boundary. Correctness parity above says the answers
     // match; this says the work to get them no longer grows with the database. The counter is
     // SQLite's own, so it counts every statement the queries prepare, including the ones a
     // future edit might add back inside a loop.
@@ -2194,7 +2178,7 @@ TEST_CASE("the analytics aggregates run in a bounded number of queries") {
     CHECK(per_session > 5 * LargeFixture::kSessions);
 }
 
-// --- Roadmap 2.14: optional end-of-session reflection --------------------------------------
+// --- optional end-of-session reflection --------------------------------------
 
 TEST_CASE("a session reflection round-trips, and never answering stays distinguishable") {
     auto storage = Storage::open_memory();
@@ -2324,7 +2308,7 @@ TEST_CASE("the reflection migration is idempotent when the columns already exist
     CHECK(kept->reflection_next_step == "kept too");
 }
 
-// --- Roadmap 2.19: attended time inside a local day / week ---------------------------------
+// --- attended time inside a local day / week ---------------------------------
 
 namespace {
 
@@ -2418,7 +2402,7 @@ TEST_CASE("attended minutes are whole and never rounded up") {
 }
 
 TEST_CASE("attended_secs_since clips to an arbitrary Review lower bound") {
-    // Roadmap 2.19 Review half. 30d / custom ranges are not calendar day/week windows; they
+    // Review half. 30d / custom ranges are not calendar day/week windows; they
     // still must count the same clipped spans, just against a caller-supplied floor.
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -2550,20 +2534,13 @@ TEST_CASE("daily_summary counts sessions and snapback episodes by local day") {
     CHECK(days[0].snapback_count == 1);
 }
 
-// --- ADR-0007 / Roadmap 7.16: time is INTEGER epoch milliseconds ---------------------------
+// --- ADR-0007: time is INTEGER epoch milliseconds ---------------------------
 
 namespace {
 
-// The storage class SQLite actually used for one cell, as `typeof()` reports it.
-//
-// Read straight from the file rather than through Storage, so it needs no test-only API on the
-// shipping class (7.14) and cannot be satisfied by the layer under test. It has to be asserted
-// directly because nothing else in the suite can see it: SQLite is dynamically typed, so
-// writing "2026-08-09T10:00:00Z" into an INTEGER column succeeds and keeps it as TEXT, and
-// every read, every ORDER BY, and every round trip through the DTOs then behaves exactly as it
-// did before the migration. A suite that only checks values stays green against a schema that
-// never really moved -- which is the state this tree was briefly in, between the migration
-// landing and the writers being converted.
+// The storage class SQLite actually used for one cell (`typeof()`), read straight from the
+// file. SQLite is dynamically typed, so TEXT in an INTEGER column round-trips identically; only
+// this can show a schema that never really moved.
 std::string cell_type(const std::filesystem::path& dir, const std::string& table,
                       const std::string& column) {
     sqlite3* db = nullptr;
@@ -2745,7 +2722,7 @@ private:
 }  // namespace
 
 TEST_CASE("a write that waits out a foreign lock is counted and still succeeds") {
-    // Roadmap 14.11. The figure nobody had: how often kSqliteBusyTimeoutMs is reached. A
+    // The figure nobody had: how often kSqliteBusyTimeoutMs is reached. A
     // write that waited 400 ms and then succeeded looks, from every other vantage point in
     // the process, exactly like one that never waited -- same rows, same return.
     TempDir temp;
@@ -2890,7 +2867,7 @@ TEST_CASE("migration keeps a genuine NULL and floors an unparseable value to the
     CHECK(*broken->ended_at_ms == ms("1970-01-01T00:00:00Z"));
 }
 
-// Roadmap 2.9. The session explorer's curve: one session's predictions, in time order, folded
+// The session explorer's curve: one session's predictions, in time order, folded
 // into equal slices of that session's own span, and nothing from any other session.
 TEST_CASE("session_focus_curve slices one session's span and ignores every other session") {
     auto storage = Storage::open_memory();

@@ -102,10 +102,7 @@ public:
     }
 
     void stop() noexcept override {
-        // Stop the HOOK thread's run loop, not the caller's. This used to be
-        // CFRunLoopStop(CFRunLoopGetCurrent()), which on the UI thread targeted the app's
-        // own run loop — wrong loop, and under the webview potentially a live one. It only
-        // appeared to work because run() polls with a timeout and rechecks running_.
+        // Stop the hook thread's run loop, not the caller's.
         std::lock_guard lock(run_loop_mutex_);
         if (run_loop_) CFRunLoopStop(run_loop_);
     }
@@ -120,11 +117,7 @@ private:
         auto* self = static_cast<MacInputHook*>(user);
         if (!self) return event;
 
-        // macOS DISABLES the tap when it sends either of these — recognizing the message
-        // is not handling it. Without re-enabling, capture dies for the rest of the
-        // process lifetime while HealthStatus still reports capture_running == true.
-        // ByTimeout fires when a callback overruns the system's deadline; ByUserInput when
-        // something disabled the tap out from under us. Both are recoverable.
+        // macOS disables the tap when sending these; re-enable or capture silently dies.
         if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
             if (self->tap_) CGEventTapEnable(self->tap_, true);
             return event;
@@ -136,11 +129,8 @@ private:
             ev.event_type = map_event(type);
             ev.timestamp_secs = now_secs();
             ev.wall_clock_secs = wall_clock_secs_now();
-            // Read the cache, never query here. This used to call query_active_window()
-            // per event, which on macOS shells out to `osascript` (active_window.cpp) —
-            // forking a process per keystroke and per mouse-move, inside the tap callback.
-            // That blew the tap's deadline, which triggered the disable above. The cache
-            // is refreshed by run() on this same thread, so no lock is needed.
+            // Read the cache; never query here (osascript per event would overrun the tap
+            // deadline).
             ev.captured_context = self->cached_context_;
             if (ev.event_type == EventType::MouseMove) {
                 ev.mouse_speed = 0;
@@ -170,25 +160,9 @@ private:
         cached_context_ = std::make_shared<CaptureContext>(
             CaptureContext{std::move(active->app_name), std::move(active->window_title)});
 
-        // Emit the change as an event, not just into the cache.
-        //
-        // This was the whole reason macOS could not tell focus from distraction. The tap
-        // path stamped every key/mouse event with the cached app, so features knew *which*
-        // app you were in — but `WindowFocusChange`/`WindowTitleChange` were emitted only
-        // by run_polling_fallback(), i.e. only when the tap failed to create. With a
-        // working tap, the engine never saw a single window change, so
-        // `context_switches_30s`, `context_switches_5min`, and `window_title_changed_30s`
-        // were **permanently zero**.
-        //
-        // The consequences, measured over 714 real predictions on 2026-07-25: `thrash`
-        // caps at 0.30 without switch counts and so can never reach the 0.75 DISTRACTED
-        // threshold; `drift` caps at 0.30 without title churn and so can never reach the
-        // 0.55 PSEUDO_PRODUCTIVE threshold. Two of the four focus states were unreachable
-        // — every prediction ever made on this machine was PRODUCTIVE or DEEP_FOCUS. It
-        // also starved ContextTracker, which only advances on window changes, so snapback
-        // recovery could never fire either.
-        //
-        // `force` is the startup seed: the first observation is not a change.
+        // Emit window changes as events, not just into the cache: context-switch and
+        // title-churn features, and snapback recovery, depend on them. `force` is the startup
+        // seed, not a change.
         if ((app_changed || title_changed) && callback_) {
             CaptureEvent ev;
             ev.event_type =

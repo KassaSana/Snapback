@@ -101,7 +101,7 @@ TEST_CASE("PomodoroStatus serializes the stable camelCase IPC contract") {
     CHECK(json.at("remainingMs") == 1234);
 }
 
-// --- Roadmap 2.13: pause/resume, skip, restart, and the relaunch policy ---------------------
+// --- pause/resume, skip, restart, and the relaunch policy ---------------------
 
 TEST_CASE("pausing freezes the countdown and resuming costs the phase nothing") {
     PomodoroTimer t;

@@ -148,7 +148,7 @@ describe("Pomodoro card", () => {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("running");  // Roadmap 7.23: running/paused, not "active"
+    await screen.findByText("running");  // running/paused, not "active"
 
     const card = pomodoroCard();
     fireEvent.click(within(card).getByRole("button", { name: "Start Pomodoro" }));
@@ -182,7 +182,7 @@ describe("Pomodoro card", () => {
     expect(await within(card).findByText("12:00")).toBeInTheDocument();
   });
 
-  // Roadmap 2.13. Drives the real card + usePomodoro + api.ts against the mocked boundary,
+  // Drives the real card + usePomodoro + api.ts against the mocked boundary,
   // so a control that is wired to the wrong command fails here rather than in the app.
   const startSessionAndTimer = async () => {
     render(<App />);

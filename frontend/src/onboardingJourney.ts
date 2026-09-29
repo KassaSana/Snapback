@@ -1,19 +1,6 @@
-// Roadmap 2.12. The guided continuation that takes a new user from "capture works" to "I have
-// seen this thing be useful".
-//
-// This **extends** 1.1 rather than replacing it. `PermissionWizard` ends the moment the OS lets
-// Snapback watch the active window, and a granted permission is not the same as reaching value:
-// nothing in the product has yet taught the loop it exists for — choose a goal, start, read a
-// verdict, correct it, stop, and look at the recap.
-//
-// **The whole thing is an observer.** It issues no commands and writes no rows; every step
-// advances because the app's own state changed, which is the item's "state-driven, not a Next
-// button" requirement and also the thing that makes it safe to repeat. A guide that started a
-// session to demonstrate starting a session would manufacture exactly the fake records and
-// labels the item forbids. So: the user does the step, or the step does not happen.
-//
-// The only thing persisted is which run the user has finished or skipped — local state, no
-// analytics service implied or reachable.
+// The guided continuation after the permission wizard: choose a goal, start, read a verdict,
+// correct it, stop, read the recap. It only observes: every step advances because app state
+// changed, and it issues no commands, so it is safe to repeat. Only completion is persisted.
 
 export const ONBOARDING_STEPS = [
   "goal",
@@ -26,8 +13,7 @@ export const ONBOARDING_STEPS = [
 
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
-// The literal, and whether the erase touches it, live in browserStorage.ts so a
-// key cannot exist without a classification (Roadmap 8.15).
+// Key literal and its erase classification live in browserStorage.ts.
 export { ONBOARDING_DONE_KEY } from "./browserStorage";
 import { ONBOARDING_DONE_KEY } from "./browserStorage";
 
@@ -125,11 +111,8 @@ export type OnboardingFailure = {
 };
 
 /**
- * A blocking problem the guide must hand off rather than talk over.
- *
- * The item requires failures to "route to the relevant recovery UI". The guide has no recovery
- * UI of its own and should not grow one — Permissions and Privacy already own these problems,
- * and a second set of remediation copy is a second thing to keep true.
+ * A blocking problem the guide hands off to the UI that owns it (Permissions, Privacy) rather
+ * than growing its own remediation copy.
  */
 export function onboardingFailure(input: {
   captureFailed: boolean;

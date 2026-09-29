@@ -1,5 +1,5 @@
 // The one include site for doctest — every test includes this instead of
-// <doctest/doctest.h> directly (Roadmap 6.5).
+// <doctest/doctest.h> directly.
 //
 // Why: doctest v2.4.11 specializes std::tuple, which MSVC flags as C5285 once
 // per translation unit. 24 TUs × 1 warning buried our *own* diagnostics — part

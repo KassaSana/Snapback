@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 2.19. Drives the real card + hook + api against a mocked native boundary.
+// Drives the real card + hook + api against a mocked native boundary.
 const boundary = vi.hoisted(() => {
   const state: {
     health: Record<string, unknown>;

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 9.14. Drives the real card + useDataImport + api.ts against the mocked native
+// Drives the real card + useDataImport + api.ts against the mocked native
 // boundary, so a control wired to the wrong command fails here rather than in the app.
 const boundary = vi.hoisted(() => {
   const state: {

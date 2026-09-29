@@ -56,7 +56,7 @@ SnapbackEpisode make_episode(const std::string& id, std::uint32_t duration_secs,
 
 }  // namespace
 
-// Roadmap 2.15. The recap has always reported an interruption count; until the episodes were
+// The recap has always reported an interruption count; until the episodes were
 // stored, that number was both always zero and — had it not been — unverifiable by the person
 // it describes. An export that states a count it cannot show is not an answer to "what do you
 // have on me".
@@ -203,7 +203,7 @@ TEST_CASE("render_personal_archive names an untitled session rather than leaving
 }
 
 TEST_CASE("the personal export carries the user's own words back to them") {
-    // Roadmap 2.14. The export exists so the user keeps what they wrote; metrics they can
+    // The export exists so the user keeps what they wrote; metrics they can
     // recompute, a reflection they cannot.
     PersonalArchive archive;
     auto session = make_session("s1", "ship the exporter");

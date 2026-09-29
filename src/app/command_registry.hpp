@@ -1,17 +1,6 @@
-// The native command set as data: every command the frontend can invoke, with its handler
-// and, for the slow ones, the worker policy the bridge applies. Webview-free on purpose.
-//
-// Roadmap 14.3. Before this, the registered handlers existed only as closures handed
-// straight to webview.bind() inside a function that could not be compiled without the
-// webview headers. Tests could exercise the dispatcher and re-create individual handler
-// lambdas by hand, and the IPC contract test matched command names by regex over the
-// source text -- so a real handler's payload could drift with nothing to catch it, and a
-// bug in the wiring of a real command (the training run on the synchronous binding, found
-// 2026-09-16) was invisible to every test.
-//
-// Now the handlers register here, the webview adapter (app/commands.hpp) binds whatever is
-// registered, and a test can build the same registry against a real AppState and invoke any
-// command by name through the same envelope the bridge uses.
+// Every command the frontend can invoke, with its handler and (for slow ones) the worker
+// policy. Webview-free, so tests can build the same registry against a real AppState and invoke
+// any command by name through the bridge's envelope.
 #pragma once
 
 #include <atomic>
@@ -64,12 +53,9 @@ public:
         for (const auto& [name, descriptor] : commands_) fn(descriptor);
     }
 
-    // The test seam: run a command exactly as the bridge would frame it -- the request is
-    // the JSON *array* the shim sends, the reply is the JSON string the shim receives,
-    // errors arrive as the {__snapback_error} envelope -- but inline, on this thread. An
-    // async command's handler runs the same way; its gate and worker are the adapter's
-    // concern and are not simulated here. An unknown name is an error envelope too, which
-    // is what a stale frontend call would see.
+    // Test seam: run a command as the bridge frames it (JSON-array request, JSON reply, error
+    // envelope), inline on this thread. Async gates and workers are not simulated. An unknown
+    // name is an error envelope.
     std::string invoke(const std::string& name, const std::string& request_array,
                        const std::string& expected_token = {}) const;
 

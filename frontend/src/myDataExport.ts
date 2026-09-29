@@ -1,14 +1,5 @@
-// Roadmap 9.16. What to say after "Export my data".
-//
-// Pure and separately tested for the same reason activityDeletion.ts is: this sentence is a
-// claim about whether the user is holding all of their data, and the component suite cannot
-// run on this machine (11.11).
-//
-// The claim it replaces was false in two ways at once. The document said it contained "every
-// session" while the command stopped at 200 of them and 500 windows within each; and the
-// `truncated` flag came from the session cap alone, so a file that dropped the 501st window of
-// an *included* session was reported to the UI as complete. The export is now complete, and
-// the wording says which of those two things happened rather than leaving it implied.
+// What to say after "Export my data": whether the user holds all of their data, naming any
+// record types that were omitted.
 
 import type { MyDataExportResult } from "./api";
 

@@ -1,21 +1,5 @@
-// The Windows Run-key mechanism, with the key path as an argument. Roadmap 11.7.
-//
-// This exists for the same reason autostart_launchd.hpp and autostart_systemd.hpp do: the
-// mechanism has to be testable without touching the developer's (or the CI runner's) real
-// login configuration. Those two take their target *directory* as a parameter; this takes
-// the target *key path*, so a test can round-trip against a throwaway key under HKCU and
-// delete it afterwards.
-//
-// Before this, `tests/test_autostart.cpp` wrote to the real
-// `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. That made a passing suite depend on
-// ambient machine state — writing that key is a textbook persistence technique, so hardened
-// environments refuse it, and 2 of the first 6 observed Windows CI runs did exactly that
-// (~33%, alternating between the two Windows jobs on identical code). It also meant a test
-// crash between the write and the restore would leave the *test binary* registered to launch
-// at every login, which is the same accident 3.0 caused twice on macOS and Linux.
-//
-// Unlike the launchd and systemd modules, this one cannot compile off Windows: there is no
-// registry to call. It is guarded, and so is its test.
+// The Windows Run-key mechanism, with the key path as an argument so tests round-trip a scratch
+// key under HKCU instead of the real Run key. Windows-only.
 #pragma once
 
 #if defined(_WIN32)

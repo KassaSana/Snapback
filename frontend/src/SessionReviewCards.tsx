@@ -10,8 +10,7 @@ type SessionReviewCardsProps = {
   handleSkipSurvey: () => void;
   recap: SessionRecap | null;
   surveyPending: boolean;
-  // Roadmap 2.14. Shown alongside the check-in at the end of a session, and closed by either
-  // saving or skipping.
+  // Shown with the check-in; closed by saving or skipping.
   reflectionPending: boolean;
   reflectionSaved: boolean;
   handleSaveReflection: (done: string | null, nextStep: string | null) => void | Promise<void>;
@@ -82,11 +81,8 @@ export const SessionReviewCards = memo(function SessionReviewCards({
           <div className="meta">
             <div>
               {/*
-                Attended time leads when we have it (Roadmap 7.23 / ADR-0005): "you were here
-                for 40 of the 95 minutes this session was open" is the honest headline, and
-                elapsed alone used to report a session left running overnight as a night of
-                focus. Sessions recorded before attended time existed have activeSecs === null
-                and fall back to elapsed rather than claiming zero.
+                Attended time leads when known (ADR-0005). Older sessions have activeSecs ===
+                null and fall back to elapsed rather than claiming zero.
               */}
               <p className="meta-label">{recap.activeSecs === null ? "Duration" : "Attended"}</p>
               <p className="meta-value">

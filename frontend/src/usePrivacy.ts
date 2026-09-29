@@ -18,9 +18,7 @@ export const privacyExclusionWarning = (value: string): string | null => {
 
 type UsePrivacyArgs = {
   onActivityDataDeleted?: () => void | Promise<void>;
-  // Roadmap 2.10. The header's recording state is a separate read of the same native
-  // setting. Flipping the toggle here must make that side ask again, or Settings says
-  // "private mode on" under a header still saying "Recording".
+  // The header re-reads recording state when this toggle flips.
   onPrivateModeChanged?: () => void | Promise<void>;
 };
 
@@ -30,7 +28,7 @@ export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UseP
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletionStatus, setDeletionStatus] = useState<string | null>(null);
-  // Roadmap 8.12. A partial erasure is not good news and must not be styled as if it were.
+  // A partial erasure must not be styled as success.
   const [deletionWarning, setDeletionWarning] = useState(false);
   const [deletionRetained, setDeletionRetained] = useState<string | null>(null);
   const [dataFolderStatus, setDataFolderStatus] = useState<string | null>(null);
@@ -90,9 +88,7 @@ export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UseP
     [saveExclusions, settings],
   );
 
-  // Roadmap 7.6. Deliberately not a toggle or a stored setting — one shot, and the outcome is
-  // reported as text rather than by opening a window the user may not see (on macOS Finder can
-  // come forward behind Snapback's own window, which looks like nothing happened).
+  // Outcome reported as text: Finder can open behind Snapback's window.
   const openDataFolder = useCallback(async () => {
     setError(null);
     setDataFolderStatus(null);
@@ -110,17 +106,13 @@ export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UseP
     }
   }, []);
 
-  // Roadmap 7.6. Reports the counts, not just "done": an export that wrote nothing because the
-  // history is empty looks identical to a broken one unless the numbers are on screen.
+  // Report the counts: an empty export and a broken one look alike otherwise.
   const exportMyData = useCallback(async () => {
     setBusy(true);
     setError(null);
     setExportStatus(null);
     try {
       const result = await api.exportMyData();
-      // Roadmap 9.16. The export is complete now, so the message says so rather than staying
-      // silent about it -- "we wrote a file" and "we wrote all of it" are different claims,
-      // and this one is the reason the feature exists.
       setExportStatus(myDataExportMessage(result));
     } catch {
       setError("Could not export your data.");
@@ -137,10 +129,7 @@ export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UseP
     setDeletionRetained(null);
     try {
       const result = await api.deleteAllActivityData();
-      // Roadmap 8.15. The browser's own copies, cleared here because the native side cannot
-      // reach them. Sequenced after the native erase for the same reason the native one does
-      // the database before the exports: the authoritative copy goes first, and a failure on
-      // this side must not be able to prevent it.
+      // The browser's own copies, cleared after the native erase (authoritative copy first).
       const alsoCleared = clearActivityStorage();
       try {
         await onActivityDataDeleted?.();
@@ -148,9 +137,7 @@ export const usePrivacy = ({ onActivityDataDeleted, onPrivateModeChanged }: UseP
         // The backend deletion has already succeeded. A failed best-effort UI refresh
         // must not tell the user that their stored activity still exists.
       }
-      // Roadmap 8.12. The message is derived from what the native side reported rather than
-      // fixed: the operation can legitimately half-succeed, and a flat "deleted" over a
-      // partial result is the specific claim this item exists to stop.
+      // Derived from what the native side reported, since the erase can half-succeed.
       setDeletionStatus(activityDeletionMessage(result, alsoCleared));
       setDeletionWarning(activityDeletionIsWarning(result));
       setDeletionRetained(activityDeletionRetainedNote(result));

@@ -1,15 +1,5 @@
-// Roadmap 10.13. How the app is allowed to talk about "streaks".
-//
-// Three nearly identical labels sat over three incompatible quantities. Recent Focus's "Focus
-// streak" and Summary's "Best streak" were counts of consecutive non-DISTRACTED **prediction
-// rows**; Analytics's "Focus streak" was consecutive completed **sessions** scoring at least
-// 70. Predictions arrive when input produces a reading, not once per second, so neither row
-// count was elapsed focus by any reading — and two people doing identical work got different
-// numbers purely from typing cadence.
-//
-// The rule this module exists to enforce: **never display a row count with time-like copy.**
-// The two row-count tiles are now durations, and the session metric says "sessions" in its
-// own sentence.
+// How the app talks about "streaks": never put time-like copy on a row count. Focus stretches
+// are durations; the session metric says "sessions" in its own sentence.
 
 /** The unit each metric is actually in, so a label can never be attached to the wrong one. */
 export const FOCUS_STRETCH_LABEL = "Longest focus";

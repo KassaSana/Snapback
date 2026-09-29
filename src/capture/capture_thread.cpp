@@ -12,16 +12,8 @@ std::int64_t CaptureThread::steady_now_ms() {
 }
 
 void CaptureThread::record_failure(const char* reason) noexcept {
-    // Clear running_ BEFORE setting failed_, so no observer can ever see both at once.
-    // AppState::health() reads the two flags in separate loads and publishes them as
-    // `status` and `captureRunning`; with the stores the other way round there was a window
-    // where the diagnostics panel said "capture failed" and "running: true" in the same
-    // report. Found by ROADMAP 11.1: running each doctest case in its own process made a
-    // pre-existing ~2.5% flake reproducible, and the flaky assertion was the honest one.
-    //
-    // Publish the reason under failure_mutex_ before failed_ flips. health() can observe
-    // failed() then take the same mutex; writing the string first means that path never
-    // returns capture_failed with an empty explanation for a failure that already has one.
+    // Clear running_ before setting failed_, so health() never reports both. Publish the reason
+    // under failure_mutex_ first, so a failed() reader never sees an empty explanation.
     running_.store(false, std::memory_order_release);
     try {
         std::lock_guard lock(failure_mutex_);
@@ -66,10 +58,8 @@ void CaptureThread::start(InputHook* hook) {
                         ev.event_type == EventType::KeyRelease ||
                         ev.event_type == EventType::MouseMove ||
                         ev.event_type == EventType::MouseClick;
-                    // If the engine isn't draining fast enough the buffer fills and we drop,
-                    // Record the drop so health reporting can surface backpressure.
-                    // The event is moved end-to-end. Live input events carry immutable shared
-                    // context, so this queue handoff copies neither context string.
+                    // The engine is not draining fast enough; count the drop for health
+                    // reporting.
                     if (!buffer_.push(std::move(ev))) {
                         dropped_.fetch_add(1, std::memory_order_relaxed);
                     } else {

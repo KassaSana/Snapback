@@ -1,7 +1,4 @@
-// SQLite persistence.
-//
-// Another "easier in C++" case: SQLite is a C library, so you call sqlite3_* directly
-// through the SQLite C API. The DB filename stays focoflow.db for install compatibility.
+// SQLite persistence. The DB filename stays focoflow.db for install compatibility.
 #pragma once
 
 #include <atomic>
@@ -25,22 +22,12 @@ namespace snapback {
 
 inline constexpr int kDefaultRetentionDays = 90;
 inline constexpr std::size_t kVacuumMinDeletedRows = 500;
-// How long a writer waits on SQLITE_BUSY before failing. Without this, BEGIN IMMEDIATE
-// returns immediately when another connection holds a write lock, the engine tick throws
-// after draining the ring, and that persistence batch is discarded. A few hundred
-// milliseconds covers a backup tool or inspector briefly opening the file; a sustained
-// external writer still fails, but ordinary contention no longer loses a drained slice.
+// How long a writer waits on SQLITE_BUSY before failing, so brief contention (a backup tool
+// opening the file) does not discard a drained persistence batch.
 inline constexpr int kSqliteBusyTimeoutMs = 500;
 
-// How often that timeout is actually reached. Roadmap 14.11 named this as one of the four
-// figures nothing measured, and it cannot be read off anything else: a write that waited
-// 400 ms and then succeeded is indistinguishable, from the outside, from one that never
-// waited at all.
-//
-// `waits` counts busy handler invocations -- the pressure. `exhausted` counts the times the
-// handler gave up and the caller saw SQLITE_BUSY -- the failure, which for the engine means
-// a drained persistence batch discarded (7.12). The first is the leading indicator of the
-// second, and publishing only the second would make the problem look binary.
+// How often that timeout is hit. `waits` counts busy-handler invocations (pressure);
+// `exhausted` counts the times the caller saw SQLITE_BUSY (failure).
 struct SqliteBusySnapshot {
     std::uint64_t waits{};
     std::uint64_t exhausted{};
@@ -49,34 +36,20 @@ struct SqliteBusySnapshot {
     std::uint64_t max_wait_ms{};
 };
 
-// Roadmap 7.22. The copy taken immediately before a schema migration alters the database,
-// named for the version it was taken *from* so a user with two upgrades behind them can tell
-// which is which. Formatted as `focoflow.db.pre-v<N>.bak`.
+// The pre-migration backup name, `focoflow.db.pre-v<N>.bak`, named for the version it was taken
+// from.
 std::string pre_migration_backup_name(int from_version);
 
-// The schema version this build writes and understands, stored in `PRAGMA user_version`.
+// Schema version this build writes, stored in `PRAGMA user_version`. Bump it and append to the
+// migration list in storage.cpp when the schema changes.
 //
-// Bump this and append to the migration list in storage.cpp whenever the schema changes.
-// Two rules that the migration runner depends on and cannot check for you:
-//
-//   1. **Every migration must be idempotent.** `user_version` 0 is ambiguous — it means
-//      either a brand-new file or an install from before versioning existed, which already
-//      has the full schema. Nothing can tell those apart after the fact, so the runner
-//      replays from 0 on both and relies on each step being a no-op when its work is
-//      already done (`CREATE TABLE IF NOT EXISTS`, PRAGMA-check-then-`ALTER`).
-//   2. **Never edit a released migration.** Append a new one. Editing one changes what an
-//      already-upgraded database was built from, which is precisely the drift versioning
-//      exists to prevent.
+//   1. Every migration must be idempotent: user_version 0 means either a new file or a
+//      pre-versioning install, so the runner replays from 0 on both.
+//   2. Never edit a released migration; append a new one.
 inline constexpr int kSchemaVersion = 8;
 
-// The retention DELETEs, named so a test can plan the statements production actually runs.
-//
-// Roadmap 5.5's second half is a performance claim -- that the prune uses `idx_predictions_ts`
-// rather than scanning the largest table in the database on every startup -- and a query plan
-// is the only place that claim is visible: the wrapped and unwrapped forms return identical
-// rows. A test that planned its own copy of the SQL would assert only that *some* indexable
-// statement exists, and would keep passing if this one regressed, which is the mistake these
-// constants exist to prevent.
+// The retention DELETEs, named so a test can query-plan exactly what production runs (the index
+// use is only visible in a plan).
 inline constexpr const char* kPrunePredictionsSql =
     "DELETE FROM predictions WHERE timestamp < ?1";
 inline constexpr const char* kPruneContextSnapshotsSql =
@@ -84,9 +57,8 @@ inline constexpr const char* kPruneContextSnapshotsSql =
 inline constexpr const char* kPruneFeatureSnapshotsSql =
     "DELETE FROM feature_snapshots WHERE timestamp < ?1";
 
-// Periodic retention uses these bounded variants so no single maintenance transaction can
-// monopolize the engine's storage connection. The timestamp-first indexes added in schema v8
-// make both the candidate lookup and the oldest-first order sargable.
+// Bounded variants for periodic retention, so no maintenance transaction monopolizes the
+// connection.
 inline constexpr const char* kPrunePredictionsBatchSql =
     "DELETE FROM predictions WHERE id IN (SELECT id FROM predictions "
     "WHERE timestamp < ?1 ORDER BY timestamp, id LIMIT ?2)";
@@ -97,21 +69,9 @@ inline constexpr const char* kPruneFeatureSnapshotsBatchSql =
     "DELETE FROM feature_snapshots WHERE id IN (SELECT id FROM feature_snapshots "
     "WHERE timestamp < ?1 ORDER BY timestamp, id LIMIT ?2)";
 
-// The windowed reads over `predictions`, built here so a test can plan the statements
-// production actually runs.
-//
-// Roadmap 14.13 is the same shape of claim as 5.5 above, one indirection further: these
-// statements are built rather than constant, because the window is spelled two ways. With a
-// cutoff the predicate is a bare `timestamp >= ?N` so SQLite can seek `idx_predictions_ts`;
-// with none the clause is omitted entirely, which leaves the whole-history caller the plain
-// scan that is genuinely cheapest for it. The single statement these replaced —
-// `(?N IS NULL OR timestamp >= ?N)` — reads as the tidier SQL and is the reason every window
-// cost the whole database: a bound parameter inside an `OR` is not sargable, so the planner
-// scanned `predictions` whether the caller asked for one day or ninety.
-//
-// Both halves are visible only in a query plan. The rows, and therefore every value-based
-// test, are identical either way, so a test planning its own copy of the SQL would sail
-// through the exact regression these exist to catch.
+// Windowed reads over `predictions`, built here so a test can plan them. With a cutoff the
+// predicate is a bare `timestamp >= ?N` (sargable on idx_predictions_ts); without one it is
+// omitted. `(?N IS NULL OR ...)` looks tidier but is not sargable.
 std::string prediction_stats_sql(bool with_cutoff);
 // `?1` is the run-gap bound every caller binds and `?2` the optional cutoff, so the
 // always-bound parameter keeps a fixed index and only the optional one moves.
@@ -145,10 +105,7 @@ inline bool should_vacuum_after_prune(std::size_t rows_deleted) {
 
 class Storage {
 public:
-    // Opens focoflow.db and initializes the schema.
-    // `logger` is optional (defaults to null) so every existing call site keeps compiling
-    // unchanged; pass one to route the startup prune/vacuum messages somewhere other than
-    // stderr (main.cpp passes its rotating-file logger).
+    // Opens focoflow.db and initializes the schema. `logger` defaults to stderr.
     static std::optional<Storage> open(const std::filesystem::path& app_data_dir,
                                        Logger* logger = nullptr);
     // Opens an existing database without migration, pruning, or write capability. Intended
@@ -180,16 +137,9 @@ public:
         bool done_ = false;
     };
 
-    // RAII savepoint: Transaction, but nestable.
-    //
-    // SQLite has no nested BEGIN, so a method that needs its own atomicity *and* may be
-    // called from inside a caller's Transaction cannot use Transaction — it would throw
-    // "cannot start a transaction within a transaction". create_session is exactly that
-    // case, as the large storage fixture proves by seeding dozens of sessions inside one
-    // outer transaction.
-    //
-    // SAVEPOINT opens a transaction when none is active and nests when one is, so the same
-    // code is correct either way. Releasing the outermost savepoint commits.
+    // RAII savepoint: a nestable Transaction. Needed where a method must be atomic on its own
+    // but may run inside a caller's Transaction (SQLite has no nested BEGIN). Releasing the
+    // outermost savepoint commits.
     class Savepoint {
     public:
         // `name` is a SQL identifier and is interpolated, so it must be a literal from our
@@ -211,30 +161,18 @@ public:
     SessionRecord create_session(const std::string& goal, FocusMode mode);
     void end_session(const std::string& session_id);
 
-    // --- Attended time (Roadmap 7.23 / ADR-0005) ---------------------------------------
+    // --- Attended time (ADR-0005) ---------------------------------------------------------
     //
-    // A session's *elapsed* time is wall clock. Its *active* time is the sum of spans during
-    // which the user was actually present, which is what these maintain. Idle opens no span,
-    // so time spent away is never counted rather than counted and later subtracted.
+    // Active time is the sum of spans during which the user was present. Idle opens no span.
 
-    // Opens a span at `started_at`. Closes any span still open for the session first, so a
-    // missed pause cannot leave two overlapping spans double-counting the same minutes.
-    //
-    // Refuses — returns false, changing nothing — unless the session is ACTIVE. A caller
-    // deciding to open a span and writing it are two separate moments (the engine tick
-    // decides under one lock and writes under another), and a stop in between would
-    // otherwise leave an open span on a completed session that every attendance query
-    // measures to `now` and nothing ever closes.
+    // Opens a span at `started_at`, closing any open one first. Returns false (changing
+    // nothing) unless the session is ACTIVE, since a stop can land between the decision and the
+    // write.
     bool begin_session_span(const std::string& session_id, std::int64_t started_at_ms);
 
-    // The same, stamped from Storage's own clock.
-    //
-    // Callers must use these rather than passing their own "now". Storage stamps
-    // `sessions.started_at` and `ended_at` itself, and AppState carries a separately
-    // injectable clock (11.4) — so an AppState-supplied timestamp and a Storage-supplied one
-    // can come from different clocks entirely, which makes a span's arithmetic against its
-    // own session meaningless. `secs_ago` expresses a back-dated pause as an offset so it
-    // stays on this clock.
+    // The same, stamped from Storage's own clock. Use these rather than passing "now": AppState
+    // may use a different clock than the one that stamped the session. `secs_ago` back-dates a
+    // pause on this clock.
     bool begin_session_span_now(const std::string& session_id);
     bool close_session_span_now(const std::string& session_id, std::int64_t secs_ago = 0);
 
@@ -247,34 +185,22 @@ public:
     // than an error. A span is never closed earlier than it started.
     bool close_session_span(const std::string& session_id, std::int64_t ended_at_ms);
 
-    // Closes a span that a previous process left open — a crash, a kill, a power loss.
-    //
-    // The moment the user stopped attending is unknowable after the fact, so this closes at
-    // the last time the session has *evidence* of them: the newest prediction, context
-    // snapshot, or snapback event it recorded. Closing at "now" instead would credit every
-    // offline hour as attended, which is the one answer that is certainly wrong. A session
-    // with an open span and no recorded evidence collapses to a zero-length span rather than
-    // guessing.
-    //
-    // `feature_snapshots` is deliberately not consulted: its `timestamp` column is monotonic
-    // uptime seconds (Roadmap 7.24), not wall clock, so it cannot be compared with a span.
-    //
-    // Returns the timestamp it closed at, or nullopt when no span was open.
+    // Closes a span a crashed process left open, at the session's last recorded evidence
+    // (newest prediction, context snapshot, or snapback event) -- never "now". No evidence
+    // collapses it to zero length. feature_snapshots is not consulted: its timestamp is
+    // monotonic. Returns the close time, or nullopt when none was open.
     std::optional<std::int64_t> close_dangling_session_span(const std::string& session_id);
 
-    // Sum of closed spans, plus the open one measured to `now`. Returns nullopt when the
-    // session has no spans at all — meaning "never measured", not "zero" — so callers can
-    // fall back to elapsed instead of reporting a fabricated 0.
+    // Closed spans plus the open one measured to `now`. nullopt when the session has no spans
+    // ("never measured", not zero).
     std::optional<std::uint64_t> active_secs(const std::string& session_id,
                                              std::int64_t now_ms);
 
     // True if the session has a span open, i.e. the user is currently attending it.
     bool has_open_span(const std::string& session_id);
 
-    // Wall-clock seconds from the session's `started_at` to now, or nullopt if there is no
-    // such session. Roadmap 7.25 uses it to resume the feature extractor's session origin
-    // after a restart; computed in SQL so it is measured against the same clock that stamped
-    // `started_at`, and never negative if that clock moved backwards.
+    // Seconds from the session's `started_at` to now, or nullopt if no such session. Computed
+    // in SQL against the clock that stamped it, never negative.
     std::optional<std::int64_t> session_elapsed_secs(const std::string& session_id);
     // Completes the session and returns the row. Idempotent if already COMPLETED.
     SessionRecord stop_session(const std::string& session_id);
@@ -282,110 +208,64 @@ public:
     std::vector<SessionRecord> recent_sessions(std::size_t limit);
     SessionRecap recap(const std::string& session_id);
 
-    // Roadmap 2.19. Attended seconds inside the local day / ISO week containing `now`.
-    //
-    // Summed from `session_spans` and nothing else — never session-open duration, prediction
-    // rows, or a classifier score. A span is clipped to the window rather than counted whole,
-    // so an evening that runs past midnight contributes its real minutes to each day instead
-    // of all of them to one. Sessions recorded before spans existed have none and contribute
-    // zero, which is the honest answer: their attendance was never measured.
-    //
-    // `now` is an RFC3339 UTC stamp; it bounds still-open spans and selects the window.
+    // Attended seconds inside the local day / ISO week containing `now`, from session_spans
+    // only. Spans are clipped to the window, so a stretch past midnight splits correctly.
     std::uint64_t attended_secs_in_local_day(std::int64_t now_ms);
     std::uint64_t attended_secs_in_local_week(std::int64_t now_ms);
-    // Roadmap 2.19 Review half. Attended seconds in [since, now], clipped per span the same
-    // way the day/week helpers clip. `since` nullopt means "all retained spans" — there is no
-    // earlier bound other than the data itself. Used for 30d / all / custom Review ranges,
-    // where a daily or weekly *plan* does not apply.
+    // Attended seconds in [since, now], clipped per span. `since` nullopt means all retained
+    // spans.
     std::uint64_t attended_secs_since(std::int64_t now_ms,
                                       const std::optional<std::int64_t>& since_ms);
 
-    // Roadmap 2.14. Writes (or clears) the session's optional reflection and returns the
-    // updated row; nullopt when no such session exists, so a caller cannot mistake a typo'd id
-    // for a successful save. Either field may be nullopt to leave that answer unrecorded —
-    // clearing is how an edit removes an answer, and is distinct from never having answered
-    // only in that the user chose it. Returns the row so the caller does not re-read.
+    // Writes (or clears) the session's reflection and returns the updated row; nullopt when no
+    // such session. Either field may be nullopt.
     std::optional<SessionRecord> save_session_reflection(
         const std::string& session_id, const std::optional<std::string>& done,
         const std::optional<std::string>& next_step);
 
-    // recent_sessions(limit) + recap() for each, in three queries instead of 1 + 5N.
-    //
-    // recap() issues five statements per session, so the loop it replaces cost 1 + 5N
-    // round trips — all of them under AppState's storage mutex, which the engine tick also
-    // takes to persist. Opening a history view could therefore stall capture writes, and a
-    // bounded ring buffer turns a stall into dropped events. Results are identical to the
-    // per-session path, which a test pins by comparing the two.
+    // recent_sessions(limit) + recap() for each, in three queries instead of 1 + 5N (all under
+    // the storage mutex the engine needs). A test pins it against the per-session path.
     std::vector<SessionSummary> recent_session_summaries(
         std::size_t limit, const std::optional<std::int64_t>& started_after_ms = std::nullopt);
 
-    // --- Aggregates for the analytics and summary surfaces (Roadmap 7.12) ----------------
+    // --- Aggregates for the analytics and summary surfaces -------------------------------
     //
-    // These exist because `analytics()` and `summary_report()` used to read **every retained
-    // prediction** into a `std::vector<PredictionRecord>` and fold it in C++ — under
-    // `storage_mutex_`, on the thread answering the UI, while the engine tick needs the same
-    // lock to persist. With a bounded ring buffer, a stalled persist phase means dropped
-    // capture events, so an analytics tab open on a mature database costs the user data.
-    //
-    // Each returns final numbers in one query. The definitions below are copied from the C++
-    // loops they replace rather than re-derived, and a test pins them field for field against
-    // the 12,000-row fixture.
+    // Each returns final numbers in one query rather than folding every row in C++ under the
+    // storage mutex. A test pins them field by field against the 12,000-row fixture.
 
     struct PredictionStats {
         std::size_t sample_count{};
         double avg_focus_score{};
         double peak_focus_score{};
         std::size_t distracted_count{};
-        // Roadmap 10.13. The **duration** of the longest unbroken focused stretch, in seconds.
-        // Replaced a count of consecutive non-DISTRACTED rows shown as "Best streak": rows are
-        // not time, and predictions arrive on input rather than on a clock, so two people
-        // doing identical work got different values from typing cadence alone. A run breaks on
-        // a distracted verdict or on a gap longer than `kFocusRunGapSecs`.
+        // Duration of the longest unbroken focused stretch, in seconds. Breaks on a distracted
+        // verdict or a gap longer than `kFocusRunGapSecs`.
         std::uint64_t longest_focus_secs{};
     };
 
     // Stats over every retained prediction, or only those at/after `cutoff`.
     PredictionStats prediction_stats(const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
 
-    // Per-local-hour focus buckets, ascending by hour, omitting hours with no samples.
-    //
-    // The hour is **local**, matching `local_hour_from_rfc3339`, via SQLite's `localtime`
-    // modifier — the same C library conversion, so DST is handled identically. Rows whose
-    // timestamp will not convert are skipped, which is what the C++ loop's `hour < 0` did.
-    // Roadmap 7.16 may change how a timestamp is represented; until it does, local hour is
-    // what the UI has always shown and this preserves it.
+    // Per-local-hour focus buckets, ascending, omitting empty hours. Local via SQLite's
+    // `localtime` (same C library conversion, so DST matches); unconvertible rows are skipped.
     std::vector<AnalyticsHour> hourly_focus_buckets(
         const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
 
-    // Roadmap 2.9. One session's predictions folded into at most `buckets` equal slices of the
-    // time between its first and last prediction, ascending, omitting empty slices. One
-    // grouped statement over `idx_predictions_session_ts`, so the cost is the session's own
-    // rows and never the table's. An unknown session, or one with no predictions, is empty.
+    // A session's predictions folded into at most `buckets` equal time slices, ascending,
+    // omitting empty ones. Costs the session's rows only (idx_predictions_session_ts).
     std::vector<FocusCurvePoint> session_focus_curve(const std::string& session_id,
                                                      std::size_t buckets);
 
-    // How many of the most recently *completed* sessions, counting back from the newest, have
-    // an average focus score at or above `min_avg_focus`. Stops at the first one that does
-    // not, which is what makes it a streak rather than a count. Only the newest `limit`
-    // sessions are considered; sessions still running are skipped rather than breaking it.
-    //
-    // Replaces a `recent_sessions(limit)` loop that called `recap()` — five queries — per
-    // completed session, to read one field from each.
+    // How many of the newest completed sessions, counting back, average at least
+    // `min_avg_focus`; stops at the first that does not. Running sessions are skipped.
     std::size_t productive_session_streak(std::size_t limit, double min_avg_focus,
                                           const std::optional<std::int64_t>& started_after_ms =
                                               std::nullopt);
 
-    // One row per local calendar day between `since_ms` and `now_ms`, ascending, omitting
-    // days with no data (matching hourly_focus_buckets). The window is snapped down to the
-    // local midnight of `since_ms`'s day so buckets are whole days — the one place this
-    // family of queries uses calendar semantics rather than a rolling cutoff.
-    //
-    // Attended seconds come from session_spans clipped per day by a recursive day axis, so a
-    // span crossing midnight splits exactly. Focused/deep seconds reuse prediction_stats'
-    // run arithmetic (gap between consecutive qualifying rows, capped at kFocusRunGapSecs)
-    // summed per day instead of MAX'd per run; a gap is attributed to the local date of the
-    // *later* row, so a run crossing midnight misplaces at most kFocusRunGapSecs per
-    // midnight — accepted and documented, versus spans which split exactly.
+    // One row per local calendar day between `since_ms` and `now_ms`, omitting empty days. The
+    // window snaps down to local midnight. Attended seconds split exactly at midnight;
+    // focused/deep seconds attribute each gap to the later row's date, so a run crossing
+    // midnight can misplace up to kFocusRunGapSecs.
     std::vector<DailySummaryDay> daily_summary(std::int64_t now_ms, std::int64_t since_ms);
 
     struct SessionWindowTotals {
@@ -395,22 +275,14 @@ public:
         bool limit_reached{};  // more sessions matched the window than `limit` allowed in
     };
 
-    // Totals for sessions started at/after `started_after`, within the newest `limit`
-    // sessions. The cap applies to recency *before* the window filter, exactly as the loop it
-    // replaces did — the two orders give different answers on a database with more than
-    // `limit` sessions newer than the window.
+    // Totals for sessions started at/after `started_after`, within the newest `limit`. The cap
+    // applies before the window filter.
     SessionWindowTotals session_window_totals(std::size_t limit,
                                               std::int64_t started_after_ms);
 
-    // Counts context snapshots per app across the most recent `session_limit` sessions,
-    // taking at most `per_session_limit` snapshots from each (the oldest ones, matching
-    // list_context_snapshots' ORDER BY timestamp ASC LIMIT). When `started_after` is set,
-    // only sessions started at or after it are counted.
-    //
-    // The per-session cap is preserved rather than dropped because it changes the answer:
-    // it is what stops one very long session from dominating the app ranking. Doing it in
-    // SQL needs a window function, which is worth it — the loop this replaces materialized
-    // up to session_limit x per_session_limit full rows to compute a group-by.
+    // Context snapshots per app across the newest `session_limit` sessions, at most
+    // `per_session_limit` (oldest) from each, so one long session cannot dominate.
+    // `started_after` restricts to sessions started at or after it.
     std::unordered_map<std::string, std::size_t> context_app_counts(
         std::size_t session_limit, std::size_t per_session_limit,
         const std::optional<std::int64_t>& started_after_ms = std::nullopt);
@@ -418,13 +290,8 @@ public:
     // user configuration such as app rules.
     void delete_all_activity_data();
 
-    // Atomically removes one session and everything collected during it. Returns false if
-    // no such session exists, so a caller can tell "already gone" from "deleted" rather
-    // than reporting success for a typo'd id.
-    //
-    // Deliberately not gated on the session being finished: a user who wants a session gone
-    // may well want it gone *because* it is running. Callers own stopping it first — see
-    // AppState::delete_session, which is where the live in-memory state is also cleared.
+    // Atomically removes one session and everything recorded during it; false if none exists.
+    // Not gated on the session being finished -- AppState::delete_session stops it first.
     bool delete_session(const std::string& session_id);
 
     // Infers and saves an automatic session label on stop.
@@ -436,16 +303,8 @@ public:
     void insert_prediction(const PredictionRecord& p);
     std::optional<PredictionRecord> latest_prediction();
     std::vector<PredictionRecord> recent_predictions(std::size_t limit);
-    // Returns predictions at or after `cutoff` (or all predictions when the cutoff is
-    // absent), newest first. The timestamp range stays in SQL so idx_predictions_ts can
-    // serve analytics windows without silently dropping older rows.
-    //
-    // Roadmap 7.33 removed the `limit` this used to take. Its only caller capped the Review
-    // focus summary at the newest 50,000 rows and folded them in C++, which reported the
-    // longest focused stretch inside roughly the newest fourteen attended hours whatever
-    // window was asked for. `prediction_stats` answers that in SQL over every row; what is
-    // left here reads rows back for the parity test that pins the aggregate against
-    // `summarize_predictions`.
+    // Predictions at or after `cutoff` (all when absent), newest first. Used by the parity test
+    // that pins prediction_stats against summarize_predictions.
     std::vector<PredictionRecord> predictions_since(
         const std::optional<std::int64_t>& cutoff_ms = std::nullopt);
     void insert_feature_snapshot(const std::string& session_id, const FeatureVector& f);
@@ -461,20 +320,13 @@ public:
                                   std::optional<std::string> note);
     void delete_app_rule(std::int64_t id);
 
-    // --- Distraction episodes (Roadmap 2.15) --------------------------------------------
-    //
-    // `recap()` has counted rows in `snapback_events` since the baseline schema, and until now
-    // nothing anywhere wrote one. These are the write and read paths that make that count real.
+    // --- Distraction episodes --------------------------------------------------------------
 
-    // Records one episode. Returns false when an episode with the same session and start time
-    // already exists, which is the ordinary outcome of a retry rather than an error — the
-    // episode is identified by when it began, so recording it twice must not double the count
-    // the user is shown.
+    // Records one episode. Returns false when (session, start) already exists -- the ordinary
+    // outcome of a retry.
     bool insert_snapback_episode(const SnapbackEpisode& episode);
 
-    // A session's episodes, oldest first. Rows written before 2.15 have no start time or
-    // duration and come back with empty/zero values rather than being hidden: they are real
-    // interruptions that were counted, and nothing can reconstruct their detail.
+    // A session's episodes, oldest first. Legacy rows come back with empty start/duration.
     std::vector<SnapbackEpisode> list_snapback_episodes(const std::string& session_id,
                                                         std::size_t limit);
     // Longest recorded detour for a session; earliest start and row id break ties.
@@ -498,18 +350,11 @@ public:
     std::vector<ContextSnapshotDto> list_context_snapshots(const std::string& session_id,
                                                            std::size_t limit);
 
-    // --- Keyset paging for the ownership export (Roadmap 9.16) ---------------------------
+    // --- Keyset paging for the personal export -----------------------------------------
     //
-    // "Export my data" claimed to contain every session and silently stopped at 200 of them,
-    // and at 500 windows within each. Removing the caps by raising them is not a fix: an
-    // unbounded `list_context_snapshots` would materialize the whole history in memory under
-    // `storage_mutex_`, which is the stall-becomes-dropped-events path 7.12 exists to avoid.
-    //
-    // These page instead. A **keyset** cursor rather than OFFSET, because OFFSET re-scans from
-    // the start on every page (quadratic over a long history) and, worse, silently skips or
-    // repeats rows when the table changes underneath it. Ordering on a total key means a page
-    // boundary is a value, not a position, so a row inserted during the export cannot shift
-    // one that was already written.
+    // Paged so a full export never materializes the history under storage_mutex_. Keyset
+    // cursors rather than OFFSET: a boundary is a value, so rows inserted during the export
+    // cannot shift.
 
     // Sessions newest-first, strictly after `after` in `(started_at DESC, session_id DESC)`
     // order. Pass nullopt for the first page. The pair is the previous page's last row.
@@ -520,11 +365,8 @@ public:
     std::vector<SessionRecord> sessions_after(const std::optional<SessionCursor>& after,
                                               std::size_t limit);
 
-    // Context snapshots for one session, oldest-first, strictly after `after` in
-    // `(timestamp ASC, id ASC)` order. `id` stays in the key: milliseconds are finer than
-    // the whole seconds 7.16 inherited, but a busy tick still writes several rows inside one,
-    // so time alone is not a total order and a page boundary inside a tied group would drop or
-    // repeat rows.
+    // Context snapshots for one session, oldest first, strictly after `after` in (timestamp,
+    // id) order. `id` breaks ties within one millisecond.
     struct ContextCursor {
         std::int64_t timestamp_ms{};
         std::int64_t id{};
@@ -546,12 +388,7 @@ public:
         const std::filesystem::path& out_dir,
         const std::optional<std::string>& session_id = std::nullopt);
 
-    // Deletes old runtime rows on open.
-    //
-    // One cutoff, in UTC epoch milliseconds. It used to take two, because the tables did not
-    // agree on a time format -- predictions/context_snapshots held RFC3339 TEXT while
-    // feature_snapshots.timestamp held REAL epoch seconds. ADR-0007 ended that disagreement,
-    // and the doubled parameter went with it.
+    // Deletes runtime rows older than the cutoff (UTC epoch milliseconds).
     PruneSummary prune_runtime_data(std::int64_t cutoff_unix_ms);
 
     // Deletes at most `max_rows` expired rows in one transaction. A true `has_more` means
@@ -567,9 +404,8 @@ public:
     // Busy-wait counters for this connection, for `get_diagnostics` and the benchmarks.
     SqliteBusySnapshot busy_stats() const;
 
-    // Test seam: index names in the current schema, sorted. A dropped index is a silent
-    // perf regression — the query still returns correct rows, just via a full scan — so
-    // it needs an explicit assertion to be catchable.
+    // Test seam: index names in the current schema, sorted. A dropped index still returns
+    // correct rows, so it needs an explicit assertion.
     std::vector<std::string> index_names();
 
     // Test seam: the SQLite query plan for `sql`, one line per step. Lets a test assert an
@@ -580,50 +416,25 @@ public:
     // any database this build has opened successfully.
     int schema_version();
 
-    // Test seam: force a session's started_at. Sessions created in one test body all land in
-    // the same wall-clock second — now_rfc3339() has whole-second resolution — so anything
-    // asserting on `ORDER BY started_at` ordering needs a way to separate them or it flakes
-    // on tied rows. See ROADMAP 7.16, which is about fixing the representation itself.
+    // Test seam: force a session's started_at so ordering tests do not depend on ties.
     void backdate_session_for_test(const std::string& session_id,
                                    std::int64_t started_at_ms);
 
-    // Test seam: run ANALYZE, so the query planner has real row statistics instead of its
-    // structural defaults. Snapback never runs this in production, and that is exactly why a
-    // test wants it: without stats the planner cannot decide a full scan is cheaper than an
-    // index, so an empty-database plan assertion cannot fail for the reason we care about.
-    // With stats over a large table it can, which makes it the adversarial case for the
-    // indexes 7.13 added. See ROADMAP 7.11.
+    // Test seam: run ANALYZE so plan assertions see real statistics (production never runs it).
     void analyze_for_test();
 
-    // Test seam: how many statements SQLite *starts executing* while `body` runs, counted by
-    // SQLite itself through `sqlite3_trace_v2` rather than by bookkeeping we could forget to
-    // update. Roadmap 7.12's acceptance is "constant query count", and that is a claim no
-    // correctness test can make — a per-session loop returns the same numbers as one
-    // aggregate, just N times more slowly, which is precisely how the N+1 path survived being
-    // called fixed. A wall-clock bound would buy flakes on a shared runner; this counts the
-    // thing that actually grows.
-    //
-    // The counter lives in this function's frame and is handed to SQLite as the trace context,
-    // so there is no new member — Storage's move operations carry only `db_` and `stmt_cache_`,
-    // and a member added to one and not the other fails silently.
+    // Test seam: how many statements SQLite starts while `body` runs, counted via
+    // sqlite3_trace_v2. Lets a test pin "constant query count" without a timing bound.
     std::size_t count_statements_for_test(const std::function<void()>& body);
 
-    // Test seam: run one statement against this connection.
-    //
-    // Roadmap 2.19's window arithmetic is about spans at specific instants, and the production
-    // path only ever creates them at "now" through idle transitions. Seeding them directly is
-    // what lets a test ask about midnight, a Monday, or last week at all. Deliberately narrow:
-    // it takes SQL, not data, and nothing outside tests calls it.
+    // Test seam: run one statement, e.g. to seed spans at specific instants.
     void execute_for_test(const std::string& sql);
 
 private:
     explicit Storage(sqlite3* db) : db_(db) {}
 
-    // Applies pending migrations, backing the database up first (Roadmap 7.22).
-    //
-    // `db_path` is passed rather than stored because Storage's move operations carry only
-    // `db_` and `stmt_cache_`; a new member would have to be added to both, and forgetting
-    // one fails silently. An empty path means there is no file to back up (`open_memory`).
+    // Applies pending migrations, backing the database up first. `db_path` is a parameter, not
+    // a member, because Storage's moves carry only db_ and stmt_cache_. Empty means no file.
     void migrate(const std::filesystem::path& db_path, Logger* logger);
     // Prepare-once / reset-on-reuse cache for hot statements (per-tick inserts). Returns a
     // statement owned by stmt_cache_; wrap it in the borrowed Stmt ctor to bind + step.
@@ -632,19 +443,14 @@ private:
     // PRAGMAs, because it replaces what `PRAGMA busy_timeout` would have set.
     void install_busy_handler();
     void ensure_active_session(const std::string& session_id);
-    // The same question without the throw, for callers whose honest answer to "not active"
-    // is to do nothing rather than to fail.
+    // The same check without the throw.
     bool session_is_active(const std::string& session_id);
     void finalize_cache();
 
     sqlite3* db_ = nullptr;
     std::unordered_map<std::string, sqlite3_stmt*> stmt_cache_;
-    // Heap-allocated, and that is load-bearing rather than incidental: `open` returns a
-    // Storage by value and SQLite holds a raw pointer to these counters, so the address has
-    // to survive every move. An inline member would be a dangling pointer the first time the
-    // returned object moved -- and it would still pass every test that never contends.
-    //
-    // Both move operations below must carry it, per the warning on `migrate`.
+    // Heap-allocated: SQLite holds a raw pointer to these counters and Storage is returned by
+    // value, so the address must survive moves. Both move operations must carry it.
     std::unique_ptr<SqliteBusyStats> busy_;
 };
 

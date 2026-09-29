@@ -181,7 +181,7 @@ TEST_CASE("HealthStatus nests permissions and classifier as camelCase objects") 
 }
 
 TEST_CASE("RuntimeMetrics round-trips every field it publishes") {
-    // Roadmap 14.11. These are the numbers a user's support bundle carries out of a real
+    // These are the numbers a user's support bundle carries out of a real
     // install, and a field that serialises but does not parse back is a field that silently
     // reads as zero on the other side -- which for a contention counter is indistinguishable
     // from good news. Every one is set to something distinct so a copy-paste slip between

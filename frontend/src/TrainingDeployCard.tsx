@@ -43,8 +43,7 @@ const formatElapsed = (elapsedMs: number) => {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 };
 
-// ADR-0006 / roadmap 13.7. Shown only when developer tools are enabled (Debug or
-// SNAPBACK_DEV_TRAINING). A normal Release Settings surface must not render this card.
+// ADR-0006: rendered only when developer tools are enabled (Debug or SNAPBACK_DEV_TRAINING).
 export const TrainingDeployCard = memo(function TrainingDeployCard({
   canTrainFromExport,
   cancelRequested,

@@ -17,10 +17,8 @@ export const formatScore = (value: number | null | undefined) => {
   return score.toFixed(1);
 };
 
-// Whole-number variants for the Now surface (ADR-0003). A decimal place claims precision
-// the score does not have: `focus_score` is the model's opinion on hand-tuned weights
-// (ADR-0004), not a measurement. `formatScore`/`formatPercent` keep their decimals for the
-// Review surface, where comparing two sessions makes the extra digit meaningful.
+// Whole numbers on Now: the score is an opinion on hand-tuned weights, not a measurement.
+// Review keeps decimals for comparisons.
 export const formatScoreCoarse = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "--";
   return String(Math.round(clamp(value, 0, 100)));
@@ -31,12 +29,8 @@ export const formatPercentCoarse = (value: number | null | undefined) => {
   return `${Math.round(clamp(value, 0, 1) * 100)}%`;
 };
 
-// ADR-0007: an instant crosses the bridge as epoch milliseconds, and becomes readable here.
-//
-// `null` and `undefined` still mean "no such moment" -- a session that has not ended. 0 is a
-// real instant (the epoch) and is deliberately *not* treated as absent: migration 7 stamps a
-// timestamp it could not convert with exactly that value, and rendering it as 1970 rather than
-// as "--" is the honest answer. A row whose time is unknown should look wrong, not look empty.
+// Epoch ms to a readable time (ADR-0007). null/undefined means no such moment; 0 is a real
+// instant (unconvertible migrated timestamps) and renders as 1970 so it looks wrong.
 export const formatTime = (unixMs: number | null | undefined) => {
   if (unixMs === null || unixMs === undefined) return "--";
   const date = new Date(unixMs);
@@ -78,10 +72,8 @@ export const focusStateLabel = (state: string | null | undefined) => {
   }
 };
 
-// The hero's colour class. Derived from the verdict, not from riskLevel(): the state is the
-// policy verdict and the risk is the model's opinion (ADR-0004), and the two may disagree —
-// a Block-rule row at risk 0.3 is Distracted, and colouring that word by its risk painted
-// it calm. One element, one channel.
+// Colour by the verdict, not the risk (ADR-0004): a Block-rule row at low risk is still
+// Distracted.
 export const verdictLevel = (state: string | null | undefined): RiskLevel => {
   switch (state) {
     case "DISTRACTED":
@@ -172,10 +164,8 @@ export const displayVerdict = (
   };
 };
 
-// Turn a verdict into the evidence behind it, so the user can see *why* and catch it
-// being wrong. Every phrase below names what the classifier actually measured — not what
-// we wish it measured. `thrash` is app switching. `drift` is title churn plus erratic
-// keystroke intervals. Neither can see what is on the screen.
+// The evidence behind a verdict, in terms of what the classifier actually measured: thrash is
+// app switching, drift is title churn plus erratic keystroke intervals.
 export const explainPrediction = (
   record: PredictionRecord | null,
   goal?: string | null,
@@ -185,10 +175,7 @@ export const explainPrediction = (
   const reasons: string[] = [];
   const uncertain = isUncertainFocusGuess(record, goal);
 
-  // When a policy rule decided the verdict (ADR-0004), lead with that rule — it is the one
-  // piece of evidence the scores cannot show. A Block-rule row can be behaviourally calm,
-  // and "Distracted because no app switching" was actively misleading, so the calm
-  // low-signal phrases are suppressed while a policy override is the headline.
+  // When a policy rule decided the verdict, lead with it and suppress the calm-signal phrases.
   const policyReason =
     record.stateSource === "block"
       ? "a blocked app is open"
@@ -203,7 +190,7 @@ export const explainPrediction = (
   if (record.driftScore >= 0.55) reasons.push("tab and title churn");
   else if (record.driftScore <= 0.2 && !policyReason) reasons.push("settled in one window");
 
-  // 0.5 is the "no goal set / nothing matched" default, so only speak when it moved.
+  // 0.5 is the "no goal / no match" default.
   const goalKnown = Math.abs(record.goalAlignment - 0.5) > GOAL_ALIGNMENT_USED;
   const trimmedGoal = goal?.trim();
   if (goalKnown && trimmedGoal) {

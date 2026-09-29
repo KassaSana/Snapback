@@ -136,7 +136,7 @@ std::size_t drain(CaptureThread& capture) {
 
 }  // namespace
 
-// Regression guard for Roadmap 6.1: RingBuffer used to hold its 65,536-slot array inline,
+// Regression guard for RingBuffer used to hold its 65,536-slot array inline,
 // making sizeof(CaptureThread) ~6 MB — every stack-allocated instance (this file's tests,
 // any future AppState local) overflowed Windows' 1 MB default thread stack. The storage now
 // lives on the heap; if someone inlines it again, this fails at compile time instead of
@@ -244,23 +244,10 @@ TEST_CASE("CaptureThread reports a hook that returns as failed") {
 }
 
 TEST_CASE("CaptureThread never reports failed and running at the same time") {
-    // ROADMAP 11.1 found this, and the finding is really about how it was found.
-    //
-    // AppState::health() loads failed() and running() in two separate atomic reads and
-    // publishes them as `status` and `captureRunning`. record_failure() used to set failed_
-    // first and leave running_ true until the thread body ended, so between those two stores
-    // — a mutex acquisition and a string assignment apart — health() could report "capture
-    // failed" and "running: true" in the same report. Two fields that contradict each other,
-    // same shape as 7.7.
-    //
-    // ROADMAP 11.9. Sampling running() from the *same* thread that just observed failed()
-    // is inert on GCC/MinGW: reintroducing the inverted stores still left this case passing,
-    // because that thread's next load lands after both stores are visible. health() is not
-    // that thread — it is a second observer. So the sampler below is a second thread that
-    // pairs the two loads for the whole attempt, the way diagnostics actually reads them.
-    //
-    // It is still a spin and not a sleep. The window is microseconds wide; a sleep misses it.
-    // ROADMAP 11.8's deadline still bounds waiting for the hook to fail at all.
+    // health() reads failed() and running() as two separate loads; running_ must clear before
+    // failed_ is set, or one report can say both. A second thread samples the pair (the same
+    // thread's next load would always see both stores). A spin, not a sleep: the window is
+    // microseconds wide.
     constexpr int kAttempts = 200;
     constexpr auto kFailureDeadline = std::chrono::seconds(5);
     int contradictions = 0;

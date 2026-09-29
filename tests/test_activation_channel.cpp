@@ -1,4 +1,4 @@
-// ROADMAP 9.15. The channel a losing second launch uses to raise the running window.
+// The channel a losing second launch uses to raise the running window.
 #include "doctest_wrapper.hpp"
 
 #include <atomic>
@@ -38,18 +38,9 @@ struct ChannelTempDir {
     }
 };
 
-// Wait for the callback to have run `want` times, or give up.
-//
-// Watch the counter the assertions read, not the listener's own. The handler does
-// `activations.fetch_add(1)` *before* it invokes `on_activate`, so waiting on
-// `activation_count()` proves the request was honoured while the callback may not have run
-// yet -- and the `CHECK(raised.load() == N)` on the very next line then reads a stale 0.
-// Ordinarily that window is a few instructions and nobody sees it; ThreadSanitizer
-// instruments every access and stretches it wide enough to lose regularly. See 11.12, which
-// caught it on two different cases in two runs and never outside the tsan job.
-//
-// Waiting on `raised` is also strictly the stronger wait: the increment happens first, so a
-// callback that has run implies a count that has moved, and the reverse is what raced.
+// Wait for the callback to have run `want` times, or give up. Waits on `raised`, not
+// activation_count(): the count is bumped before the callback runs, so waiting on it races the
+// next CHECK (visible under TSan).
 bool wait_for_raised(const std::atomic<int>& raised, int want) {
     for (int attempt = 0; attempt < 500; ++attempt) {
         if (raised.load() >= want) return true;

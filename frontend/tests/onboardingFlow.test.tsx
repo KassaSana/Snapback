@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 2.12. The guided continuation, driven against the real App so that "the step
+// The guided continuation, driven against the real App so that "the step
 // advances from app state" is asserted through the state actually changing.
 const boundary = vi.hoisted(() => {
   const state: {

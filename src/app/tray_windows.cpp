@@ -77,15 +77,9 @@ public:
         wcscpy_s(nid_.szTip, L"Snapback");
         installed_ = Shell_NotifyIconW(NIM_ADD, &nid_) == TRUE;
         if (installed_) {
-            // Roadmap 2.16. Required for the balloon to report clicks at all: NIN_* callbacks
-            // (NIN_BALLOONUSERCLICK among them) are only delivered to an icon that has
-            // declared version 3 or later. Without this the wnd_proc arm below is unreachable
-            // and the notification silently is not clickable -- which looks exactly like a
-            // click handler that does not work.
-            //
-            // Version 4 also moves the cursor position from lParam into wParam. That costs
-            // nothing here: the event id is read from LOWORD(lParam) either way, and the popup
-            // menu asks GetCursorPos for the position rather than taking it off the message.
+            // Version 3+ is required for NIN_BALLOONUSERCLICK to be delivered at all. Version 4
+            // moves the cursor position into wParam; the event id stays in LOWORD(lParam) and
+            // the menu uses GetCursorPos.
             nid_.uVersion = NOTIFYICON_VERSION_4;
             Shell_NotifyIconW(NIM_SETVERSION, &nid_);
         }
@@ -96,13 +90,8 @@ public:
                            std::int64_t alert_id) override {
         if (!installed_ || !hwnd_ || !notification_payload_is_valid(payload)) return false;
 
-        // Written down before the balloon is raised, because the click that comes back carries
-        // nothing. Overwritten by each notification: only the newest balloon is on screen, and
-        // Windows collapses a replacement rather than stacking it.
-        //
-        // Recorded even when Shell_NotifyIcon goes on to fail. A balloon that was refused
-        // cannot be clicked, so the stale pair is unreachable -- and clearing it on failure
-        // would be one more branch guarding something that cannot happen.
+        // Recorded before the balloon is raised, since the click carries nothing. Only the
+        // newest balloon is on screen.
         last_notification_event_ = event;
         last_notification_alert_id_ = alert_id;
 
@@ -124,10 +113,7 @@ private:
             } else if (event == WM_RBUTTONUP || event == WM_CONTEXTMENU) {
                 self->show_menu();
             } else if (event == NIN_BALLOONUSERCLICK) {
-                // Roadmap 2.16. The user clicked the balloon body. Deliberately not
-                // NIN_BALLOONTIMEOUT, which is the same notification being *dismissed* -- by
-                // the timer or by the user's X -- and acting on that would open a window for
-                // somebody who just closed one.
+                // Balloon body clicked. Not NIN_BALLOONTIMEOUT, which is a dismissal.
                 self->notification_clicked();
             }
             return 0;
@@ -161,10 +147,7 @@ private:
         POINT pt{};
         GetCursorPos(&pt);
         HMENU menu = CreatePopupMenu();
-        // Built from the shared model rather than a literal list, so a menu item added
-        // here cannot silently go missing from the macOS menu (tray_macos.mm) or vice
-        // versa. The labels are ASCII today; utf8_to_wide keeps that from being a
-        // constraint.
+        // Built from the shared model, so macOS and Windows offer the same menu.
         const auto status =
             callbacks_.recording_status ? callbacks_.recording_status() : RecordingStatus{};
         for (const TrayMenuEntry& entry : tray_menu_entries(status)) {
@@ -184,8 +167,7 @@ private:
     HWND hwnd_ = nullptr;
     NOTIFYICONDATAW nid_{};
     bool installed_ = false;
-    // Roadmap 2.16. What the most recent balloon was about. The id is 0 until an actionable
-    // alert raises one, so a click on the close-to-tray explanation claims nothing.
+    // What the most recent balloon was about; id 0 until an actionable alert raises one.
     AlertEvent last_notification_event_ = AlertEvent::Snapback;
     std::int64_t last_notification_alert_id_ = 0;
 };

@@ -1,14 +1,6 @@
-// The whole "may this interruption reach the user, and how" decision, in one pure function.
-//
-// Roadmap 2.16. Same shape and the same reason as notification.hpp next door: that header
-// separates *what a notification says* from *how the OS shows it*, and this one separates
-// *whether it is shown at all* from both. Delivery policy scattered as `if` checks across the
-// tick, main.cpp, and the tray is policy nobody can read in one sitting and nobody can test
-// without a running app.
-//
-// Nothing here reads a clock, loads settings, or touches the filesystem. Every input arrives
-// as an argument, which is what makes the across-midnight and clock-change cases testable at
-// all.
+// The whole "may this interruption reach the user, and how" decision, as one pure function. No
+// clock, settings load, or filesystem: every input is an argument, so across-midnight and
+// clock-change cases are testable.
 #pragma once
 
 #include <cstddef>
@@ -20,31 +12,18 @@
 
 namespace snapback {
 
-// The interruptions this policy governs.
-//
-// UntrackedWork is here even though 2.16 names only the first three. It is a fourth thing that
-// interrupts the user (state.cpp emits it as its own event), so exempting it from quiet hours
-// would make quiet hours a lie -- but giving it a fourth settings field would be sprawl for a
-// nudge nobody has asked to reconfigure. It is therefore subject to snooze and quiet hours
-// with a fixed channel set, and gains a preference the day someone wants one.
+// The interruptions this policy governs. UntrackedWork has a fixed channel set but is still
+// subject to snooze and quiet hours.
 enum class AlertEvent { Snapback, Hyperfocus, Pomodoro, UntrackedWork };
 
-// How many there are, and how to index a per-event table by one.
-//
-// Declared here beside the enum rather than wherever a table happens to live, so adding a
-// fifth event is one edit instead of a silent out-of-bounds write in a file nobody thought to
-// look at.
+// Kept beside the enum so adding an event is one edit.
 inline constexpr std::size_t kAlertEventCount = 4;
 
 inline constexpr std::size_t alert_event_index(AlertEvent event) noexcept {
     return static_cast<std::size_t>(event);
 }
 
-// Why nothing fired.
-//
-// Carried rather than inferred, because "no alert appeared" has four causes and the user is
-// entitled to know which one. A log line saying "suppressed" without saying why is the reason
-// this kind of feature generates bug reports that cannot be answered.
+// Why nothing fired, carried so it can be logged and shown.
 enum class AlertSuppression {
     None,
     Snoozed,
@@ -71,15 +50,7 @@ inline const char* alert_suppression_as_str(AlertSuppression s) noexcept {
     }
 }
 
-// Where a click on the alert goes.
-//
-// 9.15's activation channel landed on 2026-08-27, which is what makes a click worth handling:
-// before it, a handler could act on the user's request and still leave the window behind
-// another app, which is worse than no handler at all.
-//
-// Chosen here rather than at each delivery site, for the same reason the channels are. There
-// are four delivery sites across two native surfaces and a webview; a site that picks its own
-// destination is a site that can pick the wrong one, and only on one platform.
+// Where a click on the alert goes, decided here rather than at each delivery site.
 enum class AlertAction {
     None,                 // nothing to open -- see the note on a suppressed route below
     ReturnToWork,         // 2.8's "Take me back": raise the window the snapback recorded
@@ -102,10 +73,6 @@ inline const char* alert_action_as_str(AlertAction a) noexcept {
 }
 
 // What the delivery layer should do with one interruption.
-//
-// `action` is the field this struct was shaped to receive: the comment that used to sit here
-// said the destination was being kept out so 2.16's action-routing half would "add a field
-// rather than reinterpret one". This is that field.
 struct AlertRoute {
     AlertChannels channels;
     AlertPreviewMode preview{AlertPreviewMode::Detailed};
@@ -115,12 +82,7 @@ struct AlertRoute {
     bool visible() const { return channels.any(); }
 };
 
-// The destination each event opens, as a fact about the event rather than a preference.
-//
-// Not configurable, and deliberately: the channel is a question about how much a person wants
-// to be interrupted, while this is a question about what the interruption *is*. A snapback
-// that opened the Pomodoro timer would not be a preference, it would be a bug someone
-// configured.
+// The destination each event opens: a fact about the event, not a preference.
 inline AlertAction alert_action_for(AlertEvent event) noexcept {
     switch (event) {
         case AlertEvent::Snapback:
@@ -137,39 +99,18 @@ inline AlertAction alert_action_for(AlertEvent event) noexcept {
     return AlertAction::None;
 }
 
-// Whether a local reading falls inside a quiet range.
-//
-// Half-open [start, end): 22:00-07:00 is quiet at 06:59 and loud at 07:00 exactly, so two
-// adjacent ranges cannot both claim the same minute and "ends at 7" means what a person means
-// by it.
-//
-// `start == end` is an empty range, not a full day. The two mistakes are not symmetric: "I set
-// both to 09:00 and got no alerts for a week" is a silent outage that is hard to attribute,
-// while "I set both to 09:00 and quiet hours did nothing" is visible the first evening. A
-// genuine all-day quiet period is already expressible by clearing every channel, which is also
-// the more honest way to say it.
+// Whether a local reading is inside a quiet range. Half-open [start, end), so 22:00-07:00 is
+// loud at 07:00. `start == end` is an empty range, not a full day (clearing every channel is
+// how to silence all day).
 inline bool minute_in_quiet_range(int minute, int start, int end) {
     if (start == end) return false;
     if (start < end) return minute >= start && minute < end;
     return minute >= start || minute < end;  // wraps midnight
 }
 
-// The delivery policy, as a function of facts.
-//
-// `local_minute_of_day` is a parameter rather than a reading taken inside, for a reason that is
-// mechanical rather than stylistic: forcing the caller to do the conversion is what lets every
-// quiet-hours case be tested without setting TZ. TZ is a process global, it does not behave the
-// same across the four toolchains CI builds on, and two cases setting it in parallel would
-// interfere with each other.
-//
-// nullopt for that parameter means the platform could not answer, and it **fails open** -- the
-// alert is delivered. Failing closed would silence the product on a machine whose locale data
-// is broken, and the user would have no way to tell that apart from "nothing happened". A
-// missed quiet hour is a small annoyance the user can see; a permanently silent app is not.
-//
-// Precedence is snooze, then quiet hours, then channels. Snooze first because it is the user's
-// most recent explicit act: when a snooze and a quiet hour both apply, "snoozed" is the more
-// useful thing to be told.
+// The delivery policy. `local_minute_of_day` is a parameter so quiet hours are testable without
+// setting TZ. nullopt (conversion failed) fails open: a missed quiet hour is visible, a
+// permanently silent app is not. Precedence: snooze, then quiet hours, then channels.
 inline AlertRoute route_alert(AlertEvent event, const AlertDeliverySettings& settings,
                               std::int64_t now_wall_ms, std::optional<int> local_minute_of_day) {
     AlertRoute route;
@@ -192,10 +133,7 @@ inline AlertRoute route_alert(AlertEvent event, const AlertDeliverySettings& set
             break;
     }
 
-    // A silenced alert loses its destination as well as its channels. An alert that never
-    // appeared has nothing to be clicked -- and leaving a live destination on it would mean a
-    // toast still sitting in notification history from before a quiet hour began could act
-    // when the user finally noticed it.
+    // A silenced alert also loses its destination, so a stale toast cannot act later.
     const auto silence = [&route](AlertSuppression why) {
         route.channels = AlertChannels{};
         route.action = AlertAction::None;
@@ -227,14 +165,8 @@ inline AlertRoute route_alert(AlertEvent event, const AlertDeliverySettings& set
     return route;
 }
 
-// The route as it crosses to the delivery layer.
-//
-// Explicit booleans here, unlike the array-of-names an AlertChannels *preference* uses in
-// settings.json. The two are different boundaries: a stored preference has to survive an
-// unknown channel from a newer build, while this is a computed instruction consumed
-// immediately by main.cpp and the frontend listener, both of which want to ask "is this
-// channel on" and nothing else. A consumer that had to scan an array to answer that would be
-// a consumer that gets it subtly wrong once.
+// The route as sent to the delivery layer: explicit booleans (unlike the stored preference's
+// array of names, which must tolerate unknown channels from newer builds).
 inline void to_json(nlohmann::json& j, const AlertRoute& v) {
     j = nlohmann::json{{"inApp", v.channels.in_app},
                        {"overlay", v.channels.overlay},

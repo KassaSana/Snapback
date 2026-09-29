@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { installMemoryStorage } from "./memoryStorage";
 
-// Roadmap 11.11. Node 26 ships an experimental global `localStorage` that is unavailable
+// Node 26 ships an experimental global `localStorage` that is unavailable
 // without `--localstorage-file`, and it shadows the one jsdom would otherwise provide — which
 // is why 47 of 87 component cases failed on this machine and passed on CI's Node 22. See
 // memoryStorage.ts for the full diagnosis.

@@ -1,28 +1,7 @@
-// "Get my data back." Roadmap 9.14.
-//
-// Snapback has four ways to get data out and, until this, none to get it back in. For a
-// cloud-synced product that is a non-feature; for this one it is a hole in the central promise.
-// 1.6 and the onboarding wizard both say the data is local and yours, and local-only also means
-// **nothing else is holding a copy**. A new laptop, a reinstall, or a restored disk image loses
-// the history outright — and history *is* the product: trends, streaks, and the Tier 13 corpus
-// are all derived from it.
-//
-// **Scope: replace, not merge. Stated here so it cannot be assumed otherwise.**
-// Importing swaps the whole database for the incoming one. Merging two histories is a genuinely
-// larger problem — session UUIDs will not collide, but retention windows, duplicate detection,
-// and conflicting settings all need answers this item deliberately does not attempt. An import
-// therefore ends with exactly the incoming history, and the replaced database is kept as a
-// backup rather than discarded.
-//
-// Two things make the obvious manual workaround worse than it looks, and both shape the design:
-//
-//  - Copying `focoflow.db` by hand works only until the schema versions differ, and 7.3's
-//    downgrade guard then refuses the file — correctly, but with no way forward. So an import
-//    of an *older* file migrates it up, and an import of a *newer* one is refused here, with an
-//    explanation, rather than after the swap when the app can no longer open its own database.
-//  - 9.8's process-lifetime lock means a copy taken while Snapback is running can be a torn
-//    read of a WAL database. Everything here goes through `VACUUM INTO`, which asks SQLite for
-//    a consistent single-file snapshot, rather than copying bytes.
+// Import a database from a file. Replace, not merge: the incoming history replaces the current
+// one, which is kept as a backup. An older file is migrated forward; a newer one is refused up
+// front. Everything goes through VACUUM INTO (a consistent snapshot) rather than copying bytes,
+// since a copy of a live WAL database can be torn.
 #pragma once
 
 #include <cstdint>
@@ -58,11 +37,8 @@ struct ImportCandidate {
     std::int64_t session_count = 0;
 };
 
-// Read-only inspection. Opens the candidate on its own connection and never writes to it, so
-// this is safe to call for a preview before the user commits to anything.
-//
-// `current_db_path` is compared against the candidate so importing the live database over
-// itself is refused rather than performing a destructive no-op.
+// Read-only inspection on its own connection, safe for a preview. Refuses importing the live
+// database over itself.
 ImportCandidate inspect_import_candidate(const std::filesystem::path& incoming,
                                          const std::filesystem::path& current_db_path);
 
@@ -77,23 +53,15 @@ struct ImportOutcome {
     std::int64_t session_count = 0;
 };
 
-// Replace the database at `db_path` with the contents of `incoming`.
+// Replace the database at `db_path` with `incoming`. The live Storage must be closed first.
 //
-// **The live Storage must be closed before calling this.** The file is replaced underneath, and
-// an open SQLite connection to the old inode would keep writing to a database that is no longer
-// the app's. The caller owns that ordering; this function owns everything after it.
+//   1. inspect the candidate; refuse before touching anything
+//   2. snapshot the current database to `backup_path`
+//   3. snapshot the incoming file to a staging path (validates it, drops -wal baggage)
+//   4. move staging over the destination and remove the old -wal/-shm
+//   5. open the result and migrate it forward if older
 //
-// Order is chosen so that every failure leaves the user with a working database:
-//   1. inspect the candidate, and refuse before touching anything
-//   2. snapshot the current database to the returned `backup_path` (VACUUM INTO)
-//   3. snapshot the *incoming* file to a staging path beside the destination — this both
-//      validates it end to end and yields a clean single file with no -wal baggage
-//   4. move staging over the destination, and remove the old -wal/-shm, which belong to the
-//      database that was just replaced and would otherwise be applied to the new one
-//   5. open the result and migrate it forward if it is older
-//
-// A failure at 1-3 has changed nothing the app reads. Only 4 is destructive, and by then the
-// replacement is a verified file sitting beside its destination.
+// Failures at 1-3 change nothing the app reads.
 ImportOutcome import_database(const std::filesystem::path& incoming,
                               const std::filesystem::path& db_path, Logger* logger);
 
@@ -104,19 +72,10 @@ std::string replaced_database_backup_name();
 // The name a verified import waits under between being chosen and being applied.
 std::string staged_import_name();
 
-// ---------------------------------------------------------------------------
-// Staging: why the swap does not happen while the app is running.
-//
-// `import_database` requires the live Storage closed, and the running app cannot close it
-// underneath itself — on Windows the rename would simply fail against the open handle, and on
-// every platform the engine thread would carry on writing into a database that is no longer the
-// one the user is looking at. 9.8's process-lifetime lock exists to prevent exactly that class
-// of confusion, so this respects it rather than working around it.
-//
-// So the choice is verified and staged now, and applied at the next launch before anything opens
-// the database. That also gives the user a free undo: a staged import that has not been applied
-// is one file deletion away from never having happened.
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------- Staging: the
+// running app cannot close its own database, so an import is verified and staged now and
+// applied at the next launch before anything opens the database. Deleting the staged file
+// undoes it. ---------------------------------------------------------------------------
 
 struct StageOutcome {
     bool ok = false;

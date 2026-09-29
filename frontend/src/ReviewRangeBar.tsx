@@ -14,7 +14,7 @@ type ReviewRangeBarProps = {
   range: ReviewRange;
   onChange: (range: ReviewRange) => void;
   /**
-   * Roadmap 10.11. The interval the cards below are actually showing, when it is not the
+   * The interval the cards below are actually showing, when it is not the
    * one selected: a load in progress, or one that failed. Said here, once, so the cards can
    * keep the honest label and the user can see why it differs from the pressed button.
    */

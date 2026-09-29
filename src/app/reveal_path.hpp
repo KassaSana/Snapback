@@ -1,18 +1,8 @@
-// Reveal a directory in the OS file manager. Roadmap 7.6, "open the data folder".
+// Reveal a directory in the OS file manager, so the local data is actually inspectable.
 //
-// Snapback records window titles and keystroke timing into `focoflow.db`. The promise is that
-// the data is local and inspectable, and "inspectable" is only true if the user can actually
-// reach the folder — so this sits alongside deleting a session and exporting in a legible form.
-//
-// Two rules shape the implementation, and both are about a path being untrusted input (it
-// contains a user-chosen home directory name):
-//
-//  1. **A path is data, never program text.** There is no `system()` or `popen()` here.
-//     Windows uses `ShellExecuteW` and macOS uses `NSWorkspace` — neither starts a shell, and
-//     macOS starts no child process at all. POSIX spawns `xdg-open` with an argv *array*, so a
-//     path containing a space, a quote, or `$(...)` is one argument instead of shell syntax.
-//  2. **Refuse rather than guess.** A path that is missing or is not a directory returns
-//     false, instead of handing the OS something whose error dialog we cannot explain.
+//  1. A path is data, never program text: no system()/popen(). Windows uses ShellExecuteW,
+//     macOS NSWorkspace, POSIX spawns xdg-open with an argv array.
+//  2. Refuse rather than guess: a missing path or non-directory returns false.
 #pragma once
 
 #include <filesystem>
@@ -39,10 +29,8 @@ inline std::vector<std::string> file_manager_argv(const std::filesystem::path& d
 
 namespace detail {
 
-// The one per-platform seam. `reveal_directory` above owns the validation so it is written
-// once, and every backend may assume `dir` is an existing directory. Implemented in
-// reveal_path.cpp for Windows and POSIX, and in reveal_path_macos.mm for AppKit — the split
-// exists because the macOS backend has to be Objective-C++ and the rest must not be.
+// The per-platform seam; reveal_directory owns validation. The macOS backend lives in
+// reveal_path_macos.mm because it must be Objective-C++.
 bool reveal_existing_directory(const std::filesystem::path& dir);
 
 }  // namespace detail

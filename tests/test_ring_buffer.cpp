@@ -58,7 +58,7 @@ TEST_CASE("RingBuffer is FIFO-correct and race-free under concurrent producer/co
 }
 
 TEST_CASE("the ring remembers how deep it ever got, not just that it overflowed") {
-    // ROADMAP 14.11. `capture_events_dropped` only moves after the ring has already
+    // `capture_events_dropped` only moves after the ring has already
     // overflowed, so it reports damage rather than headroom -- a run that peaked one slot
     // short of full and one that never passed two look identical through it. The high-water
     // mark is what turns "we never dropped an event" into a statement about margin.

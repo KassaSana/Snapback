@@ -1,8 +1,5 @@
-// Pure, webview-free core of the IPC command bridge. Split out from commands.hpp so it
-// can be unit-tested without pulling in <webview/webview.h> (and thus WebView2 / Win32).
-//
-// This holds input validation, limit clamping, and the
-// arg-unwrap + serialize + error-envelope wrapper that every bound command runs through.
+// Pure, webview-free core of the IPC bridge (testable without WebView2): input validation,
+// limit clamping, and the arg-unwrap / serialize / error-envelope wrapper.
 #pragma once
 
 #include <algorithm>
@@ -31,9 +28,8 @@ constexpr std::size_t kMaxSessionIdLen = 128;
 constexpr std::size_t kMaxAppRulePatternLen = 200;
 constexpr std::size_t kMaxAppRuleNoteLen = 500;
 constexpr std::size_t kMaxRepoPathLen = 4096;
-// Roadmap 2.14. A reflection is a sentence or two for tomorrow's restart, not a journal
-// entry. Capped well below label notes because these render into the readable personal
-// export for *every* session, where an unbounded paste would drown the file it belongs to.
+// A reflection is a sentence or two; capped because it renders into every session of the
+// personal export.
 constexpr std::size_t kMaxReflectionLen = 1000;
 
 inline std::size_t utf8_scalar_count(std::string_view s) {
@@ -98,19 +94,9 @@ inline std::optional<std::string> opt_string(const nlohmann::json& args, const c
 
 using JsonHandler = std::function<nlohmann::json(const nlohmann::json&)>;
 
-// The contract every command runs through: `req` is the JSON *array* string webview.bind
-// delivers; we take element [0] (the args object the shim forwarded), run the handler,
-// and dump the result. Any thrown exception becomes the {__snapback_error} envelope the
-// JS shim turns into a rejected Promise.
-// Roadmap 8.14. The key every native command must present.
-//
-// The shim gives it to the page's bridge only after checking that its own document is the
-// trusted one, and it makes that check before the page has run a line — `webview.init()`
-// scripts run first on every navigation. A page reached by a redirect therefore has the bound
-// functions sitting on its global object and no way to use them, because it never saw this.
-//
-// It is deliberately stripped from the args before the handler runs. A command should not be
-// able to read it, log it, or write it into an export by accident.
+// The capability token every native command must present. The shim hands it to the page only
+// after verifying its own document, before any page script runs, so a redirected page sees the
+// bound functions but cannot use them. Stripped from args before the handler runs.
 inline constexpr const char* kCapabilityTokenKey = "__snapbackToken";
 // The one key of an error envelope; a reply is either a handler result or this.
 inline constexpr const char* kErrorKey = "__snapback_error";
@@ -128,11 +114,8 @@ inline bool token_matches(const std::string& expected, const std::string& suppli
     return difference == 0;
 }
 
-// Unwraps args, checks the capability token, runs the handler, and serializes the result or
-// the error envelope.
-//
-// An empty `expected_token` disables the check, which is what the pure command tests and any
-// non-webview caller use. Production always supplies one.
+// Unwraps args, checks the token, runs the handler, and serializes the result or error
+// envelope. An empty `expected_token` disables the check (tests); production always sets one.
 inline std::string run_json_command(const JsonHandler& handler, const std::string& req,
                                     const std::string& expected_token = {}) {
     try {
@@ -157,37 +140,18 @@ inline std::string run_json_command(const JsonHandler& handler, const std::strin
         // one field, not fail the whole command.
         return dump_json(handler(args));
     } catch (const std::exception& e) {
-        // `dump_json` here for the same reason as above, and more urgently: a strict dump
-        // throws type_error.316 on the first invalid byte *from inside this catch block*, so
-        // it escapes `run_json_command` into the webview binding rather than becoming an
-        // error the caller can read. An exception message is the likeliest place for an
-        // invalid byte to appear, not the least -- these messages concatenate filesystem
-        // paths and OS-derived strings, and `nlohmann::json::parse` quotes the offending
-        // input straight back. The path that runs when something has already gone wrong is
-        // the last one that should be able to fail.
+        // dump_json here too: exception messages often quote OS strings, and a throwing dump
+        // inside this catch would escape to the webview binding.
         return dump_json(nlohmann::json{{kErrorKey, e.what()}});
     }
 }
 
-// Runs a slow command off the caller's thread, one at a time per gate. The webview binding
-// calls this with its `submit` bound to the AsyncCommandRunner and `resolve` bound to
-// w.resolve(id, ...); the test calls it with plain lambdas, which is why the two are
-// parameters rather than the webview and runner themselves.
+// Runs a slow command off the caller's thread, one at a time per gate. `submit`/`resolve` are
+// parameters so tests can pass plain lambdas. Each call resolves exactly once: busy (gate
+// held), shutting down, or the handler's result. Gates are per command family.
 //
-// Three outcomes, each resolved exactly once: the gate was already held (busy_message as
-// an error envelope, without touching the worker); the runner refused the job because it
-// is shutting down (a shutdown error, gate released); or the job ran (handler result,
-// gate released after the handler returns and before the caller sees the result).
-//
-// The gate is per command family, not global: a personal export and a training export
-// contend on the same worker but not on each other's files, so one running must not report
-// the other as busy.
-//
-// `on_claimed` runs on the calling thread right after the gate is taken and before the job
-// is queued -- never on the busy path. It is where per-run state is reset: the caller's
-// thread is the one that also carries the commands that would set that state (a cancel
-// request), so resetting here orders "new run" strictly after any request aimed at the old
-// one, and strictly before any aimed at this one. Resetting inside the job would race both.
+// `on_claimed` runs on the calling thread after the gate is taken and before the job is queued,
+// which orders per-run resets (e.g. clearing a cancel flag) between old and new requests.
 inline void dispatch_single_flight(const std::function<bool(std::function<void()>)>& submit,
                                    std::function<void(std::string)> resolve,
                                    JsonHandler handler, std::string req,
@@ -219,15 +183,12 @@ inline void dispatch_single_flight(const std::function<bool(std::function<void()
     }
 }
 
-// Builds the one JavaScript expression the host evaluates to deliver an event. Both values
-// cross as escaped string literals, and the payload is reconstructed through JSON.parse
-// inside the webview. `ensure_ascii=true` keeps U+2028/U+2029 out of JavaScript source even
-// on engines that still treat those valid JSON characters as line terminators.
+// The JavaScript expression that delivers one event: both values as escaped string literals,
+// payload rebuilt with JSON.parse.
 inline std::string event_dispatch_script(std::string_view event,
                                          std::string_view json_payload) {
-    // ensure_ascii keeps U+2028/U+2029 out of the JavaScript source; replace keeps an
-    // invalid byte that reached this far from throwing where there is no longer anywhere to
-    // report it -- this runs on the way to the webview, past every handler.
+    // ensure_ascii keeps U+2028/U+2029 out of the JS source; replace keeps an invalid byte from
+    // throwing this late.
     const auto js_event = nlohmann::json(std::string(event))
                               .dump(-1, ' ', /*ensure_ascii=*/true,
                                     nlohmann::json::error_handler_t::replace);

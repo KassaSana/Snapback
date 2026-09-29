@@ -1,4 +1,4 @@
-// The command registry (Roadmap 14.3): the real handler table, built against a real
+// The command registry: the real handler table, built against a real
 // AppState, invoked by name through the same envelope the webview bridge uses. This is the
 // seam the bridge tests could not reach -- they re-created handler lambdas by hand, so a
 // wrongly wired real command passed them.

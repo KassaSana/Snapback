@@ -11,9 +11,7 @@ import {
 import { sessionStartCaptureWarning, type SessionCaptureReadiness } from "./healthHints";
 import { normalizeFocusMode, type FocusMode } from "./sessionCockpit";
 
-// Roadmap 2.11 moved these to the pure module so the cockpit's rules could be unit-tested
-// without React. Re-exported because they are the app's vocabulary for focus modes and every
-// existing importer names this module.
+// Re-exported from the pure module; this is where importers expect them.
 export { FOCUS_MODES, normalizeFocusMode } from "./sessionCockpit";
 export type { FocusMode } from "./sessionCockpit";
 
@@ -44,15 +42,11 @@ export const useSession = ({
   const [recap, setRecap] = useState<SessionRecap | null>(null);
   const [autoLabel, setAutoLabel] = useState<FocusLabel | null>(null);
   const [surveyPending, setSurveyPending] = useState(false);
-  // Roadmap 2.14. Tracks only whether *this* end-of-session prompt is still open. Skipping and
-  // saving both close it; neither is remembered past the session it belongs to.
+  // Whether this end-of-session prompt is still open.
   const [reflectionPending, setReflectionPending] = useState(false);
   const [reflectionSaved, setReflectionSaved] = useState(false);
-  // Roadmap 2.11. `sessionPending` drives the disabled state; `inFlight` enforces it.
-  // A disabled button is a courtesy — Enter on a focused form, a synthetic click, or a second
-  // click landing inside the await before React has re-rendered all reach the handler anyway.
-  // The ref is checked and set synchronously, so the second caller returns before it can issue
-  // a duplicate `start_session` and create a second row for one intent.
+  // `sessionPending` drives the disabled state; the `inFlight` ref enforces it synchronously,
+  // so Enter or a double click cannot start two sessions.
   const [sessionPending, setSessionPending] = useState(false);
   const inFlight = useRef(false);
 
@@ -143,18 +137,12 @@ export const useSession = ({
         );
         resetTimelineRefreshGate();
         void refreshContextTimeline(record.sessionId);
-        // The draft is committed by Start, not by the select: `start_session` already made
-        // `mode` the live policy, and this remembers it as the default for next time. It is
-        // the only place the cockpit writes the default -- picking a mode while preparing a
-        // replacement session used to change the *running* session's policy on the spot.
-        // Best-effort: the session is running under the right mode either way.
+        // Start commits the draft mode as the new default. Best-effort.
         void commitDefaultFocusMode(mode);
       } catch {
         setActionError("Could not start session. Check capture permissions and try again.");
       } finally {
-        // Cleared in `finally`, never on the success path alone: a failed start that left the
-        // guard set would wedge the button until reload, which is a worse bug than the duplicate
-        // request it is here to prevent.
+        // Cleared in `finally`, or a failed start would wedge the button.
         inFlight.current = false;
         setSessionPending(false);
       }
@@ -173,9 +161,7 @@ export const useSession = ({
     await handleStartNamedSession(sessionGoal, focusMode);
   }, [focusMode, handleStartNamedSession, sessionGoal]);
 
-  // The stopped state, from the record the backend returned. Shared by Stop and by the half
-  // of a switch that succeeded: once `stop_session` has answered, the session is over in
-  // storage, and the UI has to say so whatever happens next.
+  // The stopped state, from the record the backend returned (shared by Stop and a switch).
   const applyStoppedSession = useCallback(
     async (record: SessionRecord) => {
       setSessionRecord(record);
@@ -222,7 +208,7 @@ export const useSession = ({
   }, [applyStoppedSession, sessionId, setActionError]);
 
   /**
-   * Roadmap 2.11's guarded "start a different session".
+   * Guarded "start a different session".
    *
    * Switching is stop-then-start rather than a single command because ADR-0005 makes a session
    * a declared, attended thing: the old one must end honestly, with its recap and label, before
@@ -246,10 +232,7 @@ export const useSession = ({
       setSessionPending(false);
       return false;
     }
-    // Applied before the start is attempted: storage has already completed this session, and
-    // a UI still showing it ACTIVE would be describing a row that no longer is. The response
-    // used to be discarded here, so a failed replacement start left a running-session card
-    // over a stopped session until the next hydrate.
+    // Applied before the replacement start: storage already completed this session.
     setSessionRecord(stopped);
     clearSessionLiveSignals();
 
@@ -295,18 +278,14 @@ export const useSession = ({
     setActionError,
   ]);
 
-  // Roadmap 2.11. "Keep this session": the draft goes back to describing the running session.
-  // Nothing native was touched while it was open, so there is nothing to undo -- this only
-  // stops the form from showing a goal and mode the session never had.
+  // "Keep this session": nothing native was touched, so just reset the draft.
   const cancelSwitch = useCallback(() => {
     if (!sessionRecord) return;
     setSessionGoal(sessionRecord.goal);
     setFocusMode(normalizeFocusMode(sessionRecord.focusMode, focusMode));
   }, [focusMode, sessionRecord]);
 
-  // Roadmap 2.14. Saves against the session that just ended, not a live one -- by the time
-  // this prompt is on screen there is no active session, and `sessionId` still names the right
-  // row because stopping does not clear it.
+  // Saves against the session that just ended (`sessionId` still names it).
   const handleSaveReflection = useCallback(
     async (done: string | null, nextStep: string | null) => {
       if (!sessionId) {
@@ -328,18 +307,13 @@ export const useSession = ({
     setReflectionPending(false);
   }, []);
 
-  // The cockpit's select. Form state only: it names the mode the *next* session starts with,
-  // and Start is what commits it. While a replacement is being drafted this used to call
-  // `set_focus_mode`, which natively rewrites the live policy as well as the default -- so
-  // browsing modes for the next session was silently reclassifying the current one.
+  // Form state only: the mode the next session starts with. Start commits it.
   const setDraftFocusMode = useCallback((mode: FocusMode) => {
     setFocusMode(mode);
   }, []);
 
-  // The explicit default editor (the permission wizard's "Default focus mode"). This one is
-  // meant to persist, and does so immediately. It also moves the draft, since the draft
-  // starts from the default. A failed write is reported rather than swallowed: a default
-  // that did not save is a setting the user believes they changed.
+  // The explicit default editor (the permission wizard); persists immediately and moves the
+  // draft. Failures are reported.
   const handleFocusModeChange = useCallback(
     async (mode: FocusMode) => {
       setFocusMode(mode);

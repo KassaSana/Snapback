@@ -1,11 +1,5 @@
-// Roadmap 9.14. The visible half of the import path.
-//
-// It lives beside Privacy's exports on purpose: "get my data out" and "get my data back in" are
-// the same promise read in two directions, and separating them is how a product ends up with
-// four exports and no import.
-//
-// The copy states the scope the item fixes in writing — **replace, not merge** — because that
-// is the part a user cannot infer and cannot undo after a restart.
+// The import UI, beside Privacy's exports. States the scope plainly -- replace, not merge --
+// since that cannot be undone after the restart.
 
 import { memo } from "react";
 
@@ -112,11 +106,7 @@ export const DataImportCard = memo(function DataImportCard({
                 That file holds <strong>{candidate.sessionCount}</strong>{" "}
                 {candidate.sessionCount === 1 ? "session" : "sessions"}.
               </p>
-              {/*
-                Stated plainly rather than softened. Merging is out of scope for this item, so
-                importing genuinely discards the current history — and the user is owed that
-                sentence before they click, not after.
-              */}
+              {/* Stated plainly: importing discards the current history. */}
               <p>
                 Importing <strong>replaces</strong> everything Snapback currently holds; the two
                 histories are not merged. Your current data is saved to a backup file beside the

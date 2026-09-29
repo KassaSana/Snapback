@@ -1,24 +1,6 @@
-// Roadmap 11.11. A Web Storage implementation for test environments that do not supply one.
-//
-// **The cause was not jsdom.** `vite.config.ts` sets `environment: "jsdom"`, the lockfile and
-// installed trees agree, and the document URL is a real origin (`http://localhost:3000/`), so
-// jsdom is willing to provide `localStorage`. What actually happens on Node 26 is:
-//
-//     ExperimentalWarning: localStorage is not available because --localstorage-file
-//     was not provided.
-//
-// Node 26 ships its **own** experimental global `localStorage`, gated behind a flag nobody
-// passes. It exists on `globalThis` before the jsdom environment installs its window
-// properties, so jsdom's implementation never wins and every read lands on Node's unavailable
-// one. Node 22 — which CI pins — has no such global, which is exactly why the suite was green
-// there and 47 of 87 cases failed here.
-//
-// So this is deliberately **not** a workaround for a broken DOM. It fills a gap created by a
-// host global that shadows the environment's, and it installs itself only when the environment
-// did not end up with a working Storage. On CI's Node 22 nothing here runs, and jsdom's real
-// implementation is used untouched.
-//
-// Lives under `tests/` because it is test scaffolding and must never reach the bundle.
+// A Web Storage implementation for runtimes where localStorage is unusable. On Node 26 a
+// flag-gated experimental global `localStorage` shadows jsdom's; this installs only when the
+// environment ended up without a working Storage (never on CI's Node 22). Test-only.
 
 /** The subset of the Web Storage API the app and its tests use, implemented in memory. */
 export class MemoryStorage implements Storage {

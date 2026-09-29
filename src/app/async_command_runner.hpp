@@ -9,13 +9,8 @@
 
 namespace snapback::detail {
 
-// One owned worker for native commands that must not monopolize the webview event loop.
-// Jobs are copied into the queue, and shutdown drains and joins the worker so their borrowed
-// AppState/webview references cannot outlive either owner.
-//
-// Draining means a job can start after shutdown has begun, and the join waits for every job
-// to return. A job that would otherwise block for minutes (a training run) therefore has to
-// ask `stopping()` while it works and cut itself short, or the exit waits on it.
+// One owned worker for native commands that must not block the webview event loop. Shutdown
+// drains and joins it, so a long job (training) must poll `stopping()` and cut itself short.
 class AsyncCommandRunner {
 public:
     AsyncCommandRunner() : worker_([this] { run(); }) {}

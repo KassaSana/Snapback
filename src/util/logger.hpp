@@ -1,12 +1,6 @@
-// Structured leveled logger. Roadmap 4.1: levels + formatting + filtering + file rotation.
-//
-// Replaces scattered std::cerr writes with one leveled sink: every line is
-// "<timestamp> [LEVEL] message", and anything below the configured level is dropped.
-// RotatingFileStream adds a bounded on-disk sink; an in-app diagnostics view remains a
-// follow-up.
-//
-// The sink and clock are explicit and injectable — the sink is any std::ostream, the clock is a std::function
-// — which is what lets tests assert exact output against a frozen timestamp.
+// Leveled logger: every line is "<timestamp> [LEVEL] message"; lines below the level are
+// dropped. RotatingFileStream is a bounded on-disk sink. Sink (any std::ostream) and clock are
+// injectable for tests.
 #pragma once
 
 #include <algorithm>
@@ -245,10 +239,8 @@ private:
     RotatingFileBuffer buffer_;
 };
 
-// Picks the sink for process-wide startup/shutdown logging: the caller's rotating file
-// if it opened successfully, otherwise std::cerr so a bad log path never silences the app.
-// A free function, not a class, because there's exactly one decision to make here and no
-// state to own — the returned reference always outlives the RotatingFileStream passed in.
+// The rotating file if it opened, otherwise std::cerr, so a bad log path never silences the
+// app.
 inline std::ostream& pick_startup_log_sink(RotatingFileStream& file, std::ostream& fallback) {
     return file.healthy() ? static_cast<std::ostream&>(file) : fallback;
 }

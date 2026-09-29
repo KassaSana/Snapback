@@ -28,7 +28,7 @@ type SessionControlCardProps = {
   setDraftFocusMode: (mode: FocusMode) => void;
   handleStartSession: () => void;
   handleStopSession: () => void;
-  /** Roadmap 2.11's guarded switch: stops the running session, then starts the typed one. */
+  /** Guarded switch: stops the running session, then starts the typed one. */
   handleSwitchSession: () => void | Promise<boolean>;
   /** "Keep this session": puts the draft back to the running session's goal and mode. */
   cancelSwitch: () => void;
@@ -42,9 +42,8 @@ type SessionControlCardProps = {
   /** Distinct goals from recent history, newest first. */
   recentGoals: RecentGoal[];
   /**
-   * Set when the user has been working steadily with no session running (Roadmap 2.7 /
-   * ADR-0005). Shown here rather than as a toast because this is where the answer lives:
-   * the Start button is one click away.
+   * Set when the user has been working steadily with no session running (ADR-0005). Shown
+   * here, beside Start, rather than as a toast.
    */
   untrackedNote: string | null;
   dismissUntrackedNote: () => void;
@@ -67,9 +66,7 @@ export const SessionControlCard = memo(function SessionControlCard({
   untrackedNote,
   dismissUntrackedNote,
 }: SessionControlCardProps) {
-  // Roadmap 2.11. `pristine` keeps the validation message off an untouched form. It clears on
-  // the first keystroke and never comes back for the life of the card, which is what makes the
-  // message read as an answer to something the user did.
+  // Keeps the validation message off an untouched form; cleared on the first keystroke.
   const [pristine, setPristine] = useState(true);
   const [presets, setPresets] = useState<SessionPreset[]>(() => readSessionPresets());
   const [switching, setSwitching] = useState(false);
@@ -83,16 +80,9 @@ export const SessionControlCard = memo(function SessionControlCard({
   const suggestionsOpen = showSuggestions && suggestions.length > 0;
 
   const sessionActive = sessionRecord?.status === "ACTIVE";
-  // The switch interaction ends with the session it was about: a successful switch changes
-  // the id, a Stop (or a replacement start that failed after the stop) ends the activity.
-  // Left set, `switchable` -- which requires an active session -- kept the submit button
-  // disabled on the ordinary start form until the card remounted.
-  //
-  // Reset during render, not in an effect. An effect runs after the commit that showed the
-  // new session, so for that gap the card displayed "running" or "completed" beside a stale
-  // switch form, and a click on "Start a different session" landing in it was undone when
-  // the effect caught up. That gap is what made sessionCockpitFlow fail about half the time
-  // under a loaded test run. React's "adjusting state when a prop changes" pattern closes it.
+  // The switch interaction ends with its session (new id or Stop). Reset during render rather
+  // than in an effect, so there is no frame where a stale switch form sits beside the new
+  // session.
   const switchScope = `${sessionId ?? ""}|${sessionActive}`;
   const [switchScopeSeen, setSwitchScopeSeen] = useState(switchScope);
   if (switchScope !== switchScopeSeen) {
@@ -100,8 +90,7 @@ export const SessionControlCard = memo(function SessionControlCard({
     setSwitching(false);
   }
   const validation = validateSessionGoal(sessionGoal, pristine);
-  // While a session runs, the form is only reachable through the guarded switch, so the
-  // gate is the same validation with the live session no longer disqualifying it.
+  // While a session runs, the form is only reachable through the guarded switch.
   const startable = canStartSession(sessionGoal, sessionPending, sessionActive);
   const switchable =
     switching && !sessionPending && validateSessionGoal(sessionGoal).valid && sessionActive;
@@ -122,8 +111,7 @@ export const SessionControlCard = memo(function SessionControlCard({
     writeSessionPresets(next);
   };
 
-  // Applying a preset or a recent goal fills the form and stops. ADR-0005 keeps declaration
-  // explicit, so the user still presses Start.
+  // Fills the form only; the user still presses Start (ADR-0005).
   const applyGoal = (goal: string, mode: FocusMode) => {
     setPristine(false);
     setSessionGoal(goal);
@@ -266,9 +254,7 @@ export const SessionControlCard = memo(function SessionControlCard({
                 onKeyDown={handleGoalKeyDown}
                 aria-invalid={Boolean(validation.message)}
                 aria-describedby={validation.message ? "session-goal-error" : undefined}
-                // Roadmap 10.3. The arrow keys already moved a highlight through the
-                // suggestions, but nothing told assistive tech which one, or that a list was
-                // open: the rest of the ARIA combobox pattern the list half was built for.
+                // ARIA combobox pattern for the suggestion list.
                 role="combobox"
                 aria-autocomplete="list"
                 aria-expanded={suggestionsOpen}

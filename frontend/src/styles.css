@@ -1,4 +1,4 @@
-/* Roadmap 10.10. Semantic tokens are the public API; palette tokens are the implementation.
+/* Semantic tokens are the public API; palette tokens are the implementation.
    Components should prefer --text, --border, and --card so light/dark can swap underneath. */
 
 :root,
@@ -56,7 +56,7 @@
   --log-text: #e6edf3;
   --accent-tint: rgba(198, 93, 68, 0.1);
   --accent-border: rgba(198, 93, 68, 0.35);
-  /* Roadmap 8.10. Use system fonts so first launch renders without a network request. */
+  /* Use system fonts so first launch renders without a network request. */
   --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   --font-serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
 }
@@ -705,7 +705,7 @@ h1 {
   color: var(--muted);
 }
 
-/* Roadmap 2.7. The "you are working untracked" notice on the session card. Deliberately
+/* The "you are working untracked" notice on the session card. Deliberately
    quiet: it is a prompt, not an error, and the app is telling the user about something it
    chose not to do for them. */
 .notice {
@@ -741,7 +741,7 @@ h1 {
 }
 
 /* Secondary line under a meta value — currently the elapsed time a session was open, shown
-   beneath the attended time that now leads it (Roadmap 7.23). */
+   beneath the attended time that now leads it. */
 .meta-sub {
   margin: 0.15rem 0 0;
   font-size: 0.75rem;
@@ -815,7 +815,7 @@ h1 {
   margin: 0 0 0.35rem;
 }
 
-/* The data folder path (Roadmap 7.6). Monospaced and selectable because when opening fails
+/* The data folder path. Monospaced and selectable because when opening fails
    this line is the only way the user can find their own files — it has to be copyable. */
 .data-folder-path {
   margin-top: 0.5rem;
@@ -1219,7 +1219,7 @@ h1 {
   margin: 0;
 }
 
-/* Roadmap 2.16. The interruption settings group inside Settings > General. */
+/* The interruption settings group inside Settings > General. */
 .settings-subheading {
   margin: 24px 0 4px;
   font-size: 0.95rem;
@@ -1376,7 +1376,7 @@ h1 {
   inset: 0;
   z-index: 100;
   display: flex;
-  /* Roadmap 10.3. Scrolls in a short window or at large text; the card's `margin: auto`
+  /* Scrolls in a short window or at large text; the card's `margin: auto`
      centres it when it fits, which `align-items: center` would clip when it does not. */
   overflow-y: auto;
   padding: 24px;
@@ -1475,7 +1475,7 @@ h1 {
   stroke-dasharray: 2 3;
 }
 
-/* Roadmap 10.8. An hour with no samples, drawn below the axis so it cannot be read as a
+/* An hour with no samples, drawn below the axis so it cannot be read as a
    measured value. Muted rather than accent-coloured, and outside the plot area, because the
    two failures this fixes are "no data looked like zero" and "zero looked like nothing". */
 .chart-bar-empty {
@@ -1505,7 +1505,7 @@ h1 {
   color: var(--muted);
 }
 
-/* Roadmap 2.9 — the session explorer: a day-grouped list beside the chosen session. */
+/* The session explorer: a day-grouped list beside the chosen session. */
 .session-explorer-card {
   grid-column: 1 / -1;
 }
@@ -1648,7 +1648,7 @@ h1 {
   }
 }
 
-/* Roadmap 10.3 — text for assistive tech only: in the accessibility tree, not on screen. */
+/* Text for assistive tech only: in the accessibility tree, not on screen. */
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1661,7 +1661,7 @@ h1 {
   border: 0;
 }
 
-/* Roadmap 10.3 — each Review chart's numbers as a table, behind a native disclosure. */
+/* Each Review chart's numbers as a table, behind a native disclosure. */
 .chart-data {
   margin-top: 6px;
   font-size: 0.78rem;
@@ -1714,7 +1714,7 @@ h1 {
   }
 }
 
-/* Roadmap 2.12 — the getting-started walkthrough. A strip, not a card above Start. */
+/* The getting-started walkthrough. A strip, not a card above Start. */
 
 .onboarding-guide {
   grid-column: 1 / -1;
@@ -1746,7 +1746,7 @@ h1 {
   font-weight: 600;
 }
 
-/* Roadmap 10.9 — the second level inside Settings.
+/* The second level inside Settings.
    Visually lighter than .surface-tab on purpose: ADR-0003's three surfaces stay the primary
    navigation, and a second row of equally loud pills would read as six top-level tabs. */
 
@@ -1855,7 +1855,7 @@ h1 {
   color: var(--ink);
 }
 
-/* Roadmap 2.11 — the session cockpit. */
+/* The session cockpit. */
 
 .session-live {
   display: grid;
@@ -2007,7 +2007,7 @@ h1 {
   user-select: all;
 }
 
-/* Roadmap 10.11 — one shared range for every Review card. */
+/* One shared range for every Review card. */
 
 .review-range-bar {
   grid-column: 1 / -1;
@@ -2064,7 +2064,7 @@ h1 {
   color: var(--text);
 }
 
-/* Roadmap 2.15 — Interactive Goal History Dropdown & Auto-Complete */
+/* Goal history dropdown and autocomplete. */
 .goal-input-wrapper {
   position: relative;
   width: 100%;

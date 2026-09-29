@@ -35,11 +35,7 @@ public:
         }
         slots_[head] = std::move(value);
         head_.store(next, std::memory_order_release);
-        // ROADMAP 14.11. `capture_events_dropped` only moves once the ring has already
-        // overflowed, which makes it a report of damage rather than of headroom: a run that
-        // peaked at 65,000 of 65,536 slots and one that never passed ten look identical.
-        // The occupancy is free here -- both ends were just loaded -- and this is the
-        // producer, the only thread that writes it, so a plain load/store is enough.
+        // Track the high-water mark (headroom, not just overflow). Producer-only write.
         const std::size_t occupancy = (next - tail) & kMask;
         if (occupancy > high_water_.load(std::memory_order_relaxed)) {
             high_water_.store(occupancy, std::memory_order_relaxed);
@@ -58,13 +54,8 @@ public:
         return value;
     }
 
-    // Consumer side. Non-destructive "is there anything to pop", so a bounded drain can tell
-    // "I stopped because my budget ran out" from "I stopped because I emptied the ring"
-    // without consuming the event that would answer it. Only meaningful on the consumer
-    // thread: the producer can make a false reading true a moment later, which is harmless
-    // here (the next tick sees it) and is why this is not used for correctness decisions.
-    // The deepest this ring has ever been, in events. Read from any thread; it can be one
-    // push stale, which is immaterial for a high-water mark.
+    // Consumer side: whether anything is poppable, without popping. Advisory only (the producer
+    // can make it true a moment later). The deepest this ring has been; may be one push stale.
     std::size_t high_water() const { return high_water_.load(std::memory_order_relaxed); }
 
     bool has_pending() const {
@@ -73,10 +64,7 @@ public:
 
 private:
     static constexpr std::size_t kMask = Capacity - 1;
-    // Heap, not std::array: 65,536 CaptureEvents is ~6 MB, which silently lived in
-    // whatever storage the *owner* chose. A stack-allocated CaptureThread (or AppState,
-    // which holds one by value) blew Windows' 1 MB default thread stack — see Roadmap 6.1.
-    // Allocated once here, never resized; the hot-path push/pop never touch the pointer.
+    // Heap, not std::array: ~6 MB would blow a 1 MB thread stack if the owner lived there.
     std::unique_ptr<T[]> slots_ = std::make_unique<T[]>(Capacity);
     // alignas(64): keep head_ (producer-written) and tail_ (consumer-written) on separate
     // cache lines. Adjacent atomics would share a line and ping-pong it between the two

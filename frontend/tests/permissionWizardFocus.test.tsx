@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { PermissionWizard } from "../src/PermissionWizard";
 
-// Roadmap 10.3. The wizard declares `aria-modal`; these pin the behaviour that declaration
+// The wizard declares `aria-modal`; these pin the behaviour that declaration
 // promises. Rendered directly rather than through App so each property is one assertion.
 
 type Props = Parameters<typeof PermissionWizard>[0];

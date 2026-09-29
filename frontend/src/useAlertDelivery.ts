@@ -3,9 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import type { AlertDeliverySettings } from "./alertDelivery";
 
-// Roadmap 2.16. Same shape as useIdleThreshold: read once, write on change, and keep the value
-// the native side returned rather than the one that was sent. The setter validates and rejects
-// before mutating anything, so its reply is the only value that is true.
+// Read once, write on change, keep the value the native side returned.
 const DEFAULTS: AlertDeliverySettings = {
   snapback: ["overlay"],
   hyperfocus: ["native"],

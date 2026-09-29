@@ -124,7 +124,7 @@ describe("Session start/stop flow", () => {
         focusMode: "normal",
       }),
     );
-    // UI reflects the running session. Roadmap 7.23 replaced "active" with running/paused:
+    // UI reflects the running session. replaced "active" with running/paused:
     // a session that stopped counting attended time twenty minutes ago must not read the same
     // as one that is recording, which is the whole point of the distinction.
     //

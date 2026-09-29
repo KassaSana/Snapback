@@ -8,8 +8,8 @@ type FocusFeedbackCardProps = {
   labelStatusWarning: boolean;
 };
 
-// Consumer Settings card for labelling the current moment. ADR-0006: training/deploy lives
-// elsewhere (developer tooling), so this card must not advertise a missing ml/ pipeline.
+// Labelling the current moment. Training/deploy is developer tooling (ADR-0006) and lives
+// elsewhere.
 export const FocusFeedbackCard = memo(function FocusFeedbackCard({
   handleLabel,
   labelStatus,

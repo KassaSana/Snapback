@@ -1,14 +1,6 @@
 /**
- * Roadmap 2.16's action-routing half. Where a click on a native alert lands in the app.
- *
- * The native side decides *which destination* — `alert_action_for` in
- * src/app/alert_routing.hpp — and this side decides what that destination looks like as a
- * screen. The split is deliberate: main.cpp does not know what a React surface is, and
- * teaching it would put one decision in two places that cannot both stay right.
- *
- * Pure, and out of the components, for the reason `alertDelivery.ts` next door gives: 11.11
- * makes the component suite unreliable to run on every machine, so anything with a rule in it
- * belongs where `tsx` can execute it directly.
+ * Where a click on a native alert lands in the app. The native side picks the destination
+ * (`alert_action_for` in src/app/alert_routing.hpp); this maps it to a screen.
  */
 
 import type { Surface } from "./SurfaceNav";

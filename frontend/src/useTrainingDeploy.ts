@@ -46,11 +46,8 @@ export const useTrainingDeploy = ({
     null,
   );
 
-  // Subscribed only for the length of a run: the event is the native side's log tail, and
-  // there is nothing to show outside one. Unsubscribing on completion also drops a report
-  // that was already in flight when the result arrived. The displayed value is reset by the
-  // run itself (start and finally below), not here -- an effect that sets state is a
-  // cascade, and the run already owns that lifecycle.
+  // Subscribed only during a run (the event is the log tail). The run itself resets the
+  // displayed value.
   useEffect(() => {
     if (!trainingInProgress) {
       return;
@@ -78,7 +75,7 @@ export const useTrainingDeploy = ({
   const [modelReloadStatus, setModelReloadStatus] = useState<string | null>(null);
 
   const refreshDeployStatus = useCallback(async () => {
-    // ADR-0006: consumer installs must not probe training status (or see repo-path errors).
+    // ADR-0006: consumer installs never probe training status.
     if (!enabled) {
       setDeployStatus(null);
       return;

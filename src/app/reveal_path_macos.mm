@@ -1,4 +1,4 @@
-// AppKit backend for reveal_path.hpp. Roadmap 7.6.
+// AppKit backend for reveal_path.hpp.
 #if defined(__APPLE__)
 
 #include "app/reveal_path.hpp"

@@ -203,7 +203,7 @@ TEST_CASE("minute_in_quiet_range is total across the day") {
 }
 
 TEST_CASE("every event carries the destination its own alert opens") {
-    // Roadmap 2.16's action-routing half. Decided from the event alone, not from a preference:
+    // Action-routing half. Decided from the event alone, not from a preference:
     // the channel is a question about how much a person wants to be interrupted, while this is
     // a question about what the interruption *is*.
     const AlertDeliverySettings defaults;

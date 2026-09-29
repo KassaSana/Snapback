@@ -2,13 +2,8 @@ import { memo, useState } from "react";
 
 import type { AttendedProgress } from "./api";
 
-// Roadmap 2.19. Opt-in attended-minute targets, off until someone sets one.
-//
-// The copy here is deliberately flat. The item rules out guilt, forced streaks and
-// notifications, so this states two numbers and their ratio and stops: no "you're behind",
-// no encouragement, no streak. Attendance is measured from durable spans, so it is the one
-// quantity here the user can plan against — a focus *score* is a model opinion and would make
-// a target into a demand to please the classifier.
+// Opt-in attended-minute targets. Deliberately flat copy: two numbers and a ratio, no
+// encouragement or streaks. Targets are on attendance, not the focus score.
 type AttendedTargetsCardProps = {
   progress: AttendedProgress;
   onSave: (dailyMins: number, weeklyMins: number) => void | Promise<void>;

@@ -23,11 +23,8 @@ export const useLiveData = () => {
   const [snapbackNote, setSnapbackNote] = useState<string | null>(null);
   const [contextTimeline, setContextTimeline] = useState<ContextSnapshot[]>([]);
   const lastTimelineRefreshAtRef = useRef<number | null>(null);
-  // Request generations, the pattern useReviewWorkflow already uses. A timeline or latest
-  // read that resolves after a session switch or an activity clear used to land on top of
-  // the newer state and restore rows from a session that is over (or was just deleted).
-  // Every read takes a ticket; a result is applied only if its ticket is still current, and
-  // anything that resets the state also retires every ticket in flight.
+  // Request generations: a result is applied only if its ticket is still current, and anything
+  // that resets state retires every ticket in flight.
   const timelineRequestRef = useRef(0);
   const latestRequestRef = useRef(0);
 
@@ -105,9 +102,7 @@ export const useLiveData = () => {
 
   const handlePrediction = useCallback(
     (record: PredictionRecord | null, activeSessionId?: string | null) => {
-      // Session start/stop bumps the native activity epoch so most stale dispatches die
-      // before they reach here; this is the belt for anything that still arrives — a
-      // prediction named for a previous session must not paint under the new one.
+      // Belt and braces: a prediction for a previous session must not paint under the new one.
       if (
         record &&
         activeSessionId &&
@@ -138,9 +133,7 @@ export const useLiveData = () => {
   }, []);
 
   const handleDismissSnapback = useCallback(async () => {
-    // Clearing the note is what the user asked for regardless of the backend call's
-    // outcome; the command's real job is unsticking ContextTracker's Recovering state
-    // (its only exit), not the note itself, so a failure here shouldn't trap the UI.
+    // Clear the note regardless; the command's real job is unsticking the tracker.
     setSnapbackNote(null);
     try {
       await api.dismissSnapback();
@@ -150,12 +143,8 @@ export const useLiveData = () => {
   }, []);
 
   const handleRestoreSnapbackTarget = useCallback(async () => {
-    // Unlike dismiss, this note only clears once the native side says the window came back.
-    // It used to clear first and ignore the result, so a failed activation -- the window
-    // closed, a title that no longer matches, a platform without support -- looked exactly
-    // like a successful one, and the retry button vanished with it. The native side now keeps
-    // its target across a failure, so leaving the note (and its "Take me back") in place is a
-    // real retry rather than a decoration.
+    // Cleared only once the native side confirms the window came back; a failure keeps the note
+    // and its retry.
     const summary = snapbackSummaryRef.current;
     const failed = (reason: string) => {
       setSnapbackNote(

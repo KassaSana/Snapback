@@ -105,7 +105,7 @@ afterEach(() => {
 });
 
 describe("Training / deploy card", () => {
-  // Roadmap 10.9 moved the feedback controls into **Focus** and left model tooling in
+  // Moved the feedback controls into **Focus** and left model tooling in
   // **Advanced**, so this assertion follows the card rather than the surface.
   it("describes the available feedback controls without claiming global hotkeys", async () => {
     renderApp("settings", "focus");

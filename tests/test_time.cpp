@@ -45,7 +45,7 @@ TEST_CASE("local_hour_from_rfc3339 converts UTC timestamps to local time") {
 }
 #endif
 
-// Roadmap 2.16. The quiet-hours reading. These cases are written to hold in *any* timezone,
+// The quiet-hours reading. These cases are written to hold in *any* timezone,
 // because CI runs them on four toolchains and `TZ` is a process global — a case that sets it
 // is a case that can interfere with another running beside it. The one case that does set it
 // is POSIX-only below, matching what `local_hour_from_rfc3339` already does here.

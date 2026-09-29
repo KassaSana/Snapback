@@ -1,4 +1,4 @@
-// AppKit backend for open_url.hpp. Roadmap 8.14.
+// AppKit backend for open_url.hpp.
 #if defined(__APPLE__)
 
 #include "app/open_url.hpp"

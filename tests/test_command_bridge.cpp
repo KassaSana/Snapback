@@ -263,16 +263,9 @@ TEST_CASE("run_json_command converts a thrown exception into the error envelope"
 }
 
 TEST_CASE("run_json_command keeps the error envelope serializable on invalid UTF-8") {
-    // The escape this closes. The success path one line above uses `dump_json` (lossy,
-    // error_handler_t::replace) precisely because responses carry OS-derived strings; the
-    // error envelope was still using strict `.dump()`, which throws type_error.316 on the
-    // first invalid byte -- *from inside the catch block*, so it escapes `run_json_command`
-    // entirely and lands in the webview binding. That is the exact failure mode the lossy
-    // dump was introduced to remove, surviving in the one path that runs when something has
-    // already gone wrong.
-    //
-    // Not hypothetical: exception messages here concatenate filesystem paths and OS strings,
-    // and `nlohmann::json::parse` failures quote the offending input back verbatim.
+    // The error envelope must use lossy dump_json too: a strict dump throws on invalid UTF-8
+    // from inside the catch block, escaping run_json_command. Exception messages often quote OS
+    // strings verbatim.
     const std::string invalid_utf8 = "bad path: \xff\xfe";
     std::string out;
     CHECK_NOTHROW(out = detail::run_json_command(
@@ -438,7 +431,7 @@ TEST_CASE("Pomodoro handlers return the stable status envelope through the bridg
 }
 
 TEST_CASE("a reflection answer is trimmed, blank-rejected, and length-capped") {
-    // Roadmap 2.14. The command runs both answers through validate_optional_text, so Skip, a
+    // The command runs both answers through validate_optional_text, so Skip, a
     // whitespace-only submission, and clearing an answer all collapse to the same nullopt the
     // schema stores as NULL -- an empty string would be a fourth, wrong state.
     CHECK_FALSE(detail::validate_optional_text("What got done", std::string("   \t \n "),

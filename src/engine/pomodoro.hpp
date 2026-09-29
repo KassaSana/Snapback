@@ -1,9 +1,5 @@
-// Pomodoro / focus-timer state machine. Roadmap 2.6.
-//
-// Pure logic, same discipline as IdleDetector: you feed it monotonic millisecond
-// timestamps and it auto-advances Work -> break -> Work, telling you when a phase flips
-// so the UI can chime and switch colors. No clock hidden inside, so tests drive it with a
-// fake timeline. The engine/UI owns the wiring and the "chime" side effect.
+// Pomodoro timer state machine. Pure: fed monotonic ms timestamps, it advances Work -> break ->
+// Work and reports phase flips. The caller owns the clock and the chime.
 #pragma once
 
 #include <cstdint>
@@ -29,12 +25,8 @@ struct PomodoroConfig {
     std::int64_t short_break_ms = 5 * 60 * 1000;
     std::int64_t long_break_ms = 15 * 60 * 1000;
     int intervals_before_long_break = 4;           // long break after every 4th work block
-    // Roadmap 2.13 asked for this to be decided rather than left implicit, so: **on by
-    // default**, because that is what the timer has always done and a silent change of rhythm
-    // for existing users would be the worse answer. Turned off, a phase that reaches its end
-    // stops there and waits — `poll()` still reports the boundary once so the UI can alert,
-    // but nothing begins until `acknowledge()`. That is the setting for people who want the
-    // break to start when they actually stand up, not when the clock says so.
+    // On by default. When off, a phase that ends is still reported once by poll(), but the next
+    // one waits for acknowledge().
     bool auto_start_next_phase = true;
 };
 
@@ -51,12 +43,8 @@ struct PomodoroStatus {
     std::int64_t remaining_ms = 0;
 };
 
-// The timer as it survives a relaunch. Roadmap 2.13.
-//
-// The deadline is **wall clock**, not the monotonic timeline the timer runs on: a monotonic
-// clock restarts at process launch, so a monotonic deadline written before a restart means
-// nothing after it. Wall clock is the only representation that still refers to the same
-// instant in the next process.
+// The timer as it survives a relaunch. The deadline is wall clock: the monotonic clock restarts
+// with the process.
 struct PomodoroSnapshot {
     bool running = false;
     bool paused = false;
@@ -121,11 +109,7 @@ public:
         paused_remaining_ms_ = 0;
     }
 
-    // End the current phase now and move to the next one.
-    //
-    // A skipped Work phase is **not** credited as a completed interval: the long-break cadence
-    // is a reward for work actually done, and counting skips would let someone reach a long
-    // break without working. Skipping a break simply gets back to work early.
+    // End the current phase now. A skipped Work phase is not credited toward the long break.
     void skip(std::int64_t now_ms) {
         if (!running_) return;
         const bool was_work = phase_ == PomodoroPhase::Work;
@@ -162,12 +146,8 @@ public:
         paused_remaining_ms_ = 0;
     }
 
-    // Advance time. Returns true if at least one phase boundary was crossed (the caller
-    // chimes / repaints on true). Loops so a large time jump can't skip phases.
-    //
-    // A paused timer does not advance, and one already waiting for acknowledgement does not
-    // report the same boundary twice — otherwise a UI that alerts on `true` would alert on
-    // every tick until the user came back.
+    // Advance time; true if at least one boundary was crossed. Loops so a large jump cannot
+    // skip phases. A paused or already-waiting timer does not report the same boundary twice.
     bool poll(std::int64_t now_ms) {
         if (!running_ || paused_ || awaiting_) return false;
         bool changed = false;
@@ -179,8 +159,7 @@ public:
         return changed;
     }
 
-    // Roadmap 2.13. The timer as it should be written down, using a wall clock the next
-    // process can still make sense of.
+    // The timer as it should be persisted, on the wall clock.
     [[nodiscard]] PomodoroSnapshot snapshot(std::int64_t now_wall_ms,
                                             std::int64_t now_steady_ms) const noexcept {
         PomodoroSnapshot snap;
@@ -195,16 +174,11 @@ public:
         return snap;
     }
 
-    // Restore a snapshot taken by a previous run. Roadmap 2.13's relaunch policy, in full:
-    //
-    //   * a deadline still in the future resumes, with the time that is genuinely left;
-    //   * a deadline that passed while the app was gone restores **at zero, awaiting
-    //     acknowledgement** — never advanced, never chained through the phases that would
-    //     have elapsed. The app was not there to alert anybody, so claiming those phases
-    //     happened would credit work intervals nobody worked and hand out a long break for
-    //     an afternoon the app spent closed. This holds whether or not auto-start is on:
-    //     auto-start is about a boundary the user was present for.
-    //   * a paused timer restores paused, with its remaining time intact.
+    // Restore a previous run's snapshot:
+    //   * a deadline still ahead resumes with the time genuinely left;
+    //   * one that passed while closed restores at zero, awaiting acknowledgement -- never chained
+    //     through phases nobody was present for;
+    //   * a paused timer restores paused.
     void restore(const PomodoroSnapshot& snap, std::int64_t now_wall_ms,
                  std::int64_t now_steady_ms) {
         reset();
@@ -239,10 +213,7 @@ public:
         phase_end_ms_ = now_steady_ms;
     }
 
-    // The phase that acknowledgement will begin. Meaningful only while awaiting.
-    // Change the rhythm without disturbing the phase already under way: the new lengths apply
-    // to the phases that follow. Restarting the countdown someone is currently inside is not
-    // what editing a preference should do.
+    // New lengths apply from the next phase; the current countdown is left alone.
     void set_config(const PomodoroConfig& config) noexcept { config_ = config; }
     [[nodiscard]] const PomodoroConfig& config() const noexcept { return config_; }
 
@@ -323,10 +294,8 @@ private:
         } else {
             next = PomodoroPhase::Work;
         }
-        // With auto-start off the boundary is still crossed and still reported — the next
-        // phase simply does not begin until the user says so.
-        // The countdown stops at the deadline it just reached: remaining_ms() reports 0 while
-        // awaiting, so phase_end_ms_ is deliberately left where it is.
+        // Auto-start off: the boundary is reported but the next phase waits. remaining_ms()
+        // reads 0 while awaiting, so phase_end_ms_ stays put.
         if (!config_.auto_start_next_phase) {
             awaiting_ = true;
             pending_phase_ = next;

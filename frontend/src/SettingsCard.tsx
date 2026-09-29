@@ -28,12 +28,12 @@ type SettingsCardProps = {
   error: string | null;
   onAutostartChange: (enabled: boolean) => void;
   status: AutostartStatus | null;
-  /** Roadmap 7.23. Seconds of no input before attended time pauses. */
+  /** Seconds of no input before attended time pauses. */
   idleThresholdSecs: number;
   idleThresholdBusy: boolean;
   idleThresholdError: string | null;
   onIdleThresholdChange: (seconds: number) => void;
-  /** Roadmap 2.16. When and how an interruption may reach the user. */
+  /** When and how an interruption may reach the user. */
   alerts: AlertDeliverySettings;
   alertsBusy: boolean;
   alertsError: string | null;
@@ -57,9 +57,7 @@ export const SettingsCard = memo(function SettingsCard({
   onAlertsChange,
 }: SettingsCardProps) {
   const supported = status?.supported ?? false;
-  // A saved value outside the offered choices is still the truth about this install, so it is
-  // shown as its own option rather than silently snapping the dropdown to a value the user
-  // never picked.
+  // A saved value outside the offered choices is shown as its own option.
   const choices = IDLE_THRESHOLD_CHOICES.includes(
     idleThresholdSecs as (typeof IDLE_THRESHOLD_CHOICES)[number],
   )
@@ -122,9 +120,8 @@ export const SettingsCard = memo(function SettingsCard({
         <p className="helper-text alert">{idleThresholdError}</p>
       ) : null}
       {/*
-        Roadmap 2.16. Delivery lives under Settings > General, not Privacy. Putting "silence
-        alerts" beside "stop recording" is exactly the confusion the item forbids: one changes
-        whether you are interrupted, the other changes whether anything is recorded at all.
+        Delivery lives under General, not Privacy: silencing alerts and stopping recording are
+        different things.
       */}
       <h3 className="settings-subheading">Interruptions</h3>
       {ALERT_EVENTS.map((event: AlertEventKey) => (
@@ -217,9 +214,7 @@ export const SettingsCard = memo(function SettingsCard({
       </label>
       {alertsError ? <p className="helper-text alert">{alertsError}</p> : null}
       {!supported ? (
-        // Roadmap 3.0 added the macOS launchd backend, so this line named the wrong platforms
-        // the moment that landed. It is driven by `supported` from the native side rather than
-        // by a hardcoded OS check, so the only thing to keep true is the sentence itself.
+        // Driven by `supported` from the native side, not an OS check.
         <p className="helper-text">Start-on-login is available on Windows and macOS.</p>
       ) : null}
     </section>

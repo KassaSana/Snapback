@@ -90,7 +90,7 @@ describe("useReviewWorkflow hydration", () => {
   });
 });
 
-// Slice 5 of the Astra review (Roadmap 10.11): the interval on a card is the interval its
+// Slice 5 of the Astra review: the interval on a card is the interval its
 // data came from. Selecting a new range must not relabel the old numbers, whether the new
 // load is still running, failed, or arrived out of order.
 describe("useReviewWorkflow interval provenance", () => {

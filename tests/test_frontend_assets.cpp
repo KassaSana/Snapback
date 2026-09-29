@@ -56,7 +56,7 @@ TEST_CASE("resolve_frontend_url can reject overrides for release builds") {
 }
 
 TEST_CASE("the webview debug surface is enabled only for Debug builds") {
-    // ROADMAP 8.8. `main.cpp` passed debug=true unconditionally, which shipped developer
+    // `main.cpp` passed debug=true unconditionally, which shipped developer
     // tools attached to a page holding the full native command bridge. Asserting the rule
     // rather than reading main.cpp is the point of the item: both answers are checked here,
     // including the release one this test binary is probably not compiled as.
@@ -78,7 +78,7 @@ TEST_CASE("this build wires the debug surface to its own build kind") {
 }
 
 TEST_CASE("developer tools follow the release/debug gate unless env overrides") {
-    // ADR-0006 / roadmap 13.7. Release must not advertise training; Debug keeps the loop.
+    // ADR-0006. Release must not advertise training; Debug keeps the loop.
     CHECK(developer_tools_for_build(/*release_build=*/false, /*env_override=*/false));
     CHECK(developer_tools_for_build(/*release_build=*/false, /*env_override=*/true));
     CHECK_FALSE(developer_tools_for_build(/*release_build=*/true, /*env_override=*/false));

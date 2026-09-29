@@ -1,28 +1,12 @@
-// Measured budgets for the Review surfaces and the storage layer. Roadmap 14.11.
+// Measured budgets for the Review surfaces and the storage layer, on disk, at the engine's real
+// write cadence (at most one prediction plus one feature row per attended second), across the
+// full retention window. Unlike bench_snapback/bench_hotpaths (in-memory, fixed timestamp),
+// this answers how much a real install holds and what reading it costs.
 //
-// **Why a third benchmark instead of a flag on the existing two.** `bench_snapback.cpp` and
-// `bench_hotpaths.cpp` both run `Storage::open_memory()` with a fixed timestamp, and
-// `bench_snapback` writes a prediction on every other capture event. That answers "how fast is
-// the code" and it is the right question for those files. It cannot answer the question 14.1,
-// 14.5, 14.7 and 9.10 all open with -- *how much does a real install actually hold, and what
-// does reading it cost* -- because the two things that make the answer are exactly what those
-// harnesses leave out: the on-disk WAL, and the real write cadence.
+// No pass/fail threshold and no CI job: hosted runners are too noisy to gate on. Numbers are
+// for docs/testing_strategy.md, with the host named.
 //
-// The cadence is the fact everything else follows from. `AppState::compute_event` persists at
-// most one prediction per second, and only while a session is attended, not idle, and
-// receiving input; every persisted prediction carries exactly one `feature_snapshots` row. So
-// the per-attended-hour ceiling is 3,600 + 3,600 rows, and the realistic figure is lower by
-// however much of the hour had no input. This file generates a database at that cadence,
-// across the full 90-day retention window, on disk, and then reads it the way the app does.
-//
-// **What it deliberately does not do.** There is no pass/fail threshold here and no CI job.
-// Hosted runners are too noisy to carry a performance gate; a flaky gate gets disabled within
-// a month and then lies by omission for as long as it stays disabled. This prints numbers for
-// a human to paste into `docs/testing_strategy.md` with the host named. A number without a
-// host named is not a measurement.
-//
-// Build: -DSNAPBACK_BUILD_BENCHMARKS=ON, target `snapback_budget_benchmarks`.
-// Env:
+// Build: -DSNAPBACK_BUILD_BENCHMARKS=ON, target `snapback_budget_benchmarks`. Env:
 //   SNAPBACK_BUDGET_DAYS           days of history to generate      (default 90 = retention)
 //   SNAPBACK_BUDGET_ATTENDED_HOURS attended hours per day           (default 6)
 //   SNAPBACK_BUDGET_DUTY_PCT       percent of attended seconds that saw input (default 100)
@@ -33,9 +17,8 @@
 //   SNAPBACK_BUDGET_REVIEW_IDLE_MS think time between Review loads  (default 5000)
 //   SNAPBACK_BUDGET_KEEP           1 to leave the generated database on disk
 //
-// The default is the **ceiling**: every attended second writes. Run it again with
-// SNAPBACK_BUDGET_DUTY_PCT=60 for a figure closer to a real day. Publishing both is the point
-// -- the ceiling bounds the worst case and the duty-cycled run says what to expect.
+// The default is the ceiling (every attended second writes); SNAPBACK_BUDGET_DUTY_PCT=60 is
+// closer to a real day.
 
 #include <algorithm>
 #include <chrono>
@@ -227,29 +210,12 @@ Stats time_query(std::size_t reps, Fn&& body) {
 
 }  // namespace
 
-// --- Roadmap 14.1: what a report costs the writer ------------------------------------------
+// --- What a report costs the writer --------------------------------------------------
 //
-// 14.1 proposes a separate SQLite read lane and then forbids building it from structure
-// alone: measure the largest reads running *concurrently with persistence* first, and close
-// the item with the numbers if the result is immaterial. This is that measurement.
-//
-// The shape mirrors `AppState` exactly, because a benchmark of a different shape would answer
-// a different question: one `Storage`, one `RankedMutex` at `LockRank::Storage` around every
-// use of it, a writer persisting at the engine's real cadence, and readers issuing the
-// heaviest Review queries. WAL already allows a concurrent reader and writer at the SQLite
-// level -- the serialization being measured here is ours, not SQLite's, which is precisely
-// what a read lane would remove.
-//
-// The figure that matters is the **comparison**: the same writer, measured alone and then
-// under load. An absolute persist latency says nothing about contention on its own.
-//
-// **Two kinds of load, and the difference between them is the point.** The first draft ran
-// only reader threads looping with no think time, which produced a 29 s worst-case wait and
-// no way to tell how much of it was the benchmark. A hot loop is a ceiling: it is the right
-// number for "what is the worst this lock can do to a persist" and the wrong one for "what
-// does opening Review cost". So both run here -- one realistic reader doing what a person
-// does, and the hot loop kept beside it as the bound -- and they are reported side by side,
-// the same way SNAPBACK_BUDGET_DUTY_PCT publishes a ceiling and an expected day.
+// Mirrors AppState: one Storage, one RankedMutex at LockRank::Storage around every use, a
+// writer at the engine's cadence, and readers issuing the heaviest Review queries. The figure
+// that matters is the same writer alone versus under load. Two loads: a realistic Review reader
+// and a hot loop (the ceiling), reported side by side.
 struct WriterResult {
     // Time blocked on the storage lock, which is the quantity 14.1 names: "measure writer
     // delay". Kept apart from the write itself, because the two answer different questions --
@@ -279,20 +245,8 @@ void persist_one(Storage& storage, const std::string& session_id, const FeatureV
     storage.insert_feature_snapshot(session_id, features);
 }
 
-// One Review load, issued the way the product issues it (Roadmap 14.1).
-//
-// `useReviewWorkflow.ts:loadReview` fires five commands inside one `Promise.all`, which reads
-// as concurrent and is not. `CommandRegistry::add` registers a synchronous handler and the
-// bridge runs it inline on the webview's own thread; only `add_async` commands reach the
-// worker, and none of these five is one. A Review load is therefore five reads in a row on a
-// single thread, and modelling the reader as N parallel threads measures a shape the product
-// cannot produce.
-//
-// The lock granularity is `state.cpp`'s and not a simplification of it: one acquisition per
-// command, with `analytics` and `summary_report` each holding theirs across every storage
-// call they make. That granularity is the quantity being measured, so it cannot be rounded.
-// The five, in the order `loadReview` lists them. Named so a hold can be attributed to a
-// command rather than to "one of the reads".
+// One Review load as the product issues it: five synchronous commands in a row on the webview
+// thread (none is add_async), one lock acquisition per command, in loadReview's order.
 constexpr std::size_t kReviewCommandCount = 5;
 constexpr const char* kReviewCommands[kReviewCommandCount] = {
     "get_analytics", "get_summary_report", "get_focus_summary", "get_session_history",
@@ -353,16 +307,8 @@ ReviewLoadTiming review_load(Storage& storage, RankedMutex& storage_lock, std::i
     return timing;
 }
 
-// Runs a paced writer, taking the shared lock per persist exactly as the engine does. Called
-// once per phase: alone, against one realistic Review reader, and against the hot loop.
-//
-// **Paced, not flat out**, and the first draft of this file got that wrong in a way worth
-// recording. A writer with no pacing does tens of thousands of persists a second when it is
-// alone and a few dozen when a reader holds the lock, so the two phases take different
-// numbers of samples and the comparison degenerates into a throughput ratio that says more
-// about the benchmark than about the engine. The engine persists at most once per second and
-// spends the rest of its time asleep; what it wants to know is how long *one* persist waits
-// when a report is in flight. Fixed attempts at a fixed interval measure that.
+// A paced writer taking the shared lock per persist, as the engine does: fixed attempts at a
+// fixed interval, so each phase measures how long one persist waits rather than throughput.
 WriterResult run_writer(Storage& storage, RankedMutex& storage_lock, const std::string& session_id,
                         std::int64_t base_ms, std::size_t attempts, std::int64_t interval_ms,
                         WriterPriority* gate = nullptr) {

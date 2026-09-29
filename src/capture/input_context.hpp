@@ -16,11 +16,9 @@ inline bool context_matches_foreground(const void* foreground, const void* captu
     return has_context && foreground != nullptr && foreground == captured_window;
 }
 
-// Convert a mouse translation into the uint32_t speed stored on CaptureEvent. The hook's
-// monotonic event timestamp is millisecond-resolution on Windows, so a pair of events can
-// share a timestamp even though the callback ran over a real, shorter interval. Keep that
-// interval bounded away from zero, widen coordinates before subtracting them, and validate the
-// floating-point result before narrowing it to the event representation.
+// Mouse translation to CaptureEvent's uint32 speed. Windows timestamps are ms-resolution, so
+// the interval is bounded away from zero; coordinates are widened before subtracting and the
+// result validated before narrowing.
 inline std::uint32_t mouse_speed_for_points(std::int32_t current_x, std::int32_t current_y,
                                              std::int32_t previous_x, std::int32_t previous_y,
                                              double elapsed_secs) {

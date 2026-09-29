@@ -1,18 +1,10 @@
-// First-session teaching: which windows were the work?
-//
-// Allow/Block rules are the accuracy lever the heuristic actually has, but they live in
-// Settings. A quiet Deep-work guess stays a guess until the user names the apps that count.
-// This module derives the candidate list from the session timeline and remembers a skip, so
-// the card can be an observer of existing rows rather than a second rule store.
-//
-// Skip is durable (like the onboarding journey). Per-app "not now" is the card's own
-// session state and is not persisted — a new unknown window should be offerable again.
+// First-session teaching: which windows were the work? Derives candidates from the timeline and
+// remembers a durable skip; per-app "not now" is card state only.
 
 import type { AppRuleRecord, ContextSnapshot } from "./api";
 import { getAppRuleForName } from "./useAppRules";
 
-// The literal, and whether the erase touches it, live in browserStorage.ts so a
-// key cannot exist without a classification (Roadmap 8.15).
+// Key literal and its erase classification live in browserStorage.ts.
 export { WORK_APP_TEACH_DONE_KEY } from "./browserStorage";
 import { WORK_APP_TEACH_DONE_KEY } from "./browserStorage";
 

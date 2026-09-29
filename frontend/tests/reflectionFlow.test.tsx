@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 2.14. Mocks only the native boundary, so the real card + useSession + api.ts run
+// Mocks only the native boundary, so the real card + useSession + api.ts run
 // end to end: a field wired to the wrong argument fails here rather than in the app.
 const boundary = vi.hoisted(() => {
   const state: {

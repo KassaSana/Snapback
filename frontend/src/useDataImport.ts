@@ -1,13 +1,5 @@
-// Roadmap 9.14. The import half of "your data is yours".
-//
-// Two-step by design, and the steps are not decoration. `inspect` is read-only and answers
-// "what is this file?"; only after the user has seen that answer does `stage` park it. A
-// destructive whole-database replace behind one button is the wrong shape for an action whose
-// mistake case is "all of my history is gone".
-//
-// Nothing here applies anything. The running app holds the database open (9.8), so the swap is
-// performed at the next launch — which also means a staged import is cancellable right up until
-// the restart, and that cancel is the undo this feature would otherwise lack.
+// Two steps: `inspect` (read-only) answers what the file is; only then does `stage` park it.
+// The swap happens at the next launch, so a staged import can be cancelled until then.
 
 import { useCallback, useState } from "react";
 

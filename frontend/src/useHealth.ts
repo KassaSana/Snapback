@@ -28,9 +28,7 @@ export const useHealth = () => {
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
   const [classifierModelId, setClassifierModelId] = useState<string | null>(null);
   const [developerToolsEnabled, setDeveloperToolsEnabled] = useState(false);
-  // Roadmap 10.9. The one model signal that is a *failure* rather than a configuration fact,
-  // so it is the only one the header badge can honestly react to. It already arrives on
-  // `get_health` for DiagnosticsCard; surfacing it here adds no query.
+  // The one model signal that is a failure, so the header badge can react to it.
   const [modelDeploymentDegraded, setModelDeploymentDegraded] = useState(false);
 
   const applyClassifierStatus = useCallback((status: ClassifierStatus) => {
@@ -98,9 +96,8 @@ export const useHealth = () => {
     }
   }, [applyPermissionStatus, refreshHealth]);
 
-  // Triggers the OS permission dialog, then reflects whatever the user chose. Separate
-  // from refresh because refresh is also called on a timer — prompting from there would
-  // pop a dialog repeatedly.
+  // Prompts via the OS dialog, then reflects the choice. Separate from refresh, which runs on a
+  // timer.
   const handleRequestPermissions = useCallback(async () => {
     try {
       applyPermissionStatus(await api.requestPermissions());

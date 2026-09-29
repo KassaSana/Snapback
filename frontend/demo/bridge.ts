@@ -1,9 +1,5 @@
-// Installs the `window.__snapback` object the React app expects.
-//
-// In the desktop app this object is injected by the C++ host through the webview's `bind()`
-// (see `src/app/ipc_shim.cpp`). Nothing in the browser provides it, which is why
-// `src/bridge.ts` throws "Snapback bridge is unavailable" if you simply open the built page.
-// This file is the demo's stand-in for that host.
+// Installs the `window.__snapback` object the React app expects; in the desktop app the C++
+// host injects it (src/app/ipc_shim.cpp).
 
 import { DemoBackend } from "./backend";
 

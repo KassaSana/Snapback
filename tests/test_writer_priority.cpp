@@ -1,4 +1,4 @@
-// Roadmap 14.1 — a waiting writer goes before the next reader.
+// A waiting writer goes before the next reader.
 //
 // The property is an ordering, so it is asserted as one: a sequence counter records who got
 // the lock first. Nothing here measures time, because a timing assertion is exactly the kind

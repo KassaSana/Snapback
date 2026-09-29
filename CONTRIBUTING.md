@@ -130,9 +130,10 @@ so the diff is reviewable as pure formatting instead of hidden inside a behaviou
 `clang-tidy` yet — `.clang-tidy` is there so editors and `clangd` agree on a check set; see
 the note at the top of that file.
 
-The prose style in comments is part of the style. Comments here explain *why*, and
-particularly why an obvious-looking alternative is wrong. Match the density of the file you
-are in.
+Comments explain *why*, particularly why an obvious-looking alternative is wrong, and stay
+short. History belongs in git and the roadmap archive, not in code: no roadmap item numbers,
+no "this used to…", no retelling of the bug that motivated a change. A test may say what
+regression it guards against, in a sentence.
 
 ## Two JSON boundaries
 

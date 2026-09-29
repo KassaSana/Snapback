@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 2.10. The status is decided in the backend; this proves the card reports it rather
+// The status is decided in the backend; this proves the card reports it rather
 // than re-deriving it, and that the pause controls drive the one command.
 const boundary = vi.hoisted(() => {
   const state: {
@@ -202,7 +202,7 @@ describe("Recording status", () => {
   });
 });
 
-// Slice 3 of the Astra review (Roadmap 2.10 / 2.16 / 14.4): the header, Settings, and the
+// Slice 3 of the Astra review (/ 14.4): the header, Settings, and the
 // native state must agree after every way the answer can change -- not only after the clicks
 // this side makes.
 describe("Recording status stays coherent with native state", () => {

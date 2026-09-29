@@ -74,10 +74,8 @@ bool has_table(sqlite3* db, const char* name) {
     return found;
 }
 
-// VACUUM INTO, the same mechanism 7.22's pre-migration backup uses and for the same reason:
-// the source may be a live WAL database whose recent commits are not in the .db file yet, so
-// copying bytes can produce a torn read. Destination must not exist; VACUUM INTO refuses to
-// overwrite.
+// VACUUM INTO, not a byte copy: the source may be a live WAL database. Destination must not
+// exist.
 void vacuum_into(sqlite3* db, const std::filesystem::path& destination) {
     std::error_code ignored;
     std::filesystem::remove(destination, ignored);
@@ -223,9 +221,7 @@ ImportCandidate inspect_import_candidate(const std::filesystem::path& incoming,
 
     const int version = static_cast<int>(scalar(db.get(), "PRAGMA user_version", 0));
 
-    // 7.3's downgrade guard, enforced *before* the swap rather than after. Letting this through
-    // is how the manual copy workaround strands people: the file lands, the app then refuses to
-    // open its own database, and there is no way back from inside the product.
+    // Refuse a newer schema before the swap, not after.
     if (version > kSchemaVersion) {
         std::ostringstream msg;
         msg << "That database was written by a newer version of Snapback (format v" << version
@@ -279,10 +275,8 @@ ImportOutcome import_database(const std::filesystem::path& incoming,
         }
     }
 
-    // Step 3. Snapshot the incoming file into place beside the destination. Doing this through
-    // VACUUM INTO rather than a copy is what makes the swap safe: an import source taken from a
-    // running Snapback has a -wal beside it, and copying only the .db would silently drop the
-    // most recent sessions — the exact data loss this feature exists to prevent.
+    // Step 3: snapshot the incoming file beside the destination. A byte copy would drop a live
+    // source's -wal.
     try {
         RawDb source(incoming, SQLITE_OPEN_READONLY);
         if (!source.ok()) throw std::runtime_error("could not reopen the file to import");
@@ -317,9 +311,7 @@ ImportOutcome import_database(const std::filesystem::path& incoming,
         return outcome;
     }
 
-    // Step 5. Bring an older import up to this build's schema. `Storage::open` migrates, and
-    // 7.22's own pre-migration backup runs inside it, so an import that is two versions behind
-    // gets the same protection an upgrade would have.
+    // Step 5: Storage::open migrates older imports, with its own pre-migration backup.
     outcome.schema_version = candidate.schema_version;
     outcome.session_count = candidate.session_count;
     outcome.backup_path = backup;

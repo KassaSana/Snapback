@@ -94,7 +94,7 @@ TEST_CASE("saving keeps the previous settings as a backup") {
     // the case the first two saves cannot reach: on save one there is no settings.json to
     // back up, and on save two there is no settings.json.bak to overwrite. Only here does
     // the copy actually have to replace something -- which is exactly where libstdc++ on
-    // MinGW ignores copy_options::overwrite_existing (ROADMAP 11.8).
+    // MinGW ignores copy_options::overwrite_existing.
     const auto second_contents = read_file(temp.path / kSettingsFileName);
     AppSettings third;
     third.default_focus_mode = FocusMode::Deep;
@@ -105,7 +105,7 @@ TEST_CASE("saving keeps the previous settings as a backup") {
 }
 
 TEST_CASE("settings save leaves no temp file after a durable flush") {
-    // Roadmap 7.21. The temp is synced, then renamed; a leftover `.tmp` would mean the
+    // The temp is synced, then renamed; a leftover `.tmp` would mean the
     // durable path never finished and a later crash could confuse the loader.
     TempDir temp;
     save_app_settings(temp.path, sample_settings());
@@ -115,7 +115,7 @@ TEST_CASE("settings save leaves no temp file after a durable flush") {
 }
 
 TEST_CASE("malformed settings recover from the backup and say so") {
-    // Roadmap 7.19. The old loader caught every parse error and returned defaults with no
+    // The old loader caught every parse error and returned defaults with no
     // log line, so a user whose configuration silently reverted had nothing to look at.
     TempDir temp;
     save_app_settings(temp.path, sample_settings());  // establishes settings.json
@@ -237,7 +237,7 @@ TEST_CASE("settings.json is never left truncated by a partial write") {
     CHECK_FALSE(read_file(temp.path / kSettingsFileName).empty());
 }
 
-// Roadmap 2.16. Alert delivery is the first nested settings object with a wire form that is
+// Alert delivery is the first nested settings object with a wire form that is
 // not a mirror of its struct, so these pin the crossing rather than the struct.
 
 TEST_CASE("alert delivery settings round-trip through save and load") {

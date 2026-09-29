@@ -99,7 +99,7 @@ TEST_CASE("overlay_text falls back to the app name when there is no summary") {
 }
 
 // ---------------------------------------------------------------------------
-// Roadmap 10.12 — monitor and DPI awareness.
+// Monitor and DPI awareness.
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -257,7 +257,7 @@ TEST_CASE("overlay_rect stays on screen for a degenerate work area") {
 }
 
 TEST_CASE("the Take me back region sits inside the card at every scale") {
-    // Roadmap 2.16. A hit region that falls outside its window receives no clicks at all, and
+    // A hit region that falls outside its window receives no clicks at all, and
     // one that does not line up with the text drawn over it is a button that misses. Neither
     // crashes, which is why this is pinned rather than eyeballed.
     for (const int dpi : {96, 120, 144, 192}) {

@@ -1,19 +1,8 @@
-// Lock ordering, enforced by the type system instead of by review.
+// Lock ordering, enforced at runtime. A RankedMutex knows its position in the program's lock
+// order and refuses to be acquired out of turn, so an inversion is caught on the first
+// single-threaded run through the bad path (TSan only catches it if a test races both orders).
 //
-// ROADMAP 11.6. `AppState` has always documented its lock order in a comment — acquire
-// `mutex_` before `storage_mutex_`, never the reverse — and nothing checked it. A comment
-// holds only as long as every future author reads it, and the class now has three mutexes,
-// three mixed-lock methods, and an IPC command surface that keeps growing. ThreadSanitizer
-// does not close the gap either: it reports an inversion only if some test happens to drive
-// both orders concurrently, so the absence of a TSan report is not evidence of correctness.
-//
-// A `RankedMutex` carries its position in the program's lock order and refuses to be
-// acquired out of turn. The invariant becomes a property of the lock rather than a claim
-// about the code around it, and it is checked on the very first single-threaded run through
-// a bad path — no race, no scheduler luck required.
-//
-// `RankedMutex` satisfies BasicLockable and Lockable, so `std::lock_guard lock(mutex_)`
-// deduces it and every existing call site keeps working unchanged.
+// RankedMutex is BasicLockable and Lockable, so `std::lock_guard lock(mutex_)` works as-is.
 #pragma once
 
 #include <array>
@@ -28,13 +17,9 @@
 
 namespace snapback {
 
-// The program's complete lock order, outermost first. A thread may hold locks only in
-// strictly increasing rank, so reading this enum top to bottom is reading the invariant.
-//
-// Ranks are spaced by 100 so a lock can be inserted between two existing ones without
-// renumbering the others — renumbering is exactly the edit most likely to be made carelessly.
-// Equal ranks are a violation too: two locks nobody has ordered can be taken in either order
-// by two threads, which is the deadlock this type exists to prevent.
+// The complete lock order, outermost first; a thread may hold locks only in strictly increasing
+// rank. Spaced by 100 so a lock can be inserted without renumbering. Equal ranks are a
+// violation.
 enum class LockRank : int {
     // AppState::mutex_ — mutable in-memory state. Hot live reads use AppState's immutable
     // snapshot; mutations and less-frequent configuration reads still take this lock.
@@ -59,10 +44,8 @@ inline const char* lock_rank_name(LockRank rank) {
     return "Unknown";
 }
 
-// What went wrong. `held` is the innermost rank the thread already had; `requested` is the
-// one it tried to take. `out_of_order_release` distinguishes the two failure kinds: false
-// means an inverted acquisition (the deadlock risk), true means a lock was released while a
-// deeper one was still held, which breaks the LIFO assumption the tracking itself relies on.
+// `held` is the innermost rank already held; `requested` the one being taken.
+// `out_of_order_release` distinguishes a non-LIFO release from an inverted acquisition.
 struct LockOrderViolation {
     LockRank held;
     LockRank requested;
@@ -73,24 +56,11 @@ using LockOrderViolationHandler = std::function<void(const LockOrderViolation&)>
 
 namespace detail {
 
-// The ranks this thread currently holds.
-//
-// A fixed array rather than a std::vector: this runs on every acquisition of the engine
-// tick's state lock, so it must not allocate. Eight slots is far more than the three ranks
-// that exist; going deeper than that would itself be the bug.
-//
-// It is a set, not a single "innermost" value, because a lock can be released while a deeper
-// one is still held. `std::unique_lock` permits that, and the first draft of this file used a
-// single int that each mutex restored on unlock — which is only correct under LIFO release.
-// An out-of-LIFO release left the tracking permanently wrong and every subsequent lock on
-// that thread reported a violation that had not happened. A check that goes wrong after the
-// first mistake is worse than no check: it converts one bug into a wall of false reports.
+// The ranks this thread holds. A fixed array so acquisition never allocates. A set rather than
+// one "innermost" value, because std::unique_lock allows non-LIFO release.
 inline constexpr int kMaxHeldRanks = 8;
 
-// What a release found: whether it was in LIFO order, and when the lock was taken. The
-// second is why this returns a struct rather than the bool it used to -- hold time is
-// measured at unlock, so the acquire instant has to be carried by the bookkeeping that
-// already knows a thread can hold several ranks at once.
+// What a release found: whether it was LIFO, and when the lock was taken (for hold time).
 struct ReleasedRank {
     bool was_innermost = false;
     bool timed = false;
@@ -121,10 +91,8 @@ struct HeldRanks {
         ranks[count++] = rank;
     }
 
-    // Removes the most recent entry for `rank` and reports whether it was the deepest one
-    // held — i.e. whether this release was in LIFO order — and when it was acquired. A rank
-    // past `kMaxHeldRanks` was never recorded, so `timed` is false and no hold sample is
-    // taken for it; dropping the sample is the honest failure, inventing one is not.
+    // Removes the most recent entry for `rank`; reports whether it was the deepest held and
+    // when it was acquired. Ranks past kMaxHeldRanks were never recorded, so no sample.
     ReleasedRank pop(int rank) {
         ReleasedRank released;
         released.was_innermost = count > 0 && ranks[count - 1] == rank;
@@ -161,10 +129,7 @@ inline void default_violation_handler(const LockOrderViolation& violation) {
                      lock_rank_name(violation.requested), lock_rank_name(violation.held));
     }
 #ifndef NDEBUG
-    // A violation is a latent deadlock, and a deadlock in the field is a hang with no
-    // diagnosis attached. Abort while a developer is watching, so the stack trace names the
-    // call site. Release builds only log: crashing a user's app over a warning about a
-    // deadlock that has not happened is worse than the warning.
+    // Debug aborts so the stack names the call site; Release only logs.
     std::abort();
 #endif
 }
@@ -196,30 +161,12 @@ private:
 
 // ---- Lock metrics ------------------------------------------------------------------------
 //
-// ROADMAP 14.11. Four figures were named as missing before any scaling work starts, and two
-// of them are about this type: how long `storage_mutex_` is held, and how long the engine's
-// persist phase waits for it. Nothing measured either -- query wall time bounds the hold but
-// is not it, because the lock is taken around more than the query.
-//
-// Instrumenting `RankedMutex` rather than the call sites is what makes the figure
-// trustworthy: every acquisition of every rank goes through the `lock()`/`unlock()` below, so
-// there is no thirtieth call site that quietly is not counted.
-//
-// **This ships in Release.** The figures that matter come from a real install over a real
-// working day, through `get_diagnostics` and the support bundle; a measurement that exists
-// only in a harness answers a question nobody asked. The cost is two `steady_clock::now()`
-// calls per acquisition -- one after taking the lock, one at release -- on locks taken on the
-// order of ten times a second. An uncontended acquisition pays no more than that, because the
-// wait is timed only on the slow path.
+// Hold and wait times, measured in RankedMutex itself so every acquisition is counted. Ships in
+// Release so real installs report them (via get_diagnostics and support bundles). Cost: two
+// steady_clock reads per acquisition; waits are timed only on the slow path.
 
-// Durations land in log-scale buckets: bucket 0 is "under 1 us", bucket i covers
-// [2^(i-1), 2^i) microseconds, and the top bucket saturates rather than wrapping.
-//
-// A histogram, not a reservoir, because a reservoir allocates and has to be sampled or
-// locked. The consequence is honest and has to stay visible in every report: a percentile
-// read off buckets is an **upper bound**, not a value. `p95 <= 512us` is what the data
-// supports; `p95 = 391us` would be a fabrication. The exact tail is carried separately as
-// `max_hold_us` / `max_wait_us`.
+// Log-scale buckets: bucket 0 is under 1 us, bucket i covers [2^(i-1), 2^i) us, the top one
+// saturates. A percentile read off buckets is an upper bound; the exact tail is max_*_us.
 inline constexpr int kLockHistogramBuckets = 24;
 
 inline int lock_bucket_for_us(std::uint64_t microseconds) {
@@ -358,11 +305,8 @@ inline void reset_lock_metrics() {
     }
 }
 
-// A std::mutex that knows where it sits in the lock order.
-//
-// Reporting happens *before* the underlying lock is taken, so the handler runs while the
-// offending thread still holds only the locks it started with — a handler that aborts gets a
-// stack whose frames are the actual acquisition path.
+// A std::mutex that knows its place in the lock order. Violations are reported before the lock
+// is taken, so an aborting handler's stack shows the real acquisition path.
 class RankedMutex {
 public:
     explicit RankedMutex(LockRank rank) : rank_(static_cast<int>(rank)) {}

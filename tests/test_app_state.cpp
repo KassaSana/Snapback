@@ -534,7 +534,7 @@ TEST_CASE("an idle stretch with no session running feeds the extractor nothing")
 }
 
 TEST_CASE("going idle pauses the session and coming back resumes it") {
-    // Roadmap 7.23 / ADR-0005. This is the action idle_detector.hpp documented from the start
+    // ADR-0005. This is the action idle_detector.hpp documented from the start
     // ("5 minutes of no input pauses the session") and never performed -- the edges only ever
     // emitted a UI event.
     //
@@ -599,7 +599,7 @@ bool contains(const std::vector<std::string>& names, const std::string& wanted) 
 }  // namespace
 
 TEST_CASE("sustained work with no session raises one nudge") {
-    // Roadmap 2.7 / ADR-0005. Without a session AppState records nothing at all, so someone
+    // ADR-0005. Without a session AppState records nothing at all, so someone
     // who forgets to press Start gets no data and no warning. This asks, once, rather than
     // auto-starting -- an auto-started session has no declared goal, and goal_alignment is a
     // real model input that Tier 13 trains on.
@@ -679,7 +679,7 @@ TEST_CASE("private mode never raises the untracked nudge") {
 }
 
 TEST_CASE("excluded apps never raise the untracked nudge") {
-    // Roadmap 2.7 leftover. Private mode already reset the timer; excluded apps are the
+    // Leftover. Private mode already reset the timer; excluded apps are the
     // same promise for one process. Typing in Slack for half an hour must not earn a
     // "start recording" prompt, and leaving Slack starts a fresh stretch rather than
     // firing a nudge earned while excluded.
@@ -777,7 +777,7 @@ TEST_CASE("going idle restarts the untracked stretch instead of firing again") {
 }
 
 TEST_CASE("replacing a session closes the replaced session's span") {
-    // Roadmap 7.23 + 7.20. Starting a session while one runs replaces it, and the replaced
+    // + 7.20. Starting a session while one runs replaces it, and the replaced
     // session is completed. Its span must close with it -- an open span on a completed
     // session counts to "now" indefinitely, so a session replaced last week would keep
     // accruing attended time and eventually claim more of it than it was ever open for.
@@ -832,7 +832,7 @@ TEST_CASE("a session with no idle edges still records attended time") {
 }
 
 TEST_CASE("reopening after a crash closes the dangling span at the last recorded activity") {
-    // Roadmap 7.23. A process that dies with a span open leaves it open. Left alone,
+    // A process that dies with a span open leaves it open. Left alone,
     // active_secs measures that span to "now", so an app that crashed on Friday reports the
     // whole weekend as attended -- the one answer that is certainly wrong.
     //
@@ -924,7 +924,7 @@ TEST_CASE("attendance resumes after hydration without waiting for an idle round 
 }
 
 TEST_CASE("a clean shutdown closes the open span") {
-    // Roadmap 7.23. Exiting normally is the last moment we know the user was attending, so
+    // Exiting normally is the last moment we know the user was attending, so
     // the span closes here rather than being left for the next launch to reconstruct from
     // whatever rows happen to exist.
     TempDir temp;
@@ -943,7 +943,7 @@ TEST_CASE("a clean shutdown closes the open span") {
 }
 
 TEST_CASE("the idle threshold is a setting, applied live and persisted") {
-    // Roadmap 7.23. Five minutes was inherited from a constant. It is a judgement about the
+    // Five minutes was inherited from a constant. It is a judgement about the
     // user's working rhythm -- reading and thinking look identical to a keyboard -- so it
     // belongs to the user.
     TempDir temp;
@@ -988,7 +988,7 @@ TEST_CASE("an out-of-range idle threshold is rejected and changes nothing") {
 }
 
 TEST_CASE("mouse movement alone counts as presence") {
-    // Roadmap 7.23 asked whether scroll and mouse movement should count before this was
+    // Asked whether scroll and mouse movement should count before this was
     // treated as a trustworthy default. They do, and this pins it: a mouse-only stretch --
     // reading a document, dragging a scrollbar -- is someone at their desk, and the OS idle
     // timers every user already has calibrated their expectations on agree. Requiring
@@ -1127,7 +1127,7 @@ TEST_CASE("wake during a failed idle close preserves both transitions in order")
 }
 
 TEST_CASE("a failed start leaves the previous session exactly as it was") {
-    // Roadmap 7.25. start_session used to change focus mode and reset the extractor, tracker,
+    // Start_session used to change focus mode and reset the extractor, tracker,
     // and Pomodoro *before* the storage write that can throw. A failed insert therefore left
     // the old database session running underneath brand-new in-memory state: the app believed
     // it was recording a session that did not exist.
@@ -1165,7 +1165,7 @@ TEST_CASE("a failed start leaves the previous session exactly as it was") {
 }
 
 TEST_CASE("replacing a session writes the same automatic label a stop would") {
-    // Roadmap 7.25. Replacement completed the old row silently, so the only thing deciding
+    // Replacement completed the old row silently, so the only thing deciding
     // whether a finished session got a verdict was whether the user pressed Stop or just
     // started the next thing -- a distinction they never made deliberately.
     ManualClock clock;
@@ -1183,7 +1183,7 @@ TEST_CASE("replacing a session writes the same automatic label a stop would") {
 }
 
 TEST_CASE("stopping twice does not append a second automatic label") {
-    // Roadmap 7.25. Storage::stop_session is idempotent, but the label write was not, so a
+    // Storage::stop_session is idempotent, but the label write was not, so a
     // double-click on Stop produced two `auto` rows for one session -- different whenever a
     // prediction landed between them, with nothing to say which was meant. The labels table is
     // append-only by design, so a duplicate cannot be cleaned up afterwards.
@@ -1202,7 +1202,7 @@ TEST_CASE("stopping twice does not append a second automatic label") {
 }
 
 TEST_CASE("restarting restores the active session's saved focus mode") {
-    // Roadmap 7.25. Focus mode sets the risk threshold and the hyperfocus window, so a Deep
+    // Focus mode sets the risk threshold and the hyperfocus window, so a Deep
     // session that came back as Normal was being classified against a different question than
     // the one it was started to ask -- and nothing on screen said so.
     TempDir temp;
@@ -1231,7 +1231,7 @@ TEST_CASE("restarting restores the active session's saved focus mode") {
 }
 
 TEST_CASE("a resumed session's elapsed feature continues instead of restarting at zero") {
-    // Roadmap 7.25. `seconds_since_session_start` restarted from zero on reopen while the
+    // `seconds_since_session_start` restarted from zero on reopen while the
     // recap beside it kept reporting the real elapsed time: one session, two contradictory
     // numbers, and the contradictory one is a model input.
     FeatureExtractor features;
@@ -1264,7 +1264,7 @@ TEST_CASE("a backwards clock between runs resumes at zero rather than counting d
 }
 
 TEST_CASE("AppState binds Pomodoro to an active session and exposes transition edges") {
-    // ROADMAP 7.14: this used to call `start_pomodoro_for_test(100)`, a public method on the
+    // This used to call `start_pomodoro_for_test(100)`, a public method on the
     // shipping class whose only reason to exist was passing `now_ms` in by hand. 11.4's
     // injected clock made it redundant — `start_pomodoro()` reads the clock, so setting the
     // clock and calling the *real* API is now strictly better: it exercises the production
@@ -1314,16 +1314,8 @@ TEST_CASE("AppState focus_summary_for_window aggregates persisted predictions") 
 }
 
 TEST_CASE("AppState focus summary reports the whole window, not the newest rows") {
-    // Roadmap 7.33. `focus_summary_for_window` used to materialise the newest 50,000
-    // predictions and fold them in C++. Predictions persist at most once per attended second,
-    // so that ceiling is about fourteen hours: on a 7-day window the "Longest focus" tile
-    // reported the longest run inside the newest fourteen hours and said nothing about it,
-    // while the tile beside it -- served by the same SQL aggregate this now uses -- reported
-    // the right number for the same window.
-    //
-    // The fixture is built so the two answers differ. An old twenty-hour run sits outside the
-    // newest 50,000 rows; the rows that displace it form a run of their own that is shorter,
-    // so a truncating implementation returns a plausible number rather than zero.
+    // The fixture puts an old twenty-hour run outside the newest 50,000 rows, so an
+    // implementation that truncates to a recent sample returns a plausible but wrong answer.
     auto state = make_state();
     auto session = state->start_session("Long stretch", FocusMode::Deep);
 
@@ -1359,7 +1351,7 @@ TEST_CASE("AppState focus summary reports the whole window, not the newest rows"
 }
 
 TEST_CASE("Both longest-focus tiles read the same number for the same window") {
-    // Roadmap 7.33. get_focus_summary and get_summary_report both report the longest focused
+    // Get_focus_summary and get_summary_report both report the longest focused
     // stretch. They disagreed because they were two computations; this pins them to one. A
     // window is named on both sides so the shared cutoff is exercised too.
     auto state = make_state();
@@ -1522,7 +1514,7 @@ TEST_CASE("AppState labels and export training data") {
     AppStateTestAccess::process_event(*state, ev(EventType::WindowFocusChange, 300.0));
     exported = state->export_training_data(temp_other.path, session.session_id);
     CHECK(exported.feature_count >= 1);
-    // Two now, not one: the manual label above plus the automatic one that Roadmap 7.25 made
+    // Two now, not one: the manual label above plus the automatic one that made
     // replacement write. Before that, whether a finished session got a verdict depended on
     // whether it ended by Stop or by being replaced, which is not a distinction the user made.
     CHECK(exported.label_count == 2);
@@ -1577,7 +1569,7 @@ TEST_CASE("AppState persists privacy settings and suppresses private events") {
 
 namespace {
 
-// Roadmap 7.26. A real injected write failure, not a simulated one: `save_app_settings`
+// A real injected write failure, not a simulated one: `save_app_settings`
 // stages through `settings.json.tmp`, and an ofstream cannot open a path that is a directory.
 // The failure therefore happens at step 1, before anything the user depends on is touched --
 // which is exactly the case where the old setters had already changed live behaviour.
@@ -1596,7 +1588,7 @@ struct BlockSettingsWrite {
 }  // namespace
 
 TEST_CASE("a settings write that fails changes neither disk nor live behaviour") {
-    // Roadmap 7.26. Every setter used to mutate settings_ -- and in some cases live state --
+    // Every setter used to mutate settings_ -- and in some cases live state --
     // *before* the save that can throw. IPC then reported failure while the process kept the
     // new behaviour, so the error message and the running app disagreed.
     TempDir temp;
@@ -1653,7 +1645,7 @@ TEST_CASE("a settings write that fails changes neither disk nor live behaviour")
 }
 
 TEST_CASE("concurrent settings writers leave disk and memory agreeing") {
-    // Roadmap 7.26 asks for the change to be "one serialized operation". Two threads racing on
+    // Asks for the change to be "one serialized operation". Two threads racing on
     // different fields must not interleave into a settings.json that matches neither the
     // in-memory state nor either writer's intent.
     TempDir temp;
@@ -1731,7 +1723,7 @@ bool mentions(const std::vector<std::string>& lines, const std::string& needle) 
 }  // namespace
 
 TEST_CASE("deleting all activity removes the readable export and the migration backups") {
-    // Roadmap 8.12. Two copies of the user's history were missed for the life of the feature.
+    // Two copies of the user's history were missed for the life of the feature.
     //
     // `exports/personal` is the worst of them: it is the *most legible* copy that exists --
     // window titles verbatim, in Markdown -- and "delete all activity" reported success while
@@ -1782,7 +1774,7 @@ TEST_CASE("the deletion result names what was kept, not just what went") {
 }
 
 TEST_CASE("a replica that cannot be removed does not save the source from deletion") {
-    // Roadmap 8.12's sharpest requirement. The old order deleted exports first and *threw* on
+    // Sharpest requirement. The old order deleted exports first and *threw* on
     // the first failure, so one stale file held open by another program meant the database was
     // never cleared at all: the user asked to erase their history, saw an error, and kept
     // everything.
@@ -2036,7 +2028,7 @@ TEST_CASE("AppState creates and exports day or week summary reports") {
     // The session cap is reported even when it did not bind, so the UI can name it.
     CHECK(report.session_limit == 500);
     CHECK_FALSE(report.sessions_truncated);
-    // Roadmap 2.19: no target set yet, so planned is absent rather than a fake zero goal.
+    // No target set yet, so planned is absent rather than a fake zero goal.
     CHECK(report.planned_mins == 0);
     CHECK_THROWS_AS(state->summary_report("month"), std::runtime_error);
 
@@ -2047,7 +2039,7 @@ TEST_CASE("AppState creates and exports day or week summary reports") {
 }
 
 TEST_CASE("summary report carries planned-versus-actual for today and omits a plan for 30d") {
-    // Roadmap 2.19 Review half. today/7d reuse the calendar windows the Now card already
+    // Review half. today/7d reuse the calendar windows the Now card already
     // shows, so the two surfaces cannot disagree about the same plan. Longer ranges still
     // report attended seconds, but planned stays 0 — inventing a prorated target would be a
     // second plan the user never set.
@@ -2153,7 +2145,7 @@ double drive_one_episode(AppState& state, double start_secs, double distraction_
 }  // namespace
 
 TEST_CASE("a distraction episode is recorded, and the recap finally counts it") {
-    // Roadmap 2.15. `recap()` has counted rows in `snapback_events` since the baseline schema,
+    // `recap()` has counted rows in `snapback_events` since the baseline schema,
     // and **nothing anywhere wrote one** -- there was no production INSERT into that table at
     // all. Every user's Snapback count was therefore zero, and the only non-zero values ever
     // seen came from hand-seeded test databases, which is exactly why the gap survived.
@@ -2320,17 +2312,8 @@ std::string hostile_title() {
 const std::string kHostileTitle = hostile_title();
 }  // namespace
 
-// Regression guard for Roadmap 6.1, the AppState half of the assertion that already covers
-// CaptureThread (tests/test_capture_thread.cpp). 6.1 was a RingBuffer holding
-// std::array<CaptureEvent, 65536> inline: ~6 MB per CaptureThread, and AppState holds one by
-// value, so every instance overflowed Windows' 1 MB default thread stack while Linux and
-// macOS survived on 8 MB. A std::array member is C++ silently choosing automatic storage,
-// which is what made a sizing mistake present as a platform-specific SIGSEGV.
-//
-// 3,392 bytes here (MSVC x64, 2026-08-22). The bound is deliberately loose -- it is a trip
-// wire for a member that jumps by orders of magnitude, not a budget to tune against, and it
-// has to hold across standard libraries whose string and deque layouts differ. Anything
-// resembling 6.1 clears 16 KB immediately.
+// Trip wire against a large inline member (e.g. a std::array ring buffer) overflowing Windows'
+// 1 MB default thread stack. ~3.4 KB today; deliberately loose.
 static_assert(sizeof(AppState) < 16384,
               "AppState must stay stack-friendly; bulk storage belongs on the heap");
 
@@ -2530,17 +2513,8 @@ private:
 }  // namespace
 
 TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") {
-    // The prune is due once per day of uptime, and the tick stamps that day as spent when it
-    // *decides* to prune. The decision and the prune were separated by the activity-boundary
-    // check, whose early return abandons the whole rest of the tick -- so a delete winning
-    // that boundary spent the day without collecting anything, and retention slipped by
-    // another 24 h of uptime.
-    //
-    // The comment on the boundary block only justifies dropping *buffered* rows: they belong
-    // to activity the user just deleted. A prune is not that. It deletes rows that aged out
-    // of the 90-day window, which stays true no matter which session was deleted -- and
-    // deleting one session leaves every other session's aged-out rows exactly where they
-    // were.
+    // The daily prune must still run when a delete wins the activity boundary: aged-out rows of
+    // other sessions are unaffected by deleting one session.
     DeleteRacingClock clock;
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -2781,16 +2755,8 @@ TEST_CASE("a snapback remains pending until the tick transaction commits") {
 }
 
 TEST_CASE("a failed restore keeps its target for a retry and still re-arms the tracker") {
-    // restore_snapback_target used to clear the payload *before* calling focus_window(), so a
-    // failed activation -- the window closed, the platform stub, a title that no longer
-    // matched -- also destroyed the only copy of what the user was trying to get back to.
-    // The frontend then had nothing to retry against, and the native overlay's "Take me back"
-    // region ran its dismiss callback first for the same net effect.
-    //
-    // The two halves of the fix are asserted separately because they pull in opposite
-    // directions: the payload must survive a failure, but the tracker must not stay latched
-    // in Recovering because of one (dismiss_recovery is its only exit, and a stuck tracker
-    // silently disables every later snapback this session).
+    // A failed activation must keep the payload (so it can be retried) and still unlatch the
+    // tracker (dismiss_recovery is its only exit). Asserted separately.
     auto state = make_state();
     state->start_session("implement the classifier", FocusMode::Normal);
 
@@ -3549,7 +3515,7 @@ TEST_CASE("AppState emits a hyperfocus nudge once the mode's window elapses") {
     CHECK(std::count(events.begin(), events.end(), "hyperfocus") == 1);
 }
 
-// Roadmap 7.6 — the legible export, end to end through the real storage path. The renderer is
+// The legible export, end to end through the real storage path. The renderer is
 // unit-tested in test_data_export.cpp; what is only observable here is that the rows reaching
 // it are the rows the database actually holds.
 TEST_CASE("AppState exports a legible archive of what was recorded") {
@@ -3575,7 +3541,7 @@ TEST_CASE("AppState exports a legible archive of what was recorded") {
 }
 
 TEST_CASE("the ownership export contains every session and window, past the old caps") {
-    // Roadmap 9.16. The document claimed to hold "every session" while the command stopped at
+    // The document claimed to hold "every session" while the command stopped at
     // 200 sessions and 500 windows per session, with no way to retrieve the rest. This seeds
     // past both limits and requires every row to appear exactly once.
     //
@@ -3642,7 +3608,7 @@ TEST_CASE("the ownership export contains every session and window, past the old 
 }
 
 TEST_CASE("the ownership export contains every interruption past the old episode cap") {
-    // Roadmap 9.16. The old exporter fetched at most 10,000 episodes for one session. Legacy
+    // The old exporter fetched at most 10,000 episodes for one session. Legacy
     // rows have no start time, so this also pins the stable id tie-breaker when 10,001 episodes
     // share the same return timestamp.
     TempDir temp_db;
@@ -3681,7 +3647,7 @@ TEST_CASE("the ownership export contains every interruption past the old episode
 }
 
 TEST_CASE("the export states what it holds and can be told from a truncated file") {
-    // Roadmap 9.16's manifest. "Include exact exported/omitted counts per record type plus a
+    // Manifest. "Include exact exported/omitted counts per record type plus a
     // small manifest/checksum so a partial or interrupted file is distinguishable from a valid
     // empty one."
     ManualClock clock;
@@ -3741,7 +3707,7 @@ TEST_CASE("AppState exports a document, not an empty file, with no history") {
     CHECK(markdown.find("No sessions have been recorded yet") != std::string::npos);
 }
 
-// --- Roadmap 2.14: reflections through AppState --------------------------------------------
+// --- reflections through AppState --------------------------------------------
 
 TEST_CASE("a reflection saved on the running session is visible without a restart") {
     // AppState caches the active session, so the write reaching storage is only half the job:
@@ -3777,7 +3743,7 @@ TEST_CASE("reflecting on one session leaves another session's cached copy alone"
     CHECK(state->get_session(first.session_id)->reflection_done == "finished first");
 }
 
-// --- Roadmap 2.13: the timer against the session lifecycle ---------------------------------
+// --- the timer against the session lifecycle ---------------------------------
 
 TEST_CASE("replacing a session clears the timer rather than carrying it into the new one") {
     // 2.13 names this case explicitly. A pomodoro belongs to the session it was started in;
@@ -3855,7 +3821,7 @@ TEST_CASE("changing the rhythm does not restart the phase the user is already in
     CHECK(state->pomodoro_config().work_ms == 60 * 1000);
 }
 
-// --- Roadmap 2.10: one recording status, and a privacy pause that can be timed -------------
+// --- one recording status, and a privacy pause that can be timed -------------
 
 TEST_CASE("the recording state names the strongest reason recording is not happening") {
     // The precedence is the substance of 2.10: two surfaces deriving this separately is the
@@ -3885,16 +3851,9 @@ TEST_CASE("the recording state names the strongest reason recording is not happe
     CHECK(derive_recording_state(in) == RecordingState::Blocked);
 }
 
-// The derived state these two cases used to assert directly depends on something neither of
-// them controls: `recording_status()` reads the *real* capture permission, and Blocked outranks
-// PausedPrivate by design (pinned above). On Windows `check_capture_permissions` always reports
-// available, so the assertion held; on a headless CI Linux host (no DISPLAY, no xdotool) and on
-// an untrusted macOS one it reports unavailable, so the state is legitimately Blocked and both
-// cases failed with "expected 1, got 0" — PausedPrivate against Blocked.
-//
-// The pause itself is what these cases are about, and it is host-independent. The private-mode
-// -> PausedPrivate mapping is already pinned on the pure function above, where it belongs and
-// where no ambient permission can reach it.
+// recording_status() reads the real capture permission, and Blocked outranks PausedPrivate, so
+// on hosts without capture these cases would see Blocked. They assert the pause itself; the
+// private -> PausedPrivate mapping is pinned on the pure function above.
 namespace {
 
 // True when this host can actually run capture, so the integrated state is worth asserting.
@@ -4007,7 +3966,7 @@ TEST_CASE("an indefinite privacy pause never lapses by itself") {
     CHECK_FALSE(state.privacy_settings().private_mode);
 }
 
-// Roadmap 2.16. Alert delivery, and the one failure the item singles out.
+// Alert delivery, and the one failure the item singles out.
 //
 // The quiet-hours cases below position the range relative to *this machine's* local offset
 // rather than naming a wall-clock hour: CI runs them in whatever timezone the runner has, and
@@ -4253,7 +4212,7 @@ TEST_CASE("an alert snooze survives a rebuilt AppState") {
 }
 
 TEST_CASE("the close-to-tray explanation is claimed once and stays claimed across a restart") {
-    // Roadmap 9.15. Closing a window is the universal "I am done with this program", and
+    // Closing a window is the universal "I am done with this program", and
     // close-to-tray quietly makes it mean something else -- so the app says so, once. Twice is
     // the failure that turns a helpful notice into the thing a user hunts for a setting to
     // switch off, and a process-lifetime bool would deliver exactly that on every launch.
@@ -4307,7 +4266,7 @@ std::int64_t emitted_alert_id(AppState& state, const char* event_name) {
 }  // namespace
 
 TEST_CASE("a clicked alert can be acted on once and then not again") {
-    // Roadmap 2.16's duplicate-click clause. A user double-clicking a toast, or clicking one
+    // Duplicate-click clause. A user double-clicking a toast, or clicking one
     // twice because the first click did not visibly do anything, must not fire the action
     // twice — and on Windows a balloon click carries no payload at all, so the identity has to
     // survive on this side.

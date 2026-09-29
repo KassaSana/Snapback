@@ -16,12 +16,10 @@ type UseAppEffectsArgs = {
   captureRunning: boolean;
   invalidateReview: () => void;
   refreshPomodoroStatus: () => void | Promise<void>;
-  // Roadmap 2.19. Refreshed alongside the timer: both describe the session that just changed.
+  // Refreshed alongside the timer.
   refreshAttendedProgress: () => void | Promise<void>;
-  // Roadmap 2.10. Re-asked on every session change and every idle transition -- both change
-  // the answer natively without a command from this side. A timed pause lapsing is handled
-  // inside useRecordingStatus (it schedules its own refresh at the deadline), and tray or
-  // Settings changes arrive as `recording-status` events below.
+  // Re-asked on session changes and idle transitions. Timed pauses refresh themselves
+  // (useRecordingStatus); tray and Settings changes arrive as `recording-status` events.
   refreshRecordingStatus: () => void | Promise<void>;
   applyRecordingStatusEvent: (status: RecordingStatus) => void;
   refreshLatest: () => void | Promise<void>;
@@ -42,7 +40,7 @@ type UseAppEffectsArgs = {
   handleUntrackedWork: (payload: { message: string }) => void;
   handleIdle: (payload: { idle: boolean }) => void;
   /**
-   * Roadmap 2.16. A native alert was clicked and named a destination this side owns. The
+   * A native alert was clicked and named a destination this side owns. The
    * window has already been raised natively by the time this runs — all that is left is to
    * put the right thing in front of the user.
    */
@@ -98,10 +96,8 @@ export const useAppEffects = ({
     }
   }, [invalidateReview, sessionStatus]);
 
-  // Starting or stopping a session resets the Pomodoro timer server-side
-  // (AppState::start_session / stop_session both call pomodoro_.reset()), so
-  // refetch whenever the session identity *or status* changes — Stop keeps the
-  // same id, and the header's recording line would otherwise stay on "Recording".
+  // Session start/stop resets the Pomodoro natively, so refetch on id or status change (Stop
+  // keeps the id).
   useEffect(() => {
     void refreshPomodoroStatus();
     void refreshAttendedProgress();
@@ -170,8 +166,7 @@ export const useAppEffects = ({
     );
     unsubs.push(
       api.onSnapback((payload, inApp) => {
-        // Roadmap 2.16. The alert is gated; the timeline refresh is not. Quiet hours silence
-        // an interruption, they do not stop the app knowing what happened.
+        // The alert is gated; the timeline refresh is not.
         if (inApp) {
           handleSnapback(payload);
         }

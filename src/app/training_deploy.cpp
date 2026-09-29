@@ -34,14 +34,8 @@ std::string shell_quote(const std::string& value) {
     out += "\"";
     return out;
 #else
-    // Single quotes are the only POSIX construct that suppresses *everything* — no
-    // parameter expansion, no command substitution, no backslash escapes. The previous
-    // version used double quotes and escaped only `"`, which left $(...) and `...` live:
-    // a repo directory literally named `$(cmd)` passed the is_training_repo() existence
-    // check and then executed when the path was pasted into the shell command.
-    //
-    // A single quote can't be escaped inside single quotes, so close, emit an escaped
-    // quote, and reopen: foo'bar -> 'foo'\''bar'
+    // Single quotes suppress all expansion (`$(...)`, backticks, backslashes). A single quote
+    // inside is written as: close, escaped quote, reopen -- foo'bar -> 'foo'\''bar'.
     std::string out = "'";
     for (char c : value) {
         if (c == '\'') out += "'\\''";
@@ -180,10 +174,8 @@ std::optional<std::vector<std::string>> find_python() {
     return std::nullopt;
 }
 
-// Whether an interpreter is installed changes about once per machine, and the status panel
-// asks on every refresh -- each ask is one or two process spawns. Cached the same way the
-// xdotool check is (util/cached_probe.hpp). train_from_export itself always probes afresh:
-// that call is the user saying "try now", and a cached "no" would be a stale refusal.
+// Cached like the xdotool probe (util/cached_probe.hpp). train_from_export always probes
+// afresh, since that call is the user saying "try now".
 constexpr std::int64_t kPythonProbeTtlMs = 60'000;
 
 bool python_available_cached() {
@@ -494,19 +486,15 @@ bool sync_trained_model_to_app_dir(const std::filesystem::path& app_data_dir,
         }
         throw;
     }
-    // The commit sentinel makes cleanup crash-safe: recovery keeps the new pair if cleanup
-    // was interrupted after the promotion committed.
-    // Cleanup failure does not undo a committed promotion. The retained marker and
-    // sentinel make the next recovery retry cleanup before another deployment starts.
+    // Cleanup failure does not undo a committed promotion; the retained marker and sentinel
+    // make the next recovery retry it.
     cleanup_deployment_files(paths);
     return true;
 }
 
 void swap_file(const std::filesystem::path& first, const std::filesystem::path& second) {
-    // copy_over, not copy_file + overwrite_existing: libstdc++ on MinGW ignores the flag and
-    // throws "File exists" instead. All three copies here replace an existing destination
-    // (the second and third by definition; the first whenever a previous rollback left its
-    // temp behind), so every one of them hit it. See util/fs_replace.hpp (ROADMAP 11.8).
+    // copy_over, not copy_file + overwrite_existing (ignored by libstdc++ on MinGW); every copy
+    // here replaces an existing destination. See util/fs_replace.hpp.
     const auto temporary = first.string() + ".rollback-temp";
     const std::filesystem::path temp_path(temporary);
     copy_over(first, temp_path);

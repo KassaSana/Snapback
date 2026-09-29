@@ -25,8 +25,7 @@ std::optional<std::string> opt_str(const json& j, const char* key) {
     return it->get<std::string>();
 }
 
-// ADR-0007's optional instants. Null on the wire stays null in C++, because for these fields
-// it is a fact rather than an absence of data: a session with no `endedAtMs` is still running.
+// Optional instants (ADR-0007): null stays null (e.g. no endedAtMs means still running).
 void put_opt_ms(json& j, const char* key, const std::optional<std::int64_t>& v) {
     if (v) j[key] = *v;
     else j[key] = nullptr;
@@ -377,9 +376,7 @@ void to_json(json& j, const ExportTrainingResult& v) {
 
 // ---- AppSettings -----------------------------------------------------------
 
-// Roadmap 2.13. Config and running state are separate objects in the file because they answer
-// different questions: one is the rhythm the user chose, the other is where the timer got to.
-// Restoring a rhythm should never depend on a stale deadline being parseable, and vice versa.
+// Config and running state are separate objects so neither's parse depends on the other.
 void to_json(json& j, const PomodoroConfig& v) {
     j = json{{"workMs", v.work_ms},
              {"shortBreakMs", v.short_break_ms},
@@ -438,13 +435,8 @@ void to_json(json& j, const AttendedProgress& v) {
              {"weeklyActualMins", v.weekly_actual_mins}};
 }
 
-// Roadmap 2.16. An array of channel names, not three booleans.
-//
-// The wire form then has no unrepresentable state and no combination to keep in sync by hand:
-// off is `[]`, one channel is `["overlay"]`, both is `["overlay","native"]`. A reader that
-// meets a channel it does not know drops it rather than failing, so a settings file written by
-// a newer build degrades to the channels this one understands instead of reverting the whole
-// object to defaults.
+// An array of channel names (`[]`, `["overlay"]`, ...). Unknown names from a newer build are
+// dropped rather than failing the whole object.
 void to_json(json& j, const AlertChannels& v) {
     j = json::array();
     if (v.in_app) j.push_back("inApp");
@@ -516,9 +508,7 @@ void from_json(const json& j, AppSettings& v) {
     v.private_mode = get_or<bool>(j, "privateMode", false);
     v.excluded_apps = get_or<std::vector<std::string>>(j, "excludedApps", {});
     v.goal_categories = get_or<std::vector<GoalCategory>>(j, "goalCategories", {});
-    // A settings.json written before 7.23 has no such key, and a hand-edited one can hold
-    // anything. Both land on the default rather than on a threshold that would disable idle
-    // detection (<= 0) or pause a session mid-sentence.
+    // Missing or out-of-range values fall back to the default.
     const auto threshold = get_or<std::int64_t>(j, "idleThresholdSecs", kDefaultIdleThresholdSecs);
     v.idle_threshold_secs =
         (threshold >= kMinIdleThresholdSecs && threshold <= kMaxIdleThresholdSecs)
@@ -531,13 +521,9 @@ void from_json(const json& j, AppSettings& v) {
     v.private_until_wall_ms = get_or<std::int64_t>(j, "privateUntilWallMs", 0);
     v.untracked_nudge_until_wall_ms =
         std::max<std::int64_t>(0, get_or<std::int64_t>(j, "untrackedNudgeUntilWallMs", 0));
-    // A settings.json written before 2.16 has no "alerts" key at all, and must keep loading
-    // with every other preference intact -- so this is a defaulted read like the rest, not a
-    // required one.
+    // Defaulted read: older settings files have no "alerts" key.
     v.alerts = get_or<AlertDeliverySettings>(j, "alerts", AlertDeliverySettings{});
-    // Absent means "not yet shown", which is the right answer for a settings.json written
-    // before 9.15 as well as for a first run: the explanation is worth showing once to someone
-    // upgrading into close-to-tray, since it is new behaviour for them too.
+    // Absent means not yet shown (also right for users upgrading into close-to-tray).
     v.tray_close_notice_shown = get_or<bool>(j, "trayCloseNoticeShown", false);
 }
 

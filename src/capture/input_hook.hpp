@@ -1,8 +1,5 @@
-// Global input capture behind one backend per OS. This is the single biggest chunk
-// of platform-specific work and the
-// most footgun-prone (a global hook callback runs on an OS-owned thread).
-//
-// See input_hook_windows.cpp / input_hook_macos.cpp / input_hook_x11.cpp.
+// Global input capture, one backend per OS. The callback runs on an OS-owned thread. See
+// input_hook_windows.cpp / input_hook_macos.mm / input_hook_x11.cpp.
 #pragma once
 
 #include <atomic>
@@ -13,16 +10,9 @@
 
 namespace snapback {
 
-// Wall-clock seconds since the Unix epoch, for CaptureEvent::wall_clock_secs.
-//
-// Roadmap 7.24. Every backend stamps `timestamp_secs` from an uptime clock, which is right
-// for durations and ordering and catastrophic for calendar features: read as epoch time, an
-// uptime of ten hours says "10:00 on 1 Jan 1970". Each backend stamps this alongside it so
-// hour_of_day and day_of_week describe when the user actually worked.
-//
-// Defined once here rather than per backend so the three cannot drift — the uptime helpers
-// they each define locally are already three subtly different things (GetTickCount64 is
-// since boot; the steady_clock ones are since first call).
+// Wall-clock epoch seconds for CaptureEvent::wall_clock_secs, stamped by every backend beside
+// the uptime-based timestamp_secs so calendar features use real time. Defined once so backends
+// cannot drift.
 inline double wall_clock_secs_now() {
     return std::chrono::duration<double>(
                std::chrono::system_clock::now().time_since_epoch())

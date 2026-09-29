@@ -104,8 +104,7 @@ bool is_trusted_document(const std::string& url, const std::string& trusted_url,
     if (url.empty() || trusted_url.empty()) return false;
     const auto canonical = canonical_document_url(url);
     if (canonical == canonical_document_url(trusted_url)) return true;
-    // 8.8's build-time gate, reused: the dev server is a development affordance and must not
-    // exist in a shipped build.
+    // The dev server is Debug-only.
     return debug_build && is_loopback_authority(canonical);
 }
 
@@ -116,16 +115,13 @@ NavigationDecision classify_navigation(const std::string& target, const std::str
 
     const auto scheme = scheme_of(canonical_document_url(target));
     if (scheme == "http" || scheme == "https" || scheme == "mailto") {
-        // A real destination, just not one that may hold the native bridge. Handing it to the
-        // system browser is the honest resolution: the user still gets where they were going,
-        // in a program that has no access to their data.
+        // A real destination, just not one that may hold the native bridge: open it in the
+        // browser.
         return NavigationDecision::OpenExternally;
     }
 
-    // `file:` outside the bundle, plus `data:`, `javascript:`, `blob:`, `about:` and anything
-    // unrecognized. None of these is a destination a user asked for, and each is a way to get
-    // script running in the privileged frame. Blocked rather than externalized: handing
-    // `javascript:` or a local `file:` to the system browser would be a different bug.
+    // Other `file:` URLs, data:, javascript:, blob:, about:, and anything unknown are blocked
+    // (handing them to the browser would be a different bug).
     return NavigationDecision::Block;
 }
 

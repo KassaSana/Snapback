@@ -76,12 +76,9 @@ import {
 } from "./settingsSections";
 
 export default function App() {
-  // Which surface is showing (ADR-0003). Defaults to Now: it is the 95% case, and the
-  // only one that matters while a session is running.
+  // Which surface is showing (ADR-0003); Now by default.
   const [surface, setSurface] = useState<Surface>("now");
-  // Roadmap 10.9. Settings' second level. Seeded from the URL hash so a support instruction
-  // ("open #settings/privacy") lands on the right group; a hash naming anything else leaves
-  // both levels alone rather than bouncing the user somewhere they did not ask for.
+  // Settings' second level, seeded from the URL hash (e.g. "#settings/privacy").
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(() => {
     const deepLink =
       typeof globalThis.location === "undefined"
@@ -98,22 +95,14 @@ export default function App() {
     setSettingsSection(section);
   }, []);
 
-  // Roadmap 2.16. Where a clicked native alert lands. The native side already raised the
-  // window and already decided *which* destination (src/app/alert_routing.hpp); this turns
-  // that into a screen, which is the half it deliberately does not know about.
-  //
-  // `focus` names a region rather than an element id, so a destination that outlived the card
-  // it meant cannot reach for a component that has since been renamed.
+  // Where a clicked native alert lands. The native side already raised the window and chose the
+  // destination (src/app/alert_routing.hpp); this maps it to a screen. `focus` names a region,
+  // not an element id.
   const applyAlertDestination = useCallback((destination: AlertDestination) => {
     setSurface(destination.surface);
     if (destination.focus === null) return;
-    // One frame later, because the surface above has not rendered yet: on a click that
-    // switched surfaces, the region being scrolled to is not in the DOM at this point.
-    //
-    // Looked up by data attribute rather than by ref, so a destination cannot hold a component
-    // that has since been renamed or unmounted. This runs inside a host event listener, where
-    // a thrown exception has no user-visible failure mode — the click would just silently do
-    // nothing — so every step here is optional-chained rather than assumed.
+    // Next frame, so a surface switch has rendered. Looked up by data attribute and
+    // optional-chained throughout: a failure here has no visible surface.
     requestAnimationFrame(() => {
       document
         .querySelector(`[data-alert-region="${destination.focus}"]`)
@@ -121,7 +110,7 @@ export default function App() {
     });
   }, []);
 
-  // Roadmap 2.12. Skipping and finishing are the same durable state: the guide is done.
+  // Skipping and finishing are the same durable state.
   const [onboardingComplete, setOnboardingComplete] = useState(() => readOnboardingComplete());
   const [workAppTeachDone, setWorkAppTeachDone] = useState(() => readWorkAppTeachComplete());
   // Latched, because "has read the recap" is a thing that happened, not a thing that is true
@@ -201,10 +190,7 @@ export default function App() {
     setPersistenceFailureReason,
   } = useHealth();
 
-  // Roadmap 10.9's one exception to "Advanced stays put": a real, actionable failure may
-  // reveal the section that can fix it. It fires at most once per app run — a user who has
-  // been shown the problem and navigated away is not lost, and re-steering them would make
-  // every other section unreachable for as long as the failure lasts.
+  // A real, actionable failure may reveal the Settings section that fixes it, once per run.
   const failureSection = settingsSectionForFailure({
     permissionBlocked: !permissionCaptureAvailable && healthStatus !== "checking",
     captureFailed,
@@ -265,10 +251,8 @@ export default function App() {
     captureReadiness,
   });
 
-  // Roadmap 7.23 / ADR-0005. A session is now running *or paused*, and the difference is
-  // real: a paused session accrues no attended time. Derived here rather than in useSession
-  // because the idle signal lives in useLiveData, and showing "active" for a session that
-  // stopped counting twenty minutes ago is the confusion this whole item exists to remove.
+  // Running or paused: a paused session accrues no attended time (ADR-0005). Derived here
+  // because the idle signal lives in useLiveData.
   const liveSessionStatusLabel = useMemo(
     () => sessionStatusLabel(sessionRecord, live.userIdle),
     [live.userIdle, sessionRecord],
@@ -328,11 +312,8 @@ export default function App() {
   } = useAppRules();
 
 
-  // Deleting one session (Roadmap 7.6) invalidates less than deleting everything, but it is
-  // not local to the Insights card: the aggregates on other surfaces counted that session's
-  // predictions, and if it was the *running* session the native command already tore down the
-  // live engine state, so the UI must stop showing a session that no longer exists.
-  //
+  // Deleting one session affects aggregates on other surfaces, and if it was the running one
+  // the live engine state is gone too.
   const { refreshCockpitHistory, sessionHistory: cockpitHistory } = useCockpitHistory();
 
   const handleSessionDeleted = useCallback(
@@ -379,16 +360,14 @@ export default function App() {
     onSessionDeleted: handleSessionDeleted,
   });
 
-  // Roadmap 10.11. The cards are labelled with the interval their data came from, not the
-  // one the buttons show as pressed. The two differ while a load is in flight and after one
-  // fails; the range bar is where that difference is explained.
+  // Cards are labelled with the interval their data came from, which lags the selected one
+  // during a load or after a failure.
   const reviewRangeLabelText = useMemo(
     () => reviewRangeLabel(reviewDisplayedRange),
     [reviewDisplayedRange],
   );
 
-  // Roadmap 2.11. The cockpit's "recent goals" come from unfiltered history, not the Review
-  // range — a user comparing last week should still be able to repeat yesterday.
+  // Recent goals come from unfiltered history, not the Review range.
   const cockpitRecentGoals = useMemo(() => recentGoals(cockpitHistory), [cockpitHistory]);
 
   const handleActivityDataDeleted = useCallback(async () => {
@@ -417,11 +396,8 @@ export default function App() {
     onPrivateModeChanged: refreshRecordingStatus,
   });
 
-  // Roadmap 2.10. The other direction of the same coherence: a pause or resume from the
-  // header, the tray, or a lapsed deadline changes the private-mode setting natively, and the
-  // Settings toggle is a separate read of it. Re-read whenever the recording state moves, so
-  // the toggle cannot say "off" under a header saying "Paused privately". The initial answer
-  // is skipped: usePrivacy already loads itself on mount.
+  // Re-read private mode whenever the recording state moves (header, tray, or lapsed deadline),
+  // so the Settings toggle cannot contradict the header. The initial answer is skipped.
   const previousRecordingState = useRef<string | null>(null);
   const refreshPrivacySettings = privacy.refresh;
   useEffect(() => {
@@ -433,10 +409,8 @@ export default function App() {
   }, [recordingStatus.state, refreshPrivacySettings]);
   const dataImport = useDataImport();
 
-  // Roadmap 2.12. Every input is state the app already tracks for its own reasons — the guide
-  // reads them and issues nothing. `feedbackGiven` uses `labelStatus` because it is set by both
-  // submitting a correction and deliberately skipping the survey, and the step is "you have been
-  // offered the correction and dealt with it", not "you disagreed with the classifier".
+  // Every input is state the app already tracks; the guide issues nothing. `feedbackGiven` uses
+  // labelStatus, set by both a correction and a skip.
   const onboardingState = useMemo(
     () => ({
       captureReady: captureIsReady(captureRunning, captureProbeConfirmed),
@@ -465,14 +439,12 @@ export default function App() {
     step: onboardingStep,
   });
 
-  // Roadmap 9.14. Asked once at launch: an import staged in a previous run is still waiting,
-  // and the card must say so rather than offering to stage a second one over it.
+  // Asked once: an import staged in a previous run may still be waiting.
   useEffect(() => {
     void dataImport.refreshImportStatus();
   }, [dataImport.refreshImportStatus]);
 
-  // The last step completes by being *read*. The recap now lands on Now after Stop, so
-  // opening Review is no longer the signal — seeing the recap is.
+  // The last step completes when the recap is seen.
   useEffect(() => {
     if (recap !== null) setRecapSeen(true);
   }, [recap]);
@@ -576,11 +548,7 @@ export default function App() {
       >
         {surface === "now" && (
           <>
-        {/*
-          Roadmap 2.12. Above the cockpit because every step but the last happens there, and
-          only while the journey is unfinished. It observes and never acts, which is what lets
-          it be replayed without manufacturing a session or a label.
-        */}
+        {/* Above the cockpit, where every step but the last happens. */}
         {onboardingVisible && onboardingStep && (
           <OnboardingGuide
             step={onboardingStep}
@@ -619,10 +587,7 @@ export default function App() {
             hyperfocusNote={live.hyperfocusNote}
             labelStatus={feedback.labelStatus}
             onCorrectVerdict={(label) => {
-              // Record what the classifier said alongside the correction: agreement rate is
-              // only computable if we know what was being corrected. `notes` is free text
-              // and already exists, so this needs no schema change — a dedicated
-              // `predicted_state` column is the proper fix once 7.3 lands migrations.
+              // Record the classifier's verdict alongside the correction, in notes.
               const predicted = live.prediction?.focusState ?? "unknown";
               void handleLabel(label, "manual", `corrected:${predicted}`);
             }}
@@ -708,7 +673,7 @@ export default function App() {
               rangeLabel={reviewRangeLabelText}
               report={summaryReport}
             />
-            {/* Roadmap 2.9. "Start this again" fills the start form on Now and goes there; the
+            {/* "Start this again" fills the start form on Now and goes there; the
                 session still begins only when the user presses Start (ADR-0005). */}
             <SessionExplorerCard
               sessionHistory={sessionHistory}
@@ -762,12 +727,7 @@ export default function App() {
 
         {surface === "settings" && (
           <>
-        {/*
-          Roadmap 10.9. Settings is now four groups rather than one stream of eight cards.
-          ADR-0003's three surfaces are untouched: this is a second level *inside* Settings.
-          Only the active group renders, which is what makes the common settings reachable
-          without scrolling past developer controls at the default 1100×760 window.
-        */}
+        {/* Only the active Settings group renders (ADR-0003's surfaces are unchanged). */}
         <SettingsNav active={settingsSection} onChange={setSettingsSection} />
         <div
           className="settings-section"
@@ -775,11 +735,7 @@ export default function App() {
           id={settingsPanelId(settingsSection)}
           aria-labelledby={settingsTabId(settingsSection)}
         >
-        {/*
-          Roadmap 10.3. The panel holds the section's controls, not only its heading: it used
-          to close after the blurb, so the settings themselves were siblings of an empty
-          tabpanel. It is a subgrid (styles.css), so the cards keep the surface grid's columns.
-        */}
+        {/* The panel holds the section's controls; a subgrid keeps the surface's columns. */}
         <div className="settings-section-intro">
           <h2 className="settings-section-title">
             {SETTINGS_SECTION_LABELS[settingsSection]}
@@ -789,10 +745,7 @@ export default function App() {
 
         {settingsSection === "general" && (
           <>
-          {/*
-            Roadmap 2.12's "resumable from Help". Safe to offer unconditionally because
-            replaying the guide creates nothing — it reads state and points at controls.
-          */}
+          {/* Replaying the guide is always safe: it reads state and creates nothing. */}
           <section className="settings-help">
             <div className="card-header">
               <h2>Getting started</h2>
@@ -906,11 +859,7 @@ export default function App() {
           </>
         )}
 
-        {/*
-          Advanced. Training, raw signals, and logs are collapsed by default — the item's
-          explicit requirement, and the reason Settings no longer opens on model tooling.
-          They stay one click away rather than moving somewhere else.
-        */}
+        {/* Advanced: training, raw signals, and logs, collapsed by default. */}
         {settingsSection === "advanced" && (
           <>
             {developerToolsEnabled ? (

@@ -1,4 +1,4 @@
-// AppKit side of mac_ui.hpp. Roadmap 3.1.
+// AppKit side of mac_ui.hpp.
 #if defined(__APPLE__)
 
 #include "app/mac_ui.hpp"

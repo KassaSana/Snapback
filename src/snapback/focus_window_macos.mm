@@ -27,12 +27,8 @@ FocusTargetResult focus_window_native(const std::string& app_name,
         NSWorkspace* workspace = [NSWorkspace sharedWorkspace];
         NSArray<NSRunningApplication*>* apps = [workspace runningApplications];
 
-        // Both properties are nullable -- `bundleIdentifier` is nil for a great many running
-        // processes -- and messaging nil in Objective-C returns 0, which is the value of
-        // NSOrderedSame. Comparing without the nil check therefore reports a *match* on every
-        // such app, so a name matching nothing would activate whichever one came first and
-        // report success. That is what made this read as "focus_window cannot detect failure"
-        // when the real fault was matching far too eagerly.
+        // Both properties are nullable, and messaging nil returns 0 == NSOrderedSame, so check
+        // nil first or every such app "matches".
         NSRunningApplication* matched = nil;
         for (NSRunningApplication* app in apps) {
             NSString* localizedName = app.localizedName;

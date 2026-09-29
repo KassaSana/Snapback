@@ -27,14 +27,11 @@ export const SummaryCard = memo(function SummaryCard({
   report,
 }: SummaryCardProps) {
   const hasHistory = report.sampleCount > 0 || report.completedSessionCount > 0;
-  // Roadmap 2.19. Attended can be worth showing even when prediction history is empty —
-  // spans are the plan's actuals, and a quiet morning with a target still has a comparison.
+  // Attended can be shown even with no prediction history.
   const attendedSeconds = report.attendedSeconds;
   const showAttended = attendedSeconds > 0 || report.plannedMins > 0 || hasHistory;
-  // Attendance is compared against a daily or weekly plan, so for those two presets the
-  // backend measures it over the local calendar day / week while every other tile on this
-  // card uses the rolling window the range pill names. Say which period this figure covers
-  // instead of letting "Last 24h" stand over a since-midnight number.
+  // Attendance for today/7d is measured over the calendar day/week, unlike the rolling window
+  // the pill names, so say which period it covers.
   const attendedPeriod =
     report.window === "day"
       ? "since midnight"
@@ -42,10 +39,8 @@ export const SummaryCard = memo(function SummaryCard({
         ? "this calendar week"
         : null;
 
-  // "Session time" is the wall clock of completed sessions, start to end -- it includes idle
-  // and distracted stretches and is not the model's focused time, which is why it is no longer
-  // labelled "Focus time". The session aggregates also read only the newest N sessions; when
-  // that cap bit, say so rather than let "All time" quietly mean "the latest 500".
+  // "Session time" is start-to-end of completed sessions, not focused time. Say when the
+  // newest-N session cap applied.
   const sessionDetail = (base?: string) => {
     const cap = report.sessionsTruncated ? `latest ${report.sessionLimit} sessions only` : null;
     return [base, cap].filter(Boolean).join(" · ") || undefined;

@@ -59,7 +59,7 @@ beforeEach(() => {
     outputPath: "/data/exports/personal/snapback_my_data.md",
     sessionCount: 3,
     windowCount: 40,
-    // Roadmap 9.16. Per-record-type omissions and a body checksum ride with the counts, and
+    // Per-record-type omissions and a body checksum ride with the counts, and
     // `truncated` is derived from the omissions rather than being an independent flag.
     episodeCount: 0,
     omittedSessions: 0,
@@ -111,7 +111,7 @@ describe("privacy controls", () => {
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("delete_all_activity_data"),
     );
-    // Roadmap 8.15. The headline names the browser-side copy too. This assertion used to read
+    // The headline names the browser-side copy too. This assertion used to read
     // "All locally collected activity data was deleted." while `snapback.sessionPresets` --
     // goal text the user typed, and the only copy left once the database is cleared -- was
     // still sitting in localStorage. The sentence was the part that made that a defect rather
@@ -204,7 +204,7 @@ describe("legible data export", () => {
     await clickExport();
 
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("export_my_data"));
-    // Roadmap 9.16 added interruptions to the counts and made the completeness claim
+    // Added interruptions to the counts and made the completeness claim
     // explicit. "We wrote a file" and "we wrote all of it" are different statements, and the
     // second is the reason the feature exists.
     expect(
@@ -237,7 +237,7 @@ describe("legible data export", () => {
     expect(screen.getByText(/nothing was left out/)).toBeInTheDocument();
   });
 
-  // Roadmap 9.16. The export no longer caps history, so this covers the *reporting* contract
+  // The export no longer caps history, so this covers the *reporting* contract
   // rather than a limit the product still has: whichever record type had to be left out is
   // named, and the completeness claim disappears. The old version of this case asserted
   // "Older sessions were left out", a message that came from the session cap alone — which is

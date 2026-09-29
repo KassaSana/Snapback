@@ -1,25 +1,11 @@
-// Every `localStorage` key this app owns, and which side of the privacy line it falls on.
-// Roadmap 8.15.
+// Every localStorage key this app owns, and which side of the privacy line it falls on:
 //
-// The list exists because "Delete all activity" (**8.12**) promised to erase every app-owned
-// copy of the user's activity, and one key was quietly outside that promise.
-// `sessionCockpit.ts` justified keeping session presets in `localStorage` on the grounds that
-// they "are derived from goals the database already holds", so losing them is a non-event.
-// That argument is true right up until the database holds no goals — after which the presets
-// are the **only** surviving copy of goal strings the user typed, which
-// [ADR-0009](../../docs/adr/0009-local-first-threat-model.md) ranks second in sensitivity
-// behind window titles. The erase left them behind.
+//   - `activity`   a copy of something the user did or typed; deleted with their activity.
+//   - `preference` a setting or "don't show again" flag; kept, like native configuration.
 //
-// So each key is classified here, next to the key, and the classification is the thing that
-// decides whether the erase touches it:
-//
-//   - `activity`  — a copy of something the user did or recorded. Deleted with their activity.
-//   - `preference` — a setting or a "don't show me this again" flag. Erasing activity is not
-//     resetting the app (the native side says as much in its `retained` list), so these stay.
-//
-// `tests/browserStorage.test.ts` fails if a `snapback.*` key appears anywhere in `src/`
-// without a row here, so the next key added has to pick a side rather than defaulting to
-// "survives the erase" by nobody thinking about it.
+// Session presets are activity: once the database holds no goals they are the only copy of goal
+// strings the user typed. tests/browserStorage.test.ts fails if a `snapback.*` key in src/ has
+// no row here.
 
 export type BrowserStorageClass = "activity" | "preference";
 
@@ -95,12 +81,8 @@ const defaultStorage = (): RemovableStorage | null => {
 };
 
 /**
- * Remove every `activity` key, and report what was named so the caller can tell the user.
- *
- * Returns the labels it *attempted*, not the ones it proved gone: a `removeItem` that throws
- * has left a copy behind, and that key is left out of the returned list rather than claimed.
- * Saying "your presets were cleared" when they were not is the specific failure **8.12**
- * exists to prevent, and it does not become acceptable because this side of the line is small.
+ * Remove every `activity` key and return the labels actually removed; a key whose removeItem
+ * threw is left out rather than claimed as cleared.
  */
 export function clearActivityStorage(
   storage: RemovableStorage | null = defaultStorage(),

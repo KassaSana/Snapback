@@ -3,20 +3,14 @@ import { memo } from "react";
 import type { RecordingStatus } from "./api";
 import { snoozeRemainingLabel } from "./alertDelivery";
 
-// Roadmap 2.10. For software that reads window titles, "am I recording right now?" should
-// never require navigation — so this states the answer plainly and offers the pause beside it.
-//
-// The five states come from the backend already decided. Deriving them here from health plus
-// settings is exactly what the item forbids: the tray would then compute the same question
-// separately, and the two could disagree.
-//
-// The header variant is the same answer in the chrome (ADR-0003's Now cockpit): a full card
-// on idle Now was four Pause buttons under "nothing is being recorded".
+// "Am I recording right now?", answered plainly with the pause beside it. The state comes from
+// the backend already decided, so the tray and this cannot disagree. The header variant is the
+// same answer in the chrome.
 type RecordingStatusCardProps = {
   status: RecordingStatus;
   onPause: (minutes: number) => void | Promise<void>;
   onResume: () => void | Promise<void>;
-  /** Roadmap 2.16. Ends an alert snooze started from the tray. */
+  /** Ends an alert snooze started from the tray. */
   onResumeAlerts: () => void | Promise<void>;
   /**
    * The last attempt to confirm this with the app failed, so `status` is the last answer we

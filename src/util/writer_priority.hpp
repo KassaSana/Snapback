@@ -1,23 +1,9 @@
-// Let a waiting writer go before the next reader. Roadmap 14.1.
+// Let a waiting writer go before the next reader. std::mutex is unfair: a Review load of five
+// commands on one thread can reacquire between commands before the blocked engine thread runs,
+// so a persist waited out the whole load. A writer announces itself while waiting; readers
+// about to lock wait for announced writers. The writer still waits for the current holder.
 //
-// `storage_mutex_` is a `RankedMutex` over a `std::mutex`, and `std::mutex` promises no
-// fairness. A Review load is five commands on one thread, each taking and releasing the lock;
-// between two of them the releasing thread is already running and reacquires before a blocked
-// engine thread is even scheduled. `benchmarks/bench_budgets.cpp` measured the result three
-// times on two fixtures: the persist that arrives during a load waits out the *whole* load
-// (2.55 s at 7 days on the ceiling fixture), not the one command that was running. And
-// because `AppState::engine_tick` persists before it emits, the prediction and any snapback
-// alert that tick produced wait with it.
-//
-// This is a gate beside the mutex, not a replacement for it. A writer announces itself while
-// it waits for the lock; a reader about to take the lock first waits for announced writers to
-// get it. The writer still waits for whatever command holds the lock now -- that is the bound
-// this buys, one hold instead of one load -- and the mutex, its rank check, and its metrics
-// are untouched.
-//
-// **Only yield while holding no lock the writer needs.** A reader that yields while holding
-// the writer's lock waits for a writer that is waiting for it. The call sites in `AppState`
-// hold nothing at that point; keep it that way.
+// Only yield while holding no lock the writer needs, or it deadlocks.
 #pragma once
 
 #include <atomic>

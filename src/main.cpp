@@ -83,11 +83,8 @@ std::optional<std::string> env_var(const char* name) {
 #endif
 }
 
-// Roadmap 8.13. The choice of *where* is now separate from the environment lookups, so the
-// fallback rule is testable. The old version ended `return temp_directory_path() / "snapback"`
-// on both platforms: the same predictable path for every account, in a directory every local
-// account can write to. That produced a working app quietly recording window titles somewhere
-// anyone could read, with nothing said about it.
+// Where the data lives. Fails closed rather than falling back to a shared temp directory anyone
+// could read.
 snapback::DataDirChoice app_data_dir() {
     const auto override_dir = env_var("SNAPBACK_DATA_DIR").value_or("");
 #if defined(_WIN32)
@@ -107,13 +104,8 @@ snapback::DataDirChoice app_data_dir() {
                                      home);
 }
 
-// The directory the running binary lives in — NOT the working directory. Those coincide
-// often enough during development to hide a bug: this function was Windows-only, and every
-// other platform fell through to `current_path()`. Launched as `./build-app/snapback` from
-// the repo root, that made the app load the *source* `frontend/index.html` (Vite's dev
-// template, whose only script is `/src/main.tsx`) instead of the built bundle next to the
-// binary — a silently blank window, and one that never trips the missing-bundle check
-// because a file really is there.
+// The directory of the running binary, not the working directory -- the two coincide in
+// development and hide a bug where the source index.html is loaded instead of the bundle.
 std::filesystem::path executable_dir() {
 #if defined(_WIN32)
     std::wstring buffer(MAX_PATH, L'\0');
@@ -148,9 +140,7 @@ std::filesystem::path executable_dir() {
     return std::filesystem::current_path();
 }
 
-// Returns whether `fn` ran to completion. Most callers ignore it; route_alert_click does not,
-// because an action that threw did not settle the alert and the card's dismiss fallback is
-// then the only thing left to unlatch the tracker.
+// Returns whether `fn` completed; route_alert_click needs to know when an action threw.
 bool run_tray_action(snapback::Logger& logger, const char* action,
                      const std::function<void()>& fn) noexcept {
     try {
@@ -164,12 +154,8 @@ bool run_tray_action(snapback::Logger& logger, const char* action,
     return false;
 }
 
-// Roadmap 2.16. The event the frontend acts on when a native click chose a destination this
-// side does not own.
-//
-// The alert id travels with it even though the claim has already been consumed on this side.
-// It is not a second gate -- it is what makes a log line from the frontend and one from here
-// line up when someone has to work out why a click went where it did.
+// The event the frontend acts on when a native click chose a destination this side does not
+// own. The alert id travels along for log correlation.
 std::string dump_alert_action_event(snapback::AlertAction action, std::int64_t alert_id) {
     return nlohmann::json{{"action", snapback::alert_action_as_str(action)},
                           {"alertId", alert_id}}
@@ -193,15 +179,11 @@ snapback::RecordingStatus tray_recording_status(snapback::AppState& state,
 int main(int argc, char** argv) {
     using namespace snapback;
 
-    // Roadmap 9.5. `snapback --purge` removes everything this app created and exits. The
-    // Windows uninstaller runs it before deleting the binary, which is the only moment both
-    // the data directory and something that knows where it is still exist. It prints what went
-    // and what did not, because "most of it" must never be reported as "all of it" for an
-    // application that recorded window titles.
+    // `snapback --purge` removes everything this app created and exits; the Windows uninstaller
+    // runs it. It prints what was and was not removed.
     const bool purge = argc > 1 && std::string(argv[1]) == "--purge";
 
-    // Roadmap 8.13. Fail closed rather than record somewhere shared. There is no safe
-    // automatic answer when the user has no profile directory, so there is no automatic answer.
+    // Fail closed rather than record somewhere shared.
     const auto chosen = app_data_dir();
     if (!chosen.ok) {
         std::cerr << chosen.reason << '\n';
@@ -230,19 +212,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Acquire this before opening even the rotating log: a losing process must not rotate
-    // the live instance's file out from under it. The lock is tied to this object's OS
-    // handle, so crashes release it automatically and a stale lock file is harmless.
+    // Acquire before opening the log, so a losing process cannot rotate the live instance's
+    // file. The lock is tied to an OS handle, so a crash releases it.
     auto instance_guard = SingleInstanceGuard::acquire(data_dir / "snapback.lock");
     if (!instance_guard.acquired()) {
-        // Roadmap 9.15. Losing the lock is not the end of this launch's job: the user asked to
-        // see Snapback, and the running instance may be hidden in the tray with no window on
-        // screen. Ask it to come forward before saying anything.
-        //
-        // This stays above `Storage::open` deliberately. A process that has opened no database,
-        // started no capture and installed no tray is one whose only remaining act is to exit,
-        // so blocking its only thread on the ack is the simplest correct thing it can do — and
-        // the ordering is what keeps 9.8's "one database owner" true while it does.
+        // Ask the running instance (which may be hidden in the tray) to come forward, then
+        // exit. Before Storage::open, so there is only ever one database owner.
         if (instance_guard.status() == SingleInstanceStatus::AlreadyRunning) {
             const auto activation = request_activation(data_dir);
             // Silence on success. The window is now in front of the user, and a console line
@@ -256,11 +231,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // One leveled logger for the process, writing to a rotating file next to
-    // the DB instead of the console (nothing owns a terminal once this ships as a GUI
-    // app). Falls back to stderr if the file can't be opened, so a bad log path degrades
-    // instead of going silent. Level is overridable via SNAPBACK_LOG (e.g. "debug"),
-    // Keep startup logging configurable without coupling it to the UI.
+    // One leveled logger writing to a rotating file next to the DB, falling back to stderr.
+    // SNAPBACK_LOG overrides the level (e.g. "debug").
     RotatingFileStream log_file(data_dir / "snapback.log");
     Logger logger(pick_startup_log_sink(log_file, std::cerr),
                   level_from_string(env_var("SNAPBACK_LOG").value_or("")));
@@ -281,16 +253,11 @@ int main(int argc, char** argv) {
         logger.warn(std::string("optional model load failed: ") + error.what());
     }
 
-    // Observability: log the startup sequence, one line per step, at INFO. This exists
-    // because the log file was empty through an entire successful startup — so when the
-    // macOS window came up blank there was nothing on disk to say how far we got or what
-    // the webview was pointed at. Capture and the webview are the two things that cannot
-    // be verified headlessly, which makes them exactly the two that must narrate.
+    // Log each startup step: capture and the webview cannot be verified headlessly, so the log
+    // is how a blank window gets diagnosed.
     logger.info("snapback " SNAPBACK_VERSION " starting");
     logger.info("data dir: " + data_dir.string());
-    // Roadmap 8.13. Said after the logger exists, because the repair happens before it does.
-    // An entry that could not be tightened is reported rather than swallowed: claiming
-    // "secured" over a file we failed to touch is the specific failure the item names.
+    // Reported after the logger exists; an entry that could not be tightened is said so.
     for (const auto& repaired : privacy.repaired) {
         logger.info("restricted permissions on " + repaired);
     }
@@ -298,9 +265,7 @@ int main(int argc, char** argv) {
         logger.warn("still readable by other accounts: " + exposed);
     }
 
-    // Roadmap 9.14. Before anything opens the database, apply an import the user staged in a
-    // previous run. It has to be here: the swap replaces the file, so it cannot happen while a
-    // connection is open, and 9.8's lock means the running app is always that connection.
+    // Apply a staged import before anything opens the database: the swap replaces the file.
     if (const auto imported = apply_staged_import(data_dir / "focoflow.db", &logger)) {
         if (imported->ok) {
             logger.info("startup: applied staged import — " + imported->message);
@@ -319,17 +284,13 @@ int main(int argc, char** argv) {
         }
         logger.info("storage opened: " + (data_dir / "focoflow.db").string());
 
-    // Keep AppState heap-owned so callbacks registered below can borrow one stable
-    // process-lifetime address. RingBuffer independently heap-backs its 64K slots, so
-    // AppState itself remains stack-friendly.
+    // Heap-owned so callbacks below can borrow a stable address.
     auto state = std::make_unique<AppState>(
         std::move(*storage), data_dir, &logger, nullptr,
         training_deploy::to_model_deployment_health(model_recovery));
     state->start_engine();
 
-    // Read-only probe (never prompts), logged once at startup so the log answers the
-    // question 0.3 exists to answer: did the OS actually let us capture? Without this, a
-    // starved event tap and a working one look identical from outside.
+    // Read-only probe (never prompts), logged once: did the OS let us capture?
     const auto permissions = check_capture_permissions(/*capture_running=*/true);
     logger.info(std::string("engine started; capture permission: ") +
                 (permissions.capture_available ? "granted" : "DENIED") +
@@ -339,16 +300,12 @@ int main(int argc, char** argv) {
         logger.warn("capture permission missing — " + permissions.message);
     }
 
-    // The overlay's own dismiss triggers (auto-timeout, click) have no other route back
-    // into app state — ContextTracker::dismiss_recovery() is the only exit from
-    // Recovering, so without this the tracker gets stuck after the first snapback of a
-    // session and never fires another one. Registering here covers every dismiss path,
-    // not just the IPC `dismiss_snapback` command.
+    // Route every overlay dismiss (timeout, click) back into state: dismiss_recovery() is the
+    // tracker's only exit from Recovering.
     Overlay::instance().set_dismiss_callback(
         [state = state.get()] { state->dismiss_snapback(); });
 
-    // Roadmap 2.16. The overlay's "Take me back" region. Registered later, once the window
-    // exists and route_alert_click has something to raise -- see the block below the tray.
+    // The overlay's "Take me back" action is registered below, once the window exists.
 
     webview::webview w(/*debug=*/kWebviewDebugEnabled, nullptr);
     // This guard is declared after the webview, so exception unwinding stops
@@ -357,8 +314,8 @@ int main(int argc, char** argv) {
     w.set_title("Snapback");
     w.set_size(1100, 760, WEBVIEW_HINT_NONE);
 
-    // Resolve the trusted document before binding commands. Roadmap 8.14: the shim and every
-    // native bind share one canonical URL and one per-launch capability token.
+    // Resolve the trusted document first: the shim and every native bind share one canonical
+    // URL and one per-launch capability token.
 #if defined(NDEBUG)
     const auto frontend_url = resolve_frontend_url(executable_dir(), std::nullopt, false, false);
 #else
@@ -372,9 +329,8 @@ int main(int argc, char** argv) {
     // ahead of the bundle), then register the command binds it calls.
     w.init(build_ipc_shim_script(trusted_url, capability_token, kWebviewDebugEnabled));
 
-    // Roadmap 10.1. This source loader does not exist in ordinary builds, including Debug:
-    // CMake must opt a GUI-smoke target into it explicitly. That keeps an arbitrary script
-    // environment variable from becoming a capability in a packaged binary.
+    // Only GUI-smoke builds can load an acceptance script, so the env var is never a capability
+    // in a packaged binary.
     std::optional<std::string> acceptance_script;
 #if defined(SNAPBACK_ENABLE_ACCEPTANCE_HARNESS)
     if (const auto path = env_var("SNAPBACK_ACCEPTANCE_SCRIPT")) {
@@ -396,20 +352,10 @@ int main(int argc, char** argv) {
     register_commands(w, *state, data_dir, async_commands, capability_token,
                       std::move(native_ui));
 
-    // System tray (Phase 8): left-click/double-click or the "Show" menu item brings the
-    // window forward; "Quit" ends the run loop. Both branches read the native window
-    // handle out of the webview once, here on the UI thread, because that is the only
-    // thread either platform's window APIs may be touched from.
-    // Close-to-tray (Roadmap 9.15): closing the window hides it instead of terminating the app.
+    // Tray: click or "Show" raises the window, "Quit" ends the run loop. Closing the window
+    // hides it to the tray. The native window handle is read once here, on the UI thread.
     //
-    // How the window comes forward is written once per platform and shared by everything that
-    // needs it: the tray's Show item, and 9.15's activation channel below. Two copies would
-    // drift, and only one of them would be the one anybody actually clicks.
-    // Roadmap 9.15. Closing a window is the universal "I am done with this program", and
-    // close-to-tray quietly makes it mean something else; the honest reading of what happened,
-    // left unexplained, is "it crashed". Said once and then never again -- `claim_...` returns
-    // true exactly once and persists that, so the caller cannot notify twice or forget to
-    // record that it notified. Fired on the UI thread by the platform close handler.
+    // Explain close-to-tray once (claim_tray_close_notice persists that it was shown).
     const auto explain_close_to_tray = [state = state.get(), &logger] {
         run_tray_action(logger, "close-to-tray notice", [state] {
             if (state->claim_tray_close_notice()) {
@@ -420,24 +366,11 @@ int main(int argc, char** argv) {
 
     std::function<void()> raise_window;
 
-    // Roadmap 2.16's action-routing half. One handler for both native surfaces.
-    //
-    // The order matters and is the reason this waited on 9.15: raising the window is
-    // unconditional and comes first. A click that appears to do nothing at all is worse than
-    // one that brings the app forward and stops there -- and coming forward is the part the
-    // user unambiguously asked for by clicking, whatever the app then decides about the rest.
-    //
-    // Only after that does the claim decide whether the *destination* is still live. A false
-    // means the alert was already acted on, or a newer one of its kind replaced it, or the OS
-    // kept a toast around long after the moment it was about.
-    //
-    // Returns whether an action ran. The overlay uses this to decide whether its dismiss
-    // callback still has a job: restore_snapback_target settles the tracker itself and keeps
-    // the payload when the activation fails, and a dismiss on top of that would throw away
-    // the target the frontend is about to offer a retry for.
-    // `raise_window` is captured by reference because it is assigned in the platform blocks
-    // *below* this point -- both it and this lambda live until `w.run()` returns, which is the
-    // condition that makes a reference capture safe here rather than merely convenient.
+    // One click handler for both native surfaces. Raising the window comes first and is
+    // unconditional; then the claim decides whether the destination is still live (false means
+    // already acted on or superseded). Returns whether an action ran, so the overlay knows
+    // whether its dismiss callback still has work. `raise_window` is assigned below; both
+    // outlive w.run().
     const auto route_alert_click = [&w, state = state.get(), &logger, &raise_window](
                                        AlertEvent event, std::int64_t alert_id) {
         if (raise_window) raise_window();
@@ -450,19 +383,15 @@ int main(int argc, char** argv) {
         logger.info(std::string("alert click: ") + alert_action_as_str(action));
         switch (action) {
             case AlertAction::ReturnToWork:
-                // 2.8's existing native action, reused rather than reimplemented. It raises the
-                // recorded window and unlatches the tracker in one step. A failure is logged
-                // here because nothing else on this path sees it -- the frontend only learns
-                // that the payload is still there.
+                // Raises the recorded window and unlatches the tracker. Failures are logged
+                // here, since nothing else on this path sees them.
                 return run_tray_action(logger, "return to work", [state, &logger] {
                     const auto result = state->restore_snapback_target();
                     if (!result.ok) logger.warn("return to work: " + result.message);
                 });
             case AlertAction::OpenSessionComposer:
             case AlertAction::OpenPomodoro:
-                // Handed to the frontend, which owns what a surface is. This side says which
-                // destination was chosen and stops there; teaching main.cpp about React routes
-                // would put the same decision in two places that cannot both be right.
+                // The frontend owns surfaces; this side only names the destination.
                 emit(w, events::kAlertAction,
                      dump_alert_action_event(action, alert_id));
                 break;
@@ -503,11 +432,8 @@ int main(int argc, char** argv) {
             run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
         };
         callbacks.on_notification_click = route_alert_click;
-        // Roadmap 9.15. Close-to-tray goes on only once an icon is actually in the
-        // notification area. Hiding the only window into a tray that failed to install leaves
-        // the user with a running process and no way to reach it -- which is worse than the
-        // behaviour close-to-tray replaced, and invisible until the day the shell is busy at
-        // login and Shell_NotifyIcon returns false.
+        // Close-to-tray only once the icon is installed, or the window could vanish
+        // unreachably.
         if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_hwnd, explain_close_to_tray);
     }
 #elif defined(__APPLE__)
@@ -540,34 +466,21 @@ int main(int argc, char** argv) {
             run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
         };
         callbacks.on_notification_click = route_alert_click;
-        // Roadmap 9.15. Close-to-tray goes on only once an icon is actually in the
-        // notification area. Hiding the only window into a tray that failed to install leaves
-        // the user with a running process and no way to reach it -- which is worse than the
-        // behaviour close-to-tray replaced, and invisible until the day the shell is busy at
-        // login and Shell_NotifyIcon returns false.
+        // Close-to-tray only once the icon is installed, or the window could vanish
+        // unreachably.
         if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_window, explain_close_to_tray);
     }
 #endif
 
-    // Roadmap 2.16. The overlay card's action, through the same handler the tray click uses.
-    //
-    // The overlay carries no alert id of its own: it shows exactly one card at a time and the
-    // card on screen is by definition the newest snapback, which is the one whose id is
-    // outstanding. Passing 0 would claim nothing, so the id is read back from state -- the same
-    // value the payload carried out.
+    // The overlay card's action. The overlay has no alert id of its own and only shows the
+    // newest card, so the outstanding id is read from state.
     Overlay::instance().set_action_callback([state = state.get(), &route_alert_click] {
         return route_alert_click(AlertEvent::Snapback,
                                  state->outstanding_alert_id(AlertEvent::Snapback));
     });
 
-    // Roadmap 9.15. The owner's half of the activation channel, started once the window exists
-    // and kept alive by this scope until `w.run()` returns.
-    //
-    // `on_activate` arrives on the listener's own thread, so it does nothing but hand the work
-    // to the UI thread — the same rule the emit hook below follows, and for the same reason:
-    // both platforms' window APIs may only be touched from the thread that owns the run loop.
-    // Raising the window directly from here would be the ordinary cross-thread UI bug, arriving
-    // only on a second launch and therefore almost never on a developer's machine.
+    // The owner's half of the activation channel. on_activate runs on the listener thread, so
+    // it only dispatches to the UI thread.
     std::optional<ActivationListener> activation_listener;
     if (raise_window) {
         activation_listener = ActivationListener::start(data_dir, [&w, raise_window, &logger] {
@@ -575,9 +488,7 @@ int main(int argc, char** argv) {
             w.dispatch([raise_window] { raise_window(); });
         });
         if (!activation_listener) {
-            // Not fatal, and deliberately not silent. Refusing to start because a convenience
-            // channel failed would trade a small annoyance for a total outage; saying nothing
-            // would leave "double-click does nothing" with no evidence anywhere.
+            // Not fatal, but logged.
             logger.warn("activation channel unavailable — a second launch cannot raise this "
                         "window and will report that it could not");
         } else {
@@ -585,39 +496,26 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Host->frontend events: the engine tick runs off-thread, but webview.eval and the
-    // Win32 overlay must run on the UI thread — so marshal via dispatch. Copy
-    // event/payload by value; the tick's strings don't outlive the hook call.
+    // Engine events arrive off-thread; webview.eval and the overlay need the UI thread, so
+    // dispatch. Copy event/payload by value.
     state->set_emit_hook([&w, state = state.get()](const char* event,
                                                    const std::string& payload,
                                                    AppState::ActivityEpoch activity_epoch) {
         std::string ev = event;
         w.dispatch([&w, state, ev, payload, activity_epoch] {
-            // The engine thread only queues this closure. A delete command may execute on
-            // the UI thread before the queue reaches us, so reject the stale tick here,
-            // immediately before every user-visible side effect.
+            // Reject stale ticks right before any user-visible side effect: a delete may have
+            // run on the UI thread since this was queued.
             if (!state->activity_epoch_is_current(activity_epoch)) return;
             emit(w, ev.c_str(), payload);
-            // Roadmap 2.16. Which channels fire is decided in app/alert_routing.hpp and
-            // arrives on the payload; this reads flags and decides nothing.
-            //
-            // The previous comment here claimed the toast was needed because "the overlay
-            // alone can't" reach a user whose app window is not focused. That was wrong:
-            // the overlay is created WS_EX_TOPMOST | WS_EX_NOACTIVATE and shown with
-            // SW_SHOWNOACTIVATE on the foreground window's monitor (snapback/
-            // overlay_windows.cpp), so it is always-on-top and never steals focus -- it
-            // reaches the user regardless. The toast was duplication that additionally
-            // copied the summary, which may name a file or a project, into OS notification
-            // history. Hence the default is now the overlay alone, with "both" one
-            // preference away.
+            // Channels come from app/alert_routing.hpp on the payload; nothing is decided here.
+            // The overlay is topmost and non-activating, so it reaches the user without a
+            // toast.
             if (ev == events::kSnapback) {
                 try {
                     const auto parsed = nlohmann::json::parse(payload);
                     const auto snap = parsed.get<SnapbackPayload>();
-                    // A missing delivery block means a bug, not an old payload -- the tick
-                    // that emits it is in this same binary. Falling back to the shipped
-                    // defaults keeps the app audible while that bug is found; an all-false
-                    // route would silently stop interrupting and look like working software.
+                    // A missing delivery block is a bug; fall back to defaults rather than
+                    // going silent.
                     const auto route =
                         parsed.contains("delivery")
                             ? parsed["delivery"].get<AlertRoute>()
@@ -632,9 +530,7 @@ int main(int argc, char** argv) {
                     // A malformed payload must never take down the UI thread.
                 }
             }
-            // The hyperfocus nudge defaults to a toast and no overlay: an overlay here would
-            // interrupt exactly the deep work the guardrail is trying to protect. Roadmap
-            // 2.16 makes that a preference rather than a rule, so it is read, not assumed.
+            // Hyperfocus defaults to a toast, not the overlay, to avoid interrupting deep work.
             if (ev == events::kHyperfocus) {
                 try {
                     const auto parsed = nlohmann::json::parse(payload);
@@ -681,9 +577,7 @@ int main(int argc, char** argv) {
         });
     }
 
-    // Log the URL, not just the fact that we navigated. A malformed `file:////...` URL (the
-    // POSIX four-slash bug) and a missing bundle both render an empty window silently; the
-    // only difference is visible in this string.
+    // Log the URL: a malformed file URL and a missing bundle both render a blank window.
     logger.info("navigating webview to: " + frontend_url);
     if (frontend_url == "about:blank") {
         logger.error("no frontend bundle next to the executable (" + executable_dir().string() +

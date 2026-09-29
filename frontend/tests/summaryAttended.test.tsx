@@ -5,7 +5,7 @@ import { SummaryCard } from "../src/SummaryCard";
 import { SessionReviewCards } from "../src/SessionReviewCards";
 import type { SessionRecap, SummaryReport } from "../src/api";
 
-// Roadmap 2.19 Review half. The Summary card is where planned-versus-actual lands so it
+// Review half. The Summary card is where planned-versus-actual lands so it
 // follows 10.11's shared range instead of inventing a second date control.
 
 const baseReport = (overrides: Partial<SummaryReport> = {}): SummaryReport => ({

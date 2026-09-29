@@ -1,11 +1,7 @@
 import { memo, useState } from "react";
 
-// Roadmap 2.14. The session recap is metrics; this is the part only the user can write.
-// Two optional questions asked once, at the end of the session they refer to.
-//
-// Skip is deliberately one click and writes nothing: a skipped reflection and one that was
-// never offered are the same absent state, and storing an empty answer instead would leave a
-// hollow heading in the personal export forever.
+// Two optional questions at the end of a session. Skip writes nothing, so skipped and never
+// asked are the same state.
 type SessionReflectionCardProps = {
   onSave: (done: string | null, nextStep: string | null) => void | Promise<void>;
   onSkip: () => void;

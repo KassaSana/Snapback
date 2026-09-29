@@ -117,27 +117,13 @@ public:
     // scenario starts at. Pass nullopt to mean "no active session" (feature stays 0).
     void reset_for_session(std::optional<double> session_start_secs);
 
-    // Start a session whose origin is not yet known, seeding it from the first event.
-    //
-    // AppState can't call reset_for_session with a real value: `started_at` is wall-clock
-    // while event timestamps come from a monotonic clock started at process launch, and
-    // there is no conversion between the two. Passing nullopt (which is what it used to do)
-    // silently pinned seconds_since_session_start to 0.0 for every row ever written.
+    // Start a session whose origin is seeded from the first event (wall-clock started_at cannot
+    // be converted to the monotonic event clock).
     void begin_session();
 
-    // Roadmap 7.25. Resume a session that has already been running for `elapsed_secs` — the
-    // restart case, where the row is still ACTIVE but this process has never seen an event
-    // from it.
-    //
-    // Same lazy seed as begin_session(), back-dated: the origin becomes the first event's
-    // timestamp minus the elapsed time the session already has. Without it, a session
-    // recovered after a crash reported `seconds_since_session_start` counting up from zero
-    // while the recap next to it said four hours — the same feature disagreeing with the same
-    // session in two places.
-    //
-    // The break clock is deliberately *not* back-dated. Nothing is known about what happened
-    // while the process was gone, and a back-dated `minutes_since_last_break` would fire the
-    // hyperfocus nudge the instant the app reopened.
+    // Resume a session already running for `elapsed_secs` (after a restart): the origin is the
+    // first event minus that. The break clock is not back-dated, or the hyperfocus nudge would
+    // fire on reopen.
     void resume_session(double elapsed_secs);
 
     FeatureVector update(const CaptureEvent& ev, const std::vector<AppRuleRecord>& rules = {});
@@ -152,17 +138,15 @@ private:
     double window_seconds_ = 30.0;
     double long_window_seconds_ = 300.0;
     double break_threshold_seconds_ = 300.0;
-    // Roadmap 7.24. Wall-clock epoch seconds from the newest event, used only for the
-    // calendar features. Zero means no event has supplied one, and the extractor falls back
-    // to the monotonic clock — which is how the epoch-shaped parity fixtures keep working.
+    // Wall-clock seconds from the newest event, for calendar features only. 0 falls back to the
+    // monotonic clock (the parity fixtures rely on this).
     double last_wall_clock_secs_ = 0.0;
     std::unordered_map<std::string, std::uint32_t> app_ids_;
     std::deque<WindowedEvent> events_30s_;
     std::deque<WindowedEvent> events_5min_;
     std::optional<double> session_start_secs_;
     bool awaiting_session_start_ = false;  // seed session_start_secs_ from the next event
-    // How far behind the first event the seeded origin should sit (Roadmap 7.25). Zero for a
-    // freshly started session; the already-elapsed seconds for a resumed one.
+    // Back-dating for a resumed session's origin; 0 for a fresh one.
     double pending_session_backdate_secs_ = 0.0;
     std::optional<double> last_break_secs_;
     std::string current_app_name_;

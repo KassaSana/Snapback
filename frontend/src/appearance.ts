@@ -1,11 +1,10 @@
-/** Roadmap 10.10. Appearance is a frontend-only preference: it changes how the webview
+/** Appearance is a frontend-only preference: it changes how the webview
  *  renders, not what the native side stores. localStorage keeps the choice across restarts
  *  without a new IPC command or settings.json field. */
 
 export type AppearanceMode = "system" | "light" | "dark";
 
-// The literal, and whether the erase touches it, live in browserStorage.ts so a
-// key cannot exist without a classification (Roadmap 8.15).
+// Key literal and its erase classification live in browserStorage.ts.
 export { APPEARANCE_STORAGE_KEY } from "./browserStorage";
 import { APPEARANCE_STORAGE_KEY } from "./browserStorage";
 export const APPEARANCE_ATTRIBUTE = "data-appearance";

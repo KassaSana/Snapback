@@ -13,7 +13,7 @@ type AppHeaderProps = {
   captureProbeConfirmed: boolean;
   captureRunning: boolean;
   healthStatus: string;
-  /** Roadmap 10.9. The one model fact that is a failure rather than configuration. */
+  /** The one model fact that is a failure rather than configuration. */
   modelDeploymentDegraded: boolean;
   permissionCaptureAvailable: boolean;
   permissionMessage: string | null;
@@ -61,16 +61,9 @@ export const AppHeader = memo(function AppHeader({
     setupSteps: permissionSteps,
   });
 
-  // Roadmap 10.9. Classifier backend, model file, and training quality used to sit here
-  // permanently — three engineering fields on the first screen of a focus tool. They are now
-  // one badge that says whether anything needs attention, and a link to the section where the
-  // detail lives. That is ordering the information, not hiding it.
-  //
-  // `permissionHealth.label` is deliberately *not* the input here. It collapses to "blocked"
-  // for a failed capture listener as well as a refused OS permission, and those are different
-  // problems with different fixes — one is a settings dialog, the other is a restart. Reading
-  // the two causes separately is what keeps both badge labels reachable. The `checking` guard
-  // stops a not-yet-loaded health payload from being reported as a refusal.
+  // One badge for whether anything needs attention, linking to the section with the detail.
+  // Reads the capture-failure and permission causes separately (they have different fixes);
+  // `checking` keeps an unloaded payload from reading as a refusal.
   const badge = settingsHealthBadge({
     permissionBlocked: !permissionCaptureAvailable && healthStatus !== "checking",
     captureFailed,

@@ -2,13 +2,8 @@ import { useState } from "react";
 
 import { focusStateLabel, type FocusLabel } from "./api";
 
-// Quiet correction on the Now surface.
-//
-// Why "Wrong?" asks a follow-up instead of just recording a thumbs-down: a disagreement
-// with no correct answer cannot train anything and cannot build a confusion matrix. One
-// extra click turns a complaint into a labelled example. Roadmap 13.5 asks whether there
-// is enough labelled data to train on at all — this is how that question gets an answer
-// made of data instead of speculation.
+// Quiet correction on Now. "Wrong?" asks for the right answer, so a disagreement becomes a
+// labelled example.
 
 const STATES: FocusLabel[] = ["DEEP_FOCUS", "PRODUCTIVE", "PSEUDO_PRODUCTIVE", "DISTRACTED"];
 

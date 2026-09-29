@@ -1,10 +1,5 @@
-// The webview IPC bridge: binds whatever the CommandRegistry holds (Roadmap 14.3).
-//
-// We register each command with webview.bind(name, handler): the handler receives the call
-// arguments as a JSON *array* string, run_json_command takes element [0] (the args object
-// the shim forwarded), calls the registered handler, and returns JSON. The command names
-// must match the frontend's invoke() calls -- that match is the IPC contract, pinned by
-// test_ipc_contract against the registry itself rather than this file's text.
+// The webview IPC bridge: binds every command in the CommandRegistry. Handlers receive a JSON
+// array; run_json_command unwraps element [0], runs the handler, and returns JSON.
 #pragma once
 
 #include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
@@ -22,11 +17,8 @@
 namespace snapback {
 namespace detail {
 
-// Roadmap 8.14. Every command, without exception -- including the read-only ones -- carries
-// the capability token check. A page that can read your session history has read your
-// window titles, so "only mutations need the check" would be the wrong boundary. Binding
-// from the registry rather than one call site per command is what makes "every" a property
-// of this loop instead of a discipline.
+// Every command, read-only ones included, checks the capability token: reading history means
+// reading window titles.
 inline void bind_registry(webview::webview& w, const CommandRegistry& registry,
                           AsyncCommandRunner& async_commands, const std::string& token) {
     registry.for_each([&](const CommandDescriptor& command) {

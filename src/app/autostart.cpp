@@ -8,9 +8,8 @@ namespace snapback {
 
 #if defined(_WIN32)
 
-// The mechanism lives in autostart_run_key.cpp so the registry round trip can be tested
-// against a scratch key instead of the shared Run key; this file only decides *which* key.
-// Same split as the launchd and systemd branches below (Roadmap 11.7).
+// The mechanism lives in autostart_run_key.cpp (testable against a scratch key); this file only
+// chooses the key. Same split as the launchd and systemd branches.
 bool autostart_enabled() { return run_key::entry_present(run_key::user_run_key_path()); }
 
 bool autostart_supported() { return true; }
@@ -24,7 +23,7 @@ bool set_autostart_enabled(bool enabled) {
     return run_key::install_entry(key_path, executable);
 }
 
-#elif defined(__APPLE__)  // Roadmap 3.0
+#elif defined(__APPLE__)
 
 // The mechanism lives in autostart_launchd.cpp so its plist text and install/remove logic are
 // compiled and tested on every OS; this file only decides *where* the agent goes.
@@ -42,7 +41,7 @@ bool set_autostart_enabled(bool enabled) {
     return launchd::install_agent(dir, executable);
 }
 
-#elif defined(__linux__)  // Roadmap 3.0
+#elif defined(__linux__)
 
 // Same shape as the launchd branch: the mechanism is in autostart_systemd.cpp so it is
 // compiled and tested on all three CI hosts, and this file only chooses the directory.

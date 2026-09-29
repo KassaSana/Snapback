@@ -1,14 +1,7 @@
 /**
- * Roadmap 2.16. The frontend half of alert delivery: reading the route the engine attaches to
- * an alert event, and deciding whether the *in-app* surface is one of the channels it names.
- *
- * Kept pure and out of the components for the reason 11.11 makes concrete — the component
- * suite cannot be relied on to run on every machine, so the rules worth testing live in a
- * module `tsx` can execute directly.
- *
- * The engine already decided everything here. Nothing in this file re-derives policy: quiet
- * hours, the snooze deadline, and the channel preferences were all resolved in
- * src/app/alert_routing.hpp before the event was emitted. This only reads flags.
+ * The frontend half of alert delivery: reading the route the engine attaches to an alert
+ * event, and whether the in-app surface is one of its channels. Policy (quiet hours, snooze,
+ * channels) was already resolved in src/app/alert_routing.hpp; this only reads flags.
  */
 
 export type AlertPreviewMode = "detailed" | "generic";
@@ -57,12 +50,7 @@ export function deliversInApp(raw: unknown): boolean {
   return parseAlertRoute(raw).inApp;
 }
 
-// ---------------------------------------------------------------------------
-// Settings surface. Roadmap 2.16.
-//
-// These live here rather than in SettingsCard for the reason at the top of the file: the
-// component suite cannot be relied on to run, so anything with a rule in it belongs where
-// `tsx` can execute it.
+// --------------------------------------------------------------------------- Settings surface.
 // ---------------------------------------------------------------------------
 
 export const ALERT_CHANNELS = ["inApp", "overlay", "native"] as const;

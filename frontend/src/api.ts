@@ -48,9 +48,8 @@ export type PredictionRecord = {
   goalAlignment: number;
   timestampMs: number;
   modelId: string;
-  // Which rule decided focusState (ADR-0004): "model" when the classifier's argmax stood,
-  // else "risk" | "thrash" | "block" | "drift". null on rows from before verdicts carried
-  // provenance — unknown, not "model".
+  // Which rule decided focusState (ADR-0004): "model", or "risk" | "thrash" | "block" |
+  // "drift". null means unknown (older rows).
   stateSource: string | null;
 };
 
@@ -61,8 +60,7 @@ export type SessionRecord = {
   focusMode: string;
   startedAtMs: number | null;
   endedAtMs: number | null;
-  // Roadmap 2.14. null means the question was never answered, which is what Skip leaves
-  // behind — deliberately not "" so the UI can tell "skipped" from "answered with nothing".
+  // null means unanswered (what Skip leaves), distinct from "".
   reflectionDone: string | null;
   reflectionNextStep: string | null;
 };
@@ -75,13 +73,7 @@ export type PermissionStatus = {
   setupSteps: string[];
 };
 
-/**
- * Roadmap 11.13. `CaptureFailurePayload` and `OverlayFailurePayload` were deleted with the
- * `capture-failed` and `overlay-failed` listeners: nothing native ever emitted either name.
- * Capture failure arrives on `getHealth` instead -- `captureFailed`, `captureFailureReason`,
- * and the permission message and steps -- which is the path that was always doing the work.
- * This type stays because Roadmap 9.6 owns the `persistence-failed` emitter it waits for.
- */
+/** Payload of the planned `persistence-failed` event (see fixtures/ipc_commands.json). */
 export type PersistenceFailurePayload = {
   reason: string;
   message: string;
@@ -114,7 +106,7 @@ export type ModelDeploymentHealth = {
   rollbackAvailable: boolean;
 };
 
-/** Roadmap 14.11. What the process costs itself, carried on health so it travels in the
+/** What the process costs itself, carried on health so it travels in the
  *  support bundle. Engineering figures, not user-facing ones: nothing renders these today.
  *
  *  The `...P50Us` / `...P95Us` fields are histogram bucket **upper bounds**, not measured
@@ -194,7 +186,7 @@ export type SessionRecap = {
   /** Wall clock from start to end, including time the user was away. */
   durationSecs: number;
   /**
-   * Time the user was actually present (Roadmap 7.23 / ADR-0005).
+   * Time the user was actually present (ADR-0005).
    *
    * `null` means "never measured" — sessions recorded before attended time existed — and is
    * deliberately not 0, so the UI can fall back to `durationSecs` instead of telling someone
@@ -214,8 +206,7 @@ export type SessionLongestSnapback = {
   returnAppName: string;
 };
 
-// Roadmap 9.14. What a candidate file turned out to be, so the confirmation can state both
-// halves of the trade: what is adopted and what is replaced.
+// What a candidate file is, so the confirmation can state what is adopted and replaced.
 export type DataImportCandidate = {
   acceptable: boolean;
   /** Why it was refused, already phrased for display. Empty when acceptable. */
@@ -242,11 +233,7 @@ export type FocusSummary = {
   peakFocusScore: number;
   distractedSamples: number;
   distractedFraction: number;
-  /**
-   * Roadmap 10.13. Seconds of the longest unbroken focused stretch. It replaced a count of
-   * consecutive non-DISTRACTED prediction rows shown under the time-like label "Focus streak";
-   * rows are not time, and predictions arrive on input rather than on a clock.
-   */
+  /** Seconds of the longest unbroken focused stretch (not a row count). */
   longestFocusSecs: number;
 };
 
@@ -254,9 +241,7 @@ export type PomodoroPhase = "work" | "shortBreak" | "longBreak";
 
 export type PomodoroStatus = {
   running: boolean;
-  // Roadmap 2.13. Both read as "not counting down", and they are not the same thing: paused
-  // is the user's choice and resumes where it stopped; awaiting means a phase ended and the
-  // next one is deliberately waiting to be started.
+  // Paused resumes where it stopped; awaiting means a phase ended and the next is waiting.
   paused: boolean;
   awaitingAcknowledgement: boolean;
   phase: PomodoroPhase;
@@ -264,8 +249,7 @@ export type PomodoroStatus = {
   remainingMs: number;
 };
 
-// Roadmap 2.10. One status model, derived in the backend so the header and the tray cannot
-// disagree about the only question this app must never be vague on.
+// Derived in the backend so the header and tray cannot disagree.
 export type RecordingState =
   | "blocked"
   | "pausedPrivate"
@@ -278,7 +262,7 @@ export type RecordingStatus = {
   /** Milliseconds left on a timed privacy pause; 0 when indefinite or not paused. */
   privatePauseRemainingMs: number;
   /**
-   * Roadmap 2.16. Milliseconds left on an alert snooze; 0 when not snoozed.
+   * Milliseconds left on an alert snooze; 0 when not snoozed.
    *
    * Reported beside `state`, never instead of it. A snooze silences interventions while
    * recording continues, so `state` still reads "recording" throughout one.
@@ -286,8 +270,7 @@ export type RecordingStatus = {
   alertSnoozeRemainingMs: number;
 };
 
-// Roadmap 2.19. A target of 0 means "not set" -- there is no separate enabled flag to drift
-// out of step with the number.
+// A target of 0 means "not set".
 export type AttendedProgress = {
   dailyTargetMins: number;
   dailyActualMins: number;
@@ -396,10 +379,10 @@ export type TrainingDeployStatus = {
 
 export type AppSettings = {
   defaultFocusMode: string;
-  /** Roadmap 7.23. Seconds without input before a session stops counting as attended. */
+  /** Seconds without input before a session stops counting as attended. */
   idleThresholdSecs: number;
   pomodoro: PomodoroConfig;
-  /** Roadmap 2.16. When and how an interruption may reach the user. */
+  /** When and how an interruption may reach the user. */
   alerts: AlertDeliverySettings;
 };
 
@@ -409,22 +392,20 @@ export type PrivacySettings = {
   localOnly: boolean;
 };
 
-// Roadmap 7.6. The counts travel with the path so the UI can say "12 sessions, 340 windows"
-// rather than only naming a file — the difference between "it worked" and "here is what it
-// holds", which is the whole point of a legible export.
+// Counts travel with the path so the UI can say what the file holds.
 export type MyDataExportResult = {
   outputPath: string;
   sessionCount: number;
   windowCount: number;
-  /** Roadmap 2.15. Distraction episodes recorded during the exported sessions. */
+  /** Distraction episodes recorded during the exported sessions. */
   episodeCount: number;
   /**
-   * Roadmap 9.16. Per-record-type omissions. Both are zero now that the export is complete;
+   * Per-record-type omissions. Both are zero now that the export is complete;
    * they exist so a reintroduced cap has to say which record type it dropped.
    */
   omittedSessions: number;
   omittedWindows: number;
-  /** Roadmap 9.16 follow-up. Per-session interruption pagination omissions. */
+  /** Per-session interruption pagination omissions. */
   omittedEpisodes: number;
   /** Derived from the two counts above, never stored on its own. */
   truncated: boolean;
@@ -432,9 +413,7 @@ export type MyDataExportResult = {
   checksum: string;
 };
 
-// Roadmap 7.6. `opened` and `supported` are separate answers: an unsupported platform never
-// opens anything, but a supported one can still be refused by the OS, and the UI says
-// different things about "this build cannot" and "that did not work this time".
+// "This build cannot" (supported) and "that did not work" (opened) are different answers.
 export type OpenDataFolderResult = {
   opened: boolean;
   path: string;
@@ -448,7 +427,7 @@ export type AnalyticsHour = {
   distractedFraction: number;
 };
 
-/** Roadmap 2.9. One slice of a single session's focus over its own duration. */
+/** One slice of a single session's focus over its own duration. */
 export type FocusCurvePoint = {
   startMs: number;
   sampleCount: number;
@@ -470,7 +449,7 @@ export type AnalyticsSummary = {
 
 /** One local calendar day of the Review trend series. The *Secs fields are durations
  *  (attended from spans; focused/deep from prediction run gaps), never row counts —
- *  the row count travels separately as sampleCount (roadmap 10.13). Days with no data
+ *  the row count travels separately as sampleCount. Days with no data
  *  are omitted by the backend; charts fill the gaps. */
 export type DailySummaryDay = {
   /** Local calendar date, "YYYY-MM-DD" — the bucketing key. */
@@ -517,11 +496,11 @@ export type SummaryReport = {
   sampleCount: number;
   avgFocusScore: number;
   distractedFraction: number;
-  /** Roadmap 10.13. Seconds, not a row count. See FocusSummary.longestFocusSecs. */
+  /** Seconds, not a row count. See FocusSummary.longestFocusSecs. */
   longestFocusSecs: number;
   topContextApp: string;
   /**
-   * Roadmap 2.19. Durable attended seconds for the Review comparison window — never wall-clock
+   * Durable attended seconds for the Review comparison window — never wall-clock
    * session-open time. `plannedMins` is 0 when no daily/weekly target applies to this range.
    */
   attendedSeconds: number;
@@ -570,10 +549,8 @@ export type RollbackClassifierModelResult = {
   classifier: ClassifierStatus;
 };
 
-// A resolved export value is read as success, so a refusal shape (the browser demo's
-// answer to anything that would touch a real disk) must throw rather than map to
-// defaults like "wrote 0 sessions, complete history". Native success shapes carry no
-// ok/supported/cancelled fields, so these flags can only be a refusal.
+// A refusal shape (the browser demo's answer to disk access) must throw rather than map to
+// defaults that read as success. Native success shapes carry none of these flags.
 function throwIfUnavailable(raw: Record<string, unknown>, action: string): void {
   if (raw.ok === false || raw.supported === false || raw.cancelled === true) {
     const message = typeof raw.message === "string" && raw.message ? raw.message : action;
@@ -586,8 +563,7 @@ export const api = {
     const raw = await invoke<Record<string, unknown>>("get_health");
     return mapHealth(raw);
   },
-  // Roadmap 10.1. Ordinary UI never calls this. Acceptance-enabled desktop builds inject a
-  // page script that uses it to publish the result of a real webview.bind round trip.
+  // Only acceptance-enabled desktop builds call this, to report a real webview round trip.
   reportAcceptanceVerdict: (verdict: Record<string, unknown>) =>
     invoke<{ accepted: boolean }>("report_acceptance_verdict", { verdict }),
   getDiagnostics: async () => {
@@ -610,8 +586,6 @@ export const api = {
     const rows = await invoke<Record<string, unknown>[]>("get_prediction_history", { limit });
     return rows.map(mapPrediction);
   },
-  // Roadmap 7.33. Window-only. The `limit` form used to reach a second native computation
-  // of the same "Longest focus" tile; both now read one SQL aggregate over the whole window.
   getFocusSummary: async (range: ReviewWindowRequest = { window: "day" }) => {
     const raw = await invoke<Record<string, unknown>>("get_focus_summary", {
       window: range.window,
@@ -654,8 +628,7 @@ export const api = {
     const raw = await invoke<Record<string, unknown>>("stop_pomodoro");
     return mapPomodoroStatus(raw);
   },
-  // Roadmap 2.13. Each returns the status the timer actually reached; a control that does not
-  // apply in the current state is a no-op, not an error.
+  // Each returns the status reached; an inapplicable control is a no-op, not an error.
   pausePomodoro: async () => {
     const raw = await invoke<Record<string, unknown>>("pause_pomodoro");
     return mapPomodoroStatus(raw);
@@ -703,9 +676,7 @@ export const api = {
     source: LabelSource = "manual",
   ) =>
     invoke("submit_label", { request: { sessionId, label, notes, source } }),
-  // Roadmap 2.14. Pass null (or omit) for an answer the user skipped or cleared; the backend
-  // trims, treats blank as unanswered, and returns the saved row so the caller renders what
-  // was actually stored.
+  // null (or omitted) means skipped or cleared; returns the stored row.
   saveSessionReflection: async (
     sessionId: string,
     done: string | null,
@@ -795,8 +766,7 @@ export const api = {
     const raw = await invoke<unknown>("delete_all_activity_data");
     return mapActivityDeletionResult(raw);
   },
-  // Resolves false when the session was already gone — the caller should refresh its list
-  // rather than report a successful delete for a row that no longer existed.
+  // Resolves false when the session was already gone.
   deleteSession: (sessionId: string) =>
     invoke<boolean>("delete_session", { sessionId }),
   pickOpenFile: (options?: FileDialogOptions) =>
@@ -818,8 +788,7 @@ export const api = {
       checksum: typeof raw.checksum === "string" ? raw.checksum : "",
     } satisfies MyDataExportResult;
   },
-  // Roadmap 9.14. Read-only: it reports whether a file could be imported and what it holds,
-  // so the confirmation can name what is being adopted as well as what is being replaced.
+  // Read-only: whether the file can be imported and what it holds.
   inspectDataImport: async (path: string) => {
     const raw = await invoke<Record<string, unknown>>("inspect_data_import", { path });
     return {
@@ -872,7 +841,7 @@ export const api = {
     return mapSettings(raw ?? {});
   },
   /**
-   * Roadmap 2.16. Replaces every delivery preference at once. `snoozedUntilWallMs` is ignored
+   * Replaces every delivery preference at once. `snoozedUntilWallMs` is ignored
    * by the native side: a snooze belongs to the tray action that started it, and a Settings
    * save must not silently extend or cancel one.
    */
@@ -975,7 +944,7 @@ export const api = {
       handler(mapPrediction(event.payload));
     }),
   /**
-   * Roadmap 2.16. `inApp` says whether this event may raise an in-app alert. It is passed
+   * `inApp` says whether this event may raise an in-app alert. It is passed
    * alongside the payload rather than used to drop the event, because a snapback also
    * refreshes the timeline: silencing the alert must not silence the state update.
    */
@@ -996,7 +965,7 @@ export const api = {
       handler(event.payload, deliversInApp(event.payload)),
     ),
   /**
-   * Sustained work with no session running (Roadmap 2.7 / ADR-0005). Nothing is recorded
+   * Sustained work with no session running (ADR-0005). Nothing is recorded
    * without a session, so this is the only signal a user gets that their work is going
    * unmeasured. It asks; it never starts a session on their behalf.
    */
@@ -1004,13 +973,9 @@ export const api = {
     listen<{ message: string }>("untracked_work", (event) =>
       handler(event.payload, deliversInApp(event.payload)),
     ),
+  /** Whether the user has gone away or come back (ADR-0005). */
   /**
-   * Whether the user has gone away or come back (Roadmap 7.23 / ADR-0005). The engine has
-   * emitted this since idle detection landed; nothing consumed it, so an active session that
-   * was actually paused still displayed as running.
-   */
-  /**
-   * Roadmap 2.16. A native alert was clicked and the destination is one this side owns.
+   * A native alert was clicked and the destination is one this side owns.
    *
    * Only fires for destinations the app has to navigate for. "return to work" never arrives
    * here: it is handled natively by restore_snapback_target, which raises another
@@ -1024,7 +989,7 @@ export const api = {
   onIdle: (handler: (payload: { idle: boolean }) => void) =>
     listen<{ idle: boolean }>("idle", (event) => handler(event.payload)),
   /**
-   * Roadmap 2.10 / 2.16. The native side changed the answer to "am I being recorded?" --
+   * The native side changed the answer to "am I being recorded?" --
    * a pause, resume, or snooze from the tray, or the private-mode toggle in Settings. The
    * payload is the same shape `getRecordingStatus` returns, so the header applies it rather
    * than asking again.

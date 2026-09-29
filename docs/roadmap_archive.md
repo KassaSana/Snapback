@@ -1077,7 +1077,7 @@ both are true as of their own date.
   - **7.1** — string `<` comparison against a cutoff, after a row-count cap.
   - **7.2** — UTC hour slicing presented as local.
   - **`now_rfc3339()` uses `std::time(nullptr)`** — whole-second resolution
-    (`state.cpp:now_rfc3339`). Throttling makes collisions rare but not impossible, and ordering
+    (state.cpp as it stood then). Throttling makes collisions rare but not impossible, and ordering
     within a second is undefined for any `ORDER BY timestamp`.
 
   **Do not fix these separately.** Decide once — canonical format, storage type (text vs
@@ -3214,7 +3214,7 @@ both are true as of their own date.
 
   The original finding was:
 
-  Time is read directly in at least three places (`state.cpp:now_rfc3339`,
+  Time is read directly in at least three places (state.cpp's now_rfc3339 as it stood then,
   `storage.cpp`'s `CURRENT_TIMESTAMP`). This forces sleep-based tests, blocks testing
   idle/pomodoro/throttle interactions at real durations, and is the direct cause of the
   `_for_test` methods in 7.14. One injected clock seam fixes all of it. **Pairs naturally

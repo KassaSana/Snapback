@@ -1,17 +1,6 @@
-// Roadmap 2.11. The session cockpit's decision logic, kept pure and out of the component for
-// the reason sessionStatus.ts and activityDeletion.ts are: a rule that is only reachable
-// through a rendered card is a rule with no cheap local test.
-//
-// The item's four complaints are really one complaint. Start and Stop are always enabled, a
-// blank goal silently does nothing, duplicate clicks issue duplicate requests, and the
-// prominent running-session metadata is a UUID. In each case the card knows something it
-// declines to say: that the goal is not usable yet, that a request is already in flight, that
-// the interesting number is elapsed time rather than an id. So the fix is not new data, it is
-// letting the card answer with what it already has.
-//
-// **Presets and chips never auto-start.** ADR-0005 makes declaration explicit and manual, and
-// a chip that begins recording on click would quietly repeal that. They fill the form; the
-// user still presses Start. Everything here returns the *proposed* goal and mode.
+// The session cockpit's decision logic, kept pure: goal validation, in-flight guards, recent
+// goals, and presets. Presets and chips never auto-start (ADR-0005): they fill the form and the
+// user presses Start.
 
 import type { SessionRecord, SessionSummary } from "./api";
 
@@ -161,8 +150,7 @@ export type SessionPreset = {
 };
 
 
-// The literal, and whether the erase touches it, live in browserStorage.ts so a
-// key cannot exist without a classification (Roadmap 8.15).
+// Key literal and its erase classification live in browserStorage.ts.
 export { SESSION_PRESETS_KEY } from "./browserStorage";
 import { SESSION_PRESETS_KEY } from "./browserStorage";
 
@@ -192,12 +180,8 @@ const coercePreset = (raw: unknown): SessionPreset | null => {
 };
 
 /**
- * Read pinned presets. Any failure yields an empty list.
- *
- * Presets are a local convenience, not user data — they are derived from goals the database
- * already holds — so `localStorage` is the right home and losing them is a non-event. That is
- * also why a corrupt value is silently discarded instead of surfacing an error the user can do
- * nothing about.
+ * Read pinned presets; any failure yields an empty list. Presets hold goal text, so they are
+ * classified as activity in browserStorage.ts and cleared with "Delete all activity".
  */
 export function readSessionPresets(
   storage: StorageLike | null = defaultStorage(),
@@ -277,15 +261,9 @@ export function moveSessionPreset(
 }
 
 /**
- * Elapsed wall-clock time for a running session, formatted for the header.
- *
- * The origin is always the backend's `started_at`; `nowMs` is only the tick. That ordering is
- * the item's requirement and it matters after a sleep or a window reopen, when a browser-side
- * counter would resume from wherever it stopped and under-report the session by exactly the
- * time the user was away.
- *
- * This is *elapsed* time, deliberately not attended time: 7.23's spans are the source for the
- * latter, and inventing a second answer here is how two numbers that must agree stop agreeing.
+ * Elapsed wall-clock time for a running session. The origin is always the backend's
+ * `started_at` (so sleep or a reopened window cannot under-report); `nowMs` is only the tick.
+ * Elapsed, not attended time.
  */
 export function formatElapsed(startedAtMs: number | null | undefined, nowMs: number): string {
   if (startedAtMs === null || startedAtMs === undefined) return "--";

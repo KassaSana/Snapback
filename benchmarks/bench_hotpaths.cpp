@@ -1,13 +1,10 @@
-// Targeted hot-path micro-benchmarks for Snapback's critical components, isolating each
-// from the others (unlike bench_snapback.cpp, which times a full session replay):
+// Hot-path micro-benchmarks, each component in isolation (bench_snapback.cpp replays a full
+// session):
 //
-//   1. Producer latency   — RingBuffer<CaptureEvent,65536>::push() (wait-free? spikes?)
-//   2. Consumer drain      — drain 5,000 events -> feature extract -> heuristic classify
-//   3. Lock contention     — UI-style reads on AppState while a writer holds mutex_
-//   4. SQLite persistence  — per-tick insert (prediction + feature snapshot) on disk
-//
-// Zero-dependency <chrono> timing (see bench_util.hpp). Runs on whatever machine builds
-// it; numbers in the report are from the dev box, not fabricated.
+//   1. Producer latency   -- RingBuffer<CaptureEvent,65536>::push()
+//   2. Consumer drain     -- drain 5,000 events -> feature extract -> heuristic classify
+//   3. Lock contention    -- UI-style reads on AppState while a writer holds mutex_
+//   4. SQLite persistence -- per-tick insert (prediction + feature snapshot) on disk
 #include <algorithm>
 #include <atomic>
 #include <chrono>

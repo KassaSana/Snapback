@@ -25,8 +25,7 @@ export const AnalyticsCard = memo(function AnalyticsCard({
   onCreateAppRule,
   rangeLabel,
 }: AnalyticsCardProps) {
-  // Roadmap 10.8. Geometry lives in analyticsChart.ts so it can be tested without a DOM;
-  // this component only places what it is given.
+  // Geometry lives in analyticsChart.ts; this only places it.
   const bars = hourBars(analytics.hourly);
   const references = referenceLines();
 

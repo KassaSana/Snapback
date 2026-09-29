@@ -1,20 +1,9 @@
-// macOS system tray: an NSStatusItem in the menu bar with an NSMenu built from the shared
-// tray_menu_entries() model. Roadmap 3.1.
+// macOS tray: an NSStatusItem with an NSMenu built from tray_menu_entries().
 //
-// Two things differ from the Windows tray and are worth stating, because both are places
-// where copying tray_windows.cpp would have produced something subtly wrong.
-//
-// 1. There is no message-only window and no message pump of our own. Cocoa delivers menu
-//    clicks through the responder chain on the main thread's run loop, which webview
-//    already runs. That is why install() refuses to do anything off the main thread: an
-//    NSStatusItem created on a worker thread is undefined behaviour, and the symptom is a
-//    menu bar item that exists but never responds.
-//
-// 2. Notifications stay unimplemented on purpose. Posting one needs UNUserNotification-
-//    Center, which needs a bundle identifier, which we do not have until Roadmap 3.3
-//    packages the .app. show_notification() therefore keeps returning false — the same
-//    contract NoopTray documents, for the same reason: a caller may start trusting the
-//    return value to decide whether to fall back, and "true" here would be a lie.
+// 1. No message pump of our own: menu clicks arrive on the main run loop (which webview runs),
+//    so install() refuses off the main thread.
+// 2. Notifications are unimplemented: UNUserNotificationCenter needs a bundle identifier.
+//    show_notification() returns false, like NoopTray.
 #if defined(__APPLE__)
 
 #include "app/tray.hpp"
@@ -41,8 +30,7 @@
 }
 
 - (void)menuItemClicked:(NSMenuItem*)sender {
-    // The item's tag carries the shared command id, so this goes through exactly the same
-    // tested mapping the Win32 WM_COMMAND path uses instead of switching on the title.
+    // The tag carries the shared command id, so this uses the same mapping as Win32.
     switch (snapback::tray_action_for(static_cast<unsigned int>(sender.tag))) {
         case snapback::TrayAction::Show:
             if (callbacks_.on_show) callbacks_.on_show();
@@ -110,12 +98,10 @@ public:
         [target_ setCallbacks:std::move(callbacks)];
 
         if (!status_item_) {
-            // systemStatusBar owns the item, so retain it to keep our pointer valid for
-            // the process lifetime; the destructor removes it before releasing.
+            // Retained for the process lifetime; the destructor removes it first.
             status_item_ = [[[NSStatusBar systemStatusBar]
                 statusItemWithLength:NSVariableStatusItemLength] retain];
-            // A text glyph, not an image: there is no icon resource to load until 3.3
-            // gives us a bundle to carry one. `button` is nil only on pre-10.10 systems.
+            // A text glyph: no bundle yet to carry an icon. `button` is nil only before 10.10.
             status_item_.button.title = @"◎";
             status_item_.button.toolTip = @"Snapback";
         }
@@ -124,18 +110,11 @@ public:
         menu.autoenablesItems = NO;
         menu.delegate = target_;
         status_item_.menu = menu;
-        // The status item is what the user clicks to get the window back, so its existence is
-        // the honest answer to "did a tray install?" -- `button` is nil on systems too old to
-        // draw one, and a menu hung off nothing is not a way back.
+        // Installed only if there is a clickable button.
         return status_item_ != nil && status_item_.button != nil;
     }
 
-    // Deliberately unimplemented until Roadmap 3.3 — see the file header.
-    //
-    // Roadmap 2.16's click routing is therefore inert here, and that is a consequence rather
-    // than an omission: there is no toast to click. The remembered event/id are dropped for
-    // the same reason. When 3.3 gives this a real UNUserNotificationCenter delivery, the
-    // click handler goes in beside it and TrayCallbacks::on_notification_click is waiting.
+    // Unimplemented until the app is bundled; see the file header. Click routing is inert here.
     bool show_notification(const NotificationPayload&, AlertEvent, std::int64_t) override {
         return false;
     }

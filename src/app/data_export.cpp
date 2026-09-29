@@ -14,10 +14,7 @@ std::string or_unknown(const std::optional<std::string>& value) {
     return value && !value->empty() ? *value : "unknown";
 }
 
-// ADR-0007. This file is an edge that shows a person a time, so this is where a stored instant
-// becomes a readable one. The conversion lives here rather than in the DTO precisely so the
-// value stays comparable everywhere else -- a Markdown table is the last place a timestamp is
-// any use as a number.
+// Display edge: stored instants become readable RFC3339 here (ADR-0007).
 std::string ts_text(std::int64_t unix_ms) { return rfc3339_from_unix_ms(unix_ms); }
 
 std::string ts_text_or_unknown(const std::optional<std::int64_t>& unix_ms) {
@@ -125,10 +122,7 @@ std::string render_archive_session_header(const PersonalArchiveSession& session,
     out << "- Average focus score: " << one_decimal(recap.avg_focus_score) << " / 100\n";
     out << "- Deep focus: " << one_decimal(recap.deep_focus_pct) << "%\n";
     out << "- Interruptions recorded: " << recap.snapback_count << "\n\n";
-    // Roadmap 2.14. The user's own words, printed as prose under the metrics rather than as
-    // another bullet: this is the one part of the entry they wrote, and the export exists so
-    // they keep it. Absent when never answered — a heading over nothing would read as though
-    // the app lost something, when in fact the question was skipped.
+    // The user's own words, as prose. Omitted when never answered.
     if (record.reflection_done || record.reflection_next_step) {
         out << "#### Reflection\n\n";
         if (record.reflection_done) {
@@ -143,9 +137,7 @@ std::string render_archive_session_header(const PersonalArchiveSession& session,
 }
 
 std::string render_archive_episodes(const std::vector<SnapbackEpisode>& episodes) {
-    // Roadmap 2.15. Listed before the window table because it is the shorter, more
-    // interesting list: an interruption log is a summary of the session, where the window
-    // capture is the raw material.
+    // Episodes before the window table: the shorter, more useful list.
     if (episodes.empty()) return {};
     std::ostringstream out;
     out << render_archive_episode_table_header();
@@ -183,9 +175,7 @@ std::string render_archive_window_row(const ContextSnapshotDto& snapshot) {
 }
 
 std::string render_archive_footer(const PersonalArchiveExport& totals) {
-    // Roadmap 9.16. The manifest. Counts per record type, so "complete" is a claim the reader
-    // can check against the tables above rather than take on trust, and a checksum so a file
-    // that was cut short is distinguishable from one that legitimately holds nothing.
+    // The manifest: counts per record type and a checksum, so completeness is checkable.
     std::ostringstream out;
     out << "\n---\n\n## What this export holds\n\n";
     out << "- Sessions: " << totals.session_count << "\n";

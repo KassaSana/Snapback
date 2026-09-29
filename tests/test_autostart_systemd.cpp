@@ -14,7 +14,7 @@ using namespace snapback::systemd;
 namespace {
 
 // Hermetic by construction — the directory is a parameter, so nothing here can register the
-// test binary to start at login (Roadmap 11.7).
+// test binary to start at login.
 struct UnitDir {
     std::filesystem::path path;
 
@@ -130,7 +130,7 @@ TEST_CASE("an empty directory is refused rather than resolved against the proces
     CHECK_FALSE(remove_unit(""));
 }
 
-// Roadmap 9.4's upgrade case: reinstalled to a new path, the login entry must not still name
+// Upgrade case: reinstalled to a new path, the login entry must not still name
 // the old binary — and re-enabling must not fail because the link is already there.
 TEST_CASE("install_unit is repeatable and points at the newest path") {
     UnitDir dir;

@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 2.11. Drives the real SessionControlCard + useSession + api.ts against the mocked
+// Drives the real SessionControlCard + useSession + api.ts against the mocked
 // native boundary, so a control wired to the wrong command fails here rather than in the app.
 const boundary = vi.hoisted(() => {
   const state: {
@@ -364,7 +364,7 @@ describe("session cockpit", () => {
     );
   });
 
-  // Slice 4 of the Astra review (Roadmap 2.11 / 14.4): the switch interaction has to leave
+  // Slice 4 of the Astra review (/ 14.4): the switch interaction has to leave
   // the UI describing what storage actually holds, and drafting one must not touch the
   // session that is running.
   it("drafting a replacement changes nothing native, and Keep this session restores the draft", async () => {
@@ -481,7 +481,7 @@ describe("session cockpit", () => {
     expect(options).toHaveLength(2);
     expect(options[0]).toHaveTextContent("Ship the overlay");
 
-    // Roadmap 10.3: the field says it is a combobox with an open list.
+    // The field says it is a combobox with an open list.
     expect(input).toHaveAttribute("role", "combobox");
     expect(input).toHaveAttribute("aria-expanded", "true");
     expect(input).toHaveAttribute("aria-controls", dropdown.id);

@@ -28,8 +28,8 @@ struct ModelDeploymentRecoveryOutcome {
 // Throws on failure — for user-initiated paths that must observe a hard error.
 void recover_model_deployment(const std::filesystem::path& app_data_dir);
 
-// Roadmap 13.8. Startup-safe recovery: never throws, preserves live models, and reports what
-// the user can retry or roll back.
+// Startup-safe recovery: never throws, preserves live models, reports what can be retried or
+// rolled back.
 ModelDeploymentRecoveryOutcome recover_model_deployment_for_startup(
     const std::filesystem::path& app_data_dir);
 ModelDeploymentRecoveryOutcome retry_model_deployment_cleanup(
@@ -88,10 +88,8 @@ std::string build_pipeline_command(const std::filesystem::path& output_dir);
 
 namespace detail {
 
-// Quote a single argument for the platform shell so its contents can never be interpreted
-// as syntax. This guards `pipelineCommand`, the copy-and-paste string the user runs in their
-// own shell. The app's own training run does not go through a shell at all (see
-// training_spawn_request), so this is a display concern, not the execution boundary.
+// Quote one argument for the platform shell. Guards the copy-and-paste `pipelineCommand`; the
+// app's own training run never goes through a shell (see training_spawn_request).
 std::string shell_quote(const std::string& value);
 
 // The process the app starts for a training run, as an argv array rather than a command

@@ -1,8 +1,5 @@
-// Snapback context-recovery state machine.
-//
-// Watches the focus stream: when the user drifts to a distracting app and then
-// returns, it fires a SnapbackPayload describing where they left off ("You were
-// editing auth.ts in Snapback"). This is the product's namesake feature.
+// Snapback context-recovery state machine: when the user drifts to a distracting app and
+// returns, it fires a SnapbackPayload describing where they left off.
 #pragma once
 
 #include <functional>
@@ -17,10 +14,8 @@ namespace snapback {
 
 enum class DistractionState { Focused, Distracted, Recovering };
 
-// The single context-recovery tracker owns both the context
-// timeline snapshots AND the return-from-distraction snapback, driven by window changes +
-// on-task gating + a minimum-distraction threshold. (An earlier, simpler SnapbackTracker
-// that keyed off the classifier's focus_state was retired in favor of this faithful port.)
+// Owns both the context timeline snapshots and the return-from-distraction snapback, driven by
+// window changes, on-task gating, and a minimum-distraction threshold.
 class ContextTracker {
 public:
     void reset();

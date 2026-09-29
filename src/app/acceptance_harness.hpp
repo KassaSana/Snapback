@@ -1,4 +1,4 @@
-// Test-only support for Roadmap 10.1's real-webview acceptance round trip.
+// Test-only support for the real-webview acceptance round trip.
 #pragma once
 
 #include <filesystem>

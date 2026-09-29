@@ -1,8 +1,4 @@
-// Roadmap 10.9. The second-level nav inside Settings.
-//
-// A tablist for the same reason SurfaceNav is one: the panel below is swapped in place, which
-// is what `role="tab"` means, and keyboard users get arrow-key traversal rather than eight
-// cards of tab stops between them and the group they wanted.
+// The second-level nav inside Settings: a tablist, like SurfaceNav, with arrow-key movement.
 
 import { memo } from "react";
 

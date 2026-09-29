@@ -1,16 +1,7 @@
-// Focus summary aggregation. Roadmap 2.2 (first slice: the pure math).
-//
-// Turns a batch of prediction rows into the numbers a daily/weekly recap shows: average
-// focus, how much time read as distracted, the peak, and the longest unbroken focus run.
-// Pure over the input vector — no storage, no clock — so the recap logic is unit-testable
-// independent of the DB.
-//
-// Roadmap 7.33. `summarize_predictions` is no longer on any production path: both "Longest
-// focus" tiles now read `storage.cpp:Storage::prediction_stats`, one SQL aggregate over
-// every row in the window. This stays as the **reference implementation** the parity test in
-// `tests/test_storage.cpp` folds rows through to pin that SQL — which is the job it was
-// already doing, and how the SQL's factor-of-two error was caught. `FocusSummary` itself is
-// still the wire type the `get_focus_summary` command returns.
+// Focus summary aggregation over prediction rows: average, peak, distracted fraction, longest
+// unbroken stretch. Production reads Storage::prediction_stats; summarize_predictions is the
+// reference implementation the parity test in tests/test_storage.cpp pins that SQL against.
+// FocusSummary is the get_focus_summary wire type.
 #pragma once
 
 #include <algorithm>
@@ -33,29 +24,19 @@ struct FocusSummary {
     double peak_focus_score = 0.0;     // best single sample
     std::size_t distracted_samples = 0;
     double distracted_fraction = 0.0;  // distracted_samples / sample_count, in [0,1]
-    // Roadmap 10.13. The **duration** of the longest unbroken focused stretch, in seconds.
-    //
-    // This replaced a count of consecutive non-DISTRACTED prediction *rows*, which was shown
-    // under the time-like label "Focus streak". Predictions arrive when input produces a
-    // reading, not on a clock, so that number was not elapsed focus by any reading of it — and
-    // two people doing identical work got different values purely from typing cadence. A row
-    // count is not a duration and must never be labelled as one.
+    // Duration of the longest unbroken focused stretch, in seconds (not a row count).
     std::uint64_t longest_focus_secs = 0;
 };
 
-// Aggregate predictions in the order given (**must be chronological**, oldest first — the
-// duration below is measured between neighbours, so a reversed vector would measure the same
-// intervals backwards and report zero). Empty input yields a zeroed summary, so callers can
-// render "no data yet" without special-casing.
+// Aggregate predictions, which must be chronological (intervals are measured between
+// neighbours). Empty input yields a zeroed summary.
 inline FocusSummary summarize_predictions(const std::vector<PredictionRecord>& preds) {
     FocusSummary s;
     s.sample_count = preds.size();
     if (preds.empty()) return s;
 
     double sum = 0.0;
-    // Roadmap 10.13. The run is measured in time, so it needs the previous sample's clock as
-    // well as its verdict. `nullopt` means "no run is open": either nothing has been seen yet,
-    // or the last sample broke one.
+    // `nullopt` means no run is open.
     std::int64_t run_secs = 0;
     std::optional<std::int64_t> previous_secs;
     // A stretch of focus belongs to one session. Two sessions with a gap of seconds between
@@ -66,8 +47,6 @@ inline FocusSummary summarize_predictions(const std::vector<PredictionRecord>& p
         sum += p.focus_score;
         if (p.focus_score > s.peak_focus_score) s.peak_focus_score = p.focus_score;
 
-        // ADR-0007: already an instant, so there is nothing to parse and nothing that can
-        // fail to. The `!now_secs` branch below went with the parse it guarded.
         const std::int64_t now_secs = p.timestamp_ms / 1000;
         const bool new_session = p.session_id != previous_session;
         previous_session = p.session_id;

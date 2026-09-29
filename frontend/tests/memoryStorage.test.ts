@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { MemoryStorage, hasWorkingStorage, installMemoryStorage } from "./memoryStorage";
 
-// Roadmap 11.11. The shim itself needs a test, and it cannot be the component suite's — the
+// The shim itself needs a test, and it cannot be the component suite's — the
 // component suite is the thing that depends on it. This runs under the `tsx` runner, which
 // works on any Node, so the fallback is verified even on the runtime that made it necessary.
 

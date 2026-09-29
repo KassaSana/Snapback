@@ -35,10 +35,8 @@ std::string windows_command_line(const std::vector<std::string>& argv) {
             out += arg;
             continue;
         }
-        // The runtime's rules: a backslash is literal unless it precedes a quote, in which
-        // case each pair of backslashes is one literal backslash and the odd one escapes the
-        // quote. So a run of n backslashes before a quote we emit becomes 2n+1, and a run
-        // before the closing quote we add becomes 2n. Everywhere else it is copied as is.
+        // Windows argv rules: backslashes are literal unless before a quote, so a run of n
+        // before an emitted quote becomes 2n+1, and before the closing quote 2n.
         out += '"';
         std::size_t backslashes = 0;
         for (char c : arg) {
@@ -274,8 +272,7 @@ std::optional<ChildProcess> ChildProcess::spawn(const SpawnRequest& request,
                                      O_WRONLY | O_CREAT | O_TRUNC, 0644);
     posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
     if (request.cwd) {
-        // The _np chdir action is what lets this stay posix_spawn rather than fork+chdir+exec;
-        // glibc 2.29 and macOS 10.15 both have it, and every CI runner is far newer.
+        // The _np chdir action keeps this posix_spawn rather than fork+chdir+exec.
         const std::string cwd = request.cwd->string();
         if (const int err = posix_spawn_file_actions_addchdir_np(&actions, cwd.c_str())) {
             return fail(errno_text("addchdir", err));

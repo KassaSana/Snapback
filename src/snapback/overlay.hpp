@@ -1,10 +1,5 @@
-// The snapback overlay window.
-//
-// The C++ app uses a native, borderless, always-on-top Win32 window because webview
-// can't easily run a second WebView2 loop on the same thread, so it uses a native,
-// borderless, always-on-top Win32 window. Kept as an interface so the platform choice is
-// swappable; the placement math + text formatting are pure free functions and can be
-// unit-tested without a real window.
+// The snapback overlay window: native, borderless, always on top (a second WebView2 loop on the
+// UI thread is not practical). Placement math and text formatting are pure functions.
 #pragma once
 
 #include <functional>
@@ -14,16 +9,12 @@
 
 namespace snapback {
 
-// Overlay geometry constants, in design units at 96 DPI. Roadmap 10.12: these are no longer
-// pixel counts. On a 200% display, 420 design units is 840 physical pixels, and treating them
-// as pixels is what makes the card render physically tiny on a high-DPI monitor.
+// Overlay geometry, in design units at 96 DPI (not pixels).
 constexpr int kOverlayWidth = 420;
 constexpr int kOverlayHeight = 250;
 constexpr int kScreenMargin = 20;
 
-// Roadmap 2.16. The "Take me back" region, in the same design units as the card above.
-// Bottom-left, inset by the card's own padding, leaving the rest of the card as the dismiss
-// area it has always been.
+// The "Take me back" region, bottom-left inside the card's padding. The rest dismisses.
 constexpr int kOverlayActionWidth = 140;
 constexpr int kOverlayActionHeight = 34;
 constexpr int kOverlayActionInset = 20;
@@ -36,26 +27,15 @@ struct ScreenPoint {
     int y{};
 };
 
-// Roadmap 10.12. Which display the card belongs on, decided as a policy rather than inline at
-// the call site so the fallback order is testable without a second monitor.
-//
-// The foreground window is the right answer because it is *where the user was looking* — a
-// nudge caused by what happened on one screen appearing on another is the bug this replaces.
-// The cursor is the explicit fallback for the case the item names: there may be no foreground
-// window at all (it was just closed, or the desktop has focus). Primary is the last resort, and
-// is also what a monitor unplugged between the snapback firing and the card showing degrades
-// to — an overlay on a display that no longer exists is worse than one in the wrong corner.
+// Which display the card goes on: the foreground window's (where the user was looking), else
+// the cursor's, else the primary. A monitor unplugged in between also degrades to primary.
 enum class OverlayMonitorSource { kForegroundWindow, kCursor, kPrimary };
 
 OverlayMonitorSource choose_overlay_monitor(bool foreground_monitor_valid,
                                             bool cursor_monitor_valid);
 
-// Scale a design-unit length to physical pixels for a monitor's effective DPI.
-//
-// Rounds to nearest rather than truncating: at 150% a 1-unit border truncates to 1 pixel and
-// stays hairline, which is how "scaled" UIs end up looking unscaled in their details. A
-// nonsensical DPI (0 or negative, which is what the Win32 query returns on failure) falls back
-// to the base rather than collapsing every dimension to zero.
+// Scale design units to physical pixels for a DPI. Rounds to nearest; a nonsensical DPI (0 or
+// negative, i.e. a failed Win32 query) falls back to the base.
 int scale_for_dpi(int design_units, int dpi);
 
 struct OverlayRect {
@@ -65,75 +45,35 @@ struct OverlayRect {
     int height{};
 };
 
-// The card's physical rectangle: top-right of `work_pos`/`work_size`, scaled for `dpi`.
-//
-// The work area is passed in rather than queried so this stays pure. It is the *target
-// monitor's* work area, which is the other half of 10.12's fix — Windows was asking
-// SPI_GETWORKAREA, which always answers for the primary display no matter where the user was.
-//
-// Two properties the tests pin, because both fail silently rather than loudly:
-//   - the result always lies inside the work area, including on monitors whose origin is
-//     negative (mounted above or to the left of the primary one)
-//   - a card that would not fit is shrunk to the work area rather than allowed to clip, which
-//     is the realistic outcome at 200% on a small laptop panel
+// The card's physical rectangle: top-right of the target monitor's work area, scaled for `dpi`.
+// Always inside the work area (including negative-origin monitors); shrunk rather than clipped
+// if it does not fit.
 OverlayRect overlay_rect(ScreenPoint work_pos, ScreenPoint work_size, int dpi);
 
-// Top-right placement within a monitor's work area, with a margin.
-//
-// Answers in the top-left-origin, y-grows-downward convention: y is the distance measured
-// *downward* from the work area's top edge. That is what Win32 wants directly; Cocoa needs
-// cocoa_origin_y() below.
+// Top-right placement within a work area, with a margin. Top-left origin, y down (Win32); Cocoa
+// needs cocoa_origin_y().
 ScreenPoint top_right_position(ScreenPoint monitor_pos, ScreenPoint monitor_size,
                                int window_width, int margin);
 
-// Convert a top-down y into the y Cocoa wants.
-//
-// Cocoa positions a window by its BOTTOM-left corner on an axis that grows *upward* from
-// the bottom of the primary screen, so both the direction and the reference corner differ
-// from what top_right_position() returns. `work_area_top` is the top edge of the target
-// screen's visible frame in that same Cocoa space (NSMaxY of NSScreen.visibleFrame).
-//
-// This is a pure function with tests rather than three lines inside the .mm file because
-// getting it wrong fails quietly: the card lands at the bottom of the screen, or off it
-// entirely on a display that is not the primary one. The result is legitimately negative
-// for a screen mounted below the primary, so callers must not clamp it to zero.
+// Convert a top-down y into Cocoa's bottom-left, y-up coordinates. `work_area_top` is
+// NSMaxY(visibleFrame) of the target screen. Legitimately negative below the primary screen; do
+// not clamp.
 int cocoa_origin_y(int work_area_top, int top_down_y, int window_height);
 
-// Roadmap 2.16. Where "Take me back" sits inside a card of `card_size` at `dpi`.
-//
-// Pure, and in this file rather than inline in the Win32 paint handler, for the reason the
-// rest of this header already gives: placement math fails *quietly*. A hit region that does
-// not line up with the text drawn over it is a button that misses, and nothing crashes.
-//
-// DPI-scaled through scale_for_dpi like everything else here. A fixed-pixel rectangle over
-// DPI-scaled text is 10.12's defect in a new place: correct at 100% and wrong everywhere else.
-//
-// Coordinates are relative to the card's own top-left, which is what both a WM_PAINT rect and
-// a WM_LBUTTONUP's client-space point are already in.
+// Where "Take me back" sits inside a card of `card_size` at `dpi`, relative to the card's
+// top-left (the space WM_PAINT and WM_LBUTTONUP use). DPI-scaled like everything else.
 OverlayRect overlay_action_rect(ScreenPoint card_size, int dpi);
 
-// Whether a client-space click landed on that region.
-//
-// Half-open on the right and bottom edges, the same convention minute_in_quiet_range uses:
-// a point on the far edge belongs to the next region, so the action area and the dismiss area
-// around it cannot both claim one pixel.
+// Whether a client-space click hit that region. Half-open on the right and bottom edges.
 bool overlay_action_hit(ScreenPoint card_size, int dpi, ScreenPoint click);
 
 // The label drawn in that region. One definition so the painter and any future platform
 // cannot disagree about what the button says.
 const char* overlay_action_label();
 
-// Roadmap 2.16. What happens to app state once "Take me back" has been clicked and the card
-// is off screen. Pure and shared so the ordering is written down once and tested once; the
-// platform handlers only hide their window and call this.
-//
-// This ordering has been wrong in both directions. Dismiss-then-act cleared the payload before
-// restore_snapback_target could read it, so the button never worked. Act-then-always-dismiss
-// fixed that but broke the failure path: a restore that fails keeps its target so the frontend
-// can retry, and the dismiss that followed one line later threw that target away. The rule
-// is that the action, when it runs, owns the alert's lifecycle; the dismiss callback is the
-// fallback for a click nothing acted on, since ContextTracker's Recovering state has no
-// other exit.
+// What happens after "Take me back" is clicked and the card is hidden. If the action runs it
+// owns the alert's lifecycle (a failed restore keeps its target for a retry); the dismiss
+// callback is the fallback for a click nothing acted on.
 void settle_overlay_action(const std::function<bool()>& on_action,
                            const std::function<void()>& on_dismiss);
 
@@ -151,25 +91,13 @@ public:
     virtual void show(const SnapbackPayload& payload) = 0;
     virtual void dismiss() = 0;
 
-    // Fired whenever the card is dismissed — by the auto-dismiss timer, a click, or an
-    // explicit dismiss() call — so a caller can clear app state (ContextTracker's
-    // Recovering state has no other exit) even when the user dismisses natively instead
-    // of through the IPC `dismiss_snapback` command. main.cpp wires this once at startup.
+    // Fired on every dismiss (timer, click, dismiss()), so state is cleared even for native
+    // dismisses. ContextTracker's Recovering state has no other exit.
     virtual void set_dismiss_callback(std::function<void()> on_dismiss) = 0;
 
-    // Roadmap 2.16. Fired when the user clicks the card's "Take me back" region -- and only
-    // then. A click anywhere else on the card stays a dismiss, which is what it has always
-    // been and what people already expect from it.
-    //
-    // The overlay is the surface this matters most on: 2.16's delivery half made the snapback
-    // default overlay-only, so without this the item's headline destination would be
-    // unreachable for anyone who never turned the native channel on.
-    //
-    // Returns whether the click was acted on. True means the state side has already settled
-    // the alert -- the tracker is unlatched and the payload is either consumed or deliberately
-    // kept for a retry -- and the card must not run its dismiss callback over the top of that.
-    // False means nothing claimed the click (stale id, already used), and dismissing is the
-    // only way left to unlatch the tracker. See settle_overlay_action.
+    // Fired only for a click on the "Take me back" region. Returns true when state already
+    // settled the alert, in which case the dismiss callback must not run; false means nothing
+    // claimed the click and dismissing is the only way to unlatch the tracker.
     virtual void set_action_callback(std::function<bool()> on_action) = 0;
 
     static Overlay& instance();

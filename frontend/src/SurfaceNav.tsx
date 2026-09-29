@@ -1,9 +1,5 @@
-// Navigation between the three surfaces defined in ADR-0003.
-//
-// Implemented as a real tablist rather than styled buttons: the panel it controls is
-// swapped in place, which is what `role="tab"` means, and it gives keyboard users
-// arrow-key movement for free-ish. Roadmap 10.3 (accessibility) is still open, but the
-// shell is the one place worth getting right up front — every surface inherits it.
+// Navigation between the three surfaces (ADR-0003): a real tablist, since the panel is swapped
+// in place, with arrow-key movement.
 
 import { memo } from "react";
 

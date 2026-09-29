@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { PredictionHistoryCard } from "../src/ActivityCards";
 import type { PredictionRecord } from "../src/api";
 
-// Roadmap 10.3. Recent Predictions showed two bare numbers per row, and the risk level lived
+// Recent Predictions showed two bare numbers per row, and the risk level lived
 // only in the chip's colour. These pin what the row says without sight of the colour.
 
 afterEach(() => {

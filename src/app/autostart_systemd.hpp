@@ -1,25 +1,12 @@
-// Linux start-on-login, via a systemd **user** unit. Roadmap 3.0, second half.
+// Linux start-on-login via a systemd user unit.
 //
-// Two things make this different from the launchd agent, and both are easy to get wrong:
+//  1. Writing the unit does not enable it: the `<target>.wants/` symlink does, and it is created
+//     directly rather than via systemctl.
+//  2. `%` is a systemd specifier, so paths are escaped.
 //
-//  1. **Writing the unit file does not enable it.** launchd starts anything it finds in
-//     ~/Library/LaunchAgents; systemd only starts units that something *wants*. `systemctl
-//     --user enable` reads the unit's `[Install] WantedBy=` and creates a symlink in
-//     `<target>.wants/`. That symlink is the enablement, so this module creates it directly
-//     rather than shelling out to systemctl — the same end state, no subprocess.
-//  2. **Unit files have their own escaping.** `%` introduces a systemd specifier (`%h` is the
-//     home directory), so an unescaped `%` in a path silently expands into something else.
-//     A directory like `/home/kassa/100%backup` is unusual but entirely legal.
-//
-// Known limitation, stated rather than hidden: this hangs Snapback off
-// `graphical-session.target`, which only exists on desktops that integrate with systemd.
-// GNOME does; some others do not, and there the unit is written but never triggered. The
-// alternative — an XDG `~/.config/autostart/*.desktop` file — is desktop-environment driven
-// and more universal. The roadmap specified systemd, so that is what this implements; the
-// XDG fallback is the natural follow-up if a real Linux user reports it.
-//
-// As with launchd, everything here compiles and is tested on every OS, and every function
-// takes its directory as an argument so no test can touch a real login item (Roadmap 11.7).
+// Limitation: hangs off graphical-session.target, which not every desktop provides; an XDG
+// autostart file would be the fallback. Every function takes its directory as an argument so
+// tests never touch a real login item.
 #pragma once
 
 #include <filesystem>

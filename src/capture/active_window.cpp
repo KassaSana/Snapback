@@ -82,20 +82,10 @@ std::optional<ActiveWindow> query_active_window_for_hwnd(HWND hwnd) {
 #endif
 
 #if defined(__APPLE__)
-// Ask a browser for its own tab title.
-//
-// Chromium-family apps do not expose their windows through System Events' accessibility
-// window list — `name of front window` fails outright with "Can't get window 1 of process
-// ... Invalid index. (-1719)". Measured 2026-07-25: Cursor and Obsidian return titles fine,
-// Google Chrome errors. That matters more than it sounds: for a browser the title is the
-// *only* thing distinguishing work from distraction, and `kDistractingTitleKeywords`
-// ("youtube", "reddit", "twitter", …) matches against the title. With it empty, an
-// afternoon of video reads exactly like an afternoon of documentation.
-//
-// Chromium apps share Chrome's scripting terminology, so one `using terms from` block
-// serves all of them. It runs as a *separate* osascript invocation on purpose: `using terms
-// from` resolves at compile time, so folding it into the main script would break the whole
-// query on a machine without Chrome installed.
+// Ask a browser for its own tab title. Chromium-family windows are not exposed through System
+// Events (`name of front window` errors), and for a browser the title is what separates work
+// from distraction. A separate osascript call because `using terms from` resolves at compile
+// time and would break the whole query without Chrome installed.
 std::optional<std::string> browser_tab_title(const std::string& app_name) {
     static constexpr std::array<const char*, 5> kChromium = {
         "Google Chrome", "Brave Browser", "Microsoft Edge", "Chromium", "Vivaldi"};
@@ -125,11 +115,7 @@ std::optional<ActiveWindow> query_active_window() {
 #if defined(_WIN32)
     return query_active_window_for_hwnd(GetForegroundWindow());
 #elif defined(__APPLE__)
-    // The title lookup is wrapped in `try` so that losing it does not cost us the app name
-    // too. Before this, both statements were unguarded: `name of front window` fails for
-    // Chromium browsers, which made the whole script error, produced no tab in the output,
-    // and returned nullopt — so the engine learned *nothing* about the foreground app at the
-    // exact moment it most needed to (a browser). Every app-category flag read zero.
+    // The title lookup is in `try`, so losing it (Chromium) still returns the app name.
     auto output = run_command(
         "osascript "
         "-e 'set appName to \"\"' "

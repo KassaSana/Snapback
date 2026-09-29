@@ -1,23 +1,6 @@
-// ROADMAP 11.2 — property tests for the numeric core.
-//
-// `features.cpp` and `classifier.cpp` are pure functions over a feature vector, and until now
-// they were covered only by example-based cases: a hand-built vector, a hand-checked answer.
-// That style verifies the cases someone thought of, which is the same blind spot behind 7.1
-// (the tests never seeded past the cap) and 5.2 (a `focus_state` outside the four labels
-// shipped). Both would have been caught mechanically by an assertion that holds for *every*
-// input rather than for the chosen ones.
-//
-// Two deliberate choices about how this is written.
-//
-// **The seed is fixed.** A property test that draws fresh randomness each run turns a real
-// defect into an intermittent one and trains everybody to re-run it — the exact failure mode
-// 11.1 just finished untangling in the capture layer. A fixed seed means the same 5,000
-// vectors every run on every host, so a failure is reproducible on the machine that saw it
-// *and* on the machine that has to fix it. The cost is that the corpus is fixed too; widening
-// it is a deliberate edit, which is the right place for that decision.
-//
-// **Failures print the counterexample.** An invariant violation is worthless if you cannot see
-// which vector caused it, so every check reports the iteration and the inputs that matter.
+// Property tests for the numeric core (features.cpp, classifier.cpp): invariants that hold for
+// every input, not just hand-picked examples. The seed is fixed so a failure reproduces on any
+// host, and failures print the counterexample.
 #include "doctest_wrapper.hpp"
 
 #include <array>
@@ -274,7 +257,7 @@ TEST_CASE("guardrails force DISTRACTED whenever any of their conditions fires") 
 }
 
 TEST_CASE("guardrails never raise the state — policy is demote-only") {
-    // ADR-0004, which settled ROADMAP 7.18. The characterization test that sat here pinned
+    // ADR-0004, which settled The characterization test that sat here pinned
     // the opposite behaviour: the drift branch excluded only DEEP_FOCUS, so a row the model
     // called DISTRACTED — with risk under the mode threshold — was softened to
     // PSEUDO_PRODUCTIVE. The property below is the one that originally failed on 246 of

@@ -1,10 +1,5 @@
-// ONNX Runtime inference, enabled with the SNAPBACK_ONNX build option.
-//
-// ONNX Runtime ships a first-class C++
-// API, so there's no `ort` wrapper crate to fight. Gated by the SNAPBACK_ONNX CMake
-// option (a PUBLIC define on snapback_core). When the
-// option is off, this is a stub whose loaded() is always false and the classifier falls
-// back to the heuristic.
+// ONNX Runtime inference, behind the SNAPBACK_ONNX build option. When off, loaded() is always
+// false and the classifier uses the heuristic.
 #pragma once
 
 #include <array>
@@ -49,36 +44,18 @@ public:
     static std::optional<std::filesystem::path> resolve_model_path(
         const std::filesystem::path& app_data_dir);
 
-    // Runs the 31-feature vector through the graph and returns the raw class probabilities
-    // [DISTRACTED, PSEUDO_PRODUCTIVE, PRODUCTIVE, DEEP_FOCUS].
-    //
-    // **nullopt means inference failed** — no model, a throwing Run(), or no usable 4-class
-    // tensor in the outputs — and the caller must fall back to the heuristic. It used to
-    // return default-constructed scores on failure, indistinguishable from a real
-    // prediction and carrying an empty focus_state straight into the database.
-    //
-    // Returns probabilities rather than PredictionScores on purpose: turning them into
-    // scores requires the user's context (Block rules, goal alignment, thrash/drift), which
-    // this layer has no business knowing. That layering mistake is what let the ONNX path
-    // quietly ignore user configuration — see Classifier::predict.
-    //
-    // Non-const because Ort::Session::Run mutates session state.
+    // Raw class probabilities [DISTRACTED, PSEUDO_PRODUCTIVE, PRODUCTIVE, DEEP_FOCUS] for the
+    // 31-feature vector. nullopt means inference failed and the caller falls back to the
+    // heuristic. Probabilities, not scores: scoring needs the user's context, which this layer
+    // does not know. Non-const because Ort::Session::Run mutates state.
     std::optional<std::array<double, 4>> infer_probabilities(const FeatureVector& features);
 
-    // Whether the four floats a model handed back are usable as class weights: every entry
-    // finite and non-negative, and at least one of them positive. Not "within [0, 1]": the
-    // classifier normalises the row by its sum (scores_from_probas), so an unnormalised
-    // linear head -- which is what the fixture model is, and what a Gemm-only export
-    // produces -- is a valid output, while a negative entry corrupts that normalisation
-    // and NaN or an all-zero row is no prediction at all. Checked here rather than in the
-    // classifier because this is a property of the model's output contract, not of scoring.
+    // Usable class weights: all finite and non-negative, at least one positive. Not required to
+    // sum to 1 (the classifier normalises), so an unnormalised linear head is valid.
     static bool valid_class_probabilities(const std::array<double, 4>& probas);
 
-    // Inference health, separate from load health. A model can load and still fail every
-    // Run() (a runtime fault, an output the validator rejects), in which case the classifier
-    // falls back to the heuristic per prediction. `loaded()` alone would then keep reporting
-    // the ONNX backend for predictions the heuristic actually made. Both reset on
-    // load/unload; `last_inference_failed()` follows each Run() outcome.
+    // Inference health, separate from load health: a loaded model can still fail every Run().
+    // Both reset on load/unload.
     bool last_inference_failed() const {
         return last_inference_failed_.load(std::memory_order_relaxed);
     }

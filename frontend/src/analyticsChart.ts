@@ -1,15 +1,6 @@
-// Roadmap 10.8. The geometry and wording of the hourly focus chart, as pure functions.
-//
-// Split out of AnalyticsCard for the reason sessionStatus.ts and idleThreshold.ts were: the
-// component suite cannot run on this machine (11.11), so anything reachable only through a
-// rendered component is untested locally. Chart geometry is exactly the kind of thing that
-// looks right and is wrong.
-//
-// The bug this replaces: every bar was drawn as a fraction of the *largest value in the
-// current dataset*. A user whose best hour scored 20/100 saw that hour at full height, so the
-// chart said "this is your peak" where the number said "this is poor" — and the two were the
-// same measurement. A missing hour was drawn identically to a measured zero, which made "we
-// have no idea" and "you were completely distracted" the same picture.
+// Geometry and wording of the hourly focus chart, as pure functions. Bars are on the fixed
+// 0-100 score scale (not relative to the best hour), and a missing hour is drawn differently
+// from a measured zero.
 
 import type { AnalyticsHour } from "./api";
 
@@ -41,7 +32,7 @@ export type HourBar = {
   hasData: boolean;
   /** Accessible/tooltip text. Carries the sample count and distraction rate, not just a score. */
   label: string;
-  /** The two halves of `label`, for the chart's data table (Roadmap 10.3): the hour, and the rest. */
+  /** The two halves of `label`, for the chart's data table: the hour, and the rest. */
   name: string;
   detail: string;
 };
@@ -108,12 +99,8 @@ export function hourBars(hourly: readonly AnalyticsHour[]): HourBar[] {
 /**
  * How the top-apps list describes its numbers.
  *
- * `context_app_counts` counts context snapshot rows, which the engine writes periodically as
- * well as on a real window change. Calling them "switches" therefore overstated app-hopping
- * for anyone who sat in one window — the longer you stayed put, the more "switches" you were
- * credited with. Roadmap 10.8 is explicit that the SQL count must not be renamed by wish, so
- * the label describes what is actually counted and a real switch/dwell metric stays a separate
- * question.
+ * `context_app_counts` counts context snapshot rows, written periodically as well as on a real
+ * window change, so they are "samples", not "switches".
  */
 export function contextSampleLabel(count: number): string {
   return `${count} ${count === 1 ? "sample" : "samples"}`;

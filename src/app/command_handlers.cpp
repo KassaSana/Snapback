@@ -35,24 +35,15 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     const auto report_acceptance_verdict =
         std::make_shared<std::function<void(const json&)>>(
             std::move(ui.report_acceptance_verdict));
-    // Training consumes the export's files and privacy deletion erases them, so neither may
-    // overlap a partially written pair. Export and training share the worker, which already
-    // serialises them; the gate is what the UI-thread deletion reads.
+    // Set while a training export writes; deletion refuses meanwhile.
     const auto training_export_active = std::make_shared<std::atomic<bool>>(false);
-    // Held for the length of a Python run, which reads the export's CSVs and writes its model
-    // and log into the same directory. Export cannot overlap it (same worker); the UI-thread
-    // deletion can, and reads this to refuse.
+    // Set for the length of a Python run, which reads and writes the export directory.
     const auto training_active = std::make_shared<std::atomic<bool>>(false);
-    // Raised by cancel_training, read by the run at each poll, cleared when the next run
-    // claims the gate. Set only while the gate is held, so a click after a run has ended
-    // cannot cancel the run after that.
+    // Raised by cancel_training, polled by the run, cleared when the next run claims the gate.
     const auto training_cancel_requested = std::make_shared<std::atomic<bool>>(false);
     // Personal exports write one archive; two at once would race on the same path.
     const auto personal_export_active = std::make_shared<std::atomic<bool>>(false);
-    // The three below were synchronous bindings until 2026-09-16, which put a full database
-    // copy (VACUUM INTO) and two file writes on the webview's thread. Each has the same
-    // shape as the exports: a worker job, one gate, and a UI-thread command that must not
-    // touch the same files while the gate is held.
+    // Worker-job gates: a UI-thread command must not touch these files while one is running.
     const auto summary_export_active = std::make_shared<std::atomic<bool>>(false);
     const auto support_export_active = std::make_shared<std::atomic<bool>>(false);
     const auto import_staging_active = std::make_shared<std::atomic<bool>>(false);
@@ -88,9 +79,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     registry.add("get_prediction_history", [&state](const json& a) {
         return json(state.prediction_history(detail::clamp_limit(a, 8)));
     });
-    // Roadmap 7.33. One window, one aggregate. The `limit` form this used to accept was a
-    // second computation of the same tile and had no caller; the frontend always sends a
-    // window.
     registry.add("get_focus_summary", [&state](const json& a) {
         return json(state.focus_summary_for_window(a.at("window").get<std::string>(),
                                                    detail::opt_string(a, "since")));
@@ -122,8 +110,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         const auto label = state.session_auto_label(a.at("sessionId").get<std::string>());
         return label ? json(*label) : json(nullptr);
     });
-    // Roadmap 2.9. `buckets` defaults to 60 and is capped at 240: a curve drawn in a card
-    // gains nothing from more slices than it has pixels, and the cap bounds the result.
+    // `buckets` defaults to 60, capped at 240.
     registry.add("get_session_focus_curve", [&state](const json& a) {
         std::size_t buckets = 60;
         if (a.contains("buckets") && !a.at("buckets").is_null()) {
@@ -145,11 +132,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         }
         return json(state.session_history(detail::clamp_limit(a, 20)));
     });
-    // Roadmap 2.14. Both answers are optional, and blank is not an answer:
-    // validate_optional_text trims and turns "" into nullopt, so Skip, an all-whitespace
-    // submission, and clearing a previous answer all land on the same NULL the schema uses
-    // for "never answered". Returns the saved row so the UI renders what was stored rather
-    // than what it hoped was stored.
+    // Both answers optional; blank becomes nullopt. Returns the saved row.
     registry.add("save_session_reflection", [&state](const json& a) {
         auto sid = detail::validate_required_text(
             "Session ID", a.at("sessionId").get<std::string>(), detail::kMaxSessionIdLen);
@@ -171,9 +154,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
              [&state](const json&) { return json(state.start_pomodoro()); });
     registry.add("stop_pomodoro",
              [&state](const json&) { return json(state.stop_pomodoro()); });
-    // Roadmap 2.13. Each returns the resulting status, so the UI renders the state the timer
-    // actually reached rather than the one the click hoped for — pause on an already-ended
-    // phase, or acknowledge on a running one, are deliberate no-ops.
+    // Each returns the resulting status; out-of-phase clicks are no-ops.
     registry.add("pause_pomodoro", [&state](const json&) { return json(state.pause_pomodoro()); });
     registry.add("resume_pomodoro",
              [&state](const json&) { return json(state.resume_pomodoro()); });
@@ -183,9 +164,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
              [&state](const json&) { return json(state.restart_pomodoro_phase()); });
     registry.add("acknowledge_pomodoro_phase",
              [&state](const json&) { return json(state.acknowledge_pomodoro_phase()); });
-    // Roadmap 2.10. One status, one command. The header and the tray both call this rather
-    // than each deriving "am I recording?" from health plus settings, which is how two
-    // surfaces come to disagree about the only question this app must never be vague on.
     registry.add("get_recording_status",
              [&state](const json&) { return json(state.recording_status()); });
     registry.add("pause_recording_privately", [&state](const json& a) {
@@ -194,9 +172,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     });
     registry.add("resume_recording",
              [&state](const json&) { return json(state.resume_from_private_pause()); });
-    // Roadmap 2.16. Deliberately a sibling of the two above rather than a mode of them: this
-    // silences *delivery* and leaves recording running, and the returned status says both --
-    // `state` still reads Recording while `alertSnoozeRemainingMs` counts down.
+    // Silences delivery only; `state` still reads Recording while the snooze counts down.
     registry.add("snooze_alerts", [&state](const json& a) {
         // 0 (or absent) means the default 30 minutes, which is what the tray action sends.
         return json(state.snooze_alerts_for(a.value("minutes", std::int64_t{0})));
@@ -209,8 +185,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         state.dismiss_untracked_nudge(a.value("minutes", std::int64_t{60}));
         return json{{"dismissed", true}};
     });
-    // Roadmap 2.19. Opt-in attended-minute targets. Reported together with the actuals so
-    // the UI never has to pair a plan with a total fetched separately and possibly later.
     registry.add("get_attended_progress",
              [&state](const json&) { return json(state.attended_progress()); });
     registry.add("set_attended_targets", [&state](const json& a) {
@@ -241,8 +215,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         return json(nullptr);
     });
     registry.add("get_settings", [&state](const json&) { return json(state.settings()); });
-    // Roadmap 7.23. Returns the whole settings object rather than null so the UI renders the
-    // value the app actually accepted, not the one it optimistically sent.
+    // Returns the accepted settings.
     registry.add("set_idle_threshold", [&state](const json& a) {
         state.set_idle_threshold_secs(a.at("seconds").get<std::int64_t>());
         return json(state.settings());
@@ -283,9 +256,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         state.set_privacy_exclusions(std::move(exclusions));
         return json(state.privacy_settings());
     });
-    // Roadmap 8.12. Returns what was deleted, what could not be, and what was deliberately
-    // kept. It used to return null, which left the UI able to say only "deleted" or "failed"
-    // for an operation that can half-succeed.
+    // Returns what was deleted, what failed, and what was kept.
     registry.add("delete_all_activity_data",
              [&state, training_export_active, training_active, summary_export_active,
               personal_export_active](
@@ -299,9 +270,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
             throw std::runtime_error(
                 "summary export is in progress; wait for it to finish before deleting activity");
         }
-        // Deleting exports/training under a running pipeline would take its inputs away
-        // mid-read and race its outputs. Training only became concurrent with this command
-        // when it moved off the UI thread, which is why the check is newer than its sibling.
+        // Refuse while a training run reads the export directory.
         if (training_active->load(std::memory_order_acquire)) {
             throw std::runtime_error(
                 "training is in progress; wait for it to finish before deleting activity");
@@ -312,27 +281,20 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         }
         return json(state.delete_all_activity_data());
     });
-    // Roadmap 7.6: "delete everything" was the only eraser available, which makes removing
-    // one bad session cost the user their whole history. Reports whether a row was actually
-    // removed rather than returning null, so the UI can distinguish a stale list entry from
-    // a successful delete instead of silently claiming success for an id that never existed.
+    // Reports whether a row was removed, so a stale list entry is distinguishable.
     registry.add("delete_session", [&state](const json& a) {
         auto sid = detail::validate_required_text("Session ID",
                                                   a.at("sessionId").get<std::string>(),
                                                   detail::kMaxSessionIdLen);
         return json(state.delete_session(sid));
     });
-    // Roadmap 7.6: "local-only" is a claim the user cannot check without being able to reach
-    // the files. `path` comes back whether or not the file manager opened, because "we could
-    // not open it, here is where it is" is still an answer the user can act on — and on a
-    // platform with no backend it is the *only* one.
+    // `path` is returned even when no file manager opened, so the user can still find it.
     registry.add("open_data_folder", [data_dir](const json&) {
         return json{{"path", data_dir.string()},
                     {"supported", reveal_supported()},
                     {"opened", reveal_directory(data_dir)}};
     });
-    // Roadmap 8.14. External links leave through the OS browser; this is the native half of
-    // the shim's click interceptor. Only http/https/mailto are accepted.
+    // External links open in the OS browser. Only http/https/mailto.
     registry.add("open_external_url", [](const json& a) {
         auto url =
             detail::validate_required_text("URL", a.at("url").get<std::string>(), 4096);
@@ -342,7 +304,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         return json{{"supported", open_external_url_supported()},
                     {"opened", open_external_url(url)}};
     });
-    // Roadmap 10.14. Native OS file pickers for import and export.
     registry.add("pick_open_file", [](const json& a) {
         FileDialogOptions options{};
         if (a.contains("options") && !a.at("options").is_null()) {
@@ -444,9 +405,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         },
         training_export_active, "training export is already in progress");
 
-    // Roadmap 9.14. The missing direction. `inspect` is read-only and exists so the
-    // confirmation can state what the user is about to adopt *and* what they are about to lose;
-    // a destructive replace behind a single unlabelled button is the wrong shape for this.
+    // Read-only preview of what an import adopts and what it replaces.
     registry.add("inspect_data_import", [data_dir](const json& a) {
         const auto candidate = inspect_import_candidate(
             std::filesystem::path(detail::opt_string(a, "path").value_or("")),
@@ -457,11 +416,8 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
                     {"sessionCount", candidate.session_count}};
     });
 
-    // Staged rather than applied, because the swap cannot happen while this process holds the
-    // database open — see data_import.hpp. Returns what will happen at the next launch.
-    // Staging is a VACUUM INTO of the whole incoming database: seconds for a mature one, all
-    // of it disk-bound, so it runs on the worker. The two commands below that read or remove
-    // the staged file check the gate rather than race a copy in progress.
+    // Staged, not applied: the swap cannot happen while this process holds the database (see
+    // data_import.hpp). VACUUM INTO is slow, so it runs on the worker.
     registry.add_async(
         "stage_data_import",
         [data_dir](const json& a) {
@@ -493,20 +449,13 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         return json{{"pending", !staging && has_staged_import(data_dir / "focoflow.db")}};
     });
 
-    // Roadmap 7.6: the legible counterpart to export_training_data. Separate command and
-    // separate directory because they answer different questions and have different audiences
-    // — one is for a training script, this one is for the person being recorded.
-    // Reads every session, window, and episode the user has and writes them out. That was a
-    // synchronous binding, so a long history on a slow disk held the UI thread for the whole
-    // write; it now runs on the same worker the training export uses, behind its own gate.
+    // Personal export: everything recorded about the user, as Markdown, on the worker.
     registry.add_async(
         "export_my_data",
         [&state, data_dir](const json&) {
             const auto result = state.export_personal_data(data_dir / "exports" / "personal");
-            // Roadmap 9.16. Per-record-type omission counts and the body checksum travel with
-            // the path. `truncated` is derived from the counts rather than being its own
-            // field, so the old failure -- reporting a complete export after dropping windows
-            // from an included session -- cannot be expressed on the wire either.
+            // Per-type omission counts and the checksum travel with the path; `truncated` is
+            // derived.
             return json{{"outputPath", result.output_path},
                         {"sessionCount", result.session_count},
                         {"windowCount", result.window_count},
@@ -537,12 +486,8 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         training_deploy::write_training_repo_path(data_dir, repo_path);
         return json(nullptr);
     });
-    // Training runs Python for minutes. It was a sync binding, which runs on the webview's
-    // own thread: the window froze for the whole run. On the worker it also has to be
-    // cancellable, because the runner joins that worker at shutdown -- quitting mid-run
-    // would otherwise wait for Python to finish. The predicate reads the runner's state and
-    // the user's cancel live, so a job that starts during the shutdown drain, or after a
-    // cancel that arrived while it was still queued, ends at its first poll.
+    // Training runs Python for minutes, so it runs on the worker and must be cancellable (the
+    // runner joins the worker at shutdown).
     registry.add_async(
         "train_from_export",
         [&state, data_dir, training_export_active, training_cancel_requested,
@@ -584,12 +529,8 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         if (running) training_cancel_requested->store(true, std::memory_order_release);
         return json{{"requested", running}};
     });
-    // AUD-16 / P0-08: deliberately NOT developer-gated, unlike the three commands above.
-    // ADR-0006 scopes developer tooling to *producing* a model — training, repo-path config,
-    // train-from-export, the CLI copy surface. Recovering from a bad deployed model is the
-    // other half of that line and belongs to the user: someone whose classifier was ruined by
-    // a deployment must not need SNAPBACK_DEV_TRAINING or a Debug build to escape it. The
-    // asymmetry with its siblings is the decision, not an oversight.
+    // Not developer-gated (ADR-0006 scopes only model *production*): recovering from a bad
+    // model must not need a dev build.
     registry.add("rollback_classifier_model", [&state, data_dir, training_active](const json&) {
         if (training_active->load(std::memory_order_acquire)) {
             throw std::runtime_error(
@@ -599,8 +540,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         result["classifier"] = state.reload_classifier_model();
         return result;
     });
-    // Roadmap 13.8. Retries startup-safe deployment cleanup without restarting the app.
-    // Ungated for the same reason as rollback above: recovery, not production.
+    // Ungated for the same reason as rollback.
     registry.add("retry_model_deployment_cleanup", [&state, training_active](const json&) {
         if (training_active->load(std::memory_order_acquire)) {
             throw std::runtime_error(

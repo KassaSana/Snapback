@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Roadmap 10.9. Navigation and focus for the second level inside Settings, plus the two
+// Navigation and focus for the second level inside Settings, plus the two
 // behaviours that are allowed to move the user: a deep link, and a real actionable failure.
 const boundary = vi.hoisted(() => {
   const state: { health: Record<string, unknown>; settings: Record<string, unknown> } = {
@@ -115,7 +115,7 @@ describe("Settings second-level navigation", () => {
     expect(sectionTab("General")).toHaveAttribute("aria-controls", "settings-panel-general");
   });
 
-  // Roadmap 10.3. The panel used to close after its heading and blurb, so every control in
+  // The panel used to close after its heading and blurb, so every control in
   // the section was a sibling of an empty tabpanel.
   it("puts the section's controls inside its tabpanel", async () => {
     render(<App />);

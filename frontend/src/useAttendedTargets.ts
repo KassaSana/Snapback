@@ -2,9 +2,7 @@ import { useCallback, useState } from "react";
 
 import { api, type AttendedProgress } from "./api";
 
-// Roadmap 2.19. Off until someone opts in: zero targets and zero attendance is what a fresh
-// install shows, and is also what a failed load leaves in place rather than an error banner
-// over a card nobody asked for.
+// Off until opted in; a failed load leaves this in place rather than an error banner.
 const EMPTY_PROGRESS: AttendedProgress = {
   dailyTargetMins: 0,
   dailyActualMins: 0,

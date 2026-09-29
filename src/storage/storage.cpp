@@ -59,16 +59,9 @@ constexpr std::array<std::string_view, 31> kFeatureColumns = {
     throw std::runtime_error(std::string(action) + ": " + msg);
 }
 
-// The counting busy handler. Roadmap 14.11.
-//
-// `PRAGMA busy_timeout` and `sqlite3_busy_handler` are the same slot -- installing one
-// replaces the other -- so counting the waits means owning the wait. The schedule below is
-// SQLite's own documented one (`sqliteDefaultBusyCallback`), reproduced so the *behaviour*
-// is unchanged and only the counting is new: back off 1, 2, 5, 10, 15, 20, 25, 25, 25, 50,
-// 50, then 100 ms a time, and stop at kSqliteBusyTimeoutMs in total.
-//
-// Returning 1 means "retry"; returning 0 hands the caller SQLITE_BUSY, which is the outcome
-// that costs the engine a drained batch.
+// Counting busy handler. Installing it replaces PRAGMA busy_timeout, so it reproduces SQLite's
+// own back-off schedule (1, 2, 5, 10, 15, 20, 25, 25, 25, 50, 50, then 100 ms) up to
+// kSqliteBusyTimeoutMs. 1 means retry; 0 hands the caller SQLITE_BUSY.
 int counting_busy_handler(void* raw_stats, int attempts) {
     static constexpr int kDelaysMs[] = {1, 2, 5, 10, 15, 20, 25, 25, 25, 50, 50, 100};
     static constexpr int kElapsedMs[] = {0, 1, 3, 8, 18, 33, 53, 78, 103, 128, 178, 228};
@@ -207,25 +200,15 @@ std::optional<std::string> column_opt_text(sqlite3_stmt* stmt, int column) {
     return column_text(stmt, column);
 }
 
-// ADR-0007. An optional instant: NULL in the column means the fact that there is no such
-// moment -- a session still running, an episode whose start nobody recorded -- and that has to
-// survive the read rather than collapse into a stand-in value.
-//
-// There is no conversion left in this file. The columns are INTEGER epoch milliseconds and the
-// DTOs carry the same, so a timestamp is read and written as itself; RFC3339 is produced at the
-// edges that show one to a person. That is the decision's whole point, and it is why nothing
-// here calls `rfc3339_from_unix_ms`.
+// An optional instant (ADR-0007): NULL means there is no such moment (a running session, an
+// episode with no recorded start). Columns and DTOs are both epoch ms, so no conversion.
 std::optional<std::int64_t> column_opt_ms(sqlite3_stmt* stmt, int column) {
     if (sqlite3_column_type(stmt, column) == SQLITE_NULL) return std::nullopt;
     return sqlite3_column_int64(stmt, column);
 }
 
-// The column list every `sessions` read shares, and the count `read_session` consumes.
-//
-// Named rather than spelled out per query because it was spelled out six times, and 2.14 had
-// to touch all six to add two columns. A query that needs more than these appends its own
-// after the list and reads them from kSessionColumnCount onward, so adding a column here can
-// never silently shift somebody else's index.
+// The column list every `sessions` read shares. A query that needs more appends after it and
+// reads from kSessionColumnCount onward.
 constexpr const char* kSessionColumns =
     "session_id, goal, status, focus_mode, started_at, ended_at, "
     "reflection_done, reflection_next_step";
@@ -305,9 +288,7 @@ void write_user_version(sqlite3* db, int version) {
 }
 
 
-// ADR-0007. The one wall-clock reading, in the one representation. `unix_now_secs` returned a
-// double of seconds and existed solely because `feature_snapshots.timestamp` was REAL; that
-// column is INTEGER milliseconds as of schema v7, so the exception it served is gone.
+// The one wall-clock reading, in epoch milliseconds (ADR-0007).
 std::int64_t unix_now_ms() {
     using clock = std::chrono::system_clock;
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -331,11 +312,6 @@ std::string make_uuid_v4() {
     return out.str();
 }
 
-// ADR-0007 collapsed the matched pair this used to be. `retention_cutoff_rfc3339` and
-// `retention_cutoff_unix_secs` existed only to express one instant in the two formats the
-// tables disagreed on; the tables agree now, so one function answers for all three. Both are
-// deleted rather than left for a caller who might reasonably assume they were still the way to
-// ask -- an unused second representation is what this decision exists to prevent.
 std::int64_t retention_cutoff_unix_ms(int retention_days) {
     return unix_now_ms() -
            static_cast<std::int64_t>(retention_days) * 24 * 60 * 60 * 1000;
@@ -394,11 +370,8 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         }
         Storage storage(db);
         exec(storage.db_, "PRAGMA foreign_keys = ON;");
-        // WAL + NORMAL: commits append to the write-ahead log and only fsync at
-        // checkpoints, instead of an fsync per statement (synchronous=FULL default). This
-        // is the single biggest win for the engine's per-tick write latency, and it's
-        // still crash-safe (a power loss can lose the last few committed txns, never
-        // corrupt the DB) — the right trade for local focus telemetry.
+        // WAL + NORMAL: fsync at checkpoints rather than per commit. Crash-safe (a power loss
+        // can lose the last few commits, never corrupt the file).
         exec(storage.db_, "PRAGMA journal_mode = WAL;");
         exec(storage.db_, "PRAGMA synchronous = NORMAL;");
         // Wait briefly on SQLITE_BUSY instead of failing the first contended BEGIN, and
@@ -438,10 +411,8 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         }
         return storage;
     } catch (const std::exception& err) {
-        // Previously a bare `catch (...)` returning nullopt, which made a corrupt DB, a
-        // permissions error, a failed migration, and a full disk indistinguishable to the
-        // caller — and to the user, who just saw the app decline to start. The inner
-        // prune/vacuum handlers already logged; only this outer one was blind.
+        // Log the cause: a corrupt DB, a permissions error, a failed migration, and a full disk
+        // would otherwise all look like "the app will not start".
         std::ostringstream msg;
         msg << "storage: failed to open " << db_path << ": " << err.what();
         log.error(msg.str());
@@ -536,11 +507,8 @@ Storage::Savepoint::Savepoint(Storage& storage, const char* name)
 
 Storage::Savepoint::~Savepoint() {
     if (done_) return;
-    // Best-effort rollback; a destructor must never throw, so use the raw API directly.
-    //
-    // ROLLBACK TO undoes the work but leaves the savepoint on the stack — it is not a pop.
-    // The RELEASE is what pops it, and omitting it would leave a savepoint holding the
-    // enclosing transaction open for the rest of the process.
+    // Best-effort rollback; a destructor must not throw. ROLLBACK TO does not pop the savepoint
+    // -- the RELEASE does, and omitting it would hold the enclosing transaction open.
     char* error = nullptr;
     const std::string sql =
         "ROLLBACK TO " + std::string(name_) + "; RELEASE " + std::string(name_) + ";";
@@ -557,11 +525,8 @@ namespace {
 
 // --- Schema migrations -------------------------------------------------------------------
 //
-// Ordered and append-only. `version` is the user_version the database carries *after* the
-// step runs, so the runner applies every entry with version > the stored one. See
-// kSchemaVersion in storage.hpp for the two rules these must obey — in particular that each
-// one is idempotent, because user_version 0 means "fresh file" and "install from before
-// versioning" indistinguishably, and both replay from 0.
+// Ordered and append-only. `version` is the user_version *after* the step runs. Each must be
+// idempotent; see kSchemaVersion in storage.hpp.
 
 void migrate_baseline_schema(sqlite3* db) {
     exec(db,
@@ -699,17 +664,12 @@ void migrate_baseline_schema(sqlite3* db) {
          )sql");
 }
 
-// Databases written before model provenance existed lack predictions.model_id. Kept as a
-// separate step rather than folded into the baseline because a pre-versioning install
-// already has the `predictions` table, so `CREATE TABLE IF NOT EXISTS` would skip it and
-// the column would never appear.
+// A separate step because a pre-versioning install already has `predictions`, so the baseline's
+// CREATE TABLE IF NOT EXISTS would skip adding the column.
 void migrate_prediction_model_id(sqlite3* db) { ensure_prediction_model_id_column(db); }
 
-// ADR-0004: records which guardrail decided focus_state ('risk'/'thrash'/'block'/'drift'),
-// or 'model' when the classifier's own argmax stood. Nullable with no default, deliberately:
-// pre-decision rows had their focus_state overwritten in place and the model's argmax was
-// never stored, so nothing can backfill why a verdict disagrees with its scores. NULL means
-// "written before verdicts carried provenance" and stays NULL forever.
+// ADR-0004: which rule decided focus_state. Nullable, no default, no backfill: NULL means
+// "written before verdicts carried provenance".
 void migrate_prediction_state_source(sqlite3* db) {
     Stmt columns(db, "PRAGMA table_info(predictions)");
     while (columns.step_row()) {
@@ -724,15 +684,8 @@ struct Migration {
     void (*apply)(sqlite3* db);
 };
 
-// Roadmap 7.23 / ADR-0005. Active time is stored as spans rather than accumulated into a
-// column on `sessions`: a running counter is mutable in-memory state that a crash loses,
-// which is the same shape as the bug 7.20 fixed. Spans are durable, and they make active
-// duration a query rather than something the app has to remember to keep correct.
-//
-// Deliberately **not backfilled**. A session that predates this table has no idle history,
-// so inventing one full-width span would silently restate every historical duration as if it
-// had been measured. Sessions with no spans report no active duration at all, and callers
-// fall back to elapsed — an honest discontinuity instead of a fabricated number.
+// ADR-0005: active time is durable spans rather than an in-memory counter a crash loses. Not
+// backfilled: older sessions report no active duration and callers fall back to elapsed.
 void migrate_session_spans(sqlite3* db) {
     exec(db,
          R"sql(
@@ -748,23 +701,9 @@ void migrate_session_spans(sqlite3* db) {
          )sql");
 }
 
-// Roadmap 2.15. `snapback_events` has existed since the baseline schema and `recap()` has
-// always counted rows in it, but **nothing ever wrote one** — there was no production
-// `INSERT INTO snapback_events` anywhere in the tree, so every user's Snapback count was zero
-// and the only non-zero values ever seen came from hand-seeded test databases.
-//
-// Turning the write on needs more than the original two columns. A count of interruptions is
-// not an answer to "what interrupted me"; the episode needs when it began, how long it lasted,
-// and enough context to describe the way back — which the payload already carries and threw
-// away.
-//
-// The UNIQUE index is the idempotence the item asks for. An episode is identified by the
-// session it happened in and the moment it began, so a duplicate tick, a delivery retry, or a
-// restart that re-drains the same payload lands on `INSERT OR IGNORE` and writes nothing.
-//
-// Columns are added rather than the table recreated: a pre-versioning install already has
-// `snapback_events`, so `CREATE TABLE IF NOT EXISTS` would skip it and the columns would never
-// appear — the same trap `migrate_prediction_model_id` documents.
+// Distraction episodes. The UNIQUE (session_id, started_at) index makes the write idempotent
+// under INSERT OR IGNORE. Columns are ALTERed in because pre-versioning installs already have
+// `snapback_events`.
 void migrate_snapback_episodes(sqlite3* db) {
     std::vector<std::string> existing;
     {
@@ -781,31 +720,15 @@ void migrate_snapback_episodes(sqlite3* db) {
     if (!has("app_name")) exec(db, "ALTER TABLE snapback_events ADD COLUMN app_name TEXT");
     if (!has("file_hint")) exec(db, "ALTER TABLE snapback_events ADD COLUMN file_hint TEXT");
 
-    // Rows written before this migration have a NULL started_at. SQLite treats NULLs as
-    // distinct in a UNIQUE index, so they neither collide with each other nor block the index
-    // — which is the right outcome: nothing can reconstruct when those episodes began.
+    // Legacy rows have NULL started_at; SQLite treats NULLs as distinct, so they coexist.
     exec(db,
          "CREATE UNIQUE INDEX IF NOT EXISTS idx_snapback_events_episode "
          "ON snapback_events(session_id, started_at)");
 }
 
-// Roadmap 2.14. Two nullable columns on `sessions`, deliberately not a table of their own: a
-// reflection is exactly one optional pair per session, so a row per session with NULLs is the
-// honest shape and a join buys nothing.
-//
-// Nullable with no default, and no backfill. NULL means "never answered", which is the same
-// state Skip leaves behind — the product promise is that skipping costs one click and records
-// nothing, so an empty string would be a different, wrongly-answered state. Sessions that
-// predate this simply never had the chance to answer.
-//
-// These are kept off the `labels` table on purpose. A label is a training signal; this is the
-// user writing to their future self, and 2.14 is explicit that it stays out of training data
-// unless a later decision says otherwise. Storing them apart is what makes that enforceable
-// rather than a convention the exporter has to remember.
-//
-// ALTER rather than CREATE: a pre-versioning install already has `sessions`, so a
-// CREATE TABLE IF NOT EXISTS would skip it and the columns would never appear — the trap
-// migrate_prediction_model_id documents.
+// Session reflection: two nullable columns, no default, no backfill (NULL means unanswered,
+// which is also what Skip leaves). Kept off `labels`: a reflection is a note, not training
+// data. ALTER because pre-versioning installs already have `sessions`.
 void migrate_session_reflection(sqlite3* db) {
     std::vector<std::string> existing;
     {
@@ -824,38 +747,16 @@ void migrate_session_reflection(sqlite3* db) {
 }
 
 
-// ADR-0007 / Roadmap 7.16. Every point in time becomes UTC milliseconds since the epoch,
-// stored as INTEGER, in one migration rather than one per table.
+// ADR-0007: every point in time becomes INTEGER UTC milliseconds, in one migration.
 //
-// **Why all twelve columns move together.** `close_dangling_session_span` takes MAX over a
-// UNION ALL of `predictions`, `context_snapshots`, and `snapback_events`. SQLite orders
-// storage classes before values -- every INTEGER sorts below every TEXT -- so a half-migrated
-// schema would make that MAX silently return the unmigrated table's value every time,
-// regardless of which is actually later. A migration split by table would therefore pass its
-// own tests and corrupt attended time in exactly the quiet way this ADR exists to end.
+// All columns move together: close_dangling_session_span takes MAX over several tables, and
+// SQLite sorts every INTEGER below every TEXT, so a half-migrated schema would silently pick
+// the wrong value. Tables are rebuilt because a TEXT-affinity column would convert integers
+// back to text on write. Storage::migrate turns foreign keys off around the upgrade and runs
+// foreign_key_check before committing.
 //
-// **Why the tables are rebuilt rather than patched.** SQLite has no ALTER COLUMN TYPE, and
-// the obvious shortcut -- UPDATE the values in place and leave the column declared TEXT -- is
-// worse than doing nothing: a TEXT-affinity column converts an integer back to text on the way
-// in, so every subsequent write would silently re-introduce the representation this migration
-// exists to remove. Affinity is the whole point of the change, so the declared type has to
-// move. `Storage::migrate` turns foreign keys off around the whole upgrade and runs
-// `foreign_key_check` before committing -- see the reasoning there, which this migration is
-// what made necessary.
-//
-// **What happens to a value that does not parse.** `strftime` yields NULL for one, and the
-// rule is uniform: a genuine NULL stays NULL, and an unparseable value becomes 0 -- the epoch.
-// Neither dropping the row nor failing the migration is right. Dropping destroys user data
-// during an upgrade, and failing turns a corrupt import into an app that will not open.
-// Mapping to 0 keeps the row, and 0 is older than any retention window, so the next prune
-// collects it under the ordinary policy. That is the honest end state for a row whose time is
-// unknown, and it is a strict improvement: these are precisely the rows that used to outlive
-// every retention pass forever, because `datetime()` returned NULL and `NULL < x` is NULL.
-//
-// A genuine NULL must be preserved rather than folded into 0, because NULL is load-bearing in
-// three places: `sessions.ended_at` and `session_spans.ended_at` mean "still open", and
-// `snapback_events.started_at` means "recorded before episodes carried a start". Mapping a bad
-// value to NULL instead would resurrect a completed session as a running one.
+// Unparseable values become 0 (the epoch), so the next prune collects them. Genuine NULLs stay
+// NULL: ended_at NULL means "still open", started_at NULL means "never recorded".
 void migrate_time_to_epoch_ms(sqlite3* db) {
     // TEXT -> epoch ms. NULL in, NULL out; unparseable in, 0 out.
     const auto ms = [](const std::string& col) {
@@ -1010,9 +911,7 @@ void migrate_time_to_epoch_ms(sqlite3* db) {
     exec(db, "DROP TABLE session_spans");
     exec(db, "ALTER TABLE session_spans_v7 RENAME TO session_spans");
 
-    // feature_snapshots is the one column that was never TEXT: REAL Unix *seconds*, which is
-    // why `prune_runtime_data` had to take its cutoff twice. It converts arithmetically rather
-    // than through strftime, and stops being the schema's documented exception.
+    // feature_snapshots held REAL epoch seconds; converted arithmetically.
     exec(db, R"sql(
         CREATE TABLE feature_snapshots_v7 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1067,11 +966,8 @@ void migrate_time_to_epoch_ms(sqlite3* db) {
     exec(db, "DROP TABLE feature_snapshots");
     exec(db, "ALTER TABLE feature_snapshots_v7 RENAME TO feature_snapshots");
 
-    // Every index lived on a table that has just been dropped, so they are recreated here
-    // rather than left to the baseline migration -- which does not run for an existing
-    // database. Same names and same column order as migrate_baseline_schema, deliberately:
-    // `index_names()` is asserted against in the suite precisely so that a dropped index
-    // cannot become a silent full scan.
+    // The rebuilt tables lost their indexes; recreate them with the same names and column order
+    // as migrate_baseline_schema (index_names() is asserted in tests).
     exec(db, R"sql(
         CREATE INDEX IF NOT EXISTS idx_predictions_session_ts
             ON predictions(session_id, timestamp DESC);
@@ -1126,21 +1022,16 @@ std::string pre_migration_backup_name(int from_version) {
 
 namespace {
 
-// True if this database has any user objects at all. Version 0 is ambiguous — it means both
-// "brand-new file" and "install from before versioning existed" (see kSchemaVersion) — and
-// backing up an empty file on every first run would be pure noise. The presence of a table
-// is the one signal that distinguishes them after the fact.
+// True if the database has any user objects. Distinguishes a brand-new file (nothing to back
+// up) from a pre-versioning install, since both have user_version 0.
 bool has_user_data(sqlite3* db) {
     Stmt stmt(db, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' "
                   "AND name NOT LIKE 'sqlite_%'");
     return stmt.step_row() && sqlite3_column_int64(stmt.get(), 0) > 0;
 }
 
-// Roadmap 7.22. VACUUM INTO rather than copying the file: the database is open in WAL mode,
-// so bytes on disk are not the whole story — recent commits may live in -wal and a plain copy
-// of the .db alone can be a torn read. VACUUM INTO asks SQLite for a consistent single-file
-// snapshot, which is exactly the guarantee a restore needs. It also cannot run inside a
-// transaction, which is why this happens before migrate() opens one.
+// VACUUM INTO gives a consistent single-file snapshot even in WAL mode, where a plain file copy
+// can be torn. It cannot run inside a transaction, hence before migrate() opens one.
 void back_up_before_migration(sqlite3* db, const std::filesystem::path& db_path, int from,
                               Logger* logger) {
     const auto backup = db_path.parent_path() / pre_migration_backup_name(from);
@@ -1150,9 +1041,7 @@ void back_up_before_migration(sqlite3* db, const std::filesystem::path& db_path,
     // does not masquerade as a fresh one if the new write fails.
     std::filesystem::remove(backup, ec);
 
-    // Bound parameter, not string interpolation: a data directory can legitimately contain a
-    // quote (a Windows user named O'Brien is enough), and hand-quoting a path into SQL is the
-    // kind of thing that works until it silently does not.
+    // Bound parameter: a data directory can contain a quote.
     Stmt stmt(db, "VACUUM INTO ?1");
     stmt.bind(1, backup.string());
     stmt.step_done();
@@ -1168,11 +1057,8 @@ void back_up_before_migration(sqlite3* db, const std::filesystem::path& db_path,
 void Storage::migrate(const std::filesystem::path& db_path, Logger* logger) {
     const int from = read_user_version(db_);
 
-    // A database stamped newer than this build understands was written by a later version
-    // of Snapback. Opening it anyway is the dangerous option, not the friendly one: our
-    // INSERTs omit columns that build may have added as NOT NULL, and our reads would
-    // silently ignore data the user can still see in the newer build. Refuse loudly and
-    // leave the file untouched — Storage::open turns this into a logged nullopt.
+    // A database from a newer build: refuse and leave it untouched. Our INSERTs could omit its
+    // NOT NULL columns and our reads would ignore its data.
     if (from > kSchemaVersion) {
         throw std::runtime_error("database schema version " + std::to_string(from) +
                                  " is newer than this build understands (" +
@@ -1182,15 +1068,9 @@ void Storage::migrate(const std::filesystem::path& db_path, Logger* logger) {
 
     if (from == kSchemaVersion) return;  // already current; skip the DDL entirely
 
-    // Roadmap 7.22. Back up before touching anything. The transaction below already handles a
-    // migration that *fails* — it rolls back to `from`. What it cannot help with is a
-    // migration that succeeds and is wrong: a bad UPDATE or a botched backfill commits, and
-    // kSchemaVersion's own rule that a released migration is never edited makes that
-    // permanent for everyone who upgrades. This copy is the only recovery path.
-    //
-    // Deliberately not fatal. Refusing to start because a backup failed would turn a
-    // disk-space problem into "the app will not open", which is worse than the risk it
-    // guards; the migration is still transactional either way. Log loudly and continue.
+    // Back up before touching anything: the transaction covers a migration that fails, not one
+    // that succeeds and is wrong. Not fatal -- a failed backup must not stop the app from
+    // opening.
     if (!db_path.empty() && has_user_data(db_)) {
         try {
             back_up_before_migration(db_, db_path, from, logger);
@@ -1202,34 +1082,19 @@ void Storage::migrate(const std::filesystem::path& db_path, Logger* logger) {
         }
     }
 
-    // Foreign keys off for the duration, which is SQLite's documented procedure for any
-    // migration that rebuilds a table (7.16 does; see `migrate_time_to_epoch_ms`).
-    //
-    // The reason is not squeamishness about constraints. `DROP TABLE` on a parent performs an
-    // implicit `DELETE FROM` when foreign keys are on, so dropping `sessions` registers one
-    // violation per child row -- and recreating the table under the same name does not clear
-    // them, because the counter tracks row operations rather than the schema. `PRAGMA
-    // defer_foreign_keys` only postpones that verdict to COMMIT, so it converts an immediate
-    // failure into a failure at the end; it does not avoid it. This has to be set *before*
-    // BEGIN, because `PRAGMA foreign_keys` is a silent no-op inside a transaction.
-    //
-    // What replaces the enforcement is `foreign_key_check` below, run while the transaction is
-    // still open. That is strictly stronger here: it audits the whole database rather than only
-    // the rows this migration happened to touch.
+    // Foreign keys off for the duration: SQLite's documented procedure for table rebuilds (DROP
+    // TABLE on a parent counts one violation per child row, which recreation does not clear).
+    // Must be set before BEGIN. foreign_key_check below replaces the enforcement.
     struct ForeignKeyGuard {
         sqlite3* db;
         ~ForeignKeyGuard() {
-            // A destructor must not throw, and this runs on the failure path too -- where the
-            // transaction has already rolled back and leaving enforcement off would be the
-            // worse outcome.
+            // Also runs on the failure path; must not throw.
             sqlite3_exec(db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr);
         }
     } foreign_key_guard{db_};
     exec(db_, "PRAGMA foreign_keys = OFF;");
 
-    // One transaction for the whole upgrade. SQLite makes DDL transactional, so a failure
-    // half-way through rolls back to the version we started at rather than leaving a
-    // database that is neither the old shape nor the new one.
+    // One transaction for the whole upgrade; DDL is transactional in SQLite.
     Transaction tx(*this);
     for (const Migration& migration : kMigrations) {
         if (migration.version <= from) continue;
@@ -1237,10 +1102,7 @@ void Storage::migrate(const std::filesystem::path& db_path, Logger* logger) {
     }
     write_user_version(db_, kSchemaVersion);
 
-    // Inside the transaction on purpose: a rebuild that dropped a row's parent, or a copy that
-    // lost a key, must roll the whole upgrade back rather than commit a database whose
-    // references no longer resolve. Reported with the offending table named, because "foreign
-    // key constraint failed" with no subject is the least actionable error SQLite produces.
+    // Inside the transaction, so a broken reference rolls the upgrade back. Names the table.
     {
         Stmt check(db_, "PRAGMA foreign_key_check");
         if (check.step_row()) {
@@ -1328,18 +1190,9 @@ std::optional<SessionRecord> Storage::get_session(const std::string& session_id)
 }
 
 SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
-    // Roadmap 7.20. Closing the previous session and inserting the replacement are one
-    // atomic step. Split across two statements, a failing insert left the user with *no*
-    // active session: their old one already completed and the requested one absent. That is
-    // strictly worse than either outcome the caller expects, and it is unrecoverable —
-    // nothing afterwards knows the close was meant to be conditional on the insert.
-    //
-    // The rule this preserves is unchanged: starting a session still replaces an existing
-    // one. Only the failure path differs, and only by leaving the old session running.
-    //
-    // Savepoint rather than Transaction because callers already wrap this: the large
-    // storage fixture seeds sessions inside one outer transaction, and a nested BEGIN there
-    // would throw. See Savepoint's comment in storage.hpp.
+    // Closing the previous session and inserting the new one are one atomic step, so a failed
+    // insert leaves the old session running. Savepoint because callers may already hold a
+    // Transaction.
     Savepoint savepoint(*this, "create_session");
 
     const std::int64_t ended_at_ms = unix_now_ms();
@@ -1371,23 +1224,15 @@ SessionRecord Storage::create_session(const std::string& goal, FocusMode mode) {
 }
 
 bool Storage::begin_session_span(const std::string& session_id, std::int64_t started_at_ms) {
-    // Close-then-open in one transaction. If a pause was missed (a crash, a dropped idle
-    // edge), reopening without closing would leave two overlapping spans and double-count
-    // the overlap forever — and no later code could tell which of the two was wrong.
+    // Close-then-open atomically, so a missed pause cannot leave overlapping spans.
     Savepoint savepoint(*this, "begin_session_span");
-    // Checked before the close, not only in the INSERT below, because the close is not
-    // harmless on a session that is not ACTIVE: it would stamp a dangling span with *this*
-    // call's timestamp, crediting every hour since the process died as attended. That is
-    // the exact answer close_dangling_session_span() exists to avoid giving.
+    // Checked before the close: closing a dangling span here would credit all downtime.
     if (!session_is_active(session_id)) return false;
 
     close_session_span(session_id, started_at_ms);
 
-    // The INSERT re-states the guard as a SELECT so it also holds for a caller that read
-    // the status a moment ago and raced a stop. An open span on a COMPLETED session is
-    // unbounded damage rather than one wrong row — every attendance query measures an open
-    // span as COALESCE(ended_at, now), so it grows forever, and nothing ever closes it:
-    // shutdown and hydration only touch the *active* session.
+    // The INSERT re-checks ACTIVE, so a racing stop cannot leave an open span on a completed
+    // session (which would grow forever).
     Stmt insert(db_,
                 "INSERT INTO session_spans (session_id, started_at) "
                 "SELECT ?1, ?2 FROM sessions WHERE session_id = ?1 AND status = 'ACTIVE'");
@@ -1408,10 +1253,7 @@ std::int64_t Storage::session_span_timestamp_now(std::int64_t millis_ago) const 
 }
 
 bool Storage::close_session_span_now(const std::string& session_id, std::int64_t secs_ago) {
-    // Off the same clock the rest of this file stamps with. This used to round-trip through
-    // SQL and RFC3339 text purely to express "now minus N seconds" in the stored format;
-    // milliseconds are arithmetic, so the detour is gone along with the whole-second rounding
-    // it silently imposed on a value 7.23 cares about to the second.
+    // Same clock the rest of this file stamps with.
     return close_session_span(session_id, session_span_timestamp_now(secs_ago * 1000));
 }
 
@@ -1428,10 +1270,7 @@ bool Storage::close_session_span(const std::string& session_id, std::int64_t end
 }
 
 std::optional<std::int64_t> Storage::close_dangling_session_span(const std::string& session_id) {
-    // The last wall-clock evidence the user was present during this session. MAX over a
-    // UNION ALL of per-table maxima rather than a UNION of rows: each subquery is answered by
-    // that table's session index, so this stays three index probes no matter how many rows
-    // the session recorded.
+    // Last evidence of presence: MAX over per-table maxima, each an index probe.
     Stmt evidence(db_,
                   "SELECT MAX(ts) FROM ("
                   "  SELECT MAX(timestamp) AS ts FROM predictions WHERE session_id = ?1"
@@ -1451,8 +1290,6 @@ std::optional<std::int64_t> Storage::close_dangling_session_span(const std::stri
     if (!open_span.step_row()) return std::nullopt;
     const std::int64_t started_at_ms = sqlite3_column_int64(open_span.get(), 0);
 
-    // Integers compare as instants. This used to lean on RFC3339 sorting lexicographically,
-    // which is true only for a fixed-width UTC format and quietly false for anything else.
     const std::int64_t ended_at_ms =
         last_seen && *last_seen > started_at_ms ? *last_seen : started_at_ms;
     close_session_span(session_id, ended_at_ms);
@@ -1462,10 +1299,8 @@ std::optional<std::int64_t> Storage::close_dangling_session_span(const std::stri
 
 std::optional<std::uint64_t> Storage::active_secs(const std::string& session_id,
                                                   std::int64_t now_ms) {
-    // ROUND per span, not a truncating CAST over the sum. julianday returns a double, so a
-    // 30-minute span computes as 1799.9999... and CAST truncates it to 1799; two of them lost
-    // a second and turned an exact hour into 3599. Each span is a measurement in whole
-    // seconds, so each is rounded before being summed.
+    // ROUND per span, not CAST over the sum: julianday returns a double, and truncation loses a
+    // second per span.
     Stmt stmt(db_,
               "SELECT COUNT(*), CAST(COALESCE(SUM(ROUND(MAX(0, "
               "  (COALESCE(ended_at, MAX(started_at, ?2)) - started_at) / 1000.0"
@@ -1552,34 +1387,17 @@ std::vector<SessionRecord> Storage::recent_sessions(std::size_t limit) {
 
 namespace {
 
-// Roadmap 2.19. Attended seconds inside one local-time window, clipped per span.
-//
-// ADR-0007 simplified this rather than merely retyping it. Every value used to be converted to
-// local time *before* being compared -- `julianday(MIN(datetime(COALESCE(ended_at, ?1),
-// 'localtime'), :window_end))` -- because the columns were text and a text comparison is only
-// meaningful between two strings on the same clock. Integers are absolute instants, so the
-// comparison is now direct and local time survives in exactly one place: computing where the
-// window's calendar boundaries fall. That is the ADR's rule stated as code -- local time is
-// applied when a value is bucketed for a report, never when it is filtered or compared.
-//
-// DST still needs no special case, for the same reason as before: the boundary expressions
-// resolve 'localtime' per instant, so an hour that repeats or never happens is handled by the
-// conversion rather than by arithmetic on a fixed offset.
-//
-// ROUND before CAST for the reason active_secs documents: a truncating CAST loses a second per
-// span. The sum is in milliseconds and is divided once at the end, so the rounding happens on
-// the total rather than per span.
+// Attended seconds inside one local-time window, clipped per span. Local time appears only when
+// computing the window's calendar boundaries (ADR-0007); comparisons are on instants.
+// 'localtime' resolves per instant, so DST needs no special case. The sum is ms, rounded once.
 constexpr const char* kAttendedInWindowSql =
     "SELECT CAST(ROUND(COALESCE(SUM(MAX(0,"
     "  MIN(COALESCE(ended_at, ?1), :window_end)"
     "  - MAX(started_at, :window_start)"
     ")), 0) / 1000.0) AS INTEGER) FROM session_spans";
 
-// A local calendar boundary, as epoch milliseconds. `unixepoch` reads the bound instant,
-// `localtime` moves it onto the user's clock, the caller's modifiers land on the boundary, and
-// `utc` converts the result back to an absolute instant -- without that last step the value
-// would be a local wall-clock reading compared against UTC instants, which is the off-by-one-
-// timezone bug this whole conversion exists to avoid.
+// A local calendar boundary as epoch ms: unixepoch -> localtime -> caller modifiers -> utc.
+// Without the final `utc` it would compare a local reading against UTC instants.
 std::string local_boundary_ms(const std::string& modifiers) {
     return "(strftime('%s', ?1 / 1000.0, 'unixepoch', 'localtime'" + modifiers +
            ", 'utc') * 1000)";
@@ -1613,9 +1431,7 @@ std::uint64_t Storage::attended_secs_in_local_day(std::int64_t now_ms) {
 }
 
 std::uint64_t Storage::attended_secs_in_local_week(std::int64_t now_ms) {
-    // ISO weeks: Monday to Sunday. `weekday 1` moves *forward* to the next Monday, so stepping
-    // back six days first lands on the Monday on or before today -- including when today is
-    // itself Monday, which is the case a naive `weekday 1` gets wrong by a whole week.
+    // ISO weeks start Monday. Step back six days, then `weekday 1`, so Monday itself stays put.
     return attended_in_window(
         db_, now_ms,
         local_boundary_ms(", 'start of day', '-6 days', 'weekday 1'"),
@@ -1624,13 +1440,7 @@ std::uint64_t Storage::attended_secs_in_local_week(std::int64_t now_ms) {
 
 std::uint64_t Storage::attended_secs_since(std::int64_t now_ms,
                                            const std::optional<std::int64_t>& since_ms) {
-    // Roadmap 2.19. Same clip arithmetic as the day/week helpers, but the lower bound is an
-    // instant from the Review range rather than a calendar expression. Open spans use `now` as
-    // their end, so a still-running session does not invent future attendance.
-    //
-    // Neither bound goes through `local_boundary_ms`: both are absolute instants already, and
-    // this is the case that shows why the old code's blanket local conversion was the wrong
-    // shape. "Since this moment" has no calendar boundary to find.
+    // Lower bound is an instant, so no calendar boundary is needed. Open spans end at `now`.
     if (!since_ms) {
         // 0 is the epoch, which is before any span this app could have recorded.
         return attended_in_window(db_, now_ms, "0", "?1");
@@ -1657,13 +1467,8 @@ std::uint64_t Storage::attended_secs_since(std::int64_t now_ms,
 std::optional<SessionRecord> Storage::save_session_reflection(
     const std::string& session_id, const std::optional<std::string>& done,
     const std::optional<std::string>& next_step) {
-    // Roadmap 2.14. One UPDATE, both columns, every time — including the nullopt case, which
-    // writes NULL. A "only update what was provided" variant would make clearing an answer
-    // impossible to express, and the edit path in 2.9 needs exactly that.
-    //
-    // No status check. A reflection is offered at the end of a session but the item calls it
-    // editable afterwards, so refusing to write one to a COMPLETED session would forbid the
-    // ordinary case rather than a wrong one.
+    // One UPDATE for both columns, including NULL, so clearing an answer is expressible. No
+    // status check: reflections are editable after the session ends.
     {
         Stmt stmt(db_,
                   "UPDATE sessions SET reflection_done = ?1, reflection_next_step = ?2 "
@@ -1681,27 +1486,15 @@ std::optional<SessionRecord> Storage::save_session_reflection(
         stmt.bind(3, session_id);
         stmt.step_done();
     }
-    // Re-read rather than trusting sqlite3_changes(): an UPDATE that sets a column to the value
-    // it already held reports zero rows changed, which would make a genuine no-op save
-    // indistinguishable from a missing session.
+    // Re-read rather than trusting sqlite3_changes(), which is 0 for a no-op update.
     return get_session(session_id);
 }
 
 std::vector<SessionSummary> Storage::recent_session_summaries(
     std::size_t limit, const std::optional<std::int64_t>& started_after_ms) {
     const std::int64_t now_ms = unix_now_ms();
-    // All three queries below re-derive "the most recent `limit` sessions" independently,
-    // so they must agree on *which* sessions those are. `started_at` is milliseconds since
-    // ADR-0007, which makes ties rarer than the whole seconds this comment used to describe
-    // but not impossible, and SQLite does not promise that two differently-shaped queries
-    // break a tie the same way. If they disagreed, a session present in the result would miss
-    // its aggregates and silently
-    // report zeros. `session_id` is the primary key, so adding it to the ORDER BY gives a
-    // total order and removes the ambiguity.
-    //
-    // It is a determinism tiebreak, not a chronological one: session_id is a random UUIDv4,
-    // so this makes the order *stable*, not *correct*. Recovering true sub-second order is
-    // 7.16's job.
+    // All three queries select "the newest `limit` sessions" independently, so they need a
+    // total order: session_id breaks started_at ties (for stability, not chronology).
 
     // Query 1: the sessions themselves, plus the duration recap() computes separately.
     // Ordering and LIMIT match recent_sessions() exactly so the two stay interchangeable.
@@ -1737,10 +1530,8 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
     }
     if (out.empty()) return out;
 
-    // Query 2: every prediction aggregate recap() computes, grouped in one pass. The
-    // expressions are copied verbatim from recap() — including the deliberate absolute 0.7
-    // distraction bar, which is a product decision documented there and in ADR-0004, not a
-    // threshold to unify here.
+    // Query 2: recap()'s prediction aggregates in one pass, including the absolute 0.7
+    // distraction bar (see recap() and ADR-0004).
     {
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
@@ -1795,12 +1586,8 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
         }
     }
 
-    // Query 4: attended time (Roadmap 7.23). Grouped like the others rather than calling
-    // active_secs() per session — this whole function exists because that shape cost 1 + 5N
-    // round trips under the storage mutex, and adding an N back would undo 7.12.
-    //
-    // A session with no spans does not appear here, so its recap keeps `active_secs` empty:
-    // "never measured", which is exactly right for sessions predating the table.
+    // Query 4: attended time, grouped rather than one active_secs() call per session. Sessions
+    // with no spans are absent, so their active_secs stays empty.
     {
         Stmt stmt(db_,
                   "WITH recent AS (SELECT session_id FROM sessions "
@@ -1863,14 +1650,8 @@ std::size_t Storage::count_statements_for_test(const std::function<void()>& body
     return count;
 }
 
-// Roadmap 14.13. See the declarations in `storage.hpp` for why each of these is built in
-// two spellings rather than written once with `(?N IS NULL OR timestamp >= ?N)`, and why the
-// difference is visible only in a query plan. `predictions_since` already built two strings
-// for exactly this reason; these three had not followed it.
-//
-// `ANALYZE` was tried instead and rejected: `sqlite_stat1` carries per-index average row
-// counts, not a value histogram, so the planner still picks the seek for a whole-table bound.
-// The two spellings are the answer, not a tuning knob.
+// Two spellings per query (with/without cutoff) rather than `(?N IS NULL OR ...)`, which is not
+// sargable; see storage.hpp. ANALYZE does not fix it: sqlite_stat1 has no histogram.
 std::string prediction_stats_sql(bool with_cutoff) {
     return std::string(
                "SELECT COUNT(*), COALESCE(AVG(focus_score), 0), "
@@ -1936,32 +1717,12 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::int6
         }
     }
 
-    // Roadmap 10.13 + 7.12. The longest unbroken focused stretch, as a **duration**, computed
-    // in SQL rather than by reading every row back into C++.
+    // Longest unbroken focused stretch, as a duration (gaps and islands). A row starts a new
+    // run when it is distracted, first, or more than the gap bound after the previous row (so
+    // idle and private time break runs). A run's duration is the sum of gaps inside it.
     //
-    // Gaps-and-islands, with the island boundary carrying more than one condition. A row
-    // starts a new run when it is distracted, when it is the first row, or when the gap to the
-    // previous row exceeds the bound — that last one is what makes this a measure of the user
-    // rather than of the data, because predictions stop entirely while they are idle or
-    // private. A running sum over the break flags numbers the runs; the run's duration is the
-    // sum of the gaps *inside* it, so the boundary row contributes nothing and a run of one
-    // sample is correctly zero.
-    //
-    // `prev_distracted` is why the parity test earned its keep. Without it the first focused
-    // row after a distracted one keeps its gap, and that interval — the time spent *being
-    // distracted* — is credited to the focused run that follows. On the 12,000-row fixture
-    // that reported every stretch as exactly twice its real length: a plausible number, wrong
-    // by a factor of two, and invisible to any test that only checked it was non-zero.
-    //
-    // Ordered ascending here, unlike the counting query this replaced: intervals between
-    // neighbours have a sign, so the direction is load-bearing rather than incidental. `id`
-    // stays in the key because timestamps have whole-second resolution and are not unique.
-    //
-    // **Partitioned by session**, which the parity test against the C++ implementation is what
-    // caught: without it, rows from two sessions recorded in the same second interleave, every
-    // gap between them reads as zero, and the run walks the same stretch of time twice. Two
-    // sessions seconds apart are still two pieces of work, and a run that spans them reports a
-    // stretch of focus the user never had.
+    // `prev_distracted` keeps the interval *entering* focus out of the run, and the partition
+    // by session keeps two sessions' rows from interleaving; the parity test pins both.
     {
         Stmt stmt(db_, longest_focus_stretch_sql(cutoff_ms.has_value()).c_str());
         stmt.bind(1, static_cast<std::int64_t>(kFocusRunGapSecs));
@@ -1977,10 +1738,8 @@ Storage::PredictionStats Storage::prediction_stats(const std::optional<std::int6
 
 std::vector<AnalyticsHour> Storage::hourly_focus_buckets(
     const std::optional<std::int64_t>& cutoff_ms) {
-    // `datetime(timestamp, 'localtime')` reads the stored UTC and converts to this machine's
-    // local time through the same C library `localtime` that local_hour_from_rfc3339 calls, so
-    // the two agree including across a DST boundary. A timestamp SQLite cannot parse yields
-    // NULL and is dropped, which is what the C++ loop's `hour < 0 || hour >= 24` did.
+    // 'localtime' uses the same C library conversion as local_hour_from_rfc3339, so DST
+    // matches. Unparseable timestamps yield NULL and are dropped.
     Stmt stmt(db_, hourly_focus_buckets_sql(cutoff_ms.has_value()).c_str());
     if (cutoff_ms) stmt.bind(1, *cutoff_ms);
     std::vector<AnalyticsHour> hourly;
@@ -2025,8 +1784,7 @@ std::vector<FocusCurvePoint> Storage::session_focus_curve(const std::string& ses
 }
 
 std::vector<DailySummaryDay> Storage::daily_summary(std::int64_t now_ms, std::int64_t since_ms) {
-    // Keyed by "YYYY-MM-DD"; std::map keeps the days ascending, and the four queries below
-    // merge into it so the statement count stays constant regardless of range (7.12).
+    // Keyed by "YYYY-MM-DD", ascending. The queries below merge into it.
     std::map<std::string, DailySummaryDay> by_day;
     const auto bucket_for = [&by_day](sqlite3_stmt* stmt, int column) -> DailySummaryDay& {
         std::string day = column_text(stmt, column);
@@ -2035,11 +1793,8 @@ std::vector<DailySummaryDay> Storage::daily_summary(std::int64_t now_ms, std::in
         return bucket;
     };
 
-    // Snap the cutoff down to the local midnight of its own day, once, so every query filters
-    // on the same absolute instant (a raw-integer compare, which is what lets
-    // idx_predictions_ts serve it) and the first bucket is a whole calendar day. This is the
-    // one calendar-snapped window in this family of queries; the divergence from the rolling
-    // cutoffs is deliberate — a trend chart of partial first days would misread as a bad day.
+    // Snap the cutoff down to local midnight once, so the first bucket is a whole day and every
+    // query filters on the same instant.
     std::int64_t start_ms = since_ms;
     {
         Stmt stmt(db_,
@@ -2050,11 +1805,8 @@ std::vector<DailySummaryDay> Storage::daily_summary(std::int64_t now_ms, std::in
     }
     if (start_ms >= now_ms) return {};
 
-    // Query 1: attended seconds per day. A recursive local-day axis joined to session_spans,
-    // so a span crossing midnight splits exactly at the boundary; the clip arithmetic is
-    // kAttendedInWindowSql's, applied per day instead of once. Stepping the axis through
-    // 'localtime'/'start of day' (never fixed +24h arithmetic) keeps DST correct per instant,
-    // the same reasoning as attended_secs_in_local_week.
+    // Query 1: attended seconds per day via a recursive local-day axis joined to spans, so a
+    // span crossing midnight splits exactly. The axis steps through 'localtime' (DST-safe).
     {
         Stmt stmt(db_,
                   "WITH RECURSIVE days(day_start, day_end) AS ("
@@ -2082,10 +1834,8 @@ std::vector<DailySummaryDay> Storage::daily_summary(std::int64_t now_ms, std::in
         }
     }
 
-    // Query 2: prediction volume and average per local date. The filters stay on the raw
-    // integer; 'localtime' appears only in the bucketing expression (ADR-0007's rule). The
-    // upper bound matters here where the scalar queries skip it: the day axis ends at `now`,
-    // so a future-dated row (clock skew, a fixture) must not grow the series past it.
+    // Query 2: volume and average per local date. Filters on the raw integer; the upper bound
+    // keeps future-dated rows from extending the series.
     {
         Stmt stmt(db_,
                   "SELECT strftime('%Y-%m-%d', timestamp / 1000.0, 'unixepoch', 'localtime')"
@@ -2105,16 +1855,8 @@ std::vector<DailySummaryDay> Storage::daily_summary(std::int64_t now_ms, std::in
         }
     }
 
-    // Query 3: focused and deep seconds per day — prediction_stats' run arithmetic, summed
-    // per day instead of MAX'd per run. A gap counts toward a state's total when *both* of
-    // its endpoint rows qualify (non-DISTRACTED for focused, DEEP_FOCUS for deep) and the gap
-    // is within kFocusRunGapSecs; that is exactly "inside a run" without needing the run
-    // numbering, because a per-day SUM has no per-run grouping to preserve. The both-ends
-    // rule is prediction_stats' prev_distracted lesson: the interval *entering* a state is
-    // not time spent in it. `prev_* = 0` is false for the NULL of a partition's first row,
-    // which is what excludes it. Each gap lands on the local date of its later row, so a run
-    // crossing midnight misplaces at most kFocusRunGapSecs per midnight — accepted; spans
-    // (query 1) split exactly. DEEP_FOCUS implies non-DISTRACTED, so focused >= deep per day.
+    // Query 3: focused/deep seconds per day. A gap counts when both endpoint rows qualify and
+    // it is within kFocusRunGapSecs; each gap lands on its later row's date. focused >= deep.
     {
         Stmt stmt(db_,
                   "WITH ordered AS ("
@@ -2234,9 +1976,8 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
               "         CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000))"
               "              - started_at) / 1000.0)) AS INTEGER)"
               "         ELSE 0 END), 0),"
-              // Whether the LIMIT cut sessions the window would otherwise include. Counted
-              // against the full table rather than inferred from the capped count, so exactly
-              // `limit` matching sessions reads as complete, not as truncated.
+              // Whether LIMIT cut sessions the window would include, counted against the full
+              // table.
               "       (SELECT COUNT(*) FROM sessions"
               "         WHERE started_at IS NOT NULL AND started_at >= ?2) > ?1 "
               "FROM recent WHERE started_at IS NOT NULL AND started_at >= ?2");
@@ -2256,9 +1997,7 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
 std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
     std::size_t session_limit, std::size_t per_session_limit,
     const std::optional<std::int64_t>& started_after_ms) {
-    // ROW_NUMBER reproduces list_context_snapshots' "ORDER BY timestamp ASC LIMIT n" per
-    // session, so the per-session cap survives the move into SQL. Without it this would
-    // count every snapshot and quietly change which app ranks first.
+    // ROW_NUMBER keeps list_context_snapshots' per-session cap in SQL.
     const char* sql =
         "WITH recent AS ("
         "  SELECT session_id FROM sessions"
@@ -2290,9 +2029,8 @@ std::unordered_map<std::string, std::size_t> Storage::context_app_counts(
 
 void Storage::delete_all_activity_data() {
     Transaction transaction(*this);
-    // Keep the order explicit instead of depending on every historical database having
-    // ON DELETE CASCADE. app_rules is deliberately absent: it is user configuration, not
-    // captured activity.
+    // Explicit order rather than relying on ON DELETE CASCADE, which older databases lack.
+    // app_rules is user configuration and stays.
     exec(db_,
          R"sql(
             DELETE FROM session_spans;
@@ -2316,10 +2054,7 @@ bool Storage::delete_session(const std::string& session_id) {
         if (!exists.step_row()) return false;  // ~Transaction rolls back the empty txn
     }
 
-    // Child rows first, in the same order and for the same reason as
-    // delete_all_activity_data: historical databases were not all created with
-    // ON DELETE CASCADE, so relying on it would leave orphans on exactly the old files
-    // Roadmap 7.11's fixtures exist to represent.
+    // Child rows first, as in delete_all_activity_data.
     for (const char* sql : {"DELETE FROM session_spans WHERE session_id = ?1",
                             "DELETE FROM feature_snapshots WHERE session_id = ?1",
                             "DELETE FROM context_snapshots WHERE session_id = ?1",
@@ -2386,15 +2121,9 @@ SessionRecap Storage::recap(const std::string& session_id) {
     }
 
     {
-        // The 0.7 is deliberate: it's an *absolute* "this was a strong distraction" bar,
-        // not the mode's alerting threshold
-        // (risk_threshold() = 0.55/0.70/0.85). Keeping it absolute stops Deep mode's higher
-        // sensitivity from inflating session-quality metrics that feed auto-labels.
-        //
-        // ADR-0004 made it a pure opinion-channel count: distraction_risk alone, no
-        // focus_state conjunct. The state is the policy verdict and carries the mode with
-        // it — the old `AND focus_state = 'DISTRACTED'` meant Recovery rows between 0.7
-        // and 0.85 were never counted, which defeated the point of an absolute bar.
+        // An absolute 0.7 "strong distraction" bar, deliberately not the mode's alerting
+        // threshold, so Deep mode's sensitivity does not skew quality metrics. Risk alone
+        // (ADR-0004).
         Stmt stmt(db_,
                   "SELECT COUNT(*) FROM predictions WHERE session_id = ?1 "
                   "AND distraction_risk >= 0.7");
@@ -2419,15 +2148,8 @@ FocusLabel Storage::infer_session_label(const SessionRecap& recap) {
 }
 
 FocusLabel Storage::save_auto_session_label(const std::string& session_id) {
-    // Roadmap 7.25. One automatic label per session, enforced here rather than by every
-    // caller remembering. `Storage::stop_session` is idempotent, so a double-click on Stop
-    // reached this twice and appended a second inferred verdict — two `auto` rows for one
-    // session, differing whenever a prediction landed between them, with nothing to say which
-    // was meant. The labels table is append-only by design (a correction is a new row, not an
-    // edit), which is exactly why a duplicate cannot be cleaned up afterwards.
-    //
-    // The existing label wins rather than the newer inference: it is the one the user was
-    // shown, and re-deriving a verdict they have already seen is a silent revision.
+    // One automatic label per session: the labels table is append-only, so a duplicate could
+    // never be cleaned up. The existing label wins; it is the one the user saw.
     if (const auto existing = session_auto_label(session_id)) return *existing;
 
     const SessionRecap session_recap = recap(session_id);
@@ -2594,9 +2316,7 @@ void Storage::delete_app_rule(std::int64_t id) {
 }
 
 bool Storage::insert_snapback_episode(const SnapbackEpisode& episode) {
-    // OR IGNORE against idx_snapback_events_episode. The alternative — checking first, then
-    // inserting — is two statements with a race between them, and this write happens inside
-    // the engine tick's transaction where a second round trip is not free.
+    // OR IGNORE against idx_snapback_events_episode: one statement, no check-then-insert race.
     Stmt stmt(db_, cached_stmt(
                        "INSERT OR IGNORE INTO snapback_events "
                        "(session_id, summary, timestamp, started_at, duration_secs, app_name, "
@@ -2604,11 +2324,7 @@ bool Storage::insert_snapback_episode(const SnapbackEpisode& episode) {
     stmt.bind(1, episode.session_id);
     stmt.bind(2, episode.summary);
     stmt.bind(3, episode.ended_at_ms);
-    // An empty start is the pre-2.15 row's "nobody recorded when this began", and it has to
-    // reach the column as NULL rather than as some stand-in instant. The UNIQUE index over
-    // (session_id, started_at) treats NULLs as distinct, which is what lets those rows coexist
-    // without colliding; a shared sentinel would make the second one silently vanish into
-    // INSERT OR IGNORE.
+    // No start is written as NULL; the UNIQUE index treats NULLs as distinct.
     if (episode.started_at_ms) {
         stmt.bind(4, *episode.started_at_ms);
     } else {
@@ -2623,8 +2339,7 @@ bool Storage::insert_snapback_episode(const SnapbackEpisode& episode) {
 
 std::vector<SnapbackEpisode> Storage::list_snapback_episodes(const std::string& session_id,
                                                              std::size_t limit) {
-    // Ordered by the episode's own start where there is one, falling back to the return time
-    // for pre-2.15 rows, so a mixed table still reads chronologically.
+    // By start where known, else by return time, so legacy rows still read chronologically.
     Stmt stmt(db_,
               "SELECT session_id, summary, timestamp, started_at, duration_secs, app_name, "
               "file_hint FROM snapback_events WHERE session_id = ?1 "
@@ -2723,9 +2438,7 @@ void Storage::save_context_snapshot(const std::string& session_id,
 
 std::vector<SessionRecord> Storage::sessions_after(const std::optional<SessionCursor>& after,
                                                    std::size_t limit) {
-    // The row-value comparison `(a, b) < (?, ?)` is the keyset predicate written the way
-    // SQLite can serve from idx_sessions_status_started / the primary key, and it expresses
-    // "strictly after in this ordering" without the three-way OR expansion by hand.
+    // Row-value comparison: the keyset predicate in a form the index can serve.
     const std::string sql =
         "SELECT " + std::string(kSessionColumns) + " FROM sessions " +
         (after ? "WHERE (started_at, session_id) < (?2, ?3) " : "") +
@@ -2812,11 +2525,7 @@ ExportTrainingResult Storage::export_training_csv(
         "fs.focus_momentum, fs.is_pseudo_productive, fs.session_id, s.goal, s.focus_mode "
         "FROM feature_snapshots fs "
         "LEFT JOIN sessions s ON s.session_id = fs.session_id "
-        // `fs.id` breaks the tie, and it has to: the timestamp is whole milliseconds, and
-        // several feature rows can land in one. Under the old REAL seconds column that was
-        // rare enough to go unnoticed -- which is exactly why it needs stating rather than
-        // rediscovering. `id` is the AUTOINCREMENT insertion order, so equal timestamps come
-        // back in the order they were written.
+        // `fs.id` breaks ties between rows in the same millisecond (insertion order).
         "WHERE fs.session_id = ?1 ORDER BY fs.timestamp ASC, fs.id ASC";
 
     const char* feature_select_all =
@@ -2878,10 +2587,8 @@ ExportTrainingResult Storage::export_training_csv(
                 write_csv_row(out, row);
             }
         }
-        // Checking only at open() catches a bad path but not a full disk: the writes above
-        // fail silently and the stream just sets badbit. Without this, export returns a
-        // success result whose feature_count doesn't match the truncated file on disk, and
-        // the training pipeline then trains on whatever survived.
+        // Check after writing: a full disk only sets badbit, and a short file must not be
+        // reported as a complete export.
         out.flush();
         if (!out) throw std::runtime_error("failed to write features.csv (disk full?)");
     }
@@ -2935,19 +2642,7 @@ ExportTrainingResult Storage::export_training_csv(
 }
 
 PruneSummary Storage::prune_runtime_data(std::int64_t cutoff_unix_ms) {
-    // Roadmap 5.5, closed by ADR-0007 rather than patched.
-    //
-    // These two DELETEs used to read `WHERE datetime(timestamp) < datetime(?1)`, which was
-    // wrong twice over. `datetime()` returns NULL for a value it cannot parse and `NULL < x`
-    // is NULL, so any row with a malformed timestamp survived every retention pass forever,
-    // silently and with nothing surfaced -- and wrapping the column defeated
-    // `idx_predictions_ts`, so the prune full-scanned the largest tables in the database on
-    // every startup.
-    //
-    // Both are gone, and neither is *fixed* so much as made unexpressible: the column is
-    // INTEGER, the cutoff is an integer, and a plain `<` between them is a sargable predicate
-    // that cannot return NULL. That is the whole argument for ADR-0007's Option A over the
-    // one-sitting patch -- the class of defect leaves with the representation.
+    // INTEGER column vs integer cutoff: a sargable `<` that cannot return NULL (ADR-0007).
     PruneSummary summary;
     {
         Stmt stmt(db_, kPrunePredictionsSql);
@@ -2962,11 +2657,8 @@ PruneSummary Storage::prune_runtime_data(std::int64_t cutoff_unix_ms) {
         summary.context_snapshots_deleted = static_cast<std::size_t>(sqlite3_changes(db_));
     }
     {
-        // feature_snapshots is the highest-volume table in the schema -- one row per
-        // prediction tick (~1/sec while active) with 31 REAL columns -- and for most of the
-        // project's life it was never pruned at all, so it grew without bound while the other
-        // two stayed flat. It used to need its own REAL seconds cutoff; as of schema v7 it
-        // takes the same integer as the other two.
+        // feature_snapshots is the highest-volume table (about one row per second while
+        // active).
         Stmt stmt(db_, kPruneFeatureSnapshotsSql);
         stmt.bind(1, cutoff_unix_ms);
         stmt.step_done();

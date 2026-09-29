@@ -226,7 +226,7 @@ assert.equal(canStopSession(done, false), false, "a finished session cannot be s
 assert.equal(canStopSession(null, false), false, "no session, nothing to stop");
 
 // ---------------------------------------------------------------------------
-// Goal suggestions (Roadmap 2.15).
+// Goal suggestions.
 // ---------------------------------------------------------------------------
 
 {

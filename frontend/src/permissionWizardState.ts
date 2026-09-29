@@ -1,8 +1,7 @@
 // First-run permission wizard: the decision logic, kept pure and separate from
 // React/DOM so it can be unit-tested headlessly.
 
-// The literal, and whether the erase touches it, live in browserStorage.ts so a
-// key cannot exist without a classification (Roadmap 8.15).
+// Key literal and its erase classification live in browserStorage.ts.
 export { FIRST_RUN_ACK_KEY } from "./browserStorage";
 import { FIRST_RUN_ACK_KEY } from "./browserStorage";
 

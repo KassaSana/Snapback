@@ -1,11 +1,5 @@
-// Roadmap 2.12. The visible half of the guided continuation.
-//
-// It renders on Now, above the cockpit, because every step except the last is performed there.
-// It has no Next button by design: the only controls are Skip and, when something is broken, a
-// hand-off to the surface that owns the problem. Everything else advances because the user did
-// the thing.
-//
-// ADR-0003's Now density: this is a strip, not a card that pushes Start below the fold.
+// The guided continuation, as a strip on Now. No Next button: steps advance when the user does
+// them; the only controls are Skip and a hand-off when something is broken.
 
 import { memo } from "react";
 

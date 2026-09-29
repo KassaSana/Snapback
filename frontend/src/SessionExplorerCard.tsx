@@ -1,13 +1,5 @@
-// Roadmap 2.9 — the session explorer, first version.
-//
-// Review answered "how was the week" and never "what happened in that session on Tuesday":
-// past sessions appeared mostly inside the destructive Session management list. This card
-// lists the sessions in the selected range by day, and a selected one opens a detail panel —
-// the list-then-detail shape Rize, Timing, ActivityWatch and Session all converge on.
-//
-// Deliberately left for later: search, filters and paging past the range's 500-session cap,
-// and label editing (2.17). "Start this again" hands off to the ordinary start form on Now; it
-// never starts recording by itself, because a session is declared (ADR-0005).
+// The session explorer: sessions in the selected range by day, with a detail panel. "Start this
+// again" fills the start form on Now; it never starts recording (ADR-0005).
 import { memo, useEffect, useMemo, useState } from "react";
 
 import {

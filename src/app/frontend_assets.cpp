@@ -55,12 +55,8 @@ std::string file_url_from_path(const std::filesystem::path& path) {
     const auto absolute = std::filesystem::absolute(path).lexically_normal();
     auto encoded = percent_encode_path(absolute.string());
 
-    // A file URL is `file://` + authority + absolute path, and our authority is empty — so
-    // the path's own leading slash is the third character, not a fourth one we add. On POSIX
-    // `absolute` already starts with `/`; prepending "file:///" produced `file:////Users/...`,
-    // which parses as an empty authority plus a `//Users/...` path and is refused by both
-    // WKWebView and WebKitGTK — a blank window with no error. On Windows the path starts
-    // with a drive letter (`C:/...`), so there the separator must still be supplied.
+    // file:// plus an empty authority plus the absolute path. POSIX paths already start with
+    // `/` (a fourth slash breaks WKWebView/WebKitGTK); Windows drive paths need it added.
     if (!encoded.empty() && encoded.front() == '/') return "file://" + encoded;
     return "file:///" + encoded;
 }
@@ -82,8 +78,7 @@ std::string resolve_frontend_url(const std::filesystem::path& exe_dir,
 }
 
 bool developer_tools_enabled() {
-    // ADR-0006: Release stays silent unless SNAPBACK_DEV_TRAINING opts back into the repo
-    // tooling path. Debug keeps the existing developer loop without requiring the env var.
+    // ADR-0006: Release is off unless SNAPBACK_DEV_TRAINING is set; Debug is on.
     return developer_tools_for_build(kReleaseBuild, env_flag_set("SNAPBACK_DEV_TRAINING"));
 }
 

@@ -1,14 +1,5 @@
-// Roadmap 10.9. The second level of navigation inside Settings.
-//
-// ADR-0003 fixes the three top-level surfaces, so this adds a level *below* Settings rather
-// than a fourth tab. The complaint the item makes is about order, not content: Settings opened
-// with model training and permanently exposed classifier backend, model file, and quality state,
-// so the product read as an engineering console before it read as a focus tool. Grouping is the
-// fix, and the grouping has to be opinionated about which group is first.
-//
-// Kept pure and separate from the components for the usual reason — the routing rules below are
-// the part worth testing, and they are the part that would otherwise only be reachable through
-// eight rendered cards.
+// The second level of navigation inside Settings (ADR-0003 fixes the top three surfaces).
+// General comes first; model tooling is last.
 
 export const SETTINGS_SECTIONS = ["general", "focus", "privacy", "advanced"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -49,12 +40,8 @@ export function isSettingsSection(value: unknown): value is SettingsSection {
 }
 
 /**
- * Resolve a deep link like `#settings/privacy` to its section.
- *
- * The item requires these to keep working: support instructions say "open Settings → Privacy",
- * and a reorganisation that silently invalidated every such instruction would be a worse
- * outcome than the console it replaced. Returns null when the hash names something else, so a
- * caller can leave the current section alone rather than bouncing the user to General.
+ * Resolve a deep link like `#settings/privacy` to its section, so support instructions keep
+ * working. null for anything else, so the caller leaves the current section alone.
  */
 export function parseSettingsDeepLink(hash: string | null | undefined): SettingsSection | null {
   const raw = String(hash ?? "").trim().replace(/^#/, "");
@@ -76,14 +63,8 @@ export type SettingsFailureInput = {
 };
 
 /**
- * Which section a *real, actionable* failure should reveal — the item's one exception to
- * "Advanced stays collapsed".
- *
- * Two rules make this safe to auto-navigate on. It only fires for failures the user can do
- * something about from the revealed section, and permission problems outrank model problems:
- * a blocked capture means the product is recording nothing, while a failed model load leaves
- * the heuristic classifier working (13.8's whole point). Returns null when nothing is wrong,
- * which is the common case and must not move the user anywhere.
+ * Which section a real, actionable failure should reveal. Permission problems outrank model
+ * problems (a failed model load leaves the heuristic working). null when nothing is wrong.
  */
 export function settingsSectionForFailure(
   input: SettingsFailureInput,

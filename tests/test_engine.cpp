@@ -126,7 +126,7 @@ TEST_CASE("feature extractor computes rolling keyboard mouse and context feature
 // No comma in the name: doctest treats commas as separators in --test-case filters, so a
 // case named "a, b" cannot be selected on its own.
 TEST_CASE("calendar features come from the wall clock rather than the uptime clock") {
-    // Roadmap 7.24. Production-shaped input: `timestamp_secs` is an uptime clock (10 seconds
+    // Production-shaped input: `timestamp_secs` is an uptime clock (10 seconds
     // since boot / process start) while the real time is 2023-11-14T22:13:20Z. Before this,
     // hour_of_day and day_of_week were derived from the uptime value, so two of the 31 model
     // inputs answered "how long has this machine been up?" instead of "when is the user

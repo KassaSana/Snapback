@@ -1,12 +1,6 @@
-// Roadmap 7.23. The AFK threshold, as the UI needs to talk about it.
-//
-// Pure functions in their own module for the reason sessionStatus.ts is: the component suite
-// cannot run on this machine (11.11), so logic reachable only through a rendered component is
-// untested locally. Anything with a rule in it lives here, where `tsx` can reach it.
-//
-// The bounds mirror src/types.hpp's kMinIdleThresholdSecs / kMaxIdleThresholdSecs. The native
-// side is the authority — it rejects out-of-range values with an error rather than clamping —
-// and these exist so the UI can say why *before* making the call, not so it can decide.
+// The AFK threshold as the UI talks about it. Bounds mirror kMinIdleThresholdSecs /
+// kMaxIdleThresholdSecs in src/types.hpp; the native side is the authority and rejects
+// out-of-range values.
 
 export const MIN_IDLE_THRESHOLD_SECS = 30;
 export const MAX_IDLE_THRESHOLD_SECS = 3600;

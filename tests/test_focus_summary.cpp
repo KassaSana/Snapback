@@ -10,7 +10,7 @@ using namespace snapback;
 
 namespace {
 
-// Roadmap 10.13. Timestamps are load-bearing now: the focused stretch is measured in seconds
+// Timestamps are load-bearing now: the focused stretch is measured in seconds
 // between neighbours, not counted in rows, so every fixture has to sit on a real clock.
 PredictionRecord pred(double score, const char* state, const char* timestamp = nullptr) {
     PredictionRecord p;
@@ -51,7 +51,7 @@ TEST_CASE("summarize_predictions computes average, peak, and distracted fraction
 }
 
 TEST_CASE("the focused stretch is measured in seconds, not counted in rows") {
-    // Roadmap 10.13. The tile used to show a count of consecutive non-DISTRACTED prediction
+    // The tile used to show a count of consecutive non-DISTRACTED prediction
     // rows under the label "Focus streak". Rows are not time.
     //
     // Two focused runs: 10 seconds of frequent samples, then 90 seconds of sparse ones. The

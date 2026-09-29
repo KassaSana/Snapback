@@ -1,14 +1,6 @@
-// Roadmap 8.12. What to tell the user after "Delete all activity".
-//
-// Pure, and in its own module, for the reason sessionStatus.ts and analyticsChart.ts are: the
-// component suite cannot run on this machine (11.11), so a message that is only reachable
-// through a rendered component has no local test. This one earns the separation twice over,
-// because the wrong string here is a privacy claim rather than a cosmetic slip.
-//
-// The rule the item states outright: **never say "permanently deleted" over a partial result.**
-// The native side attempts every target and reports each one, so a stale export held open by
-// another program leaves the database cleared and one file behind. That is a legitimate
-// outcome and it has to read as one.
+// What to tell the user after "Delete all activity". Never say "permanently deleted" over a
+// partial result: the native side reports each target, and a file held open elsewhere is a
+// legitimate partial outcome.
 
 export type ActivityDeletionResult = {
   deleted: string[];
@@ -34,13 +26,8 @@ export function mapActivityDeletionResult(raw: unknown): ActivityDeletionResult 
 }
 
 /**
- * The headline the Privacy card shows.
- *
- * `alsoCleared` names browser-side copies the native result cannot know about (Roadmap 8.15):
- * `localStorage` belongs to this side of the bridge, so the native side reports nothing about
- * it, and an erase that silently left goal text behind in it was the defect. They are named
- * rather than merely deleted, because "all activity" is a claim the user has to be able to
- * check against what they can still see in the app.
+ * The headline the Privacy card shows. `alsoCleared` names the browser-side copies (which the
+ * native side cannot see), so "all activity" is checkable against what remains in the app.
  */
 export function activityDeletionMessage(
   result: ActivityDeletionResult,
