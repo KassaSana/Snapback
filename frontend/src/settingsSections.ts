@@ -66,11 +66,6 @@ export function parseSettingsDeepLink(hash: string | null | undefined): Settings
   return isSettingsSection(section) ? (section as SettingsSection) : null;
 }
 
-/** The inverse, so the app can advertise a stable link back to a section. */
-export function settingsDeepLink(section: SettingsSection): string {
-  return `#settings/${section}`;
-}
-
 export type SettingsFailureInput = {
   /** The OS refused capture, or the capability probe failed. */
   permissionBlocked: boolean;

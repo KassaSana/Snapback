@@ -5,7 +5,6 @@ import {
   buildExportSummary,
   buildPipelineCommand,
   buildTrainFromExportHint,
-  classifierBackendLabel,
   classifyTrainDeployOutcome,
   formatLabelBreakdown,
   formatTrainingMetrics,
@@ -200,11 +199,6 @@ assert.equal(
   buildPipelineCommand(outputDir, "python3 -m ml.pipeline_cli --custom"),
   "python3 -m ml.pipeline_cli --custom",
 );
-
-// classifierBackendLabel: only "onnx" maps to "ONNX"; anything else is Heuristic.
-assert.equal(classifierBackendLabel("onnx"), "ONNX");
-assert.equal(classifierBackendLabel("heuristic"), "Heuristic");
-assert.equal(classifierBackendLabel(""), "Heuristic");
 
 // formatTrainingMetrics: null in, null out (no metrics to show).
 assert.equal(formatTrainingMetrics(null), null);

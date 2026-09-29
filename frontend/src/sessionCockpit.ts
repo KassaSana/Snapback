@@ -11,9 +11,7 @@
 //
 // **Presets and chips never auto-start.** ADR-0005 makes declaration explicit and manual, and
 // a chip that begins recording on click would quietly repeal that. They fill the form; the
-// user still presses Start. **Repeat last** is the exception: it *is* the declaration ("do
-// that again") and starts the session. Everything here still returns the *proposed* goal and
-// mode; the start lives in the click handler that asked for it.
+// user still presses Start. Everything here returns the *proposed* goal and mode.
 
 import type { SessionRecord, SessionSummary } from "./api";
 
@@ -105,11 +103,6 @@ export function recentGoals(history: SessionSummary[], limit = 5): RecentGoal[] 
     if (out.length >= limit) break;
   }
   return out;
-}
-
-/** The most recent goal, for the one-click **Repeat last**; null when there is no history. */
-export function lastSessionGoal(history: SessionSummary[]): RecentGoal | null {
-  return recentGoals(history, 1)[0] ?? null;
 }
 
 export type GoalSuggestion = {

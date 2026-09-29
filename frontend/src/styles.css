@@ -409,14 +409,12 @@ h1 {
   margin: 0;
 }
 
-.verdict-feedback-hint,
 .verdict-feedback-status {
   font-size: 0.85rem;
   color: var(--muted);
   margin: 18px 0 0;
 }
 
-.verdict-vote,
 .verdict-option {
   appearance: none;
   font-family: var(--font-sans);
@@ -432,13 +430,11 @@ h1 {
     border-color 0.16s ease;
 }
 
-.verdict-vote:hover,
 .verdict-option:hover {
   background: var(--surface);
   border-color: var(--border-strong);
 }
 
-.verdict-vote:focus-visible,
 .verdict-option:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -452,7 +448,6 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .verdict-vote,
   .verdict-option,
   .surface-tab,
   .card {
@@ -645,13 +640,6 @@ h1 {
   font-size: 0.75rem;
   background: var(--surface-alt);
   color: var(--ink);
-}
-
-.risk-badge {
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
 }
 
 .risk-low {
@@ -888,10 +876,6 @@ h1 {
 .helper-text.snapback {
   color: var(--success-text);
   font-weight: 600;
-}
-
-.metric-value.state-value {
-  font-size: 1.1rem;
 }
 
 .session-status {
@@ -1214,20 +1198,6 @@ h1 {
 
 .rules-empty {
   color: var(--muted);
-}
-
-/* Per-session deletion (Roadmap 7.6). Set apart from the trend chart above it with the
-   same top border the Privacy danger zone uses, so a destructive list never reads as
-   part of the surrounding read-only summary. */
-.session-delete-zone {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.session-delete-zone h3 {
-  margin: 0 0 6px;
-  font-size: 0.95rem;
 }
 
 .session-list {
@@ -1774,29 +1744,6 @@ h1 {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
-}
-
-.onboarding-track {
-  list-style: none;
-  display: flex;
-  gap: 6px;
-  margin: 12px 0;
-  padding: 0;
-}
-
-.onboarding-dot {
-  width: 100%;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--accent-tint);
-}
-
-.onboarding-dot-done {
-  background: var(--accent-border);
-}
-
-.onboarding-dot-current {
-  background: var(--accent);
 }
 
 /* Roadmap 10.9 — the second level inside Settings.

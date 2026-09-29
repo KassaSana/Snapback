@@ -87,6 +87,9 @@ EXPECTED_ABSENT = {
     "src/engine/confidence.hpp": "deleted 2026-08-03 by ADR-0004; ADR-0002/0003 and "
                                  "ROADMAP 5.3 name it to say it is gone",
     "tests/test_confidence.cpp": "deleted with it; ROADMAP 5.3 names it to say so",
+    "frontend/src/FocusSummaryCard.tsx": "deleted 2026-09-29; 2a68501 folded its tiles into "
+                                          "SummaryCard and nothing rendered it after. The "
+                                          "archived 7.33 entry names it as history",
 }
 
 

@@ -36,8 +36,3 @@ export function myDataExportMessage(result: MyDataExportResult): string {
   if (result.omittedEpisodes > 0) omissions.push(plural(result.omittedEpisodes, "interruption"));
   return `Wrote ${contents} to ${result.outputPath}. ${omissions.join(" and ")} could not be included.`;
 }
-
-/** Whether the message above is reporting an incomplete archive. */
-export function myDataExportIsIncomplete(result: MyDataExportResult): boolean {
-  return result.truncated;
-}

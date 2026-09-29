@@ -90,13 +90,3 @@ export function writeWorkAppTeachComplete(storage: StorageLike | null = defaultS
     // Worst case the card offers itself again; nothing is lost.
   }
 }
-
-/** Clear the skip so the card can be replayed from Help, matching onboarding. */
-export function clearWorkAppTeachComplete(storage: StorageLike | null = defaultStorage()): void {
-  if (!storage) return;
-  try {
-    storage.removeItem(WORK_APP_TEACH_DONE_KEY);
-  } catch {
-    // Ignore disabled storage.
-  }
-}

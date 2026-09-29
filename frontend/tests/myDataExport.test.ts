@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { myDataExportIsIncomplete, myDataExportMessage } from "../src/myDataExport";
+import { myDataExportMessage } from "../src/myDataExport";
 import type { MyDataExportResult } from "../src/api";
 
 const result = (over: Partial<MyDataExportResult> = {}): MyDataExportResult => ({
@@ -25,7 +25,6 @@ const result = (over: Partial<MyDataExportResult> = {}): MyDataExportResult => (
   assert.ok(message.includes("7 interruptions"));
   assert.ok(message.includes("complete history"));
   assert.ok(message.includes("nothing was left out"));
-  assert.equal(myDataExportIsIncomplete(result()), false);
 }
 
 // THE BUG. Omitting windows from an included session used to report as complete, because the
@@ -36,7 +35,6 @@ const result = (over: Partial<MyDataExportResult> = {}): MyDataExportResult => (
   assert.ok(!message.includes("complete history"));
   assert.ok(!message.includes("nothing was left out"));
   assert.ok(message.includes("42 captured windows could not be included"));
-  assert.equal(myDataExportIsIncomplete(windowsOnly), true);
 }
 
 {

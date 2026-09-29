@@ -1359,9 +1359,9 @@ TEST_CASE("AppState focus summary reports the whole window, not the newest rows"
 }
 
 TEST_CASE("Both longest-focus tiles read the same number for the same window") {
-    // Roadmap 7.33. `FocusSummaryCard` (get_focus_summary) and `SummaryCard` (get_summary_report)
-    // both render FOCUS_STRETCH_LABEL. They disagreed because they were two computations; this
-    // pins them to one. A window is named on both sides so the shared cutoff is exercised too.
+    // Roadmap 7.33. get_focus_summary and get_summary_report both report the longest focused
+    // stretch. They disagreed because they were two computations; this pins them to one. A
+    // window is named on both sides so the shared cutoff is exercised too.
     auto state = make_state();
     auto session = state->start_session("Agreement", FocusMode::Deep);
 

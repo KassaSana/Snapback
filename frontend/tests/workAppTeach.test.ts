@@ -4,7 +4,6 @@ import type { AppRuleRecord, ContextSnapshot } from "../src/api";
 import {
   WORK_APP_TEACH_DONE_KEY,
   WORK_APP_TEACH_LIMIT,
-  clearWorkAppTeachComplete,
   readWorkAppTeachComplete,
   shouldShowWorkAppTeach,
   workAppCandidates,
@@ -68,12 +67,9 @@ assert.equal(readWorkAppTeachComplete(storage), false);
 writeWorkAppTeachComplete(storage);
 assert.equal(storage.getItem(WORK_APP_TEACH_DONE_KEY), "true");
 assert.equal(readWorkAppTeachComplete(storage), true);
-clearWorkAppTeachComplete(storage);
-assert.equal(readWorkAppTeachComplete(storage), false);
 
 // Disabled / missing storage must not throw — the card reappearing is the failure mode.
 assert.equal(readWorkAppTeachComplete(null), false);
 writeWorkAppTeachComplete(null);
-clearWorkAppTeachComplete(null);
 
 console.log("workAppTeach.test.ts passed");

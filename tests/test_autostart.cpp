@@ -4,13 +4,6 @@
 
 using namespace snapback;
 
-TEST_CASE("autostart_command_line quotes the path so spaces parse correctly") {
-    CHECK(autostart_command_line("C:\\Program Files\\Snapback\\snapback.exe") ==
-          "\"C:\\Program Files\\Snapback\\snapback.exe\"");
-    CHECK(autostart_command_line("/usr/local/bin/snapback") ==
-          "\"/usr/local/bin/snapback\"");
-}
-
 #if defined(_WIN32)
 
 // Roadmap 11.7 — CLOSED. There used to be a real round trip here against

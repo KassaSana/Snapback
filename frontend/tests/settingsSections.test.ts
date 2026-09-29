@@ -7,7 +7,6 @@ import {
   SETTINGS_SECTION_LABELS,
   isSettingsSection,
   parseSettingsDeepLink,
-  settingsDeepLink,
   settingsHealthBadge,
   settingsPanelId,
   settingsSectionForFailure,
@@ -60,7 +59,7 @@ assert.equal(parseSettingsDeepLink("#"), null);
 // Round-trip: every section's advertised link parses back to itself. This is what stops a
 // renamed section from silently breaking the instruction that points at it.
 for (const section of SETTINGS_SECTIONS) {
-  assert.equal(parseSettingsDeepLink(settingsDeepLink(section)), section);
+  assert.equal(parseSettingsDeepLink(`#settings/${section}`), section);
 }
 
 // ---------------------------------------------------------------------------

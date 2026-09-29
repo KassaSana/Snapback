@@ -1,25 +1,13 @@
 // Start-on-login (autostart) toggle. Roadmap 1.3.
 //
-// Windows: reads/writes a value under HKCU\...\CurrentVersion\Run — the standard
-// per-user mechanism, no elevation required. launchd (macOS) and systemd user units
-// (Linux) are follow-ups; until then autostart_enabled() is always false and
-// set_autostart_enabled() is a documented no-op there, so the app and its tests build
-// and run identically on every OS (unlike Tray/Overlay, which only link on Windows —
-// see Roadmap 3.1/3.2 — this module is a single translation unit with an #if inside it,
-// not a singleton only one platform implements).
+// Windows writes a value under HKCU\...\CurrentVersion\Run (autostart_run_key), macOS a
+// launchd agent (autostart_launchd), Linux a systemd user unit (autostart_systemd). Any other
+// platform has no backend: autostart_supported() is false and set_autostart_enabled() is a
+// documented no-op. This module is a single translation unit with an #if inside it, not a
+// singleton only one platform implements (unlike Tray/Overlay — see Roadmap 3.1/3.2).
 #pragma once
 
-#include <string>
-#include <string_view>
-
 namespace snapback {
-
-// Pure: the exact command line written to the Run key. Quoted so paths containing
-// spaces (e.g. "C:\Program Files\Snapback\snapback.exe") parse correctly. Exposed here
-// (not hidden in the .cpp) so it's testable without touching the registry.
-inline std::string autostart_command_line(std::string_view executable_path) {
-    return "\"" + std::string(executable_path) + "\"";
-}
 
 // True if Snapback is currently registered to start on login.
 bool autostart_enabled();

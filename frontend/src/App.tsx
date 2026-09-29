@@ -387,8 +387,8 @@ export default function App() {
     [reviewDisplayedRange],
   );
 
-  // Roadmap 2.11. The cockpit's "recent goals" and Repeat last come from unfiltered history,
-  // not the Review range — a user comparing last week should still be able to repeat yesterday.
+  // Roadmap 2.11. The cockpit's "recent goals" come from unfiltered history, not the Review
+  // range — a user comparing last week should still be able to repeat yesterday.
   const cockpitRecentGoals = useMemo(() => recentGoals(cockpitHistory), [cockpitHistory]);
 
   const handleActivityDataDeleted = useCallback(async () => {

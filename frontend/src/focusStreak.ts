@@ -9,11 +9,10 @@
 //
 // The rule this module exists to enforce: **never display a row count with time-like copy.**
 // The two row-count tiles are now durations, and the session metric says "sessions" in its
-// own label.
+// own sentence.
 
 /** The unit each metric is actually in, so a label can never be attached to the wrong one. */
 export const FOCUS_STRETCH_LABEL = "Longest focus";
-export const PRODUCTIVE_SESSIONS_LABEL = "Sessions in a row";
 
 /**
  * A duration in seconds, as a compact tile value.

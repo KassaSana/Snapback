@@ -70,9 +70,6 @@ export const buildTrainingReadinessBlockers = (status: TrainingDeployStatus | nu
   return blockers;
 };
 
-export const classifierBackendLabel = (backend: string) =>
-  backend === "onnx" ? "ONNX" : "Heuristic";
-
 export const formatTrainingMetrics = (metrics: Record<string, number> | null) => {
   if (!metrics) {
     return null;

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 
 import {
   FOCUS_STRETCH_LABEL,
-  PRODUCTIVE_SESSIONS_LABEL,
   focusStretchHelperText,
   formatFocusStretch,
   productiveSessionsHelperText,
@@ -12,9 +11,6 @@ import {
 // prediction-row counts wearing time-like copy. Whatever else changes, no label may say
 // "streak" over a row count.
 assert.ok(!FOCUS_STRETCH_LABEL.toLowerCase().includes("streak"));
-assert.ok(!PRODUCTIVE_SESSIONS_LABEL.toLowerCase().includes("streak"));
-// And the session metric must name its unit in the label itself, not only in a footnote.
-assert.ok(PRODUCTIVE_SESSIONS_LABEL.toLowerCase().includes("session"));
 
 // Durations read in the largest unit that does not round the answer away. A 45-second stretch
 // shown as "0m" is the same failure in a new costume.

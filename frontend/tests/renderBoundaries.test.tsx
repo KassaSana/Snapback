@@ -3,10 +3,10 @@ import { memo, useMemo, useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FocusSummaryCard } from "../src/FocusSummaryCard";
 import { PomodoroCard } from "../src/PomodoroCard";
 import { SettingsCard } from "../src/SettingsCard";
-import type { AutostartStatus, FocusSummary, PomodoroStatus } from "../src/api";
+import { SummaryCard } from "../src/SummaryCard";
+import type { AutostartStatus, PomodoroStatus, SummaryReport } from "../src/api";
 import { useSession } from "../src/useSession";
 
 afterEach(() => cleanup());
@@ -40,17 +40,17 @@ describe("prediction render boundaries", () => {
       completedWorkIntervals: 0,
       remainingMs: 0,
     } as PomodoroStatus;
-    const focusSummary = {
+    const summaryReport = {
       get sampleCount() {
         reviewReads += 1;
         return 0;
       },
-      avgFocusScore: 0,
-      peakFocusScore: 0,
-      distractedSamples: 0,
-      distractedFraction: 0,
-      longestFocusSecs: 0,
-    } as FocusSummary;
+      completedSessionCount: 0,
+      attendedSeconds: 0,
+      plannedMins: 0,
+      window: "7d",
+    } as SummaryReport;
+    const onExport = vi.fn();
     const autostartStatus = {
       get supported() {
         settingsReads += 1;
@@ -105,7 +105,12 @@ describe("prediction render boundaries", () => {
             onAcknowledge={onAcknowledge}
             onSaveConfig={onSaveConfig}
           />
-          <FocusSummaryCard focusSummary={focusSummary} rangeLabel="7 days" />
+          <SummaryCard
+            exportStatus={null}
+            onExport={onExport}
+            rangeLabel="7 days"
+            report={summaryReport}
+          />
           <SettingsCard
             appearanceMode="system"
             onAppearanceChange={onAppearanceChange}

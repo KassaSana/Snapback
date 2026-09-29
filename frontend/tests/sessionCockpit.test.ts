@@ -8,8 +8,6 @@ import {
   canStopSession,
   filterGoalSuggestions,
   formatElapsed,
-
-  lastSessionGoal,
   moveSessionPreset,
   normalizeFocusMode,
   readSessionPresets,
@@ -93,16 +91,12 @@ assert.deepEqual(recentGoals(undefined as unknown as SessionSummary[]), []);
   assert.ok(goals.every((entry) => entry.goal.trim().length > 0));
 
   assert.equal(recentGoals(history, 2).length, 2);
-  assert.deepEqual(lastSessionGoal(history), { goal: "Ship the overlay", focusMode: "deep" });
 }
 
-assert.equal(lastSessionGoal([]), null);
+assert.deepEqual(recentGoals([]), []);
 // An unknown mode from an older row degrades to normal instead of reaching a <select> that
 // has no such option.
-assert.deepEqual(lastSessionGoal([summary("x", "hyperfocus")]), {
-  goal: "x",
-  focusMode: "normal",
-});
+assert.deepEqual(recentGoals([summary("x", "hyperfocus")]), [{ goal: "x", focusMode: "normal" }]);
 assert.equal(normalizeFocusMode("DEEP"), "deep");
 assert.equal(normalizeFocusMode(null), "normal");
 assert.equal(normalizeFocusMode("nonsense", "recovery"), "recovery");
