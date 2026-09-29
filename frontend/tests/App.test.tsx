@@ -15,11 +15,11 @@ const boundary = vi.hoisted(() => {
       case "refresh_permissions":
         return (state.health.permissions as Record<string, unknown>) ?? {};
       case "get_settings":
-        return { default_focus_mode: "normal" };
+        return { defaultFocusMode: "normal" };
       case "get_privacy_settings":
-        return { private_mode: false, excluded_apps: [], local_only: true };
+        return { privateMode: false, excludedApps: [], localOnly: true };
       case "get_diagnostics":
-        return { health: state.health, recent_logs: ["ready"] };
+        return { health: state.health, recentLogs: ["ready"] };
       case "get_goal_categories":
         return [{ name: "coding", keywords: ["code", "test"] }];
       case "get_summary_report":
@@ -56,17 +56,17 @@ import { renderApp } from "./renderApp";
 
 const health = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   status: "online",
-  capture_running: false,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: false,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: false,
-    capture_probe_confirmed: false,
-    active_window_available: false,
+    captureAvailable: false,
+    captureProbeConfirmed: false,
+    activeWindowAvailable: false,
     message: "Grant Input Monitoring.",
-    setup_steps: ["Open Settings", "Enable Snapback"],
+    setupSteps: ["Open Settings", "Enable Snapback"],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
   ...overrides,
 });
 
@@ -138,13 +138,13 @@ describe("App first-run permission wizard", () => {
   // are about. So they opt into a healthy capture and test one thing each.
   const healthyCapture = (): Record<string, unknown> =>
     health({
-      capture_running: true,
+      captureRunning: true,
       permissions: {
-        capture_available: true,
-        capture_probe_confirmed: true,
-        active_window_available: true,
+        captureAvailable: true,
+        captureProbeConfirmed: true,
+        activeWindowAvailable: true,
         message: "",
-        setup_steps: [],
+        setupSteps: [],
       },
     });
 
@@ -226,13 +226,13 @@ describe("App first-run permission wizard", () => {
 
   it("hides the wizard once capture is confirmed running", async () => {
     boundary.state.health = health({
-      capture_running: true,
+      captureRunning: true,
       permissions: {
-        capture_available: true,
-        capture_probe_confirmed: true,
-        active_window_available: true,
+        captureAvailable: true,
+        captureProbeConfirmed: true,
+        activeWindowAvailable: true,
         message: "",
-        setup_steps: [],
+        setupSteps: [],
       },
     });
     render(<App />);

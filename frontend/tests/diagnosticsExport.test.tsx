@@ -8,12 +8,12 @@ const boundary = vi.hoisted(() => {
         version: "9.8.7-test",
         health: {
           status: "online",
-          capture_running: true,
-          capture_events_dropped: 0,
+          captureRunning: true,
+          captureEventsDropped: 0,
           classifier: { backend: "heuristic" },
           permissions: {},
         },
-        recent_logs: ["startup complete"],
+        recentLogs: ["startup complete"],
         supportBundlePrivacyNotice:
           "Contains health and logs. It excludes the database. Health details and logs may contain local paths.",
       };

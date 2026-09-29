@@ -31,40 +31,40 @@ assert.deepEqual(mapSessionLongestSnapback({ durationSecs: 360, returnAppName: "
   returnAppName: "Code",
 });
 
-const healthSnake = mapHealth({
+const healthOnline = mapHealth({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_failure_reason: null,
-  overlay_failure_reason: "Overlay window failed",
-  persistence_failure_reason: "Disk full",
+  captureRunning: true,
+  captureFailed: false,
+  captureFailureReason: null,
+  overlayFailureReason: "Overlay window failed",
+  persistenceFailureReason: "Disk full",
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: false,
-    active_window_available: false,
+    captureAvailable: true,
+    captureProbeConfirmed: false,
+    activeWindowAvailable: false,
     message: "OK",
-    setup_steps: ["Step one"],
+    setupSteps: ["Step one"],
   },
   classifier: {
     backend: "onnx",
-    onnx_runtime_enabled: true,
-    model_path: "/data/model.onnx",
+    onnxRuntimeEnabled: true,
+    modelPath: "/data/model.onnx",
   },
 });
 
-assert.equal(healthSnake.status, "online");
-assert.equal(healthSnake.captureRunning, true);
-assert.equal(healthSnake.overlayFailureReason, "Overlay window failed");
-assert.equal(healthSnake.persistenceFailureReason, "Disk full");
-assert.equal(healthSnake.permissions.captureAvailable, true);
-assert.equal(healthSnake.permissions.captureProbeConfirmed, false);
-assert.equal(healthSnake.permissions.setupSteps[0], "Step one");
-assert.equal(healthSnake.classifier.backend, "onnx");
-assert.equal(healthSnake.classifier.modelPath, "/data/model.onnx");
-assert.equal(healthSnake.developerToolsEnabled, false);
-assert.equal(healthSnake.modelDeployment.state, "ok");
+assert.equal(healthOnline.status, "online");
+assert.equal(healthOnline.captureRunning, true);
+assert.equal(healthOnline.overlayFailureReason, "Overlay window failed");
+assert.equal(healthOnline.persistenceFailureReason, "Disk full");
+assert.equal(healthOnline.permissions.captureAvailable, true);
+assert.equal(healthOnline.permissions.captureProbeConfirmed, false);
+assert.equal(healthOnline.permissions.setupSteps[0], "Step one");
+assert.equal(healthOnline.classifier.backend, "onnx");
+assert.equal(healthOnline.classifier.modelPath, "/data/model.onnx");
+assert.equal(healthOnline.developerToolsEnabled, false);
+assert.equal(healthOnline.modelDeployment.state, "ok");
 
-const healthCamel = mapHealth({
+const healthDegraded = mapHealth({
   status: "degraded",
   captureRunning: false,
   captureFailed: true,
@@ -93,23 +93,23 @@ const healthCamel = mapHealth({
   },
 });
 
-assert.equal(healthCamel.captureFailed, true);
-assert.equal(healthCamel.captureFailureReason, "rdev");
-assert.equal(healthCamel.developerToolsEnabled, true);
-assert.equal(healthCamel.modelDeployment.state, "degraded");
-assert.equal(healthCamel.modelDeployment.retryCleanupAvailable, true);
-assert.equal(healthCamel.classifier.onnxRuntimeEnabled, false);
+assert.equal(healthDegraded.captureFailed, true);
+assert.equal(healthDegraded.captureFailureReason, "rdev");
+assert.equal(healthDegraded.developerToolsEnabled, true);
+assert.equal(healthDegraded.modelDeployment.state, "degraded");
+assert.equal(healthDegraded.modelDeployment.retryCleanupAvailable, true);
+assert.equal(healthDegraded.classifier.onnxRuntimeEnabled, false);
 
 const prediction = mapPrediction({
-  session_id: "sess-1",
-  focus_score: 72.5,
-  distraction_risk: 0.42,
-  focus_state: "PRODUCTIVE",
-  thrash_score: 0.1,
-  drift_score: 0.2,
-  goal_alignment: 0.8,
+  sessionId: "sess-1",
+  focusScore: 72.5,
+  distractionRisk: 0.42,
+  focusState: "PRODUCTIVE",
+  thrashScore: 0.1,
+  driftScore: 0.2,
+  goalAlignment: 0.8,
   timestampMs: Date.parse("2026-07-07T12:00:00Z"),
-  state_source: "drift",
+  stateSource: "drift",
 });
 
 assert.equal(prediction.sessionId, "sess-1");
@@ -120,7 +120,7 @@ assert.equal(prediction.stateSource, "drift");
 
 // Rows written before verdicts carried provenance (ADR-0004) map to null — unknown is not
 // the same claim as "model".
-assert.equal(mapPrediction({ session_id: "old" }).stateSource, null);
+assert.equal(mapPrediction({ sessionId: "old" }).stateSource, null);
 
 const session = mapSession({
   sessionId: "sess-2",
@@ -135,45 +135,43 @@ assert.equal(session.sessionId, "sess-2");
 assert.equal(session.focusMode, "deep");
 assert.equal(session.endedAtMs, null);
 
-const settingsSnake = mapSettings({ default_focus_mode: "deep" });
-assert.equal(settingsSnake.defaultFocusMode, "deep");
-
-const settingsCamel = mapSettings({ defaultFocusMode: "recovery" });
-assert.equal(settingsCamel.defaultFocusMode, "recovery");
+assert.equal(mapSettings({ defaultFocusMode: "recovery" }).defaultFocusMode, "recovery");
 
 const settingsUnknown = mapSettings({ defaultFocusMode: "bogus" });
 assert.equal(settingsUnknown.defaultFocusMode, "normal");
 
-const autostartSnake = mapAutostartStatus({ enabled: true, supported: true });
-assert.deepEqual(autostartSnake, { enabled: true, supported: true });
+assert.deepEqual(mapAutostartStatus({ enabled: true, supported: true }), {
+  enabled: true,
+  supported: true,
+});
 
 const autostartMissing = mapAutostartStatus({});
 assert.deepEqual(autostartMissing, { enabled: false, supported: false });
 
-const privacy = mapPrivacySettings({ private_mode: true, excluded_apps: ["Banking"], local_only: true });
+const privacy = mapPrivacySettings({ privateMode: true, excludedApps: ["Banking"], localOnly: true });
 assert.deepEqual(privacy, { privateMode: true, excludedApps: ["Banking"], localOnly: true });
 
 const analytics = mapAnalyticsSummary({
-  sample_count: 2,
-  avg_focus_score: 72,
-  productive_session_streak: 3,
-  hourly: [{ hour: 9, sample_count: 2, avg_focus_score: 72, distracted_fraction: 0.5 }],
-  top_apps: [{ app_name: "Cursor", window_count: 4 }],
+  sampleCount: 2,
+  avgFocusScore: 72,
+  productiveSessionStreak: 3,
+  hourly: [{ hour: 9, sampleCount: 2, avgFocusScore: 72, distractedFraction: 0.5 }],
+  topApps: [{ appName: "Cursor", windowCount: 4 }],
 });
 assert.equal(analytics.hourly[0].avgFocusScore, 72);
 assert.equal(analytics.topApps[0].appName, "Cursor");
 
 const report = mapSummaryReport({
   window: "week",
-  session_count: 4,
-  completed_session_count: 3,
-  focus_seconds: 3600,
-  avg_focus_score: 81,
-  distracted_fraction: 0.2,
-  longest_focus_secs: 8,
-  top_context_app: "Cursor",
-  attended_seconds: 1800,
-  planned_mins: 120,
+  sessionCount: 4,
+  completedSessionCount: 3,
+  focusSeconds: 3600,
+  avgFocusScore: 81,
+  distractedFraction: 0.2,
+  longestFocusSecs: 8,
+  topContextApp: "Cursor",
+  attendedSeconds: 1800,
+  plannedMins: 120,
 });
 assert.equal(report.window, "week");
 assert.equal(report.focusSeconds, 3600);
@@ -193,7 +191,7 @@ assert.equal(todayReport.window, "day");
 assert.equal(todayReport.attendedSeconds, 600);
 assert.equal(todayReport.plannedMins, 90);
 
-const rangeReport = mapSummaryReport({ window: "30d", attended_seconds: 0, planned_mins: 0 });
+const rangeReport = mapSummaryReport({ window: "30d", attendedSeconds: 0, plannedMins: 0 });
 assert.equal(rangeReport.window, "30d");
 assert.equal(rangeReport.plannedMins, 0);
 
@@ -202,8 +200,8 @@ assert.deepEqual(categories, [{ name: "coding", keywords: ["code", "bug"] }]);
 
 const diagnostics = mapDiagnosticsSnapshot({
   version: "0.2.0",
-  health: { status: "online", capture_running: true, classifier: { backend: "heuristic" } },
-  recent_logs: ["2026-07-19T00:00:00Z [INFO] ready"],
+  health: { status: "online", captureRunning: true, classifier: { backend: "heuristic" } },
+  recentLogs: ["2026-07-19T00:00:00Z [INFO] ready"],
   supportBundlePrivacyNotice: "Review before sharing.",
 });
 assert.equal(diagnostics.version, "0.2.0");
@@ -213,12 +211,12 @@ assert.equal(diagnostics.supportBundlePrivacyNotice, "Review before sharing.");
 
 const trainDeployed = mapTrainFromExportResult({
   success: true,
-  training_succeeded: true,
-  deploy_ready: true,
+  trainingSucceeded: true,
+  deployReady: true,
   message: "Training complete",
-  onnx_exported: true,
+  onnxExported: true,
   metrics: { cv_accuracy: 0.91 },
-  log_tail: "done",
+  logTail: "done",
 });
 
 assert.equal(trainDeployed.success, true);
@@ -242,10 +240,10 @@ assert.equal(trainNotDeployed.onnxExported, false);
 
 const snapback = mapSnapbackPayload({
   summary: "auth.ts — Snapback",
-  app_name: "Code",
-  window_title: "auth.ts - Snapback",
-  file_hint: "auth.ts",
-  distraction_duration_secs: 45,
+  appName: "Code",
+  windowTitle: "auth.ts - Snapback",
+  fileHint: "auth.ts",
+  distractionDurationSecs: 45,
 });
 
 assert.equal(snapback.summary, "auth.ts — Snapback");
@@ -260,26 +258,26 @@ assert.equal(deployEmpty.metrics, null);
 assert.equal(deployEmpty.hasExport, false);
 assert.equal(deployEmpty.pipelineCommand, "");
 
-const deploySnake = mapTrainingDeployStatus({
-  export_dir: "/data/export",
-  feature_count: 120,
-  label_count: 40,
-  label_breakdown: { DEEP_FOCUS: 5, DISTRACTED: 2 },
-  has_export: true,
-  model_onnx_exists: true,
-  metrics_exists: true,
+const deployReadyRepo = mapTrainingDeployStatus({
+  exportDir: "/data/export",
+  featureCount: 120,
+  labelCount: 40,
+  labelBreakdown: { DEEP_FOCUS: 5, DISTRACTED: 2 },
+  hasExport: true,
+  modelOnnxExists: true,
+  metricsExists: true,
   metrics: { cv_accuracy: 0.9 },
-  python_available: true,
-  repo_path: "/repo",
-  repo_configured: true,
-  pipeline_command: "python -m ml.pipeline_cli",
+  pythonAvailable: true,
+  repoPath: "/repo",
+  repoConfigured: true,
+  pipelineCommand: "python -m ml.pipeline_cli",
 });
-assert.equal(deploySnake.exportDir, "/data/export");
-assert.deepEqual(deploySnake.labelBreakdown, { DEEP_FOCUS: 5, DISTRACTED: 2 });
-assert.deepEqual(deploySnake.metrics, { cv_accuracy: 0.9 });
-assert.equal(deploySnake.repoPath, "/repo");
+assert.equal(deployReadyRepo.exportDir, "/data/export");
+assert.deepEqual(deployReadyRepo.labelBreakdown, { DEEP_FOCUS: 5, DISTRACTED: 2 });
+assert.deepEqual(deployReadyRepo.metrics, { cv_accuracy: 0.9 });
+assert.equal(deployReadyRepo.repoPath, "/repo");
 
-const deployCamel = mapTrainingDeployStatus({
+const deployNoRepo = mapTrainingDeployStatus({
   exportDir: "/data/export2",
   featureCount: 10,
   labelCount: 5,
@@ -293,9 +291,9 @@ const deployCamel = mapTrainingDeployStatus({
   repoConfigured: false,
   pipelineCommand: "",
 });
-assert.deepEqual(deployCamel.labelBreakdown, { PRODUCTIVE: 3 });
-assert.equal(deployCamel.metrics, null);
-assert.equal(deployCamel.repoPath, null);
+assert.deepEqual(deployNoRepo.labelBreakdown, { PRODUCTIVE: 3 });
+assert.equal(deployNoRepo.metrics, null);
+assert.equal(deployNoRepo.repoPath, null);
 
 // The guard this mapper exists to enforce: `metrics` must be a plain object,
 // not an array or a primitive, or it silently coerces into garbage
@@ -312,11 +310,11 @@ assert.equal(deployMetricsString.metrics, null);
 // --- mapSetupSteps: previously only exercised indirectly via mapHealth ---
 
 assert.deepEqual(mapSetupSteps({}), []);
-assert.deepEqual(mapSetupSteps({ setup_steps: ["Step one"] }), ["Step one"]);
+assert.deepEqual(mapSetupSteps({ setupSteps: ["Step one"] }), ["Step one"]);
 assert.deepEqual(mapSetupSteps({ setupSteps: ["Step two"] }), ["Step two"]);
 // A non-array value must degrade to [] rather than throwing when the
 // caller later calls .map()/.length on the result.
-assert.deepEqual(mapSetupSteps({ setup_steps: "oops" }), []);
+assert.deepEqual(mapSetupSteps({ setupSteps: "oops" }), []);
 
 // --- mapPermissionStatus: previously only exercised indirectly via mapHealth ---
 
@@ -325,24 +323,16 @@ assert.equal(permissionsEmpty.captureAvailable, false);
 assert.equal(permissionsEmpty.message, "");
 assert.deepEqual(permissionsEmpty.setupSteps, []);
 
-const permissionsSnake = mapPermissionStatus({
-  capture_available: true,
-  capture_probe_confirmed: true,
-  active_window_available: true,
+const permissionsGranted = mapPermissionStatus({
+  captureAvailable: true,
+  captureProbeConfirmed: true,
+  activeWindowAvailable: true,
   message: "OK",
-  setup_steps: ["Grant access"],
+  setupSteps: ["Grant access"],
 });
-assert.equal(permissionsSnake.captureAvailable, true);
-assert.deepEqual(permissionsSnake.setupSteps, ["Grant access"]);
-
-const permissionsCamel = mapPermissionStatus({
-  captureAvailable: false,
-  captureProbeConfirmed: false,
-  activeWindowAvailable: false,
-  message: "Denied",
-  setupSteps: [],
-});
-assert.equal(permissionsCamel.message, "Denied");
+assert.equal(permissionsGranted.captureAvailable, true);
+assert.deepEqual(permissionsGranted.setupSteps, ["Grant access"]);
+assert.equal(permissionsGranted.message, "OK");
 
 // --- mapClassifierStatus ---
 
@@ -351,29 +341,29 @@ assert.equal(classifierEmpty.backend, "heuristic");
 assert.equal(classifierEmpty.onnxRuntimeEnabled, false);
 assert.equal(classifierEmpty.modelPath, null);
 
-const classifierSnake = mapClassifierStatus({
+const classifierOnnx = mapClassifierStatus({
   backend: "onnx",
-  onnx_runtime_enabled: true,
-  model_path: "/data/model.onnx",
+  onnxRuntimeEnabled: true,
+  modelPath: "/data/model.onnx",
 });
-assert.equal(classifierSnake.backend, "onnx");
-assert.equal(classifierSnake.modelPath, "/data/model.onnx");
+assert.equal(classifierOnnx.backend, "onnx");
+assert.equal(classifierOnnx.modelPath, "/data/model.onnx");
 
-const classifierCamel = mapClassifierStatus({
+const classifierHeuristic = mapClassifierStatus({
   backend: "heuristic",
   onnxRuntimeEnabled: false,
   modelPath: null,
 });
-assert.equal(classifierCamel.onnxRuntimeEnabled, false);
+assert.equal(classifierHeuristic.onnxRuntimeEnabled, false);
 // Inference health defaults to healthy when an older backend does not send it.
-assert.equal(classifierCamel.inferenceDegraded, false);
-assert.equal(classifierCamel.inferenceFailures, 0);
+assert.equal(classifierHeuristic.inferenceDegraded, false);
+assert.equal(classifierHeuristic.inferenceFailures, 0);
 const classifierDegraded = mapClassifierStatus({
   backend: "heuristic",
-  onnx_runtime_enabled: false,
-  model_path: "/data/model.onnx",
-  inference_degraded: true,
-  inference_failures: 3,
+  onnxRuntimeEnabled: false,
+  modelPath: "/data/model.onnx",
+  inferenceDegraded: true,
+  inferenceFailures: 3,
 });
 assert.equal(classifierDegraded.inferenceDegraded, true);
 assert.equal(classifierDegraded.inferenceFailures, 3);
@@ -385,28 +375,17 @@ assert.equal(appRuleEmpty.id, 0);
 assert.equal(appRuleEmpty.ruleType, "allow");
 assert.equal(appRuleEmpty.note, null);
 
-const appRuleSnake = mapAppRule({
+const appRuleBlock = mapAppRule({
   id: 7,
   pattern: "youtube.com",
-  rule_type: "block",
+  ruleType: "block",
   note: "distracting",
-  created_at_ms: Date.parse("2026-07-01T00:00:00Z"),
-  updated_at_ms: Date.parse("2026-07-02T00:00:00Z"),
+  createdAtMs: Date.parse("2026-07-01T00:00:00Z"),
+  updatedAtMs: Date.parse("2026-07-02T00:00:00Z"),
 });
-assert.equal(appRuleSnake.id, 7);
-assert.equal(appRuleSnake.ruleType, "block");
-assert.equal(appRuleSnake.note, "distracting");
-
-const appRuleCamel = mapAppRule({
-  id: 8,
-  pattern: "github.com",
-  ruleType: "allow",
-  note: null,
-  createdAtMs: Date.parse("2026-07-03T00:00:00Z"),
-  updatedAtMs: Date.parse("2026-07-04T00:00:00Z"),
-});
-assert.equal(appRuleCamel.ruleType, "allow");
-assert.equal(appRuleCamel.note, null);
+assert.equal(appRuleBlock.id, 7);
+assert.equal(appRuleBlock.ruleType, "block");
+assert.equal(appRuleBlock.note, "distracting");
 
 // --- mapContextSnapshot ---
 
@@ -414,26 +393,16 @@ const contextEmpty = mapContextSnapshot({});
 assert.equal(contextEmpty.appName, "");
 assert.equal(contextEmpty.summary, "");
 
-const contextSnake = mapContextSnapshot({
-  app_name: "Code",
-  window_title: "auth.ts",
-  file_hint: "auth.ts",
-  project_hint: "Snapback",
+const contextCode = mapContextSnapshot({
+  appName: "Code",
+  windowTitle: "auth.ts",
+  fileHint: "auth.ts",
+  projectHint: "Snapback",
   summary: "Editing auth.ts",
   timestampMs: Date.parse("2026-07-08T00:00:00Z"),
 });
-assert.equal(contextSnake.appName, "Code");
-assert.equal(contextSnake.projectHint, "Snapback");
-
-const contextCamel = mapContextSnapshot({
-  appName: "Terminal",
-  windowTitle: "zsh",
-  fileHint: "",
-  projectHint: "",
-  summary: "Idle",
-  timestampMs: Date.parse("2026-07-08T00:01:00Z"),
-});
-assert.equal(contextCamel.appName, "Terminal");
+assert.equal(contextCode.appName, "Code");
+assert.equal(contextCode.projectHint, "Snapback");
 
 // --- mapExportTrainingResult ---
 
@@ -441,24 +410,16 @@ const exportEmpty = mapExportTrainingResult({});
 assert.equal(exportEmpty.outputDir, "");
 assert.equal(exportEmpty.featureCount, 0);
 
-const exportSnake = mapExportTrainingResult({
-  output_dir: "/data/export",
-  features_path: "/data/export/features.csv",
-  labels_path: "/data/export/labels.csv",
-  feature_count: 200,
-  label_count: 50,
+const exported = mapExportTrainingResult({
+  outputDir: "/data/export",
+  featuresPath: "/data/export/features.csv",
+  labelsPath: "/data/export/labels.csv",
+  featureCount: 200,
+  labelCount: 50,
 });
-assert.equal(exportSnake.outputDir, "/data/export");
-assert.equal(exportSnake.featureCount, 200);
-
-const exportCamel = mapExportTrainingResult({
-  outputDir: "/data/export2",
-  featuresPath: "/data/export2/features.csv",
-  labelsPath: "/data/export2/labels.csv",
-  featureCount: 300,
-  labelCount: 60,
-});
-assert.equal(exportCamel.labelCount, 60);
+assert.equal(exported.outputDir, "/data/export");
+assert.equal(exported.featureCount, 200);
+assert.equal(exported.labelCount, 50);
 
 // --- mapFocusSummary ---
 
@@ -466,29 +427,19 @@ const focusSummaryEmpty = mapFocusSummary({});
 assert.equal(focusSummaryEmpty.sampleCount, 0);
 assert.equal(focusSummaryEmpty.avgFocusScore, 0);
 
-const focusSummarySnake = mapFocusSummary({
-  sample_count: 120,
-  avg_focus_score: 68.4,
-  peak_focus_score: 97.0,
-  distracted_samples: 18,
-  distracted_fraction: 0.15,
-  longest_focus_secs: 42,
+const focusSummaryFull = mapFocusSummary({
+  sampleCount: 120,
+  avgFocusScore: 68.4,
+  peakFocusScore: 97.0,
+  distractedSamples: 18,
+  distractedFraction: 0.15,
+  longestFocusSecs: 42,
 });
-assert.equal(focusSummarySnake.sampleCount, 120);
-assert.equal(focusSummarySnake.peakFocusScore, 97.0);
-assert.equal(focusSummarySnake.distractedFraction, 0.15);
-assert.equal(focusSummarySnake.longestFocusSecs, 42);
-
-const focusSummaryCamel = mapFocusSummary({
-  sampleCount: 80,
-  avgFocusScore: 55.0,
-  peakFocusScore: 90.0,
-  distractedSamples: 30,
-  distractedFraction: 0.375,
-  longestFocusSecs: 10,
-});
-assert.equal(focusSummaryCamel.sampleCount, 80);
-assert.equal(focusSummaryCamel.distractedSamples, 30);
+assert.equal(focusSummaryFull.sampleCount, 120);
+assert.equal(focusSummaryFull.peakFocusScore, 97.0);
+assert.equal(focusSummaryFull.distractedFraction, 0.15);
+assert.equal(focusSummaryFull.longestFocusSecs, 42);
+assert.equal(focusSummaryFull.distractedSamples, 18);
 
 // --- mapPomodoroStatus ---
 
@@ -497,30 +448,23 @@ assert.equal(pomodoroEmpty.running, false);
 assert.equal(pomodoroEmpty.phase, "work");
 assert.equal(pomodoroEmpty.remainingMs, 0);
 
-const pomodoroSnake = mapPomodoroStatus({
+const pomodoroBreak = mapPomodoroStatus({
   running: true,
   phase: "shortBreak",
-  completed_work_intervals: 3,
-  remaining_ms: 45_000,
+  completedWorkIntervals: 3,
+  remainingMs: 45_000,
 });
-assert.equal(pomodoroSnake.running, true);
-assert.equal(pomodoroSnake.phase, "shortBreak");
-assert.equal(pomodoroSnake.completedWorkIntervals, 3);
-assert.equal(pomodoroSnake.remainingMs, 45_000);
+assert.equal(pomodoroBreak.running, true);
+assert.equal(pomodoroBreak.phase, "shortBreak");
+assert.equal(pomodoroBreak.completedWorkIntervals, 3);
+assert.equal(pomodoroBreak.remainingMs, 45_000);
 
-const pomodoroCamel = mapPomodoroStatus({
-  running: false,
-  phase: "longBreak",
-  completedWorkIntervals: 4,
-  remainingMs: 0,
-});
-assert.equal(pomodoroCamel.phase, "longBreak");
-assert.equal(pomodoroCamel.completedWorkIntervals, 4);
+assert.equal(mapPomodoroStatus({ phase: "longBreak" }).phase, "longBreak");
 
 const pomodoroUnknownPhase = mapPomodoroStatus({ running: false, phase: "bogus" });
 assert.equal(pomodoroUnknownPhase.phase, "work"); // falls back safely
 
-const dailyCamel = mapDailySummary({
+const dailyFull = mapDailySummary({
   window: "7d",
   generatedAtMs: 1_787_000_000_000,
   capped: true,
@@ -537,28 +481,28 @@ const dailyCamel = mapDailySummary({
     },
   ],
 });
-assert.equal(dailyCamel.window, "7d");
-assert.equal(dailyCamel.capped, true);
-assert.equal(dailyCamel.days.length, 1);
-assert.equal(dailyCamel.days[0].day, "2026-08-05");
-assert.equal(dailyCamel.days[0].attendedSecs, 1800);
-assert.equal(dailyCamel.days[0].focusedSecs, 1200);
-assert.equal(dailyCamel.days[0].deepFocusSecs, 600);
-assert.equal(dailyCamel.days[0].avgFocusScore, 63.5);
-assert.equal(dailyCamel.days[0].sampleCount, 412);
-assert.equal(dailyCamel.days[0].sessionCount, 2);
-assert.equal(dailyCamel.days[0].snapbackCount, 3);
+assert.equal(dailyFull.window, "7d");
+assert.equal(dailyFull.capped, true);
+assert.equal(dailyFull.days.length, 1);
+assert.equal(dailyFull.days[0].day, "2026-08-05");
+assert.equal(dailyFull.days[0].attendedSecs, 1800);
+assert.equal(dailyFull.days[0].focusedSecs, 1200);
+assert.equal(dailyFull.days[0].deepFocusSecs, 600);
+assert.equal(dailyFull.days[0].avgFocusScore, 63.5);
+assert.equal(dailyFull.days[0].sampleCount, 412);
+assert.equal(dailyFull.days[0].sessionCount, 2);
+assert.equal(dailyFull.days[0].snapbackCount, 3);
 
-const dailySnake = mapDailySummary({
+const dailyPartial = mapDailySummary({
   window: "30d",
-  generated_at_ms: 5,
-  days: [{ day: "2026-08-06", attended_secs: 60, deep_focus_secs: 30 }],
+  generatedAtMs: 5,
+  days: [{ day: "2026-08-06", attendedSecs: 60, deepFocusSecs: 30 }],
 });
-assert.equal(dailySnake.generatedAtMs, 5);
-assert.equal(dailySnake.capped, false);
-assert.equal(dailySnake.days[0].attendedSecs, 60);
-assert.equal(dailySnake.days[0].deepFocusSecs, 30);
-assert.equal(dailySnake.days[0].focusedSecs, 0);
+assert.equal(dailyPartial.generatedAtMs, 5);
+assert.equal(dailyPartial.capped, false);
+assert.equal(dailyPartial.days[0].attendedSecs, 60);
+assert.equal(dailyPartial.days[0].deepFocusSecs, 30);
+assert.equal(dailyPartial.days[0].focusedSecs, 0);
 
 const dailyEmpty = mapDailySummary({});
 assert.equal(dailyEmpty.window, "7d");

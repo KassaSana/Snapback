@@ -13,7 +13,7 @@ const boundary = vi.hoisted(() => {
     history: Record<string, unknown>[];
   } = {
     activeSession: null,
-    analytics: { avg_focus_score: 80, sample_count: 10, productive_session_streak: 2, hourly: [], top_apps: [] },
+    analytics: { avgFocusScore: 80, sampleCount: 10, productiveSessionStreak: 2, hourly: [], topApps: [] },
     health: {},
     rules: [],
     timeline: [],
@@ -34,10 +34,10 @@ const boundary = vi.hoisted(() => {
         const rule = {
           id: nextId++,
           pattern: String(request.pattern ?? ""),
-          rule_type: String(request.ruleType ?? "allow"),
+          ruleType: String(request.ruleType ?? "allow"),
           note: request.note ?? null,
-          created_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          updated_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+          createdAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          updatedAtMs: Date.parse("2026-07-11T00:00:00Z"),
         };
         state.rules = [...state.rules, rule];
         return rule;
@@ -58,23 +58,17 @@ const boundary = vi.hoisted(() => {
       case "get_session_history":
         return state.history;
       case "get_summary_report":
-        return { total_attended_minutes: 0, session_count: 0 };
+        return { sessionCount: 0 };
       case "get_focus_summary":
         return {};
       case "get_settings":
-        return { default_focus_mode: "normal" };
+        return { defaultFocusMode: "normal" };
       case "get_privacy_settings":
-        return { private_mode: false, excluded_apps: [] };
+        return { privateMode: false, excludedApps: [] };
       case "get_recording_status":
         return { state: "recording" };
       case "get_pomodoro_status":
         return { enabled: false };
-      case "get_attended_targets":
-        return { daily_target_minutes: null, weekly_target_minutes: null };
-      case "get_autostart_status":
-        return { enabled: false };
-      case "get_diagnostics_snapshot":
-        return { database_size_bytes: 0, log_size_bytes: 0, model_size_bytes: 0 };
       case "get_goal_categories":
         return [];
       case "get_training_deploy_status":
@@ -94,17 +88,17 @@ import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 beforeEach(() => {
@@ -115,7 +109,7 @@ beforeEach(() => {
   boundary.state.timeline = [];
   boundary.state.history = [];
   boundary.state.activeSession = null;
-  boundary.state.analytics = { avg_focus_score: 80, sample_count: 10, productive_session_streak: 2, hourly: [], top_apps: [] };
+  boundary.state.analytics = { avgFocusScore: 80, sampleCount: 10, productiveSessionStreak: 2, hourly: [], topApps: [] };
 });
 
 afterEach(() => {
@@ -156,10 +150,10 @@ describe("App rules add/delete flow", () => {
       {
         id: 7,
         pattern: "notion",
-        rule_type: "block",
+        ruleType: "block",
         note: null,
-        created_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-        updated_at_ms: Date.parse("2026-07-11T00:00:00Z"),
+        createdAtMs: Date.parse("2026-07-11T00:00:00Z"),
+        updatedAtMs: Date.parse("2026-07-11T00:00:00Z"),
       },
     ];
     renderApp("settings", "focus");
@@ -175,19 +169,19 @@ describe("App rules add/delete flow", () => {
 
   it("creates an allow rule with one click from the context timeline", async () => {
     const session = {
-      session_id: "session-123",
+      sessionId: "session-123",
       goal: "Code review",
       status: "COMPLETED",
-      focus_mode: "normal",
-      started_at_ms: Date.parse("2026-08-14T00:00:00Z"),
-      ended_at_ms: Date.parse("2026-08-14T01:00:00Z"),
+      focusMode: "normal",
+      startedAtMs: Date.parse("2026-08-14T00:00:00Z"),
+      endedAtMs: Date.parse("2026-08-14T01:00:00Z"),
     };
-    boundary.state.history = [{ record: session, recap: { session_id: "session-123", goal: "Code review" } }];
+    boundary.state.history = [{ record: session, recap: { sessionId: "session-123", goal: "Code review" } }];
     boundary.state.timeline = [
       {
         timestampMs: Date.parse("2026-08-14T00:05:00Z"),
-        app_name: "Slack",
-        window_title: "team-general - Slack",
+        appName: "Slack",
+        windowTitle: "team-general - Slack",
         summary: "Chatting with team",
       },
     ];
@@ -212,11 +206,11 @@ describe("App rules add/delete flow", () => {
 
   it("creates a block rule with one click from top apps in review", async () => {
     boundary.state.analytics = {
-      avg_focus_score: 80,
-      sample_count: 10,
-      productive_session_streak: 2,
+      avgFocusScore: 80,
+      sampleCount: 10,
+      productiveSessionStreak: 2,
       hourly: [],
-      top_apps: [{ app_name: "Steam", window_count: 15 }],
+      topApps: [{ appName: "Steam", windowCount: 15 }],
     };
 
     renderApp("review");

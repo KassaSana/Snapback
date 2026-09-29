@@ -27,7 +27,7 @@ const boundary = vi.hoisted(() => {
       case "get_settings":
         return state.settings;
       case "get_privacy_settings":
-        return { private_mode: false, excluded_apps: [] };
+        return { privateMode: false, excludedApps: [] };
       case "inspect_data_import":
         return state.inspect;
       case "pick_open_file":
@@ -65,18 +65,18 @@ import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
-  developer_tools_enabled: false,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
+  developerToolsEnabled: false,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 beforeEach(() => {
@@ -84,7 +84,7 @@ beforeEach(() => {
   window.location.hash = "";
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settings = { defaultFocusMode: "normal" };
   boundary.state.inspect = { acceptable: true, message: "", schemaVersion: 6, sessionCount: 42 };
   boundary.state.stage = {
     ok: true,

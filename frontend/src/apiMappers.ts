@@ -91,20 +91,20 @@ export function mapSettings(raw: Record<string, unknown>): AppSettings {
   return {
     alerts: mapAlertDelivery(raw.alerts),
     defaultFocusMode: normalizeFocusMode(
-      raw.default_focus_mode ?? raw.defaultFocusMode,
+      raw.defaultFocusMode,
     ),
     idleThresholdSecs: normalizeIdleThresholdSecs(
-      raw.idle_threshold_secs ?? raw.idleThresholdSecs,
+      raw.idleThresholdSecs,
     ),
     pomodoro: {
-      workMs: Number(pomodoro.work_ms ?? pomodoro.workMs ?? 25 * 60 * 1000),
-      shortBreakMs: Number(pomodoro.short_break_ms ?? pomodoro.shortBreakMs ?? 5 * 60 * 1000),
-      longBreakMs: Number(pomodoro.long_break_ms ?? pomodoro.longBreakMs ?? 15 * 60 * 1000),
+      workMs: Number(pomodoro.workMs ?? 25 * 60 * 1000),
+      shortBreakMs: Number(pomodoro.shortBreakMs ?? 5 * 60 * 1000),
+      longBreakMs: Number(pomodoro.longBreakMs ?? 15 * 60 * 1000),
       intervalsBeforeLongBreak: Number(
-        pomodoro.intervals_before_long_break ?? pomodoro.intervalsBeforeLongBreak ?? 4,
+        pomodoro.intervalsBeforeLongBreak ?? 4,
       ),
       autoStartNextPhase: Boolean(
-        pomodoro.auto_start_next_phase ?? pomodoro.autoStartNextPhase ?? true,
+        pomodoro.autoStartNextPhase ?? true,
       ),
     },
   };
@@ -118,38 +118,38 @@ export function mapAutostartStatus(raw: Record<string, unknown>): AutostartStatu
 }
 
 export function mapPrivacySettings(raw: Record<string, unknown>): PrivacySettings {
-  const exclusions = raw.excluded_apps ?? raw.excludedApps;
+  const exclusions = raw.excludedApps;
   return {
-    privateMode: Boolean(raw.private_mode ?? raw.privateMode ?? false),
+    privateMode: Boolean(raw.privateMode ?? false),
     excludedApps: Array.isArray(exclusions) ? exclusions.map((value) => String(value)) : [],
-    localOnly: Boolean(raw.local_only ?? raw.localOnly ?? true),
+    localOnly: Boolean(raw.localOnly ?? true),
   };
 }
 
 export function mapAnalyticsSummary(raw: Record<string, unknown>): AnalyticsSummary {
   const hourlyRaw = Array.isArray(raw.hourly) ? raw.hourly : [];
-  const topAppsValue = raw.top_apps ?? raw.topApps;
+  const topAppsValue = raw.topApps;
   const topAppsRaw = Array.isArray(topAppsValue) ? topAppsValue : [];
   return {
-    sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
-    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
+    sampleCount: Number(raw.sampleCount ?? 0),
+    avgFocusScore: Number(raw.avgFocusScore ?? 0),
     productiveSessionStreak: Number(
-      raw.productive_session_streak ?? raw.productiveSessionStreak ?? 0,
+      raw.productiveSessionStreak ?? 0,
     ),
     hourly: hourlyRaw.map((value) => {
       const row = (value ?? {}) as Record<string, unknown>;
       return {
         hour: Number(row.hour ?? 0),
-        sampleCount: Number(row.sample_count ?? row.sampleCount ?? 0),
-        avgFocusScore: Number(row.avg_focus_score ?? row.avgFocusScore ?? 0),
-        distractedFraction: Number(row.distracted_fraction ?? row.distractedFraction ?? 0),
+        sampleCount: Number(row.sampleCount ?? 0),
+        avgFocusScore: Number(row.avgFocusScore ?? 0),
+        distractedFraction: Number(row.distractedFraction ?? 0),
       };
     }),
     topApps: topAppsRaw.map((value) => {
       const row = (value ?? {}) as Record<string, unknown>;
       return {
-        appName: String(row.app_name ?? row.appName ?? ""),
-        windowCount: Number(row.window_count ?? row.windowCount ?? 0),
+        appName: String(row.appName ?? ""),
+        windowCount: Number(row.windowCount ?? 0),
       };
     }),
   };
@@ -159,19 +159,19 @@ export function mapDailySummary(raw: Record<string, unknown>): DailySummary {
   const daysRaw = Array.isArray(raw.days) ? raw.days : [];
   return {
     window: String(raw.window ?? "7d"),
-    generatedAtMs: Number(raw.generated_at_ms ?? raw.generatedAtMs ?? 0),
+    generatedAtMs: Number(raw.generatedAtMs ?? 0),
     capped: Boolean(raw.capped ?? false),
     days: daysRaw.map((value): DailySummaryDay => {
       const row = (value ?? {}) as Record<string, unknown>;
       return {
         day: String(row.day ?? ""),
-        attendedSecs: Number(row.attended_secs ?? row.attendedSecs ?? 0),
-        focusedSecs: Number(row.focused_secs ?? row.focusedSecs ?? 0),
-        deepFocusSecs: Number(row.deep_focus_secs ?? row.deepFocusSecs ?? 0),
-        avgFocusScore: Number(row.avg_focus_score ?? row.avgFocusScore ?? 0),
-        sampleCount: Number(row.sample_count ?? row.sampleCount ?? 0),
-        sessionCount: Number(row.session_count ?? row.sessionCount ?? 0),
-        snapbackCount: Number(row.snapback_count ?? row.snapbackCount ?? 0),
+        attendedSecs: Number(row.attendedSecs ?? 0),
+        focusedSecs: Number(row.focusedSecs ?? 0),
+        deepFocusSecs: Number(row.deepFocusSecs ?? 0),
+        avgFocusScore: Number(row.avgFocusScore ?? 0),
+        sampleCount: Number(row.sampleCount ?? 0),
+        sessionCount: Number(row.sessionCount ?? 0),
+        snapbackCount: Number(row.snapbackCount ?? 0),
       };
     }),
   };
@@ -185,28 +185,28 @@ export function mapSummaryReport(raw: Record<string, unknown>): SummaryReport {
     : "day") as SummaryWindow;
   return {
     window: normalized,
-    generatedAtMs: Number(raw.generated_at_ms ?? raw.generatedAtMs ?? 0),
-    sessionCount: Number(raw.session_count ?? raw.sessionCount ?? 0),
+    generatedAtMs: Number(raw.generatedAtMs ?? 0),
+    sessionCount: Number(raw.sessionCount ?? 0),
     completedSessionCount: Number(
-      raw.completed_session_count ?? raw.completedSessionCount ?? 0,
+      raw.completedSessionCount ?? 0,
     ),
-    focusSeconds: Number(raw.focus_seconds ?? raw.focusSeconds ?? 0),
-    sessionLimit: Number(raw.session_limit ?? raw.sessionLimit ?? 0),
-    sessionsTruncated: Boolean(raw.sessions_truncated ?? raw.sessionsTruncated ?? false),
-    sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
-    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
-    distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
-    longestFocusSecs: Number(raw.longest_focus_secs ?? raw.longestFocusSecs ?? 0),
-    topContextApp: String(raw.top_context_app ?? raw.topContextApp ?? ""),
-    attendedSeconds: Number(raw.attended_seconds ?? raw.attendedSeconds ?? 0),
-    plannedMins: Number(raw.planned_mins ?? raw.plannedMins ?? 0),
+    focusSeconds: Number(raw.focusSeconds ?? 0),
+    sessionLimit: Number(raw.sessionLimit ?? 0),
+    sessionsTruncated: Boolean(raw.sessionsTruncated ?? false),
+    sampleCount: Number(raw.sampleCount ?? 0),
+    avgFocusScore: Number(raw.avgFocusScore ?? 0),
+    distractedFraction: Number(raw.distractedFraction ?? 0),
+    longestFocusSecs: Number(raw.longestFocusSecs ?? 0),
+    topContextApp: String(raw.topContextApp ?? ""),
+    attendedSeconds: Number(raw.attendedSeconds ?? 0),
+    plannedMins: Number(raw.plannedMins ?? 0),
   };
 }
 
 export function mapSummaryExportResult(raw: Record<string, unknown>): SummaryExportResult {
   return {
     window: String(raw.window ?? "day") === "week" ? "week" : "day",
-    outputPath: String(raw.output_path ?? raw.outputPath ?? ""),
+    outputPath: String(raw.outputPath ?? ""),
   };
 }
 
@@ -223,28 +223,28 @@ export function mapGoalCategories(raw: Record<string, unknown>[]): GoalCategory[
 
 export function mapContextSnapshot(raw: Record<string, unknown>): ContextSnapshot {
   return {
-    appName: String(raw.app_name ?? raw.appName ?? ""),
-    windowTitle: String(raw.window_title ?? raw.windowTitle ?? ""),
-    fileHint: String(raw.file_hint ?? raw.fileHint ?? ""),
-    projectHint: String(raw.project_hint ?? raw.projectHint ?? ""),
+    appName: String(raw.appName ?? ""),
+    windowTitle: String(raw.windowTitle ?? ""),
+    fileHint: String(raw.fileHint ?? ""),
+    projectHint: String(raw.projectHint ?? ""),
     summary: String(raw.summary ?? ""),
-    timestampMs: Number(raw.timestamp_ms ?? raw.timestampMs ?? 0),
+    timestampMs: Number(raw.timestampMs ?? 0),
   };
 }
 
 export function mapSetupSteps(raw: Record<string, unknown>): string[] {
-  const steps = raw.setup_steps ?? raw.setupSteps;
+  const steps = raw.setupSteps;
   return Array.isArray(steps) ? steps.map((step: unknown) => String(step)) : [];
 }
 
 export function mapPermissionStatus(raw: Record<string, unknown>): PermissionStatus {
   return {
-    captureAvailable: Boolean(raw.capture_available ?? raw.captureAvailable ?? false),
+    captureAvailable: Boolean(raw.captureAvailable ?? false),
     captureProbeConfirmed: Boolean(
-      raw.capture_probe_confirmed ?? raw.captureProbeConfirmed ?? false,
+      raw.captureProbeConfirmed ?? false,
     ),
     activeWindowAvailable: Boolean(
-      raw.active_window_available ?? raw.activeWindowAvailable ?? false,
+      raw.activeWindowAvailable ?? false,
     ),
     message: String(raw.message ?? ""),
     setupSteps: mapSetupSteps(raw),
@@ -254,73 +254,68 @@ export function mapPermissionStatus(raw: Record<string, unknown>): PermissionSta
 export function mapClassifierStatus(raw: Record<string, unknown>): ClassifierStatus {
   return {
     backend: String(raw.backend ?? "heuristic"),
-    onnxRuntimeEnabled: Boolean(raw.onnx_runtime_enabled ?? raw.onnxRuntimeEnabled ?? false),
-    modelPath: (raw.model_path ?? raw.modelPath ?? null) as string | null,
-    modelId: (raw.model_id ?? raw.modelId ?? null) as string | null,
-    inferenceDegraded: Boolean(raw.inference_degraded ?? raw.inferenceDegraded ?? false),
-    inferenceFailures: Number(raw.inference_failures ?? raw.inferenceFailures ?? 0),
+    onnxRuntimeEnabled: Boolean(raw.onnxRuntimeEnabled ?? false),
+    modelPath: (raw.modelPath ?? null) as string | null,
+    modelId: (raw.modelId ?? null) as string | null,
+    inferenceDegraded: Boolean(raw.inferenceDegraded ?? false),
+    inferenceFailures: Number(raw.inferenceFailures ?? 0),
   };
 }
 
 export function mapModelDeploymentHealth(raw: Record<string, unknown>): ModelDeploymentHealth {
-  const preserved = raw.preserved_paths ?? raw.preservedPaths;
+  const preserved = raw.preservedPaths;
   return {
     state: String(raw.state ?? "ok") === "degraded" ? "degraded" : "ok",
     message: (raw.message ?? null) as string | null,
     preservedPaths: Array.isArray(preserved) ? preserved.map((path) => String(path)) : [],
     retryCleanupAvailable: Boolean(
-      raw.retry_cleanup_available ?? raw.retryCleanupAvailable ?? false,
+      raw.retryCleanupAvailable ?? false,
     ),
-    rollbackAvailable: Boolean(raw.rollback_available ?? raw.rollbackAvailable ?? false),
+    rollbackAvailable: Boolean(raw.rollbackAvailable ?? false),
   };
 }
 
 export function mapRuntimeMetrics(raw: Record<string, unknown>): RuntimeMetrics {
   // One reader for every field, because a counter that fails to map reads as 0 on this side
   // and a 0 contention count is indistinguishable from good news.
-  const num = (camel: string, snake: string): number => Number(raw[snake] ?? raw[camel] ?? 0);
+  const num = (key: string): number => Number(raw[key] ?? 0);
   return {
-    engineWakeups: num("engineWakeups", "engine_wakeups"),
-    processCpuMs: num("processCpuMs", "process_cpu_ms"),
-    captureRingHighWater: num("captureRingHighWater", "capture_ring_high_water"),
-    captureRingCapacity: num("captureRingCapacity", "capture_ring_capacity"),
-    storageLockAcquisitions: num("storageLockAcquisitions", "storage_lock_acquisitions"),
-    storageLockContended: num("storageLockContended", "storage_lock_contended"),
-    storageLockHoldP50Us: num("storageLockHoldP50Us", "storage_lock_hold_p50_us"),
-    storageLockHoldP95Us: num("storageLockHoldP95Us", "storage_lock_hold_p95_us"),
-    storageLockMaxHoldUs: num("storageLockMaxHoldUs", "storage_lock_max_hold_us"),
-    storageLockWaitP95Us: num("storageLockWaitP95Us", "storage_lock_wait_p95_us"),
-    storageLockMaxWaitUs: num("storageLockMaxWaitUs", "storage_lock_max_wait_us"),
-    sqliteBusyWaits: num("sqliteBusyWaits", "sqlite_busy_waits"),
-    sqliteBusyExhausted: num("sqliteBusyExhausted", "sqlite_busy_exhausted"),
-    sqliteBusyMaxWaitMs: num("sqliteBusyMaxWaitMs", "sqlite_busy_max_wait_ms"),
+    engineWakeups: num("engineWakeups"),
+    processCpuMs: num("processCpuMs"),
+    captureRingHighWater: num("captureRingHighWater"),
+    captureRingCapacity: num("captureRingCapacity"),
+    storageLockAcquisitions: num("storageLockAcquisitions"),
+    storageLockContended: num("storageLockContended"),
+    storageLockHoldP50Us: num("storageLockHoldP50Us"),
+    storageLockHoldP95Us: num("storageLockHoldP95Us"),
+    storageLockMaxHoldUs: num("storageLockMaxHoldUs"),
+    storageLockWaitP95Us: num("storageLockWaitP95Us"),
+    storageLockMaxWaitUs: num("storageLockMaxWaitUs"),
+    sqliteBusyWaits: num("sqliteBusyWaits"),
+    sqliteBusyExhausted: num("sqliteBusyExhausted"),
+    sqliteBusyMaxWaitMs: num("sqliteBusyMaxWaitMs"),
   };
 }
 
 export function mapHealth(raw: Record<string, unknown>): HealthStatus {
   return {
     status: String(raw.status ?? "offline"),
-    captureRunning: Boolean(raw.capture_running ?? raw.captureRunning ?? false),
-    captureFailed: Boolean(raw.capture_failed ?? raw.captureFailed ?? false),
-    captureFailureReason: (raw.capture_failure_reason ??
-      raw.captureFailureReason ??
+    captureRunning: Boolean(raw.captureRunning ?? false),
+    captureFailed: Boolean(raw.captureFailed ?? false),
+    captureFailureReason: (raw.captureFailureReason ??
       null) as string | null,
-    overlayFailureReason: (raw.overlay_failure_reason ??
-      raw.overlayFailureReason ??
+    overlayFailureReason: (raw.overlayFailureReason ??
       null) as string | null,
-    persistenceFailureReason: (raw.persistence_failure_reason ??
-      raw.persistenceFailureReason ??
+    persistenceFailureReason: (raw.persistenceFailureReason ??
       null) as string | null,
     captureEventsDropped: Number(
-      raw.capture_events_dropped ?? raw.captureEventsDropped ?? 0,
+      raw.captureEventsDropped ?? 0,
     ),
-    captureStalled: Boolean(raw.capture_stalled ?? raw.captureStalled ?? false),
+    captureStalled: Boolean(raw.captureStalled ?? false),
     lastPredictionAgeSecs:
-      raw.last_prediction_age_secs == null && raw.lastPredictionAgeSecs == null
-        ? null
-        : Number(raw.last_prediction_age_secs ?? raw.lastPredictionAgeSecs),
+      raw.lastPredictionAgeSecs == null ? null : Number(raw.lastPredictionAgeSecs),
     predictionSuppressionReason: String(
-      raw.prediction_suppression_reason ?? raw.predictionSuppressionReason ?? "none",
+      raw.predictionSuppressionReason ?? "none",
     ),
     permissions: mapPermissionStatus(
       (raw.permissions as Record<string, unknown>) ?? {},
@@ -329,19 +324,17 @@ export function mapHealth(raw: Record<string, unknown>): HealthStatus {
       (raw.classifier as Record<string, unknown>) ?? {},
     ),
     modelDeployment: mapModelDeploymentHealth(
-      (raw.model_deployment as Record<string, unknown>) ??
-        (raw.modelDeployment as Record<string, unknown>) ??
-        {},
+      (raw.modelDeployment as Record<string, unknown>) ?? {},
     ),
     runtime: mapRuntimeMetrics((raw.runtime as Record<string, unknown>) ?? {}),
     developerToolsEnabled: Boolean(
-      raw.developer_tools_enabled ?? raw.developerToolsEnabled ?? false,
+      raw.developerToolsEnabled ?? false,
     ),
   };
 }
 
 export function mapDiagnosticsSnapshot(raw: Record<string, unknown>): DiagnosticsSnapshot {
-  const logs = raw.recent_logs ?? raw.recentLogs;
+  const logs = raw.recentLogs;
   return {
     version: String(raw.version ?? "0.0.0-dev"),
     health: mapHealth((raw.health as Record<string, unknown>) ?? {}),
@@ -354,45 +347,45 @@ export function mapAppRule(raw: Record<string, unknown>): AppRuleRecord {
   return {
     id: Number(raw.id ?? 0),
     pattern: String(raw.pattern ?? ""),
-    ruleType: String(raw.rule_type ?? raw.ruleType ?? "allow") as AppRuleKind,
+    ruleType: String(raw.ruleType ?? "allow") as AppRuleKind,
     note: (raw.note ?? null) as string | null,
-    createdAtMs: Number(raw.created_at_ms ?? raw.createdAtMs ?? 0),
-    updatedAtMs: Number(raw.updated_at_ms ?? raw.updatedAtMs ?? 0),
+    createdAtMs: Number(raw.createdAtMs ?? 0),
+    updatedAtMs: Number(raw.updatedAtMs ?? 0),
   };
 }
 
 export function mapPrediction(raw: Record<string, unknown>): PredictionRecord {
   return {
-    sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
-    focusScore: Number(raw.focus_score ?? raw.focusScore ?? 0),
-    distractionRisk: Number(raw.distraction_risk ?? raw.distractionRisk ?? 0),
-    focusState: String(raw.focus_state ?? raw.focusState ?? "UNKNOWN"),
-    thrashScore: Number(raw.thrash_score ?? raw.thrashScore ?? 0),
-    driftScore: Number(raw.drift_score ?? raw.driftScore ?? 0),
-    goalAlignment: Number(raw.goal_alignment ?? raw.goalAlignment ?? 0.5),
-    timestampMs: Number(raw.timestamp_ms ?? raw.timestampMs ?? 0),
-    modelId: String(raw.model_id ?? raw.modelId ?? "heuristic:snapback-features-v1-31"),
-    stateSource: (raw.state_source ?? raw.stateSource ?? null) as string | null,
+    sessionId: String(raw.sessionId ?? ""),
+    focusScore: Number(raw.focusScore ?? 0),
+    distractionRisk: Number(raw.distractionRisk ?? 0),
+    focusState: String(raw.focusState ?? "UNKNOWN"),
+    thrashScore: Number(raw.thrashScore ?? 0),
+    driftScore: Number(raw.driftScore ?? 0),
+    goalAlignment: Number(raw.goalAlignment ?? 0.5),
+    timestampMs: Number(raw.timestampMs ?? 0),
+    modelId: String(raw.modelId ?? "heuristic:snapback-features-v1-31"),
+    stateSource: (raw.stateSource ?? null) as string | null,
   };
 }
 
 export function mapSession(raw: Record<string, unknown>): SessionRecord {
   return {
-    sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
+    sessionId: String(raw.sessionId ?? ""),
     goal: String(raw.goal ?? ""),
     status: String(raw.status ?? ""),
-    focusMode: String(raw.focus_mode ?? raw.focusMode ?? "normal"),
-    startedAtMs: toMsOrNull(raw.started_at_ms ?? raw.startedAtMs),
-    endedAtMs: toMsOrNull(raw.ended_at_ms ?? raw.endedAtMs),
-    reflectionDone: (raw.reflection_done ?? raw.reflectionDone ?? null) as string | null,
-    reflectionNextStep: (raw.reflection_next_step ?? raw.reflectionNextStep ?? null) as
+    focusMode: String(raw.focusMode ?? "normal"),
+    startedAtMs: toMsOrNull(raw.startedAtMs),
+    endedAtMs: toMsOrNull(raw.endedAtMs),
+    reflectionDone: (raw.reflectionDone ?? null) as string | null,
+    reflectionNextStep: (raw.reflectionNextStep ?? null) as
       | string
       | null,
   };
 }
 
 function activeSecsOf(raw: Record<string, unknown>): number | null {
-  const value = raw.active_secs ?? raw.activeSecs;
+  const value = raw.activeSecs;
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -400,35 +393,35 @@ function activeSecsOf(raw: Record<string, unknown>): number | null {
 
 export function mapSessionRecap(raw: Record<string, unknown>): SessionRecap {
   return {
-    sessionId: String(raw.session_id ?? raw.sessionId ?? ""),
+    sessionId: String(raw.sessionId ?? ""),
     goal: String(raw.goal ?? ""),
-    durationSecs: Number(raw.duration_secs ?? raw.durationSecs ?? 0),
+    durationSecs: Number(raw.durationSecs ?? 0),
     // Not `?? 0`: null and absent both mean "not measured", and collapsing them to 0 would
     // report every pre-7.23 session as fully unattended.
     activeSecs: activeSecsOf(raw),
-    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
-    avgDistractionRisk: Number(raw.avg_distraction_risk ?? raw.avgDistractionRisk ?? 0),
-    snapbackCount: Number(raw.snapback_count ?? raw.snapbackCount ?? 0),
-    thrashSpikes: Number(raw.thrash_spikes ?? raw.thrashSpikes ?? 0),
-    deepFocusPct: Number(raw.deep_focus_pct ?? raw.deepFocusPct ?? 0),
+    avgFocusScore: Number(raw.avgFocusScore ?? 0),
+    avgDistractionRisk: Number(raw.avgDistractionRisk ?? 0),
+    snapbackCount: Number(raw.snapbackCount ?? 0),
+    thrashSpikes: Number(raw.thrashSpikes ?? 0),
+    deepFocusPct: Number(raw.deepFocusPct ?? 0),
   };
 }
 
 export function mapSessionLongestSnapback(raw: Record<string, unknown>): SessionLongestSnapback {
   return {
-    durationSecs: Number(raw.duration_secs ?? raw.durationSecs ?? 0),
-    returnAppName: String(raw.return_app_name ?? raw.returnAppName ?? ""),
+    durationSecs: Number(raw.durationSecs ?? 0),
+    returnAppName: String(raw.returnAppName ?? ""),
   };
 }
 
 export function mapFocusSummary(raw: Record<string, unknown>): FocusSummary {
   return {
-    sampleCount: Number(raw.sample_count ?? raw.sampleCount ?? 0),
-    avgFocusScore: Number(raw.avg_focus_score ?? raw.avgFocusScore ?? 0),
-    peakFocusScore: Number(raw.peak_focus_score ?? raw.peakFocusScore ?? 0),
-    distractedSamples: Number(raw.distracted_samples ?? raw.distractedSamples ?? 0),
-    distractedFraction: Number(raw.distracted_fraction ?? raw.distractedFraction ?? 0),
-    longestFocusSecs: Number(raw.longest_focus_secs ?? raw.longestFocusSecs ?? 0),
+    sampleCount: Number(raw.sampleCount ?? 0),
+    avgFocusScore: Number(raw.avgFocusScore ?? 0),
+    peakFocusScore: Number(raw.peakFocusScore ?? 0),
+    distractedSamples: Number(raw.distractedSamples ?? 0),
+    distractedFraction: Number(raw.distractedFraction ?? 0),
+    longestFocusSecs: Number(raw.longestFocusSecs ?? 0),
   };
 }
 
@@ -449,20 +442,20 @@ export function mapRecordingStatus(raw: Record<string, unknown>): RecordingStatu
       ? (state as RecordingState)
       : "blocked",
     privatePauseRemainingMs: Number(
-      raw.private_pause_remaining_ms ?? raw.privatePauseRemainingMs ?? 0,
+      raw.privatePauseRemainingMs ?? 0,
     ),
     alertSnoozeRemainingMs: Number(
-      raw.alert_snooze_remaining_ms ?? raw.alertSnoozeRemainingMs ?? 0,
+      raw.alertSnoozeRemainingMs ?? 0,
     ),
   };
 }
 
 export function mapAttendedProgress(raw: Record<string, unknown>): AttendedProgress {
   return {
-    dailyTargetMins: Number(raw.daily_target_mins ?? raw.dailyTargetMins ?? 0),
-    dailyActualMins: Number(raw.daily_actual_mins ?? raw.dailyActualMins ?? 0),
-    weeklyTargetMins: Number(raw.weekly_target_mins ?? raw.weeklyTargetMins ?? 0),
-    weeklyActualMins: Number(raw.weekly_actual_mins ?? raw.weeklyActualMins ?? 0),
+    dailyTargetMins: Number(raw.dailyTargetMins ?? 0),
+    dailyActualMins: Number(raw.dailyActualMins ?? 0),
+    weeklyTargetMins: Number(raw.weeklyTargetMins ?? 0),
+    weeklyActualMins: Number(raw.weeklyActualMins ?? 0),
   };
 }
 
@@ -471,13 +464,13 @@ export function mapPomodoroStatus(raw: Record<string, unknown>): PomodoroStatus 
     running: Boolean(raw.running ?? false),
     paused: Boolean(raw.paused ?? false),
     awaitingAcknowledgement: Boolean(
-      raw.awaiting_acknowledgement ?? raw.awaitingAcknowledgement ?? false,
+      raw.awaitingAcknowledgement ?? false,
     ),
     phase: normalizePomodoroPhase(raw.phase),
     completedWorkIntervals: Number(
-      raw.completed_work_intervals ?? raw.completedWorkIntervals ?? 0,
+      raw.completedWorkIntervals ?? 0,
     ),
-    remainingMs: Number(raw.remaining_ms ?? raw.remainingMs ?? 0),
+    remainingMs: Number(raw.remainingMs ?? 0),
   };
 }
 
@@ -490,17 +483,17 @@ export function mapSessionSummary(raw: Record<string, unknown>): SessionSummary 
 
 export function mapExportTrainingResult(raw: Record<string, unknown>): ExportTrainingResult {
   return {
-    outputDir: String(raw.output_dir ?? raw.outputDir ?? ""),
-    featuresPath: String(raw.features_path ?? raw.featuresPath ?? ""),
-    labelsPath: String(raw.labels_path ?? raw.labelsPath ?? ""),
-    featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
-    labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
+    outputDir: String(raw.outputDir ?? ""),
+    featuresPath: String(raw.featuresPath ?? ""),
+    labelsPath: String(raw.labelsPath ?? ""),
+    featureCount: Number(raw.featureCount ?? 0),
+    labelCount: Number(raw.labelCount ?? 0),
   };
 }
 
 export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingDeployStatus {
   const labelBreakdownRaw =
-    (raw.label_breakdown ?? raw.labelBreakdown ?? {}) as Record<string, unknown>;
+    (raw.labelBreakdown ?? {}) as Record<string, unknown>;
   const labelBreakdown: Record<string, number> = {};
   for (const [key, value] of Object.entries(labelBreakdownRaw)) {
     labelBreakdown[key] = Number(value);
@@ -513,28 +506,28 @@ export function mapTrainingDeployStatus(raw: Record<string, unknown>): TrainingD
       metrics[key] = Number(value);
     }
   }
-  const qualityGateRaw = (raw.quality_gate ?? raw.qualityGate ?? {}) as Record<string, unknown>;
+  const qualityGateRaw = (raw.qualityGate ?? {}) as Record<string, unknown>;
   return {
-    exportDir: String(raw.export_dir ?? raw.exportDir ?? ""),
-    featureCount: Number(raw.feature_count ?? raw.featureCount ?? 0),
-    labelCount: Number(raw.label_count ?? raw.labelCount ?? 0),
+    exportDir: String(raw.exportDir ?? ""),
+    featureCount: Number(raw.featureCount ?? 0),
+    labelCount: Number(raw.labelCount ?? 0),
     labelBreakdown,
-    hasExport: Boolean(raw.has_export ?? raw.hasExport ?? false),
-    modelOnnxExists: Boolean(raw.model_onnx_exists ?? raw.modelOnnxExists ?? false),
-    metricsExists: Boolean(raw.metrics_exists ?? raw.metricsExists ?? false),
+    hasExport: Boolean(raw.hasExport ?? false),
+    modelOnnxExists: Boolean(raw.modelOnnxExists ?? false),
+    metricsExists: Boolean(raw.metricsExists ?? false),
     metrics,
     qualityGate: {
       passed: Boolean(qualityGateRaw.passed ?? false),
       metric: String(qualityGateRaw.metric ?? ""),
-      candidateScore: Number(qualityGateRaw.candidate_score ?? qualityGateRaw.candidateScore ?? 0),
+      candidateScore: Number(qualityGateRaw.candidateScore ?? 0),
       threshold: Number(qualityGateRaw.threshold ?? 0),
       reason: String(qualityGateRaw.reason ?? ""),
     },
-    rollbackAvailable: Boolean(raw.rollback_available ?? raw.rollbackAvailable ?? false),
-    pythonAvailable: Boolean(raw.python_available ?? raw.pythonAvailable ?? false),
-    repoPath: (raw.repo_path ?? raw.repoPath ?? null) as string | null,
-    repoConfigured: Boolean(raw.repo_configured ?? raw.repoConfigured ?? false),
-    pipelineCommand: String(raw.pipeline_command ?? raw.pipelineCommand ?? ""),
+    rollbackAvailable: Boolean(raw.rollbackAvailable ?? false),
+    pythonAvailable: Boolean(raw.pythonAvailable ?? false),
+    repoPath: (raw.repoPath ?? null) as string | null,
+    repoConfigured: Boolean(raw.repoConfigured ?? false),
+    pipelineCommand: String(raw.pipelineCommand ?? ""),
   };
 }
 
@@ -550,17 +543,17 @@ export function mapTrainFromExportResult(raw: Record<string, unknown>): TrainFro
 
   return {
     success: Boolean(raw.success ?? false),
-    trainingSucceeded: Boolean(raw.training_succeeded ?? raw.trainingSucceeded ?? raw.success ?? false),
+    trainingSucceeded: Boolean(raw.trainingSucceeded ?? false),
     cancelled: Boolean(raw.cancelled ?? false),
     deployReady: Boolean(
-      raw.deploy_ready ?? raw.deployReady ?? raw.onnx_exported ?? raw.onnxExported ?? false,
+      raw.deployReady ?? false,
     ),
     message: String(raw.message ?? ""),
-    onnxExported: Boolean(raw.onnx_exported ?? raw.onnxExported ?? false),
+    onnxExported: Boolean(raw.onnxExported ?? false),
     metrics,
-    qualityGatePassed: Boolean(raw.quality_gate_passed ?? raw.qualityGatePassed ?? false),
-    qualityGateReason: String(raw.quality_gate_reason ?? raw.qualityGateReason ?? ""),
-    logTail: String(raw.log_tail ?? raw.logTail ?? ""),
+    qualityGatePassed: Boolean(raw.qualityGatePassed ?? false),
+    qualityGateReason: String(raw.qualityGateReason ?? ""),
+    logTail: String(raw.logTail ?? ""),
   };
 }
 
@@ -570,7 +563,7 @@ export function mapRollbackClassifierModelResult(
   return {
     success: Boolean(raw.success ?? false),
     message: String(raw.message ?? ""),
-    modelId: (raw.model_id ?? raw.modelId ?? null) as string | null,
+    modelId: (raw.modelId ?? null) as string | null,
     classifier: mapClassifierStatus((raw.classifier as Record<string, unknown>) ?? {}),
   };
 }
@@ -578,11 +571,11 @@ export function mapRollbackClassifierModelResult(
 export function mapSnapbackPayload(raw: Record<string, unknown>): SnapbackPayload {
   return {
     summary: String(raw.summary ?? "Previous task"),
-    appName: String(raw.app_name ?? raw.appName ?? ""),
-    windowTitle: String(raw.window_title ?? raw.windowTitle ?? ""),
-    fileHint: String(raw.file_hint ?? raw.fileHint ?? ""),
+    appName: String(raw.appName ?? ""),
+    windowTitle: String(raw.windowTitle ?? ""),
+    fileHint: String(raw.fileHint ?? ""),
     distractionDurationSecs: Number(
-      raw.distraction_duration_secs ?? raw.distractionDurationSecs ?? 0,
+      raw.distractionDurationSecs ?? 0,
     ),
   };
 }

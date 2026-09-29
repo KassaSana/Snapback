@@ -1,7 +1,7 @@
 // The in-memory backend the hosted demo talks to, in place of the C++ engine.
 //
-// Every handler returns the *raw* shape `src/apiMappers.ts` expects. The mappers accept
-// camelCase as readily as the native side's snake_case, so these read as plain objects.
+// Every handler returns the *raw* shape `src/apiMappers.ts` expects: the camelCase keys the
+// native side sends.
 //
 // Two rules this file follows, because a demo that lies is worse than no demo:
 //

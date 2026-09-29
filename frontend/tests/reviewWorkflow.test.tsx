@@ -20,7 +20,7 @@ const boundary = vi.hoisted(() => {
         const held = state.hold[window];
         if (held) return held;
         // The window travels with the answer so a test can tell whose data landed.
-        return { sample_count: window === "all" ? 999 : window === "30d" ? 30 : 7 };
+        return { sampleCount: window === "all" ? 999 : window === "30d" ? 30 : 7 };
       }
       case "get_summary_report":
       case "get_focus_summary":
@@ -113,7 +113,7 @@ describe("useReviewWorkflow interval provenance", () => {
 
     // It lands: now the cards describe 30 days.
     await act(async () => {
-      release({ sample_count: 30 });
+      release({ sampleCount: 30 });
     });
     await waitFor(() => expect(result.current.analytics.sampleCount).toBe(30));
     expect(result.current.displayedRange).toEqual({ preset: "30d" });
@@ -154,7 +154,7 @@ describe("useReviewWorkflow interval provenance", () => {
 
     // The late 30d answer must not land on top of it -- neither the data nor the label.
     await act(async () => {
-      releaseThirty({ sample_count: 30 });
+      releaseThirty({ sampleCount: 30 });
       await Promise.resolve();
     });
     expect(result.current.analytics.sampleCount).toBe(999);

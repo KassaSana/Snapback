@@ -7,9 +7,9 @@ const boundary = vi.hoisted(() => {
       return {
         state: "ok",
         message: null,
-        preserved_paths: [],
-        retry_cleanup_available: false,
-        rollback_available: false,
+        preservedPaths: [],
+        retryCleanupAvailable: false,
+        rollbackAvailable: false,
       };
     }
     if (cmd === "get_diagnostics") {
@@ -17,28 +17,28 @@ const boundary = vi.hoisted(() => {
         version: "0.2.0",
         health: {
           status: "degraded",
-          capture_running: true,
-          capture_failed: false,
-          capture_events_dropped: 0,
-          prediction_suppression_reason: "none",
+          captureRunning: true,
+          captureFailed: false,
+          captureEventsDropped: 0,
+          predictionSuppressionReason: "none",
           permissions: {
-            capture_available: true,
-            capture_probe_confirmed: true,
-            active_window_available: true,
+            captureAvailable: true,
+            captureProbeConfirmed: true,
+            activeWindowAvailable: true,
             message: "",
-            setup_steps: [],
+            setupSteps: [],
           },
-          classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
-          model_deployment: {
+          classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
+          modelDeployment: {
             state: "degraded",
             message: "could not finish committed model deployment cleanup",
-            preserved_paths: ["model.onnx", "model_deploy.transaction.json"],
-            retry_cleanup_available: true,
-            rollback_available: false,
+            preservedPaths: ["model.onnx", "model_deploy.transaction.json"],
+            retryCleanupAvailable: true,
+            rollbackAvailable: false,
           },
-          developer_tools_enabled: false,
+          developerToolsEnabled: false,
         },
-        recent_logs: ["model deployment recovery degraded"],
+        recentLogs: ["model deployment recovery degraded"],
         supportBundlePrivacyNotice: "",
       };
     }
@@ -64,9 +64,9 @@ beforeEach(() => {
       return {
         state: "ok",
         message: null,
-        preserved_paths: [],
-        retry_cleanup_available: false,
-        rollback_available: false,
+        preservedPaths: [],
+        retryCleanupAvailable: false,
+        rollbackAvailable: false,
       };
     }
     if (cmd === "get_diagnostics") {
@@ -74,28 +74,28 @@ beforeEach(() => {
         version: "0.2.0",
         health: {
           status: "degraded",
-          capture_running: true,
-          capture_failed: false,
-          capture_events_dropped: 0,
-          prediction_suppression_reason: "none",
+          captureRunning: true,
+          captureFailed: false,
+          captureEventsDropped: 0,
+          predictionSuppressionReason: "none",
           permissions: {
-            capture_available: true,
-            capture_probe_confirmed: true,
-            active_window_available: true,
+            captureAvailable: true,
+            captureProbeConfirmed: true,
+            activeWindowAvailable: true,
             message: "",
-            setup_steps: [],
+            setupSteps: [],
           },
-          classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
-          model_deployment: {
+          classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
+          modelDeployment: {
             state: "degraded",
             message: "could not finish committed model deployment cleanup",
-            preserved_paths: ["model.onnx", "model_deploy.transaction.json"],
-            retry_cleanup_available: true,
-            rollback_available: false,
+            preservedPaths: ["model.onnx", "model_deploy.transaction.json"],
+            retryCleanupAvailable: true,
+            rollbackAvailable: false,
           },
-          developer_tools_enabled: false,
+          developerToolsEnabled: false,
         },
-        recent_logs: ["model deployment recovery degraded"],
+        recentLogs: ["model deployment recovery degraded"],
         supportBundlePrivacyNotice: "",
       };
     }
@@ -138,9 +138,9 @@ describe("DiagnosticsCard model deployment recovery", () => {
         return {
           state: "degraded",
           message: "still locked",
-          preserved_paths: ["model.onnx"],
-          retry_cleanup_available: true,
-          rollback_available: false,
+          preservedPaths: ["model.onnx"],
+          retryCleanupAvailable: true,
+          rollbackAvailable: false,
         };
       }
       if (cmd === "get_diagnostics") {
@@ -148,28 +148,28 @@ describe("DiagnosticsCard model deployment recovery", () => {
           version: "0.2.0",
           health: {
             status: "degraded",
-            capture_running: true,
-            capture_failed: false,
-            capture_events_dropped: 0,
-            prediction_suppression_reason: "none",
+            captureRunning: true,
+            captureFailed: false,
+            captureEventsDropped: 0,
+            predictionSuppressionReason: "none",
             permissions: {
-              capture_available: true,
-              capture_probe_confirmed: true,
-              active_window_available: true,
+              captureAvailable: true,
+              captureProbeConfirmed: true,
+              activeWindowAvailable: true,
               message: "",
-              setup_steps: [],
+              setupSteps: [],
             },
-            classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
-            model_deployment: {
+            classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
+            modelDeployment: {
               state: "degraded",
               message: "cleanup blocked",
-              preserved_paths: [],
-              retry_cleanup_available: true,
-              rollback_available: false,
+              preservedPaths: [],
+              retryCleanupAvailable: true,
+              rollbackAvailable: false,
             },
-            developer_tools_enabled: false,
+            developerToolsEnabled: false,
           },
-          recent_logs: [],
+          recentLogs: [],
           supportBundlePrivacyNotice: "",
         };
       }
@@ -191,28 +191,28 @@ describe("DiagnosticsCard model deployment recovery", () => {
           version: "0.2.0",
           health: {
             status: "degraded",
-            capture_running: true,
-            capture_failed: false,
-            capture_events_dropped: 0,
-            prediction_suppression_reason: "none",
+            captureRunning: true,
+            captureFailed: false,
+            captureEventsDropped: 0,
+            predictionSuppressionReason: "none",
             permissions: {
-              capture_available: true,
-              capture_probe_confirmed: true,
-              active_window_available: true,
+              captureAvailable: true,
+              captureProbeConfirmed: true,
+              activeWindowAvailable: true,
               message: "",
-              setup_steps: [],
+              setupSteps: [],
             },
-            classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
-            model_deployment: {
+            classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
+            modelDeployment: {
               state: "degraded",
               message: "cleanup blocked",
-              preserved_paths: ["model.onnx"],
-              retry_cleanup_available: true,
-              rollback_available: false,
+              preservedPaths: ["model.onnx"],
+              retryCleanupAvailable: true,
+              rollbackAvailable: false,
             },
-            developer_tools_enabled: false,
+            developerToolsEnabled: false,
           },
-          recent_logs: [],
+          recentLogs: [],
           supportBundlePrivacyNotice: "",
         };
       }

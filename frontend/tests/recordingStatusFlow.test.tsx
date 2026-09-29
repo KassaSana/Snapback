@@ -18,8 +18,8 @@ const boundary = vi.hoisted(() => {
   } = {
     health: {},
     settings: {},
-    recording: { state: "noSession", private_pause_remaining_ms: 0 },
-    privacy: { private_mode: false, excluded_apps: [], local_only: true },
+    recording: { state: "noSession", privatePauseRemainingMs: 0 },
+    privacy: { privateMode: false, excludedApps: [], localOnly: true },
     pausedWith: null,
     resumed: false,
     holdStatus: null,
@@ -46,35 +46,35 @@ const boundary = vi.hoisted(() => {
       }
       case "pause_recording_privately":
         state.pausedWith = args ?? {};
-        state.privacy = { ...state.privacy, private_mode: true };
+        state.privacy = { ...state.privacy, privateMode: true };
         state.recording = {
           state: "pausedPrivate",
-          private_pause_remaining_ms: Number(args?.minutes ?? 0) * 60 * 1000,
+          privatePauseRemainingMs: Number(args?.minutes ?? 0) * 60 * 1000,
         };
         return state.recording;
       case "resume_recording":
         state.resumed = true;
-        state.privacy = { ...state.privacy, private_mode: false };
-        state.recording = { state: "noSession", private_pause_remaining_ms: 0 };
+        state.privacy = { ...state.privacy, privateMode: false };
+        state.recording = { state: "noSession", privatePauseRemainingMs: 0 };
         return state.recording;
       case "get_privacy_settings":
         return state.privacy;
       case "set_private_mode":
-        state.privacy = { ...state.privacy, private_mode: Boolean(args?.enabled) };
+        state.privacy = { ...state.privacy, privateMode: Boolean(args?.enabled) };
         state.recording = {
           state: args?.enabled ? "pausedPrivate" : "recording",
-          private_pause_remaining_ms: 0,
+          privatePauseRemainingMs: 0,
         };
         return state.privacy;
       case "get_attended_progress":
         return {
-          daily_target_mins: 0,
-          daily_actual_mins: 0,
-          weekly_target_mins: 0,
-          weekly_actual_mins: 0,
+          dailyTargetMins: 0,
+          dailyActualMins: 0,
+          weeklyTargetMins: 0,
+          weeklyActualMins: 0,
         };
       case "get_pomodoro_status":
-        return { running: false, phase: "work", completed_work_intervals: 0, remaining_ms: 0 };
+        return { running: false, phase: "work", completedWorkIntervals: 0, remainingMs: 0 };
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -105,17 +105,17 @@ import { renderApp } from "./renderApp";
 
 const healthy = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 const card = () =>
@@ -125,9 +125,9 @@ beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthy();
-  boundary.state.settings = { default_focus_mode: "normal" };
-  boundary.state.recording = { state: "noSession", private_pause_remaining_ms: 0 };
-  boundary.state.privacy = { private_mode: false, excluded_apps: [], local_only: true };
+  boundary.state.settings = { defaultFocusMode: "normal" };
+  boundary.state.recording = { state: "noSession", privatePauseRemainingMs: 0 };
+  boundary.state.privacy = { privateMode: false, excludedApps: [], localOnly: true };
   boundary.state.pausedWith = null;
   boundary.state.resumed = false;
   boundary.state.holdStatus = null;
@@ -140,14 +140,14 @@ afterEach(() => {
 
 describe("Recording status", () => {
   it("reports the state the backend decided, not one it derived", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
   });
 
   it("distinguishes idle from private, which both stop capture", async () => {
-    boundary.state.recording = { state: "pausedIdle", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "pausedIdle", privatePauseRemainingMs: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
     expect(await within(card()).findByText("Paused for idle")).toBeInTheDocument();
@@ -158,7 +158,7 @@ describe("Recording status", () => {
   });
 
   it("pauses for a fixed stretch and shows the time left", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
 
@@ -172,7 +172,7 @@ describe("Recording status", () => {
   });
 
   it("pauses indefinitely without promising a resume time", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
 
@@ -184,7 +184,7 @@ describe("Recording status", () => {
   });
 
   it("resumes through the same command the tray would use", async () => {
-    boundary.state.recording = { state: "pausedPrivate", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "pausedPrivate", privatePauseRemainingMs: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
 
@@ -195,7 +195,7 @@ describe("Recording status", () => {
 
   it("shows an unknown state as blocked rather than as recording", async () => {
     // If the two ends ever disagree, the claim that cannot mislead is "nothing is captured".
-    boundary.state.recording = { state: "somethingNew", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "somethingNew", privatePauseRemainingMs: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
     expect(await within(card()).findByText("Blocked")).toBeInTheDocument();
@@ -210,29 +210,29 @@ describe("Recording status stays coherent with native state", () => {
     boundary.invoke.mock.calls.filter(([cmd]) => cmd === "get_recording_status").length;
 
   it("re-asks when the engine reports an idle transition", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
 
     // The user walks away. The engine says so; nothing on this side clicked anything.
-    boundary.state.recording = { state: "pausedIdle", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "pausedIdle", privatePauseRemainingMs: 0 };
     act(() => boundary.emit("idle", { idle: true }));
     expect(await within(card()).findByText("Paused for idle")).toBeInTheDocument();
 
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     act(() => boundary.emit("idle", { idle: false }));
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
   });
 
   it("applies a tray-originated change without a command from this side", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
     const before = recordingCalls();
 
     // The tray paused recording. The native side announces the new answer directly.
     act(() =>
-      boundary.emit("recording-status", { state: "pausedPrivate", private_pause_remaining_ms: 0 }),
+      boundary.emit("recording-status", { state: "pausedPrivate", privatePauseRemainingMs: 0 }),
     );
     expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
     // Applied, not re-fetched: the event carried the answer.
@@ -243,7 +243,7 @@ describe("Recording status stays coherent with native state", () => {
     vi.useFakeTimers();
     try {
       const pauseMs = 5 * 60 * 1000;
-      boundary.state.recording = { state: "pausedPrivate", private_pause_remaining_ms: pauseMs };
+      boundary.state.recording = { state: "pausedPrivate", privatePauseRemainingMs: pauseMs };
       render(<App />);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
@@ -251,7 +251,7 @@ describe("Recording status stays coherent with native state", () => {
       expect(within(card()).getByText("Paused privately")).toBeInTheDocument();
 
       // Natively the pause lapses on the read that finds the deadline passed.
-      boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+      boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
       const asked = recordingCalls();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(pauseMs - 1000);
@@ -271,7 +271,7 @@ describe("Recording status stays coherent with native state", () => {
   });
 
   it("never lets an older answer overwrite a newer one", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
 
@@ -289,7 +289,7 @@ describe("Recording status stays coherent with native state", () => {
 
     // ...then the stale refresh lands with the pre-pause answer. It must be ignored.
     await act(async () => {
-      release({ state: "recording", private_pause_remaining_ms: 0 });
+      release({ state: "recording", privatePauseRemainingMs: 0 });
       await Promise.resolve();
     });
     expect(within(card()).getByText("Paused privately")).toBeInTheDocument();
@@ -297,7 +297,7 @@ describe("Recording status stays coherent with native state", () => {
   });
 
   it("says so when it cannot confirm the state, and stops saying so once it can", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
     expect(within(card()).queryByText(/Could not confirm/)).not.toBeInTheDocument();
@@ -309,14 +309,14 @@ describe("Recording status stays coherent with native state", () => {
     expect(within(card()).getByText("Recording")).toBeInTheDocument();
 
     boundary.state.statusFails = false;
-    boundary.state.recording = { state: "pausedIdle", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "pausedIdle", privatePauseRemainingMs: 0 };
     act(() => boundary.emit("idle", { idle: true }));
     expect(await within(card()).findByText("Paused for idle")).toBeInTheDocument();
     expect(within(card()).queryByText(/Could not confirm/)).not.toBeInTheDocument();
   });
 
   it("keeps the Settings toggle and the header in agreement in both directions", async () => {
-    boundary.state.recording = { state: "recording", private_pause_remaining_ms: 0 };
+    boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     renderApp("settings", "privacy");
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
     const toggle = () => screen.getByRole("checkbox", { name: "Private mode" }) as HTMLInputElement;
@@ -334,9 +334,9 @@ describe("Recording status stays coherent with native state", () => {
     await waitFor(() => expect(toggle().checked).toBe(false));
 
     // Tray -> both, with no command from this side.
-    boundary.state.privacy = { ...boundary.state.privacy, private_mode: true };
+    boundary.state.privacy = { ...boundary.state.privacy, privateMode: true };
     act(() =>
-      boundary.emit("recording-status", { state: "pausedPrivate", private_pause_remaining_ms: 0 }),
+      boundary.emit("recording-status", { state: "pausedPrivate", privatePauseRemainingMs: 0 }),
     );
     expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
     await waitFor(() => expect(toggle().checked).toBe(true));

@@ -4,19 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Permission state starts ungranted (setup_steps non-empty) so the "Grant access" button
 // is present — that button is what raises the real OS dialog on macOS.
 const ungranted = {
-  capture_available: false,
-  capture_probe_confirmed: false,
-  active_window_available: false,
+  captureAvailable: false,
+  captureProbeConfirmed: false,
+  activeWindowAvailable: false,
   message: "Grant Accessibility permission to Snapback to read foreground context.",
-  setup_steps: ["Open System Settings > Privacy & Security > Accessibility."],
+  setupSteps: ["Open System Settings > Privacy & Security > Accessibility."],
 };
 
 const granted = {
-  capture_available: true,
-  capture_probe_confirmed: true,
-  active_window_available: true,
+  captureAvailable: true,
+  captureProbeConfirmed: true,
+  activeWindowAvailable: true,
   message: "macOS Accessibility permission is available.",
-  setup_steps: [],
+  setupSteps: [],
 };
 
 const boundary = vi.hoisted(() => {
@@ -39,14 +39,14 @@ const boundary = vi.hoisted(() => {
           status: "online",
           // The native capture thread is alive even when macOS denied the event tap
           // and it fell back to window polling. That must not hide onboarding.
-          capture_running: true,
-          capture_failed: false,
-          capture_events_dropped: 0,
+          captureRunning: true,
+          captureFailed: false,
+          captureEventsDropped: 0,
           permissions: state.permissions,
-          classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+          classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
         };
       case "get_settings":
-        return { default_focus_mode: "normal" };
+        return { defaultFocusMode: "normal" };
       case "get_autostart":
         return { enabled: false, supported: false };
       case "get_active_session":

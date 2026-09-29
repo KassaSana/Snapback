@@ -50,8 +50,8 @@ const boundary = vi.hoisted(() => {
         if (!row) throw new Error("missing session");
         row.record = {
           ...(row.record as object),
-          reflection_done: args?.done ?? null,
-          reflection_next_step: args?.nextStep ?? null,
+          reflectionDone: args?.done ?? null,
+          reflectionNextStep: args?.nextStep ?? null,
         };
         return row.record;
       }
@@ -83,17 +83,17 @@ import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 const rawSummary = (id: string, focus: number, deep: number, snap: number) => ({
@@ -302,8 +302,8 @@ describe("Session reflection editing from Insights", () => {
         ...summary,
         record: {
           ...summary.record,
-          reflection_done: "old result",
-          reflection_next_step: "old next",
+          reflectionDone: "old result",
+          reflectionNextStep: "old next",
         },
       },
     ];
@@ -333,8 +333,8 @@ describe("Session reflection editing from Insights", () => {
         ...summary,
         record: {
           ...summary.record,
-          reflection_done: "old result",
-          reflection_next_step: "old next",
+          reflectionDone: "old result",
+          reflectionNextStep: "old next",
         },
       },
     ];
@@ -353,20 +353,20 @@ describe("Session reflection editing from Insights", () => {
 describe("Focus summary card", () => {
   it("consolidates headline metrics and peak focus in the overview", async () => {
     boundary.state.summary = {
-      sample_count: 40,
-      session_count: 2,
-      completed_session_count: 2,
-      avg_focus_score: 72.4,
-      longest_focus_secs: 18,
-      distracted_fraction: 0.15,
+      sampleCount: 40,
+      sessionCount: 2,
+      completedSessionCount: 2,
+      avgFocusScore: 72.4,
+      longestFocusSecs: 18,
+      distractedFraction: 0.15,
     };
     boundary.state.focusSummary = {
-      sample_count: 40,
-      avg_focus_score: 72.4,
-      peak_focus_score: 95,
-      distracted_samples: 6,
-      distracted_fraction: 0.15,
-      longest_focus_secs: 18,
+      sampleCount: 40,
+      avgFocusScore: 72.4,
+      peakFocusScore: 95,
+      distractedSamples: 6,
+      distractedFraction: 0.15,
+      longestFocusSecs: 18,
     };
     renderApp("review");
 
@@ -386,7 +386,7 @@ describe("Focus summary card", () => {
   });
 
   it("shows an empty state when there are no predictions yet", async () => {
-    boundary.state.focusSummary = { sample_count: 0 };
+    boundary.state.focusSummary = { sampleCount: 0 };
     renderApp("review");
 
     const card = focusSummaryCard();
@@ -429,11 +429,11 @@ describe("Review interval provenance", () => {
     boundary.state.history = [rawSummary("a", 50, 10, 0)];
     boundary.state.summary = {
       window: "7d",
-      sample_count: 3,
-      session_count: 600,
-      completed_session_count: 600,
-      session_limit: 500,
-      sessions_truncated: true,
+      sampleCount: 3,
+      sessionCount: 600,
+      completedSessionCount: 600,
+      sessionLimit: 500,
+      sessionsTruncated: true,
     };
     renderApp("review");
     await waitFor(() => expect(screen.getByRole("button", { name: "Last 7 days" })).toBeEnabled());
@@ -461,16 +461,16 @@ describe("Review first-run states", () => {
 
   it("explains empty charts and overview without presenting zeroes as insights", async () => {
     boundary.state.history = [];
-    boundary.state.analytics = { sample_count: 0 };
+    boundary.state.analytics = { sampleCount: 0 };
     // The backend counts an active session before its first prediction. That is still a
     // first-run state, not one zero-valued session worth exporting.
     boundary.state.summary = {
       window: "day",
-      sample_count: 0,
-      session_count: 1,
-      completed_session_count: 0,
+      sampleCount: 0,
+      sessionCount: 1,
+      completedSessionCount: 0,
     };
-    boundary.state.focusSummary = { sample_count: 0 };
+    boundary.state.focusSummary = { sampleCount: 0 };
     renderApp("review");
 
     expect(await screen.findByText(/No completed sessions yet/i)).toBeInTheDocument();
@@ -482,10 +482,10 @@ describe("Review first-run states", () => {
   it("keeps a completed zero-prediction session available for review and export", async () => {
     boundary.state.summary = {
       window: "day",
-      sample_count: 0,
-      session_count: 1,
-      completed_session_count: 1,
-      focus_seconds: 12,
+      sampleCount: 0,
+      sessionCount: 1,
+      completedSessionCount: 1,
+      focusSeconds: 12,
     };
     renderApp("review");
 

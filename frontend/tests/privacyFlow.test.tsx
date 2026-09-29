@@ -3,28 +3,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => {
   const state = {
-    privacy: { private_mode: false, excluded_apps: [], local_only: true } as Record<string, unknown>,
+    privacy: { privateMode: false, excludedApps: [], localOnly: true } as Record<string, unknown>,
     dataFolder: { path: "", supported: true, opened: true } as Record<string, unknown>,
     dataFolderThrows: false,
     myDataExport: {} as Record<string, unknown>,
     exportThrows: false,
     health: {
       status: "online",
-      capture_running: true,
-      capture_failed: false,
-      capture_events_dropped: 0,
-      permissions: { capture_available: true, capture_probe_confirmed: true, active_window_available: true, message: "", setup_steps: [] },
-      classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+      captureRunning: true,
+      captureFailed: false,
+      captureEventsDropped: 0,
+      permissions: { captureAvailable: true, captureProbeConfirmed: true, activeWindowAvailable: true, message: "", setupSteps: [] },
+      classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
     },
   };
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
     switch (cmd) {
       case "get_privacy_settings": return state.privacy;
       case "set_private_mode":
-        state.privacy = { ...state.privacy, private_mode: Boolean(args?.enabled) };
+        state.privacy = { ...state.privacy, privateMode: Boolean(args?.enabled) };
         return state.privacy;
       case "set_privacy_exclusions":
-        state.privacy = { ...state.privacy, excluded_apps: args?.excludedApps ?? [] };
+        state.privacy = { ...state.privacy, excludedApps: args?.excludedApps ?? [] };
         return state.privacy;
       case "delete_all_activity_data": return null;
       case "open_data_folder":
@@ -34,7 +34,7 @@ const boundary = vi.hoisted(() => {
         if (state.exportThrows) throw new Error("export failed");
         return state.myDataExport;
       case "get_health": return state.health;
-      case "get_settings": return { default_focus_mode: "normal" };
+      case "get_settings": return { defaultFocusMode: "normal" };
       case "get_active_session": case "get_latest_prediction": return null;
       case "get_prediction_history": case "get_app_rules": case "get_context_timeline": case "get_pomodoro_status": return [];
       case "get_focus_summary": return {};
@@ -52,7 +52,7 @@ import { renderApp } from "./renderApp";
 
 beforeEach(() => {
   boundary.invoke.mockClear();
-  boundary.state.privacy = { private_mode: false, excluded_apps: [], local_only: true };
+  boundary.state.privacy = { privateMode: false, excludedApps: [], localOnly: true };
   boundary.state.dataFolder = { path: "", supported: true, opened: true };
   boundary.state.dataFolderThrows = false;
   boundary.state.myDataExport = {

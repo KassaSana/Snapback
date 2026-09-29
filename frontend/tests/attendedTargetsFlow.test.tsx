@@ -12,10 +12,10 @@ const boundary = vi.hoisted(() => {
     health: {},
     settings: {},
     progress: {
-      daily_target_mins: 0,
-      daily_actual_mins: 0,
-      weekly_target_mins: 0,
-      weekly_actual_mins: 0,
+      dailyTargetMins: 0,
+      dailyActualMins: 0,
+      weeklyTargetMins: 0,
+      weeklyActualMins: 0,
     },
     savedTargets: null,
   };
@@ -30,12 +30,12 @@ const boundary = vi.hoisted(() => {
         return state.settings;
       case "start_session":
         return {
-          session_id: "sess-42",
+          sessionId: "sess-42",
           goal: String(args?.goal ?? ""),
           status: "ACTIVE",
-          focus_mode: String(args?.focusMode ?? "normal"),
-          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          ended_at_ms: null,
+          focusMode: String(args?.focusMode ?? "normal"),
+          startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          endedAtMs: null,
         };
       case "get_attended_progress":
         return state.progress;
@@ -43,12 +43,12 @@ const boundary = vi.hoisted(() => {
         state.savedTargets = args ?? {};
         state.progress = {
           ...state.progress,
-          daily_target_mins: Number(args?.dailyMins ?? 0),
-          weekly_target_mins: Number(args?.weeklyMins ?? 0),
+          dailyTargetMins: Number(args?.dailyMins ?? 0),
+          weeklyTargetMins: Number(args?.weeklyMins ?? 0),
         };
         return state.progress;
       case "get_pomodoro_status":
-        return { running: false, phase: "work", completed_work_intervals: 0, remaining_ms: 0 };
+        return { running: false, phase: "work", completedWorkIntervals: 0, remainingMs: 0 };
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -71,17 +71,17 @@ import App from "../src/App";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 const startSession = async () => {
@@ -101,12 +101,12 @@ beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settings = { defaultFocusMode: "normal" };
   boundary.state.progress = {
-    daily_target_mins: 0,
-    daily_actual_mins: 0,
-    weekly_target_mins: 0,
-    weekly_actual_mins: 0,
+    dailyTargetMins: 0,
+    dailyActualMins: 0,
+    weeklyTargetMins: 0,
+    weeklyActualMins: 0,
   };
   boundary.state.savedTargets = null;
 });
@@ -118,10 +118,10 @@ afterEach(() => {
 describe("Attended-time targets", () => {
   it("shows attendance with no target set, and offers to set one", async () => {
     boundary.state.progress = {
-      daily_target_mins: 0,
-      daily_actual_mins: 95,
-      weekly_target_mins: 0,
-      weekly_actual_mins: 320,
+      dailyTargetMins: 0,
+      dailyActualMins: 95,
+      weeklyTargetMins: 0,
+      weeklyActualMins: 320,
     };
     await startSession();
     const card = await screen.findByRole("heading", { name: "Attended time" });
@@ -133,10 +133,10 @@ describe("Attended-time targets", () => {
 
   it("reports progress against a target as a plain ratio", async () => {
     boundary.state.progress = {
-      daily_target_mins: 240,
-      daily_actual_mins: 120,
-      weekly_target_mins: 1200,
-      weekly_actual_mins: 300,
+      dailyTargetMins: 240,
+      dailyActualMins: 120,
+      weeklyTargetMins: 1200,
+      weeklyActualMins: 300,
     };
     await startSession();
     await screen.findByRole("heading", { name: "Attended time" });
@@ -166,10 +166,10 @@ describe("Attended-time targets", () => {
 
   it("turns a target off by setting it to zero", async () => {
     boundary.state.progress = {
-      daily_target_mins: 240,
-      daily_actual_mins: 0,
-      weekly_target_mins: 0,
-      weekly_actual_mins: 0,
+      dailyTargetMins: 240,
+      dailyActualMins: 0,
+      weeklyTargetMins: 0,
+      weeklyActualMins: 0,
     };
     await startSession();
     await screen.findByRole("heading", { name: "Attended time" });

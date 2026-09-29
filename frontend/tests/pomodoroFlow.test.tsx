@@ -12,7 +12,7 @@ const boundary = vi.hoisted(() => {
     health: {},
     settings: {},
     settingsThrows: false,
-    pomodoro: { running: false, phase: "work", completed_work_intervals: 0, remaining_ms: 0 },
+    pomodoro: { running: false, phase: "work", completedWorkIntervals: 0, remainingMs: 0 },
   };
 
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
@@ -26,12 +26,12 @@ const boundary = vi.hoisted(() => {
         return state.settings;
       case "start_session":
         return {
-          session_id: "sess-42",
+          sessionId: "sess-42",
           goal: String(args?.goal ?? ""),
           status: "ACTIVE",
-          focus_mode: String(args?.focusMode ?? "normal"),
-          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          ended_at_ms: null,
+          focusMode: String(args?.focusMode ?? "normal"),
+          startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          endedAtMs: null,
         };
       case "get_pomodoro_status":
         return state.pomodoro;
@@ -42,16 +42,16 @@ const boundary = vi.hoisted(() => {
         state.pomodoro = {
           running: true,
           phase: "work",
-          completed_work_intervals: 0,
-          remaining_ms: 25 * 60 * 1000,
+          completedWorkIntervals: 0,
+          remainingMs: 25 * 60 * 1000,
         };
         return state.pomodoro;
       case "stop_pomodoro":
         state.pomodoro = {
           running: false,
           phase: "work",
-          completed_work_intervals: 0,
-          remaining_ms: 0,
+          completedWorkIntervals: 0,
+          remainingMs: 0,
         };
         return state.pomodoro;
       case "pause_pomodoro":
@@ -64,18 +64,18 @@ const boundary = vi.hoisted(() => {
         state.pomodoro = {
           ...state.pomodoro,
           phase: "shortBreak",
-          remaining_ms: 5 * 60 * 1000,
+          remainingMs: 5 * 60 * 1000,
         };
         return state.pomodoro;
       case "restart_pomodoro_phase":
-        state.pomodoro = { ...state.pomodoro, remaining_ms: 25 * 60 * 1000 };
+        state.pomodoro = { ...state.pomodoro, remainingMs: 25 * 60 * 1000 };
         return state.pomodoro;
       case "acknowledge_pomodoro_phase":
         state.pomodoro = {
           ...state.pomodoro,
-          awaiting_acknowledgement: false,
+          awaitingAcknowledgement: false,
           phase: "shortBreak",
-          remaining_ms: 5 * 60 * 1000,
+          remainingMs: 5 * 60 * 1000,
         };
         return state.pomodoro;
       case "get_prediction_history":
@@ -99,17 +99,17 @@ import App from "../src/App";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 const pomodoroCard = () =>
@@ -119,13 +119,13 @@ beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settings = { defaultFocusMode: "normal" };
   boundary.state.settingsThrows = false;
   boundary.state.pomodoro = {
     running: false,
     phase: "work",
-    completed_work_intervals: 0,
-    remaining_ms: 0,
+    completedWorkIntervals: 0,
+    remainingMs: 0,
   };
 });
 
@@ -167,8 +167,8 @@ describe("Pomodoro card", () => {
     boundary.state.pomodoro = {
       running: true,
       phase: "work",
-      completed_work_intervals: 0,
-      remaining_ms: 12 * 60 * 1000,
+      completedWorkIntervals: 0,
+      remainingMs: 12 * 60 * 1000,
     };
 
     render(<App />);
@@ -229,10 +229,10 @@ describe("Pomodoro card", () => {
     boundary.state.pomodoro = {
       running: true,
       paused: false,
-      awaiting_acknowledgement: true,
+      awaitingAcknowledgement: true,
       phase: "shortBreak",
-      completed_work_intervals: 1,
-      remaining_ms: 0,
+      completedWorkIntervals: 1,
+      remainingMs: 0,
     };
     render(<App />);
     await screen.findByRole("heading", { name: "Session Control" });
@@ -257,9 +257,9 @@ describe("Pomodoro card", () => {
 
   it("edits and saves the persisted Pomodoro rhythm", async () => {
     boundary.state.settings = {
-      default_focus_mode: "normal",
-      pomodoro: { work_ms: 1500000, short_break_ms: 300000, long_break_ms: 900000,
-        intervals_before_long_break: 4, auto_start_next_phase: true },
+      defaultFocusMode: "normal",
+      pomodoro: { workMs: 1500000, shortBreakMs: 300000, longBreakMs: 900000,
+        intervalsBeforeLongBreak: 4, autoStartNextPhase: true },
     };
     render(<App />);
     await screen.findByRole("heading", { name: "Session Control" });

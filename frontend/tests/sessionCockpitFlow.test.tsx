@@ -33,12 +33,12 @@ const boundary = vi.hoisted(() => {
   };
 
   const session = (overrides: Record<string, unknown> = {}) => ({
-    session_id: "sess-42",
+    sessionId: "sess-42",
     goal: "Write tests",
     status: "ACTIVE",
-    focus_mode: "normal",
-    started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-    ended_at_ms: null,
+    focusMode: "normal",
+    startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+    endedAtMs: null,
     ...overrides,
   });
 
@@ -57,18 +57,18 @@ const boundary = vi.hoisted(() => {
         if (state.failStart) throw new Error("capture down");
         state.started += 1;
         return session({
-          session_id: `sess-${41 + state.started}`,
+          sessionId: `sess-${41 + state.started}`,
           goal: String(args?.goal ?? ""),
-          focus_mode: String(args?.focusMode ?? "normal"),
+          focusMode: String(args?.focusMode ?? "normal"),
         });
       case "stop_session":
         return session({
-          session_id: String(args?.sessionId ?? "sess-42"),
+          sessionId: String(args?.sessionId ?? "sess-42"),
           status: "COMPLETED",
-          ended_at_ms: Date.parse("2026-07-11T00:30:00Z"),
+          endedAtMs: Date.parse("2026-07-11T00:30:00Z"),
         });
       case "get_session_recap":
-        return { session_id: "sess-42", goal: "Write tests", duration_secs: 1800 };
+        return { sessionId: "sess-42", goal: "Write tests", durationSecs: 1800 };
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -91,27 +91,27 @@ import { useSession } from "../src/useSession";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 const historyRow = (goal: string, focusMode: string) => ({
   record: {
-    session_id: `sess-${goal}`,
+    sessionId: `sess-${goal}`,
     goal,
     status: "COMPLETED",
-    focus_mode: focusMode,
-    started_at_ms: Date.parse("2026-07-10T09:00:00Z"),
-    ended_at_ms: Date.parse("2026-07-10T10:00:00Z"),
+    focusMode: focusMode,
+    startedAtMs: Date.parse("2026-07-10T09:00:00Z"),
+    endedAtMs: Date.parse("2026-07-10T10:00:00Z"),
   },
   recap: {},
 });
@@ -120,7 +120,7 @@ beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settings = { defaultFocusMode: "normal" };
   boundary.state.history = [];
   boundary.state.holdStart = null;
   boundary.state.failStart = false;

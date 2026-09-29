@@ -6,17 +6,17 @@ const boundary = vi.hoisted(() => {
     autostart: { enabled: false, supported: true },
     health: {
       status: "online",
-      capture_running: true,
-      capture_failed: false,
-      capture_events_dropped: 0,
+      captureRunning: true,
+      captureFailed: false,
+      captureEventsDropped: 0,
       permissions: {
-        capture_available: true,
-        capture_probe_confirmed: true,
-        active_window_available: true,
+        captureAvailable: true,
+        captureProbeConfirmed: true,
+        activeWindowAvailable: true,
         message: "",
-        setup_steps: [],
+        setupSteps: [],
       },
-      classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+      classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
     },
   };
 
@@ -30,7 +30,7 @@ const boundary = vi.hoisted(() => {
       case "get_health":
         return state.health;
       case "get_settings":
-        return { default_focus_mode: "normal" };
+        return { defaultFocusMode: "normal" };
       case "get_active_session":
       case "get_latest_prediction":
         return null;

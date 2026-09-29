@@ -20,33 +20,33 @@ const boundary = vi.hoisted(() => {
         return state.settings;
       case "start_session":
         return {
-          session_id: "sess-42",
+          sessionId: "sess-42",
           goal: String(args?.goal ?? ""),
           status: "ACTIVE",
-          focus_mode: "normal",
-          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          ended_at_ms: null,
+          focusMode: "normal",
+          startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          endedAtMs: null,
         };
       case "stop_session":
         return {
-          session_id: "sess-42",
+          sessionId: "sess-42",
           goal: "Write tests",
           status: "COMPLETED",
-          focus_mode: "normal",
-          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          ended_at_ms: Date.parse("2026-07-11T00:30:00Z"),
+          focusMode: "normal",
+          startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          endedAtMs: Date.parse("2026-07-11T00:30:00Z"),
         };
       case "get_session_recap":
-        return { session_id: "sess-42", goal: "Write tests", duration_secs: 1800 };
+        return { sessionId: "sess-42", goal: "Write tests", durationSecs: 1800 };
       case "save_session_reflection":
         state.saved = args ?? {};
         return {
-          session_id: "sess-42",
+          sessionId: "sess-42",
           goal: "Write tests",
           status: "COMPLETED",
-          focus_mode: "normal",
-          reflection_done: args?.done ?? null,
-          reflection_next_step: args?.nextStep ?? null,
+          focusMode: "normal",
+          reflectionDone: args?.done ?? null,
+          reflectionNextStep: args?.nextStep ?? null,
         };
       case "get_prediction_history":
       case "get_app_rules":
@@ -54,7 +54,7 @@ const boundary = vi.hoisted(() => {
       case "get_session_history":
         return [];
       case "get_pomodoro_status":
-        return { running: false, phase: "work", completed_work_intervals: 0, remaining_ms: 0 };
+        return { running: false, phase: "work", completedWorkIntervals: 0, remainingMs: 0 };
       case "get_training_deploy_status":
         return {};
       default:
@@ -72,17 +72,17 @@ import App from "../src/App";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 const reflectionCard = () =>
@@ -107,7 +107,7 @@ beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settings = { defaultFocusMode: "normal" };
   boundary.state.saved = null;
 });
 

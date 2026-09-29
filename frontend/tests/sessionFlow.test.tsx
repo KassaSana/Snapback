@@ -20,24 +20,24 @@ const boundary = vi.hoisted(() => {
         return state.settings;
       case "start_session":
         return {
-          session_id: "sess-42",
+          sessionId: "sess-42",
           goal: String(args?.goal ?? ""),
           status: "ACTIVE",
-          focus_mode: String(args?.focusMode ?? "normal"),
-          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          ended_at_ms: null,
+          focusMode: String(args?.focusMode ?? "normal"),
+          startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          endedAtMs: null,
         };
       case "stop_session":
         return {
-          session_id: "sess-42",
+          sessionId: "sess-42",
           goal: "Write tests",
           status: "COMPLETED",
-          focus_mode: "normal",
-          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          ended_at_ms: Date.parse("2026-07-11T00:30:00Z"),
+          focusMode: "normal",
+          startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          endedAtMs: Date.parse("2026-07-11T00:30:00Z"),
         };
       case "get_session_recap":
-        return { session_id: "sess-42", goal: "Write tests", duration_secs: 1800 };
+        return { sessionId: "sess-42", goal: "Write tests", durationSecs: 1800 };
       case "get_session_auto_label":
         if (state.autoLabelError) throw new Error("label read failed");
         return state.autoLabel;
@@ -69,24 +69,24 @@ import App from "../src/App";
 // Capture running so the first-run wizard stays out of the way.
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 beforeEach(() => {
   window.localStorage.clear();
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settings = { defaultFocusMode: "normal" };
   boundary.state.autoLabel = "PRODUCTIVE";
   boundary.state.autoLabelError = false;
 });
@@ -138,7 +138,7 @@ describe("Session start/stop flow", () => {
   });
 
   it("uses the persisted default focus mode for a new session", async () => {
-    boundary.state.settings = { default_focus_mode: "deep" };
+    boundary.state.settings = { defaultFocusMode: "deep" };
 
     render(<App />);
     await screen.findByRole("heading", { name: "Session Control" });

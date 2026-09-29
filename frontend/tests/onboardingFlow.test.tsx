@@ -17,12 +17,12 @@ const boundary = vi.hoisted(() => {
   };
 
   const session = (overrides: Record<string, unknown> = {}) => ({
-    session_id: "sess-1",
+    sessionId: "sess-1",
     goal: "Write tests",
     status: "ACTIVE",
-    focus_mode: "normal",
-    started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-    ended_at_ms: null,
+    focusMode: "normal",
+    startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+    endedAtMs: null,
     ...overrides,
   });
 
@@ -41,9 +41,9 @@ const boundary = vi.hoisted(() => {
       case "start_session":
         return session({ goal: String(args?.goal ?? "") });
       case "stop_session":
-        return session({ status: "COMPLETED", ended_at_ms: Date.parse("2026-07-11T00:30:00Z") });
+        return session({ status: "COMPLETED", endedAtMs: Date.parse("2026-07-11T00:30:00Z") });
       case "get_session_recap":
-        return { session_id: "sess-1", goal: "Write tests", duration_secs: 1800 };
+        return { sessionId: "sess-1", goal: "Write tests", durationSecs: 1800 };
       case "submit_label":
         return true;
       case "get_prediction_history":
@@ -68,18 +68,18 @@ import App from "../src/App";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
-  developer_tools_enabled: false,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
+  developerToolsEnabled: false,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 beforeEach(() => {
@@ -87,8 +87,8 @@ beforeEach(() => {
   window.location.hash = "";
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
-  boundary.state.privacy = { private_mode: false, excluded_apps: [] };
+  boundary.state.settings = { defaultFocusMode: "normal" };
+  boundary.state.privacy = { privateMode: false, excludedApps: [] };
   boundary.state.prediction = null;
 });
 
@@ -113,13 +113,13 @@ describe("onboarding continuation", () => {
   it("stays away until capture actually works", async () => {
     boundary.state.health = {
       ...healthyCaptureRunning(),
-      capture_running: false,
+      captureRunning: false,
       permissions: {
-        capture_available: false,
-        capture_probe_confirmed: false,
-        active_window_available: false,
+        captureAvailable: false,
+        captureProbeConfirmed: false,
+        activeWindowAvailable: false,
         message: "Screen recording permission is required.",
-        setup_steps: ["Open System Settings"],
+        setupSteps: ["Open System Settings"],
       },
     };
 
@@ -197,7 +197,7 @@ describe("onboarding continuation", () => {
 
   // Failures hand off to the surface that owns them instead of growing a second recovery UI.
   it("routes a capture failure to the permissions section", async () => {
-    boundary.state.health = { ...healthyCaptureRunning(), capture_failed: true };
+    boundary.state.health = { ...healthyCaptureRunning(), captureFailed: true };
 
     render(<App />);
     await waitFor(() => expect(queryGuide()).not.toBeNull());
@@ -217,7 +217,7 @@ describe("onboarding continuation", () => {
   });
 
   it("says so when private mode is why nothing is being recorded", async () => {
-    boundary.state.privacy = { private_mode: true, excluded_apps: [] };
+    boundary.state.privacy = { privateMode: true, excludedApps: [] };
 
     render(<App />);
     await waitFor(() => expect(queryGuide()).not.toBeNull());

@@ -25,7 +25,7 @@ const boundary = vi.hoisted(() => {
       case "export_training_data":
         return state.exportResult;
       case "reload_classifier_model":
-        return { backend: "onnx", onnx_runtime_enabled: true, model_path: "data/model.onnx" };
+        return { backend: "onnx", onnxRuntimeEnabled: true, modelPath: "data/model.onnx" };
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -58,30 +58,30 @@ import { renderApp } from "./renderApp";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
-  developer_tools_enabled: true,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
+  developerToolsEnabled: true,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
-  model_deployment: { state: "ok", preserved_paths: [], retry_cleanup_available: false },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
+  modelDeployment: { state: "ok", preservedPaths: [], retryCleanupAvailable: false },
 });
 
 const readyToTrain = (): Record<string, unknown> => ({
-  has_export: true,
-  repo_configured: true,
-  python_available: true,
-  feature_count: 100,
-  label_count: 20,
-  label_breakdown: { DEEP_FOCUS: 10, DISTRACTED: 10 },
-  export_dir: "data",
-  pipeline_command: "py -m ml.pipeline_cli",
+  hasExport: true,
+  repoConfigured: true,
+  pythonAvailable: true,
+  featureCount: 100,
+  labelCount: 20,
+  labelBreakdown: { DEEP_FOCUS: 10, DISTRACTED: 10 },
+  exportDir: "data",
+  pipelineCommand: "py -m ml.pipeline_cli",
 });
 
 beforeEach(() => {
@@ -92,11 +92,11 @@ beforeEach(() => {
   boundary.state.trainResult = {};
   boundary.state.trainPending = null;
   boundary.state.exportResult = {
-    output_dir: "data",
-    features_path: "data/features.csv",
-    labels_path: "data/labels.csv",
-    feature_count: 100,
-    label_count: 20,
+    outputDir: "data",
+    featuresPath: "data/features.csv",
+    labelsPath: "data/labels.csv",
+    featureCount: 100,
+    labelCount: 20,
   };
 });
 
@@ -117,7 +117,7 @@ describe("Training / deploy card", () => {
   });
 
   it("hides model tooling when developer tools are off", async () => {
-    boundary.state.health = { ...healthyCaptureRunning(), developer_tools_enabled: false };
+    boundary.state.health = { ...healthyCaptureRunning(), developerToolsEnabled: false };
     renderApp("settings", "advanced");
 
     // Advanced still renders — it is the diagnostics home too — but the training disclosure
@@ -130,7 +130,7 @@ describe("Training / deploy card", () => {
   });
 
   it("disables 'Train from export' until export + repo + python are ready", async () => {
-    boundary.state.deployStatus = { ...readyToTrain(), has_export: false };
+    boundary.state.deployStatus = { ...readyToTrain(), hasExport: false };
     renderApp("settings", "advanced");
 
     const trainButton = await screen.findByRole("button", { name: "Train from export" });
@@ -155,11 +155,11 @@ describe("Training / deploy card", () => {
     expect(trainButton).toBeDisabled();
 
     finishExport({
-      output_dir: "data",
-      features_path: "data/features.csv",
-      labels_path: "data/labels.csv",
-      feature_count: 100,
-      label_count: 20,
+      outputDir: "data",
+      featuresPath: "data/features.csv",
+      labelsPath: "data/labels.csv",
+      featureCount: 100,
+      labelCount: 20,
     });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Export training data" })).not.toBeDisabled(),
@@ -169,12 +169,12 @@ describe("Training / deploy card", () => {
   it("warns and does NOT reload when training succeeds but ONNX isn't deployable", async () => {
     boundary.state.trainResult = {
       success: true,
-      training_succeeded: true,
-      deploy_ready: false,
-      onnx_exported: false,
+      trainingSucceeded: true,
+      deployReady: false,
+      onnxExported: false,
       message: "ONNX export skipped",
       metrics: null,
-      log_tail: "",
+      logTail: "",
     };
     renderApp("settings", "advanced");
 
@@ -190,8 +190,8 @@ describe("Training / deploy card", () => {
   it("does not offer reload for an export rejected by the quality gate", async () => {
     boundary.state.deployStatus = {
       ...readyToTrain(),
-      model_onnx_exists: true,
-      quality_gate: {
+      modelOnnxExists: true,
+      qualityGate: {
         passed: false,
         reason: "Model rejected: held_out_accuracy=0.59 is below the threshold.",
       },
@@ -208,12 +208,12 @@ describe("Training / deploy card", () => {
   it("surfaces a failure message and does not reload when training fails", async () => {
     boundary.state.trainResult = {
       success: false,
-      training_succeeded: false,
-      deploy_ready: false,
-      onnx_exported: false,
+      trainingSucceeded: false,
+      deployReady: false,
+      onnxExported: false,
       message: "Python 3 not found",
       metrics: null,
-      log_tail: "",
+      logTail: "",
     };
     renderApp("settings", "advanced");
 
@@ -228,12 +228,12 @@ describe("Training / deploy card", () => {
   it("reloads the classifier when training is deploy-ready", async () => {
     boundary.state.trainResult = {
       success: true,
-      training_succeeded: true,
-      deploy_ready: true,
-      onnx_exported: true,
+      trainingSucceeded: true,
+      deployReady: true,
+      onnxExported: true,
       message: "Trained and exported",
       metrics: { cv_accuracy: 0.7 },
-      log_tail: "",
+      logTail: "",
     };
     renderApp("settings", "advanced");
 
@@ -270,13 +270,13 @@ describe("Training / deploy card", () => {
 
     finishRun({
       success: false,
-      training_succeeded: false,
+      trainingSucceeded: false,
       cancelled: true,
-      deploy_ready: false,
-      onnx_exported: false,
+      deployReady: false,
+      onnxExported: false,
       message: "Training was cancelled before it finished. Nothing was deployed.",
       metrics: null,
-      log_tail: "",
+      logTail: "",
     });
 
     expect(await screen.findByText(/Training was cancelled/)).toBeInTheDocument();
@@ -310,12 +310,12 @@ describe("Training / deploy card", () => {
 
     finishRun({
       success: false,
-      training_succeeded: false,
-      deploy_ready: false,
-      onnx_exported: false,
+      trainingSucceeded: false,
+      deployReady: false,
+      onnxExported: false,
       message: "Training failed. Check the training log for details.",
       metrics: null,
-      log_tail: "epoch 3/10",
+      logTail: "epoch 3/10",
     });
 
     expect(await screen.findByText(/Training failed/)).toBeInTheDocument();

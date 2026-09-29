@@ -24,12 +24,12 @@ const boundary = vi.hoisted(() => {
         return (state.health.permissions as Record<string, unknown>) ?? {};
       case "get_active_session":
         return {
-          session_id: "active-session",
+          sessionId: "active-session",
           goal: "Finish auth.ts",
           status: "ACTIVE",
-          focus_mode: "normal",
-          started_at_ms: Date.parse("2026-09-25T09:00:00Z"),
-          ended_at_ms: null,
+          focusMode: "normal",
+          startedAtMs: Date.parse("2026-09-25T09:00:00Z"),
+          endedAtMs: null,
         };
       case "dismiss_snapback":
         return null;
@@ -67,17 +67,17 @@ import App from "../src/App";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 beforeEach(() => {

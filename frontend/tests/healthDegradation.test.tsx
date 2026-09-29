@@ -33,18 +33,18 @@ import { renderApp } from "./renderApp";
 
 const health = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_failure_reason: null,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureFailureReason: null,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
   ...overrides,
 });
 
@@ -63,7 +63,7 @@ afterEach(() => {
 
 describe("Health degradation visibility", () => {
   it("warns when capture events are being dropped", async () => {
-    boundary.state.health = health({ capture_events_dropped: 5 });
+    boundary.state.health = health({ captureEventsDropped: 5 });
     renderApp("settings", "privacy");
 
     const card = within(permissionsCard());
@@ -76,9 +76,9 @@ describe("Health degradation visibility", () => {
     window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
     boundary.state.health = health({
       status: "capture_failed",
-      capture_running: false,
-      capture_failed: true,
-      capture_failure_reason: "listener died",
+      captureRunning: false,
+      captureFailed: true,
+      captureFailureReason: "listener died",
     });
     renderApp("settings", "privacy");
 
@@ -88,7 +88,7 @@ describe("Health degradation visibility", () => {
   });
 
   it("warns when capture is running but receiving no events (stalled)", async () => {
-    boundary.state.health = health({ capture_stalled: true });
+    boundary.state.health = health({ captureStalled: true });
     renderApp("settings", "privacy");
 
     const card = within(permissionsCard());
@@ -102,13 +102,13 @@ describe("Health degradation visibility", () => {
       // Wizard acknowledged; capture is down at launch (listener pending).
       window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
       boundary.state.health = health({
-        capture_running: false,
+        captureRunning: false,
         permissions: {
-          capture_available: true,
-          capture_probe_confirmed: false,
-          active_window_available: true,
+          captureAvailable: true,
+          captureProbeConfirmed: false,
+          activeWindowAvailable: true,
           message: "",
-          setup_steps: [],
+          setupSteps: [],
         },
       });
       renderApp("settings", "privacy");
@@ -121,7 +121,7 @@ describe("Health degradation visibility", () => {
       expect(card.getByText("listener pending")).toBeInTheDocument();
 
       // Capture comes up after launch; the background health poll should notice.
-      boundary.state.health = health({ capture_running: true });
+      boundary.state.health = health({ captureRunning: true });
       await act(async () => {
         await vi.advanceTimersByTimeAsync(HEALTH_POLL_MS);
       });
@@ -137,7 +137,7 @@ describe("Health degradation visibility", () => {
     try {
       window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
       // Capture is up and looks fine at launch (grace not elapsed yet).
-      boundary.state.health = health({ capture_running: true, capture_stalled: false });
+      boundary.state.health = health({ captureRunning: true, captureStalled: false });
       renderApp("settings", "privacy");
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
@@ -147,7 +147,7 @@ describe("Health degradation visibility", () => {
       expect(card.queryByText(/hasn't received any input events/i)).not.toBeInTheDocument();
 
       // Backend now reports the listener stalled (grace elapsed, still no events).
-      boundary.state.health = health({ capture_running: true, capture_stalled: true });
+      boundary.state.health = health({ captureRunning: true, captureStalled: true });
       await act(async () => {
         await vi.advanceTimersByTimeAsync(CAPTURE_STALL_RECHECK_MS);
       });

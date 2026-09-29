@@ -45,7 +45,7 @@ assert.ok(helper.includes("Elapsed time keeps running"));
 // The mapper accepts both wire spellings, and a settings payload written before 7.23 -- with
 // no such key at all -- still produces a usable value.
 assert.equal(mapSettings({ idleThresholdSecs: 600 }).idleThresholdSecs, 600);
-assert.equal(mapSettings({ idle_threshold_secs: 600 }).idleThresholdSecs, 600);
+assert.equal(mapSettings({ idleThresholdSecs: 600 }).idleThresholdSecs, 600);
 assert.equal(mapSettings({}).idleThresholdSecs, DEFAULT_IDLE_THRESHOLD_SECS);
 
 console.log("idleThreshold.test.ts passed");

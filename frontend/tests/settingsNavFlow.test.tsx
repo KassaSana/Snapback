@@ -39,18 +39,18 @@ import App from "../src/App";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
-  developer_tools_enabled: true,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
+  developerToolsEnabled: true,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
 });
 
 const openSettings = async () => {
@@ -64,7 +64,7 @@ beforeEach(() => {
   window.location.hash = "";
   boundary.invoke.mockClear();
   boundary.state.health = healthyCaptureRunning();
-  boundary.state.settings = { default_focus_mode: "normal" };
+  boundary.state.settings = { defaultFocusMode: "normal" };
 });
 
 afterEach(() => {
@@ -154,14 +154,14 @@ describe("Settings second-level navigation", () => {
   it("reveals Privacy & permissions when capture is blocked", async () => {
     boundary.state.health = {
       ...healthyCaptureRunning(),
-      capture_running: false,
-      capture_failed: true,
+      captureRunning: false,
+      captureFailed: true,
       permissions: {
-        capture_available: false,
-        capture_probe_confirmed: false,
-        active_window_available: false,
+        captureAvailable: false,
+        captureProbeConfirmed: false,
+        activeWindowAvailable: false,
         message: "Screen recording permission is required.",
-        setup_steps: ["Open System Settings"],
+        setupSteps: ["Open System Settings"],
       },
     };
 
@@ -212,8 +212,8 @@ describe("Settings second-level navigation", () => {
   it("sends the badge to Privacy & permissions when capture is the problem", async () => {
     boundary.state.health = {
       ...healthyCaptureRunning(),
-      capture_running: false,
-      capture_failed: true,
+      captureRunning: false,
+      captureFailed: true,
     };
 
     render(<App />);

@@ -28,23 +28,23 @@ vi.mock("../src/bridge", () => ({
 import { useLiveData } from "../src/useLiveData";
 
 const row = (appName: string) => ({
-  app_name: appName,
-  window_title: `${appName} window`,
+  appName: appName,
+  windowTitle: `${appName} window`,
   summary: appName,
-  timestamp_ms: 1,
+  timestampMs: 1,
 });
 
 const prediction = (focusScore: number) => ({
-  session_id: "s-1",
-  focus_state: "PRODUCTIVE",
-  focus_score: focusScore,
-  distraction_risk: 0.1,
-  thrash_score: 0,
-  drift_score: 0,
-  goal_alignment: 0.5,
-  timestamp_ms: focusScore,
-  model_id: "heuristic",
-  state_source: "model",
+  sessionId: "s-1",
+  focusState: "PRODUCTIVE",
+  focusScore: focusScore,
+  distractionRisk: 0.1,
+  thrashScore: 0,
+  driftScore: 0,
+  goalAlignment: 0.5,
+  timestampMs: focusScore,
+  modelId: "heuristic",
+  stateSource: "model",
 });
 
 beforeEach(() => {

@@ -20,9 +20,9 @@ const boundary = vi.hoisted(() => {
       case "get_context_timeline":
         return args?.sessionId
           ? [
-              { app_name: "Code.exe", timestamp_ms: 1 },
-              { app_name: "Code.exe", timestamp_ms: 2 },
-              { app_name: "chrome.exe", timestamp_ms: 3 },
+              { appName: "Code.exe", timestampMs: 1 },
+              { appName: "Code.exe", timestampMs: 2 },
+              { appName: "chrome.exe", timestampMs: 3 },
             ]
           : [];
       case "get_session_longest_snapback":
@@ -30,20 +30,20 @@ const boundary = vi.hoisted(() => {
       case "get_health":
         return {
           status: "online",
-          capture_running: true,
-          capture_failed: false,
-          capture_events_dropped: 0,
+          captureRunning: true,
+          captureFailed: false,
+          captureEventsDropped: 0,
           permissions: {
-            capture_available: true,
-            capture_probe_confirmed: true,
-            active_window_available: true,
+            captureAvailable: true,
+            captureProbeConfirmed: true,
+            activeWindowAvailable: true,
             message: "",
-            setup_steps: [],
+            setupSteps: [],
           },
-          classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+          classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
         };
       case "get_settings":
-        return { default_focus_mode: "normal" };
+        return { defaultFocusMode: "normal" };
       case "get_session_history":
         return state.history;
       case "get_focus_summary":

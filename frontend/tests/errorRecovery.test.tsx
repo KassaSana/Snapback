@@ -21,12 +21,12 @@ const boundary = vi.hoisted(() => {
           throw new Error("capture backend unavailable");
         }
         return {
-          session_id: "sess-1",
+          sessionId: "sess-1",
           goal: String(args?.goal ?? ""),
           status: "ACTIVE",
-          focus_mode: "normal",
-          started_at_ms: Date.parse("2026-07-11T00:00:00Z"),
-          ended_at_ms: null,
+          focusMode: "normal",
+          startedAtMs: Date.parse("2026-07-11T00:00:00Z"),
+          endedAtMs: null,
         };
       case "get_prediction_history":
       case "get_app_rules":
@@ -50,17 +50,17 @@ import App from "../src/App";
 
 const health = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   status: "online",
-  capture_running: true,
-  capture_failed: false,
-  capture_events_dropped: 0,
+  captureRunning: true,
+  captureFailed: false,
+  captureEventsDropped: 0,
   permissions: {
-    capture_available: true,
-    capture_probe_confirmed: true,
-    active_window_available: true,
+    captureAvailable: true,
+    captureProbeConfirmed: true,
+    activeWindowAvailable: true,
     message: "",
-    setup_steps: [],
+    setupSteps: [],
   },
-  classifier: { backend: "heuristic", onnx_runtime_enabled: false, model_path: null },
+  classifier: { backend: "heuristic", onnxRuntimeEnabled: false, modelPath: null },
   ...overrides,
 });
 
@@ -101,13 +101,13 @@ describe("Action error surfacing and recovery", () => {
     // Wizard acknowledged so it doesn't cover the screen; capture is down.
     window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
     boundary.state.health = health({
-      capture_running: false,
+      captureRunning: false,
       permissions: {
-        capture_available: false,
-        capture_probe_confirmed: false,
-        active_window_available: false,
+        captureAvailable: false,
+        captureProbeConfirmed: false,
+        activeWindowAvailable: false,
         message: "Grant Input Monitoring.",
-        setup_steps: [],
+        setupSteps: [],
       },
     });
     render(<App />);
