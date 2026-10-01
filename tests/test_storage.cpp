@@ -974,7 +974,7 @@ TEST_CASE("a corrupt database is refused with a logged reason, not a crash") {
     CHECK(logged.find("focoflow.db") != std::string::npos);
 }
 
-TEST_CASE("an aged database is pruned on open") {
+TEST_CASE("an aged database waits for explicit retention after open") {
     // Retention has only ever been exercised against rows inserted moments earlier in the
     // same process. This is the real shape: a file that sat on disk long enough for its
     // contents to age past the window, opened fresh.
@@ -999,6 +999,8 @@ TEST_CASE("an aged database is pruned on open") {
 
     auto reopened = Storage::open(temp.path);
     REQUIRE(reopened.has_value());
+    CHECK(reopened->recent_predictions(10).size() == 1);
+    CHECK(reopened->prune_to_retention(kDefaultRetentionDays).total() == 1);
     CHECK(reopened->recent_predictions(10).empty());
     // Pruning runtime rows must not take the session with it — sessions are the user's
     // history, predictions are regenerable telemetry.
@@ -1593,7 +1595,7 @@ TEST_CASE("should_vacuum_after_prune uses the configured threshold") {
     CHECK(should_vacuum_after_prune(kVacuumMinDeletedRows));
 }
 
-TEST_CASE("Storage::open routes the startup prune message through an injected logger") {
+TEST_CASE("Storage::open performs no ordinary retention or VACUUM") {
     TempDir temp;
     {
         // Seed one prediction old enough for the on-open prune (kDefaultRetentionDays)
@@ -1612,8 +1614,9 @@ TEST_CASE("Storage::open routes the startup prune message through an injected lo
     auto reopened = Storage::open(temp.path, &logger);
     REQUIRE(reopened.has_value());
 
-    CHECK(log_out.str().find("[INFO]") != std::string::npos);
-    CHECK(log_out.str().find("pruned 1 rows") != std::string::npos);
+    CHECK(log_out.str().find("pruned") == std::string::npos);
+    CHECK(log_out.str().find("VACUUM") == std::string::npos);
+    CHECK(reopened->recent_predictions(10).size() == 1);
 }
 
 TEST_CASE("storage schema indexes the hot read paths") {
@@ -2685,11 +2688,10 @@ TEST_CASE("a timestamp that never parsed stops outliving retention") {
     REQUIRE(sqlite3_exec(db, seed.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
     sqlite3_close(db);
 
-    // Storage::open migrates, then prunes, so the row is gone by the time it returns. Under
-    // the old comparison it would still be here -- and would have been on every open after
-    // this one, for the life of the install.
+    // Opening migrates the invalid timestamp; explicit retention then collects the row.
     auto reopened = Storage::open(temp.path);
     REQUIRE(reopened.has_value());
+    CHECK(reopened->prune_to_retention(kDefaultRetentionDays).total() == 1);
     CHECK(reopened->recent_predictions(10).empty());
     // The session is untouched: retention collects telemetry, not the user's history.
     CHECK(reopened->get_session(session_id).has_value());

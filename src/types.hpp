@@ -264,6 +264,11 @@ struct RuntimeMetrics {
     std::uint64_t persistence_dropped_predictions{};
     std::uint64_t engine_wakeups{};
     std::uint64_t engine_max_drain_ms{};
+    bool maintenance_pending{};
+    bool maintenance_running{};
+    std::uint64_t maintenance_rows_deleted{};
+    std::uint64_t maintenance_elapsed_ms{};
+    std::string maintenance_result{"waiting_for_ui"};
     // User + kernel milliseconds for the whole process since it started. 0 where the platform
     // call failed, or where the process has not yet burned one scheduler tick.
     std::uint64_t process_cpu_ms{};

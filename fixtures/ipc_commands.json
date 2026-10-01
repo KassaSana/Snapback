@@ -3,6 +3,7 @@
     "get_diagnostics",
     "export_support_bundle",
     "get_health",
+    "notify_frontend_ready",
     "report_acceptance_verdict",
     "get_latest_prediction",
     "get_prediction_history",

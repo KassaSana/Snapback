@@ -56,6 +56,11 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
         </span>
       </div>
       <p className="helper-text">
+        Retention cleanup: {health.runtime.maintenanceResult}; {health.runtime.maintenanceRowsDeleted} rows deleted;
+        last attempt {health.runtime.maintenanceElapsedMs} ms.
+        {health.runtime.maintenanceResult === "failed" ? " Retrying automatically in 30 seconds." : ""}
+      </p>
+      <p className="helper-text">
         Capture: {health.captureRunning ? "running" : "stopped"}. Classifier: {health.classifier.backend}.
       </p>
       {health.modelDeployment.state === "degraded" ? (

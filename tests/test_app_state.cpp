@@ -2421,6 +2421,7 @@ TEST_CASE("periodic retention waits for an inactive session and runs off the tic
 
     // A day later the tick only queues the pass. Because this session is active, the worker
     // remains paused and the row is still available immediately after the tick returns.
+    state.notify_frontend_ready();
     clock.advance_minutes(24 * 60);
     AppStateTestAccess::engine_tick(state);
     CHECK(AppStateTestAccess::maintenance_pending(state));
@@ -2451,6 +2452,7 @@ TEST_CASE("a due retention pass does not make the engine tick wait for storage")
     AppStateTestAccess::insert_prediction_at(state, session.session_id,
                                              ms("2000-01-01T00:00:00Z"));
     state.stop_session(session.session_id);
+    state.notify_frontend_ready();
     clock.advance_minutes(24 * 60);
 
     std::atomic<bool> tick_returned{false};
@@ -2484,7 +2486,7 @@ namespace {
 class DeleteRacingClock final : public Clock {
 public:
     std::int64_t steady_ms() const override {
-        if (armed_ && state_ != nullptr) {
+        if (std::this_thread::get_id() == owner_ && armed_ && state_ != nullptr) {
             armed_ = false;
             AppStateTestAccess::bump_activity_epoch(*state_);
         }
@@ -2505,10 +2507,12 @@ public:
     }
 
 private:
+    // The injected deletion belongs to the test tick, never the maintenance reader.
+    const std::thread::id owner_ = std::this_thread::get_id();
     mutable bool armed_ = false;
     mutable AppState* state_ = nullptr;
-    std::int64_t steady_ms_ = 1'000'000;
-    std::int64_t wall_ = 1'700'000'000'000;
+    std::atomic<std::int64_t> steady_ms_{1'000'000};
+    std::atomic<std::int64_t> wall_{1'700'000'000'000};
 };
 
 }  // namespace
@@ -2529,6 +2533,7 @@ TEST_CASE("a delete landing mid-tick does not defer the day's retention prune") 
 
     // A day of uptime has passed, so this tick prunes -- and a delete lands in the window
     // between it latching the epoch and reaching the boundary check.
+    state.notify_frontend_ready();
     clock.advance_minutes(24 * 60);
     clock.arm(state);
     AppStateTestAccess::engine_tick(state);
@@ -2554,6 +2559,7 @@ TEST_CASE("periodic retention completes multiple batches without VACUUM") {
     }
     state.stop_session(session.session_id);
 
+    state.notify_frontend_ready();
     clock.advance_minutes(24 * 60);
     AppStateTestAccess::engine_tick(state);
     REQUIRE(wait_for_maintenance(state));
@@ -4588,4 +4594,80 @@ TEST_CASE("deadline engine advances idle without new capture") {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     CHECK(state->is_idle());
     state->stop_engine();
+}
+
+TEST_CASE("retention readiness is idempotent and cleanup failures retry honestly") {
+    auto state = make_state();
+    auto session = state->start_session("aged readiness", FocusMode::Normal);
+    AppStateTestAccess::insert_prediction_at(*state, session.session_id, ms("2000-01-01T00:00:00Z"));
+    state->stop_session();
+    std::atomic<int> attempts{0};
+    AppStateTestAccess::maintenance_fault(*state, [&] {
+        if (attempts.fetch_add(1) == 0) throw std::runtime_error("maintenance fault");
+    });
+    AppStateTestAccess::engine_tick(*state);
+    CHECK_FALSE(AppStateTestAccess::maintenance_pending(*state));
+    CHECK(state->runtime_metrics().maintenance_result == "waiting_for_ui");
+    CHECK(state->prediction_history(10).size() == 1);
+    state->notify_frontend_ready();
+    for (int i = 0; i < 5000 && state->runtime_metrics().maintenance_result != "failed"; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(state->runtime_metrics().maintenance_result == "failed");
+    CHECK(state->runtime_metrics().maintenance_pending);
+    CHECK(AppStateTestAccess::maintenance_retry_delay(*state) > 29000);
+    state->notify_frontend_ready();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(attempts.load() == 1);
+    AppStateTestAccess::expire_maintenance_retry(*state);
+    REQUIRE(wait_for_maintenance(*state));
+    CHECK(state->runtime_metrics().maintenance_result == "succeeded");
+    CHECK(state->runtime_metrics().maintenance_rows_deleted == 1);
+    CHECK(state->prediction_history(10).empty());
+    state->notify_frontend_ready();
+    CHECK_FALSE(state->runtime_metrics().maintenance_pending);
+    state->stop_engine();
+    CHECK_FALSE(state->runtime_metrics().maintenance_running);
+}
+
+TEST_CASE("session start pauses retention before the next batch") {
+    auto state = make_state();
+    const auto old = state->start_session("aged batches", FocusMode::Normal);
+    for (int i = 0; i < 1000; ++i)
+        AppStateTestAccess::insert_prediction_at(*state, old.session_id, ms("2000-01-01T00:00:00Z"));
+    state->stop_session();
+    std::atomic<bool> inside{false}, release{false};
+    std::atomic<int> batches{0};
+    AppStateTestAccess::maintenance_fault(*state, [&] {
+        if (batches.fetch_add(1) == 0) {
+            inside.store(true);
+            while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+    state->notify_frontend_ready();
+    for (int i = 0; i < 5000 && !inside.load(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(inside.load());
+    std::thread start([&] { state->start_session("pause cleanup", FocusMode::Normal); });
+    for (int i = 0; i < 5000 && !AppStateTestAccess::maintenance_paused(*state); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(AppStateTestAccess::maintenance_paused(*state));
+    release.store(true);
+    start.join();
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    CHECK(batches.load() == 1);
+    CHECK(state->runtime_metrics().maintenance_pending);
+    state->stop_session();
+    REQUIRE(wait_for_maintenance(*state));
+    CHECK(state->runtime_metrics().maintenance_rows_deleted == 1000);
+}
+
+TEST_CASE("shutdown cancels a pending paused readiness pass") {
+    auto state = make_state();
+    state->start_session("keep cleanup paused", FocusMode::Normal);
+    state->notify_frontend_ready();
+    CHECK(state->runtime_metrics().maintenance_pending);
+    state->stop_engine();
+    CHECK_FALSE(state->runtime_metrics().maintenance_pending);
+    CHECK_FALSE(state->runtime_metrics().maintenance_running);
+    CHECK(state->runtime_metrics().maintenance_result == "cancelled");
 }

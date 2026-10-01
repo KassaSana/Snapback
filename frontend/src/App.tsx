@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { api } from "./api";
+import { afterFirstPaint } from "./frontendReady";
+
 import { useAppEffects } from "./useAppEffects";
 
 import { PredictionHistoryCard } from "./ActivityCards";
@@ -76,6 +79,11 @@ import {
 } from "./settingsSections";
 
 export default function App() {
+  useEffect(() => afterFirstPaint(() => {
+    void api.notifyFrontendReady().catch((error: unknown) => {
+      console.warn("Could not acknowledge frontend readiness", error);
+    });
+  }), []);
   // Which surface is showing (ADR-0003); Now by default.
   const [surface, setSurface] = useState<Surface>("now");
   // Settings' second level, seeded from the URL hash (e.g. "#settings/privacy").

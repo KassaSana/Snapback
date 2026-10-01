@@ -49,6 +49,10 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     const auto import_staging_active = std::make_shared<std::atomic<bool>>(false);
 
     // --- Health + predictions ---
+    registry.add("notify_frontend_ready", [&state](const json&) {
+        state.notify_frontend_ready();
+        return json(nullptr);
+    });
     registry.add("get_health", [&state](const json&) { return json(state.health()); });
     registry.add("report_acceptance_verdict", [report_acceptance_verdict](const json& a) {
         if (!*report_acceptance_verdict) {

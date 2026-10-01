@@ -117,6 +117,11 @@ export type RuntimeMetrics = {
   persistenceDroppedPredictions: number;
   engineWakeups: number;
   engineMaxDrainMs: number;
+  maintenancePending: boolean;
+  maintenanceRunning: boolean;
+  maintenanceRowsDeleted: number;
+  maintenanceElapsedMs: number;
+  maintenanceResult: string;
   processCpuMs: number;
   captureRingHighWater: number;
   captureRingCapacity: number;
@@ -140,6 +145,11 @@ export const EMPTY_RUNTIME_METRICS: RuntimeMetrics = {
   persistenceDroppedPredictions: 0,
   engineWakeups: 0,
   engineMaxDrainMs: 0,
+  maintenancePending: false,
+  maintenanceRunning: false,
+  maintenanceRowsDeleted: 0,
+  maintenanceElapsedMs: 0,
+  maintenanceResult: "waiting_for_ui",
   processCpuMs: 0,
   captureRingHighWater: 0,
   captureRingCapacity: 0,
@@ -565,6 +575,7 @@ function throwIfUnavailable(raw: Record<string, unknown>, action: string): void 
 }
 
 export const api = {
+  notifyFrontendReady: () => invoke<void>("notify_frontend_ready"),
   getHealth: async () => {
     const raw = await invoke<Record<string, unknown>>("get_health");
     return mapHealth(raw);

@@ -234,3 +234,17 @@ ticks. The Windows libstdc++ path therefore retains the C++20 semaphore token bu
 uses an owned OS event for the blocking timeout. Other standard libraries use the
 semaphore wait directly. Real desktop CPU, release soak, statistical latency checks,
 and the less-than-1% instrumentation gate remain unverified.
+
+### Startup/open measurement (2026-10-01)
+
+The `snapback_startup_benchmarks` target measures `Storage::open`, with 21 freshly
+copied aged fixtures and a warm OS cache. Argument 30 or 90 seeds 1000 predictions
+per day (30000 or 90000 rows), all outside retention. These simplified prediction-only
+fixtures exercise startup pruning/VACUUM; they do not reproduce a full activity archive.
+Same Windows/MinGW Release host: 30-day fixture p95 80637 us before, 3158 us after
+(96.1% reduction); 90-day p95 351694 us before, 3943 us after (98.9%).
+
+The measured interval ends when database open returns, before the React view or its
+readiness acknowledgement. Full desktop startup-to-ready p95, representative month/90-day
+archives, and the roadmap's 80% UI readiness gate remain unverified. Automatic VACUUM
+is deferred: background DELETE leaves reusable pages and may not shrink the file.

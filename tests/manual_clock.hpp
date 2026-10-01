@@ -5,6 +5,7 @@
 // clock in the production tree.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <ctime>
 
@@ -46,8 +47,8 @@ public:
     void set_wall_ms(std::int64_t value) { wall_ms_ = value; }
 
 private:
-    std::int64_t steady_ms_;
-    std::int64_t wall_ms_;
+    std::atomic<std::int64_t> steady_ms_;
+    std::atomic<std::int64_t> wall_ms_;
 };
 
 }  // namespace snapback

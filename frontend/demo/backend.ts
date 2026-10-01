@@ -329,6 +329,8 @@ export class DemoBackend {
     const range = args as Range;
 
     switch (command) {
+      case "notify_frontend_ready":
+        return null;
       case "get_health":
         return this.health();
       case "report_acceptance_verdict":

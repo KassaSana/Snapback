@@ -79,6 +79,16 @@ struct AppStateTestAccess {
         return state.capture_.has_pending_events();
     }
 
+    static void maintenance_fault(AppState& state, std::function<void()> hook) {
+        std::lock_guard lock(state.storage_mutex_);
+        state.maintenance_test_hook_ = std::move(hook);
+    }
+    static std::int64_t maintenance_retry_delay(AppState& state) {
+        return state.maintenance_retry_at_ms_.load() - state.steady_now_ms();
+    }
+    static void expire_maintenance_retry(AppState& state) {
+        state.signal_maintenance([&] { state.maintenance_retry_at_ms_.store(state.steady_now_ms()); });
+    }
     static bool maintenance_pending(const AppState& state) {
         return state.maintenance_pending_.load(std::memory_order_acquire);
     }

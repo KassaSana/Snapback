@@ -296,6 +296,11 @@ if(SNAPBACK_BUILD_BENCHMARKS)
   target_include_directories(snapback_budget_benchmarks PRIVATE benchmarks tests)
   target_link_libraries(snapback_budget_benchmarks PRIVATE snapback_app)
 
+  # Isolated startup/open cost with aged copies, separate from GUI readiness.
+  add_executable(snapback_startup_benchmarks benchmarks/bench_startup.cpp)
+  target_include_directories(snapback_startup_benchmarks PRIVATE benchmarks)
+  target_link_libraries(snapback_startup_benchmarks PRIVATE snapback_core)
+
   # What the engine costs while idle: 14.11's wakeups-per-second and idle-CPU figures.
   add_executable(snapback_idle_benchmarks benchmarks/bench_idle.cpp)
   target_include_directories(snapback_idle_benchmarks PRIVATE benchmarks tests)

@@ -247,3 +247,18 @@ remains uncalibrated. Linux key/button/wheel translation and its injectable fore
 are in `src/capture/input_context.hpp`. Context refresh is cadence-bounded at 500 ms and never
 runs inside native callbacks or per-device-event translation. Missing Linux context clears the
 cached title instead of retaining a stale private context.
+
+### Startup maintenance readiness
+
+Database open performs schema checks, migrations, and required recovery synchronously.
+Ordinary retention DELETE waits for the idempotent `notify_frontend_ready` command,
+sent after the mounted React view crosses two animation frames. The owned maintenance
+worker releases the storage lock between 256-row batches, yields 10 ms, and pauses
+when a session starts. Failed attempts remain pending, report failure in diagnostics,
+and retry after 30 seconds; shutdown cancels and joins the worker. Rows-deleted is a
+cumulative counter; elapsed time describes the latest attempt, including pauses.
+
+Automatic VACUUM is deferred. Background DELETE can leave reusable free pages and does
+not necessarily shrink the database file. Explicit exports and deletion retain their
+existing behavior. Headless callers must acknowledge readiness explicitly to run
+ordinary maintenance; opening alone never implies readiness.

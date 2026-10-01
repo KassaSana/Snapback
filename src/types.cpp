@@ -226,6 +226,11 @@ void to_json(json& j, const RuntimeMetrics& v) {
              {"persistenceDroppedPredictions", v.persistence_dropped_predictions},
              {"engineWakeups", v.engine_wakeups},
              {"engineMaxDrainMs", v.engine_max_drain_ms},
+             {"maintenancePending", v.maintenance_pending},
+             {"maintenanceRunning", v.maintenance_running},
+             {"maintenanceRowsDeleted", v.maintenance_rows_deleted},
+             {"maintenanceElapsedMs", v.maintenance_elapsed_ms},
+             {"maintenanceResult", v.maintenance_result},
              {"processCpuMs", v.process_cpu_ms},
              {"captureRingHighWater", v.capture_ring_high_water},
              {"captureRingCapacity", v.capture_ring_capacity},
@@ -245,6 +250,11 @@ void from_json(const json& j, RuntimeMetrics& v) {
     v.persistence_dropped_predictions = get_or<std::uint64_t>(j, "persistenceDroppedPredictions", 0);
     v.engine_wakeups = get_or<std::uint64_t>(j, "engineWakeups", 0);
     v.engine_max_drain_ms = get_or<std::uint64_t>(j, "engineMaxDrainMs", 0);
+    v.maintenance_pending = get_or<bool>(j, "maintenancePending", false);
+    v.maintenance_running = get_or<bool>(j, "maintenanceRunning", false);
+    v.maintenance_rows_deleted = get_or<std::uint64_t>(j, "maintenanceRowsDeleted", 0);
+    v.maintenance_elapsed_ms = get_or<std::uint64_t>(j, "maintenanceElapsedMs", 0);
+    v.maintenance_result = get_or<std::string>(j, "maintenanceResult", "waiting_for_ui");
     v.process_cpu_ms = get_or<std::uint64_t>(j, "processCpuMs", 0);
     v.capture_ring_high_water = get_or<std::uint64_t>(j, "captureRingHighWater", 0);
     v.capture_ring_capacity = get_or<std::uint64_t>(j, "captureRingCapacity", 0);

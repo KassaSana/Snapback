@@ -384,31 +384,8 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
         exec(storage.db_, "PRAGMA temp_store = MEMORY;");
         exec(storage.db_, "PRAGMA mmap_size = 268435456;");
         storage.migrate(db_path, &log);
-        try {
-            const PruneSummary summary = storage.prune_to_retention(kDefaultRetentionDays);
-            if (summary.total() > 0) {
-                std::ostringstream msg;
-                msg << "storage: pruned " << summary.total() << " rows older than "
-                    << kDefaultRetentionDays
-                    << "d on open (predictions=" << summary.predictions_deleted
-                    << ", context_snapshots=" << summary.context_snapshots_deleted
-                    << ", feature_snapshots=" << summary.feature_snapshots_deleted << ")";
-                log.info(msg.str());
-                if (should_vacuum_after_prune(summary.total())) {
-                    try {
-                        storage.vacuum();
-                    } catch (const std::exception& err) {
-                        std::ostringstream vacuum_msg;
-                        vacuum_msg << "storage: VACUUM after prune failed: " << err.what();
-                        log.warn(vacuum_msg.str());
-                    }
-                }
-            }
-        } catch (const std::exception& err) {
-            std::ostringstream msg;
-            msg << "storage: startup retention prune failed: " << err.what();
-            log.warn(msg.str());
-        }
+        // Ordinary retention and space reclamation must not delay the first view.
+        // Opening still completes migrations and required recovery synchronously.
         return storage;
     } catch (const std::exception& err) {
         // Log the cause: a corrupt DB, a permissions error, a failed migration, and a full disk

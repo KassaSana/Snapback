@@ -190,6 +190,12 @@ TEST_CASE("RuntimeMetrics round-trips every field it publishes") {
     metrics.persistence_failures = 15;
     metrics.persistence_dropped_predictions = 16;
     metrics.engine_wakeups = 1;
+    metrics.engine_max_drain_ms = 17;
+    metrics.maintenance_pending = true;
+    metrics.maintenance_running = true;
+    metrics.maintenance_rows_deleted = 18;
+    metrics.maintenance_elapsed_ms = 19;
+    metrics.maintenance_result = "failed";
     metrics.process_cpu_ms = 2;
     metrics.capture_ring_high_water = 3;
     metrics.capture_ring_capacity = 4;
@@ -214,6 +220,12 @@ TEST_CASE("RuntimeMetrics round-trips every field it publishes") {
     CHECK(back.persistence_failures == 15);
     CHECK(back.persistence_dropped_predictions == 16);
     CHECK(back.engine_wakeups == 1);
+    CHECK(back.engine_max_drain_ms == 17);
+    CHECK(back.maintenance_pending);
+    CHECK(back.maintenance_running);
+    CHECK(back.maintenance_rows_deleted == 18);
+    CHECK(back.maintenance_elapsed_ms == 19);
+    CHECK(back.maintenance_result == "failed");
     CHECK(back.process_cpu_ms == 2);
     CHECK(back.capture_ring_high_water == 3);
     CHECK(back.capture_ring_capacity == 4);

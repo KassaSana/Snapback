@@ -71,6 +71,7 @@ public:
 
     // Spawn capture and the engine tick thread.
     void start_engine();
+    void notify_frontend_ready();
     // Test seam: run the same engine loop with an injected hook instead of installing
     // the platform-wide input hook.
     void start_engine_for_test(InputHook* hook);
@@ -494,7 +495,7 @@ private:
     bool idle_ = false;              // user is currently AFK (mirrors idle_detector_ state)
     bool live_read_dirty_ = true;    // protected by mutex_; cleared after publication
     // Monotonic uptime at the last retention attempt. Seeded at construction because
-    // Storage::open just pruned.
+    // Initial maintenance waits for the first painted frontend view.
     std::atomic<std::int64_t> last_prune_steady_ms_{0};
     // Uptime at the last "capture backlog" log line. Guarded by mutex_. Optional because 0 is
     // a valid steady-clock value.
@@ -515,7 +516,16 @@ private:
     std::mutex maintenance_mutex_;
     std::condition_variable maintenance_ready_;
     std::thread maintenance_thread_;
+    std::atomic<bool> frontend_ready_{false};
     std::atomic<bool> maintenance_pending_{false};
+    std::atomic<bool> maintenance_running_{false};
+    std::atomic<std::int64_t> maintenance_retry_at_ms_{0};
+    std::atomic<std::uint64_t> maintenance_rows_deleted_{0};
+    std::atomic<std::uint64_t> maintenance_elapsed_ms_{0};
+    // 0 awaiting readiness, 1 pending, 2 running, 3 succeeded, 4 failed, 5 cancelled.
+    std::atomic<int> maintenance_result_{0};
+    std::function<void()> maintenance_test_hook_;  // guarded by storage_mutex_
+
     std::atomic<bool> maintenance_paused_{false};
     std::atomic<bool> maintenance_stopping_{false};
 };

@@ -144,7 +144,7 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     pomodoro_.restore(settings_.pomodoro_state, now_unix_ms(), steady_now_ms());
     hydrate_active_session_unlocked();
     hydrate_session_attendance_unlocked();
-    last_prune_steady_ms_.store(steady_now_ms());  // Storage::open pruned on the way in
+    last_prune_steady_ms_.store(steady_now_ms());  // Readiness queues the initial pass.
     maintenance_paused_.store(active_session_.has_value(), std::memory_order_release);
     publish_live_read_unlocked();
     capture_.set_wake_signal(&engine_wake_);
@@ -623,7 +623,8 @@ std::optional<std::int64_t> AppState::next_engine_delay_ms() const {
     if (persistence_failure_reason_ &&
         (!pending_span_transitions_.empty() || pending_snapback_episode_))
         deadlines.monotonic(persistence_retry_at_ms_);
-    if (!maintenance_pending_.load(std::memory_order_acquire))
+    if (frontend_ready_.load(std::memory_order_acquire) &&
+        !maintenance_pending_.load(std::memory_order_acquire))
         deadlines.monotonic(last_prune_steady_ms_.load(std::memory_order_acquire) + kRetentionPruneIntervalMs);
     return deadlines.delay_ms();
 }
@@ -655,6 +656,9 @@ void AppState::stop_engine() noexcept {
     engine_wake_.notify();
     if (engine_thread_.joinable()) engine_thread_.join();
     if (maintenance_thread_.joinable()) maintenance_thread_.join();
+    maintenance_running_.store(false, std::memory_order_release);
+    if (maintenance_pending_.exchange(false, std::memory_order_acq_rel))
+        maintenance_result_.store(5, std::memory_order_release);
     close_open_span_on_shutdown();
 }
 
@@ -690,7 +694,6 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     WakeOnExit wake{engine_wake_};
     // Mixed (in-memory + storage): take both locks in the fixed order mutex_ -> storage_mutex_.
     std::lock_guard state_lock(mutex_);
-    std::lock_guard store_lock(storage_mutex_);
 
     // Persist first, mutate second: everything before release() below is undone as a unit on
     // failure; everything after is in-memory and cannot fail. Replacing a running session
@@ -701,6 +704,7 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
         active_session_ ? std::optional<std::string>(active_session_->session_id) : std::nullopt;
     maintenance_paused_.store(true, std::memory_order_release);
 
+    std::lock_guard store_lock(storage_mutex_);
     SessionRecord created;
     try {
         Storage::Savepoint savepoint(storage_, "app_start_session");
@@ -936,6 +940,12 @@ RuntimeMetrics AppState::runtime_metrics() const {
     out.persistence_dropped_predictions = persistence_dropped_predictions_.load(std::memory_order_relaxed);
     out.engine_wakeups = engine_wakeups();
     out.engine_max_drain_ms = engine_max_drain_ms_.load(std::memory_order_relaxed);
+    out.maintenance_pending = maintenance_pending_.load(std::memory_order_acquire);
+    out.maintenance_running = maintenance_running_.load(std::memory_order_acquire);
+    out.maintenance_rows_deleted = maintenance_rows_deleted_.load(std::memory_order_relaxed);
+    out.maintenance_elapsed_ms = maintenance_elapsed_ms_.load(std::memory_order_relaxed);
+    static constexpr const char* results[] = {"waiting_for_ui", "pending", "running", "succeeded", "failed", "cancelled"};
+    out.maintenance_result = results[maintenance_result_.load(std::memory_order_acquire)];
     out.process_cpu_ms = process_cpu_ms();
     out.capture_ring_high_water = static_cast<std::uint64_t>(capture_ring_high_water());
     out.capture_ring_capacity = static_cast<std::uint64_t>(CaptureThread::kCapacity);
@@ -1858,8 +1868,17 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
     }
 }
 
+void AppState::notify_frontend_ready() {
+    WakeOnExit wake{engine_wake_};
+    if (!frontend_ready_.exchange(true, std::memory_order_acq_rel)) {
+        maintenance_result_.store(1, std::memory_order_release);
+        request_retention_maintenance();
+    }
+}
+
 void AppState::request_retention_maintenance() {
-    if (maintenance_stopping_.load(std::memory_order_acquire)) return;
+    if (maintenance_stopping_.load(std::memory_order_acquire) ||
+        !frontend_ready_.load(std::memory_order_acquire)) return;
     // Notifies even when the flag was already set: the wake is unconditional now, and a
     // spurious one costs the worker a single predicate evaluation.
     signal_maintenance([this] {
@@ -1871,14 +1890,24 @@ void AppState::run_retention_maintenance() noexcept {
     for (;;) {
         {
             std::unique_lock lock(maintenance_mutex_);
-            maintenance_ready_.wait(lock, [this] {
-                return maintenance_stopping_.load(std::memory_order_acquire) ||
-                       (maintenance_pending_.load(std::memory_order_acquire) &&
-                        !maintenance_paused_.load(std::memory_order_acquire));
-            });
+            auto runnable = [this] {
+                return maintenance_pending_.load(std::memory_order_acquire) &&
+                       !maintenance_paused_.load(std::memory_order_acquire);
+            };
+            while (!maintenance_stopping_.load(std::memory_order_acquire)) {
+                const auto retry = maintenance_retry_at_ms_.load(std::memory_order_acquire);
+                if (runnable() && steady_now_ms() >= retry) break;
+                if (runnable()) {
+                    maintenance_ready_.wait_for(lock, std::chrono::milliseconds(
+                        std::max<std::int64_t>(1, retry - steady_now_ms())));
+                } else maintenance_ready_.wait(lock);
+            }
         }
         if (maintenance_stopping_.load(std::memory_order_acquire)) return;
 
+        maintenance_running_.store(true, std::memory_order_release);
+        maintenance_result_.store(2, std::memory_order_release);
+        const auto started = steady_now_ms();
         PruneSummary total;
         bool failed = false;
         try {
@@ -1902,9 +1931,11 @@ void AppState::run_retention_maintenance() noexcept {
                     // Starting a session raises the pause flag before waiting for this lock.
                     // Recheck after acquiring it so a queued start prevents another batch.
                     if (maintenance_paused_.load(std::memory_order_acquire)) continue;
+                    if (maintenance_test_hook_) maintenance_test_hook_();
                     batch = storage_.prune_runtime_data_batch(cutoff,
                                                               kRetentionPruneBatchRows);
                 }
+                maintenance_rows_deleted_.fetch_add(batch.total(), std::memory_order_relaxed);
                 total.predictions_deleted += batch.predictions_deleted;
                 total.context_snapshots_deleted += batch.context_snapshots_deleted;
                 total.feature_snapshots_deleted += batch.feature_snapshots_deleted;
@@ -1943,8 +1974,18 @@ void AppState::run_retention_maintenance() noexcept {
             } catch (...) {
             }
         }
-        last_prune_steady_ms_.store(steady_now_ms(), std::memory_order_release);
-        maintenance_pending_.store(false, std::memory_order_release);
+        maintenance_elapsed_ms_.store(static_cast<std::uint64_t>(
+            std::max<std::int64_t>(0, steady_now_ms() - started)), std::memory_order_relaxed);
+        maintenance_running_.store(false, std::memory_order_release);
+        if (failed) {
+            maintenance_retry_at_ms_.store(steady_now_ms() + 30000, std::memory_order_release);
+            maintenance_result_.store(4, std::memory_order_release);
+        } else {
+            maintenance_retry_at_ms_.store(0, std::memory_order_release);
+            last_prune_steady_ms_.store(steady_now_ms(), std::memory_order_release);
+            maintenance_result_.store(3, std::memory_order_release);
+            maintenance_pending_.store(false, std::memory_order_release);
+        }
         engine_wake_.notify();
     }
 }
@@ -2066,7 +2107,8 @@ bool AppState::engine_tick() {
         episode_to_persist = pending_snapback_episode_;
         span_transitions.assign(pending_span_transitions_.begin(),
                                 pending_span_transitions_.end());
-        if (now_ms - last_prune_steady_ms_.load(std::memory_order_acquire) >=
+        if (frontend_ready_.load(std::memory_order_acquire) &&
+            now_ms - last_prune_steady_ms_.load(std::memory_order_acquire) >=
             kRetentionPruneIntervalMs) {
             prune_due = true;
         }

@@ -240,7 +240,7 @@ TEST_CASE("IPC contract: every frontend listener has an emitter or a named owner
     }
 }
 
-TEST_CASE("IPC contract: canonical set has 77 handler commands") {
+TEST_CASE("IPC contract: canonical set has 78 handler commands") {
     // 61 -> 65 with import path; 66 with Roadmap 2.8; 68 with file
     // dialogs; 71 with alert snooze, resume, and delivery preferences; 72 with
     // the daily focus series behind the Review trend surfaces; 73 with cancel_training once
@@ -248,6 +248,6 @@ TEST_CASE("IPC contract: canonical set has 77 handler commands") {
     // verdict sink that proves the page crossed the real webview bridge; 75
     // with the session explorer's per-session focus curve.
     // 76 reads the saved automatic label for the end-of-session check-in; 77 reads the
-    // selected session's longest snapback for Review.
-    CHECK(load_expected_commands().size() == 77);
+    // selected session's longest snapback for Review. 78 acknowledges the painted frontend.
+    CHECK(load_expected_commands().size() == 78);
 }
