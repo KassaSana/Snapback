@@ -125,3 +125,84 @@ console.log("demoBackend.test.ts passed");
   const recap = demo.handle("get_session_recap", { sessionId: session.sessionId }) as { activeSecs: number };
   assert.equal(recap.activeSecs, 15);
 }
+
+// Demo phase actions follow the native timer, with controllable time instead of fixed snapshots.
+{
+  let now = Date.now();
+  const demo = new DemoBackend(now, () => now);
+  demo.handle("delete_all_activity_data", {});
+  assert.throws(() => demo.handle("start_pomodoro", {}), /Start a session/);
+  const session = demo.handle("start_session", { goal: "Timer" }) as { sessionId: string };
+  type Timer = { phase: string; remainingMs: number; running: boolean; paused: boolean;
+    awaitingAcknowledgement: boolean; completedWorkIntervals: number };
+  const timer = (command = "get_pomodoro_status") => demo.handle(command, {}) as Timer;
+  demo.handle("set_pomodoro_config", { config: { workMs: 60_000, shortBreakMs: 30_000,
+    longBreakMs: 90_000, intervalsBeforeLongBreak: 2, autoStartNextPhase: true } });
+  assert.equal(timer("start_pomodoro").remainingMs, 60_000);
+  now += 20_000;
+  assert.equal(timer("pause_pomodoro").remainingMs, 40_000);
+  now += 100_000;
+  assert.equal(timer().remainingMs, 40_000);
+  timer("resume_pomodoro");
+  now += 10_000;
+  assert.equal(timer().remainingMs, 30_000);
+  const skipped = timer("skip_pomodoro_phase");
+  assert.equal(skipped.phase, "shortBreak");
+  assert.equal(skipped.completedWorkIntervals, 0);
+  timer("skip_pomodoro_phase");
+  now += 65_000;
+  assert.equal(timer().phase, "shortBreak");
+  assert.equal(timer().remainingMs, 25_000);
+  assert.equal(timer().completedWorkIntervals, 1);
+  now += 85_000;
+  assert.equal(timer().phase, "longBreak");
+  assert.equal(timer().completedWorkIntervals, 2);
+  assert.equal(timer().remainingMs, 90_000);
+  now += 10_000;
+  assert.equal(timer("restart_pomodoro_phase").remainingMs, 90_000);
+  demo.handle("set_pomodoro_config", { config: { autoStartNextPhase: false } });
+  now += 90_000;
+  assert.equal(timer().phase, "work");
+  assert.equal(timer().awaitingAcknowledgement, true);
+  now += 120_000;
+  assert.equal(timer().remainingMs, 0);
+  assert.equal(timer("acknowledge_pomodoro_phase").remainingMs, 60_000);
+  now += 5000;
+  assert.equal(timer("acknowledge_pomodoro_phase").remainingMs, 55_000);
+  demo.handle("stop_session", { sessionId: session.sessionId });
+  assert.equal(timer().running, false);
+  assert.equal(timer().completedWorkIntervals, 0);
+  assert.throws(() => demo.handle("set_pomodoro_config", { config: { workMs: 0 } }), /positive integers/);
+}
+
+// Skip while awaiting starts the pending phase; intervalsBeforeLongBreak 0 never schedules a long break.
+{
+  let now = Date.now();
+  const demo = new DemoBackend(now, () => now);
+  demo.handle("delete_all_activity_data", {});
+  demo.handle("start_session", { goal: "Awaiting" });
+  demo.handle("set_pomodoro_config", {
+    config: {
+      workMs: 1000,
+      shortBreakMs: 1000,
+      longBreakMs: 1000,
+      intervalsBeforeLongBreak: 0,
+      autoStartNextPhase: false,
+    },
+  });
+  demo.handle("start_pomodoro", {});
+  now += 1000;
+  type Timer = { phase: string; remainingMs: number; awaitingAcknowledgement: boolean };
+  const waiting = demo.handle("get_pomodoro_status", {}) as Timer;
+  assert.equal(waiting.phase, "shortBreak");
+  assert.equal(waiting.awaitingAcknowledgement, true);
+  assert.equal((demo.handle("skip_pomodoro_phase", {}) as Timer).phase, "shortBreak");
+  assert.equal((demo.handle("get_pomodoro_status", {}) as Timer).awaitingAcknowledgement, false);
+  now += 1000;
+  demo.handle("get_pomodoro_status", {});
+  assert.equal((demo.handle("restart_pomodoro_phase", {}) as Timer).phase, "shortBreak");
+  assert.throws(
+    () => demo.handle("set_pomodoro_config", { config: { intervalsBeforeLongBreak: -1 } }),
+    /nonnegative/,
+  );
+}

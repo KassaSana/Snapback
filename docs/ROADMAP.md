@@ -1611,6 +1611,8 @@ kept here; already-deep modules and completed performance work were rejected dur
 - **14.4 — Move frontend invalidation into workflow modules.** `in progress` `M`
   **Progress 2026-10-01:** Recording pause controls now name what they pause, with explicit elapsed-versus-attended copy and private/idle session labels. Demo predictions and attendance stop during private pauses, timed resumption counts only post-expiry time, and repeated Stop preserves the original end timestamp. ADR-0005 elapsed semantics remain intact; native desktop interaction still needs live confirmation.
 
+  **Progress 2026-10-01:** Pomodoro countdown now advances between authoritative native snapshots, freezes while paused or awaiting acknowledgement, and rejects stale status reads after newer timer events. Demo phase transitions, skip/restart/acknowledge, long-break cadence (including intervalsBeforeLongBreak 0), and session-bound resets follow the native state machine. Desktop Pomodoro timing under suspension remains a live-check gate.
+
 
   `App.tsx` coordinates roughly a dozen feature states and passes 29 values into
   `useAppEffects`; deletion and session actions know which unrelated stores must refresh.

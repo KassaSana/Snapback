@@ -82,9 +82,14 @@ export class DemoBackend {
     paused: false,
     awaitingAcknowledgement: false,
     phase: "work",
-    completedWorkIntervals: 2,
-    remainingMs: 25 * MINUTE,
+    completedWorkIntervals: 0,
+    remainingMs: 0,
   };
+
+  private pomodoroDeadlineMs = 0;
+  // Set while awaiting acknowledgement: the ended phase stays in `pomodoro.phase`, matching
+  // native PomodoroTimer; status reports this pending phase to the UI.
+  private pomodoroPendingPhase: string | null = null;
 
   private privatePauseUntil = 0;
   private snoozeUntil = 0;
@@ -119,6 +124,67 @@ export class DemoBackend {
     if (session) session.attendedSecs += Math.max(0, now - from) / 1000;
     this.attendedUpdatedAtMs = now;
     this.recordingStatus();
+  }
+
+  private resetPomodoro(): void {
+    this.pomodoro = { running: false, paused: false, awaitingAcknowledgement: false,
+      phase: "work", completedWorkIntervals: 0, remainingMs: 0 };
+    this.pomodoroDeadlineMs = 0;
+    this.pomodoroPendingPhase = null;
+  }
+
+  private pomodoroDuration(phase = this.pomodoro.phase): number {
+    const config = this.settings.pomodoro;
+    return phase === "work" ? config.workMs
+      : phase === "longBreak" ? config.longBreakMs : config.shortBreakMs;
+  }
+
+  private nextBreakPhase(completed: number): string {
+    const cadence = this.settings.pomodoro.intervalsBeforeLongBreak;
+    return cadence > 0 && completed > 0 && completed % cadence === 0 ? "longBreak" : "shortBreak";
+  }
+
+  private nextPomodoroPhase(phase = this.pomodoro.phase): string {
+    return phase !== "work" ? "work" : this.nextBreakPhase(this.pomodoro.completedWorkIntervals);
+  }
+
+  private beginPomodoroPhase(phase = this.pomodoro.phase): void {
+    this.pomodoroPendingPhase = null;
+    this.pomodoro = {
+      ...this.pomodoro,
+      phase,
+      paused: false,
+      awaitingAcknowledgement: false,
+      remainingMs: this.pomodoroDuration(phase),
+    };
+    this.pomodoroDeadlineMs = this.now() + this.pomodoro.remainingMs;
+  }
+
+  private pomodoroStatus(): typeof this.pomodoro {
+    return {
+      ...this.pomodoro,
+      phase: this.pomodoro.awaitingAcknowledgement && this.pomodoroPendingPhase
+        ? this.pomodoroPendingPhase
+        : this.pomodoro.phase,
+    };
+  }
+
+  private refreshPomodoro(): void {
+    if (!this.pomodoro.running || this.pomodoro.paused || this.pomodoro.awaitingAcknowledgement) return;
+    const now = this.now();
+    while (now >= this.pomodoroDeadlineMs) {
+      if (this.pomodoro.phase === "work") this.pomodoro.completedWorkIntervals += 1;
+      const next = this.nextPomodoroPhase();
+      if (!this.settings.pomodoro.autoStartNextPhase) {
+        // Keep the ended phase; the UI reads the pending next phase via pomodoroStatus().
+        this.pomodoroPendingPhase = next;
+        this.pomodoro = { ...this.pomodoro, awaitingAcknowledgement: true, remainingMs: 0 };
+        return;
+      }
+      this.pomodoro.phase = next;
+      this.pomodoroDeadlineMs += this.pomodoroDuration(next);
+    }
+    this.pomodoro = { ...this.pomodoro, remainingMs: Math.max(0, this.pomodoroDeadlineMs - now) };
   }
 
   private session(id: string): DemoSession | undefined {
@@ -348,6 +414,7 @@ export class DemoBackend {
 
   handle(command: string, args: Json): unknown {
     this.syncAttendance();
+    this.refreshPomodoro();
     const range = args as Range;
 
     switch (command) {
@@ -429,43 +496,64 @@ export class DemoBackend {
       }
 
       case "get_pomodoro_status":
-        return this.pomodoro;
+        return this.pomodoroStatus();
       case "start_pomodoro":
-        this.pomodoro = {
-          ...this.pomodoro,
-          running: true,
-          paused: false,
-          remainingMs: 25 * MINUTE,
-        };
-        return this.pomodoro;
+        if (!this.activeSessionId) throw new Error("Start a session first.");
+        this.resetPomodoro();
+        this.pomodoro.running = true;
+        this.beginPomodoroPhase();
+        return this.pomodoroStatus();
       case "stop_pomodoro":
-        this.pomodoro = { ...this.pomodoro, running: false, paused: false };
-        return this.pomodoro;
+        this.pomodoro = { ...this.pomodoro, running: false, paused: false,
+          awaitingAcknowledgement: false, remainingMs: 0 };
+        this.pomodoroPendingPhase = null;
+        return this.pomodoroStatus();
       case "pause_pomodoro":
-        this.pomodoro = { ...this.pomodoro, paused: true };
-        return this.pomodoro;
+        if (this.pomodoro.running && !this.pomodoro.awaitingAcknowledgement) {
+          this.pomodoro = { ...this.pomodoro, paused: true };
+        }
+        return this.pomodoroStatus();
       case "resume_pomodoro":
-        this.pomodoro = { ...this.pomodoro, paused: false };
-        return this.pomodoro;
+        if (this.pomodoro.running && this.pomodoro.paused) {
+          this.pomodoro = { ...this.pomodoro, paused: false };
+          this.pomodoroDeadlineMs = this.now() + this.pomodoro.remainingMs;
+        }
+        return this.pomodoroStatus();
       case "skip_pomodoro_phase":
+        if (this.pomodoro.running) {
+          // Awaiting: start the pending phase. Otherwise end early without crediting work.
+          const next = this.pomodoro.awaitingAcknowledgement && this.pomodoroPendingPhase
+            ? this.pomodoroPendingPhase
+            : this.nextPomodoroPhase();
+          this.beginPomodoroPhase(next);
+        }
+        return this.pomodoroStatus();
       case "restart_pomodoro_phase":
+        // Restarts the active (or ended-while-awaiting) phase; does not consume the pending one.
+        if (this.pomodoro.running) this.beginPomodoroPhase(this.pomodoro.phase);
+        return this.pomodoroStatus();
       case "acknowledge_pomodoro_phase":
-        this.pomodoro = {
-          ...this.pomodoro,
-          awaitingAcknowledgement: false,
-          remainingMs: this.pomodoro.phase === "work" ? 25 * MINUTE : 5 * MINUTE,
-        };
-        return this.pomodoro;
+        if (this.pomodoro.running && this.pomodoro.awaitingAcknowledgement && this.pomodoroPendingPhase) {
+          this.beginPomodoroPhase(this.pomodoroPendingPhase);
+        }
+        return this.pomodoroStatus();
       case "set_pomodoro_config": {
-        const config = (args.config ?? {}) as Json;
-        this.settings.pomodoro = {
-          ...this.settings.pomodoro,
-          ...config,
-        } as typeof this.settings.pomodoro;
-        return this.pomodoro;
+        const config = { ...this.settings.pomodoro, ...((args.config ?? {}) as Json) };
+        if (![config.workMs, config.shortBreakMs, config.longBreakMs]
+          .every((value) => Number.isFinite(value) && value > 0 && Number.isInteger(value)) ||
+          !Number.isInteger(config.intervalsBeforeLongBreak) ||
+          config.intervalsBeforeLongBreak < 0) {
+          throw new Error(
+            "Pomodoro durations must be positive integers; long-break intervals must be nonnegative.",
+          );
+        }
+        this.settings.pomodoro = config;
+        return this.pomodoroStatus();
       }
 
       case "start_session": {
+        if (this.activeSessionId) this.handle("stop_session", { sessionId: this.activeSessionId });
+        this.resetPomodoro();
         this.counter += 1;
         const session: DemoSession = {
           sessionId: `demo-live-${this.counter}`,
@@ -489,7 +577,10 @@ export class DemoBackend {
         if (session.endedAtMs !== null) return this.sessionJson(session);
         session.status = "COMPLETED";
         session.endedAtMs = this.now();
-        if (this.activeSessionId === session.sessionId) this.activeSessionId = null;
+        if (this.activeSessionId === session.sessionId) {
+          this.activeSessionId = null;
+          this.resetPomodoro();
+        }
         if (!this.autoLabels.has(session.sessionId) &&
             this.data.predictions.some((row) => row.sessionId === session.sessionId)) {
           const recap = this.recapOf(session);
@@ -582,7 +673,7 @@ export class DemoBackend {
         this.data.episodes = this.data.episodes.filter((episode) => episode.sessionId !== id);
         this.feedbackLabels = this.feedbackLabels.filter((label) => label.sessionId !== id);
         this.autoLabels.delete(id);
-        if (this.activeSessionId === id) this.activeSessionId = null;
+        if (this.activeSessionId === id) { this.activeSessionId = null; this.resetPomodoro(); }
         return this.data.sessions.length < before;
       }
 
@@ -806,6 +897,7 @@ export class DemoBackend {
         this.feedbackLabels = [];
         this.autoLabels.clear();
         this.activeSessionId = null;
+        this.resetPomodoro();
         return {
           deleted: ["sessions", "predictions", "context snapshots"],
           failed: [],

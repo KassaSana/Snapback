@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the native boundary so the real api.ts + usePomodoro run end to end.
@@ -96,6 +96,8 @@ const boundary = vi.hoisted(() => {
 vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 import App from "../src/App";
+import { usePomodoro, usePomodoroCountdown } from "../src/usePomodoro";
+import type { PomodoroStatus } from "../src/api";
 
 const healthyCaptureRunning = (): Record<string, unknown> => ({
   status: "online",
@@ -131,6 +133,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe("Pomodoro card", () => {
@@ -278,5 +281,56 @@ describe("Pomodoro card", () => {
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("set_pomodoro_config", {
       config: expect.objectContaining({ workMs: 40 * 60 * 1000 }),
     }));
+  });
+});
+
+
+describe("Pomodoro snapshot countdown", () => {
+  const running: PomodoroStatus = { running: true, paused: false, awaitingAcknowledgement: false,
+    phase: "work", completedWorkIntervals: 0, remainingMs: 10_000 };
+
+  it("counts down monotonically, freezes during pause, and reanchors on resume", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    const { result, rerender, unmount } = renderHook(({ status }) => usePomodoroCountdown(status),
+      { initialProps: { status: running } });
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(result.current.remainingMs).toBe(7000);
+    rerender({ status: { ...running, paused: true, remainingMs: 7000 } });
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(result.current.remainingMs).toBe(7000);
+    rerender({ status: { ...running, remainingMs: 7000 } });
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(result.current.remainingMs).toBe(5000);
+    rerender({ status: { ...running, phase: "shortBreak", remainingMs: 5000 } });
+    expect(result.current.phase).toBe("shortBreak");
+    expect(result.current.remainingMs).toBe(5000);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clamps at zero without inventing a phase and stops ticking while awaiting", () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+    const { result, rerender } = renderHook(({ status }) => usePomodoroCountdown(status),
+      { initialProps: { status: running } });
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(result.current.remainingMs).toBe(0);
+    expect(result.current.phase).toBe("work");
+    expect(vi.getTimerCount()).toBe(0);
+    rerender({ status: { ...running, phase: "shortBreak", awaitingAcknowledgement: true, remainingMs: 0 } });
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(result.current.remainingMs).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ignores an old status read arriving after a phase event", async () => {
+    let resolveRead!: (value: unknown) => void;
+    boundary.invoke.mockImplementationOnce(() => new Promise((resolve) => { resolveRead = resolve; }));
+    const { result } = renderHook(() => usePomodoro({ setActionError: () => {} }));
+    let refresh!: Promise<void>;
+    act(() => { refresh = result.current.refreshPomodoroStatus(); });
+    act(() => result.current.handlePomodoroEvent({ ...running, phase: "shortBreak", remainingMs: 5000 }));
+    await act(async () => { resolveRead(running); await refresh; });
+    expect(result.current.pomodoroStatus.phase).toBe("shortBreak");
+    expect(result.current.pomodoroStatus.remainingMs).toBe(5000);
   });
 });
