@@ -626,6 +626,8 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   **Progress 2026-10-01:** Pomodoro countdown now advances between authoritative native snapshots, freezes while paused or awaiting acknowledgement, and rejects stale status reads after newer timer events. Demo phase transitions, skip/restart/acknowledge, long-break cadence (including intervalsBeforeLongBreak 0), and session-bound resets follow the native state machine. Review demo "Session time" uses completed-session wall-clock duration instead of prediction-count estimates, and all-time/custom ranges no longer invent a planned total. Desktop Pomodoro timing under suspension remains a live-check gate.
 
+  **Progress 2026-10-01:** Session Control and the header Session status chip share one `{label, reason}` model (`sessionStatusView`). Private/idle/no-input pauses use "Paused — …" wording with an elapsed-vs-attended reason; the Now headline uses that label instead of inventing "Session in progress". Surface and unit tests assert both chips match for running and private pause.
+
   Review hydration is already active-surface gated, with inactive-call assertions in
   `frontend/tests/reviewWorkflow.test.tsx`; recording/privacy and session transitions have
   received narrow correctness repairs. Do not rebuild those paths or deleted hooks.

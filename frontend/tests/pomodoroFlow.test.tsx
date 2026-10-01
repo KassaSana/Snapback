@@ -151,7 +151,7 @@ describe("Pomodoro card", () => {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("running");  // running/paused, not "active"
+    await screen.findByRole("heading", { level: 1, name: "running" });  // running/paused, not "active"
 
     const card = pomodoroCard();
     fireEvent.click(within(card).getByRole("button", { name: "Start Pomodoro" }));
@@ -180,7 +180,7 @@ describe("Pomodoro card", () => {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("running");
+    await screen.findByRole("heading", { level: 1, name: "running" });
     const card = pomodoroCard();
     expect(await within(card).findByText("12:00")).toBeInTheDocument();
   });
@@ -194,7 +194,7 @@ describe("Pomodoro card", () => {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("running");
+    await screen.findByRole("heading", { level: 1, name: "running" });
     const card = pomodoroCard();
     fireEvent.click(within(card).getByRole("button", { name: "Start Pomodoro" }));
     await within(card).findByText("25:00");
@@ -244,7 +244,7 @@ describe("Pomodoro card", () => {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("running");
+    await screen.findByRole("heading", { level: 1, name: "running" });
     const card = pomodoroCard();
 
     expect(await within(card).findByText("Done")).toBeInTheDocument();

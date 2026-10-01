@@ -2,6 +2,7 @@ import { memo } from "react";
 
 import type { RecordingStatus } from "./api";
 import { snoozeRemainingLabel } from "./alertDelivery";
+import type { SessionStatusView } from "./sessionStatus";
 
 // "Am I recording right now?", answered plainly with the pause beside it. The state comes from
 // the backend already decided, so the tray and this cannot disagree. The header variant is the
@@ -20,6 +21,8 @@ type RecordingStatusCardProps = {
   unconfirmed?: boolean;
   /** Compact chrome for the app header. Same commands, no card chrome. */
   variant?: "card" | "header";
+  /** When set, the header chip uses the shared session vocabulary instead of a second lexicon. */
+  sessionStatus?: SessionStatusView | null;
 };
 
 export const RECORDING_STATE_LABELS: Record<RecordingStatus["state"], string> = {
@@ -56,11 +59,14 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
   onResumeAlerts,
   unconfirmed = false,
   variant = "card",
+  sessionStatus = null,
 }: RecordingStatusCardProps) {
   const paused = status.state === "pausedPrivate";
   const snoozed = status.alertSnoozeRemainingMs > 0;
   const canPause = status.state === "recording";
   const header = variant === "header";
+  const headerLabel = sessionStatus?.label ?? RECORDING_STATE_LABELS[status.state];
+  const headerReason = sessionStatus?.reason ?? null;
 
   const remaining =
     paused && status.privatePauseRemainingMs > 0 ? (
@@ -139,11 +145,11 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
   if (header) {
     return (
       <section className="recording-status-header" aria-labelledby="recording-status-heading">
-        <h2 id="recording-status-heading">Recording status</h2>
+        <h2 id="recording-status-heading">Session status</h2>
         <span className={`status-value${status.state === "blocked" ? " status-alert" : ""}`}>
-          {RECORDING_STATE_LABELS[status.state]}
+          {headerLabel}
         </span>
-        {pauseDefinition}
+        {headerReason ? <p className="meta-sub">{headerReason}</p> : pauseDefinition}
         {unconfirmedLine}
         {remaining}
         {snoozeLine}

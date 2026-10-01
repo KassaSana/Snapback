@@ -97,7 +97,7 @@ const runASession = async () => {
     target: { value: "Write tests" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-  await screen.findByText("running");
+  await screen.findByRole("heading", { level: 1, name: "running" });
   fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
   await screen.findByText("completed");
   await screen.findByRole("heading", { name: "Reflection" });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   api,
@@ -389,11 +389,6 @@ export const useSession = ({
     void refreshContextTimeline(null);
   }, [refreshContextTimeline, resetTimelineRefreshGate, setLabelStatus, setLabelStatusWarning]);
 
-  const sessionStatusLabel = useMemo(
-    () => (sessionRecord ? sessionRecord.status.toLowerCase() : "idle"),
-    [sessionRecord],
-  );
-
   return {
     autoLabel,
     cancelSwitch,
@@ -417,7 +412,6 @@ export const useSession = ({
     sessionGoal,
     sessionId,
     sessionRecord,
-    sessionStatusLabel,
     setSessionGoal,
     reflectionPending,
     reflectionSaved,

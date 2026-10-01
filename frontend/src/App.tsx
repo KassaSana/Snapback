@@ -27,7 +27,7 @@ import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
 import { SessionTechnicalDetails } from "./SessionTechnicalDetails";
 import { recentGoals } from "./sessionCockpit";
-import { sessionStatusLabel } from "./sessionStatus";
+import { sessionStatusView } from "./sessionStatus";
 import { nowSurfaceMode } from "./nowSurface";
 import { SessionReviewCards } from "./SessionReviewCards";
 import { FocusFeedbackCard } from "./FocusFeedbackCard";
@@ -269,8 +269,8 @@ export default function App() {
 
   // Running or paused: a paused session accrues no attended time (ADR-0005). Derived here
   // because the idle signal lives in useLiveData.
-  const liveSessionStatusLabel = useMemo(
-    () => sessionStatusLabel(sessionRecord, live.userIdle, recordingStatus.state),
+  const liveSessionStatus = useMemo(
+    () => sessionStatusView(sessionRecord, live.userIdle, recordingStatus.state),
     [live.userIdle, sessionRecord, recordingStatus.state],
   );
   const sessionActive = sessionRecord?.status === "ACTIVE";
@@ -538,6 +538,7 @@ export default function App() {
         onResumeRecording={handleResumeRecording}
         onResumeAlerts={handleResumeAlerts}
         sessionActive={sessionActive}
+        sessionStatus={liveSessionStatus}
         activeGoal={sessionRecord?.goal ?? null}
       />
 
@@ -597,7 +598,8 @@ export default function App() {
             sessionId={sessionId}
             sessionPending={sessionPending}
             sessionRecord={sessionRecord}
-            sessionStatusLabel={liveSessionStatusLabel}
+            sessionStatusLabel={liveSessionStatus.label}
+            sessionStatusReason={liveSessionStatus.reason}
             setSessionGoal={setSessionGoal}
             recentGoals={cockpitRecentGoals}
             untrackedNote={live.untrackedNote}

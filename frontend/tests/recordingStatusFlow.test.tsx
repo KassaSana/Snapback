@@ -119,7 +119,7 @@ const healthy = (): Record<string, unknown> => ({
 });
 
 const card = () =>
-  screen.getByRole("heading", { name: "Recording status" }).closest("section") as HTMLElement;
+  screen.getByRole("heading", { name: "Session status" }).closest("section") as HTMLElement;
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -138,18 +138,18 @@ afterEach(() => {
   cleanup();
 });
 
-describe("Recording status", () => {
+describe("Session status", () => {
   it("reports the state the backend decided, not one it derived", async () => {
     boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
-    await screen.findByRole("heading", { name: "Recording status" });
+    await screen.findByRole("heading", { name: "Session status" });
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
   });
 
   it("distinguishes idle from private, which both stop capture", async () => {
     boundary.state.recording = { state: "pausedIdle", privatePauseRemainingMs: 0 };
     render(<App />);
-    await screen.findByRole("heading", { name: "Recording status" });
+    await screen.findByRole("heading", { name: "Session status" });
     expect(await within(card()).findByText("Paused for idle")).toBeInTheDocument();
     // Idle is not a privacy pause, so it is not offering to resume from one.
     expect(
@@ -160,7 +160,7 @@ describe("Recording status", () => {
   it("pauses for a fixed stretch and shows the time left", async () => {
     boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
-    await screen.findByRole("heading", { name: "Recording status" });
+    await screen.findByRole("heading", { name: "Session status" });
 
     fireEvent.click(within(card()).getByRole("button", { name: "Pause recording 30m" }));
     await waitFor(() => expect(boundary.state.pausedWith).not.toBeNull());
@@ -174,7 +174,7 @@ describe("Recording status", () => {
   it("pauses indefinitely without promising a resume time", async () => {
     boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
-    await screen.findByRole("heading", { name: "Recording status" });
+    await screen.findByRole("heading", { name: "Session status" });
 
     fireEvent.click(within(card()).getByRole("button", { name: "Pause recording until I resume" }));
     await waitFor(() => expect(boundary.state.pausedWith).not.toBeNull());
@@ -187,7 +187,7 @@ describe("Recording status", () => {
   it("resumes through the same command the tray would use", async () => {
     boundary.state.recording = { state: "pausedPrivate", privatePauseRemainingMs: 0 };
     render(<App />);
-    await screen.findByRole("heading", { name: "Recording status" });
+    await screen.findByRole("heading", { name: "Session status" });
 
     fireEvent.click(within(card()).getByRole("button", { name: "Resume recording" }));
     await waitFor(() => expect(boundary.state.resumed).toBe(true));
@@ -198,7 +198,7 @@ describe("Recording status", () => {
     // If the two ends ever disagree, the claim that cannot mislead is "nothing is captured".
     boundary.state.recording = { state: "somethingNew", privatePauseRemainingMs: 0 };
     render(<App />);
-    await screen.findByRole("heading", { name: "Recording status" });
+    await screen.findByRole("heading", { name: "Session status" });
     expect(await within(card()).findByText("Blocked")).toBeInTheDocument();
   });
 });
@@ -206,7 +206,7 @@ describe("Recording status", () => {
 // Slice 3 of the Astra review (/ 14.4): the header, Settings, and the
 // native state must agree after every way the answer can change -- not only after the clicks
 // this side makes.
-describe("Recording status stays coherent with native state", () => {
+describe("Session status stays coherent with native state", () => {
   const recordingCalls = () =>
     boundary.invoke.mock.calls.filter(([cmd]) => cmd === "get_recording_status").length;
 

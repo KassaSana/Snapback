@@ -237,7 +237,7 @@ describe("onboarding continuation", () => {
 
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByText("running");
+    await screen.findByRole("heading", { level: 1, name: "running" });
 
     fireEvent.click(await screen.findByRole("button", { name: "Stop session" }));
     await screen.findByRole("heading", { name: "Session Recap" });

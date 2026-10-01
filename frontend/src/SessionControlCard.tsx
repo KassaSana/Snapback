@@ -36,6 +36,7 @@ type SessionControlCardProps = {
   sessionId: string | null;
   sessionRecord: SessionRecord | null;
   sessionStatusLabel: string;
+  sessionStatusReason?: string | null;
   setSessionGoal: (value: string) => void;
   /** True while a start/stop request is in flight, so the controls can go quiet. */
   sessionPending: boolean;
@@ -60,6 +61,7 @@ export const SessionControlCard = memo(function SessionControlCard({
   sessionId,
   sessionRecord,
   sessionStatusLabel,
+  sessionStatusReason = null,
   setSessionGoal,
   sessionPending,
   recentGoals,
@@ -164,6 +166,7 @@ export const SessionControlCard = memo(function SessionControlCard({
         <h2>Session Control</h2>
         <span className="session-status">{sessionStatusLabel}</span>
       </div>
+      {sessionStatusReason ? <p className="meta-sub session-status-reason">{sessionStatusReason}</p> : null}
       {untrackedNote && (
         <div className="notice notice-untracked" role="status">
           <p>{untrackedNote}</p>

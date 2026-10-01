@@ -91,7 +91,7 @@ const startSession = async () => {
     target: { value: "Write tests" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-  await screen.findByText("running");
+  await screen.findByRole("heading", { level: 1, name: "running" });
 };
 
 const targetsCard = () =>
