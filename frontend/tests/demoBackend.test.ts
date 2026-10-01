@@ -206,3 +206,31 @@ console.log("demoBackend.test.ts passed");
     /nonnegative/,
   );
 }
+
+// Review "Session time" is completed wall-clock duration, not prediction-count * 120.
+// A short busy session must not read as half an hour, and all-time never invents a plan.
+{
+  let now = Date.now();
+  const demo = new DemoBackend(now, () => now);
+  demo.handle("delete_all_activity_data", {});
+  demo.handle("set_attended_targets", { dailyMins: 240, weeklyMins: 1200 });
+  const session = demo.handle("start_session", { goal: "Short session" }) as { sessionId: string };
+  for (let i = 0; i < 15; i += 1) {
+    now += 5000;
+    assert.ok(demo.tick());
+  }
+  demo.handle("stop_session", { sessionId: session.sessionId });
+  const day = demo.handle("get_summary_report", { window: "day" }) as {
+    focusSeconds: number; plannedMins: number; completedSessionCount: number; sampleCount: number;
+  };
+  assert.equal(day.completedSessionCount, 1);
+  assert.equal(day.focusSeconds, 75);
+  assert.ok(day.sampleCount >= 15);
+  assert.notEqual(day.focusSeconds, day.sampleCount * 120);
+  assert.equal(day.plannedMins, 240);
+  const all = demo.handle("get_summary_report", { window: "all" }) as {
+    focusSeconds: number; plannedMins: number;
+  };
+  assert.equal(all.focusSeconds, 75);
+  assert.equal(all.plannedMins, 0);
+}

@@ -1613,6 +1613,7 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   **Progress 2026-10-01:** Pomodoro countdown now advances between authoritative native snapshots, freezes while paused or awaiting acknowledgement, and rejects stale status reads after newer timer events. Demo phase transitions, skip/restart/acknowledge, long-break cadence (including intervalsBeforeLongBreak 0), and session-bound resets follow the native state machine. Desktop Pomodoro timing under suspension remains a live-check gate.
 
+  **Progress 2026-10-01:** Review demo "Session time" uses completed-session wall-clock duration instead of prediction-count estimates, and all-time/custom ranges no longer invent a planned total. A short busy session can no longer read as half an hour of Session time.
 
   `App.tsx` coordinates roughly a dozen feature states and passes 29 values into
   `useAppEffects`; deletion and session actions know which unrelated stores must refresh.

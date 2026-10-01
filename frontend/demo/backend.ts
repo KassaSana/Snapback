@@ -817,6 +817,7 @@ export class DemoBackend {
         const rows = this.predictionsIn(range);
         const start = this.rangeStart(range);
         const sessions = this.data.sessions.filter((s) => s.startedAtMs >= start);
+        const completed = sessions.filter((s) => s.endedAtMs !== null);
         const distracted = rows.filter((r) => r.focusState === "DISTRACTED").length;
         const counts = new Map<string, number>();
         for (const context of this.data.contexts) {
@@ -826,13 +827,24 @@ export class DemoBackend {
         const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
         const windowName = String(range?.window ?? "day");
         const attendedSeconds = sessions.reduce((sum, s) => sum + s.attendedSecs, 0);
-        const days = Math.max(1, Math.round((this.now() - start) / DAY));
+        // Session time is completed wall-clock duration, never prediction-row estimates.
+        const focusSeconds = completed.reduce((sum, s) => {
+          const ended = s.endedAtMs ?? s.startedAtMs;
+          return sum + Math.max(0, Math.round((ended - s.startedAtMs) / 1000));
+        }, 0);
+        // Planned targets only apply to day/week windows, matching native summary_report.
+        const plannedMins =
+          windowName === "day" || windowName === "today"
+            ? this.targets.dailyTargetMins
+            : windowName === "week" || windowName === "7d"
+              ? this.targets.weeklyTargetMins
+              : 0;
         return {
           window: windowName,
           generatedAtMs: this.now(),
           sessionCount: sessions.length,
-          completedSessionCount: sessions.filter((s) => s.endedAtMs !== null).length,
-          focusSeconds: rows.filter((r) => r.focusState !== "DISTRACTED").length * 120,
+          completedSessionCount: completed.length,
+          focusSeconds,
           sessionLimit: 500,
           sessionsTruncated: false,
           sampleCount: rows.length,
@@ -843,10 +855,7 @@ export class DemoBackend {
           longestFocusSecs: this.longestFocusSecs(rows),
           topContextApp: top ? top[0] : "",
           attendedSeconds,
-          plannedMins:
-            windowName === "day"
-              ? this.targets.dailyTargetMins
-              : days * this.targets.dailyTargetMins,
+          plannedMins,
         };
       }
 
