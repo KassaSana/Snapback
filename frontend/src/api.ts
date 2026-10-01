@@ -73,7 +73,7 @@ export type PermissionStatus = {
   setupSteps: string[];
 };
 
-/** Payload of the planned `persistence-failed` event (see fixtures/ipc_commands.json). */
+/** Payload of the `persistence-failed` event (see fixtures/ipc_commands.json). */
 export type PersistenceFailurePayload = {
   reason: string;
   message: string;

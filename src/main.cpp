@@ -505,7 +505,8 @@ int main(int argc, char** argv) {
         w.dispatch([&w, state, ev, payload, activity_epoch] {
             // Reject stale ticks right before any user-visible side effect: a delete may have
             // run on the UI thread since this was queued.
-            if (!state->activity_epoch_is_current(activity_epoch)) return;
+            // Recorder health survives session replacement/deletion; activity alerts do not.
+            if (!state->frontend_event_is_current(ev, activity_epoch)) return;
             emit(w, ev.c_str(), payload);
             // Channels come from app/alert_routing.hpp on the payload; nothing is decided here.
             // The overlay is topmost and non-activating, so it reaches the user without a

@@ -635,6 +635,11 @@ void AppState::set_emit_hook(EmitHook hook) {
     emit_hook_ = std::move(hook);
 }
 
+bool AppState::frontend_event_is_current(const std::string& event, ActivityEpoch epoch) const noexcept {
+    return event == events::kPersistenceFailed || event == events::kPersistenceRecovered ||
+           activity_epoch_is_current(epoch);
+}
+
 void AppState::emit_event(const char* event, const std::string& json_payload) {
     EmitHook emit_to_frontend;
     ActivityEpoch epoch = 0;

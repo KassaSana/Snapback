@@ -3489,7 +3489,7 @@ TEST_CASE("activity deletion invalidates asynchronously queued prediction emissi
 
     std::size_t delivered = 0;
     for (const auto& event : queued) {
-        if (state->activity_epoch_is_current(event.epoch)) ++delivered;
+        if (state->frontend_event_is_current(event.name, event.epoch)) ++delivered;
     }
     CHECK(delivered == 0);
     CHECK(state->active_session() == std::nullopt);
@@ -4836,4 +4836,41 @@ TEST_CASE("late frontend readiness cannot queue maintenance after shutdown") {
     CHECK_FALSE(state->runtime_metrics().maintenance_pending);
     CHECK_FALSE(state->runtime_metrics().maintenance_running);
     CHECK(state->runtime_metrics().maintenance_result == prior);
+}
+
+TEST_CASE("queued persistence health survives activity deletion and session replacement") {
+    TempDir temp;
+    ManualClock clock;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage);
+    AppState state(std::move(*storage), temp.path, nullptr, &clock);
+    std::vector<std::pair<std::string, AppState::ActivityEpoch>> queued;
+    state.set_emit_hook([&](const char* name, const std::string&, AppState::ActivityEpoch epoch) {
+        queued.emplace_back(name, epoch);
+    });
+    state.start_session("unsaved", FocusMode::Normal);
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::persistence_error(state, 5);
+    CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+    REQUIRE_FALSE(queued.empty());
+    const auto failed = queued.front();
+    REQUIRE(failed.first == "persistence-failed");
+    AppStateTestAccess::clear_persistence_failure(state);
+    state.delete_all_activity_data();
+    CHECK_FALSE(state.activity_epoch_is_current(failed.second));
+    CHECK(state.frontend_event_is_current(failed.first, failed.second));
+    CHECK_FALSE(state.frontend_event_is_current("prediction", failed.second));
+    state.start_session("recovered", FocusMode::Normal);
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    CHECK_NOTHROW(AppStateTestAccess::engine_tick(state));
+    REQUIRE_FALSE(state.health().persistence_failure_reason);
+    const auto recovered = std::find_if(queued.begin(), queued.end(), [](const auto& event) {
+        return event.first == "persistence-recovered";
+    });
+    REQUIRE(recovered != queued.end());
+    state.start_session("replacement", FocusMode::Normal);
+    CHECK_FALSE(state.activity_epoch_is_current(recovered->second));
+    CHECK(state.frontend_event_is_current(recovered->first, recovered->second));
+    CHECK_FALSE(state.frontend_event_is_current("snapback", recovered->second));
+    state.set_emit_hook(nullptr);
 }
