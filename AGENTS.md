@@ -81,3 +81,6 @@ Formatting commands and the existing-file policy are in [`CONTRIBUTING.md`](CONT
   tell you which one you forgot.
 - Review, audit, and analysis requests are read-only. Do not edit docs, add roadmap items,
   or commit unless the owner explicitly asks.
+- **Context re-entry:** when returning for feedback after parallel or long work, open with a
+  plain-language recap of the current task, ask only one question at a time, and end with the
+  exact next action needed to move forward.
