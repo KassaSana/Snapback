@@ -1638,6 +1638,8 @@ kept here; already-deep modules and completed performance work were rejected dur
   workflow extraction and any Settings-surface gating still open above.
 
 - **14.5 — Replace the fixed 10 Hz engine poll with deadline-aware, bounded work.** `in progress` `M`
+  **Progress 2026-10-01:** The idle harness now reports engine-thread CPU separately from whole-process CPU on Windows/Linux. A serial same-host 60-second run measured 540 to 2 ticks and 15 ms to below-resolution engine CPU; whole-process CPU varied, so no process CPU gain is claimed. Component instrumentation calibration is documented separately and does not establish the less-than-1% whole-cycle overhead gate. Full verification and 72-case sanitizer runs passed; live desktop, statistical latency, and Release soak gates remain open.
+
   **Progress 2026-10-01:** Implemented coalesced C++20 semaphore notifications, authoritative deadline rechecks for idle/Pomodoro/privacy/snooze/nudges/retry/maintenance, producer-first shutdown, and maximum-drain diagnostics. The MinGW runtime uses an owned blocking event for timed waits after measurement exposed spinning. Full local verification passed (759 native cases plus frontend and guards); focused wake/timer/shutdown checks passed. Same-host 60s quiet ticks fell 548 to 2, paced-input p95 107975 to 271 us. These single headless runs exclude OS capture/GUI cost; engine-only CPU, statistical latency, less-than-1% instrumentation overhead, live platform checks, release soak remain open. Focused Linux ASan/UBSan and ThreadSanitizer checks passed (29 cases, 3014 assertions each); TSAN used a process-local ASLR workaround. No broader cycle refactor is required; item remains in progress.
 
   `performance`

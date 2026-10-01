@@ -22,6 +22,7 @@
 #include "bench_util.hpp"
 
 #include "app/state.hpp"
+#include "app_state_test_access.hpp"
 #include "capture/capture_thread.hpp"
 #include "capture/input_hook.hpp"
 #include "storage/storage.hpp"
@@ -75,6 +76,38 @@ std::size_t env_size(const char* name, std::size_t fallback) {
         if (value > 0) return static_cast<std::size_t>(value);
     }
     return fallback;
+}
+
+// Calibrate component costs separately from the idle measurement. This is an
+// isolated microbenchmark, not an instrumentation-on/off engine-cycle comparison.
+void print_probe_costs() {
+    constexpr std::uint64_t iterations = 1000000;
+    std::atomic<std::uint64_t> maximum{0};
+    Timer drain_timer;
+    for (std::uint64_t i = 0; i < iterations; ++i) {
+        const auto elapsed = i % 32;
+        auto previous = maximum.load(std::memory_order_relaxed);
+        while (elapsed > previous && !maximum.compare_exchange_weak(previous, elapsed)) {}
+    }
+    const auto drain_ns = drain_timer.elapsed_us() * 1000.0 / iterations;
+    std::atomic<std::int64_t> stamp{0};
+    double checksum = 0;
+    Timer latency_timer;
+    for (std::uint64_t i = 0; i < iterations / 55; ++i) {
+        std::vector<double> samples;
+        for (int j = 0; j < 55; ++j) {
+            const auto now = std::chrono::steady_clock::now();
+            stamp.store(std::chrono::duration_cast<std::chrono::microseconds>(
+                now.time_since_epoch()).count(), std::memory_order_release);
+            samples.push_back(static_cast<double>(stamp.load(std::memory_order_acquire)));
+        }
+        checksum += samples.back();
+    }
+    const auto latency_ns = latency_timer.elapsed_us() * 1000.0 / ((iterations / 55) * 55);
+    std::cout << "\nInstrumentation component calibration\n"
+              << "  drain counter       " << drain_ns << " ns/update\n"
+              << "  latency observer    " << latency_ns << " ns/sample (clock, atomic, vector)\n"
+              << "  calibration sink    " << maximum.load() << ", " << checksum << '\n';
 }
 
 void print_lock_rank(const char* label, LockRank rank) {
@@ -131,6 +164,7 @@ int main() {
         state->start_engine_for_test(&hook);
         std::this_thread::sleep_for(std::chrono::seconds(idle_seconds));
         const auto wakeups = state->engine_wakeups();
+        const auto engine_cpu = AppStateTestAccess::engine_cpu_ms(*state);
         state->stop_engine();
         state->set_emit_hook(nullptr);
         const double wall_ms = wall.elapsed_ms();
@@ -150,7 +184,7 @@ int main() {
                   << "  engine wakeups      " << wakeups << " ("
                   << (wall_secs > 0.0 ? static_cast<double>(wakeups) / wall_secs : 0.0)
                   << " per second)\n"
-                  << "  cpu per wakeup      "
+                  << "  process cpu/wakeup  "
                   << (wakeups > 0 ? static_cast<double>(cpu_ms) * 1000.0 /
                                         static_cast<double>(wakeups)
                                   : 0.0)
@@ -158,6 +192,10 @@ int main() {
                   << "  ring high-water     " << state->capture_ring_high_water()
                   << " of " << CaptureThread::kCapacity << " slots\n"
                   << "  capture drops       " << state->health().capture_events_dropped << '\n';
+        if (engine_cpu) {
+            std::cout << "  engine thread cpu   " << *engine_cpu << " ms (shutdown excluded)\n";
+            if (*engine_cpu == 0) std::cout << "  (engine CPU is below measurement resolution)\n";
+        } else std::cout << "  engine thread cpu   unavailable on this platform\n";
         // GetProcessTimes counts in scheduler ticks (~15.6 ms on Windows), so a
         // process that burned less than one tick over the whole window reports zero.
         // That is a real result -- the idle cost is below what the OS can resolve --
@@ -183,6 +221,7 @@ int main() {
                   << "  longest wait        " << busy.max_wait_ms << " ms\n";
 
         state.reset();
+        print_probe_costs();
         std::error_code ignored;
         std::filesystem::remove_all(dir, ignored);
         return 0;

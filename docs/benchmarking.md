@@ -248,3 +248,21 @@ The measured interval ends when database open returns, before the React view or 
 readiness acknowledgement. Full desktop startup-to-ready p95, representative month/90-day
 archives, and the roadmap's 80% UI readiness gate remain unverified. Automatic VACUUM
 is deferred: background DELETE leaves reusable pages and may not shrink the file.
+
+### Engine CPU and instrumentation calibration (2026-10-01)
+
+The idle harness now reads engine-thread CPU separately on Windows/Linux, before join;
+shutdown is excluded. A serial 60-second comparison used an archived build of commit
+`1a08ef3` and the current scheduler with the same harness and compiler/dependencies.
+The old engine made 540 ticks and used 15 ms thread CPU; the new engine made 2 ticks
+and reported 0 ms (below the Windows accounting granularity, not zero cost). Whole
+process CPU was 30 ms before and 47 ms after. Other runs varied considerably: fake
+capture wakes, host scheduling, and timer granularity dominate this small process
+measurement. No statistically meaningful whole-process CPU improvement is established.
+
+Separate component calibration (one million iterations, outside the measured idle
+window) recorded 0.29 ns per drain-counter loop update and 37.09 ns per latency-observer
+sample (clock, atomic, vector). These are isolated microbenchmarks, not a complete engine
+cycle with instrumentation toggled off/on. They do not close the less-than-1% overhead
+gate; that gate and statistical latency equivalence still require controlled profiling.
+On platforms without the thread CPU reader, the harness reports unavailable explicitly.

@@ -10,11 +10,51 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#if defined(__MINGW32__)
+#include <pthread.h>
+#endif
+#elif defined(__linux__)
+#include <pthread.h>
+#include <time.h>
+#endif
+
 #include "app/state.hpp"
 
 namespace snapback {
 
 struct AppStateTestAccess {
+    // Benchmark-only observation of the live engine thread, before join.
+    static std::optional<std::uint64_t> engine_cpu_ms(AppState& state) {
+        if (!state.engine_thread_.joinable()) return std::nullopt;
+#if defined(_WIN32)
+#if defined(__MINGW32__)
+        const auto handle = static_cast<HANDLE>(pthread_gethandle(state.engine_thread_.native_handle()));
+#else
+        const auto handle = state.engine_thread_.native_handle();
+#endif
+        FILETIME created{}, exited{}, kernel{}, user{};
+        if (!GetThreadTimes(handle, &created, &exited, &kernel, &user)) return std::nullopt;
+        const auto ticks = [](const FILETIME& value) {
+            return (static_cast<std::uint64_t>(value.dwHighDateTime) << 32) | value.dwLowDateTime;
+        };
+        return (ticks(kernel) + ticks(user)) / 10000;
+#elif defined(__linux__)
+        clockid_t id;
+        timespec value{};
+        if (pthread_getcpuclockid(state.engine_thread_.native_handle(), &id) != 0 ||
+            clock_gettime(id, &value) != 0) return std::nullopt;
+        return static_cast<std::uint64_t>(value.tv_sec) * 1000 + value.tv_nsec / 1000000;
+#else
+        return std::nullopt;
+#endif
+    }
+
+
     static void while_holding_state_lock(AppState& state, const std::function<void()>& body) {
         std::lock_guard lock(state.mutex_);
         body();
