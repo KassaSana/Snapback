@@ -1,16 +1,18 @@
 import { memo } from "react";
 import { formatFocusStretch } from "./focusStreak";
 
-import { focusStateLabel, formatScore, type FocusLabel, type SessionRecap } from "./api";
+import { focusStateLabel, formatScore, sessionCheckInLabel, type FocusLabel, type SessionRecap } from "./api";
 import { SessionReflectionCard } from "./SessionReflectionCard";
 
 type SessionReviewCardsProps = {
   autoLabel: FocusLabel | null;
   handleLabel: (label: FocusLabel, source?: "manual" | "hotkey" | "survey" | "auto") => void | Promise<void>;
   handleSkipSurvey: () => void | Promise<void>;
+  handleChangeSessionRating?: () => void;
   labelPending?: boolean;
   labelStatus?: string | null;
   labelStatusWarning?: boolean;
+  savedSessionRating?: FocusLabel | null;
   recap: SessionRecap | null;
   surveyPending: boolean;
   // Shown with the check-in; closed by saving or skipping.
@@ -24,9 +26,11 @@ export const SessionReviewCards = memo(function SessionReviewCards({
   autoLabel,
   handleLabel,
   handleSkipSurvey,
+  handleChangeSessionRating,
   labelPending = false,
   labelStatus = null,
   labelStatusWarning = false,
+  savedSessionRating = null,
   recap,
   surveyPending,
   reflectionPending,
@@ -86,7 +90,15 @@ export const SessionReviewCards = memo(function SessionReviewCards({
             <h2>Session Recap</h2>
             <span className="pill">summary</span>
           </div>
-          {labelStatus && (!surveyPending || labelStatusWarning) ? (
+          {!surveyPending && savedSessionRating && handleChangeSessionRating ? (
+            <p role="status" className="helper-text saved-session-rating">
+              Saved: {sessionCheckInLabel(savedSessionRating)}
+              {" — "}
+              <button className="link-button" type="button" onClick={handleChangeSessionRating}>
+                Change
+              </button>
+            </p>
+          ) : labelStatus && (!surveyPending || labelStatusWarning) ? (
             <p role={labelStatusWarning ? "alert" : "status"} className={`helper-text${labelStatusWarning ? " alert" : ""}`}>
               {labelStatus}
             </p>

@@ -72,6 +72,22 @@ export const focusStateLabel = (state: string | null | undefined) => {
   }
 };
 
+/** Check-in button wording — use this when confirming a session rating the user just chose. */
+export const sessionCheckInLabel = (state: string | null | undefined) => {
+  switch (state) {
+    case "DEEP_FOCUS":
+      return "Deep";
+    case "PRODUCTIVE":
+      return "Focused";
+    case "PSEUDO_PRODUCTIVE":
+      return "Drift";
+    case "DISTRACTED":
+      return "Distracted";
+    default:
+      return focusStateLabel(state);
+  }
+};
+
 // Colour by the verdict, not the risk (ADR-0004): a Block-rule row at low risk is still
 // Distracted.
 export const verdictLevel = (state: string | null | undefined): RiskLevel => {

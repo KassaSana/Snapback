@@ -231,6 +231,7 @@ export default function App() {
     handleSaveReflection,
     handleSkipReflection,
     handleSkipSurvey,
+    handleChangeSessionRating,
     handleStartSession,
     handleStopSession,
     handleSwitchSession,
@@ -244,6 +245,7 @@ export default function App() {
     setSessionGoal,
     reflectionPending,
     reflectionSaved,
+    savedSessionRating,
     surveyPending,
   } = useSession({
     refreshContextTimeline: live.refreshContextTimeline,
@@ -642,9 +644,11 @@ export default function App() {
             autoLabel={autoLabel}
             handleLabel={handleLabel}
             handleSkipSurvey={handleSkipSurvey}
+            handleChangeSessionRating={handleChangeSessionRating}
             labelPending={labelPending}
             labelStatus={feedback.labelStatus}
             labelStatusWarning={feedback.labelStatusWarning}
+            savedSessionRating={savedSessionRating}
             recap={recap}
             surveyPending={surveyPending}
             reflectionPending={reflectionPending}

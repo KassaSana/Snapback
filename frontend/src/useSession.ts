@@ -41,6 +41,7 @@ export const useSession = ({
   const [focusMode, setFocusMode] = useState<FocusMode>("normal");
   const [recap, setRecap] = useState<SessionRecap | null>(null);
   const [autoLabel, setAutoLabel] = useState<FocusLabel | null>(null);
+  const [savedSessionRating, setSavedSessionRating] = useState<FocusLabel | null>(null);
   const [surveyPending, setSurveyPending] = useState(false);
   // Whether this end-of-session prompt is still open.
   const [reflectionPending, setReflectionPending] = useState(false);
@@ -105,6 +106,7 @@ export const useSession = ({
         setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
         setLabelStatusWarning(false);
         if (source === "survey") {
+          setSavedSessionRating(label);
           setSurveyPending(false);
         }
       } catch {
@@ -143,6 +145,7 @@ export const useSession = ({
         setSessionGoal(record.goal);
         setRecap(null);
         setAutoLabel(null);
+        setSavedSessionRating(null);
         // Drop live cards from the previous generation immediately; the native epoch bump
         // rejects most stale dispatches, and this clears anything already painted.
         clearSessionLiveSignals();
@@ -191,6 +194,7 @@ export const useSession = ({
       ]);
       setRecap(sessionRecap);
       setAutoLabel(savedLabel);
+      setSavedSessionRating(null);
       setSurveyPending(true);
       setReflectionPending(true);
       setReflectionSaved(false);
@@ -267,6 +271,7 @@ export const useSession = ({
       setSessionGoal(record.goal);
       setRecap(null);
       setAutoLabel(null);
+      setSavedSessionRating(null);
       setSurveyPending(false);
       setActionError(
         captureReadiness ? sessionStartCaptureWarning(captureReadiness) : null,
@@ -358,9 +363,14 @@ export const useSession = ({
       return;
     }
     setSurveyPending(false);
+    setSavedSessionRating(null);
     setLabelStatus("Skipped check-in.");
     setLabelStatusWarning(false);
   }, [autoLabel, handleLabel, setLabelStatus, setLabelStatusWarning]);
+
+  const handleChangeSessionRating = useCallback(() => {
+    setSurveyPending(true);
+  }, []);
 
   const clearActivitySession = useCallback(() => {
     sessionGeneration.current += 1;
@@ -373,6 +383,7 @@ export const useSession = ({
     setSessionId(null);
     setRecap(null);
     setAutoLabel(null);
+    setSavedSessionRating(null);
     setSurveyPending(false);
     resetTimelineRefreshGate();
     void refreshContextTimeline(null);
@@ -394,6 +405,7 @@ export const useSession = ({
     handleSaveReflection,
     handleSkipReflection,
     handleSkipSurvey,
+    handleChangeSessionRating,
     handleStartNamedSession,
     handleStartSession,
     handleStopSession,
@@ -409,6 +421,7 @@ export const useSession = ({
     setSessionGoal,
     reflectionPending,
     reflectionSaved,
+    savedSessionRating,
     surveyPending,
   };
 };

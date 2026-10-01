@@ -290,10 +290,15 @@ it("records Keep as explicit survey agreement and confirms it in the recap", asy
   }));
   await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
   const recap = screen.getByRole("heading", { name: "Session Recap" }).closest("section")!;
-  expect(within(recap).getByRole("status")).toHaveTextContent("Session rating saved: Productive");
+  expect(within(recap).getByRole("status")).toHaveTextContent("Saved: Focused");
+  expect(within(recap).getByRole("button", { name: "Change" })).toBeInTheDocument();
+  fireEvent.click(within(recap).getByRole("button", { name: "Change" }));
+  expect(await screen.findByRole("heading", { name: "Session Check-in" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));
   await screen.findByText("running");
-  expect(screen.queryByText("Session rating saved: Productive")).toBeNull();
+  expect(screen.queryByText(/Saved: Focused/)).toBeNull();
 });
 
 it("keeps the check-in open after a failed agreement and permits retry", async () => {
