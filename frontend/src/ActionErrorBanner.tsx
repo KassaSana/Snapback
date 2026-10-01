@@ -1,6 +1,6 @@
 type ActionErrorBannerProps = {
   error: string | null;
-  onDismiss: () => void;
+  onDismiss?: () => void;
 };
 
 export function ActionErrorBanner({ error, onDismiss }: ActionErrorBannerProps) {
@@ -11,9 +11,11 @@ export function ActionErrorBanner({ error, onDismiss }: ActionErrorBannerProps) 
   return (
     <div className="action-error-banner" role="alert">
       <p>{error}</p>
-      <button type="button" className="ghost-button" onClick={onDismiss}>
-        Dismiss
-      </button>
+      {onDismiss ? (
+        <button type="button" className="ghost-button" onClick={onDismiss}>
+          Dismiss
+        </button>
+      ) : null}
     </div>
   );
 }

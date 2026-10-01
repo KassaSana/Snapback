@@ -402,7 +402,7 @@ private:
     bool lapse_private_pause_unlocked();
     void save_auto_session_label_unlocked(const std::string& session_id);
     // Drops the pending snapback payload and its emitted flag together. Requires mutex_.
-    void clear_snapback_unlocked();
+    void clear_snapback_unlocked(bool discard_pending_recording = true);
     void reload_app_rules_unlocked();  // refresh app_rules_; requires mutex_ + storage_mutex_
     static std::vector<std::string> normalize_privacy_exclusions(
         std::vector<std::string> exclusions);

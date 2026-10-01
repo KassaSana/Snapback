@@ -683,9 +683,9 @@ void AppState::discard_pending_span_unlocked(const std::optional<std::string>& s
     });
 }
 
-void AppState::clear_snapback_unlocked() {
+void AppState::clear_snapback_unlocked(bool discard_pending_recording) {
     latest_snapback_.reset();
-    pending_snapback_episode_.reset();
+    if (discard_pending_recording) pending_snapback_episode_.reset();
     snapback_emitted_ = false;
     ++snapback_generation_;
 }
@@ -992,7 +992,7 @@ std::optional<SnapbackPayload> AppState::take_snapback() {
     WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     auto out = std::move(latest_snapback_);
-    clear_snapback_unlocked();
+    clear_snapback_unlocked(false);
     if (out) live_read_dirty_ = true;
     publish_live_read_unlocked();
     return out;
@@ -1003,7 +1003,7 @@ void AppState::dismiss_snapback() {
     std::lock_guard lock(mutex_);
     // Clear the pending payload and return the tracker from Recovering to Focused so it
     // doesn't keep the recovery state latched.
-    clear_snapback_unlocked();
+    clear_snapback_unlocked(false);
     context_tracker_.dismiss_recovery(last_event_secs_);
     live_read_dirty_ = true;
     publish_live_read_unlocked();
@@ -1034,7 +1034,7 @@ FocusTargetResult AppState::restore_snapback_target() {
         // The tracker leaves Recovering either way (dismiss_recovery() is its only exit). A
         // failed
         // activation keeps the payload so "Take me back" can be retried.
-        if (result.ok) clear_snapback_unlocked();
+        if (result.ok) clear_snapback_unlocked(false);
         context_tracker_.dismiss_recovery(last_event_secs_);
         live_read_dirty_ = true;
         publish_live_read_unlocked();
@@ -2235,7 +2235,7 @@ bool AppState::engine_tick() {
     }
     if (backoff || persistence_error) {
         const auto lost = std::count_if(jobs.begin(), jobs.end(), [](const PersistJob& job) {
-            return job.prediction.has_value();
+            return !job.session_id.empty() && job.prediction.has_value();
         });
         persistence_dropped_predictions_.fetch_add(static_cast<std::uint64_t>(lost), std::memory_order_relaxed);
         snap_to_emit.reset();
@@ -2381,41 +2381,47 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
         // The tracker latches a snapback payload on the return-from-distraction edge;
         // drain it into the field the tick loop emits.
         if (auto snapback = context_tracker_.take_pending_snapback()) {
-            // Record the episode. Its start is derived from the duration on the same clock as
-            // `ended_at`.
-            SnapbackEpisode episode;
-            episode.session_id = active_session_->session_id;
-            episode.summary = snapback->summary;
-            episode.app_name = snapback->app_name;
-            episode.file_hint = snapback->file_hint;
-            episode.duration_secs = snapback->distraction_duration_secs;
-            episode.ended_at_ms = now_unix_ms();
-            episode.started_at_ms =
-                unix_ms_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
-            job.snapback_episode = std::move(episode);
-            pending_snapback_episode_ = job.snapback_episode;
-
-            // Delivery is decided at the latch, the only place that can also acknowledge a
-            // suppressed
-            // snapback.
-            const auto route = alert_route_unlocked(AlertEvent::Snapback);
-            if (route.visible()) {
-                latest_snapback_ = *snapback;
-                latest_snapback_route_ = route;
-                snapback_emitted_ = false;  // replaces any predecessor, restored or not
-                ++snapback_generation_;
-                live_read_dirty_ = true;
-            } else {
-                // A suppressed card can never be dismissed, and dismiss_recovery() is the
-                // tracker's only exit
-                // from Recovering; skipping this would disable every later snapback. The
-                // episode is still
-                // persisted (the alert was suppressed, not the recording); the stale restore
-                // target is
-                // dropped.
+            if (persistence_failure_reason_ && pending_snapback_episode_) {
+                // Keep the original episode/alert pair until its retry commits. Later
+                // drift still classifies, but cannot replace an unsaved restore target.
                 context_tracker_.dismiss_recovery(event.timestamp_secs);
-                log().info(std::string("alerts: snapback suppressed (") +
-                           alert_suppression_as_str(route.suppressed_by) + ")");
+            } else {
+                // Record the episode. Its start is derived from the duration on the same clock as
+                // `ended_at`.
+                SnapbackEpisode episode;
+                episode.session_id = active_session_->session_id;
+                episode.summary = snapback->summary;
+                episode.app_name = snapback->app_name;
+                episode.file_hint = snapback->file_hint;
+                episode.duration_secs = snapback->distraction_duration_secs;
+                episode.ended_at_ms = now_unix_ms();
+                episode.started_at_ms =
+                    unix_ms_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
+                job.snapback_episode = std::move(episode);
+                pending_snapback_episode_ = job.snapback_episode;
+
+                // Delivery is decided at the latch, the only place that can also acknowledge a
+                // suppressed
+                // snapback.
+                const auto route = alert_route_unlocked(AlertEvent::Snapback);
+                if (route.visible()) {
+                    latest_snapback_ = *snapback;
+                    latest_snapback_route_ = route;
+                    snapback_emitted_ = false;  // replaces any predecessor, restored or not
+                    ++snapback_generation_;
+                    live_read_dirty_ = true;
+                } else {
+                    // A suppressed card can never be dismissed, and dismiss_recovery() is the
+                    // tracker's only exit
+                    // from Recovering; skipping this would disable every later snapback. The
+                    // episode is still
+                    // persisted (the alert was suppressed, not the recording); the stale restore
+                    // target is
+                    // dropped.
+                    context_tracker_.dismiss_recovery(event.timestamp_secs);
+                    log().info(std::string("alerts: snapback suppressed (") +
+                               alert_suppression_as_str(route.suppressed_by) + ")");
+                }
             }
         }
     }

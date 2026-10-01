@@ -66,7 +66,7 @@ export const useHealth = () => {
   const applyPersistenceFailure = useCallback((payload: PersistenceFailurePayload) => {
     ++healthGeneration.current;
     setPersistenceFailureReason(payload.message);
-    setHealthStatus("degraded");
+    setHealthStatus((current) => current === "offline" ? current : "degraded");
   }, []);
 
   const refreshHealth = useCallback(async () => {

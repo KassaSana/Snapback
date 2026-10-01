@@ -203,6 +203,27 @@ struct AppStateTestAccess {
     // events across a focus transition to reach. The lifecycle question -- does this payload
     // survive a session change -- is independent of how it got there, so staging it directly
     // tests the thing that was actually broken instead of re-testing the tracker.
+    static void stage_unsaved_snapback(AppState& state, const SnapbackPayload& payload) {
+        std::lock_guard lock(state.mutex_);
+        SnapbackEpisode episode;
+        episode.session_id = state.active_session_->session_id;
+        episode.summary = payload.summary;
+        episode.app_name = payload.app_name;
+        episode.ended_at_ms = state.now_unix_ms();
+        episode.started_at_ms = episode.ended_at_ms - 90000;
+        episode.duration_secs = 90;
+        state.pending_snapback_episode_ = episode;
+        state.latest_snapback_ = payload;
+        state.latest_snapback_route_ = state.alert_route_unlocked(AlertEvent::Snapback);
+        state.snapback_emitted_ = false;
+        ++state.snapback_generation_;
+        state.live_read_dirty_ = true;
+        state.publish_live_read_unlocked();
+    }
+    static bool has_unsaved_snapback(AppState& state) {
+        std::lock_guard lock(state.mutex_);
+        return state.pending_snapback_episode_.has_value();
+    }
     static void stage_snapback(AppState& state, const SnapbackPayload& payload) {
         std::lock_guard lock(state.mutex_);
         state.latest_snapback_ = payload;

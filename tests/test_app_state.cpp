@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include <sqlite3.h>
 
 #include "app/command_dispatch.hpp"
 #include "app/settings.hpp"
@@ -34,6 +35,22 @@
 using namespace snapback;
 
 namespace {
+
+class EventListHook final : public InputHook {
+public:
+    explicit EventListHook(std::vector<CaptureEvent> events) : events_(std::move(events)) {}
+    void run(InputCallback emit, const std::atomic<bool>& stop_requested) override {
+        for (const auto& event : events_) emit(event);
+        emitted_.store(true, std::memory_order_release);
+        while (!stop_requested.load(std::memory_order_acquire))
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    void stop() noexcept override {}
+    bool emitted() const { return emitted_.load(std::memory_order_acquire); }
+private:
+    std::vector<CaptureEvent> events_;
+    std::atomic<bool> emitted_{false};
+};
 
 class OneShotHook final : public InputHook {
 public:
@@ -4670,4 +4687,142 @@ TEST_CASE("shutdown cancels a pending paused readiness pass") {
     CHECK_FALSE(state->runtime_metrics().maintenance_pending);
     CHECK_FALSE(state->runtime_metrics().maintenance_running);
     CHECK(state->runtime_metrics().maintenance_result == "cancelled");
+}
+
+TEST_CASE("an unsaved snapback survives an empty retry and explicit alert dismissal") {
+    auto state = make_state();
+    const auto session = state->start_session("save the retained episode", FocusMode::Normal);
+    AppStateTestAccess::stage_unsaved_snapback(*state, staged_payload());
+    int alerts = 0;
+    state->set_emit_hook([&](const char* name, const std::string&, AppState::ActivityEpoch) {
+        if (std::string(name) == "snapback") ++alerts;
+    });
+    AppStateTestAccess::fail_next_persistence_at(*state, "commit");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(*state));
+    CHECK(AppStateTestAccess::snapback_episodes(*state, session.session_id).empty());
+    CHECK_NOTHROW(AppStateTestAccess::engine_tick(*state));
+    CHECK(alerts == 0);
+    CHECK(AppStateTestAccess::has_unsaved_snapback(*state));
+    state->dismiss_snapback();
+    CHECK(AppStateTestAccess::has_unsaved_snapback(*state));
+    AppStateTestAccess::clear_persistence_failure(*state);
+    AppStateTestAccess::engine_tick(*state);
+    CHECK(AppStateTestAccess::snapback_episodes(*state, session.session_id).size() == 1);
+    CHECK_FALSE(AppStateTestAccess::has_unsaved_snapback(*state));
+    CHECK(alerts == 0);
+    state->set_emit_hook(nullptr);
+}
+
+TEST_CASE("session deletion invalidates an unsaved episode during persistence failure") {
+    auto state = make_state();
+    const auto session = state->start_session("delete retained episode", FocusMode::Normal);
+    AppStateTestAccess::stage_unsaved_snapback(*state, staged_payload());
+    AppStateTestAccess::fail_next_persistence_at(*state, "begin");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(*state));
+    CHECK(state->delete_session(session.session_id));
+    CHECK_FALSE(AppStateTestAccess::has_unsaved_snapback(*state));
+    AppStateTestAccess::clear_persistence_failure(*state);
+    CHECK_NOTHROW(AppStateTestAccess::engine_tick(*state));
+    CHECK(state->health().persistence_failure_reason.has_value());
+}
+
+TEST_CASE("no-session previews during backoff are not counted as lost recordings") {
+    auto state = make_state();
+    const auto session = state->start_session("fail before preview", FocusMode::Normal);
+    AppStateTestAccess::stage_pending_span_open(*state, session.session_id);
+    AppStateTestAccess::fail_next_persistence_at(*state, "write");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(*state));
+    state->stop_session();
+    const auto losses = state->runtime_metrics().persistence_dropped_predictions;
+    BurstHook input(1);
+    fill_capture_ring(*state, input);
+    CHECK_NOTHROW(AppStateTestAccess::engine_tick(*state));
+    CHECK(state->latest_prediction().has_value());
+    CHECK(state->runtime_metrics().persistence_dropped_predictions == losses);
+    CHECK(state->health().persistence_failure_reason.has_value());
+    AppStateTestAccess::stop_capture(*state);
+}
+
+TEST_CASE("SQLite contention reaches the native persistence failure contract") {
+    TempDir temp;
+    EventListHook input({ev(EventType::KeyPress, 1.0)});
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage));
+    state->start_session("real contention", FocusMode::Normal);
+    std::string reason;
+    state->set_emit_hook([&](const char* name, const std::string& payload, AppState::ActivityEpoch) {
+        if (std::string(name) == "persistence-failed") reason = nlohmann::json::parse(payload).at("reason");
+    });
+    sqlite3* peer = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &peer) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(peer, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) == SQLITE_OK);
+    AppStateTestAccess::start_capture_only(*state, &input);
+    for (int i = 0; i < 5000 && !input.emitted(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    AppStateTestAccess::stop_capture(*state);
+    CHECK_THROWS_AS(AppStateTestAccess::engine_tick(*state), SqliteError);
+    CHECK(reason == "database_busy");
+    CHECK(state->runtime_metrics().persistence_dropped_predictions == 1);
+    sqlite3_exec(peer, "ROLLBACK", nullptr, nullptr, nullptr);
+    sqlite3_close(peer);
+    state->set_emit_hook(nullptr);
+}
+
+TEST_CASE("SQLite page exhaustion reaches the disk-full persistence category") {
+    struct SharedCacheScope {
+        SharedCacheScope() { sqlite3_enable_shared_cache(1); }
+        ~SharedCacheScope() { sqlite3_enable_shared_cache(0); }
+    } shared_cache;
+    TempDir temp;
+    const std::string large_title(262144, 'x');
+    EventListHook input({ev(EventType::WindowFocusChange, 1.0, "Cursor", large_title.c_str())});
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage);
+    auto state = std::make_unique<AppState>(std::move(*storage));
+    state->start_session("real SQLite full", FocusMode::Normal);
+    std::string reason;
+    state->set_emit_hook([&](const char* name, const std::string& payload, AppState::ActivityEpoch) {
+        if (std::string(name) == "persistence-failed") reason = nlohmann::json::parse(payload).at("reason");
+    });
+    sqlite3* peer = nullptr;
+    REQUIRE(sqlite3_open((temp.path / "focoflow.db").string().c_str(), &peer) == SQLITE_OK);
+    // Shared cache gives both connections the same pager; cap it at its current size.
+    REQUIRE(sqlite3_exec(peer, "PRAGMA max_page_count=1", nullptr, nullptr, nullptr) == SQLITE_OK);
+    AppStateTestAccess::start_capture_only(*state, &input);
+    for (int i = 0; i < 5000 && !input.emitted(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    AppStateTestAccess::stop_capture(*state);
+    CHECK_THROWS_AS(AppStateTestAccess::engine_tick(*state), SqliteError);
+    CHECK(reason == "disk_full");
+    CHECK(state->runtime_metrics().persistence_failures == 1);
+    sqlite3_exec(peer, "PRAGMA max_page_count=1073741823", nullptr, nullptr, nullptr);
+    sqlite3_close(peer);
+    state->set_emit_hook(nullptr);
+}
+
+TEST_CASE("new drift cannot replace the retained unsaved episode and alert") {
+    EventListHook input({
+        ev(EventType::WindowFocusChange, 100.0, "Cursor", "classifier.cpp - Snapback"),
+        ev(EventType::WindowFocusChange, 101.0, "Google Chrome", "YouTube - Recommended"),
+        ev(EventType::WindowFocusChange, 141.0, "Cursor", "classifier.cpp - Snapback")
+    });
+    auto state = make_state();
+    const auto session = state->start_session("retain original target", FocusMode::Normal);
+    const auto original = staged_payload();
+    AppStateTestAccess::stage_unsaved_snapback(*state, original);
+    AppStateTestAccess::fail_next_persistence_at(*state, "commit");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(*state));
+    AppStateTestAccess::start_capture_only(*state, &input);
+    for (int i = 0; i < 5000 && !input.emitted(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    AppStateTestAccess::stop_capture(*state);
+    CHECK_NOTHROW(AppStateTestAccess::engine_tick(*state));
+    REQUIRE(state->latest_snapback());
+    CHECK(state->latest_snapback()->summary == original.summary);
+    AppStateTestAccess::clear_persistence_failure(*state);
+    AppStateTestAccess::engine_tick(*state);
+    const auto saved = AppStateTestAccess::snapback_episodes(*state, session.session_id);
+    REQUIRE(saved.size() == 1);
+    CHECK(saved.front().summary == original.summary);
 }

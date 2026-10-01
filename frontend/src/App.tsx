@@ -195,7 +195,6 @@ export default function App() {
     permissionSteps,
     refreshHealth,
     setOverlayFailureReason,
-    setPersistenceFailureReason,
   } = useHealth();
 
   // A real, actionable failure may reveal the Settings section that fixes it, once per run.
@@ -529,13 +528,14 @@ export default function App() {
       />
 
       <ActionErrorBanner
-        error={feedback.actionError ?? overlayFailureReason ?? persistenceFailureReason}
+        error={feedback.actionError ?? overlayFailureReason}
         onDismiss={() => {
           feedback.setActionError(null);
           setOverlayFailureReason(null);
-          setPersistenceFailureReason(null);
         }}
       />
+
+      <ActionErrorBanner error={persistenceFailureReason} />
 
       <SurfaceNav active={surface} onChange={setSurface} />
 
