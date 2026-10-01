@@ -8,6 +8,7 @@ const boundary = vi.hoisted(() => {
     history: [] as Record<string, unknown>[],
     failDetail: false,
     episodes: {} as Record<string, Record<string, unknown> | null>,
+    ratings: {} as Record<string, string | null>,
   };
   const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
     switch (cmd) {
@@ -27,6 +28,13 @@ const boundary = vi.hoisted(() => {
           : [];
       case "get_session_longest_snapback":
         return state.episodes[String(args?.sessionId)] ?? null;
+      case "get_session_rating":
+        return state.ratings[String(args?.sessionId)] ?? null;
+      case "submit_label": {
+        const request = (args?.request ?? {}) as Record<string, unknown>;
+        state.ratings[String(request.sessionId)] = String(request.label);
+        return null;
+      }
       case "get_health":
         return {
           status: "online",
@@ -206,6 +214,32 @@ describe("Session explorer", () => {
     const apps = within(detail.querySelector(".session-detail-apps") as HTMLElement).getAllByRole("listitem");
     expect(apps[0]).toHaveTextContent("Code.exe2 samples");
     expect(apps[1]).toHaveTextContent("chrome.exe1 sample");
+  });
+
+  it("shows the session rating and lets Review re-rate it", async () => {
+    boundary.state.ratings.a = "PRODUCTIVE";
+    render(
+      <SessionExplorerCard
+        sessionHistory={sessions}
+        rangeLabel="Last 7 days"
+        sessionActive={false}
+        onStartAgain={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Write the explorer/ }));
+    const detail = await screen.findByRole("region", { name: /Session: Write the explorer/ });
+    expect(await within(detail).findByText(/Session rating: Focused/)).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole("button", { name: "Rate Drift" }));
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("submit_label", {
+        request: expect.objectContaining({
+          sessionId: "a",
+          label: "PSEUDO_PRODUCTIVE",
+          source: "survey",
+        }),
+      }),
+    );
+    expect(await within(detail).findByText(/Session rating: Drift/)).toBeInTheDocument();
   });
 
   it("says so when the detail cannot load", async () => {

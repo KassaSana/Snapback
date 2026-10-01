@@ -627,6 +627,12 @@ export class DemoBackend {
       }
       case "get_session_auto_label":
         return this.autoLabels.get(String(args.sessionId)) ?? null;
+      case "get_session_rating": {
+        const id = String(args.sessionId);
+        const surveys = this.feedbackLabels.filter((row) => row.sessionId === id && row.source === "survey");
+        if (surveys.length > 0) return surveys[surveys.length - 1].label;
+        return this.autoLabels.get(id) ?? null;
+      }
       case "get_session_focus_curve": {
         // The native slicing (Storage::session_focus_curve), over the demo's rows.
         const id = String(args.sessionId);

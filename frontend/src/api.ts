@@ -714,6 +714,8 @@ export const api = {
   },
   getSessionAutoLabel: (sessionId: string): Promise<FocusLabel | null> =>
     invoke("get_session_auto_label", { sessionId }),
+  getSessionRating: (sessionId: string): Promise<FocusLabel | null> =>
+    invoke("get_session_rating", { sessionId }),
   getSessionFocusCurve: async (sessionId: string, buckets = 60): Promise<FocusCurvePoint[]> => {
     const rows = await invoke<Record<string, unknown>[]>("get_session_focus_curve", {
       sessionId,

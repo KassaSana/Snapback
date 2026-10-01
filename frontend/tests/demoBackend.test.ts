@@ -84,6 +84,7 @@ console.log("demoBackend.test.ts passed");
   demo.handle("stop_session", { sessionId: session.sessionId });
   assert.throws(() => demo.handle("submit_label", { request }), /Start a session/);
   demo.handle("submit_label", { request: { ...request, source: "survey", notes: "confirmed automatic label" } });
+  assert.equal(demo.handle("get_session_rating", { sessionId: session.sessionId }), "PRODUCTIVE");
   const logs = () => (demo.handle("get_diagnostics", {}) as { recentLogs: string[] }).recentLogs.join("\n");
   assert.match(logs(), /2 feedback submissions retained/);
   assert.throws(() => demo.handle("submit_label", { request: { ...request, source: "survey", label: "INVENTED" } }), /Unknown focus label/);

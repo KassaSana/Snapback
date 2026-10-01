@@ -307,6 +307,8 @@ public:
     static std::optional<FocusLabel> infer_session_label(const SessionRecap& recap);
     std::optional<FocusLabel> save_auto_session_label(const std::string& session_id);
     std::optional<FocusLabel> session_auto_label(const std::string& session_id);
+    // Prefer the latest survey confirmation, else the automatic label, else none.
+    std::optional<FocusLabel> session_rating(const std::string& session_id);
 
     // Predictions + feature snapshots (write path from the engine tick)
     void insert_prediction(const PredictionRecord& p);

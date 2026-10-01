@@ -130,6 +130,7 @@ public:
     FocusTargetResult restore_snapback_target();
     SessionRecap session_recap(const std::string& session_id);
     std::optional<FocusLabel> session_auto_label(const std::string& session_id);
+    std::optional<FocusLabel> session_rating(const std::string& session_id);
     // See Storage::session_focus_curve.
     std::vector<FocusCurvePoint> session_focus_curve(const std::string& session_id,
                                                      std::size_t buckets);

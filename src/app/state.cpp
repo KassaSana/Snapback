@@ -1057,6 +1057,11 @@ std::optional<FocusLabel> AppState::session_auto_label(const std::string& sessio
     return storage_.session_auto_label(session_id);
 }
 
+std::optional<FocusLabel> AppState::session_rating(const std::string& session_id) {
+    std::lock_guard lock(storage_mutex_);
+    return storage_.session_rating(session_id);
+}
+
 std::vector<FocusCurvePoint> AppState::session_focus_curve(const std::string& session_id,
                                                           std::size_t buckets) {
     // A Review read: yields to a waiting persist.

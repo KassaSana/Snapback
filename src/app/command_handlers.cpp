@@ -114,7 +114,10 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         const auto label = state.session_auto_label(a.at("sessionId").get<std::string>());
         return label ? json(*label) : json(nullptr);
     });
-    // `buckets` defaults to 60, capped at 240.
+    registry.add("get_session_rating", [&state](const json& a) {
+        const auto label = state.session_rating(a.at("sessionId").get<std::string>());
+        return label ? json(*label) : json(nullptr);
+    });
     registry.add("get_session_focus_curve", [&state](const json& a) {
         std::size_t buckets = 60;
         if (a.contains("buckets") && !a.at("buckets").is_null()) {
@@ -219,7 +222,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         return json(nullptr);
     });
     registry.add("get_settings", [&state](const json&) { return json(state.settings()); });
-    // Returns the accepted settings.
     registry.add("set_idle_threshold", [&state](const json& a) {
         state.set_idle_threshold_secs(a.at("seconds").get<std::int64_t>());
         return json(state.settings());
@@ -260,7 +262,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         state.set_privacy_exclusions(std::move(exclusions));
         return json(state.privacy_settings());
     });
-    // Returns what was deleted, what failed, and what was kept.
     registry.add("delete_all_activity_data",
              [&state, training_export_active, training_active, summary_export_active,
               personal_export_active](
@@ -409,7 +410,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         },
         training_export_active, "training export is already in progress");
 
-    // Read-only preview of what an import adopts and what it replaces.
     registry.add("inspect_data_import", [data_dir](const json& a) {
         const auto candidate = inspect_import_candidate(
             std::filesystem::path(detail::opt_string(a, "path").value_or("")),
@@ -458,8 +458,6 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         "export_my_data",
         [&state, data_dir](const json&) {
             const auto result = state.export_personal_data(data_dir / "exports" / "personal");
-            // Per-type omission counts and the checksum travel with the path; `truncated` is
-            // derived.
             return json{{"outputPath", result.output_path},
                         {"sessionCount", result.session_count},
                         {"windowCount", result.window_count},

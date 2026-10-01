@@ -6,10 +6,12 @@ import {
   api,
   formatScore,
   formatTime,
+  sessionCheckInLabel,
   type AppRuleKind,
   type AppRuleRecord,
   type ContextSnapshot,
   type FocusCurvePoint,
+  type FocusLabel,
   type SessionLongestSnapback,
   type SessionSummary,
 } from "./api";
@@ -44,6 +46,7 @@ type Detail =
       contextRows: number;
       context: ContextSnapshot[];
       longestSnapback: SessionLongestSnapback | null;
+      rating: FocusLabel | null;
     };
 
 const dayKey = (ms: number | null) => {
@@ -71,6 +74,7 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
   const [selection, setSelection] = useState<{ rangeLabel: string; id: string } | null>(null);
   const [detail, setDetail] = useState<Detail>({ state: "loading" });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [ratingPending, setRatingPending] = useState(false);
 
   // Newest first, grouped by the local day each session started on.
   const days = useMemo(() => {
@@ -113,12 +117,14 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
       api.getSessionFocusCurve(selectedId),
       api.getContextTimeline(selectedId, CONTEXT_SAMPLE_LIMIT),
       api.getSessionLongestSnapback(selectedId),
+      api.getSessionRating(selectedId).catch(() => null),
     ])
       .then(
-        ([curve, context, longestSnapback]: [
+        ([curve, context, longestSnapback, rating]: [
           FocusCurvePoint[],
           ContextSnapshot[],
           SessionLongestSnapback | null,
+          FocusLabel | null,
         ]) => {
           if (!current) return;
           const counts = new Map<string, number>();
@@ -137,6 +143,7 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
             contextRows: context.length,
             context,
             longestSnapback,
+            rating,
           });
         },
       )
@@ -147,6 +154,20 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
       current = false;
     };
   }, [selectedId]);
+
+  const handleReRate = async (label: FocusLabel) => {
+    if (!selectedId || ratingPending) return;
+    setRatingPending(true);
+    try {
+      await api.submitLabel(selectedId, label, undefined, "survey");
+      const rating = await api.getSessionRating(selectedId);
+      setDetail((prev) => (prev.state === "ready" ? { ...prev, rating } : prev));
+    } catch {
+      // Keep the prior rating visible; the user can try again.
+    } finally {
+      setRatingPending(false);
+    }
+  };
 
   return (
     <section className="card session-explorer-card">
@@ -203,6 +224,8 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
               setConfirmingDelete={setConfirmingDelete}
               deleting={deletingSessionId === selected.record.sessionId}
               onDeleteSession={onDeleteSession}
+              ratingPending={ratingPending}
+              onReRate={handleReRate}
             />
           ) : (
             <p className="helper-text session-explorer-empty">
@@ -226,6 +249,8 @@ function SessionDetail({
   setConfirmingDelete,
   deleting,
   onDeleteSession,
+  ratingPending,
+  onReRate,
 }: {
   summary: SessionSummary;
   detail: Detail;
@@ -237,6 +262,8 @@ function SessionDetail({
   setConfirmingDelete: (value: boolean) => void;
   deleting: boolean;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
+  ratingPending: boolean;
+  onReRate: (label: FocusLabel) => void | Promise<void>;
 }) {
   const { record, recap } = summary;
   const mode = normalizeFocusMode(record.focusMode);
@@ -289,6 +316,36 @@ function SessionDetail({
           <dd>{recap.snapbackCount}</dd>
         </div>
       </dl>
+
+      {detail.state === "ready" ? (
+        <div className="session-detail-rating">
+          <p className="helper-text" role="status">
+            {detail.rating
+              ? `Session rating: ${sessionCheckInLabel(detail.rating)}`
+              : "No session rating saved yet."}
+          </p>
+          <div className="button-row feedback-row">
+            {(
+              [
+                ["DEEP_FOCUS", "Deep"],
+                ["PRODUCTIVE", "Focused"],
+                ["PSEUDO_PRODUCTIVE", "Drift"],
+                ["DISTRACTED", "Distracted"],
+              ] as const
+            ).map(([label, text]) => (
+              <button
+                key={label}
+                type="button"
+                className="secondary-button"
+                disabled={ratingPending}
+                onClick={() => void onReRate(label)}
+              >
+                {detail.rating === label ? `${text} ✓` : `Rate ${text}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {record.reflectionDone || record.reflectionNextStep ? (
         <div className="session-detail-reflection">

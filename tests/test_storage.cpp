@@ -1403,6 +1403,21 @@ TEST_CASE("Storage::save_auto_session_label writes an AUTO label from recap") {
     CHECK(labels.find("inferred from session recap") != std::string::npos);
 }
 
+TEST_CASE("Storage::session_rating prefers the latest survey over auto") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    auto session = storage->create_session("Rating", FocusMode::Normal);
+    storage->insert_prediction(prediction(session.session_id, 90.0, 0.10, "DEEP_FOCUS"));
+    storage->end_session(session.session_id);
+    REQUIRE(storage->save_auto_session_label(session.session_id) == FocusLabel::DeepFocus);
+    CHECK(storage->session_rating(session.session_id) == FocusLabel::DeepFocus);
+    storage->insert_label(session.session_id, FocusLabel::Productive, "survey",
+                          std::string("confirmed automatic label"));
+    CHECK(storage->session_rating(session.session_id) == FocusLabel::Productive);
+    storage->insert_label(session.session_id, FocusLabel::Distracted, "survey");
+    CHECK(storage->session_rating(session.session_id) == FocusLabel::Distracted);
+}
+
 TEST_CASE("storage exports feature snapshots and labels as CSV") {
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());

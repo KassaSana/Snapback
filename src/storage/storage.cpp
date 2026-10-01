@@ -2149,6 +2149,17 @@ std::optional<FocusLabel> Storage::session_auto_label(const std::string& session
     return static_cast<FocusLabel>(sqlite3_column_int(stmt.get(), 0));
 }
 
+std::optional<FocusLabel> Storage::session_rating(const std::string& session_id) {
+    Stmt survey(db_,
+                "SELECT label FROM labels WHERE session_id = ?1 AND source = 'survey' "
+                "ORDER BY id DESC LIMIT 1");
+    survey.bind(1, session_id);
+    if (survey.step_row()) {
+        return static_cast<FocusLabel>(sqlite3_column_int(survey.get(), 0));
+    }
+    return session_auto_label(session_id);
+}
+
 void Storage::insert_prediction(const PredictionRecord& p) {
     ensure_active_session(p.session_id);
     Stmt stmt(db_, cached_stmt(
