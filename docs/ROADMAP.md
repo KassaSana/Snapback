@@ -1636,6 +1636,8 @@ kept here; already-deep modules and completed performance work were rejected dur
   workflow extraction and any Settings-surface gating still open above.
 
 - **14.5 — Replace the fixed 10 Hz engine poll with deadline-aware, bounded work.** `in progress` `M`
+  **Progress 2026-10-01:** Implemented coalesced C++20 semaphore notifications, authoritative deadline rechecks for idle/Pomodoro/privacy/snooze/nudges/retry/maintenance, producer-first shutdown, and maximum-drain diagnostics. The MinGW runtime uses an owned blocking event for timed waits after measurement exposed spinning. Full local verification passed (759 native cases plus frontend and guards); focused wake/timer/shutdown checks passed. Same-host 60s quiet ticks fell 548 to 2, paced-input p95 107975 to 271 us. These single headless runs exclude OS capture/GUI cost; engine-only CPU, statistical latency, less-than-1% instrumentation overhead, live platform checks, release soak remain open. Focused Linux ASan/UBSan and ThreadSanitizer checks passed (29 cases, 3014 assertions each); TSAN used a process-local ASLR workaround. No broader cycle refactor is required; item remains in progress.
+
   `performance`
   Opened 2026-08-05. The engine calls `engine_tick()` and sleeps 100 ms forever, including
   when there is no session and no event. Inside a cycle it drains until the capture queue is

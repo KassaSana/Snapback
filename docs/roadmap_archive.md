@@ -3874,7 +3874,7 @@ entry above is the record of what shipped.
     binary.
   - **Idle CPU and wakeups.** [`bench_idle.cpp`](../benchmarks/bench_idle.cpp): **124 ms of
     CPU over 60 s, 0.21% of one core, 9.02 wakeups/second**. The rate is not a discovery —
-    `state.hpp:kEngineTickIntervalMs` is 100 — but what those wakeups cost was the number
+    the former engine interval was 100 ms — but what those wakeups cost was the number
     nobody had. Recorded, not fixed; a poll interval is a product decision and 0.21% of a core
     is not obviously worth one.
   - **Ring high-water.** `capture_thread.hpp:ring_high_water`, one comparison on the producer

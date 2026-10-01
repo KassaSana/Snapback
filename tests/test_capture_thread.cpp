@@ -465,3 +465,30 @@ TEST_CASE("scroll confirms genuine capture input without fabricating a click") {
     REQUIRE(scroll);
     CHECK(scroll->event_type == EventType::MouseScroll);
 }
+
+TEST_CASE("engine wake signal coalesces without losing wait setup notifications") {
+    EngineWakeSignal wake;
+    for (int i = 0; i < 10000; ++i) wake.notify();
+    CHECK(wake.wait(0));
+    CHECK_FALSE(wake.wait(0));
+    for (int i = 0; i < 200; ++i) {
+        std::thread producer([&] { wake.notify(); });
+        CHECK(wake.wait(1000));
+        producer.join();
+        CHECK_FALSE(wake.wait(0));
+    }
+}
+
+TEST_CASE("engine deadline selection reconciles wall clocks and changes") {
+    EngineDeadlines none(100, 1000);
+    CHECK_FALSE(none.delay_ms());
+    none.wall(100000);
+    CHECK(none.delay_ms() == 30000);
+    none.monotonic(600);
+    CHECK(none.delay_ms() == 500);
+    none.monotonic(50);
+    CHECK(none.delay_ms() == 0);
+    EngineDeadlines changed(600, 1500);
+    changed.wall(1600);
+    CHECK(changed.delay_ms() == 100);
+}

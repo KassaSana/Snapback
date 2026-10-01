@@ -4557,3 +4557,35 @@ TEST_CASE("capture during persistence backoff is classified and counted as disca
     CHECK(state.health().runtime.persistence_failures == 1);
     CHECK(state.health().persistence_failure_reason.has_value());
 }
+
+TEST_CASE("deadline engine stays quiet and wakes for changed timers") {
+    auto state = make_state();
+    BurstHook hook(0);
+    AppStateTestAccess::idle_threshold(*state, 0);
+    state->start_engine_for_test(&hook);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const auto settled = state->engine_wakeups();
+    std::this_thread::sleep_for(std::chrono::milliseconds(350));
+    CHECK(state->engine_wakeups() == settled);
+    PomodoroConfig config;
+    config.work_ms = 30;
+    config.auto_start_next_phase = false;
+    state->start_session("timer deadline", FocusMode::Normal);
+    state->set_pomodoro_config(config);
+    state->start_pomodoro();
+    for (int i = 0; i < 1000 && !state->pomodoro_status().awaiting_acknowledgement; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(state->pomodoro_status().awaiting_acknowledgement);
+    state->stop_engine();
+}
+
+TEST_CASE("deadline engine advances idle without new capture") {
+    auto state = make_state();
+    BurstHook hook(0);
+    AppStateTestAccess::idle_threshold(*state, 1000);
+    state->start_engine_for_test(&hook);
+    for (int i = 0; i < 3000 && !state->is_idle(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(state->is_idle());
+    state->stop_engine();
+}

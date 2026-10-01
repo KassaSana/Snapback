@@ -116,6 +116,7 @@ export type RuntimeMetrics = {
   persistenceFailures: number;
   persistenceDroppedPredictions: number;
   engineWakeups: number;
+  engineMaxDrainMs: number;
   processCpuMs: number;
   captureRingHighWater: number;
   captureRingCapacity: number;
@@ -138,6 +139,7 @@ export const EMPTY_RUNTIME_METRICS: RuntimeMetrics = {
   persistenceFailures: 0,
   persistenceDroppedPredictions: 0,
   engineWakeups: 0,
+  engineMaxDrainMs: 0,
   processCpuMs: 0,
   captureRingHighWater: 0,
   captureRingCapacity: 0,

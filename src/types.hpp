@@ -263,6 +263,7 @@ struct RuntimeMetrics {
     std::uint64_t persistence_failures{};
     std::uint64_t persistence_dropped_predictions{};
     std::uint64_t engine_wakeups{};
+    std::uint64_t engine_max_drain_ms{};
     // User + kernel milliseconds for the whole process since it started. 0 where the platform
     // call failed, or where the process has not yet burned one scheduler tick.
     std::uint64_t process_cpu_ms{};

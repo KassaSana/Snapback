@@ -217,3 +217,20 @@ on the engine side where every event is ingested.
 - **Reference point.** On the current dev machine a 180-minute trace (~9.2k events) runs
   the full `AppState replay` at ~35–40k events/sec (mean ~25–30 µs, p95 < 50 µs), which is
   orders of magnitude above the human-paced capture rate — SQLite writes dominate.
+
+### Deadline scheduling measurement (2026-10-01)
+
+Same Windows host, GCC/MinGW Release headless harness, 60 seconds each. The silent
+fake capture hook wakes every 5 ms, so process CPU includes that harness cost and
+is not engine-only CPU or shipped desktop CPU. Before: 548 engine ticks (9.12/s),
+125 ms process CPU (0.21% of one core). After: 2 ticks (initial/coalesced startup),
+126 ms CPU (0.21%); no periodic 100 ms ticks. With input every 1100 ms, 55 samples:
+p95 capture-to-prediction emission fell from 107975 us to 271 us, p50 from 58192 us
+to 171 us. Process CPU fell from 155 ms to 77 ms in that paced run. These are single
+runs, not statistical equivalence or an instrumentation-overhead measurement.
+
+MinGW libstdc++ 16 timed semaphore waits spun on this host despite only two engine
+ticks. The Windows libstdc++ path therefore retains the C++20 semaphore token but
+uses an owned OS event for the blocking timeout. Other standard libraries use the
+semaphore wait directly. Real desktop CPU, release soak, statistical latency checks,
+and the less-than-1% instrumentation gate remain unverified.

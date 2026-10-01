@@ -147,6 +147,7 @@ AppState::AppState(Storage storage, std::filesystem::path app_data_dir, Logger* 
     last_prune_steady_ms_.store(steady_now_ms());  // Storage::open pruned on the way in
     maintenance_paused_.store(active_session_.has_value(), std::memory_order_release);
     publish_live_read_unlocked();
+    capture_.set_wake_signal(&engine_wake_);
     maintenance_thread_ = std::thread([this] { run_retention_maintenance(); });
 }
 
@@ -370,6 +371,7 @@ PomodoroStatus AppState::start_pomodoro_unlocked(std::int64_t now_ms) {
 }
 
 PomodoroStatus AppState::start_pomodoro() {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     return start_pomodoro_unlocked(steady_now_ms());
 }
@@ -391,6 +393,7 @@ void AppState::persist_pomodoro_unlocked() {
 // Move the timer, persist it, report it. `apply` runs under mutex_ so status and snapshot
 // describe one instant.
 PomodoroStatus AppState::mutate_pomodoro(const std::function<void(std::int64_t)>& apply) {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     const auto now = steady_now_ms();
     apply(now);
@@ -421,6 +424,7 @@ PomodoroStatus AppState::acknowledge_pomodoro_phase() {
 }
 
 PomodoroStatus AppState::set_pomodoro_config(const PomodoroConfig& config) {
+    WakeOnExit wake{engine_wake_};
     // Validated before anything moves, so a rejected rhythm leaves both the live timer and
     // settings.json exactly as they were.
     if (config.work_ms <= 0 || config.short_break_ms <= 0 || config.long_break_ms <= 0) {
@@ -440,6 +444,7 @@ PomodoroStatus AppState::set_pomodoro_config(const PomodoroConfig& config) {
 }
 
 PomodoroStatus AppState::stop_pomodoro() {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     pomodoro_.stop();
     return pomodoro_.status(steady_now_ms());
@@ -582,9 +587,11 @@ void AppState::start_engine_impl(InputHook* hook) {
                 // keystrokes would
                 // spin the loop at 1 ms.
                 if (stopping && !backlog && !capture_.has_pending_events()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(
-                    (backlog || stopping) ? kEngineBacklogTickIntervalMs
-                                          : kEngineTickIntervalMs));
+                if (backlog || stopping) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(kEngineBacklogTickIntervalMs));
+                } else {
+                    engine_wake_.wait(next_engine_delay_ms());
+                }
             } while (engine_running_.load(std::memory_order_relaxed) ||
                      backlog || capture_.has_pending_events());
         });
@@ -595,7 +602,34 @@ void AppState::start_engine_impl(InputHook* hook) {
     }
 }
 
+std::optional<std::int64_t> AppState::next_engine_delay_ms() const {
+    std::lock_guard lock(mutex_);
+    const auto now = steady_now_ms();
+    const auto wall_now = now_unix_ms();
+    EngineDeadlines deadlines(now, wall_now);
+    if (auto deadline = idle_detector_.next_deadline_ms()) deadlines.monotonic(*deadline);
+    if (auto deadline = pomodoro_.next_deadline_ms()) deadlines.monotonic(*deadline);
+    if (!active_session_ && !idle_ && untracked_since_ms_ && !untracked_latched_) {
+        const auto dismissal = settings_.untracked_nudge_until_wall_ms;
+        if (dismissal > wall_now) deadlines.wall(dismissal);
+        else deadlines.monotonic(*untracked_since_ms_ + kUntrackedNudgeMinutes * 60000);
+    }
+    if (settings_.private_mode && settings_.private_until_wall_ms > 0) {
+        if (settings_.private_until_wall_ms > wall_now) deadlines.wall(settings_.private_until_wall_ms);
+        else deadlines.monotonic(std::max(now, privacy_lapse_retry_at_ms_));
+    }
+    if (settings_.alerts.snoozed_until_wall_ms > wall_now)
+        deadlines.wall(settings_.alerts.snoozed_until_wall_ms);
+    if (persistence_failure_reason_ &&
+        (!pending_span_transitions_.empty() || pending_snapback_episode_))
+        deadlines.monotonic(persistence_retry_at_ms_);
+    if (!maintenance_pending_.load(std::memory_order_acquire))
+        deadlines.monotonic(last_prune_steady_ms_.load(std::memory_order_acquire) + kRetentionPruneIntervalMs);
+    return deadlines.delay_ms();
+}
+
 void AppState::set_emit_hook(EmitHook hook) {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     emit_hook_ = std::move(hook);
 }
@@ -618,6 +652,7 @@ void AppState::stop_engine() noexcept {
     // Stop the producer first so the final empty-ring check is a real quiescence barrier.
     capture_.stop();
     engine_running_.store(false, std::memory_order_relaxed);
+    engine_wake_.notify();
     if (engine_thread_.joinable()) engine_thread_.join();
     if (maintenance_thread_.joinable()) maintenance_thread_.join();
     close_open_span_on_shutdown();
@@ -652,6 +687,7 @@ void AppState::clear_snapback_unlocked() {
 }
 
 SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
+    WakeOnExit wake{engine_wake_};
     // Mixed (in-memory + storage): take both locks in the fixed order mutex_ -> storage_mutex_.
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
@@ -713,6 +749,7 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
 }
 
 void AppState::stop_session() {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
     if (active_session_) {
@@ -750,6 +787,7 @@ void AppState::stop_session() {
 }
 
 SessionRecord AppState::stop_session(const std::string& session_id) {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
     SessionRecord record;
@@ -793,6 +831,7 @@ std::optional<SessionRecord> AppState::get_session(const std::string& session_id
 }
 
 bool AppState::delete_session(const std::string& session_id) {
+    WakeOnExit wake{engine_wake_};
     // Same locks and order as delete_all_activity_data: the activity boundary fences in-flight
     // persistence, and the epoch bump invalidates queued UI events.
     std::lock_guard state_lock(mutex_);
@@ -896,6 +935,7 @@ RuntimeMetrics AppState::runtime_metrics() const {
     out.persistence_failures = persistence_failures_.load(std::memory_order_relaxed);
     out.persistence_dropped_predictions = persistence_dropped_predictions_.load(std::memory_order_relaxed);
     out.engine_wakeups = engine_wakeups();
+    out.engine_max_drain_ms = engine_max_drain_ms_.load(std::memory_order_relaxed);
     out.process_cpu_ms = process_cpu_ms();
     out.capture_ring_high_water = static_cast<std::uint64_t>(capture_ring_high_water());
     out.capture_ring_capacity = static_cast<std::uint64_t>(CaptureThread::kCapacity);
@@ -939,6 +979,7 @@ std::optional<SnapbackPayload> AppState::latest_snapback() const {
 }
 
 std::optional<SnapbackPayload> AppState::take_snapback() {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     auto out = std::move(latest_snapback_);
     clear_snapback_unlocked();
@@ -948,6 +989,7 @@ std::optional<SnapbackPayload> AppState::take_snapback() {
 }
 
 void AppState::dismiss_snapback() {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     // Clear the pending payload and return the tracker from Recovering to Focused so it
     // doesn't keep the recovery state latched.
@@ -1074,6 +1116,7 @@ std::vector<SessionSummary> AppState::session_history(std::size_t limit) {
 }
 
 ActivityDeletionResult AppState::delete_all_activity_data() {
+    WakeOnExit wake{engine_wake_};
     // The boundary fences off-lock persistence in engine_tick(). Incrementing the epoch
     // also invalidates any event already queued for asynchronous UI dispatch.
     std::lock_guard state_lock(mutex_);
@@ -1278,6 +1321,7 @@ void AppState::commit_settings_unlocked(AppSettings candidate,
 }
 
 void AppState::set_focus_mode(FocusMode mode) {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     AppSettings candidate = settings_;
     candidate.default_focus_mode = mode;
@@ -1305,6 +1349,7 @@ PrivacySettings AppState::privacy_settings() const {
 }
 
 void AppState::set_idle_threshold_secs(std::int64_t seconds) {
+    WakeOnExit wake{engine_wake_};
     // Validated before anything is mutated.
     if (seconds < kMinIdleThresholdSecs || seconds > kMaxIdleThresholdSecs) {
         throw std::runtime_error("idle threshold must be between " +
@@ -1389,6 +1434,7 @@ RecordingStatus AppState::announce_recording_status() {
 }
 
 RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
+    WakeOnExit wake{engine_wake_};
     if (minutes < 0) throw std::runtime_error("a privacy pause cannot be negative");
     {
         std::lock_guard lock(mutex_);
@@ -1406,6 +1452,7 @@ RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
 // Snooze and its undo. An expired snooze needs no repair write: route_alert already treats a
 // passed deadline as lapsed.
 RecordingStatus AppState::snooze_alerts_for(std::int64_t minutes) {
+    WakeOnExit wake{engine_wake_};
     if (minutes < 0) throw std::runtime_error("an alert snooze cannot be negative");
     if (minutes > kMaxAlertSnoozeMins) {
         throw std::runtime_error("an alert snooze cannot exceed " +
@@ -1424,6 +1471,7 @@ RecordingStatus AppState::snooze_alerts_for(std::int64_t minutes) {
 }
 
 AppSettings AppState::set_alert_delivery(AlertDeliverySettings alerts) {
+    WakeOnExit wake{engine_wake_};
     const auto in_day = [](std::int32_t minute) {
         return minute >= 0 && minute < kMinutesPerDay;
     };
@@ -1442,6 +1490,7 @@ AppSettings AppState::set_alert_delivery(AlertDeliverySettings alerts) {
 }
 
 RecordingStatus AppState::resume_alerts() {
+    WakeOnExit wake{engine_wake_};
     {
         std::lock_guard lock(mutex_);
         AppSettings candidate = settings_;
@@ -1452,6 +1501,7 @@ RecordingStatus AppState::resume_alerts() {
 }
 
 RecordingStatus AppState::resume_from_private_pause() {
+    WakeOnExit wake{engine_wake_};
     {
         std::lock_guard lock(mutex_);
         AppSettings candidate = settings_;
@@ -1463,6 +1513,7 @@ RecordingStatus AppState::resume_from_private_pause() {
 }
 
 void AppState::dismiss_untracked_nudge(std::int64_t minutes) {
+    WakeOnExit wake{engine_wake_};
     if (minutes <= 0 || minutes > 24 * 60) {
         throw std::runtime_error("nudge dismissal must be between 1 minute and 24 hours");
     }
@@ -1478,6 +1529,7 @@ void AppState::dismiss_untracked_nudge(std::int64_t minutes) {
 }
 
 void AppState::set_private_mode(bool enabled) {
+    WakeOnExit wake{engine_wake_};
     {
         std::lock_guard lock(mutex_);
         AppSettings candidate = settings_;
@@ -1493,6 +1545,7 @@ void AppState::set_private_mode(bool enabled) {
 }
 
 void AppState::set_privacy_exclusions(std::vector<std::string> exclusions) {
+    WakeOnExit wake{engine_wake_};
     // Normalized outside the lock: it is pure string work on the caller's argument, and the
     // candidate has to be complete before anything is committed.
     auto normalized = normalize_privacy_exclusions(std::move(exclusions));
@@ -1668,6 +1721,7 @@ std::vector<AppRuleRecord> AppState::app_rules() {
 
 AppRuleRecord AppState::upsert_app_rule(const std::string& pattern, AppRuleKind rule_type,
                                         std::optional<std::string> note) {
+    WakeOnExit wake{engine_wake_};
     // Mixed: writes storage_ AND refreshes the in-memory app_rules_ cache the tick reads.
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
@@ -1677,6 +1731,7 @@ AppRuleRecord AppState::upsert_app_rule(const std::string& pattern, AppRuleKind 
 }
 
 void AppState::delete_app_rule(std::int64_t id) {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard state_lock(mutex_);
     std::lock_guard store_lock(storage_mutex_);
     storage_.delete_app_rule(id);
@@ -1702,6 +1757,7 @@ ClassifierStatus AppState::classifier_status() const {
 }
 
 ClassifierStatus AppState::reload_classifier_model() {
+    WakeOnExit wake{engine_wake_};
     std::lock_guard lock(mutex_);
     model_deployment_health_ = training_deploy::to_model_deployment_health(
         training_deploy::recover_model_deployment_for_startup(app_data_dir_));
@@ -1889,6 +1945,7 @@ void AppState::run_retention_maintenance() noexcept {
         }
         last_prune_steady_ms_.store(steady_now_ms(), std::memory_order_release);
         maintenance_pending_.store(false, std::memory_order_release);
+        engine_wake_.notify();
     }
 }
 
@@ -1919,6 +1976,7 @@ bool AppState::engine_tick() {
     std::vector<PendingSpanTransition> span_transitions;
     // The tick only schedules retention. An owned worker performs bounded storage batches.
     bool prune_due = false;
+    bool recording_status_changed = false;
     bool backoff = false;
     bool wrote_data = false;
     bool recovered = false;
@@ -1986,6 +2044,21 @@ bool AppState::engine_tick() {
         // Idle timing runs off the tick's monotonic clock, not event timestamps: true AFK
         // means no events arrive at all, so we must measure wall time, not the last event.
         const auto now_ms = steady_now_ms();
+        if (settings_.private_mode && settings_.private_until_wall_ms > 0 &&
+            now_unix_ms() >= settings_.private_until_wall_ms && now_ms >= privacy_lapse_retry_at_ms_) {
+            recording_status_changed = lapse_private_pause_unlocked();
+            privacy_lapse_retry_at_ms_ = recording_status_changed ? 0 : now_ms + 30000;
+        }
+        const auto snooze = settings_.alerts.snoozed_until_wall_ms;
+        if (snooze > 0 && snooze <= now_unix_ms() && snooze_expiry_reported_wall_ms_ != snooze) {
+            snooze_expiry_reported_wall_ms_ = snooze;
+            recording_status_changed = true;
+        }
+        if (drained > 0) {
+            const auto elapsed = static_cast<std::uint64_t>(std::max<std::int64_t>(0, now_ms - drain_started_ms));
+            auto maximum = engine_max_drain_ms_.load(std::memory_order_relaxed);
+            while (elapsed > maximum && !engine_max_drain_ms_.compare_exchange_weak(maximum, elapsed)) {}
+        }
         const auto final_idle_edge = update_idle_unlocked(now_ms, had_input);
         if (final_idle_edge != IdleTransition::None) idle_edge = final_idle_edge;
         // Copy without consuming: a failed transaction must leave the queue intact.
@@ -2040,6 +2113,7 @@ bool AppState::engine_tick() {
     }
 
     if (prune_due) request_retention_maintenance();
+    if (recording_status_changed) announce_recording_status();
 
     try {
         // If deletion won the boundary after phase 1, discard every buffered row and

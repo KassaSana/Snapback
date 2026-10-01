@@ -46,6 +46,7 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
         <strong>{health.status}</strong>
         <span>Version {diagnostics.version}</span>
         <span>{health.captureEventsDropped} dropped capture events</span>
+        <span>Longest engine drain: {health.runtime.engineMaxDrainMs} ms</span>
         <span>{health.runtime.persistenceFailures} failed recording writes</span>
         <span>{health.runtime.persistenceDroppedPredictions} lost prediction samples</span>
         <span>

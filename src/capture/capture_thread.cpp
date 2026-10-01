@@ -69,6 +69,7 @@ void CaptureThread::start(InputHook* hook) {
                         if (direct_input) {
                             input_observed_.store(true, std::memory_order_release);
                         }
+                        if (wake_signal_) wake_signal_->notify();
                     }
                 } catch (...) {
                     dropped_.fetch_add(1, std::memory_order_relaxed);
@@ -83,6 +84,7 @@ void CaptureThread::start(InputHook* hook) {
             record_failure("input hook threw an unknown exception");
         }
         running_.store(false, std::memory_order_release);
+        if (wake_signal_) wake_signal_->notify();
     });
 }
 

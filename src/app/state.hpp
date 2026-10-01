@@ -56,7 +56,7 @@ inline constexpr std::int64_t kEngineDrainBudgetMs = 20;
 inline constexpr std::size_t kEngineDrainClockCheckStride = 128;
 // Gap between ticks. The backlog gap is non-zero so a waiting command thread can take mutex_
 // between two bounded drains.
-inline constexpr std::int64_t kEngineTickIntervalMs = 100;
+// Quiet ticks wait for capture or the next authoritative deadline.
 inline constexpr std::int64_t kEngineBacklogTickIntervalMs = 1;
 // Throttle for the "capture backlog" log line.
 inline constexpr std::int64_t kEngineBacklogLogIntervalMs = 30'000;
@@ -315,6 +315,7 @@ private:
     // than on an empty ring — i.e. work is still queued and the caller should tick again now
     // instead of sleeping out the usual interval.
     bool engine_tick();
+    std::optional<std::int64_t> next_engine_delay_ms() const;
     void request_retention_maintenance();
     void run_retention_maintenance() noexcept;
 
@@ -457,6 +458,7 @@ private:
     Logger local_logger_{std::cerr};
     Clock* clock_ = nullptr;
     SystemClock local_clock_;
+    EngineWakeSignal engine_wake_;
     CaptureThread capture_;
     FeatureExtractor features_;
     Classifier classifier_;
@@ -505,6 +507,9 @@ private:
     std::thread engine_thread_;
     std::atomic<bool> engine_running_{false};
     std::atomic<std::uint64_t> engine_wakeups_{0};
+    std::atomic<std::uint64_t> engine_max_drain_ms_{0};
+    std::int64_t privacy_lapse_retry_at_ms_{};
+    std::int64_t snooze_expiry_reported_wall_ms_{};
     // The tick only submits work. This owned worker deletes bounded batches while recording
     // is inactive and is cancelled/joined with the engine during shutdown.
     std::mutex maintenance_mutex_;

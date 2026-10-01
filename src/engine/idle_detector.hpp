@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 
 namespace snapback {
 
@@ -57,6 +58,11 @@ public:
             return IdleTransition::WentIdle;
         }
         return IdleTransition::None;
+    }
+
+    std::optional<std::int64_t> next_deadline_ms() const noexcept {
+        if (!seen_activity_ || threshold_ms_ <= 0 || state_ == IdleState::Idle) return std::nullopt;
+        return last_activity_ms_ + threshold_ms_;
     }
 
     [[nodiscard]] IdleState state() const noexcept { return state_; }

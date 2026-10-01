@@ -13,6 +13,7 @@
 #include "capture/input_hook.hpp"
 #include "capture/ring_buffer.hpp"
 #include "types.hpp"
+#include "util/engine_wake.hpp"
 
 namespace snapback {
 
@@ -25,6 +26,8 @@ public:
     // stop() is a no-op (reassigning a joinable std::thread would terminate).
     ~CaptureThread() noexcept { stop(); }
     void start(InputHook* hook = nullptr);
+    // Set before start; owner outlives the joined capture thread.
+    void set_wake_signal(EngineWakeSignal* signal) { wake_signal_ = signal; }
     void stop() noexcept;
 
     // Engine side: drain one event, or nullopt if the buffer is empty.
@@ -63,6 +66,7 @@ private:
     void record_failure(const char* reason) noexcept;
 
     RingBuffer<CaptureEvent, kCapacity> buffer_;
+    EngineWakeSignal* wake_signal_ = nullptr;
     InputHook* hook_ = nullptr;  // borrowed; owned by the singleton or the test
     std::thread hook_thread_;
     std::atomic<std::uint64_t> dropped_{0};

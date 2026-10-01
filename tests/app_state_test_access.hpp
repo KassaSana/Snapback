@@ -56,6 +56,8 @@ struct AppStateTestAccess {
     // as 14.2.
     // Returns what the engine loop reads: true if the drain stopped on a budget with events
     // still queued, false if it emptied the ring.
+    static void idle_threshold(AppState& state, std::int64_t ms) { state.idle_detector_.set_threshold_ms(ms); }
+    static std::optional<std::int64_t> next_delay(AppState& state) { return state.next_engine_delay_ms(); }
     static bool engine_tick(AppState& state) { return state.engine_tick(); }
     static void persistence_error(AppState& state, int code) {
         std::lock_guard lock(state.mutex_);

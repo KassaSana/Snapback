@@ -1,11 +1,10 @@
-// What Snapback costs while doing nothing: a real AppState, engine thread, storage connection,
-// and capture thread, left idle with no session. Wakeups are ~constant by construction (the
-// tick runs every kEngineTickIntervalMs); the CPU time beside them is the figure. The input
-// hook is a silent fake, so this is the engine's idle cost, not the whole product's. No
-// threshold, no CI job.
+// Quiet-engine and paced-input measurements using a real AppState and storage.
+// The fake capture producer sleeps every 5 ms; process CPU includes that harness cost.
+// OS hooks, GUI work, and shipped desktop CPU are outside this measurement.
 //
 // Build: -DSNAPBACK_BUILD_BENCHMARKS=ON, target `snapback_idle_benchmarks`. Env:
-//   SNAPBACK_IDLE_SECONDS  how long to sit idle before reporting (default 10)
+//   SNAPBACK_IDLE_SECONDS  how long to measure (default 10)
+//   SNAPBACK_IDLE_INPUT_MS optional paced input interval (absent = silent)
 
 #include <atomic>
 #include <chrono>
@@ -18,6 +17,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 #include "bench_util.hpp"
 
@@ -38,9 +38,25 @@ namespace {
 // and none of the same cost -- see the header note about what that excludes.
 class SilentHook final : public InputHook {
 public:
-    void run(InputCallback, const std::atomic<bool>& stop_requested) override {
+    explicit SilentHook(std::size_t interval_ms = 0) : interval_ms_(interval_ms) {}
+    std::int64_t last_input_us() const { return last_input_us_.load(std::memory_order_acquire); }
+    void run(InputCallback emit, const std::atomic<bool>& stop_requested) override {
+        auto next = std::chrono::steady_clock::now();
         while (running_.load(std::memory_order_relaxed) &&
                !stop_requested.load(std::memory_order_relaxed)) {
+            const auto now = std::chrono::steady_clock::now();
+            if (interval_ms_ > 0 && now >= next) {
+                const auto stamp = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+                last_input_us_.store(stamp, std::memory_order_release);
+                CaptureEvent event;
+                event.event_type = EventType::KeyPress;
+                event.timestamp_secs = static_cast<double>(stamp) / 1e6;
+                event.wall_clock_secs = wall_clock_secs_now();
+                event.app_name = "Editor";
+                event.window_title = "benchmark";
+                emit(std::move(event));
+                next = now + std::chrono::milliseconds(interval_ms_);
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     }
@@ -49,6 +65,8 @@ public:
 
 private:
     std::atomic<bool> running_{true};
+    std::size_t interval_ms_;
+    std::atomic<std::int64_t> last_input_us_{0};
 };
 
 std::size_t env_size(const char* name, std::size_t fallback) {
@@ -89,12 +107,21 @@ int main() {
                   << "Engine + capture thread running, no session, fake input hook.\n"
                   << "The real OS hook's cost is NOT here -- see the header.\n\n"
                   << "  idle_seconds=" << idle_seconds
-                  << "  engine_tick_interval_ms=" << kEngineTickIntervalMs << "\n\n";
+                  << "  fixed_poll_interval_ms=" << 0 /* capture/deadline driven */ << "\n\n";
 
         // Heap-allocated: AppState embeds the 64K-slot capture ring (~5 MB), which is more
         // than a default thread stack wants to hold.
         auto state = std::make_unique<AppState>(std::move(*storage));
-        SilentHook hook;
+        const auto input_ms = std::getenv("SNAPBACK_IDLE_INPUT_MS") ? env_size("SNAPBACK_IDLE_INPUT_MS", 1100) : 0;
+        SilentHook hook(input_ms);
+        std::vector<double> latency_us;
+        state->set_emit_hook([&](const char* name, const std::string&, AppState::ActivityEpoch) {
+            if (std::string(name) == "prediction" && hook.last_input_us() > 0) {
+                const auto now = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                latency_us.push_back(static_cast<double>(now - hook.last_input_us()));
+            }
+        });
 
         // Reset after construction and the first storage work, so the figures describe the
         // idle window rather than startup's migrations and retention prune.
@@ -105,10 +132,12 @@ int main() {
         std::this_thread::sleep_for(std::chrono::seconds(idle_seconds));
         const auto wakeups = state->engine_wakeups();
         state->stop_engine();
+        state->set_emit_hook(nullptr);
         const double wall_ms = wall.elapsed_ms();
         const auto cpu_ms = process_cpu_ms() - cpu_before_ms;
 
         const double wall_secs = wall_ms / 1000.0;
+        if (!latency_us.empty()) print_stats("Capture to prediction emit", latency_us.size(), summarize(latency_us, wall_ms));
         std::cout << std::fixed << std::setprecision(2) << "Idle\n"
                   << "  wall                " << wall_secs << " s\n"
                   << "  cpu                 " << static_cast<double>(cpu_ms) << " ms ("

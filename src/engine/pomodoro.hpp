@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 #include <nlohmann/json_fwd.hpp>
@@ -222,6 +223,10 @@ public:
     [[nodiscard]] bool awaiting_acknowledgement() const noexcept { return awaiting_; }
 
     [[nodiscard]] PomodoroPhase phase() const noexcept { return phase_; }
+    std::optional<std::int64_t> next_deadline_ms() const noexcept {
+        if (!running_ || paused_ || awaiting_) return std::nullopt;
+        return phase_end_ms_;
+    }
     [[nodiscard]] bool running() const noexcept { return running_; }
     [[nodiscard]] int completed_work_intervals() const noexcept {
         return completed_work_intervals_;

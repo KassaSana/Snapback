@@ -279,6 +279,7 @@ export function mapRuntimeMetrics(raw: Record<string, unknown>): RuntimeMetrics 
     persistenceFailures: num("persistenceFailures"),
     persistenceDroppedPredictions: num("persistenceDroppedPredictions"),
     engineWakeups: num("engineWakeups"),
+    engineMaxDrainMs: num("engineMaxDrainMs"),
     processCpuMs: num("processCpuMs"),
     captureRingHighWater: num("captureRingHighWater"),
     captureRingCapacity: num("captureRingCapacity"),
