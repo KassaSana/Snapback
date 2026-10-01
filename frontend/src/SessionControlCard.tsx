@@ -223,8 +223,8 @@ export const SessionControlCard = memo(function SessionControlCard({
           </div>
           {switching && (
             <p className="helper-text" role="status">
-              Starting a different session stops this one first and saves its recap. Nothing is
-              lost, but the elapsed time above stops here.
+              Starting a different session stops this one first. Check in (or discard a short
+              fragment) before the new goal starts.
             </p>
           )}
         </div>

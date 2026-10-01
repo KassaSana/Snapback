@@ -10,10 +10,13 @@ import {
 } from "./api";
 import { sessionStartCaptureWarning, type SessionCaptureReadiness } from "./healthHints";
 import { normalizeFocusMode, type FocusMode } from "./sessionCockpit";
+import { isSessionFragment } from "./sessionFragment";
 
 // Re-exported from the pure module; this is where importers expect them.
 export { FOCUS_MODES, normalizeFocusMode } from "./sessionCockpit";
 export type { FocusMode } from "./sessionCockpit";
+
+type PendingSwitch = { goal: string; focusMode: FocusMode };
 
 type UseSessionArgs = {
   refreshContextTimeline: (sid?: string | null) => void | Promise<void>;
@@ -52,6 +55,8 @@ export const useSession = ({
   const inFlight = useRef(false);
   const labelInFlight = useRef(false);
   const sessionGeneration = useRef(0);
+  /** After a switch stop: start this goal/mode once check-in (or discard) finishes. */
+  const pendingSwitch = useRef<PendingSwitch | null>(null);
   const [labelPending, setLabelPending] = useState(false);
 
   const hydrateActiveSession = useCallback(async () => {
@@ -82,44 +87,6 @@ export const useSession = ({
       // The running session is unaffected; hydrate reads the default again next launch.
     }
   }, []);
-
-  const handleLabel = useCallback(
-    async (label: FocusLabel, source: LabelSource = "manual", notes?: string) => {
-      if (!sessionId || (source !== "survey" && sessionRecord?.endedAtMs !== null)) {
-        setLabelStatus("Start a session to save live feedback.");
-        return;
-      }
-
-      if (labelInFlight.current) return;
-      labelInFlight.current = true;
-      setLabelPending(true);
-      const generation = sessionGeneration.current;
-      try {
-        await api.submitLabel(sessionId, label, notes, source);
-        if (generation !== sessionGeneration.current) return;
-        const prefix =
-          source === "hotkey"
-            ? "Hotkey saved"
-            : source === "survey"
-              ? "Session rating saved"
-              : "Saved";
-        setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
-        setLabelStatusWarning(false);
-        if (source === "survey") {
-          setSavedSessionRating(label);
-          setSurveyPending(false);
-        }
-      } catch {
-        if (generation !== sessionGeneration.current) return;
-        setLabelStatus("Could not save feedback. Try again.");
-        setLabelStatusWarning(true);
-      } finally {
-        labelInFlight.current = false;
-        setLabelPending(false);
-      }
-    },
-    [sessionId, sessionRecord, setLabelStatus, setLabelStatusWarning],
-  );
 
   const handleStartNamedSession = useCallback(
     async (goalInput: string, mode: FocusMode) => {
@@ -179,6 +146,52 @@ export const useSession = ({
     ],
   );
 
+  const continuePendingSwitch = useCallback(async () => {
+    const pending = pendingSwitch.current;
+    if (!pending) return;
+    pendingSwitch.current = null;
+    await handleStartNamedSession(pending.goal, pending.focusMode);
+  }, [handleStartNamedSession]);
+
+  const handleLabel = useCallback(
+    async (label: FocusLabel, source: LabelSource = "manual", notes?: string) => {
+      if (!sessionId || (source !== "survey" && sessionRecord?.endedAtMs !== null)) {
+        setLabelStatus("Start a session to save live feedback.");
+        return;
+      }
+
+      if (labelInFlight.current) return;
+      labelInFlight.current = true;
+      setLabelPending(true);
+      const generation = sessionGeneration.current;
+      try {
+        await api.submitLabel(sessionId, label, notes, source);
+        if (generation !== sessionGeneration.current) return;
+        const prefix =
+          source === "hotkey"
+            ? "Hotkey saved"
+            : source === "survey"
+              ? "Session rating saved"
+              : "Saved";
+        setLabelStatus(`${prefix}: ${focusStateLabel(label)}`);
+        setLabelStatusWarning(false);
+        if (source === "survey") {
+          setSavedSessionRating(label);
+          setSurveyPending(false);
+          void continuePendingSwitch();
+        }
+      } catch {
+        if (generation !== sessionGeneration.current) return;
+        setLabelStatus("Could not save feedback. Try again.");
+        setLabelStatusWarning(true);
+      } finally {
+        labelInFlight.current = false;
+        setLabelPending(false);
+      }
+    },
+    [continuePendingSwitch, sessionId, sessionRecord, setLabelStatus, setLabelStatusWarning],
+  );
+
   const handleStartSession = useCallback(async () => {
     await handleStartNamedSession(sessionGoal, focusMode);
   }, [focusMode, handleStartNamedSession, sessionGoal]);
@@ -231,12 +244,8 @@ export const useSession = ({
   }, [applyStoppedSession, sessionId, setActionError]);
 
   /**
-   * Guarded "start a different session".
-   *
-   * Switching is stop-then-start rather than a single command because ADR-0005 makes a session
-   * a declared, attended thing: the old one must end honestly, with its recap and label, before
-   * a new one begins. If the stop fails the switch stops there — starting anyway would leave
-   * two sessions the user believes are one.
+   * Two-phase switch: stop the current session honestly, keep check-in/recap open, then start
+   * the drafted goal only after the user rates, skips, or discards a fragment.
    */
   const handleSwitchSession = useCallback(async (): Promise<boolean> => {
     const goal = sessionGoal.trim();
@@ -244,70 +253,27 @@ export const useSession = ({
       return false;
     }
 
+    const next: PendingSwitch = { goal, focusMode };
     inFlight.current = true;
     setSessionPending(true);
-    let stopped: SessionRecord;
     try {
-      stopped = await api.stopSession(sessionId);
-    } catch {
-      setActionError("Could not stop the current session, so it is still running.");
-      inFlight.current = false;
-      setSessionPending(false);
-      return false;
-    }
-    // Applied before the replacement start: storage already completed this session.
-    setSessionRecord(stopped);
-    clearSessionLiveSignals();
-
-    try {
-      const record = await api.startSession(goal, focusMode);
-      sessionGeneration.current += 1;
-      setSessionRecord(record);
-      setSessionId(record.sessionId);
-      setLabelStatus(null);
-      setLabelStatusWarning(false);
-      setReflectionPending(false);
-      setReflectionSaved(false);
-      setSessionGoal(record.goal);
-      setRecap(null);
-      setAutoLabel(null);
-      setSavedSessionRating(null);
-      setSurveyPending(false);
-      setActionError(
-        captureReadiness ? sessionStartCaptureWarning(captureReadiness) : null,
-      );
-      resetTimelineRefreshGate();
-      void refreshContextTimeline(record.sessionId);
-      void commitDefaultFocusMode(focusMode);
+      const stopped = await api.stopSession(sessionId);
+      pendingSwitch.current = next;
+      await applyStoppedSession(stopped);
+      // Keep the drafted goal visible so the pending switch is obvious after check-in.
+      setSessionGoal(next.goal);
+      setFocusMode(next.focusMode);
+      setActionError(null);
       return true;
     } catch {
-      // The old session really did stop, so say so rather than implying nothing happened --
-      // and land in the ordinary stopped state, recap and all, since that is what it is.
-      setActionError("Stopped the previous session, but could not start the new one.");
-      try {
-        await applyStoppedSession(stopped);
-      } catch {
-        // The record is already applied; the recap is the part that failed to load.
-      }
+      pendingSwitch.current = null;
+      setActionError("Could not stop the current session, so it is still running.");
       return false;
     } finally {
       inFlight.current = false;
       setSessionPending(false);
     }
-  }, [
-    applyStoppedSession,
-    captureReadiness,
-    clearSessionLiveSignals,
-    commitDefaultFocusMode,
-    focusMode,
-    refreshContextTimeline,
-    resetTimelineRefreshGate,
-    sessionGoal,
-    sessionId,
-    setActionError,
-    setLabelStatus,
-    setLabelStatusWarning,
-  ]);
+  }, [applyStoppedSession, focusMode, sessionGoal, sessionId, setActionError]);
 
   // "Keep this session": nothing native was touched, so just reset the draft.
   const cancelSwitch = useCallback(() => {
@@ -315,6 +281,34 @@ export const useSession = ({
     setSessionGoal(sessionRecord.goal);
     setFocusMode(normalizeFocusMode(sessionRecord.focusMode, focusMode));
   }, [focusMode, sessionRecord]);
+
+  const handleDiscardFragment = useCallback(async () => {
+    if (!sessionId || !recap || !isSessionFragment(recap)) return;
+    try {
+      await api.deleteSession(sessionId);
+      setRecap(null);
+      setAutoLabel(null);
+      setSavedSessionRating(null);
+      setSurveyPending(false);
+      setReflectionPending(false);
+      setReflectionSaved(false);
+      setSessionRecord(null);
+      setSessionId(null);
+      setLabelStatus("Discarded the short session.");
+      setLabelStatusWarning(false);
+      setActionError(null);
+      await continuePendingSwitch();
+    } catch {
+      setActionError("Could not discard the short session.");
+    }
+  }, [
+    continuePendingSwitch,
+    recap,
+    sessionId,
+    setActionError,
+    setLabelStatus,
+    setLabelStatusWarning,
+  ]);
 
   // Saves against the session that just ended (`sessionId` still names it).
   const handleSaveReflection = useCallback(
@@ -366,7 +360,8 @@ export const useSession = ({
     setSavedSessionRating(null);
     setLabelStatus("Skipped check-in.");
     setLabelStatusWarning(false);
-  }, [autoLabel, handleLabel, setLabelStatus, setLabelStatusWarning]);
+    await continuePendingSwitch();
+  }, [autoLabel, continuePendingSwitch, handleLabel, setLabelStatus, setLabelStatusWarning]);
 
   const handleChangeSessionRating = useCallback(() => {
     setSurveyPending(true);
@@ -374,6 +369,7 @@ export const useSession = ({
 
   const clearActivitySession = useCallback(() => {
     sessionGeneration.current += 1;
+    pendingSwitch.current = null;
     setLabelStatus(null);
     setLabelStatusWarning(false);
     setReflectionPending(false);
@@ -394,6 +390,7 @@ export const useSession = ({
     cancelSwitch,
     clearActivitySession,
     focusMode,
+    handleDiscardFragment,
     handleFocusModeChange,
     setDraftFocusMode,
     handleLabel,

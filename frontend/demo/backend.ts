@@ -823,7 +823,13 @@ export class DemoBackend {
         const rows = this.predictionsIn(range);
         const start = this.rangeStart(range);
         const sessions = this.data.sessions.filter((s) => s.startedAtMs >= start);
-        const completed = sessions.filter((s) => s.endedAtMs !== null);
+        const isFragment = (s: DemoSession) => {
+          if (s.endedAtMs === null) return false;
+          const durationSecs = Math.round((s.endedAtMs - s.startedAtMs) / 1000);
+          const samples = this.data.predictions.filter((p) => p.sessionId === s.sessionId).length;
+          return durationSecs < 60 && samples === 0;
+        };
+        const completed = sessions.filter((s) => s.endedAtMs !== null && !isFragment(s));
         const distracted = rows.filter((r) => r.focusState === "DISTRACTED").length;
         const counts = new Map<string, number>();
         for (const context of this.data.contexts) {
@@ -834,6 +840,7 @@ export class DemoBackend {
         const windowName = String(range?.window ?? "day");
         const attendedSeconds = sessions.reduce((sum, s) => sum + s.attendedSecs, 0);
         // Session time is completed wall-clock duration, never prediction-row estimates.
+        // Fragments stay listable in Session Explorer but do not inflate Review totals.
         const focusSeconds = completed.reduce((sum, s) => {
           const ended = s.endedAtMs ?? s.startedAtMs;
           return sum + Math.max(0, Math.round((ended - s.startedAtMs) / 1000));

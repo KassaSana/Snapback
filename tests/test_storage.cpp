@@ -2136,7 +2136,10 @@ TEST_CASE("SQL session-window totals match the summary loop they replaced") {
             const auto& session = summary.record;
             if (!session.started_at_ms || *session.started_at_ms < cutoff) continue;
             ++totals.session_count;
-            if (session.status == "COMPLETED") {
+            // Fragments stay listable but do not inflate completed/focus aggregates.
+            const bool fragment =
+                summary.recap.duration_secs < 60 && summary.recap.sample_count == 0;
+            if (session.status == "COMPLETED" && !fragment) {
                 ++totals.completed_session_count;
                 totals.focus_seconds += summary.recap.duration_secs;
             }
@@ -2163,6 +2166,21 @@ TEST_CASE("SQL session-window totals match the summary loop they replaced") {
     CHECK_FALSE(storage->session_window_totals(500, cutoff).limit_reached);
     CHECK_FALSE(storage->session_window_totals(in_window, cutoff).limit_reached);
     CHECK(storage->session_window_totals(in_window - 1, cutoff).limit_reached);
+}
+
+TEST_CASE("session-window totals exclude zero-sample sub-minute sessions from focus sums") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage.has_value());
+    const auto fragment = storage->create_session("oops", FocusMode::Normal);
+    storage->end_session(fragment.session_id);
+    const auto recap = storage->recap(fragment.session_id);
+    REQUIRE(recap.duration_secs < 60);
+    REQUIRE(recap.sample_count == 0);
+
+    const auto totals = storage->session_window_totals(500, 0);
+    CHECK(totals.session_count == 1);
+    CHECK(totals.completed_session_count == 0);
+    CHECK(totals.focus_seconds == 0);
 }
 
 TEST_CASE("the analytics aggregates run in a bounded number of queries") {

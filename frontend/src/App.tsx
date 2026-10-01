@@ -229,6 +229,7 @@ export default function App() {
     handleSkipReflection,
     handleSkipSurvey,
     handleChangeSessionRating,
+    handleDiscardFragment,
     handleStartSession,
     handleStopSession,
     handleSwitchSession,
@@ -654,6 +655,7 @@ export default function App() {
             autoLabel={autoLabel}
             handleLabel={handleLabel}
             handleSkipSurvey={handleSkipSurvey}
+            handleDiscardFragment={handleDiscardFragment}
             handleChangeSessionRating={handleChangeSessionRating}
             labelPending={labelPending}
             labelStatus={feedback.labelStatus}

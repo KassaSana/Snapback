@@ -235,3 +235,21 @@ console.log("demoBackend.test.ts passed");
   assert.equal(all.focusSeconds, 75);
   assert.equal(all.plannedMins, 0);
 }
+
+// Fragments (under 60s, no predictions) stay listable but do not inflate Review totals.
+{
+  let now = Date.now();
+  const demo = new DemoBackend(now, () => now);
+  demo.handle("delete_all_activity_data", {});
+  const session = demo.handle("start_session", { goal: "Oops" }) as { sessionId: string };
+  now += 15_000;
+  demo.handle("stop_session", { sessionId: session.sessionId });
+  const day = demo.handle("get_summary_report", { window: "day" }) as {
+    focusSeconds: number;
+    completedSessionCount: number;
+  };
+  assert.equal(day.completedSessionCount, 0);
+  assert.equal(day.focusSeconds, 0);
+  const history = demo.handle("get_session_history", { window: "day" }) as unknown[];
+  assert.equal(history.length, 1);
+}

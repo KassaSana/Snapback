@@ -2,12 +2,14 @@ import { memo } from "react";
 import { formatFocusStretch } from "./focusStreak";
 
 import { focusStateLabel, formatScore, sessionCheckInLabel, type FocusLabel, type SessionRecap } from "./api";
+import { isSessionFragment } from "./sessionFragment";
 import { SessionReflectionCard } from "./SessionReflectionCard";
 
 type SessionReviewCardsProps = {
   autoLabel: FocusLabel | null;
   handleLabel: (label: FocusLabel, source?: "manual" | "hotkey" | "survey" | "auto") => void | Promise<void>;
   handleSkipSurvey: () => void | Promise<void>;
+  handleDiscardFragment?: () => void | Promise<void>;
   handleChangeSessionRating?: () => void;
   labelPending?: boolean;
   labelStatus?: string | null;
@@ -26,6 +28,7 @@ export const SessionReviewCards = memo(function SessionReviewCards({
   autoLabel,
   handleLabel,
   handleSkipSurvey,
+  handleDiscardFragment,
   handleChangeSessionRating,
   labelPending = false,
   labelStatus = null,
@@ -38,22 +41,35 @@ export const SessionReviewCards = memo(function SessionReviewCards({
   handleSaveReflection,
   handleSkipReflection,
 }: SessionReviewCardsProps) {
+  const fragment = recap ? isSessionFragment(recap) : false;
+
   return (
     <>
       {surveyPending && recap ? (
         <section className="card survey-card">
           <div className="card-header">
             <h2>Session Check-in</h2>
-            <span className="pill">end of session</span>
+            <span className="pill">{fragment ? "short session" : "end of session"}</span>
           </div>
           <p className="helper-text">
-            {autoLabel
-              ? `Automatic label: ${focusStateLabel(autoLabel)}. Choose a different label if this feels wrong.`
-              : recap.sampleCount === 0
-                ? "No signal this session — no automatic label recorded. You can add your own rating or skip this check-in."
-                : "Automatic label unavailable. Choose a label, or skip this check-in."}
+            {fragment
+              ? "This session was under a minute with no readings. Discard it, or keep it and rate."
+              : autoLabel
+                ? `Automatic label: ${focusStateLabel(autoLabel)}. Choose a different label if this feels wrong.`
+                : recap.sampleCount === 0
+                  ? "No signal this session — no automatic label recorded. You can add your own rating or skip this check-in."
+                  : "Automatic label unavailable. Choose a label, or skip this check-in."}
           </p>
           <div className="button-row feedback-row">
+            {fragment && handleDiscardFragment ? (
+              <button
+                className="secondary-button"
+                disabled={labelPending}
+                onClick={() => void handleDiscardFragment()}
+              >
+                Discard
+              </button>
+            ) : null}
             <button className="secondary-button" disabled={labelPending} onClick={() => void handleLabel("DEEP_FOCUS", "survey")}>
               Deep
             </button>
@@ -70,7 +86,7 @@ export const SessionReviewCards = memo(function SessionReviewCards({
               Distracted
             </button>
             <button className="ghost-button" disabled={labelPending} onClick={() => void handleSkipSurvey()}>
-              {autoLabel ? `Keep ${focusStateLabel(autoLabel)}` : "Skip check-in"}
+              {fragment ? "Keep & skip rating" : autoLabel ? `Keep ${focusStateLabel(autoLabel)}` : "Skip check-in"}
             </button>
           </div>
         </section>

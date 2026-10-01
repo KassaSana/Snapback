@@ -1943,14 +1943,28 @@ Storage::SessionWindowTotals Storage::session_window_totals(std::size_t limit,
                                                             std::int64_t started_after_ms) {
     // ROUND before CAST, the same way recap() computes duration_secs — a truncating CAST on
     // julianday's double turns an exact hour into 3599 seconds.
+    // Fragments (under 60s wall clock with no predictions) stay in Session Explorer but do not
+    // inflate Review aggregates.
     Stmt stmt(db_,
               "WITH recent AS ("
-              "  SELECT status, started_at, ended_at FROM sessions"
+              "  SELECT session_id, status, started_at, ended_at FROM sessions"
               "  ORDER BY started_at DESC, session_id DESC LIMIT ?1"
               ") "
               "SELECT COUNT(*),"
-              "       COALESCE(SUM(status = 'COMPLETED'), 0),"
-              "       COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN"
+              "       COALESCE(SUM(CASE WHEN status = 'COMPLETED'"
+              "         AND NOT ("
+              "           CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000))"
+              "                - started_at) / 1000.0)) AS INTEGER) < 60"
+              "           AND NOT EXISTS (SELECT 1 FROM predictions p"
+              "                           WHERE p.session_id = recent.session_id)"
+              "         ) THEN 1 ELSE 0 END), 0),"
+              "       COALESCE(SUM(CASE WHEN status = 'COMPLETED'"
+              "         AND NOT ("
+              "           CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000))"
+              "                - started_at) / 1000.0)) AS INTEGER) < 60"
+              "           AND NOT EXISTS (SELECT 1 FROM predictions p"
+              "                           WHERE p.session_id = recent.session_id)"
+              "         ) THEN"
               "         CAST(ROUND(MAX(0, (COALESCE(ended_at, (strftime('%s','now') * 1000))"
               "              - started_at) / 1000.0)) AS INTEGER)"
               "         ELSE 0 END), 0),"

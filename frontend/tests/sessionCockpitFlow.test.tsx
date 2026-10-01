@@ -23,6 +23,8 @@ const boundary = vi.hoisted(() => {
     failStart: boolean;
     /** Started sessions so far; the first is `sess-42`, then `sess-43`, ... */
     started: number;
+    /** Stopped session was a fragment (under 1m, no samples). */
+    fragmentRecap: boolean;
   } = {
     health: {},
     settings: {},
@@ -30,6 +32,7 @@ const boundary = vi.hoisted(() => {
     holdStart: null,
     failStart: false,
     started: 0,
+    fragmentRecap: false,
   };
 
   const session = (overrides: Record<string, unknown> = {}) => ({
@@ -68,7 +71,25 @@ const boundary = vi.hoisted(() => {
           endedAtMs: Date.parse("2026-07-11T00:30:00Z"),
         });
       case "get_session_recap":
-        return { sessionId: "sess-42", goal: "Write tests", durationSecs: 1800 };
+        return state.fragmentRecap
+          ? {
+              sessionId: String(args?.sessionId ?? "sess-42"),
+              goal: "Write tests",
+              durationSecs: 20,
+              sampleCount: 0,
+            }
+          : {
+              sessionId: String(args?.sessionId ?? "sess-42"),
+              goal: "Write tests",
+              durationSecs: 1800,
+              sampleCount: 12,
+            };
+      case "get_session_auto_label":
+        return state.fragmentRecap ? null : "PRODUCTIVE";
+      case "submit_label":
+        return true;
+      case "delete_session":
+        return true;
       case "get_prediction_history":
       case "get_app_rules":
       case "get_context_timeline":
@@ -125,6 +146,7 @@ beforeEach(() => {
   boundary.state.holdStart = null;
   boundary.state.failStart = false;
   boundary.state.started = 0;
+  boundary.state.fragmentRecap = false;
 });
 
 afterEach(() => {
@@ -356,6 +378,13 @@ describe("session cockpit", () => {
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("stop_session", { sessionId: "sess-42" }),
     );
+    // Two-phase: check-in before the replacement starts.
+    expect(await screen.findByRole("heading", { name: "Session Check-in" })).toBeInTheDocument();
+    expect(boundary.invoke).not.toHaveBeenCalledWith(
+      "start_session",
+      expect.objectContaining({ goal: "Review the PR" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("start_session", {
         goal: "Review the PR",
@@ -410,13 +439,14 @@ describe("session cockpit", () => {
     fireEvent.change(goalField(), { target: { value: "Review the PR" } });
     fireEvent.click(within(card).getByRole("button", { name: "Stop and start this one" }));
 
-    // Storage completed the old session, so the UI says completed -- not "running" over a
-    // row that no longer is -- and explains which half happened.
-    await within(card).findByText("completed");
-    expect(await screen.findByText(/Stopped the previous session/)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Session Check-in" });
+    fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
+
+    // Storage completed the old session; the replacement start is what failed.
+    expect(await screen.findByText(/Could not start session/)).toBeInTheDocument();
     expect(within(card).queryByRole("button", { name: "Stop session" })).toBeNull();
 
-    // The switch interaction is over: the ordinary Start form is usable without a remount.
+    // The ordinary Start form is usable without a remount.
     boundary.state.failStart = false;
     expect((goalField() as HTMLInputElement).value).toBe("Review the PR");
     const start = within(card).getByRole("button", { name: "Start session" });
@@ -440,6 +470,8 @@ describe("session cockpit", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Start a different session" }));
     fireEvent.change(goalField(), { target: { value: "Review the PR" } });
     fireEvent.click(within(card).getByRole("button", { name: "Stop and start this one" }));
+    await screen.findByRole("heading", { name: "Session Check-in" });
+    fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
     await within(card).findByText("Review the PR");
     // The switch form closed on its own once the new session was running.
     await waitFor(() =>
@@ -460,6 +492,32 @@ describe("session cockpit", () => {
     await waitFor(() => expect(start).toBeEnabled());
     fireEvent.click(start);
     await waitFor(() => expect(startedSessions()).toBe(3));
+  });
+
+  it("offers Discard on a fragment and starts the pending switch after delete", async () => {
+    boundary.state.fragmentRecap = true;
+    render(<App />);
+    const card = await sessionCard();
+    fireEvent.change(goalField(), { target: { value: "Write tests" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
+    await within(card).findByText("running");
+
+    fireEvent.click(within(card).getByRole("button", { name: "Start a different session" }));
+    fireEvent.change(goalField(), { target: { value: "Review the PR" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Stop and start this one" }));
+
+    expect(await screen.findByText(/under a minute with no readings/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("delete_session", { sessionId: "sess-42" }),
+    );
+    await waitFor(() =>
+      expect(boundary.invoke).toHaveBeenCalledWith("start_session", {
+        goal: "Review the PR",
+        focusMode: "normal",
+      }),
+    );
+    await within(card).findByText("Review the PR");
   });
 
   it("navigates and selects goal suggestions via keyboard and mouse", async () => {

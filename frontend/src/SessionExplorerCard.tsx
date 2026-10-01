@@ -19,6 +19,7 @@ import { ContextTimeline } from "./ActivityCards";
 import { ChartDataTable } from "./ChartDataTable";
 import { formatFocusStretch } from "./focusStreak";
 import { FOCUS_MODE_LABELS, normalizeFocusMode, type FocusMode } from "./sessionCockpit";
+import { isSessionFragment } from "./sessionFragment";
 
 /** How many context rows the detail reads to rank apps. The native cap, so it is one call. */
 const CONTEXT_SAMPLE_LIMIT = 500;
@@ -200,8 +201,9 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
                           </span>
                           <span className="session-explorer-meta">
                             {formatTime(summary.record.startedAtMs)} · {FOCUS_MODE_LABELS[mode]} ·{" "}
-                            {formatFocusStretch(attendedSecs(summary))} · focus{" "}
-                            {Math.round(summary.recap.avgFocusScore)}
+                            {isSessionFragment(summary.recap)
+                              ? "fragment"
+                              : `${formatFocusStretch(attendedSecs(summary))} · focus ${Math.round(summary.recap.avgFocusScore)}`}
                           </span>
                         </button>
                       </li>
