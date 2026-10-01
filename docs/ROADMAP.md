@@ -639,13 +639,13 @@ internals, and the benchmark harness.
 - **7.27 — Define and test one capture-event contract across platforms.** `in progress` `M` for Windows +
   macOS; `L` including Linux
   Opened 2026-08-05. The extractor assumes `CaptureEvent` has portable meaning, but each
-  backend currently invents a different one. Windows treats every non-move mouse message as a
-  click, including button-up and wheel traffic. macOS writes mouse speed as zero. Linux maps
+  backend still differs. Windows counts button-down only and ignores release/wheel traffic;
+  its foreground context refreshes on a 500 ms timer. macOS writes mouse speed as zero. Linux maps
   every `EV_KEY` press, including mouse buttons, to `KeyPress`, leaves kinematics empty, and
   can query foreground context through `sh`/`xdotool`/`ps` inside the input loop.
 
   The result is model drift by operating system: macOS has effectively dead mouse features,
-  Windows over-counts clicks, and Linux can mix mouse buttons into typing while spawning work
+  Linux can mix mouse buttons into typing while spawning work
   proportional to input volume. **0.3** proved live macOS delivery and **11.3** starts after a
   normalized event already exists; neither tests this boundary.
 
@@ -1149,7 +1149,8 @@ small; the tier is large because nobody has walked that path yet.
   **Concrete persistence gap:** exceptions escaping the engine persistence phase are logged,
   but no durable failure state reaches `HealthStatus` and no retry policy stops the engine
   from repeating the same failed write. The frontend already has a `persistence-failed`
-  event shape. Wire the native state and event, degrade health truthfully, avoid a hot retry
+  event shape and active subscription in useAppEffects; the native emitter is absent.
+  Wire the native state and event, degrade health truthfully, avoid a hot retry
   loop, and test disk-full/locked failures.
 
   **Attendance recovery landed 2026-09-20.** `AppState::engine_tick` now keeps ordered span
