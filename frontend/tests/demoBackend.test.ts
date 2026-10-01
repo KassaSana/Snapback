@@ -269,7 +269,7 @@ console.log("demoBackend.test.ts passed");
   const previous = globalThis.localStorage;
   Object.defineProperty(globalThis, "localStorage", { value: memory, configurable: true });
   try {
-    let now = Date.now();
+    const now = Date.now();
     const first = new DemoBackend(now, () => now);
     first.handle("set_focus_mode", { mode: "recovery" });
     first.handle("set_idle_threshold", { seconds: 120 });
