@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the native boundary so the real api.ts + useSession run end to end.
@@ -37,7 +37,7 @@ const boundary = vi.hoisted(() => {
           endedAtMs: Date.parse("2026-07-11T00:30:00Z"),
         };
       case "get_session_recap":
-        return { sessionId: "sess-42", goal: "Write tests", durationSecs: 1800 };
+        return { sessionId: "sess-42", goal: "Write tests", durationSecs: 1800, sampleCount: state.autoLabel === null ? 0 : 12 };
       case "get_session_auto_label":
         if (state.autoLabelError) throw new Error("label read failed");
         return state.autoLabel;
@@ -65,6 +65,7 @@ const boundary = vi.hoisted(() => {
 vi.mock("../src/bridge", () => ({ invoke: boundary.invoke, listen: boundary.listen }));
 
 import App from "../src/App";
+import { api } from "../src/api";
 
 // Capture running so the first-run wizard stays out of the way.
 const healthyCaptureRunning = (): Record<string, unknown> => ({
@@ -93,6 +94,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("Session start/stop flow", () => {
@@ -268,4 +270,87 @@ describe("Session start/stop flow", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     await waitFor(() => expect(reviewCallCount()).toBe(8));
   });
+});
+
+async function stopTestSession() {
+  render(<App />);
+  await screen.findByRole("heading", { name: "Session Control" });
+  fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), { target: { value: "Write tests" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+  await screen.findByText("running");
+  fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
+  await screen.findByRole("heading", { name: "Session Check-in" });
+}
+
+it("records Keep as explicit survey agreement and confirms it in the recap", async () => {
+  await stopTestSession();
+  fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
+  await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("submit_label", {
+    request: { sessionId: "sess-42", label: "PRODUCTIVE", source: "survey", notes: "confirmed automatic label" },
+  }));
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
+  const recap = screen.getByRole("heading", { name: "Session Recap" }).closest("section")!;
+  expect(within(recap).getByRole("status")).toHaveTextContent("Session rating saved: Productive");
+  fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+  await screen.findByText("running");
+  expect(screen.queryByText("Session rating saved: Productive")).toBeNull();
+});
+
+it("keeps the check-in open after a failed agreement and permits retry", async () => {
+  await stopTestSession();
+  const submit = vi.spyOn(api, "submitLabel").mockRejectedValueOnce(new Error("disk busy"));
+  fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
+  expect(await screen.findByText("Could not save feedback. Try again.")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Session Check-in" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
+  expect(submit).toHaveBeenCalledTimes(2);
+});
+
+it("distinguishes no signal from measured zero and skips without writing feedback", async () => {
+  boundary.state.autoLabel = null;
+  await stopTestSession();
+  expect(screen.getByText(/No signal this session/)).toBeInTheDocument();
+  const recap = screen.getByRole("heading", { name: "Session Recap" }).closest("section")!;
+  expect(within(recap).getByText("No predictions recorded")).toBeInTheDocument();
+  expect(within(recap).getAllByText("—")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Skip check-in" }));
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
+  expect(boundary.invoke.mock.calls.filter(([cmd]) => cmd === "submit_label")).toHaveLength(0);
+});
+
+it("guards Settings live feedback after stopping a session", async () => {
+  await stopTestSession();
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
+  const card = screen.getByRole("heading", { name: "Focus Feedback" }).closest("section")!;
+  for (const button of within(card).getAllByRole("button")) {
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+  }
+  expect(boundary.invoke.mock.calls.filter(([cmd]) => cmd === "submit_label")).toHaveLength(0);
+});
+
+it("coalesces repeated Keep clicks while the survey save is pending", async () => {
+  await stopTestSession();
+  let resolve!: () => void;
+  const submit = vi.spyOn(api, "submitLabel").mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+  const keep = screen.getByRole("button", { name: "Keep Productive" });
+  fireEvent.click(keep);
+  fireEvent.click(keep);
+  expect(keep).toBeDisabled();
+  expect(submit).toHaveBeenCalledTimes(1);
+  await act(async () => resolve());
+  expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull();
+});
+
+it("does not paint an old feedback save into the replacement session", async () => {
+  await stopTestSession();
+  let resolve!: () => void;
+  vi.spyOn(api, "submitLabel").mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+  fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+  await screen.findByText("running");
+  await act(async () => resolve());
+  expect(screen.queryByText("Session rating saved: Productive")).toBeNull();
 });

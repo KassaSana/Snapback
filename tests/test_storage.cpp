@@ -1352,6 +1352,7 @@ TEST_CASE("Storage::infer_session_label maps recap thresholds") {
     deep.session_id = "s";
     deep.goal = "focus";
     deep.duration_secs = 3600;
+    deep.sample_count = 10;
     deep.avg_focus_score = 80.0;
     deep.avg_distraction_risk = 0.2;
     deep.snapback_count = 0;
@@ -1388,7 +1389,7 @@ TEST_CASE("Storage::save_auto_session_label writes an AUTO label from recap") {
     storage->insert_prediction(prediction(session.session_id, 85.0, 0.15, "DEEP_FOCUS"));
     storage->end_session(session.session_id);
 
-    const FocusLabel label = storage->save_auto_session_label(session.session_id);
+    const auto label = storage->save_auto_session_label(session.session_id);
     CHECK(label == FocusLabel::DeepFocus);
     CHECK(storage->session_auto_label(session.session_id) == FocusLabel::DeepFocus);
 
@@ -2926,4 +2927,44 @@ TEST_CASE("session_focus_curve slices one session's span and ignores every other
         CHECK(storage->session_focus_curve("no-such-session", 60).empty());
         CHECK(storage->session_focus_curve(session.session_id, 0).empty());
     }
+}
+
+TEST_CASE("empty sessions never infer or export an automatic label") {
+    TempDir temp;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage);
+    const auto session = storage->create_session("No input", FocusMode::Normal);
+    storage->end_session(session.session_id);
+    const auto recap = storage->recap(session.session_id);
+    CHECK(recap.sample_count == 0);
+    CHECK_FALSE(Storage::infer_session_label(recap));
+    CHECK_FALSE(storage->save_auto_session_label(session.session_id));
+    CHECK_FALSE(storage->save_auto_session_label(session.session_id));
+    CHECK_FALSE(storage->session_auto_label(session.session_id));
+    CHECK(storage->export_training_csv(temp.path / "empty", session.session_id).label_count == 0);
+    const auto history = storage->recent_session_summaries(10);
+    REQUIRE(history.size() == 1);
+    CHECK(history.front().recap.sample_count == 0);
+    // A user's own judgment is still valid when the recorder observed nothing.
+    storage->insert_label(session.session_id, FocusLabel::Distracted, "survey");
+    CHECK(storage->export_training_csv(temp.path / "survey", session.session_id).label_count == 1);
+    storage.reset();
+    storage = Storage::open(temp.path);
+    REQUIRE(storage);
+    CHECK_FALSE(storage->session_auto_label(session.session_id));
+}
+
+TEST_CASE("measured zero focus remains distinct from an empty recap") {
+    auto storage = Storage::open_memory();
+    REQUIRE(storage);
+    const auto session = storage->create_session("Measured distraction", FocusMode::Normal);
+    storage->insert_prediction(prediction(session.session_id, 0.0, 0.9, "DISTRACTED"));
+    storage->end_session(session.session_id);
+    const auto recap = storage->recap(session.session_id);
+    CHECK(recap.sample_count == 1);
+    CHECK(recap.avg_focus_score == 0.0);
+    CHECK(storage->save_auto_session_label(session.session_id) == FocusLabel::Distracted);
+    CHECK(storage->recent_session_summaries(10).front().recap.sample_count == 1);
+    const nlohmann::json wire = recap;
+    CHECK(wire.at("sampleCount") == 1);
 }

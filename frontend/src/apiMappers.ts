@@ -402,6 +402,7 @@ export function mapSessionRecap(raw: Record<string, unknown>): SessionRecap {
     durationSecs: Number(raw.durationSecs ?? 0),
     // Not `?? 0`: null means "not measured".
     activeSecs: activeSecsOf(raw),
+    sampleCount: raw.sampleCount == null ? null : Number(raw.sampleCount),
     avgFocusScore: Number(raw.avgFocusScore ?? 0),
     avgDistractionRisk: Number(raw.avgDistractionRisk ?? 0),
     snapbackCount: Number(raw.snapbackCount ?? 0),

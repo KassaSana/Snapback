@@ -3,6 +3,7 @@ import { memo } from "react";
 import type { FocusLabel } from "./api";
 
 type FocusFeedbackCardProps = {
+  sessionActive: boolean;
   handleLabel: (label: FocusLabel) => void | Promise<void>;
   labelStatus: string | null;
   labelStatusWarning: boolean;
@@ -11,6 +12,7 @@ type FocusFeedbackCardProps = {
 // Labelling the current moment. Training/deploy is developer tooling (ADR-0006) and lives
 // elsewhere.
 export const FocusFeedbackCard = memo(function FocusFeedbackCard({
+  sessionActive,
   handleLabel,
   labelStatus,
   labelStatusWarning,
@@ -25,20 +27,21 @@ export const FocusFeedbackCard = memo(function FocusFeedbackCard({
         Was that moment actually focused? Use these controls to label it while a session is
         active.
       </p>
+      {!sessionActive ? <p className="helper-text">Start a session to save live feedback.</p> : null}
       <div className="button-row feedback-row">
-        <button className="secondary-button" onClick={() => void handleLabel("DEEP_FOCUS")}>
+        <button className="secondary-button" disabled={!sessionActive} onClick={() => void handleLabel("DEEP_FOCUS")}>
           Deep
         </button>
-        <button className="secondary-button" onClick={() => void handleLabel("PRODUCTIVE")}>
+        <button className="secondary-button" disabled={!sessionActive} onClick={() => void handleLabel("PRODUCTIVE")}>
           Focused
         </button>
         <button
-          className="secondary-button"
+          className="secondary-button" disabled={!sessionActive}
           onClick={() => void handleLabel("PSEUDO_PRODUCTIVE")}
         >
           Drift
         </button>
-        <button className="secondary-button" onClick={() => void handleLabel("DISTRACTED")}>
+        <button className="secondary-button" disabled={!sessionActive} onClick={() => void handleLabel("DISTRACTED")}>
           Distracted
         </button>
       </div>

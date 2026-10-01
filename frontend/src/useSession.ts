@@ -49,6 +49,9 @@ export const useSession = ({
   // so Enter or a double click cannot start two sessions.
   const [sessionPending, setSessionPending] = useState(false);
   const inFlight = useRef(false);
+  const labelInFlight = useRef(false);
+  const sessionGeneration = useRef(0);
+  const [labelPending, setLabelPending] = useState(false);
 
   const hydrateActiveSession = useCallback(async () => {
     const [settings, active] = await Promise.all([
@@ -81,13 +84,18 @@ export const useSession = ({
 
   const handleLabel = useCallback(
     async (label: FocusLabel, source: LabelSource = "manual", notes?: string) => {
-      if (!sessionId) {
-        setLabelStatus("Start a session to save feedback.");
+      if (!sessionId || (source !== "survey" && sessionRecord?.endedAtMs !== null)) {
+        setLabelStatus("Start a session to save live feedback.");
         return;
       }
 
+      if (labelInFlight.current) return;
+      labelInFlight.current = true;
+      setLabelPending(true);
+      const generation = sessionGeneration.current;
       try {
         await api.submitLabel(sessionId, label, notes, source);
+        if (generation !== sessionGeneration.current) return;
         const prefix =
           source === "hotkey"
             ? "Hotkey saved"
@@ -100,11 +108,15 @@ export const useSession = ({
           setSurveyPending(false);
         }
       } catch {
-        setLabelStatus("Could not save feedback.");
+        if (generation !== sessionGeneration.current) return;
+        setLabelStatus("Could not save feedback. Try again.");
         setLabelStatusWarning(true);
+      } finally {
+        labelInFlight.current = false;
+        setLabelPending(false);
       }
     },
-    [sessionId, setLabelStatus, setLabelStatusWarning],
+    [sessionId, sessionRecord, setLabelStatus, setLabelStatusWarning],
   );
 
   const handleStartNamedSession = useCallback(
@@ -121,8 +133,13 @@ export const useSession = ({
       try {
         setFocusMode(mode);
         const record = await api.startSession(goal, mode);
+        sessionGeneration.current += 1;
         setSessionRecord(record);
         setSessionId(record.sessionId);
+        setLabelStatus(null);
+        setLabelStatusWarning(false);
+        setReflectionPending(false);
+        setReflectionSaved(false);
         setSessionGoal(record.goal);
         setRecap(null);
         setAutoLabel(null);
@@ -154,6 +171,8 @@ export const useSession = ({
       refreshContextTimeline,
       resetTimelineRefreshGate,
       setActionError,
+      setLabelStatus,
+      setLabelStatusWarning,
     ],
   );
 
@@ -238,8 +257,13 @@ export const useSession = ({
 
     try {
       const record = await api.startSession(goal, focusMode);
+      sessionGeneration.current += 1;
       setSessionRecord(record);
       setSessionId(record.sessionId);
+      setLabelStatus(null);
+      setLabelStatusWarning(false);
+      setReflectionPending(false);
+      setReflectionSaved(false);
       setSessionGoal(record.goal);
       setRecap(null);
       setAutoLabel(null);
@@ -276,6 +300,8 @@ export const useSession = ({
     sessionGoal,
     sessionId,
     setActionError,
+    setLabelStatus,
+    setLabelStatusWarning,
   ]);
 
   // "Keep this session": nothing native was touched, so just reset the draft.
@@ -326,13 +352,22 @@ export const useSession = ({
     [setActionError],
   );
 
-  const handleSkipSurvey = useCallback(() => {
+  const handleSkipSurvey = useCallback(async () => {
+    if (autoLabel) {
+      await handleLabel(autoLabel, "survey", "confirmed automatic label");
+      return;
+    }
     setSurveyPending(false);
-    setLabelStatus(autoLabel ? `Kept automatic label: ${focusStateLabel(autoLabel)}.` : "Skipped check-in.");
+    setLabelStatus("Skipped check-in.");
     setLabelStatusWarning(false);
-  }, [autoLabel, setLabelStatus, setLabelStatusWarning]);
+  }, [autoLabel, handleLabel, setLabelStatus, setLabelStatusWarning]);
 
   const clearActivitySession = useCallback(() => {
+    sessionGeneration.current += 1;
+    setLabelStatus(null);
+    setLabelStatusWarning(false);
+    setReflectionPending(false);
+    setReflectionSaved(false);
     setSessionGoal("");
     setSessionRecord(null);
     setSessionId(null);
@@ -341,7 +376,7 @@ export const useSession = ({
     setSurveyPending(false);
     resetTimelineRefreshGate();
     void refreshContextTimeline(null);
-  }, [refreshContextTimeline, resetTimelineRefreshGate]);
+  }, [refreshContextTimeline, resetTimelineRefreshGate, setLabelStatus, setLabelStatusWarning]);
 
   const sessionStatusLabel = useMemo(
     () => (sessionRecord ? sessionRecord.status.toLowerCase() : "idle"),
@@ -365,6 +400,7 @@ export const useSession = ({
     handleSwitchSession,
     hydrateActiveSession,
     sessionPending,
+    labelPending,
     recap,
     sessionGoal,
     sessionId,

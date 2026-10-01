@@ -12,6 +12,7 @@ describe("FocusFeedbackCard", () => {
     const handleLabel = vi.fn();
     render(
       <FocusFeedbackCard
+        sessionActive
         handleLabel={handleLabel}
         labelStatus="Saved."
         labelStatusWarning={false}
@@ -27,6 +28,7 @@ describe("FocusFeedbackCard", () => {
   it("marks warning status", () => {
     render(
       <FocusFeedbackCard
+        sessionActive
         handleLabel={() => undefined}
         labelStatus="Could not save."
         labelStatusWarning
@@ -34,4 +36,15 @@ describe("FocusFeedbackCard", () => {
     );
     expect(screen.getByText("Could not save.")).toHaveClass("alert");
   });
+});
+
+it("disables live feedback without an active session", () => {
+  const handleLabel = vi.fn();
+  render(<FocusFeedbackCard sessionActive={false} handleLabel={handleLabel} labelStatus={null} labelStatusWarning={false} />);
+  for (const button of screen.getAllByRole("button")) {
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+  }
+  expect(handleLabel).not.toHaveBeenCalled();
+  expect(screen.getByText("Start a session to save live feedback.")).toBeInTheDocument();
 });

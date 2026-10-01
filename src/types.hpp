@@ -208,6 +208,7 @@ struct SessionRecap {
     // Time actually present, summed from session_spans (ADR-0005). nullopt means never measured
     // (not zero), so readers fall back to duration_secs.
     std::optional<std::uint64_t> active_secs;
+    std::uint64_t sample_count{};
     double avg_focus_score{};
     double avg_distraction_risk{};
     std::uint32_t snapback_count{};

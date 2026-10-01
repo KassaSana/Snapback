@@ -63,3 +63,31 @@ for (const command of [
 }
 
 console.log("demoBackend.test.ts passed");
+
+// Newly opened demo sessions have no generated observations until input is simulated.
+{
+  const demo = backend();
+  const session = demo.handle("start_session", { goal: "No signal", focusMode: "normal" }) as Record<string, unknown>;
+  demo.handle("stop_session", { sessionId: session.sessionId });
+  const recap = demo.handle("get_session_recap", { sessionId: session.sessionId }) as Record<string, unknown>;
+  assert.equal(recap.sampleCount, 0);
+  assert.equal(demo.handle("get_session_auto_label", { sessionId: session.sessionId }), null);
+  demo.handle("stop_session", { sessionId: session.sessionId });
+  assert.equal(demo.handle("get_session_auto_label", { sessionId: session.sessionId }), null);
+}
+
+{
+  const demo = backend();
+  const session = demo.handle("start_session", { goal: "Feedback", focusMode: "normal" }) as Record<string, unknown>;
+  const request = { sessionId: session.sessionId, label: "PRODUCTIVE", source: "manual" };
+  demo.handle("submit_label", { request });
+  demo.handle("stop_session", { sessionId: session.sessionId });
+  assert.throws(() => demo.handle("submit_label", { request }), /Start a session/);
+  demo.handle("submit_label", { request: { ...request, source: "survey", notes: "confirmed automatic label" } });
+  const logs = () => (demo.handle("get_diagnostics", {}) as { recentLogs: string[] }).recentLogs.join("\n");
+  assert.match(logs(), /2 feedback submissions retained/);
+  assert.throws(() => demo.handle("submit_label", { request: { ...request, source: "survey", label: "INVENTED" } }), /Unknown focus label/);
+  demo.handle("delete_session", { sessionId: session.sessionId });
+  assert.match(logs(), /0 feedback submissions retained/);
+  assert.throws(() => demo.handle("submit_label", { request: { ...request, source: "survey" } }), /No such session/);
+}

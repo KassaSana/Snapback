@@ -1192,6 +1192,7 @@ TEST_CASE("replacing a session writes the same automatic label a stop would") {
     AppState state(std::move(*storage), {}, nullptr, &clock);
 
     const auto first = state.start_session("replaced", FocusMode::Normal);
+    AppStateTestAccess::process_event(state, ev(EventType::KeyPress, 1.0));
     state.start_session("replacement", FocusMode::Normal);
 
     TempDir temp;
@@ -1211,6 +1212,7 @@ TEST_CASE("stopping twice does not append a second automatic label") {
     AppState state(std::move(*storage), {}, nullptr, &clock);
 
     const auto session = state.start_session("stop me twice", FocusMode::Normal);
+    AppStateTestAccess::process_event(state, ev(EventType::KeyPress, 1.0));
     state.stop_session(session.session_id);
     state.stop_session(session.session_id);
     state.stop_session(session.session_id);
@@ -1423,10 +1425,10 @@ TEST_CASE("AppState starts and stops sessions through storage") {
 
     TempDir temp;
     const auto exported = state->export_training_data(temp.path, session.session_id);
-    CHECK(exported.label_count == 1);
+    CHECK(exported.label_count == 0);
     const auto labels = read_file(temp.path / "labels.csv");
-    CHECK(labels.find(",auto,") != std::string::npos);
-    CHECK(labels.find("inferred from session recap") != std::string::npos);
+    CHECK(labels.find(",auto,") == std::string::npos);
+    CHECK(labels.find("inferred from session recap") == std::string::npos);
 }
 
 TEST_CASE("AppState saves an automatic label when stopping the active session") {
@@ -4873,4 +4875,44 @@ TEST_CASE("queued persistence health survives activity deletion and session repl
     CHECK(state.frontend_event_is_current(recovered->first, recovered->second));
     CHECK_FALSE(state.frontend_event_is_current("snapback", recovered->second));
     state.set_emit_hook(nullptr);
+}
+
+TEST_CASE("stopping or replacing an unmeasured session writes no automatic training label") {
+    auto state = make_state();
+    const auto stopped = state->start_session("Empty stop", FocusMode::Normal);
+    state->stop_session(stopped.session_id);
+    state->stop_session(stopped.session_id);
+    CHECK_FALSE(state->session_auto_label(stopped.session_id));
+    const auto replaced = state->start_session("Empty replacement", FocusMode::Normal);
+    state->start_session("Next", FocusMode::Deep);
+    CHECK_FALSE(state->session_auto_label(replaced.session_id));
+    TempDir temp;
+    CHECK(state->export_training_data(temp.path / "stopped", stopped.session_id).label_count == 0);
+    CHECK(state->export_training_data(temp.path / "replaced", replaced.session_id).label_count == 0);
+}
+
+TEST_CASE("explicit session judgment exports a survey label even without sensor data") {
+    auto state = make_state();
+    const auto session = state->start_session("Self assessment", FocusMode::Normal);
+    state->stop_session(session.session_id);
+    state->submit_label(session.session_id, FocusLabel::Productive, "survey", "self-reported focus");
+    TempDir temp;
+    CHECK(state->export_training_data(temp.path, session.session_id).label_count == 1);
+    CHECK(read_file(temp.path / "labels.csv").find(",survey,") != std::string::npos);
+    CHECK_FALSE(state->session_auto_label(session.session_id));
+}
+
+TEST_CASE("confirming the automatic label exports an explicit survey agreement") {
+    auto state = make_state();
+    const auto session = state->start_session("Confirm measurement", FocusMode::Normal);
+    AppStateTestAccess::process_event(*state, ev(EventType::KeyPress, 1.0));
+    state->stop_session(session.session_id);
+    const auto automatic = state->session_auto_label(session.session_id);
+    REQUIRE(automatic);
+    state->submit_label(session.session_id, *automatic, "survey", "confirmed automatic label");
+    TempDir temp;
+    CHECK(state->export_training_data(temp.path, session.session_id).label_count == 2);
+    const auto labels = read_file(temp.path / "labels.csv");
+    CHECK(labels.find(",survey,") != std::string::npos);
+    CHECK(labels.find("confirmed automatic label") != std::string::npos);
 }

@@ -42,6 +42,7 @@ export default function DemoBanner() {
     <div style={wrap}>
       <span style={tag}>Demo</span>
       <span>Every number on this page is generated sample data.</span>
+      <span style={muted}>Demo sessions and feedback reset on reload.</span>
       <span style={muted}>
         Snapback reads the active window and input idle time from the operating system, which a
         browser tab cannot do — so the real app is a desktop build.

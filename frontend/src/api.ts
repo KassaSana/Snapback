@@ -209,6 +209,8 @@ export type SessionRecap = {
    * they were present for none of a session that predates the feature.
    */
   activeSecs: number | null;
+  /** Absent/null for older bridges; zero means no predictions were recorded. */
+  sampleCount?: number | null;
   avgFocusScore: number;
   avgDistractionRisk: number;
   snapbackCount: number;

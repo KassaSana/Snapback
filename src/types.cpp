@@ -153,6 +153,7 @@ void to_json(json& j, const SessionRecap& v) {
              // null rather than 0 when unmeasured, so the UI can tell "we did not track this
              // session" from "the user was present for none of it".
              {"activeSecs", v.active_secs ? json(*v.active_secs) : json(nullptr)},
+             {"sampleCount", v.sample_count},
              {"avgFocusScore", v.avg_focus_score},
              {"avgDistractionRisk", v.avg_distraction_risk},
              {"snapbackCount", v.snapback_count},

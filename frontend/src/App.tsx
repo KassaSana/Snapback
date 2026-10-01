@@ -243,6 +243,7 @@ export default function App() {
     sessionGoal,
     sessionId,
     sessionPending,
+    labelPending,
     sessionRecord,
     setSessionGoal,
     reflectionPending,
@@ -625,6 +626,9 @@ export default function App() {
             autoLabel={autoLabel}
             handleLabel={handleLabel}
             handleSkipSurvey={handleSkipSurvey}
+            labelPending={labelPending}
+            labelStatus={feedback.labelStatus}
+            labelStatusWarning={feedback.labelStatusWarning}
             recap={recap}
             surveyPending={surveyPending}
             reflectionPending={reflectionPending}
@@ -789,6 +793,7 @@ export default function App() {
         {settingsSection === "focus" && (
           <>
             <FocusFeedbackCard
+              sessionActive={sessionActive}
               handleLabel={handleLabel}
               labelStatus={feedback.labelStatus}
               labelStatusWarning={feedback.labelStatusWarning}

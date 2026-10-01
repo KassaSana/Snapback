@@ -852,7 +852,9 @@ No open items. Completed work is in the [archive](roadmap_archive.md).
   Search, filters, pagination, and the label ledger remain open.
 
 
-- **2.17 — Give feedback an authoritative, editable label ledger.** `proposed` `M/L`
+- **2.17 — Give feedback an authoritative, editable label ledger.** `in progress` `M/L`
+  **Progress 2026-10-01:** Limited labeling-trust fixes: empty native/demo sessions no longer infer an automatic label or create a new automatic training row. Recaps carry sampleCount and distinguish no predictions from measured zero. Keep submits an explicit survey agreement, confirms successful saves in the recap, retains the check-in on failure, and coalesces pending clicks. Live Settings feedback is disabled without an active session; new-session state and older save responses cannot leak prior feedback. The demo retains feedback in memory for the current visit, clears it on deletion, and discloses reload reset. Existing historical rows are preserved. Remaining: authoritative scope/precedence, effective-label exports, editable Review ratings, supersession, persistent submission idempotence, and migration of existing conflicts.
+
   Opened 2026-08-05. Auto labels, the end-session check-in, and live verdict corrections all
   call append-only `insert_label()`. There is no list/update/supersede command, live feedback
   is attached only to a session rather than an exact prediction, and training export writes

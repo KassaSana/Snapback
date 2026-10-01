@@ -1519,7 +1519,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
                   "COALESCE(AVG(p.distraction_risk), 0), "
                   "COALESCE(100.0 * SUM(CASE WHEN p.focus_state = 'DEEP_FOCUS' THEN 1 ELSE 0 END) / "
                   "NULLIF(COUNT(*), 0), 0), "
-                  "SUM(CASE WHEN p.distraction_risk >= 0.7 THEN 1 ELSE 0 END) "
+                  "SUM(CASE WHEN p.distraction_risk >= 0.7 THEN 1 ELSE 0 END), COUNT(*) "
                   "FROM predictions p JOIN recent r ON p.session_id = r.session_id "
                   "GROUP BY p.session_id");
         stmt.bind(1, static_cast<std::int64_t>(limit));
@@ -1536,6 +1536,7 @@ std::vector<SessionSummary> Storage::recent_session_summaries(
             recap.avg_distraction_risk = sqlite3_column_double(stmt.get(), 2);
             recap.deep_focus_pct = sqlite3_column_double(stmt.get(), 3);
             recap.thrash_spikes = static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 4));
+            recap.sample_count = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 5));
         }
     }
 
@@ -2081,13 +2082,14 @@ SessionRecap Storage::recap(const std::string& session_id) {
                   "SELECT COALESCE(AVG(focus_score), 0), "
                   "COALESCE(AVG(distraction_risk), 0), "
                   "COALESCE(100.0 * SUM(CASE WHEN focus_state = 'DEEP_FOCUS' THEN 1 ELSE 0 END) / "
-                  "NULLIF(COUNT(*), 0), 0) "
+                  "NULLIF(COUNT(*), 0), 0), COUNT(*) "
                   "FROM predictions WHERE session_id = ?1");
         stmt.bind(1, session_id);
         if (stmt.step_row()) {
             out.avg_focus_score = sqlite3_column_double(stmt.get(), 0);
             out.avg_distraction_risk = sqlite3_column_double(stmt.get(), 1);
             out.deep_focus_pct = sqlite3_column_double(stmt.get(), 2);
+            out.sample_count = static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 3));
         }
     }
 
@@ -2111,7 +2113,8 @@ SessionRecap Storage::recap(const std::string& session_id) {
     return out;
 }
 
-FocusLabel Storage::infer_session_label(const SessionRecap& recap) {
+std::optional<FocusLabel> Storage::infer_session_label(const SessionRecap& recap) {
+    if (recap.sample_count == 0) return std::nullopt;
     if (recap.deep_focus_pct >= 50.0 && recap.avg_distraction_risk < 0.35) {
         return FocusLabel::DeepFocus;
     }
@@ -2124,14 +2127,15 @@ FocusLabel Storage::infer_session_label(const SessionRecap& recap) {
     return FocusLabel::Productive;
 }
 
-FocusLabel Storage::save_auto_session_label(const std::string& session_id) {
+std::optional<FocusLabel> Storage::save_auto_session_label(const std::string& session_id) {
     // One automatic label per session: the labels table is append-only, so a duplicate could
     // never be cleaned up. The existing label wins; it is the one the user saw.
     if (const auto existing = session_auto_label(session_id)) return *existing;
 
     const SessionRecap session_recap = recap(session_id);
-    const FocusLabel label = infer_session_label(session_recap);
-    insert_label(session_id, label, label_source_as_str(LabelSource::Auto),
+    const auto label = infer_session_label(session_recap);
+    if (!label) return std::nullopt;
+    insert_label(session_id, *label, label_source_as_str(LabelSource::Auto),
                  std::string("inferred from session recap"));
     return label;
 }

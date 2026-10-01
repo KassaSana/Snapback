@@ -7,7 +7,10 @@ import { SessionReflectionCard } from "./SessionReflectionCard";
 type SessionReviewCardsProps = {
   autoLabel: FocusLabel | null;
   handleLabel: (label: FocusLabel, source?: "manual" | "hotkey" | "survey" | "auto") => void | Promise<void>;
-  handleSkipSurvey: () => void;
+  handleSkipSurvey: () => void | Promise<void>;
+  labelPending?: boolean;
+  labelStatus?: string | null;
+  labelStatusWarning?: boolean;
   recap: SessionRecap | null;
   surveyPending: boolean;
   // Shown with the check-in; closed by saving or skipping.
@@ -21,6 +24,9 @@ export const SessionReviewCards = memo(function SessionReviewCards({
   autoLabel,
   handleLabel,
   handleSkipSurvey,
+  labelPending = false,
+  labelStatus = null,
+  labelStatusWarning = false,
   recap,
   surveyPending,
   reflectionPending,
@@ -39,25 +45,27 @@ export const SessionReviewCards = memo(function SessionReviewCards({
           <p className="helper-text">
             {autoLabel
               ? `Automatic label: ${focusStateLabel(autoLabel)}. Choose a different label if this feels wrong.`
-              : "Automatic label unavailable. Choose a label, or skip this check-in."}
+              : recap.sampleCount === 0
+                ? "No signal this session — no automatic label recorded. You can add your own rating or skip this check-in."
+                : "Automatic label unavailable. Choose a label, or skip this check-in."}
           </p>
           <div className="button-row feedback-row">
-            <button className="secondary-button" onClick={() => void handleLabel("DEEP_FOCUS", "survey")}>
+            <button className="secondary-button" disabled={labelPending} onClick={() => void handleLabel("DEEP_FOCUS", "survey")}>
               Deep
             </button>
-            <button className="secondary-button" onClick={() => void handleLabel("PRODUCTIVE", "survey")}>
+            <button className="secondary-button" disabled={labelPending} onClick={() => void handleLabel("PRODUCTIVE", "survey")}>
               Focused
             </button>
             <button
-              className="secondary-button"
+              className="secondary-button" disabled={labelPending}
               onClick={() => void handleLabel("PSEUDO_PRODUCTIVE", "survey")}
             >
               Drift
             </button>
-            <button className="secondary-button" onClick={() => void handleLabel("DISTRACTED", "survey")}>
+            <button className="secondary-button" disabled={labelPending} onClick={() => void handleLabel("DISTRACTED", "survey")}>
               Distracted
             </button>
-            <button className="ghost-button" onClick={handleSkipSurvey}>
+            <button className="ghost-button" disabled={labelPending} onClick={() => void handleSkipSurvey()}>
               {autoLabel ? `Keep ${focusStateLabel(autoLabel)}` : "Skip check-in"}
             </button>
           </div>
@@ -78,6 +86,11 @@ export const SessionReviewCards = memo(function SessionReviewCards({
             <h2>Session Recap</h2>
             <span className="pill">summary</span>
           </div>
+          {labelStatus && (!surveyPending || labelStatusWarning) ? (
+            <p role={labelStatusWarning ? "alert" : "status"} className={`helper-text${labelStatusWarning ? " alert" : ""}`}>
+              {labelStatus}
+            </p>
+          ) : null}
           <div className="meta">
             <div>
               {/*
@@ -94,11 +107,12 @@ export const SessionReviewCards = memo(function SessionReviewCards({
             </div>
             <div>
               <p className="meta-label">Avg focus</p>
-              <p className="meta-value">{formatScore(recap.avgFocusScore)}</p>
+              <p className="meta-value">{recap.sampleCount === 0 ? "—" : formatScore(recap.avgFocusScore)}</p>
+              {recap.sampleCount === 0 ? <p className="meta-sub">No predictions recorded</p> : null}
             </div>
             <div>
               <p className="meta-label">Deep work</p>
-              <p className="meta-value">{recap.deepFocusPct.toFixed(0)}%</p>
+              <p className="meta-value">{recap.sampleCount === 0 ? "—" : `${recap.deepFocusPct.toFixed(0)}%`}</p>
             </div>
             <div>
               <p className="meta-label">Snapbacks</p>

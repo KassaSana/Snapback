@@ -29,6 +29,7 @@ export class DemoBackend {
   private data: DemoDataset;
   private activeSessionId: string | null = null;
   private autoLabels = new Map<string, string>();
+  private feedbackLabels: { sessionId: string; label: string; source: string; notes: string | null }[] = [];
   private nextRuleId = 4;
   private counter = 0;
 
@@ -175,6 +176,7 @@ export class DemoBackend {
       goal: session.goal,
       durationSecs: Math.round((end - session.startedAtMs) / 1000),
       activeSecs: session.attendedSecs,
+      sampleCount: rows.length,
       avgFocusScore: Math.round(avg((r) => r.focusScore)),
       // Stays on the 0-1 scale: the Review cards run it through formatPercent.
       avgDistractionRisk: unit(avg((r) => r.distractionRisk)),
@@ -342,6 +344,7 @@ export class DemoBackend {
           recentLogs: [
             "demo: dataset generated in the browser",
             "demo: no capture backend is attached",
+            `demo: ${this.feedbackLabels.length} feedback submissions retained for this visit`,
             "demo: every number below is derived from the generated rows",
           ],
           supportBundlePrivacyNotice:
@@ -467,7 +470,8 @@ export class DemoBackend {
         session.endedAtMs = this.now();
         session.attendedSecs = Math.round((session.endedAtMs - session.startedAtMs) / 1000);
         if (this.activeSessionId === session.sessionId) this.activeSessionId = null;
-        if (!this.autoLabels.has(session.sessionId)) {
+        if (!this.autoLabels.has(session.sessionId) &&
+            this.data.predictions.some((row) => row.sessionId === session.sessionId)) {
           const recap = this.recapOf(session);
           const risk = Number(recap.avgDistractionRisk);
           const spikes = Number(recap.thrashSpikes);
@@ -556,6 +560,9 @@ export class DemoBackend {
         this.data.predictions = this.data.predictions.filter((p) => p.sessionId !== id);
         this.data.contexts = this.data.contexts.filter((c) => c.sessionId !== id);
         this.data.episodes = this.data.episodes.filter((episode) => episode.sessionId !== id);
+        this.feedbackLabels = this.feedbackLabels.filter((label) => label.sessionId !== id);
+        this.autoLabels.delete(id);
+        if (this.activeSessionId === id) this.activeSessionId = null;
         return this.data.sessions.length < before;
       }
 
@@ -775,6 +782,8 @@ export class DemoBackend {
         this.data.predictions = [];
         this.data.contexts = [];
         this.data.episodes = [];
+        this.feedbackLabels = [];
+        this.autoLabels.clear();
         this.activeSessionId = null;
         return {
           deleted: ["sessions", "predictions", "context snapshots"],
@@ -897,7 +906,22 @@ export class DemoBackend {
           message: "File pickers are disabled in the browser demo.",
         };
 
-      case "submit_label":
+      case "submit_label": {
+        const request = (args.request ?? {}) as Json;
+        const sessionId = String(request.sessionId ?? "");
+        const session = this.session(sessionId);
+        if (!session) throw new Error("No such session");
+        const label = String(request.label ?? "");
+        const source = String(request.source ?? "manual");
+        if (!["DEEP_FOCUS", "PRODUCTIVE", "PSEUDO_PRODUCTIVE", "DISTRACTED"].includes(label))
+          throw new Error("Unknown focus label");
+        if (!["manual", "hotkey", "survey", "auto"].includes(source))
+          throw new Error("Unknown label source");
+        if ((source === "manual" || source === "hotkey") && this.activeSessionId !== sessionId)
+          throw new Error("Start a session to save live feedback.");
+        this.feedbackLabels.push({ sessionId, label, source, notes: request.notes == null ? null : String(request.notes) });
+        return null;
+      }
       case "dismiss_snapback":
       case "dismiss_untracked_nudge":
         return null;
