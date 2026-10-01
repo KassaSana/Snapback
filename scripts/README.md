@@ -5,6 +5,7 @@ on Windows tooling, while the shell wrappers cover macOS and Linux.
 
 | Script | Runs on | What it does |
 |--------|---------|--------------|
+| `verify.py` | any OS | Canonical headless verification; `guards` is shared with Ubuntu CI, and `native` / `frontend-unit` / `frontend-component` run focused tests |
 | `test_local.sh` | macOS, Linux | Headless C++ suite + frontend typecheck/test/build |
 | `test_local.ps1` | Windows | Same, plus optional `-IncludeWindowsDemo` |
 | `run_benchmarks.sh` | macOS, Linux | Benchmark replay; `--hotpaths` for the micro-benchmarks |
@@ -24,7 +25,7 @@ on Windows tooling, while the shell wrappers cover macOS and Linux.
 | `check_no_remote_subresources.py` | any OS | verifies the built frontend bundle fetches nothing at runtime — no CDN, font, or remote script |
 | `check_release_tag.py` | any OS | verifies a release tag names exactly the `project(... VERSION x.y.z)` in `CMakeLists.txt` |
 | `check_release_legal.py` | any OS | verifies `LICENSE`, `THIRD_PARTY_NOTICES.md`, and CPack/install wiring for release packages |
-| `check_scripts_documented.py` | any OS | verifies every script in this directory is named in this table — the guard that keeps it honest |
+| `check_scripts_documented.py` | any OS | verifies every tracked or new non-ignored script in this directory is named in this table — the guard that keeps it honest |
 | `test_commit_msg_hook.sh` | macOS, Linux | runs the real `hooks/commit-msg` against real messages; each forbidden pattern has a case that fails when only that pattern is removed |
 | `windows_demo.ps1` | **Windows only** | MSVC build + CTest + launches `snapback.exe` |
 | `gui_smoke_windows.ps1` | **Windows only** | Verifies a real Snapback window appears |

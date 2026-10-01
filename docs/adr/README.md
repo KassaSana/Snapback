@@ -46,17 +46,20 @@ reverted, because the reasoning behind the original shape was nowhere on disk.
 | [0004](0004-verdict-and-opinion.md) | The state is the policy verdict, the scores are the model's opinion | Accepted | 7.7, 7.18, 5.3, 5.4, 1.2 |
 | [0005](0005-a-session-is-declared-and-attended.md) | A session is declared by the user and attended by the user | Accepted | 2.7, 7.23, 2.8 |
 | [0006](0006-trainer-is-developer-tooling.md) | Training tooling is developer-only | Accepted | 13.7 |
-| [0007](0007-time-is-integer-milliseconds-utc.md) | A point in time is UTC milliseconds since the epoch, stored as INTEGER | Accepted — **not yet applied** | 7.16 |
+| [0007](0007-time-is-integer-milliseconds-utc.md) | A point in time is UTC milliseconds since the epoch, stored as INTEGER | Accepted — applied 2026-08-24 | 7.16 |
 | [0008](0008-protect-master-from-red-ci.md) | Protect `master` from red CI | Accepted | 6.2 |
 | [0009](0009-local-first-threat-model.md) | Local-first threat model for v1 | Accepted | 8.5 |
 
 ## Awaiting an ADR
 
-The open `decision` items in `ROADMAP.md`, as of 2026-08-03. Grouped by the session that
-should settle them — the roadmap's "Start here" table sets the order.
+Open decisions are tracked only in [the roadmap](../ROADMAP.md). This navigation table
+was reconciled on 2026-09-30; the roadmap owns their status, scope, and priority.
 
 | Session | Roadmap items | The question |
 |---------|---------------|--------------|
+| — | 7.2 | Should Review presets remain rolling or become calendar windows? |
+| — | 4.11 | What may the title parser identify as a filename? |
+| — | 3.7 | What privacy and native-agent contract would a web product require? |
 | — | 5.6 | What should `longest_active_stretch_5min` report for a new session? |
 | — | 7.8 | Should `set_focus_mode` rewrite the user's default? |
 | — | 9.10 | Retention window: user setting, and what default? |

@@ -3,10 +3,10 @@
 This is the per-platform source for building, testing, launching, permissions, and common
 failures. Claims that have not been exercised locally are marked CI-only.
 
-**Short version, macOS/Linux:**
+**Short version, Windows/macOS/Linux:**
 
-```sh
-./scripts/test_local.sh            # build + test everything that works headless
+```text
+python scripts/verify.py            # headless build/tests, frontend lint, repository guards
 ```
 
 ---
@@ -29,7 +29,7 @@ not a broken tree.**
 
 Why the ❌s, concretely:
 
-- **ONNX** expects a vendored runtime at `third_party/onnxruntime` (`CMakeLists.txt:84`).
+- **ONNX** expects a vendored runtime at `third_party/onnxruntime` (`CMakeLists.txt`).
   **That directory is not in this repo** — the weekly/on-demand `onnx-linux` job vendors
   it as a build step. Turning `SNAPBACK_ONNX=ON` without it is a `FATAL_ERROR` at configure
   time, not a slow build. It is **off by default**, so the normal build never touches it.
@@ -50,9 +50,10 @@ Why the ❌s, concretely:
   it to decide whether to fall back, so do not flip it before delivery is real.
 - **Packaging** drives `signtool` and CPack/NSIS — Windows tooling. See
   [scripts/README.md](../scripts/README.md).
-- **`overlay_windows.cpp`, `tray_windows.cpp`, `input_hook_windows.cpp`, and
-  `autostart.cpp`'s Run-key path cannot compile here at all.** CI is the only place they
-  are exercised — so **when Windows CI is red, they are covered nowhere.**
+- **Windows-only sources need a Windows build.** The headless capture target includes
+  `input_hook_windows.cpp`; the desktop app target adds `overlay_windows.cpp` and
+  `tray_windows.cpp`. The Run-key path in `autostart.cpp` is also Windows-only. macOS and
+  Linux builds do not exercise those paths, so validate changes to them on Windows.
 
 ## 2. Prerequisites
 
@@ -64,9 +65,9 @@ Why the ❌s, concretely:
 | Python 3 | for `check_doc_paths.py`, parity | same | same |
 | Webview runtime | WebView2 | WKWebView (built in) | WebKitGTK dev package |
 
-Everything else — `nlohmann/json`, `doctest`, SQLite, and `webview` — is fetched by CMake
-via `FetchContent` on first configure. **First configure needs network**; after that the
-build is offline.
+CMake fetches pinned dependencies on a clean configure unless their sources are cached;
+an optional local SQLite copy overrides its fetch. The webview is fetched only for the
+desktop target. See [Dependencies](dependencies.md) for pins and update procedures.
 
 ## 3. Build and test the core (all three OSes)
 
@@ -87,6 +88,17 @@ cmake --build build --config Release --target snapback_tests
 ctest --test-dir build -C Release --output-on-failure
 ```
 
+If reusing a build directory configured with MSYS2 GCC, launch from its UCRT64 environment
+or put `C:\msys64\ucrt64\bin` on `PATH` before running CMake or `verify.py`. Otherwise the
+GCC driver can start while its compiler child fails with no useful diagnostic.
+
+The test executable also needs that toolchain's runtime DLLs. If CTest processes exit
+with `0xc0000139` before a test runs, check which GCC runtime the child shell resolves;
+another GCC installation can shadow UCRT64 even when a direct launch succeeds. For an
+isolated existing build, placing the matching `libstdc++-6.dll`, `libgcc_s_seh-1.dll`, and
+`libwinpthread-1.dll` beside the build executables avoids that loader ambiguity. These are
+local build artifacts, not a change to release packaging.
+
 That difference is the single most common cross-platform papercut here: on macOS/Linux
 `-DCMAKE_BUILD_TYPE=` at *configure* time and binaries in `build/`; on Windows `--config`
 at *build* time and binaries in `build/Release/`.
@@ -97,7 +109,9 @@ Frontend tests are separate:
 cd frontend && npm ci && npm run typecheck && npm run test && npm run build
 ```
 
-Or use the wrapper that does both: `./scripts/test_local.sh` (`.ps1` on Windows).
+Or use `python scripts/verify.py` for the normal local headless check, including lint and
+repository guards. The older wrappers still run both build/test suites:
+`./scripts/test_local.sh` (`.ps1` on Windows).
 
 The wrapper also **compiles** the benchmarks every run, because `SNAPBACK_BUILD_BENCHMARKS`
 defaults to `OFF` and nothing else local builds `benchmarks/` — so a type change in `src/`
@@ -143,13 +157,13 @@ is a real failure.
 
 ## 5. Permissions for real capture
 
-Capture is the one part that cannot be verified headlessly.
+Real capture and permission prompts need desktop hardware; headless fixtures verify
+translation and engine behavior, not live OS delivery.
 
 - **macOS** — needs **Accessibility** (System Settings → Privacy & Security →
   Accessibility). `permissions.cpp:check_capture_permissions` probes it with `AXIsProcessTrustedWithOptions`. The
-  `CGEventTap` is real, was silently dying under load until 2026-07-20, and **was verified
-  on live hardware 2026-07-25** (Roadmap 0.3) — that run is also what found macOS capture
-  stamping stale window titles onto events.
+  Live macOS capture was recorded as verified on hardware on 2026-07-25
+  (Roadmap 0.3); this documentation pass did not repeat that hardware check.
 - **Linux** — reads `/dev/input` directly (evdev). Your user usually needs to be in the
   `input` group; without access it falls back to active-window polling, which yields
   window changes but no keystroke/mouse events.
@@ -157,12 +171,14 @@ Capture is the one part that cannot be verified headlessly.
 
 ## 6. Environment variables
 
-All optional. Read in `main.cpp`.
+All optional. Runtime entry-point options are read in `main.cpp`; developer-tool gating
+is implemented by `src/app/frontend_assets.cpp`.
 
 | Variable | Effect |
 |----------|--------|
 | `SNAPBACK_DATA_DIR` | Override where `focoflow.db` and exports live |
 | `SNAPBACK_LOG` | `TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`/`OFF` (default `INFO`) |
+| `SNAPBACK_DEV_TRAINING` | Enable developer training tools in Release; Debug enables them by default (ADR-0006) |
 | `SNAPBACK_FRONTEND_URL` | Point the webview at a dev server — **debug builds only**; release ignores it (Roadmap 8.4, and see 8.7) |
 | `SNAPBACK_OVERLAY_TEST` | Pop a sample overlay on launch |
 | `SNAPBACK_NOTIFICATION_TEST` | Fire a sample notification on launch (Windows only — macOS returns `false` until 3.3) |
@@ -185,8 +201,8 @@ are running is refused rather than opened, and the log says so.
 ./scripts/run_benchmarks.sh --hotpaths      # producer/consumer/lock/SQLite micro-benchmarks
 ```
 
-The baseline sections in [benchmarking.md](benchmarking.md) name their host and toolchain.
-Compare only like-for-like runs; Windows and macOS measurements are not interchangeable.
+[Benchmarking](benchmarking.md) owns workloads, commands, host/toolchain details, and
+measured results, including the separate disk-budget and idle harnesses. Compare like-for-like runs.
 
 ## 8. When something fails
 

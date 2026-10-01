@@ -49,9 +49,10 @@ echo "== C++ mock/headless tests =="
 cmake -S "$REPO_ROOT" -B "$BUILD_PATH" \
     -DCMAKE_BUILD_TYPE="$CONFIG" \
     -DSNAPBACK_BUILD_APP=OFF \
-    -DSNAPBACK_ONNX=OFF \n    -DSNAPBACK_BUILD_BENCHMARKS=ON
+    -DSNAPBACK_ONNX=OFF \
+    -DSNAPBACK_BUILD_BENCHMARKS=ON
 cmake --build "$BUILD_PATH" --config "$CONFIG" --target snapback_tests --parallel
-ctest --test-dir "$BUILD_PATH" -C "$CONFIG" --output-on-failure
+ctest --test-dir "$BUILD_PATH" -C "$CONFIG" --output-on-failure --timeout 120 --no-tests=error
 
 # Compiled every run, deliberately, even though the smoke run below is opt-in.
 #

@@ -40,7 +40,7 @@ Require-Command ctest
 Write-Host "== C++ mock/headless tests =="
 Invoke-Native { cmake -S $RepoRoot -B $BuildPath -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF -DSNAPBACK_BUILD_BENCHMARKS=ON }
 Invoke-Native { cmake --build $BuildPath --config $Config --target snapback_tests }
-Invoke-Native { ctest --test-dir $BuildPath -C $Config --output-on-failure }
+Invoke-Native { ctest --test-dir $BuildPath -C $Config --output-on-failure --timeout 120 --no-tests=error }
 
 # Compiled every run, deliberately, even though the smoke run below is opt-in.
 #

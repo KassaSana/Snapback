@@ -71,25 +71,7 @@ jobs:
       # rather than paying for a separate "docs smoke" job on every push.
       - name: Repository guards
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          grep -q "docs/windows_demo.md" README.md
-          test -f docs/windows_demo.md
-          python3 scripts/check_release_legal.py --verbose
-          python3 scripts/check_doc_paths.py
-          python3 scripts/check_doc_symbols.py --verbose
-          python3 scripts/check_dependency_pins.py --verbose
-          python3 scripts/check_onnx_pins.py --verbose
-          python3 scripts/check_pin_freshness.py --offline --verbose
-          python3 scripts/check_ps_exit_codes.py --verbose
-          python3 scripts/check_commit_attribution.py --verbose
-          sh scripts/test_commit_msg_hook.sh
-          python3 scripts/check_no_remote_subresources.py --verbose
-          python3 scripts/check_coverage_exclusions.py --verbose
-          python3 scripts/check_unit_test_wiring.py --verbose
-          python3 scripts/check_no_bom.py
-          python3 scripts/check_scripts_documented.py
-          python3 scripts/check_roadmap_status.py --verbose
-          python3 scripts/check_dead_headers.py --verbose
+        run: python3 scripts/verify.py guards
 
   # ---------------------------------------------------------------------------
   # AddressSanitizer + UBSan (Linux/clang). Highest-value guard for the SPSC ring

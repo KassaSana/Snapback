@@ -53,7 +53,7 @@ src/
 ├── engine/    features, classifier, ONNX, focus modes
 ├── storage/   SQLite persistence and schema migrations
 ├── snapback/  context recovery and overlay
-└── util/      logger and clock helpers (header-only leaves)
+└── util/      logging, clocks, and shared system utilities
 tests/         doctest unit and contract tests
 fixtures/      model and feature-vector scenarios/golden data
 frontend/      React dashboard and native bridge adapter
@@ -62,22 +62,15 @@ scripts/       local test and packaging helpers
 
 ## Build and test
 
-Requires C++20 and CMake ≥ 3.20.
+Requires C++20, CMake ≥ 3.20, Python 3, and Node/npm for the frontend.
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target snapback_tests --parallel
-ctest --test-dir build --output-on-failure
+```text
+python scripts/verify.py
 ```
 
-For the frontend:
-
-```sh
-cd frontend
-npm ci
-npm test
-npm run typecheck
-```
+This builds/tests the headless core and frontend and runs repository guards. For
+prerequisites, per-platform commands, and desktop launch instructions, see
+[Running Snapback](docs/running.md).
 
 Before your first change, read [CONTRIBUTING.md](CONTRIBUTING.md) — the conventions here are
 enforced by CI and several of them are not guessable (commit attribution, how code is cited

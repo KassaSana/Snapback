@@ -1,41 +1,36 @@
 # Documentation index
 
-Each document has one owner-level purpose. `ROADMAP.md` is the only backlog; temporary
-session notes and parallel TODO lists do not belong in the repository.
+Maintained guides describe the current repository. Historical findings and planning live
+in the archive; the roadmap is the sole live backlog.
 
 ## Start here
 
-- [Contributing](../CONTRIBUTING.md) — the conventions CI enforces, and the ones you cannot
-  guess. Read it before a first change.
-- [Running Snapback](running.md) — build, test, launch, permissions, and troubleshooting by
-  platform.
-- [Architecture](ARCHITECTURE.md) — current runtime shape, module boundaries, threading,
-  storage, IPC, and platform seams.
-- [Roadmap](ROADMAP.md) — the six-month phase sequence, then ordered open work and release
-  blockers. The only backlog, and it carries **open work only**: every item names a status
-  (`proposed`, `accepted`, `in progress`) and completed items move to the archive below.
+- [Contributing](../CONTRIBUTING.md) — development conventions and repository guards.
+- [Running](running.md) — prerequisites, build/test/launch commands, permissions, and troubleshooting.
+- [Architecture](ARCHITECTURE.md) — current modules, threading, storage, and IPC contracts.
+- [Roadmap](ROADMAP.md) — current priorities, open items, decision gates, and binding exclusions.
 
 ## Engineering references
 
-- [Testing strategy](testing_strategy.md) — local, CI, smoke, and untested boundaries.
-- [Benchmarking](benchmarking.md) — benchmark commands, interpretation, and measured results.
-- [Dependency policy](dependencies.md) — immutable C++ dependency pins and update process.
-- [Packaging](PACKAGING.md) — Windows artifacts/signing and cross-platform packaging status.
-- [Windows demo](windows_demo.md) — the Windows end-to-end demo runbook.
-- [Architecture decisions](adr/README.md) — accepted decisions and questions awaiting ADRs.
+- [Testing strategy](testing_strategy.md) — verification layers, CI, and coverage limitations.
+- [Benchmarking](benchmarking.md) — workloads, commands, dated measurements, and caveats.
+- [Dependencies](dependencies.md) — immutable C++ pins and their update process.
+- [Packaging](PACKAGING.md) — release procedure, signing, artifacts, and platform limits.
+- [Windows demo](windows_demo.md) — isolated demo setup, switches, and walkthrough.
+- [Architecture decisions](adr/README.md) — accepted choices and their reasoning.
 
-## Point-in-time records
+## Historical evidence
 
-- [Audit 2026-08-19](audit-2026-08-19.md) — AUD/FWD findings from a full read of the tree.
-  A dated record, not a second backlog: open work it identifies is sequenced in
-  [`ROADMAP.md`](ROADMAP.md).
-- [Astra review](ASTRA_REVIEW.md) — a read-only source review (organized 2026-09-19) that
-  reconciles the audit and roadmap into twelve proposed correctness slices. Reference
-  material only; slices become work when triaged into [`ROADMAP.md`](ROADMAP.md).
-- [Roadmap archive](roadmap_archive.md) — completed roadmap items and the `(original
-  finding)` history of items that closed, kept for history and indexed by id from
-  [`ROADMAP.md`](ROADMAP.md). Deliberately stale as of each entry's completion date.
+These documents are not current instructions or additional work queues. Recheck findings
+against code before using them; original review dates and evidence limitations are retained.
+
+- [August 19 audit](archive/audit-2026-08-19.md) — original AUD/FWD findings and proposals.
+- [Astra review](archive/ASTRA_REVIEW.md) — reconciled systems/product findings and twelve historical slices; reorganization dated September 19, audit date unknown.
+- [Fable review draft](archive/fable_Review.md) — independent findings and prior-review verdicts; review date/commit unspecified.
+- [Planning history](archive/roadmap-planning-history.md) — dated strategy and audit narratives removed from the live backlog.
+- [Roadmap archive](roadmap_archive.md) — completed resolutions and historical evidence for condensed open items, distinguished explicitly.
 
 The root [README](../README.md), [frontend README](../frontend/README.md), and
-[scripts README](../scripts/README.md) remain short entry points for their own audiences.
-Detailed history belongs in Git and accepted ADRs, not in operational runbooks.
+[scripts README](../scripts/README.md) are entry points for their respective audiences.
+[Release notes](../CHANGELOG.md), [security reporting](../SECURITY.md), and
+[license notices](../THIRD_PARTY_NOTICES.md) retain their separate public purposes.

@@ -41,7 +41,7 @@ webview when the desktop target is enabled.
 | `src/storage/` | SQLite schema, versioned migrations, transactions, sessions, predictions, exports, and retention |
 | `src/snapback/` | Context tracker, title parsing, and platform overlay |
 | `src/app/` | App state, command registration, settings, tray, notifications, start-on-login, data export, and frontend assets |
-| `src/util/` | Header-only leaf utilities with no project dependencies: the leveled rotating logger and monotonic-clock helpers |
+| `src/util/` | Shared infrastructure: logging, clocks, ranked locks, subprocess ownership, private-directory handling, and writer priority |
 | `frontend/src/` | React views, API mappers, and the project-owned native bridge |
 
 `src/main.cpp` is deliberately absent from the table: it is not a module but the single
@@ -165,15 +165,15 @@ are looking at is the difference between a correct mapper and a silently empty f
 
 | Boundary | Casing | Where | Why |
 | --- | --- | --- | --- |
-| IPC — everything the dashboard calls | **camelCase** keys, **snake_case** command *names* | `src/app/commands.hpp` ↔ `frontend/src/apiMappers.ts` | The keys are consumed by TypeScript, so they follow TypeScript's convention; the command names are native identifiers and follow C++'s. `get_session_recap({ sessionId })` is both conventions in one call, on purpose |
+| IPC — everything the dashboard calls | **camelCase** keys, **snake_case** command *names* | `src/app/command_handlers.cpp` ↔ `frontend/src/apiMappers.ts` | The keys are consumed by TypeScript, so they follow TypeScript's convention; the command names are native identifiers and follow C++'s. `get_session_recap({ sessionId })` is both conventions in one call, on purpose |
 | Training / fixture data — `CaptureEvent` | **snake_case** keys | `src/types.cpp`, the training export, `fixtures/` | These rows are consumed by the Python-side training tooling and pinned by fixtures, not by the dashboard. Renaming them to camelCase would invalidate exported corpora for no reader's benefit |
 
 `CaptureEvent` is the only type on the second boundary. If you are adding a field to anything
 the UI reads, camelCase is the answer.
 
-### The five things called a "summary"
+### Summary and related result types
 
-Five distinct types overlap in name and partly in content. They are not interchangeable, and
+Six result types overlap in name and partly in content. They are not interchangeable, and
 picking the wrong one is the most common way to fetch the right numbers for the wrong window.
 
 | Type | Command | Scope | Answers |
@@ -181,7 +181,7 @@ picking the wrong one is the most common way to fetch the right numbers for the 
 | `SessionRecap` | `get_session_recap` | **One session** | How did *that* session go — duration, attended `active_secs`, avg focus, distraction spikes, deep-focus % |
 | `SessionSummary` | `get_session_history` | **One session, plus its record** | `SessionRecord` + `SessionRecap` — the shape one row of the history list needs |
 | `FocusCurvePoint` | `get_session_focus_curve` | **One session, over its own span** | That session's focus folded into up to 240 equal time slices — the curve the Review session explorer draws (Roadmap 2.9) |
-| `FocusSummary` | `get_focus_summary` | **A batch of predictions** | Pure aggregation over prediction rows: avg, peak, distracted fraction, longest unbroken focused stretch. No storage, no clock — `src/engine/focus_summary.hpp` is unit-testable on a vector |
+| `FocusSummary` | `get_focus_summary` | **A time window, by focus metrics** | SQL `Storage::prediction_stats` supplies average/peak score, distracted fraction, and longest focus stretch; the AppState mapper uses the same aggregate as SummaryReport |
 | `AnalyticsSummary` | `get_analytics` | **A time window, by shape** | The chart data — hourly buckets and top apps, plus a session streak |
 | `SummaryReport` | `get_summary_report` | **A time window, by total** | The Review headline — session counts, focus seconds, distracted fraction, attended vs planned |
 
@@ -193,8 +193,8 @@ never take a window at all.
 `Storage::recent_session_summaries` computes the same thing for many sessions in one query,
 with the aggregate expressions copied verbatim between them. They are held in agreement by a
 field-by-field parity test rather than by sharing code — so a change to one is a change to
-both, and the parity test is what tells you if you forgot. Roadmap 14.3 is where that seam
-gets a single owner.
+both, and the parity test is what tells you if you forgot. This is storage-query parity;
+Roadmap 14.3 instead owns command argument/result contracts.
 
 ## Platform boundaries
 
@@ -220,7 +220,7 @@ decides what*. It buys two things a `#if` around the whole module does not — t
 text are covered by all three CI jobs, and the tests can drive a temp directory instead of the
 developer's real login items (Roadmap 11.7). `src/app/reveal_path.cpp` follows the same shape
 with one exception: its macOS backend needs AppKit, so it lives in `reveal_path_macos.mm` and
-is the only per-OS file linked into `snapback_app` rather than the app target.
+is the only per-OS file linked into `snapback_app` rather than the executable target.
 
 The remaining stubs live in `src/snapback/overlay_stub.cpp` and `src/app/tray_stub.cpp`.
 They now cover Linux only — both guard on `!_WIN32 && !__APPLE__` — and exist so the

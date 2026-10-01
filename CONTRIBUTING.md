@@ -4,13 +4,8 @@ Read this before your first change. It is the conventions that are **enforced bu
 obvious** — the ones where following your instincts produces a red build or, worse, a quiet
 inconsistency nobody notices for a month.
 
-This file is committed on purpose. Guidance that lives only in a personal, gitignored agent
-file (`CLAUDE.md` is gitignored here, deliberately, and docs may not cite it as a path) is
-guidance no clone has and no tool but its owner's can read. The committed [`AGENTS.md`](AGENTS.md)
-is the tool-neutral entry point that sends every agent here first. Before this file
-existed, the commit-attribution rule below was written down in exactly one place —
-`.cursor/rules/commit-attribution.mdc` — which meant Cursor knew about it and nothing else
-did, including a human reading the repo for the first time.
+[`AGENTS.md`](AGENTS.md) is the short entry point for coding agents; this file holds the
+conventions for every contributor.
 
 ## The one rule with no exceptions
 
@@ -18,28 +13,22 @@ did, including a human reading the repo for the first time.
 footer, no AI or vendor attribution, in commit messages or PR bodies. Do not pass `--author`
 and do not change `git config`.
 
-This is enforced, not trusted: `scripts/check_commit_attribution.py` walks every ref on every
-CI run. It is a guard rather than a note because several tools append attribution
-automatically, at commit time, when nobody is looking — and such a commit is permanent in a
-way an ordinary mistake is not. Rewriting it changes every SHA after it, which invalidates
-release tags and the CI-conclusion check the release gate reads.
-
-Enable the local hook once per clone so a bad trailer never reaches a commit:
+`scripts/check_commit_attribution.py` enforces this in CI. Enable the local hook once per
+clone so an invalid message is rejected before the commit is created:
 
 ```sh
 git config core.hooksPath scripts/hooks
 ```
-
-Naming a tool in prose is fine. Claiming it wrote the code is not.
 
 ## Where work is tracked
 
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) is the **only** backlog. No parallel TODO lists, no
   session notes checked into the tree. A `docs/scratch/` directory existed once; it went
   stale, contradicted the accepted record, and was deleted.
-- **It holds open work only, and every item names a status.** `proposed` is the default: a
-  finding, however well evidenced, that nobody has agreed to build. `accepted` needs a citable
-  agreement — a row in the roadmap's own "Start here" sequence, or a release blocker in an ADR.
+- **Its tracked items hold open work only, and every item names a status.** `proposed` is the
+  default: a finding, however well evidenced, that nobody has agreed to build. `accepted`
+  needs a citable agreement — a row in the roadmap's own "Start here" sequence, or a release
+  blocker in an ADR.
   `in progress` means part of it landed. Promoting an item is a deliberate edit, never a side
   effect of writing it persuasively. Completed items move to
   [`docs/roadmap_archive.md`](docs/roadmap_archive.md); `scripts/check_roadmap_status.py`
@@ -52,14 +41,14 @@ Naming a tool in prose is fine. Claiming it wrote the code is not.
 - **`Accepted` on an ADR means agreed, not built.** ADRs are written in the present tense, so
   one whose code has not landed reads exactly like a description of the tree. If you write an
   ADR ahead of its implementation, say so in the header and add an `## Implementation status`
-  section. [ADR-0007](docs/adr/0007-time-is-integer-milliseconds-utc.md) is the worked
-  example — it says the schema is integer milliseconds, and the schema is not, yet.
+  section. [ADR-0007](docs/adr/0007-time-is-integer-milliseconds-utc.md) now marks its
+  integer-millisecond schema decision as applied.
 
 **Trust the roadmap's claims about the world, not its claims about the code.** The file says
 this itself: when an item says something is missing, check that it is actually missing; when
-it says something is done, check the code has a caller. Items marked `DONE` keep their
-original finding below the resolution as quoted history — that text is deliberately stale and
-is not a description of the current tree.
+it says something is done, check the code has a caller. Historical item bodies and progress are retained in
+the roadmap archive, explicitly distinguished from current open work. They describe the
+inspected or completed state, not today's implementation.
 
 ## Citing code in docs and comments
 
@@ -102,8 +91,9 @@ surprise a first change:
 | add a CI job | add a row to `docs/testing_strategy.md`'s table |
 | add a C++ dependency | pin it to a commit SHA or `URL_HASH`, never a tag — see [`docs/dependencies.md`](docs/dependencies.md) |
 
-Run them all locally with the wrappers: `./scripts/test_local.sh` (macOS/Linux) or
-`scripts/test_local.ps1` (Windows).
+Run the local headless checks and repository guards with `python scripts/verify.py` on any
+platform. The older `./scripts/test_local.sh` (macOS/Linux) and `scripts/test_local.ps1`
+(Windows) wrappers remain for native and frontend build/test iteration.
 
 ## Style
 
@@ -111,12 +101,13 @@ Run them all locally with the wrappers: `./scripts/test_local.sh` (macOS/Linux) 
 describe the house style. Every value in them was measured against the code that already
 exists rather than chosen, so they describe this codebase rather than imposing a different one.
 
-**Existing files were deliberately not reformatted**, and CI splits on that:
+**Existing files were deliberately not reformatted.** The dedicated formatting CI job was
+removed; formatting is now a contributor check, while frontend ESLint remains a CI gate:
 
 | File | Formatting |
 | --- | --- |
-| **Added** by your change | **Enforced.** New code is free to get right, and this is the only moment it is |
-| Already existed | **Advisory.** Reported in the `format-check` job, never fails the build |
+| **Added** by your change | Format it before review. Check C++ with `clang-format --dry-run --Werror <file>` or frontend code with `npx prettier --check <file>` from `frontend/` |
+| Already existed | Formatting is advisory; do not reformat it as part of a behavior change |
 
 The split is by file age rather than by what you touched, because "format what you touch"
 collapses on a large legacy file: `frontend/src/App.tsx` is 830 lines and 606 of them move
@@ -140,7 +131,7 @@ regression it guards against, in a sentence.
 The IPC surface uses **camelCase** keys with **snake_case** command names. The training and
 fixture data (`CaptureEvent` only) uses snake_case keys, because its consumer is the training
 tooling, not the dashboard. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) has the table and
-the reasoning, along with a glossary of the five different types called a "summary".
+the reasoning, along with a glossary of the six different types called a "summary".
 
 ## Searching the tree
 

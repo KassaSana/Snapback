@@ -28,9 +28,10 @@ SCRIPTS_README = REPO_ROOT / "scripts" / "README.md"
 
 
 def tracked_scripts() -> list[str]:
-    """Every tracked path under scripts/, README itself excluded."""
+    """Tracked and new non-ignored scripts, so checks work before staging."""
     result = subprocess.run(
-        ["git", "ls-files", "-z", "scripts"], cwd=REPO_ROOT, capture_output=True, check=True
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "scripts"],
+        cwd=REPO_ROOT, capture_output=True, check=True
     )
     paths = [p for p in result.stdout.decode("utf-8").split("\0") if p]
     return sorted(p for p in paths if os.path.basename(p) != "README.md")

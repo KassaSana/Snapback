@@ -1,8 +1,16 @@
 # Agent guidance for Snapback
 
-This is the tool-neutral entry point for coding agents (Codex, Cursor, Gemini CLI, Claude
-Code, and whatever comes next). It is committed so every clone has it; it is short so it
-cannot drift from the documents it points at. Do not duplicate their content here.
+Snapback is a local-first desktop app that detects focus drift and helps people return to
+their work. This is the short, tool-neutral entry point; the linked docs hold the details.
+
+## Where things live
+
+`src/capture/` receives OS input and window context; `src/engine/` extracts features and
+classifies them; `src/storage/` persists sessions and predictions; `src/app/` owns state,
+commands, and the native bridge. `src/snapback/` handles context recovery. The flow is
+capture → ring buffer → engine → SQLite → native commands/events → `frontend/src/` (React).
+Native tests are in `tests/`, contract fixtures in `fixtures/`, and verification tools in
+`scripts/`. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for threading and wire contracts.
 
 ## Read first
 
@@ -26,32 +34,50 @@ fact, which is the expensive way to learn this. Enable the local hook once per c
 git config core.hooksPath scripts/hooks
 ```
 
-## Verify before you say you are done
+## Build and verify
 
-From the repository root, the headless C++ suite:
+From the repository root on Windows, macOS, or Linux:
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target snapback_tests --parallel
-ctest --test-dir build --output-on-failure
+```text
+python scripts/verify.py
+python scripts/verify.py native "CaptureThread"
+python scripts/verify.py frontend-unit sessionStatus.test.ts
+python scripts/verify.py frontend-component sessionFlow.test.tsx
 ```
 
-From `frontend/`: `npm run typecheck && npm run lint && npm run test && npm run build`.
+The no-argument command builds and tests the headless C++ core, compiles benchmarks,
+typechecks, tests, lints, and builds the frontend, then runs repository guards. Targeted
+native selection is a CTest case-name regex; use `ctest --test-dir build -N` to discover cases.
+The two frontend modes take an existing file under `frontend/tests/`. The platform wrappers
+remain available; [`docs/running.md`](docs/running.md) has build and platform commands.
 
-The docs have guards too. Any backticked `file:symbol` citation must name a symbol that
-exists (`scripts/check_doc_symbols.py`), and any path must exist
-(`scripts/check_doc_paths.py`); run both after touching a doc. `scripts/check_dead_headers.py`
-reads `git ls-files`, so stage new files before running it.
+The full command covers local headless checks. Desktop GUI, sanitizer, and optional deep
+checks run separately in CI; see [`docs/testing_strategy.md`](docs/testing_strategy.md).
+Formatting commands and the existing-file policy are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## Invariants and boundaries
+
+- Snapback reflects focus drift; it never blocks an app or starts a session for the user.
+- Shipped pages do not fetch remote subresources. Released SQLite migrations are append-only
+  and idempotent.
+- IPC command and event names must agree across native registration, fixtures, and frontend
+  calls. Training and model tooling is developer-only under
+  [ADR-0006](docs/adr/0006-trainer-is-developer-tooling.md).
+- The roadmap's [Decided not to build](docs/ROADMAP.md#decided-not-to-build-2026-09-22)
+  section is binding until the owner agrees to revisit an item.
 
 ## Working style
 
-- One focused commit per concern, with an imperative message that says why. Review the diff
-  before committing. Never push unless the owner asks.
-- Update the roadmap item you worked on in the same commit: what landed, what remains.
+- Inspect relevant implementation, tests, architecture docs, and git state before editing.
+  For a roadmap item, confirm its evidence still matches the code and flag scope changes.
+- Make the smallest coherent change. Run targeted checks while developing and the full
+  `python scripts/verify.py` before finishing; investigate failures. Report what changed,
+  why, checks run, and any remaining uncertainty. Never claim unverified behavior.
+- Review the diff before one focused commit per concern. Update the roadmap item worked on
+  in that commit. Never push unless the owner asks.
 - Adding or renaming a native command touches `src/app/command_handlers.cpp`,
   `fixtures/ipc_commands.json` (and its count in `tests/test_ipc_contract.cpp`),
   `frontend/src/api.ts`, and `frontend/demo/backend.ts` together; the contract tests will
   tell you which one you forgot.
-- Training and model tooling is developer-only by decision
-  ([ADR-0006](docs/adr/0006-trainer-is-developer-tooling.md)); do not widen it without a new
-  ADR.
+- Review, audit, and analysis requests are read-only. Do not edit docs, add roadmap items,
+  or commit unless the owner explicitly asks.

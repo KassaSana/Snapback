@@ -4042,3 +4042,987 @@ entry above is the record of what shipped.
   merits. **Reopen** if a support bundle's `Storage` lock `max_wait_us` (on `get_health`)
   shows multi-second waits in the field, since the gate bounds the wait at one command and a
   wide window's single command can itself be seconds (`daily_summary` over 90 days is ~7 s).
+
+
+## Documentation reconciliation (2026-09-30)
+
+### 6.3 — Completed CI independence
+
+The former live item already recorded completion and hosted CI confirmation on
+2026-07-25. Current Windows/macOS desktop jobs still have no headless `needs` dependency.
+This cleanup moves the stale open entry into history; it does not claim a new hosted run.
+
+### Historical evidence retained during consolidation
+
+The original bodies below were replaced by concise current-state/remaining-work entries.
+Except for **6.3**, whose completion is recorded above, their presence here does **not**
+mark those items complete. IDs, dated progress, reasoning, prior acceptance, and corrections
+are preserved as history. Consult the live roadmap for current status; proposals in these
+quotations do not create another queue.
+
+- **6.3 — The `desktop-app-build` guard silently stops running when CI is red.** `proposed` `S`
+
+  In run `29728565319`, `Desktop app build` and `Windows desktop integration smoke` both
+  show **skipped**, because they `needs:` jobs that failed.
+
+  That job was added on 2026-07-20 specifically because the desktop app had *never* been
+  linked off Windows and no CI job built it (see the P0 entry in the [archive](roadmap_archive.md)). It has
+  therefore barely run since it was created. **A guard that only executes when everything
+  else is already green does not guard the case it exists for.**
+
+  The desktop build doesn't depend on the headless suite passing — it depends on the code
+  compiling. Decouple the `needs:` graph.
+
+  > **Decoupled 2026-07-22, awaiting CI confirmation.** Both `windows-desktop-integration`
+  > and `desktop-app-build` lost their `needs:` — they now run unconditionally, with a
+  > comment in `ci.yml` explaining why they must never regain one. Cost: they burn runner
+  > minutes even when the core is broken; that is the point — broken core is exactly when
+  > the desktop guard's answer matters.
+  >
+  > **And the guard's first real run immediately earned its keep:** once 6.1 unblocked it,
+  > `desktop-app-build / ubuntu-latest` failed for the first time ever — X11 headers
+  > (pulled in via webview → GTK → GDK) `#define KeyPress`, `KeyRelease`, `None`, `Status`
+  > as bare macros, clobbering `EventType::KeyPress`, `snapback::Status`, and every
+  > `::None` enumerator at parse time. Fixed the same day: `src/app/webview_compat.hpp` is
+  > now the only legal include site for `webview.h` and scrubs the macro pollution right
+  > after the include (same pattern as `tests/doctest_wrapper.hpp`). Verified to link on
+  > macOS; Ubuntu is CI-verified only, so the next master run is the proof.
+  >
+  > **CI-confirmed 2026-07-25** by run `30168981559`, green on all three OSes for every job
+  > but `docs-smoke` — which covers both halves: the decoupled jobs ran, and the Ubuntu
+  > desktop build linked. This item is **done**; it stays here rather than moving to the
+  > archive because the X11 lesson above is still the reason `webview_compat.hpp` exists.
+
+- **6.5 — MSVC warning noise obscures real diagnostics.** `proposed` `S`
+
+  Every Windows build emits C5285 (`cannot declare a specialization for 'std::tuple'`) from
+  `doctest.h`, once per translation unit. Third-party, not ours — but it buries our own
+  warnings, which is part of why 6.1 took a crash to surface rather than inspection.
+  Suppress at the include site.
+
+  > **Done in code 2026-07-22, awaiting a Windows CI log to confirm the spam is gone.**
+  > All 24 test TUs now include `tests/doctest_wrapper.hpp`, which wraps
+  > `<doctest/doctest.h>` in a `#pragma warning(disable : 5285)` push/pop under `_MSC_VER`.
+  > One include site, third-party noise only — our own C5285s would still fire.
+
+- **0.4b — Provision the signing certificate.** `proposed` `S` (external dependency)
+  **Still open, but only on the external half.** The code defect described below was fixed on
+  2026-08-04: `package_windows.ps1` now signs `snapback.exe` immediately after the build and
+  before CPack, signs the IExpress installer after it exists, and then **verifies the artifact
+  it is about to upload** — it extracts the ZIP and requires the `snapback.exe` inside to be
+  validly signed *by the passed-in thumbprint*. [PACKAGING.md](PACKAGING.md) documents the
+  order and the verification path.
+
+  **Checking the thumbprint, not just the status, is the part that matters.** A
+  `Get-AuthenticodeSignature` status check alone passes for anything validly signed by
+  anyone; a stray Microsoft-signed binary satisfies it. That is not hypothetical — the first
+  version of this verification was written status-only and its own negative test passed
+  against `where.exe`, which is Microsoft-signed. Both failure modes are now exercised
+  against the real script text: an unsigned binary in the ZIP is rejected as `NotSigned`, and
+  a validly-signed binary from a different certificate is rejected on the thumbprint.
+
+  **What remains is the certificate itself.** The success path has never executed, because no
+  EV certificate exists to run it with. Until a signed build has been produced and verified
+  end to end, README must keep describing Windows signing as wired but incomplete — it
+  currently does. Buy the cert, set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT`, cut one release,
+  and confirm the verification step passes; only then is this done.
+
+  The original finding was:
+
+  `package_windows.ps1` creates the CPack ZIP and embeds that ZIP in the IExpress installer
+  *before* it signs the build-tree `snapback.exe`. The uploaded ZIP and installer payload
+  therefore still contain the unsigned executable even when the secret exists; only the
+  loose build-tree binary and the outer installer receive signatures.
+
+- **7.2 — PARTLY STALE, corrected 2026-07-30.** `in progress` `S` The UTC-bucketing half **was already
+  fixed** and this entry never said so: `AppState::analytics()` calls
+  `local_hour_from_rfc3339(prediction.timestamp)`, not the character-slicing `timestamp_hour()`
+  this text describes. Found while picking work off this file — the third time an item here has
+  described a gap that the code had already closed (see 0.3 and the note on trusting this file).
+
+  **Still open** is the second half below: `cutoff_unix_ms()` treats "1 day" as a rolling
+  24 hours rather than the user's calendar day. The Review surface now *labels* its windows
+  "Last 24 hours" / "Last 7 days" (9.7), so the UI is honest about it; whether the underlying
+  window should change is a product decision, not a bug.
+
+  The original finding was:
+
+  `timestamp_hour()` (since removed; see the correction above) sliced characters 11–12 out of strings built by
+  `now_rfc3339()` (state.cpp as it stood then), which uses `gmtime_r`/`gmtime_s` and appends `Z` — UTC.
+  So `AnalyticsHour::hour` is a UTC hour rendered as the user's hour. In US Pacific that is
+  an 8-hour lie: "you focus best at 14:00" means 06:00 local.
+
+  Storing UTC is correct; *presenting* it is the bug. Recommend converting in the frontend —
+  timestamps are ISO-8601 with `Z`, and `new Date(ts).getHours()` is exactly right.
+
+  Related: `cutoff_unix_ms()` (`state.cpp:cutoff_unix_ms`) computes "1 day ago" as "24 hours ago," so the
+  "daily" summary is a rolling 24 h window, not the user's calendar day. Possibly intended,
+  nowhere written down, and users read "day" as "today."
+
+- **2.9 — Turn session history into a real session explorer.** `in progress` `M/L`
+  Opened 2026-08-05. Past sessions currently appear chiefly inside the destructive "Delete a
+  session" area, history is capped at 20, and the context timeline is tied to the current
+  session. The app records the detail needed to explain a workday, but Review cannot answer
+  the basic question "what happened in that session last Tuesday?"
+
+  Add ordinary selectable history, separate from deletion. A detail view should combine the
+  goal/mode/times, recap, focus curve, snapbacks, captured context, and labels for any chosen
+  session; support goal/app/date search, mode/verdict filters, and cursor-based pagination.
+  Deletion stays a secondary confirmed action, and "repeat this goal" should hand off to the
+  deliberate start flow rather than begin recording on selection. Do not load the entire
+  database into the browser. This needs per-session query commands and should follow **7.16**
+  and align with **14.3**'s command contract.
+
+  *Progress 2026-09-22 — first version, scoped with Kassa after comparing Rize, Timing,
+  ActivityWatch and Session, which all browse history as a list or timeline with a detail
+  panel and none of which lead with search:*
+  - **A Sessions card on Review** (`frontend/src/SessionExplorerCard.tsx`) lists the range's
+    sessions newest first, grouped by day. Choosing one opens its detail: mode and times,
+    attended time, average focus, deep-work share, snapbacks, the reflection, a focus curve
+    with its data table, and the apps it was spent in.
+  - **One new native command,** `get_session_focus_curve`: that session's predictions folded
+    into up to 240 equal slices of its own span, one grouped statement over
+    `idx_predictions_session_ts`. Context comes from the existing per-session
+    `get_context_timeline` (first 500 rows, said so when capped).
+  - **"Start this again"** fills the start form on Now and goes there; nothing records until
+    Start (ADR-0005), and it is disabled while a session runs. **Delete** is in the detail
+    behind a confirmation; Session management keeps its own delete and reflection editing.
+  - Tests: `frontend/tests/sessionExplorerFlow.test.tsx`, and the storage slicing in
+    `tests/test_storage.cpp`.
+
+  Still open from the item as written: goal/app/date search, mode/verdict filters, paging past
+  a range's 500-session cap, and labels (with **2.17**).
+
+  *Progress 2026-09-25:* The Windows QA polish pass moves the existing Sessions explorer
+  ahead of the charts on Review. The same bounded history and selected-session detail remain;
+  search, filters, pagination, and the editable label ledger remain open.
+
+  *Progress 2026-09-25:* Review now selects the newest completed session in its loaded range
+  and shows its longest recorded snapback detour, with a return destination only when recorded.
+  The selected session's context timeline lives in its detail instead of the range-wide story;
+  live prediction history moves to Settings → Advanced. These reads add no schema migration.
+  Search, filters, pagination, and the label ledger remain open.
+
+- **2.18 — PARTIALLY LANDED 2026-08-14; the scoping half stays open.** `in progress` `M`
+  What landed: one-click `+ Allow` / `+ Block` beside observed apps in the Now context timeline
+  and the Review top-apps breakdown, with a badge where a rule already matches. That closes the
+  "navigate to Settings and type a substring from memory" complaint.
+  **What did not:** `AppRuleRecord` still carries only `pattern`, `rule_type`, and `note`, so
+  every rule created this way is still a global substring — the actual defect below. No explicit
+  scope, no match-count preview, no Undo, no conflict precedence. The goal-scoped variant cannot
+  be built until **7.28** supplies a stable goal-category id, and 7.28 is open.
+  Opened 2026-08-05. Personal Rules currently asks the user to navigate to Settings and type a
+  substring from memory. That substring matches both app name and title, and every rule is
+  global. Meanwhile verdict feedback and the Review timeline already hold the exact app,
+  title, file, project, and session goal that caused a wrong reading.
+
+  Add **Usually on task** / **Usually distracting** actions beside a live correction,
+  distraction episode, and context row. Before saving, require an explicit scope — exact app,
+  title pattern, or app plus stable goal-category id from **7.28** — and preview how many stored
+  examples would match. Existing rules remain global; this adds a narrower tool rather than
+  silently changing their meaning. One-click means one place to start, not an unreviewed rule.
+
+  Save applies to the next classification tick and offers Undo that restores the exact prior
+  rule set. Pin conflict precedence when a global and goal-scoped allow/block both match, and
+  prove the same Slack/Chrome context can resolve differently for Coding and Communication.
+  State clearly that this tunes classification; it neither blocks applications nor redacts
+  capture (that is **8.11**). Depends on stable context identity in **7.27**, stable category
+  identity in **7.28**, and title-parser policy in **4.11** for title-derived suggestions.
+
+- **9.4 — Walk the upgrade path once, deliberately.** `proposed` `M`
+  Nobody has ever installed version A and then upgraded to version B. Unknowns worth
+  resolving before a stranger hits them: does the DB survive through 7.3's migration runner;
+  does the HKCU Run key survive a reinstall to a new path, or does autostart silently point
+  at a deleted binary; do settings persist; does a running instance get replaced cleanly?
+
+  **The ZIP install path works now; the upgrade walk is still unwalked.**
+  `install_windows_package.ps1` used to pass a wildcard to `Copy-Item -LiteralPath`, the one
+  parameter that does not expand one — it copied nothing, so every install failed its own
+  `snapback.exe` check. Fixed 2026-08-29 by enumerating the extracted root and copying each
+  entry literally. **CI still validates the ZIP without ever installing it**, which is why a
+  script that could never have worked sat here unnoticed; an install smoke test belongs with
+  this item. Then install v0.2.0, create recognizable
+  data, upgrade to the candidate, and prove the executable, autostart path, settings, and
+  `focoflow.db` are discovered and migrated rather than appearing lost under the C++ app's
+  current data-directory rules.
+
+  **The installer to walk is now the NSIS one.** The IExpress self-extractor that wrapped
+  `install_windows_package.ps1` is gone — it never built on a GitHub-hosted runner (see
+  [docs/PACKAGING.md](PACKAGING.md)), so there was never anything to install. NSIS installs the
+  package directly and brings its own uninstaller, which is also what 9.5's open wiring needs.
+  `install_windows_package.ps1` still stands for people who take the ZIP instead.
+
+- **9.5 — DECIDED AND IMPLEMENTED 2026-08-09; wiring the installer stays open.** `in progress` `S`
+  Decide and implement what uninstall removes. Today it plausibly leaves behind: the
+  `focoflow.db` with full window-title history, the HKCU Run key (a startup entry pointing at
+  a deleted binary), the log files and rotated backups, and the exported training CSVs. For a
+  keystroke-recording app, **leaving the database behind after uninstall is the worst of the
+  four** — the user believes they removed it. Ties to 7.6 and 8.5.
+
+  **The decision: uninstall removes all of it, database included.** Not for tidiness — because
+  a person who uninstalls an application that recorded their window titles believes they have
+  removed what it recorded, and leaving `focoflow.db` makes that belief false without telling
+  them. Everything else follows from the same rule: settings, logs and their rotations, every
+  export, the model, SQLite's `-wal`/`-shm` companions (which hold recent writes, and so recent
+  window titles), every pre-migration backup, and the start-on-login entry.
+
+  **Done:** `src/app/uninstall.hpp` enumerates it and `purge_app_data` removes it, reporting
+  per-item what went and what did not through 8.12's `ActivityDeletionResult` rather than a
+  parallel shape — the question afterwards is identical. Reachable as `snapback --purge`, which
+  exits non-zero on a partial purge so a caller cannot report a clean removal it did not
+  achieve. Deliberately **not** `delete_all_activity_data`: that one keeps the database file,
+  the settings and the model because the app keeps running: uninstall has no afterwards.
+  Two boundaries are pinned by test: files that merely look like ours (`snapback.log.bak`) are
+  left alone, and the data directory itself is removed only if empty, so someone who pointed
+  `SNAPBACK_DATA_DIR` at a folder of their own keeps what is theirs. An empty data directory
+  reports a failure rather than a silent success, because "nowhere to look" is not "nothing to
+  remove".
+
+  **Still open:** the Windows uninstaller does not call it yet — `package_windows.ps1` builds
+  an IExpress installer, and wiring an uninstall hook to run `snapback --purge` before deleting
+  the binary is packaging work that belongs with **3.3**/**3.4**. macOS and Linux have no
+  uninstaller at all yet. The command exists and is the single implementation each will use.
+
+- **9.6 — Failure UX: what does the user actually see when it breaks?** `in progress` `M`
+  The backend reports several rich failure states (7.4, 7.10, 8.1), but there is no designed
+  response to any of them. Specify what the UI does when: capture permission is revoked
+  *mid-session* (macOS lets the user do this at any time); the hook dies; the disk is full so
+  writes fail; the DB is locked by another instance; predictions have gone stale. Right now
+  most of these render as a dashboard that simply stops updating, which is
+  indistinguishable from "you're doing great."
+
+  **Concrete persistence gap:** exceptions escaping the engine persistence phase are logged,
+  but no durable failure state reaches `HealthStatus` and no retry policy stops the engine
+  from repeating the same failed write. The frontend already has a `persistence-failed`
+  event shape. Wire the native state and event, degrade health truthfully, avoid a hot retry
+  loop, and test disk-full/locked failures.
+
+  **Attendance recovery landed 2026-09-20.** `AppState::engine_tick` now keeps ordered span
+  transitions pending until their transaction commits, retains the first Storage-clock
+  boundary across retries, and advances committed attendance only after acknowledgement.
+  A wake that arrives behind a failed idle-close is preserved rather than overwriting it;
+  stop, replace, and delete still discard transitions for dead sessions. Snapback's one-shot
+  emission is acknowledged after the same persistence phase, so a failed transaction cannot
+  consume the alert. Tests cover real SQLite `BEGIN` contention plus injected begin/write/
+  commit-stage failures. The wider health state, event, backoff policy, and user-facing
+  failure treatment above remain open.
+
+- **10.1 — Nothing tests the real binary against the real UI.** `accepted` `L`
+  There is **no E2E framework** — no Playwright, no Cypress, nothing in
+  `frontend/package.json`. Frontend tests mock `invoke()`; C++ tests run headless.
+
+  Be precise about what *is* covered, because this entry used to overstate the gap.
+  `test_ipc_contract` pins command names three ways (the registered `CommandRegistry`, the
+  frontend's `invoke` calls, and `fixtures/ipc_commands.json`), `test_command_bridge` covers
+  the dispatcher itself — arg unwrapping, the error envelope, the escaped-JSON event boundary,
+  the validation helpers — and since 14.3 `test_command_registry` invokes the real handlers
+  by name through that same envelope.
+
+  **What nothing exercises is the real `webview.bind()` round trip in a running process.**
+  Every test above calls the handler layer directly, so a break *between* `bind()` and the
+  browser — the injected shim, promise resolution, a webview API change — passes CI. A
+  command whose payload shape drifted in a handler *without* a bridge test is the same
+  story, and both violate the IPC synchronization contract.
+
+  > *Corrected 2026-07-29:* this entry said `windows-desktop-integration` "is currently
+  > skipped (6.3)". It is not — 6.3 removed its `needs:` on 2026-07-22 and it now runs
+  > unconditionally. It also said the seam is tested "only by `test_ipc_contract`'s name
+  > matching", which ignored `test_command_bridge` entirely.
+
+  Plan (2026-09-16). Two of the three legs of a real-binary test already exist: the macOS
+  and Windows GUI smokes launch the real app, and `SNAPBACK_GUI_SESSION_SMOKE` runs a
+  session *from C++* via `w.dispatch` and writes a marker. What they do not do is cross the
+  bridge from the page side. Close that in two steps, the first of which needs no new
+  tooling:
+
+  1. **An in-page acceptance script.** A debug-only env var (`SNAPBACK_ACCEPTANCE_SCRIPT`,
+     gated like `SNAPBACK_FRONTEND_URL`) names a JavaScript file the host evaluates after
+     the bundle loads. The script calls `window.__snapback.invoke` -- the real shim, the
+     real `webview.bind`, the real token -- for a fixed list of commands (health, start and
+     stop a session, one async export, one deliberate error) and reports each result back
+     through one new command that writes a JSON verdict file; the existing smokes assert
+     on that file the way they assert on the marker today. This is the "break between
+     `bind()` and the browser" this item names, on all three OSes, inside jobs that already
+     run.
+  2. **A driven browser on the OSes that expose one.** WebView2 speaks CDP
+     (`--remote-debugging-port` via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`), and
+     WebKitGTK has `WEBKIT_INSPECTOR_SERVER`; Playwright can attach to both and click the
+     real UI. WKWebView has no equivalent, so macOS keeps step 1 only. This is where
+     14.6's "deliberately slow fake job keeps the heartbeat responsive" belongs.
+
+  Since 14.3 the handler layer is covered by name in native tests, so step 1's list can be
+  short: it tests the transport, not the commands.
+
+  **Step 1 implemented 2026-09-16.** `scripts/gui_acceptance.js` is injected only into a
+  desktop target explicitly compiled with `SNAPBACK_ENABLE_ACCEPTANCE_HARNESS=ON`; ordinary
+  Debug and Release builds cannot enable arbitrary JavaScript with an environment variable.
+  It crosses the real shim and `webview.bind()` for health, session start/stop, an async
+  support export, and a deliberate native error, then reports five structured results through
+  `report_acceptance_verdict`. The Windows CI desktop job and macOS GUI smoke assert the JSON
+  verdict and require the app to terminate through its run loop. Step 2 -- driven clicks via
+  WebView2/WebKitGTK -- remains.
+
+  **Step 2 Windows slice implemented 2026-09-16.** The Windows smoke chooses an ephemeral
+  loopback CDP port, attaches directly to the running WebView2 with Node's built-in WebSocket,
+  and clicks Review, Settings, Start session, and Stop session in the real React UI. No
+  Playwright/browser download is needed. The structured verdict identifies the CDP driver and
+  the app still has to exit through its run loop. WebKitGTK-driven clicks remain; WKWebView
+  stays on step 1 because it exposes no equivalent automation endpoint.
+
+  *Progress 2026-09-24:* the page-side acceptance script now checks Settings and summary
+  result casing and defaults, then reads the stopped session back through history. This
+  covers payloads crossing the real bridge in addition to command resolution. The
+  WebKitGTK-driven click slice remains open.
+
+- **10.3 — Accessibility has never been assessed.** `in progress` `M`
+  No audit has been done. Specifically worth checking: keyboard navigation through the card
+  grid; focus management when the snapback overlay appears (it steals attention by design —
+  does it trap focus?); screen-reader labelling of the score/state tiles; whether the
+  distraction states are distinguishable without color; and whether the always-on-top
+  overlay respects reduced-motion and OS contrast settings. A focus tool that fights
+  assistive tech is a bad look.
+
+  *Progress 2026-09-22 — the two defects `ASTRA_REVIEW.md` named for this item:*
+  - **The permission wizard now does what its `aria-modal` says.** Focus moves to the primary
+    action on open, the page behind is `inert`, Tab and Shift+Tab wrap inside, and focus
+    returns on close (`frontend/src/PermissionWizard.tsx`). Escape is deliberately unbound:
+    "Skip for now" records the first-run acknowledgement permanently, and a stray keypress
+    should not end onboarding for good. The backdrop scrolls, so at a 1100×480 window every
+    button is reachable (checked in a browser, as well as in
+    `frontend/tests/permissionWizardFocus.test.tsx`).
+  - **Settings' tabpanel holds its controls.** It used to close after the heading and blurb;
+    it now wraps the section and is a CSS subgrid, so the cards keep the surface grid's
+    columns (`frontend/tests/settingsNavFlow.test.tsx`).
+
+  - **The Review charts have a data view.** All three are `<svg role="img">`, which hides
+    each bar's `<title>` from assistive tech, so their numbers were unreachable without sight
+    and a mouse. Each now has a closed-by-default "Show data" disclosure holding a real table
+    (`frontend/src/ChartDataTable.tsx`), built from the same bar arrays the chart draws, with
+    `name`/`detail` fields on the bar types so the table and the tooltip cannot disagree
+    (`frontend/tests/chartDataTables.test.tsx`). Checked in the demo in light and dark.
+
+  - **An audit pass over Now and Review in the demo** (accessibility tree, tab order,
+    colour-coded elements). Passed as they are: the hero states its verdict in words and
+    hides its dot as decoration, the session tiles are labelled, the verdict buttons carry
+    `aria-label`s, and no click handler sits on an element a keyboard cannot reach. Fixed:
+    Recent Predictions read out "61.0 41.0%" with the risk level only in the chip's colour; it
+    now says "Focus score 61.0, Distraction risk 41.0%, medium risk" through visually hidden
+    text, with the level on hover (`frontend/tests/predictionHistoryLabels.test.tsx`). And the
+    goal field's suggestion list announced nothing: it is now a full ARIA combobox, with
+    `aria-expanded` and `aria-activedescendant` following the arrow keys.
+
+  - **Zoom and short windows, checked 2026-09-23** in the demo at 550×380 (an 1100×760
+    window at 200% zoom) and at 320×640 (the WCAG reflow width), every surface and every
+    Settings section, with all disclosures open: nothing extends past the viewport, nothing
+    sits in an `overflow: hidden` clip, and the page never scrolls sideways — cards stack,
+    the session explorer drops to one column, the chart tables wrap. Keyboard focus is visible
+    throughout: the components with their own `:focus-visible` rule draw the accent outline,
+    and the rest draw the browser's ring, which no rule suppresses. No change was needed.
+
+  Still open: the snapback overlay's focus, reduced-motion and contrast (native code on both
+  platforms, not reachable from the web demo); and one design decision — **the risk chip's level is still colour-only on
+  screen** (amber vs green for 41% vs 38%). A screen reader now hears it, but a sighted user
+  who cannot tell the colours apart does not see it. A visible cue (a word, an icon, a
+  pattern) changes the card's look, so it is Kassa's call.
+
+- **10.10 — Build a complete visual-token and appearance system.** `in progress` `M`
+  **PARTIAL — frontend cleanup implemented 2026-09-14; comprehensive visual/contrast
+  coverage remains open.** Opened 2026-08-05.
+
+  Complete in the frontend: semantic canvas, surface, border, text, control, chart, focus,
+  and error tokens; persisted **System / Light / Dark** appearance (System by default).
+  Explicit and system dark appearance now share one resolved token block. Risk/rules badges,
+  hero/status dots, controls, and helper states use tokens instead of light-only literals;
+  stale blue fallbacks and duplicate overriding rules are removed. The CSS guard now rejects
+  undefined tokens, raw hex/RGB/HSL colors outside the token area, and repeated selector
+  lists in the same at-rule context, with regression fixtures for the guard itself.
+
+  Review now has a full-width range bar and shared stat-tile overview, paired session/hour
+  charts, Top apps beside Recent Predictions, then full-width Context Timeline and a closed
+  Session management disclosure. Reflections and two-step deletion share one bounded list.
+  Unsaved reflections must be saved or cancelled before deletion becomes available.
+  Long lists scroll internally; chart heights and axis labels are consistent. Card-rise and
+  stagger delays are removed, reduced-motion support remains, and background glow/shadows
+  are quieter. ADR-0003's cream/coral palette, serif headings, rounded section cards, and
+  surface assignments remain intact; the App.tsx architectural split is still separate.
+
+  Verification: Review inspected in the isolated sample-data browser demo at 1100 x 760 in
+  light and dark appearance, including scrolling lists, expanded session management, and
+  surface switching; single-column layout checked at 700px. This is frontend evidence only:
+  the running native/C++ soak task was not touched.
+
+  *Progress 2026-09-25:* The Windows QA pass gives each surface an accurate heading, moves
+  Now's session controls above live feedback, leads Review with Summary and Sessions, and
+  gives its session chart full width. Settings cards use one consistent measure; disabled
+  primary actions have a distinct non-hover state. The stopped-session check-in reads and
+  names the stored automatic label, with an honest unavailable state. Cross-surface session
+  duration displays now share the seconds-aware formatter. Visual snapshot, contrast, and
+  native overlay coverage listed below remain open.
+
+  *Progress 2026-09-25:* A browser walkthrough of idle and active Now, Review, and Settings
+  prompted a visual pass across light and dark appearances. The shell now uses aligned
+  navigation, a quieter canvas, stronger headings, and restrained card borders. Review's
+  summary and Now's live metrics use aligned values with separators for faster comparison;
+  Settings places the walkthrough in a compact help row and names its controls Preferences.
+  The three surfaces and their data behavior are unchanged. The sample-data demo was checked
+  at desktop, 700px, and 375px widths, with tighter phone spacing and wrapped report metrics;
+  native-window and automated visual coverage remain open.
+
+  *Progress 2026-09-25:* The first session-story pass removes idle Now's Ready card and
+  second Start action, leaves one small correction control during work, and puts healthy
+  technical details in Advanced. Actionable failure routes remain visible.
+
+  *Progress 2026-09-25:* A reference-informed layout pass gives the active session goal
+  the main column, a separate tabular timer, and a compact mode label. Navigation adds
+  decorative icons without changing tab names or keyboard behavior. Review's range controls
+  share a compact row, with interval explanations in a disclosure; loading and failure
+  messages stay visible. Settings selects use the shared appearance tokens and larger hit
+  areas. Card heading margins and keyboard focus outlines are consistent.
+  Verified in the Windows desktop app with isolated QA data: entered and started a real
+  session, observed live readings, changed appearance, stopped it, and read its stored recap
+  and Review entry. Light Now, Review, and Settings and dark Now and Settings screenshots
+  were captured. All 747 native cases passed; frontend unit scripts, the corrected session
+  workflow test, typecheck, lint (existing warnings), and production build passed. Automated
+  snapshots and comprehensive contrast coverage remain open.
+
+  Remaining: automated light/dark visual snapshots for **all three surfaces and the native
+  overlay**, comprehensive contrast assertions coordinated with **10.3**, and a native
+  window/overlay smoke check after the ongoing soak is finished. Repo-wide Prettier cleanup
+  remains separate from this functional change.
+
+- **10.11 — Give the whole Review surface one shared time range.** `in progress` `M/L`
+  Opened 2026-08-05. Trends describes all retained predictions, Summary chooses 24 hours or
+  seven days, Recent Focus is framed as a sample count, and Insights uses its own recent-row
+  limit. Placing those cards together implies comparison even though they describe different
+  populations.
+
+  Add a Review-level **Today / 7d / 30d / All / custom** range owned by the Review workflow.
+  Every card must query and display that exact interval; no card may apply a hidden row cap.
+  Loading, empty, error, and stale-result behavior belong to the range as one unit. Add
+  workflow tests proving one change invalidates every Review dataset once and an older slow
+  response cannot overwrite the newer range. Land after **7.16** defines calendar boundaries
+  and **7.12** makes those queries bounded; implement through **14.4**, not another set of
+  cross-card callbacks in `App.tsx`.
+
+  **Interval provenance landed 2026-09-21** (Astra review slice 5). The shared range, the
+  request-generation guard, and the "Last …" labels were already in place; what was not is
+  that a card's pill came from the *selected* range, so pressing "Last 30 days" relabelled
+  the 7-day numbers on screen for as long as the load ran — and forever if it failed. The
+  workflow now carries `loadedRange` beside the data and exposes `displayedRange` /
+  `staleInterval` (`useReviewWorkflow.ts:useReviewWorkflow`); every pill reads the loaded
+  interval, and the range bar says "Showing Last 7 days until this loads" or, on failure,
+  "Still showing Last 7 days" with a Retry that re-asks for the pressed selection. Recent
+  Predictions and Context Timeline are marked *live* and the bar's "every card below uses
+  this exact interval" promise is corrected to name which cards do and which do not. The
+  per-session chart now shows the summary report's 500-session cap, since it reads the same
+  capped list. Hook tests pin stale-during-load, stale-after-failure, Retry, and an older
+  response never overwriting a newer one; App tests pin the pill, the alert, and the live
+  markers. The live views' placement was resolved by the first session-story iteration below.
+
+  *Progress 2026-09-25:* Custom now sends local midnight as a whole-second UTC timestamp,
+  matching the native Review parser. Time-zone regression coverage pins the conversion; the
+  shared range's existing loading and stale-data behavior is unchanged.
+
+  *Progress 2026-09-25:* Recent Predictions moved to Advanced diagnostics, and the context
+  timeline now reads the session selected in Review. Its insight and detail retain the label
+  of the loaded range while a different range is loading or has failed.
+
+- **10.14 — ADAPTER LANDED 2026-08-14; the export half stays open.** `in progress` `M`
+  What landed: the owned native seam — `pick_open_file` / `pick_save_file` over Win32 Common
+  Dialogs and AppKit, cancellation as an ordinary result, dialog authority kept in native code.
+  **9.14**'s restore path uses it, which is what that item needed.
+  **What did not:** the documents this item is actually about. `export_my_data`,
+  `export_summary_report`, and `export_support_bundle` all still hardcode a folder under
+  `data_dir` and return a printed path — no Save As, no Reveal or Copy path after success. The
+  seam exists; the three exports have not been moved onto it.
+  Opened 2026-08-05. Support, summary, and personal exports silently choose folders inside the
+  app-data directory and then print a path. There is no file-dialog seam. That is tolerable for
+  internal training artifacts, but poor desktop behavior for a document the user intends to
+  keep, send, or restore on another machine; **9.14** will otherwise have no safe way to select
+  an incoming snapshot either.
+
+  Add owned native **Save As** dialogs for personal, summary, and support exports, plus native
+  **Open** for the restore package in **9.14**. Cancellation is an ordinary result, not an error.
+  Use platform overwrite confirmation, type filters and correct extension handling, then write
+  to a sibling temporary file and publish atomically. After success offer Reveal and Copy path.
+  The default private app-owned folder remains available for unattended/internal workflows.
+
+  Keep dialog and filesystem authority in native code; do not expose an unrestricted path API
+  to the webview, especially across **8.14**'s trust boundary. Adapter tests must cover cancel,
+  overwrite refusal, Unicode and long paths, read-only destinations, extension normalization,
+  and a window disappearing while the dialog is open; one Windows and macOS desktop smoke must
+  exercise the real owner window. Coordinate long exports with **9.16/14.6**.
+
+- **12.6 — Global label hotkeys were never built, and nothing recorded that.** `proposed` `M`
+  Found 2026-07-23 while reconciling 12.1. The design called for global hotkeys that label
+  the current window focused/distracted without leaving the app. **The frontend event and
+  notification scaffolding now exists, but no native code registers an OS-global shortcut or
+  emits the label-hotkey event.** It stayed invisible because
+  `ARCHITECTURE.md`'s module map never listed the capability — the map only covered what
+  someone intended to build, so a skipped module left no trace anywhere.
+
+  Filed here because the doc audit is what surfaced it. It needs hand-written per-OS hotkey
+  registration, which is presumably why it was skipped. ADR-0002's six-item blocker list does
+  not include it, so this is post-v1 unless that accepted scope is explicitly revised.
+
+- **13.5 — Is there enough labelled data to train on at all?** `proposed` `S` `decision`
+  Unexamined. Labels come from explicit user submissions plus auto-labels at session end.
+  **7.5** unified explicit and shutdown stop, but **7.25** found the broader lifecycle still
+  has holes: replacement can omit an auto-label and repeated Stop can add another. Before
+  building the loop, first make label production idempotent, then measure: how many labels
+  does a typical week produce, and what's the class balance? If the answer is "40 labels,
+  90% PRODUCTIVE," personalization is premature and 2.3 should be rescoped to *collecting*
+  data well rather than training on it.
+
+- **13.8 — PARTIAL 2026-08-10.** `in progress` `S/M` Startup no longer exits on model-recovery failure
+  (`recover_model_deployment_for_startup`); health reports `degraded` with preserved paths and
+  Diagnostics offers **Retry cleanup** and **Reveal preserved files**, which opens the private
+  data directory and still reports its path when the OS refuses. Remaining from this item:
+  the adversarial real-webview harness cases named in the original acceptance (coordinate
+  with **10.1**).
+
+  The original finding was:
+
+- **13.8 (original finding) — Optional model recovery may degrade, never brick the core app.** `S/M`
+  Opened 2026-08-05. Startup runs `recover_model_deployment()` before storage or the webview
+  and exits the entire process on any exception. Recovery deliberately throws for a malformed
+  marker or staging/cleanup debris it cannot remove — including a committed deployment whose
+  valid live model is already in place. ONNX load and inference already fall back safely to
+  the heuristic, so cleanup metadata is paradoxically more availability-critical than the
+  optional model itself.
+
+  If **13.7** removes consumer deployment, remove this startup path from normal builds and close
+  the item that way. Otherwise preserve or quarantine questionable artifacts, start the core
+  capture/history app on the heuristic, and expose a durable degraded-model health state with
+  **Retry cleanup**, Reveal files, and a rollback action when one is provably safe. Never delete
+  the only candidate/previous model merely to make startup green.
+
+  Drive corrupt-marker, unremovable-staging, committed-but-locked-cleanup, invalid-model, and
+  clean-retry cases through the actual startup orchestrator. Each must prove storage, session
+  capture, Review, and heuristic predictions remain available; diagnostics must name the
+  preserved paths without leaking their contents. This complements **13.4** rollback and
+  **9.6** runtime failure UX; neither currently covers a pre-window optional-subsystem failure.
+
+- **14.3 — Make the command registry the authoritative native contract.** `accepted` `M`
+
+  Command names, argument defaults, validation, result casing, TypeScript DTOs, mappers,
+  fixtures, and mocks are parallel hand-maintained descriptions across `commands.hpp`,
+  `api.ts`, and `apiMappers.ts`. The contract test uses source-text matching for names, while
+  selected command tests manually recreate handler lambdas. That catches some drift but still
+  lets a real registered handler's payload shape diverge.
+
+  Introduce a webview-free `CommandRegistry` that owns the real descriptors and handlers;
+  make webview binding a thin adapter over it. Every registered handler must be invokable by
+  name in native tests, and the frontend contract fixture must be generated from or validated
+  against the same manifest. This complements 10.1's real-webview E2E; neither replaces the
+  other.
+
+  Progress (2026-09-16): `CommandRegistry` (`src/app/command_registry.hpp`) holds name,
+  handler, and worker policy; `command_handlers.cpp` registers all 73 and `commands.hpp` is
+  the adapter that binds them. The one platform reach in the handler table (the native
+  overlay's dismiss) became an injected hook, so the table links headless. The contract test
+  now compares the registry's names -- built against a real `AppState` -- to the fixture,
+  replacing the regex over the source; `test_command_registry` invokes real handlers by
+  name through the bridge's envelope, including the token check, and pins which commands
+  carry a worker policy.
+
+  Remaining: argument defaults and result casing are still described twice (handler and
+  `apiMappers.ts`); a generated TypeScript manifest, or per-command result-shape assertions
+  in the registry tests, would close that. The registry is also where 14.6's "slow" marking
+  now lives, as the async policy.
+
+  *Progress 2026-09-24:* registry tests now pin the actual Settings, recording, analytics,
+  summary, and session-history response keys plus representative default arguments through
+  real handlers. Expand this to the remaining mapped commands before closing the item.
+
+- **14.4 — Move frontend invalidation into workflow modules.** `in progress` `M`
+
+  `App.tsx` coordinates roughly a dozen feature states and passes 29 values into
+  `useAppEffects`; deletion and session actions know which unrelated stores must refresh.
+  Tests reproduce that knowledge with large command-switch mocks. Deep Now, Review, and
+  Preferences workflow modules should own subscriptions, refresh consequences, and failure
+  propagation, exposing smaller action/result interfaces to the surfaces.
+
+  Preserve ADR-0003's Now/Review/Settings placement. Acceptance is workflow-level tests in
+  which one public action proves every required invalidation without `App` manually calling
+  each refresh function. Schedule this after release blockers; it is locality leverage, not a
+  prerequisite to ship.
+
+  **Performance acceptance added 2026-08-05.** The default surface is Now, but mount currently
+  fetches health, latest prediction, rules, training status, insights, focus summary,
+  analytics, and active session immediately. An active session polls context history even
+  while Review is hidden. The new
+  workflows must make hydration surface-aware: initial Now renders with zero Review/Settings
+  data calls, first surface entry fetches each dataset once, re-entry uses cached data until a
+  real invalidation, and no timeline query runs while Review is hidden. Deduplicate in-flight
+  requests and prevent an older response from overwriting newer state. Prefer a native
+  "context snapshot persisted" invalidation to refreshing history on ordinary prediction
+  events. Pin command counts in workflow tests.
+
+  *Correction 2026-08-19:* this paragraph also claimed `useAnalytics` performed a duplicate
+  mount fetch. That hook was already dead when the claim was written — nothing imported it —
+  and it has since been deleted, so the duplicate fetch it describes never ran. The rest of
+  the acceptance stands; `useReviewWorkflow` fetches analytics once inside its batched
+  `refreshReview`. Do not go looking for the duplicate.
+
+  *Progress 2026-09-17:* Review hydration is gated on `active` (`surface === "review"`).
+  Mounting Now no longer runs the Review batch; `frontend/tests/reviewWorkflow.test.tsx`
+  pins zero review calls while inactive. Remaining performance work here is the broader
+  workflow extraction and any Settings-surface gating still open above.
+
+- **14.5 — Replace the fixed 10 Hz engine poll with deadline-aware, bounded work.** `in progress` `M`
+  `performance`
+  Opened 2026-08-05. The engine calls `engine_tick()` and sleeps 100 ms forever, including
+  when there is no session and no event. Inside a cycle it drains until the capture queue is
+  empty while holding the state lock; under sustained input, idle/Pomodoro work, persistence,
+  emissions, stop, and session actions wait behind an unbounded drain.
+
+  Build this with or after **14.2**'s deterministic cycle. Wake on capture arrival, stop/
+  lifecycle requests, and the next idle/Pomodoro deadline. Give each cycle a fixed event or
+  time budget, preserve event order across batches, and publish queue depth/high-water mark
+  plus maximum drain time in diagnostics. A quiet minute should execute only deadline-required
+  cycles rather than roughly 600; a continuous-producer test must prove stop and timer events
+  cannot starve. Record same-host idle CPU/wakeups and event-to-prediction p95 before/after,
+  with instrumentation overhead below 1%. ADR-0005 keeps sessions explicit, so also measure
+  and eliminate unnecessary no-session classifier work without breaking **2.7**'s nudge path.
+
+  *Progress 2026-09-17:* the per-tick drain is already bounded (`kEngineDrainBudget` /
+  `kEngineDrainBudgetMs` in `state.hpp`, with backlog re-tick). Remaining work is
+  deadline-aware wake (idle CPU when quiet) and diagnostics, not re-bounding the drain. The
+  paragraph above that describes an unbounded `while (next_event())` is historical.
+
+  *Progress 2026-09-21:* shutdown now joins the capture producer before allowing an empty queue
+  to end the engine loop, so a final callback cannot land after the consumer exits. Healthy
+  shutdown drains every time-limited slice; only consecutive failed ticks have a bounded
+  termination path. Regression coverage fills the ring while forcing the 128-event checkpoint
+  and publishes one final event during the stop barrier. Deadline-aware wake and diagnostics
+  remain open.
+
+- **14.6 — Move long-running commands behind owned, cancellable jobs.** `in progress` `L`
+  Opened 2026-08-05. Webview bindings run on the UI thread. Training waits in `std::system()`
+  for the Python process, and full training/personal exports execute directly inside bound
+  handlers. A large export or real training run can freeze the native dispatch path while the
+  frontend displays a progress state that cannot actually animate or cancel the work.
+
+  Mark slow commands in **14.3**'s registry and return a job id within 50 ms. Progress,
+  completion, structured failure, and cancellation arrive as events; only one training job
+  runs at once, while independent exports have an explicit concurrency policy. A deliberately
+  slow fake job must leave the UI heartbeat responsive. Cancellation and app shutdown must
+  terminate/reap child processes, join workers, and guarantee no callback outlives `AppState`.
+  Fast commands remain synchronous. Replace shell execution with an owned process API as part
+  of this work, aligning with **4.2**, and do not promise cancellation until the child can
+  actually be stopped.
+
+  Progress (2026-09-16): the owned process API exists (`util/subprocess.hpp`: argv, not a
+  shell; Job object / process group so a kill reaches the launcher's children; SIGTERM then
+  SIGKILL). `train_from_export` runs through it on the command worker, gated so one training
+  runs at a time and the privacy deletion refuses while one is reading the export directory,
+  and it ends at its next poll once shutdown begins -- verified with a real Python child,
+  including that `py -3`'s python.exe dies with the launcher. `pythonAvailable` no longer
+  spawns on every status refresh.
+
+  The card offers "Cancel training" while a run is in flight (`cancel_training`); the run
+  answers through its own result, so the button cannot claim a stop the child has not made.
+  Progress is the pipeline's own log: `train_from_export` re-reads `training.log`'s tail
+  between waits and pushes `training-progress` events (via `AppState::emit_event`, the same
+  hook and epoch check the engine uses) whenever it changes; the card shows elapsed time and
+  the tail under the busy button, subscribed only for the length of the run.
+
+  Decision (2026-09-16): completion stays on the command's own promise rather than moving
+  to a job id plus a completion event. With cancel and progress in place, the job-id model's
+  remaining benefit is surviving a webview reload mid-run, a development-only case, and it
+  would replace a working, tested IPC contract. Revisit if exports grow the same need.
+
+  Remaining: the registry marking from **14.3**, and the deliberately slow fake job proving
+  the UI heartbeat stays responsive (a 10.1 concern, since it needs the real webview).
+
+  *Correction 2026-09-17:* the opening paragraph's claim that training waits in
+  `std::system()` on the UI bind path is historical. `train_from_export` and the exports
+  already run on the command worker (`CommandRegistry` async policy); what remains is the
+  heartbeat proof and any further job-id model revisit noted above.
+
+  *Progress 2026-09-21:* model-file ownership now uses the training gate across promotion,
+  reload, rollback, and deployment-cleanup retry. Conflicting synchronous commands return a
+  clear busy error instead of touching a worker's transaction files; the command-registry
+  regression holds the training job before asserting all three refusals. Cancellation and
+  shutdown still release the same gate through the owned worker policy.
+
+  *Progress 2026-09-21:* rollback now goes through the same staged, journaled pair promotion
+  as a new model. Its regression covers an optional rollback metadata file and verifies the
+  current model's metadata remains available as the next rollback target; a blocked metadata
+  backup boundary now also proves both live pairs remain unchanged on failure.
+
+  *Progress 2026-09-21:* classifier provenance now follows the producer of the persisted
+  prediction: a failed loaded ONNX model reports the heuristic identity until a later ONNX
+  inference succeeds. The ONNX regression checks backend, degraded status, and identity across
+  both sides of that transition, and a fixture-backed AppState case verifies the successful
+  identity reaches the stored prediction row.
+
+- **14.7 — Move retention and space reclamation out of the launch critical path.** `in progress` `M`
+  `performance`
+  Opened 2026-08-05. `main.cpp` blocks on `Storage::open()` before the webview is constructed.
+  That open synchronously migrates, prunes every retained runtime table, and runs a full
+  blocking `VACUUM` after only 500 deleted rows. At roughly one prediction/feature row per
+  second, an ordinary day's expiry clears that threshold; a mature database can periodically
+  rewrite itself while a user double-clicks and sees no window.
+
+  Measure first with month- and 90-day fixtures. Keep lock acquisition, schema validation, and
+  required migrations on the correctness-critical startup path, but schedule ordinary pruning
+  and page reclamation after first paint. Make timestamp predicates indexable after **7.16**,
+  add the missing useful global timestamp access path for high-volume feature rows, delete in
+  bounded chunks, and choose incremental/freelist-ratio or byte-based reclamation from measured
+  file growth rather than row count alone. A session start must be able to yield/cancel
+  maintenance before it harms capture persistence.
+
+  Acceptance: no full `VACUUM` runs before the first window; the same-host mature-fixture p95
+  for launch-to-visible improves by at least 80% over the captured baseline; expiry leaves no
+  out-of-policy rows; engine write latency stays inside its existing benchmark bound; and a
+  crash between chunks resumes safely without a second deletion interpretation. Publish last
+  maintenance time/result and pending reclaim bytes in diagnostics. Reuse **14.5**'s deadline
+  scheduler or **14.6**'s owned jobs rather than starting another unmanaged thread, and align
+  the policy with user-configurable retention in **9.10**.
+
+  *Progress 2026-09-17:* periodic retention no longer runs inside `engine_tick` under
+  `storage_mutex_`. The tick only schedules work; `run_retention_maintenance` on
+  `maintenance_thread_` deletes in bounded batches and yields, pauses while a session is
+  active, and does not VACUUM. Startup `Storage::open` prune+VACUUM is still the launch
+  blocker this item names. `idx_feature_snapshots_ts` exists (schema v8).
+
+- **14.8 — Decompose `AppState` along its lock boundaries.** `in progress` `L`
+  Opened 2026-09-16. `state.cpp` is ~2,400 lines and `AppState` has ~110 methods across
+  seven concerns that share one class: the engine tick and event pipeline; sessions and
+  their recaps; the Pomodoro state machine; alert routing, ids, and snooze/private-pause
+  policy; settings, privacy exclusions, and app rules; reporting (analytics, summaries,
+  history, exports); and model deployment/classifier lifecycle. The three ranked mutexes
+  (`mutex_`, `activity_boundary_mutex_`, `storage_mutex_`) already say where the real
+  boundaries are; the class just ignores them.
+
+  **Do not "split the file".** Extract one concern at a time behind a type that owns its own
+  state and is unit-testable without `AppState`, in this order, because each is the least
+  entangled remaining piece: (1) Pomodoro -- `pomodoro_` plus the nine `*_pomodoro*`
+  methods already form a machine whose only outward edges are `alert_route_unlocked` and
+  persistence; (2) alert policy -- `issue_alert_id_unlocked`, `claim_alert_action`,
+  `outstanding_alert_id`, snooze and private-pause lapses, reading settings through an
+  interface rather than `settings_` directly; (3) reporting -- everything that takes only
+  `storage_mutex_` and returns JSON (**14.1** closed without a read lane, so this is
+  an extraction, not a second connection); (4) session lifecycle. The tick (`engine_tick`, `compute_event`,
+  `persist`) stays last and becomes **14.2**'s production seam once the concerns it
+  coordinates are types it can be handed.
+
+  Acceptance per extraction: the moved methods are tested against the new type alone; the
+  ranked-mutex order is unchanged (TSan and the `RankedMutex` self-check both stay green);
+  `test_app_state` passes unmodified except for construction; no behaviour change is bundled
+  in. Stop after any extraction whose diff exceeds ~600 lines and land it before the next.
+  Prerequisite for none of the open items, so it yields to anything with a user-facing
+  failure behind it.
+
+  *Progress 2026-09-17 (concurrency audit follow-ups, before any extraction):*
+  - Session start/stop bump `activity_epoch_` the way deletion already did, so queued
+    prediction/snapback UI dispatches cannot paint after a generation change; the frontend
+    also drops live cards on start/stop and ignores predictions for a different session id.
+  - Writers open with `PRAGMA busy_timeout = kSqliteBusyTimeoutMs` so a brief external lock
+    no longer fails `BEGIN IMMEDIATE` immediately and discards a drained persistence batch.
+  - Snapbacks are not marked emitted until an emit hook exists (engine can start before the
+    webview hook is installed).
+  - `CaptureThread::record_failure` publishes the reason before `failed_`.
+  - `recording_status` / `request_permissions` no longer hold `mutex_` across OS permission
+    probes; `focus_summary_for_window` caps and reverses its prediction sample.
+  Still under lock by design until extraction: settings fsync (`commit_settings_unlocked`)
+  and ONNX reload (singleton shared with the tick).
+
+- **14.12 — One Review load computes `prediction_stats` three times.** `proposed` `S` `performance`
+  Opened 2026-09-22, by **14.11**'s measurement rather than by reading. `useReviewWorkflow.ts`
+  fires five commands in parallel for one Review load, and three of them —
+  `state.cpp:AppState::analytics`, `state.cpp:AppState::summary_report`, and
+  `state.cpp:AppState::focus_summary_for_window` — independently run
+  `storage.cpp:Storage::prediction_stats` over the **same cutoff**, each taking
+  `storage_mutex_` to do it. At the measured 90-day cost of 5.2 s that is ~15.5 s of lock-held
+  work for one number computed three times, inside a load whose other two commands add a
+  further ~8 s.
+
+  Two of those three call sites predate 2026-09-22; **7.33** added the third, deliberately and
+  correctly — the implementation it replaced returned a *wrong* stretch on any window past
+  about fourteen attended hours, and a right answer computed redundantly is the better defect.
+  Recorded here rather than folded into 7.33 because the fix is not to undo it: the three
+  commands want overlapping slices of one aggregate, so the answer is to compute it once per
+  window and share it, which is a question about the command layer's shape and not about any
+  one of them.
+
+  *Reassessed 2026-09-22, after **14.13**.* The figures above were taken when every window read
+  the whole table. On the presets the product actually offers, three calls now cost **165 ms**
+  (`today`) and **1.3 s** (`7d`), not 15.5 s. That is no longer an obvious build — a cache
+  carries invalidation, and the three commands derive their cutoffs milliseconds apart, so a
+  memo keyed on the exact cutoff would never hit and one keyed on `(window, since)` would hand
+  two of the three an answer computed for a slightly different instant. **Left `proposed` on
+  purpose.** **14.1** closed 2026-09-22 with writer priority rather than a read lane, so a
+  persist no longer waits out a whole load. What redundancy still costs is the Review
+  page's own load time, not the engine's.
+
+  *Measured inside a load 2026-09-22* (**14.1**'s per-command breakdown, corrected fixture,
+  7-day preset). The three calls are **~1.3 s of a 2.55 s Review load** — the largest single
+  share of it. Still `proposed`: the cache objection above is unchanged, and since 14.1's
+  gate it is a question of how fast Review opens, not of how long a persist waits.
+
+## Tier 6 — CI health
+
+Opened by the 2026-07-20 staff review against run `29728565319`, when this tier was titled
+"CI is red (blocking)". **It is not red any more:** 6.1, 6.3, and 6.4 are all done and
+CI-confirmed, and run `30168981559` (2026-07-25) was green on all three OSes. Retitled
+2026-07-29 so the heading stops claiming a blocking outage that ended three days earlier.
+**This tier is now closed:** 6.2 was the last item, and it was a process decision — what to
+do when master goes red — rather than a CI failure. It closed 2026-08-27.
+
+## Tier 7 — Correctness & product findings (2026-07-20 staff review)
+
+Covered in the review: `state.cpp`, `classifier.cpp`, `storage.cpp`, `capture_thread.cpp` +
+`ring_buffer.hpp`, `tracker.cpp`, `title_parser.cpp`, the IPC/eval boundary, `main.cpp`, and
+the frontend XSS surface. **Not covered — un-reviewed, not clean:** `features.cpp` extraction
+maths, ONNX internals, the Windows overlay/tray implementations, frontend component
+internals, and the benchmark harness.
+
+## Tier 8 — Security hardening (2026-07-20 staff review)
+
+**No exploitable vulnerability was found.** Except for 8.1 — a real availability bug in
+normal use — these are defense-in-depth and fragility items.
+
+**What is already right**, recorded so a future review doesn't re-derive it: every SQL
+statement is parameterized (no string-built queries in `storage.cpp`); no `innerHTML`,
+`dangerouslySetInnerHTML`, or `eval()` in the frontend; the `popen`/`std::system` call site
+in `permissions.cpp:command_available` takes a compile-time literal;
+`training_deploy.cpp` quotes the user-supplied repo path; `npm audit --production` reports 0
+vulnerabilities and the `security-audit` job is green; and the hook callback correctly
+swallows all exceptions (`capture_thread.cpp:record_failure`) since unwinding through an OS callback is UB.
+
+> **This list went stale in the unsafe direction on 2026-07-25, which is worth recording as
+> a pattern.** It used to say `active_window.cpp`'s `run_command()` also took a compile-time literal. It no
+> longer does: `626ad87` changed `run_command()` from `const char*` to `const std::string&`
+> so it could build a per-browser `osascript` command, and that command is chosen by the
+> foreground **app name, which comes from the OS**. The code is still safe — it interpolates
+> the matched allowlist *literal* rather than the caller's string, with a comment saying
+> exactly why — but the property holding it safe changed from "the type system makes this
+> impossible" to "a loop is careful," and nothing but that comment now enforces it.
+>
+> The general lesson: **a "what is already right" list is a claim with an expiry date.** It
+> reads as reassurance, so it is the least likely thing in this file to be re-checked, and
+> `check_doc_paths.py` cannot catch it — the path still exists, only the claim about it
+> died. Re-verify this block whenever a signature it names changes.
+
+## Tier 5 — Open findings from the 2026-07-20 engine/storage audit
+
+**Checking each one before fixing it changed the answer twice.** 5.4 and 5.6 turned out to be
+deliberate behaviour rather than defects — and 5.6 would have failed the feature-parity
+golden test had it been "fixed" unilaterally. Both are now decision items. **An audit
+finding is a hypothesis; verify it before writing code.**
+
+Done: 5.1, 5.2, 5.7, 5.8, 5.9 (details in the [archive](roadmap_archive.md)).
+
+## Tier 9 — Ship a v1 (release readiness)
+
+**The gap this tier closes: there is no written definition of "shipped."** Tiers 0–8 are all
+"make the thing correct." This is "make the thing releasable to a stranger." Every item was
+scoped by walking the lifecycle a real user goes through — install, first run, daily use,
+upgrade, failure, uninstall — and asking what's missing at each step. Most of these are
+small; the tier is large because nobody has walked that path yet.
+
+## Tier 10 — Frontend & UX
+
+The frontend was inventoried in July and reviewed end-to-end on 2026-08-05: composition,
+loading behavior, chart semantics, session controls, Settings hierarchy, privacy copy, and
+the CSS token layer. Tests still mock IPC, so **10.1** remains the real-browser boundary.
+
+## Tier 12 — Documentation truth
+
+**Every item here is a doc asserting something false.** This tier exists because that has now
+happened often enough to be a category, not an accident. Two root causes recur: docs written
+*before* the code (plans that were never reconciled), and docs written *about* code that
+later moved.
+
+> **Cleared 2026-07-23.** 12.1–12.5 are all done; only **12.6** remains, and it is a port
+> gap the audit *found*, not a doc defect. Three things are worth carrying forward:
+>
+> 1. **The tier is now partly self-enforcing.** `scripts/check_doc_paths.py` runs in
+>    `docs-smoke` and fails the build if any doc names a file that does not exist. That
+>    closes the most common failure mode mechanically. It cannot check *claims* — only
+>    paths — so the audit habit still matters.
+> 2. **Doc audits find code bugs.** 12.2 turned up **8.7**, a silently dead `-UseVite`
+>    flow, and 12.1 turned up **12.6**, an entire missing capability. A doc records what
+>    the code was *supposed* to do; diffing that against what it does is cheap and finds
+>    things tests do not.
+> 3. **Every stale claim pointed the same way** — describing the system before a fix
+>    landed, never after. Docs rot toward *pessimism* here, which is the dangerous
+>    direction: it makes finished work look open and invites rebuilding it.
+
+- [x] Feed a window title containing invalid UTF-8, U+2028, quotes, and backslashes through
+      the full pipeline. Covers 8.1 and 8.2 in one test. **Automated 2026-08-22** as
+      `tests/test_app_state.cpp:a hostile window title crosses the whole pipeline without dropping the tick`,
+      so it no longer needs running by hand. It found a live defect on its first run: the
+      emit dumps used nlohmann's strict handler and threw `type_error.316` on the invalid
+      bytes, costing every event of that tick. `dump_json` (`src/types.hpp:dump_json`) now
+      replaces malformed bytes with U+FFFD on every path carrying OS-derived strings.
+
+
+- [x] **Stack-size assertion:** `static_assert(sizeof(AppState) < N)`. One line, permanently
+      prevents 6.1's class of regression. **Done 2026-08-22** in `tests/test_app_state.cpp`,
+      beside the equivalent guard for `CaptureThread`; N is 16 KB against a current 3,392
+      bytes, and the assertion was verified to fire before being set to that bound.
+
+- [x] **Dead-header job:** automate the dead-code sweep above. It's the check that would have
+      caught 2.4 for free. **Done 2026-08-22** as `scripts/check_dead_headers.py`, run in the
+      CI guard job. A header's own `.cpp` and its tests do not count as callers, so a
+      `.hpp`/`.cpp` pair nothing else uses fails it, not just a header-only file.
+
+
+### Completed-work ledger formerly in the local queue
+
+The September 22 queue carried this dated commit ledger; preserved as history,
+not as a claim about a new release or a second backlog.
+
+| Commit | Slice | What landed |
+| --- | --- | --- |
+| `119a6a7` | 1 — attendance recovery (9.6) | Span transitions survive failed persistence |
+| `da676d5` | 2 — wake context (AUD-02) | Foreground resynchronized before the first post-wake prediction |
+| `357b41c` | Step 0 | Astra review committed + indexed; personal hook tooling gitignored |
+| `d549b83` | 3 — recording/privacy coherence (2.10/2.16/14.4) | Native `recording-status` event; deadline + idle refresh; ordering guard; "could not confirm"; Settings toggle ↔ header |
+| `2648ae5` | 4 — session switching + draft (2.11/14.4) | Stop applied before replacement start; `switching` resets; mode select is a draft committed by Start |
+| `d9c87da` | 5 — Review interval provenance (10.11) | Cards labelled with the loaded interval; stale note + Retry; live cards marked; 500-session cap shown |
+| `f3a589d` | 6 — Windows mouse speed (7.27) | Coordinates widened before subtraction; finite, saturating result |
+| `a077cf9` | 7 — shutdown drain (14.5) | Exit consults the producer, not a stale backlog flag |
+| `86c622a` | 8 — export/delete exclusion (8.12/9.16/14.6) | Deletion refuses beneath an accepted personal export |
+| `2ce58d5` | 9 — export episode completeness (9.16) | The per-session episode cap is reported as truncation |
+| `c5e33a8` `41bbef7` `c075547` `9e6e4f4` | 10/11 — model-file exclusion + atomic rollback (Tier 13) | Model commands serialized; rollback is a journaled pair; provenance tests |
+| `cd3349e` | 12 — prediction provenance (Tier 13) | `model_id()` reports the backend actually used after ONNX fallback |
+| `5e207a2` | 7.33 — one focus stretch | Review's focus summary served from the SQL aggregate; the 50,000-row cap deleted |
+| `88f78b0` | 11.13 — events in the IPC contract | `src/app/events.hpp` registry + fixture `events` block; four dead listeners gone; the invoke regex hole closed |
+| `a610ce0` | 8.15 — delete-all clears goal text | `browserStorage.ts` classifies all six keys; session presets deleted and named; an enforced list |
+| `2c9e0a9` | 14.11 — measured budgets (partial) | `bench_budgets.cpp` on-disk at real cadence; footprint + read latency published; opened 14.12 |
+| `584014e` | 12.8 — split the roadmap | 128 blocks/3,317 lines to the archive; status words on every open item; `check_roadmap_status.py` |
+| `49ec9d1` `13d8eca` | 14.13 — sargable window predicates | `(?1 IS NULL OR ...)` defeated `idx_predictions_ts`; today 8.7x/12.8x faster; reassessed 14.12; closed, `sessions` remainder carved out as 14.14 |
+| `85a015e` `71a044c` `8e8a96e` `f3c23c3` `77beea6` | 14.11 — measured budgets (closed) | Ranked-lock hold/wait, SQLite busy waits, idle CPU/wakeups, all on `get_health`; archived. Ring high-water over a real day still needs a support bundle, not code |
+| `b54fa83` | 14.1 — first concurrency measurement | Writer vs two hot readers: 0.04 ms → 29,191 ms worst wait, 7 of 200 persists; does not decide 14.1 |
+| `89d931d` `ee42361` | 14.1 — realistic reader, fixture corrected | Sessions were dated at generation; corrected, a 7d Review load is 2.55 s and the stalled persist waits out all of it |
+| `e2a176a` | 14.14 — closed unbuilt | Session-windowed reads scale with the window; the idiom isn't the cost |
+| `d205636` | 14.1 — closed: writer priority | `util/writer_priority.hpp`; worst persist wait 7,423 → 845 ms in one run; no read lane |
+| `b02b8a0` | 10.3 — first slice | Permission wizard: initial focus, inert background, Tab wrap, focus restore, scrolling; Settings tabpanel wraps its controls |
+| `a5de047` | frontend flake | Session switch reset in render, not an effect; sessionCockpitFlow 8/8 under the full suite |
+| `2c12f8a` | 10.3 — chart data view | "Show data" table on all three Review charts, from the same bar arrays |
+| `fce39e4` | docs — v0.3.0 released | README, changelog `[0.3.0]` section, Phase 1 status; SmartScreen caveat for the unsigned installer |
+| `eec80aa` | 10.3 — audit pass | Recent Predictions numbers and risk level spoken; goal suggestions a full ARIA combobox |
+| `48d7ba8` | 2.9 — session explorer v1 | Sessions card on Review: day-grouped list, detail with curve/apps/reflection; `get_session_focus_curve` |
+
+### Queue reconciliation
+
+The removed local queue prioritized 10.3, 2.9, and 14.12. The live roadmap's existing
+sequence was retained; choosing a different priority order requires the owner's decision.
+The local queue's Windows soak remains P0-09, certificate work remains 0.4b/3.3, and
+the model evaluation gate is recorded with 13.5/13.6/FWD-07. Its machine-specific build
+instructions are replaced by the maintained running guide and canonical verifier.
+
+
+### Documentation consolidation — follow-up to 12.8 (2026-09-30)
+
+Historical reviews moved to docs/archive; the local working queue was reconciled and removed.
+The live roadmap now leads with current priorities and remaining work; original item bodies,
+progress, and commit evidence are retained above. Performance measurements have one home in
+benchmarking.md, the Windows runbook is focused on demonstration, and maintained guides
+distinguish current implementation, accepted decisions, and dated verification evidence.
+No runtime behavior or accepted product priority changed in this documentation pass.

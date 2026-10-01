@@ -1,5 +1,10 @@
 # Astra review — findings and reconciliation
 
+> Historical source review. Findings and proposals below describe the inspected
+> checkout, not the current implementation or an accepted work queue. Use the
+> [live roadmap](../ROADMAP.md) for remaining work and accepted priorities.
+> Recheck source evidence before acting; this archival move does not reproduce findings.
+
 This is the preserved source review for later roadmap triage. It contains Astra’s
 C++/systems audit, frontend/product audit, and final reconciliation. The synthesis
 comes first; detailed reasoning, reproduction ideas, test gaps, learning points,
@@ -8,7 +13,7 @@ and original audit instructions follow.
 ## How coding agents should use this review
 
 - **Status:** reference material, not an accepted implementation plan or a second
-  backlog. [ROADMAP.md](ROADMAP.md) remains the sole live backlog. The twelve
+  backlog. [ROADMAP.md](../ROADMAP.md) remains the sole live backlog. The twelve
   proposals below retain the review’s suggested scope and order; they have not
   been turned into tickets by this editorial pass.
 - **Evidence:** all three passes were read-only source inspections. The reviewer
@@ -18,7 +23,7 @@ and original audit instructions follow.
   unmeasured unless explicitly stated otherwise.
 - **Precedence:** use the final reconciliation when the review passes overlap.
   Before implementation, check the current code, roadmap, and accepted
-  [ADRs](adr/README.md). Review recommendations do not override those decisions.
+  [ADRs](../adr/README.md). Review recommendations do not override those decisions.
 - **Provenance:** the imported transcript supplied times of day, but no audit date
   or commit SHA. Do not infer either from this file’s reorganization date
   (2026-09-19). Source filenames and function names are retained as search clues;

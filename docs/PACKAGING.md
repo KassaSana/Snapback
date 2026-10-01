@@ -30,15 +30,18 @@ anything survived as far as a release tag.
 
 ROADMAP 9.11. A `v*` tag is its own way into `release.yml`, and `ci.yml` does not run for
 tag pushes — it runs on pushes and PRs to `main`/`master`. Without a gate, a tag could
-publish a commit that never saw the macOS/Linux/sanitizer/ONNX matrix, or was never on
+publish a commit that never saw the required current CI checks, or was never on
 master at all. **Branch protection does not cover this: a tag is not a branch.**
 
 So the order matters:
 
-1. **Merge to `master`** and let `ci.yml` finish **green** on the merge commit.
-2. **Bump `project(... VERSION x.y.z)` in `CMakeLists.txt`** if you have not already, and
-   commit it — the tag must name that exact version.
-3. **Tag that commit** and push: `git tag v0.3.0 && git push origin v0.3.0`.
+1. **Bump `project(... VERSION x.y.z)` in `CMakeLists.txt`** for the candidate and update
+   release notes before merging.
+2. **Merge the final candidate to `master`** and wait for `ci.yml` to finish **green on
+   that exact commit**. Any subsequent version/documentation fix requires its own green run.
+3. **Tag that verified commit** with its matching `vX.Y.Z` version. Push the tag only when
+   the owner authorizes publication; the workflow publishes a release for tag pushes.
+   A manual workflow run builds artifacts without publishing a release.
 
 The `verify-tag` job refuses to build unless all three hold:
 
@@ -54,22 +57,23 @@ unexpected response is treated as unproven, not as a pass.
 
 ## Pre-release checklist (external, not code)
 
-These gate the first real tag but do not block merging license or demo work:
+The unsigned Windows v0.3.0 release is recorded in the changelog. These are remaining
+external prerequisites or one-time configuration checks; they do not all gate an unsigned tag:
 
 | Item | Roadmap | What to do |
 | --- | --- | --- |
 | Apple Developer account | **3.3** | Enroll; longest lead time for macOS notarization and notifications |
-| Code-signing certificate | **0.4b** | Purchase EV cert; set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` on the release runner |
-| Version baseline | **9.13** | **Done** — first release is `v0.3.0`; orphaned `v0.2.0` tag left in place |
+| Code-signing certificate | **0.4b** | Choose/provision the certificate and set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` on its release runner |
 | GitHub Pages source | **3.6** | Repo → Settings → Pages → Source: **GitHub Actions** (one-time; required for the live demo URL) |
 
 ## Authenticode signing
 
-Release builds should be signed so Windows SmartScreen does not warn on first run.
+Release builds should carry a verifiable publisher signature. The packaged signing success
+path remains unverified until certificate provisioning and a signed artifact check complete.
 
 ### Requirements
 
-1. A code-signing certificate (EV recommended for immediate SmartScreen trust)
+1. A code-signing certificate; certificate type and provisioning are external release decisions
 2. `signtool.exe` from the Windows SDK on the packaging machine
 3. The certificate installed in the Windows certificate store for the runner user
 4. `SignTool` timestamp server (the script uses `http://timestamp.digicert.com`)
@@ -142,14 +146,14 @@ still builds and uploads unsigned artifacts.
 Rationale:
 
 - Replicating secure delta updates is a full subsystem (signing, channels, rollback).
-- v1 ships as a signed installer + manual upgrade path.
+- The intended v1 path is a signed installer and manual upgrade; the recorded v0.3.0 artifacts are unsigned.
 - Revisit when installer signing and CI release artifacts are stable.
 
 Alternatives if needed later:
 
 1. **Manual download** — link from README / GitHub Releases (simplest)
-2. **In-app "check for updates"** — HTTP fetch of a version manifest + download link (no silent install)
-3. **Full updater** — add signed manifests, channels, and rollback (high effort)
+2. **In-app "check for updates"** — requires a new ADR amending network silence before an HTTP manifest fetch is scheduled (Roadmap 3.5)
+3. **Full updater** — also requires that ADR, plus signed manifests, channels, and rollback (high effort)
 
 ## macOS / Linux packaging
 

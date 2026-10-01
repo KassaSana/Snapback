@@ -23,7 +23,8 @@ If you cannot phrase it as a question, this is not a decision — it is a task.
 ## Context
 
 What forces made this a real choice? Include the ones that pull in opposite
-directions. Cite code with `path:line` where useful.
+directions. Cite current code with `path:symbol` where useful. Historical findings should name
+the inspected date or commit, without a live-looking citation to changed code.
 
 ## Options considered
 
