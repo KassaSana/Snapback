@@ -231,3 +231,19 @@ dismissal, because `ContextTracker`'s `Recovering` state has exactly one exit
 reaches it.
 
 The headless core remains buildable without the webview or ONNX runtime.
+
+## Capture input contract
+
+Keyboard presses (including repeats) and releases are distinct; mouse clicks count button-down
+only. Pointer movement includes dragging. Scroll is `MouseScroll`, serialized as `mouse_scroll`;
+it counts as input/attendance but does not contribute typing, click, or motion features. Existing
+capture-event wire names and numeric codes are unchanged, and the model still uses 31 features.
+Developer capture readers must recognize the new scroll name; no external trainer is bundled
+here, so compatibility with a separately configured trainer must be verified before release.
+
+Windows and macOS calculate finite, clamped speed in desktop-coordinate units per second;
+different display scaling does not imply physical-distance equivalence. Linux evdev motion
+remains uncalibrated. Linux key/button/wheel translation and its injectable foreground provider
+are in `src/capture/input_context.hpp`. Context refresh is cadence-bounded at 500 ms and never
+runs inside native callbacks or per-device-event translation. Missing Linux context clears the
+cached title instead of retaining a stale private context.

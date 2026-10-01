@@ -1,6 +1,7 @@
 #if defined(__linux__)
 
 #include "capture/input_hook.hpp"
+#include "capture/input_context.hpp"
 
 #include <fcntl.h>
 #include <linux/input.h>
@@ -49,51 +50,30 @@ public:
             return;
         }
 
-        std::string last_app;
-        std::string last_title;
+        detail::CaptureContextProvider context([] { return query_active_window(); });
+        context.refresh(now_secs(), wall_clock_secs_now());
         while (!stop_requested.load(std::memory_order_acquire)) {
+            if (auto change = context.refresh(now_secs(), wall_clock_secs_now()))
+                callback_(std::move(*change));
             bool got_event = false;
             for (int fd : fds_) {
                 input_event ev{};
-                while (read(fd, &ev, sizeof(ev)) == static_cast<ssize_t>(sizeof(ev))) {
-                    if (ev.type != EV_KEY && ev.type != EV_REL && ev.type != EV_ABS) continue;
+                // Bound each device slice so a busy device cannot starve context refresh or stop.
+                for (unsigned drained = 0; drained < 256 &&
+                    !stop_requested.load(std::memory_order_acquire) &&
+                    read(fd, &ev, sizeof(ev)) == static_cast<ssize_t>(sizeof(ev)); ++drained) {
+                    const auto kind = detail::classify_linux_input(ev.type, ev.code, ev.value);
+                    if (!kind) continue;
                     CaptureEvent out;
+                    out.event_type = *kind;
                     out.timestamp_secs = now_secs();
                     out.wall_clock_secs = wall_clock_secs_now();
-                    if (ev.type == EV_KEY && ev.value == 1) {
-                        out.event_type = EventType::KeyPress;
-                    } else if (ev.type == EV_REL || ev.type == EV_ABS) {
-                        out.event_type = EventType::MouseMove;
-                    } else {
-                        continue;
-                    }
-                    if (auto active = query_active_window()) {
-                        out.app_name = active->app_name;
-                        out.window_title = active->window_title;
-                    }
+                    out.captured_context = context.value();
                     callback_(std::move(out));
                     got_event = true;
                 }
             }
-
-            if (auto active = query_active_window()) {
-                if (active->app_name != last_app || active->window_title != last_title) {
-                    CaptureEvent ev;
-                    ev.event_type = active->app_name != last_app ? EventType::WindowFocusChange
-                                                                 : EventType::WindowTitleChange;
-                    ev.timestamp_secs = now_secs();
-                    ev.app_name = active->app_name;
-                    ev.window_title = active->window_title;
-                    callback_(std::move(ev));
-                    last_app = active->app_name;
-                    last_title = active->window_title;
-                    got_event = true;
-                }
-            }
-
-            if (!got_event) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            }
+            if (!got_event) std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
 
         for (int fd : fds_) close(fd);
@@ -104,23 +84,12 @@ public:
 
 private:
     void run_polling_fallback(const std::atomic<bool>& stop_requested) {
-        std::string last_app;
-        std::string last_title;
+        detail::CaptureContextProvider context([] { return query_active_window(); });
+        context.refresh(now_secs(), wall_clock_secs_now());
         while (!stop_requested.load(std::memory_order_acquire)) {
-            if (auto active = query_active_window()) {
-                if (active->app_name != last_app || active->window_title != last_title) {
-                    CaptureEvent ev;
-                    ev.event_type = active->app_name != last_app ? EventType::WindowFocusChange
-                                                                 : EventType::WindowTitleChange;
-                    ev.timestamp_secs = now_secs();
-                    ev.app_name = active->app_name;
-                    ev.window_title = active->window_title;
-                    callback_(std::move(ev));
-                    last_app = active->app_name;
-                    last_title = active->window_title;
-                }
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            if (auto change = context.refresh(now_secs(), wall_clock_secs_now()))
+                callback_(std::move(*change));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     }
 

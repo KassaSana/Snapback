@@ -258,7 +258,7 @@ void AppState::publish_live_read_unlocked() {
 
 bool AppState::is_input_event(EventType type) {
     return type == EventType::KeyPress || type == EventType::KeyRelease ||
-           type == EventType::MouseMove || type == EventType::MouseClick;
+           type == EventType::MouseMove || type == EventType::MouseClick || type == EventType::MouseScroll;
 }
 
 IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_input,

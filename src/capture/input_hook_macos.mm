@@ -1,6 +1,7 @@
 #if defined(__APPLE__)
 
 #include "capture/input_hook.hpp"
+#include "capture/input_context.hpp"
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -23,7 +24,7 @@ double now_secs() {
     return std::chrono::duration<double>(clock::now() - start).count();
 }
 
-EventType map_event(CGEventType type) {
+std::optional<EventType> map_event(CGEventType type) {
     switch (type) {
         case kCGEventKeyDown: return EventType::KeyPress;
         case kCGEventKeyUp: return EventType::KeyRelease;
@@ -36,7 +37,8 @@ EventType map_event(CGEventType type) {
         case kCGEventRightMouseDragged:
         case kCGEventOtherMouseDragged:
             return EventType::MouseMove;
-        default: return EventType::KeyPress;
+        case kCGEventScrollWheel: return EventType::MouseScroll;
+        default: return std::nullopt;
     }
 }
 
@@ -45,6 +47,7 @@ public:
     void run(InputCallback on_event,
              const std::atomic<bool>& stop_requested) override {
         callback_ = std::move(on_event);
+        motion_.reset();
         if (stop_requested.load(std::memory_order_acquire)) return;
 
         // Publish THIS thread's run loop so stop() — which is called from the caller's
@@ -64,7 +67,7 @@ public:
                            CGEventMaskBit(kCGEventMouseMoved) |
                            CGEventMaskBit(kCGEventLeftMouseDragged) |
                            CGEventMaskBit(kCGEventRightMouseDragged) |
-                           CGEventMaskBit(kCGEventOtherMouseDragged);
+                           CGEventMaskBit(kCGEventOtherMouseDragged) | CGEventMaskBit(kCGEventScrollWheel);
 
         tap_ = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap,
                                 kCGEventTapOptionListenOnly, mask, tap_callback, this);
@@ -126,14 +129,17 @@ private:
 
         try {
             CaptureEvent ev;
-            ev.event_type = map_event(type);
+            const auto mapped = map_event(type);
+            if (!mapped) return event;
+            ev.event_type = *mapped;
             ev.timestamp_secs = now_secs();
             ev.wall_clock_secs = wall_clock_secs_now();
             // Read the cache; never query here (osascript per event would overrun the tap
             // deadline).
             ev.captured_context = self->cached_context_;
             if (ev.event_type == EventType::MouseMove) {
-                ev.mouse_speed = 0;
+                const auto point = CGEventGetLocation(event);
+                self->motion_.observe(point.x, point.y, ev.timestamp_secs, ev);
             }
             self->callback_(std::move(ev));
         } catch (...) {
@@ -195,7 +201,6 @@ private:
                                                                  : EventType::WindowTitleChange;
                     ev.timestamp_secs = now_secs();
                     ev.wall_clock_secs = wall_clock_secs_now();
-            ev.wall_clock_secs = wall_clock_secs_now();
                     ev.app_name = active->app_name;
                     ev.window_title = active->window_title;
                     callback_(std::move(ev));
@@ -219,6 +224,7 @@ private:
     // Foreground-window cache. Hook-thread-only (see refresh_active_window).
     std::shared_ptr<const CaptureContext> cached_context_;
     double last_window_refresh_secs_ = 0.0;
+    detail::PointerMotion motion_;
 };
 
 }  // namespace

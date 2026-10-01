@@ -636,9 +636,11 @@ internals, and the benchmark harness.
   "daily" summary is a rolling 24 h window, not the user's calendar day. Possibly intended,
   nowhere written down, and users read "day" as "today."
 
-- **7.27 — Define and test one capture-event contract across platforms.** `in progress` `M` for Windows +
-  macOS; `L` including Linux
-  Opened 2026-08-05. The extractor assumes `CaptureEvent` has portable meaning, but each
+- **7.27 — Define and test one capture-event contract across platforms.** `in progress` `M` for Windows + macOS; `L` including Linux
+  **Progress 2026-10-01:** Scroll activity, macOS motion coordinates/speed, Linux key/button/repeat/wheel translation, and cadence-bounded injectable Linux context are implemented with portable translation and burst fixtures. The 31-feature contract is unchanged; Linux motion calibration and live Windows/macOS distributions remain unverified, so this item stays in progress.
+
+  Historical opening finding (2026-08-05, predating the progress above): the extractor assumes
+  `CaptureEvent` has portable meaning, but each
   backend still differs. Windows counts button-down only and ignores release/wheel traffic;
   its foreground context refreshes on a 500 ms timer. macOS writes mouse speed as zero. Linux maps
   every `EV_KEY` press, including mouse buttons, to `KeyPress`, leaves kinematics empty, and

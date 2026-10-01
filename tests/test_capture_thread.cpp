@@ -168,7 +168,7 @@ TEST_CASE("Windows mouse speed translation stays bounded across timestamp and co
 }
 
 #if defined(_WIN32)
-TEST_CASE("Windows mouse messages map to one click per press and nothing for release or wheel") {
+TEST_CASE("Windows mouse messages map to one click per press and explicit scroll activity") {
     // The hook used to classify every non-move message as a click, so a single physical
     // click (down + up) counted twice in mouse_click_count and each wheel notch counted as a
     // click too. The set that survives is the one the macOS tap mask captures.
@@ -182,8 +182,8 @@ TEST_CASE("Windows mouse messages map to one click per press and nothing for rel
     CHECK(detail::classify_mouse_message(WM_RBUTTONUP) == std::nullopt);
     CHECK(detail::classify_mouse_message(WM_MBUTTONUP) == std::nullopt);
     CHECK(detail::classify_mouse_message(WM_XBUTTONUP) == std::nullopt);
-    CHECK(detail::classify_mouse_message(WM_MOUSEWHEEL) == std::nullopt);
-    CHECK(detail::classify_mouse_message(WM_MOUSEHWHEEL) == std::nullopt);
+    CHECK(detail::classify_mouse_message(WM_MOUSEWHEEL) == EventType::MouseScroll);
+    CHECK(detail::classify_mouse_message(WM_MOUSEHWHEEL) == EventType::MouseScroll);
 }
 #endif
 
@@ -382,4 +382,86 @@ TEST_CASE("CaptureThread can restart after stop") {
 
     // Buffered events survive the restart; stop() ends the hook, it doesn't drain.
     CHECK(drain(capture) == 5);
+}
+
+TEST_CASE("Linux translation distinguishes keys buttons repeats and scroll") {
+    CHECK(detail::classify_linux_input(1, 30, 1) == EventType::KeyPress);
+    CHECK(detail::classify_linux_input(1, 30, 2) == EventType::KeyPress);
+    CHECK(detail::classify_linux_input(1, 30, 0) == EventType::KeyRelease);
+    CHECK(detail::classify_linux_input(1, 0x110, 1) == EventType::MouseClick);
+    CHECK_FALSE(detail::classify_linux_input(1, 0x110, 0));
+    CHECK_FALSE(detail::classify_linux_input(1, 0x110, 2));
+    CHECK(detail::classify_linux_input(2, 8, -1) == EventType::MouseScroll);
+    CHECK(detail::classify_linux_input(2, 6, 1) == EventType::MouseScroll);
+    CHECK(detail::classify_linux_input(2, 11, 120) == EventType::MouseScroll);
+    CHECK(detail::classify_linux_input(2, 0, 10) == EventType::MouseMove);
+    CHECK_FALSE(detail::classify_linux_input(1, 0x130, 1));
+    CHECK_FALSE(detail::classify_linux_input(0, 0, 0));
+}
+
+TEST_CASE("pointer motion has finite desktop coordinate speed and resets invalid samples") {
+    detail::PointerMotion motion;
+    CaptureEvent first;
+    motion.observe(10, 20, 1, first);
+    CHECK(first.mouse_speed == 0);
+    CaptureEvent next;
+    motion.observe(13, 24, 1.1, next);
+    CHECK(next.mouse_x == 13);
+    CHECK(next.mouse_y == 24);
+    CHECK(next.mouse_speed >= 49);
+    CHECK(next.mouse_speed <= 50);
+    CaptureEvent equal;
+    motion.observe(14, 24, 1.1, equal);
+    CHECK(equal.mouse_speed > 0);
+    CaptureEvent invalid;
+    motion.observe(std::numeric_limits<double>::infinity(), 24, 1.2, invalid);
+    CaptureEvent reset;
+    motion.observe(14, 24, 1.3, reset);
+    CHECK(reset.mouse_speed == 0);
+}
+
+TEST_CASE("capture context probes have the same cadence under a 10000 event burst and no input") {
+    const auto run = [](unsigned steps) {
+        unsigned probes = 0;
+        detail::CaptureContextProvider provider([&]() -> std::optional<ActiveWindow> {
+            ++probes; return ActiveWindow{"Editor", "work"};
+        });
+        provider.refresh(0, 1000);
+        for (unsigned i = 1; i <= steps; ++i) {
+            provider.refresh(10.0 * i / steps, 1000 + 10.0 * i / steps);
+            for (unsigned n = 0; n < 5; ++n) CHECK(provider.value()->app_name == "Editor");
+        }
+        return probes;
+    };
+    const auto control = run(2000);
+    const auto burst = run(10000);
+    CHECK(control <= 21);
+    CHECK(burst <= 21);
+    CHECK(std::abs(static_cast<int>(burst) - static_cast<int>(control)) <= 1);
+}
+
+TEST_CASE("context loss replaces stale captured titles and stamps foreground changes") {
+    bool available = true;
+    detail::CaptureContextProvider provider([&]() -> std::optional<ActiveWindow> {
+        return available ? std::optional{ActiveWindow{"Editor", "secret"}} : std::nullopt;
+    });
+    CHECK_FALSE(provider.refresh(0, 1000));
+    available = false;
+    auto change = provider.refresh(0.5, 1000.5);
+    REQUIRE(change);
+    CHECK(change->wall_clock_secs == 1000.5);
+    CHECK(provider.value()->window_title.empty());
+}
+
+TEST_CASE("scroll confirms genuine capture input without fabricating a click") {
+    CaptureThread capture;
+    ScriptedHook hook(1, EventType::MouseScroll);
+    capture.start(&hook);
+    for (int i = 0; i < 1000 && !capture.input_observed(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(capture.input_observed());
+    capture.stop();
+    const auto scroll = capture.next_event();
+    REQUIRE(scroll);
+    CHECK(scroll->event_type == EventType::MouseScroll);
 }

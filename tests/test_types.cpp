@@ -311,3 +311,12 @@ TEST_CASE("LabelRequest carries the nested camelCase arg shape") {
     CHECK(req.source == std::optional<std::string>("hotkey"));
     CHECK(req.notes == std::nullopt);
 }
+
+TEST_CASE("scroll capture events round trip without changing existing enum values") {
+    CaptureEvent event;
+    event.event_type = EventType::MouseScroll;
+    json encoded = event;
+    CHECK(encoded.at("event_type") == "mouse_scroll");
+    CHECK(encoded.at("event_type").get<EventType>() == EventType::MouseScroll);
+    CHECK(static_cast<int>(EventType::IdleEnd) == 8);
+}

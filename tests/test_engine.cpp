@@ -290,3 +290,14 @@ TEST_CASE("ring buffer preserves SPSC order and reports full state") {
     CHECK(buffer.pop() == 4);
     CHECK(buffer.pop() == std::nullopt);
 }
+
+TEST_CASE("scroll leaves typing click and pointer motion features empty") {
+    FeatureExtractor features;
+    features.ingest(event(EventType::MouseScroll, 1, "Reader", "Document"));
+    features.ingest(event(EventType::MouseScroll, 2, "Reader", "Document"));
+    const auto f = features.extract(2);
+    CHECK(f.keystroke_count() == 0);
+    CHECK(f.mouse_click_count() == 0);
+    CHECK(f.mouse_move_count() == 0);
+    CHECK(f.mouse_speed_mean() == 0);
+}

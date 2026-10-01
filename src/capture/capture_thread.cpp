@@ -57,7 +57,8 @@ void CaptureThread::start(InputHook* hook) {
                         ev.event_type == EventType::KeyPress ||
                         ev.event_type == EventType::KeyRelease ||
                         ev.event_type == EventType::MouseMove ||
-                        ev.event_type == EventType::MouseClick;
+                        ev.event_type == EventType::MouseClick ||
+                        ev.event_type == EventType::MouseScroll;
                     // The engine is not draining fast enough; count the drop for health
                     // reporting.
                     if (!buffer_.push(std::move(ev))) {

@@ -19,6 +19,9 @@ std::optional<EventType> detail::classify_mouse_message(unsigned message) {
     switch (message) {
         case WM_MOUSEMOVE:
             return EventType::MouseMove;
+        case WM_MOUSEWHEEL:
+        case WM_MOUSEHWHEEL:
+            return EventType::MouseScroll;
         case WM_LBUTTONDOWN:
         case WM_RBUTTONDOWN:
         case WM_MBUTTONDOWN:

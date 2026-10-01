@@ -45,6 +45,7 @@ enum class EventType : int {
     WindowTitleChange = 6,
     IdleStart = 7,
     IdleEnd = 8,
+    MouseScroll = 9,
 };
 NLOHMANN_JSON_SERIALIZE_ENUM(EventType, {
     {EventType::KeyPress, "KEY_PRESS"},
@@ -55,6 +56,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(EventType, {
     {EventType::WindowTitleChange, "WINDOW_TITLE_CHANGE"},
     {EventType::IdleStart, "IDLE_START"},
     {EventType::IdleEnd, "IDLE_END"},
+    {EventType::MouseScroll, "mouse_scroll"},
 })
 
 // FocusLabel. Note Distracted = -1 (the label stored in SQLite).
