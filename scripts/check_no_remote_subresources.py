@@ -70,6 +70,26 @@ CSP_META = re.compile(
     r"""content\s*=\s*(?P<q>["'])(?P<policy>.*?)(?P=q)""",
     re.I | re.S)
 CSP_REMOTE = re.compile(r"""(?:https?:)?//[^\s;'"]+""", re.I)
+# Base64 hashes can contain //; they authorize inline bytes, never a network origin.
+CSP_HASH = re.compile(r"'sha(?:256|384|512)-[A-Za-z0-9+/_=-]+'", re.I)
+
+
+def remote_csp_origins(policy: str) -> list[str]:
+    return [match.group(0) for match in CSP_REMOTE.finditer(CSP_HASH.sub("", policy))]
+
+
+def verify_csp_parser() -> None:
+    cases = [
+        ("script-src 'self' 'sha256-OJjY3A+/7dFUr0wF9/6d6g8JzjGaPinY+8fgBir//1Q=';", []),
+        ("script-src 'sha384-Abc//def='; font-src https://fonts.example;", ["https://fonts.example"]),
+        ("img-src //images.example; connect-src http://api.example;", ["//images.example", "http://api.example"]),
+        ("script-src 'sha256-https://untrusted.example';", ["https://untrusted.example"]),
+    ]
+    for policy, expected in cases:
+        actual = remote_csp_origins(policy)
+        if actual != expected:
+            raise AssertionError(f"CSP parser regression: {policy!r}: {actual!r} != {expected!r}")
+
 
 
 def html_files() -> list[str]:
@@ -105,9 +125,9 @@ def check(path: str, problems: list[str], verbose: bool) -> None:
             f"before anything asks for it.")
 
     for match in CSP_META.finditer(text):
-        for origin in CSP_REMOTE.finditer(match.group("policy")):
+        for origin in remote_csp_origins(match.group("policy")):
             problems.append(
-                f"{rel}: its CSP permits the remote origin {origin.group(0)}. Remove it — a "
+                f"{rel}: its CSP permits the remote origin {origin}. Remove it — a "
                 f"permitted origin is a standing invitation even if nothing uses it today.")
 
     if verbose:
@@ -115,6 +135,7 @@ def check(path: str, problems: list[str], verbose: bool) -> None:
 
 
 def main() -> int:
+    verify_csp_parser()
     verbose = "--verbose" in sys.argv
     files = html_files()
 
