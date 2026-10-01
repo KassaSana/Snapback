@@ -628,6 +628,8 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   **Progress 2026-10-01:** Session Control and the header Session status chip share one `{label, reason}` model (`sessionStatusView`). Private/idle/no-input pauses use "Paused — …" wording with an elapsed-vs-attended reason; the Now headline uses that label instead of inventing "Session in progress". Surface and unit tests assert both chips match for running and private pause.
 
+  **Progress 2026-10-01:** Live "Today" attended minutes now tick locally between `get_attended_progress` baselines (60s rebaseline, plus idle/recording transitions). Under one minute while accruing shows `<1m` so the compact line does not look stuck at `0m`; idle/private freezes the offset.
+
   Review hydration is already active-surface gated, with inactive-call assertions in
   `frontend/tests/reviewWorkflow.test.tsx`; recording/privacy and session transitions have
   received narrow correctness repairs. Do not rebuild those paths or deleted hooks.

@@ -198,11 +198,14 @@ export const useAppEffects = ({
         // "Paused for idle" is one of the recording states, and the engine decided it just
         // now. Without this the header kept saying "Recording" for the whole absence.
         void refreshRecordingStatus();
+        // Attendance may have just frozen or resumed — rebaseline rather than inventing ticks.
+        void refreshAttendedProgress();
       }),
     );
     unsubs.push(
       api.onRecordingStatus((status) => {
         applyRecordingStatusEvent(status);
+        void refreshAttendedProgress();
       }),
     );
     unsubs.push(
@@ -235,6 +238,7 @@ export const useAppEffects = ({
     handlePomodoroEvent,
     handlePrediction,
     handleSnapback,
+    refreshAttendedProgress,
     refreshRecordingStatus,
     refreshTimelineFromEvent,
     sessionId,

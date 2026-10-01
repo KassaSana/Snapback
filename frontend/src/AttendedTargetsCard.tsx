@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 
 import type { AttendedProgress } from "./api";
+import { formatLiveTodayMins } from "./liveAttended";
 
 // Opt-in attended-minute targets. Deliberately flat copy: two numbers and a ratio, no
 // encouragement or streaks. Targets are on attendance, not the focus score.
@@ -9,6 +10,8 @@ type AttendedTargetsCardProps = {
   onSave: (dailyMins: number, weeklyMins: number) => void | Promise<void>;
   /** One-line metric on a running Now. Edit still lives behind the same control. */
   compact?: boolean;
+  /** True while attended time is accruing — unlocks the under-one-minute "<1m" label. */
+  accruing?: boolean;
 };
 
 const formatMinutes = (mins: number): string => {
@@ -45,6 +48,7 @@ export const AttendedTargetsCard = memo(function AttendedTargetsCard({
   progress,
   onSave,
   compact = false,
+  accruing = false,
 }: AttendedTargetsCardProps) {
   const [editing, setEditing] = useState(false);
   const [daily, setDaily] = useState(String(progress.dailyTargetMins));
@@ -59,7 +63,7 @@ export const AttendedTargetsCard = memo(function AttendedTargetsCard({
 
       {compact ? (
         <p className="attended-inline-line">
-          Today {formatMinutes(progress.dailyActualMins)}
+          Today {formatLiveTodayMins(progress.dailyActualMins, accruing)}
           {progress.dailyTargetMins > 0
             ? ` of ${formatMinutes(progress.dailyTargetMins)} planned`
             : ""}

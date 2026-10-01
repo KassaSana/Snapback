@@ -152,9 +152,6 @@ export default function App() {
     handleSavePomodoroConfig,
   } = usePomodoro({ setActionError: feedback.setActionError });
 
-  const { attendedProgress, refreshAttendedProgress, handleSaveAttendedTargets } =
-    useAttendedTargets({ setActionError: feedback.setActionError });
-
   const {
     applyRecordingStatusEvent,
     recordingStatus,
@@ -274,6 +271,17 @@ export default function App() {
     [live.userIdle, sessionRecord, recordingStatus.state],
   );
   const sessionActive = sessionRecord?.status === "ACTIVE";
+  // Attended accrues only while the shared status says "running" (ADR-0005).
+  const attendedAccruing =
+    sessionActive &&
+    recordingStatus.state !== "pausedPrivate" &&
+    recordingStatus.state !== "pausedIdle" &&
+    !live.userIdle;
+  const { attendedProgress, refreshAttendedProgress, handleSaveAttendedTargets } =
+    useAttendedTargets({
+      setActionError: feedback.setActionError,
+      accruing: attendedAccruing,
+    });
   const nowMode = nowSurfaceMode({ sessionActive, recap });
 
   const {
@@ -665,6 +673,7 @@ export default function App() {
             <AttendedTargetsCard
               compact
               progress={attendedProgress}
+              accruing={attendedAccruing}
               onSave={handleSaveAttendedTargets}
             />
 
