@@ -1870,10 +1870,12 @@ void AppState::process_event_for_test(const CaptureEvent& event) {
 
 void AppState::notify_frontend_ready() {
     WakeOnExit wake{engine_wake_};
-    if (!frontend_ready_.exchange(true, std::memory_order_acq_rel)) {
+    signal_maintenance([this] {
+        if (maintenance_stopping_.load(std::memory_order_acquire) ||
+            frontend_ready_.exchange(true, std::memory_order_acq_rel)) return;
         maintenance_result_.store(1, std::memory_order_release);
-        request_retention_maintenance();
-    }
+        maintenance_pending_.store(true, std::memory_order_release);
+    });
 }
 
 void AppState::request_retention_maintenance() {
@@ -1882,7 +1884,8 @@ void AppState::request_retention_maintenance() {
     // Notifies even when the flag was already set: the wake is unconditional now, and a
     // spurious one costs the worker a single predicate evaluation.
     signal_maintenance([this] {
-        maintenance_pending_.store(true, std::memory_order_release);
+        if (!maintenance_stopping_.load(std::memory_order_acquire))
+            maintenance_pending_.store(true, std::memory_order_release);
     });
 }
 

@@ -1728,6 +1728,8 @@ kept here; already-deep modules and completed performance work were rejected dur
   identity reaches the stored prediction row.
 
 - **14.7 — Move retention and space reclamation out of the launch critical path.** `in progress` `M`
+  **Progress 2026-10-01:** Late or duplicate frontend readiness is fenced by the maintenance control lock after shutdown; a regression test verifies it cannot leave queued work. Full headless verification passed (769 native tests), and the expanded 72-case ASan/UBSan and ThreadSanitizer runs passed. Live desktop startup and reclamation gates remain open.
+
   **Progress 2026-10-01:** Partially implemented: database opening no longer runs ordinary retention DELETE or automatic VACUUM. React acknowledges its first painted view after two frame boundaries through idempotent notify_frontend_ready (78-command contract, API and demo updated). The owned 256-row maintenance worker releases storage between batches, pauses before queued session starts, reports pending/running/result and cumulative rows/latest elapsed time, retries failures after 30s, and cancels/joins on shutdown. Targeted readiness/retention/IPC checks and full local verification passed (762 native cases plus frontend and guards). Focused ASan/UBSan and ThreadSanitizer checks passed. Same-host simplified aged-fixture database-open p95 improved 96.1%/98.9%; representative desktop startup-to-ready measurements and the 80% UI gate remain open. Background DELETE may not shrink the file; automatic reclamation policy is deferred, so this item remains partially complete and in progress.
 
   `performance`

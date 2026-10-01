@@ -4826,3 +4826,14 @@ TEST_CASE("new drift cannot replace the retained unsaved episode and alert") {
     REQUIRE(saved.size() == 1);
     CHECK(saved.front().summary == original.summary);
 }
+
+TEST_CASE("late frontend readiness cannot queue maintenance after shutdown") {
+    auto state = make_state();
+    state->stop_engine();
+    const auto prior = state->runtime_metrics().maintenance_result;
+    state->notify_frontend_ready();
+    state->notify_frontend_ready();
+    CHECK_FALSE(state->runtime_metrics().maintenance_pending);
+    CHECK_FALSE(state->runtime_metrics().maintenance_running);
+    CHECK(state->runtime_metrics().maintenance_result == prior);
+}
