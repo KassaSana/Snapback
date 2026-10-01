@@ -12,3 +12,6 @@ assert.equal(shouldPollHealth(true), false);
 assert.equal(HEALTH_POLL_MS > 0, true);
 
 console.log("healthPoll.test.ts passed");
+
+assert.equal(shouldPollHealth(true, false), true);
+assert.equal(shouldPollHealth(true, true), false);

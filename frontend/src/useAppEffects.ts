@@ -14,6 +14,7 @@ import { TIMELINE_POLL_MS } from "./useLiveData";
 type UseAppEffectsArgs = {
   refreshHealth: () => void | Promise<void>;
   captureRunning: boolean;
+  captureProbeConfirmed?: boolean;
   invalidateReview: () => void;
   refreshPomodoroStatus: () => void | Promise<void>;
   // Refreshed alongside the timer.
@@ -55,6 +56,7 @@ type UseAppEffectsArgs = {
 export const useAppEffects = ({
   refreshHealth,
   captureRunning,
+  captureProbeConfirmed = true,
   invalidateReview,
   refreshPomodoroStatus,
   refreshAttendedProgress,
@@ -125,7 +127,7 @@ export const useAppEffects = ({
   // Keep re-checking health until capture is confirmed up, so the app recovers
   // on its own when permissions are granted after launch.
   useEffect(() => {
-    if (!shouldPollHealth(captureRunning)) {
+    if (!shouldPollHealth(captureRunning, captureProbeConfirmed)) {
       return;
     }
 
@@ -134,7 +136,7 @@ export const useAppEffects = ({
     }, HEALTH_POLL_MS);
 
     return () => window.clearInterval(timer);
-  }, [captureRunning, refreshHealth]);
+  }, [captureRunning, captureProbeConfirmed, refreshHealth]);
 
   // When capture comes up, re-check once past the stall grace window so a
   // running-but-silent listener surfaces without a manual refresh.

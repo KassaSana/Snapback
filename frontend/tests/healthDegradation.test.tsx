@@ -126,7 +126,7 @@ describe("Health degradation visibility", () => {
         await vi.advanceTimersByTimeAsync(HEALTH_POLL_MS);
       });
 
-      expect(card.getByText("listener running")).toBeInTheDocument();
+      expect(card.getByText("input confirmed")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

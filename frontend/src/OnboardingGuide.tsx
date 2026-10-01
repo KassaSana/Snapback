@@ -43,10 +43,14 @@ export const OnboardingGuide = memo(function OnboardingGuide({
           <p className="onboarding-step-title">{copy.title}</p>
         </div>
         <button type="button" className="link-button" onClick={onSkip}>
-          Skip the walkthrough
+          {step === "review" ? "Finish walkthrough" : "Skip the walkthrough"}
         </button>
       </div>
 
+      <p className="helper-text">{copy.detail}</p>
+      {step === "capture" && !failure ? (
+        <button type="button" className="link-button" onClick={onRecover}>Open privacy settings</button>
+      ) : null}
       {failure && (
         <div className="notice notice-untracked" role="alert">
           <p>{failure.message}</p>

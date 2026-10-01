@@ -25,6 +25,9 @@ type Props = {
   onRestoreSnapbackTarget?: () => void;
   prediction: PredictionRecord | null;
   sessionActive: boolean;
+  captureDiagnosis?: string | null;
+  recordingPaused?: boolean;
+  onOpenPrivacy?: () => void;
   snapbackNote: string | null;
 };
 
@@ -37,6 +40,9 @@ export function FocusStateHero({
   onRestoreSnapbackTarget,
   prediction,
   sessionActive,
+  captureDiagnosis = null,
+  recordingPaused = false,
+  onOpenPrivacy,
   snapbackNote,
 }: Props) {
   const waiting = !prediction;
@@ -63,13 +69,17 @@ export function FocusStateHero({
         {idle ? "Ready" : display.label}
       </p>
 
+      {captureDiagnosis && onOpenPrivacy ? (
+        <div role="alert"><p>{captureDiagnosis}</p><button className="link-button" onClick={onOpenPrivacy}>Open privacy settings</button></div>
+      ) : null}
+      {recordingPaused && prediction ? <p className="helper-text">Recording paused — this is the last reading, held until recording resumes.</p> : null}
       {idle ? (
         <p className="hero-secondary" aria-live="polite">
           Start a session to see whether you are still on it.
         </p>
       ) : waiting ? (
         <p className="hero-secondary" aria-live="polite">
-          No prediction yet — capture is warming up.
+          {recordingPaused ? "Recording is paused. Readings resume with recording." : captureDiagnosis ?? "No reading yet — move the pointer, scroll, or press a key to confirm capture."}
         </p>
       ) : (
         <>

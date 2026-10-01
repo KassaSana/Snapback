@@ -11,7 +11,8 @@ export const HEALTH_POLL_MS = 5000;
  * not confirmed running: once it's up, live push events (predictions, capture
  * failure) carry state changes, so continuous polling would be wasted work.
  */
-export const shouldPollHealth = (captureRunning: boolean): boolean => !captureRunning;
+export const shouldPollHealth = (captureRunning: boolean, probeConfirmed = true): boolean =>
+  !captureRunning || !probeConfirmed;
 
 /**
  * After capture starts, re-check health once past the stall grace window so a

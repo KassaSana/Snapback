@@ -106,11 +106,11 @@ describe("onboarding continuation", () => {
     render(<App />);
 
     await waitFor(() => expect(queryGuide()).not.toBeNull());
-    expect(within(guide()).getByText("Step 1 of 6")).toBeInTheDocument();
+    expect(within(guide()).getByText("Step 2 of 7")).toBeInTheDocument();
     expect(within(guide()).getByText("Name what you're working on")).toBeInTheDocument();
   });
 
-  it("stays away until capture actually works", async () => {
+  it("keeps capture diagnosis reachable before capture works", async () => {
     boundary.state.health = {
       ...healthyCaptureRunning(),
       captureRunning: false,
@@ -126,7 +126,11 @@ describe("onboarding continuation", () => {
     render(<App />);
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
     // 1.1's wizard owns this state; a walkthrough of reading verdicts over it would be noise.
-    expect(queryGuide()).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Now" }));
+    await waitFor(() => expect(queryGuide()).not.toBeNull());
+    expect(within(guide()).getByText("Check input capture")).toBeInTheDocument();
+    fireEvent.click(within(guide()).getByRole("button", { name: "Open privacy settings" }));
+    expect(screen.getByRole("heading", { name: "Privacy" })).toBeInTheDocument();
   });
 
   // THE RULE. There is no Next button anywhere in the guide, and the step still moves.
@@ -137,11 +141,11 @@ describe("onboarding continuation", () => {
     expect(within(guide()).queryByRole("button", { name: /next/i })).toBeNull();
 
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
-    await waitFor(() => expect(within(guide()).getByText("Step 2 of 6")).toBeInTheDocument());
+    await waitFor(() => expect(within(guide()).getByText("Step 3 of 7")).toBeInTheDocument());
     expect(within(guide()).getByText("Start the session")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await waitFor(() => expect(within(guide()).getByText("Step 3 of 6")).toBeInTheDocument());
+    await waitFor(() => expect(within(guide()).getByText("Step 4 of 7")).toBeInTheDocument());
     expect(within(guide()).getByText("Wait for your first reading")).toBeInTheDocument();
   });
 
@@ -167,7 +171,7 @@ describe("onboarding continuation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
 
     // It must not walk them back to "type a goal" over a running session.
-    await waitFor(() => expect(within(guide()).getByText("Step 3 of 6")).toBeInTheDocument());
+    await waitFor(() => expect(within(guide()).getByText("Step 4 of 7")).toBeInTheDocument());
     expect(within(guide()).queryByText("Name what you're working on")).toBeNull();
   });
 
@@ -189,7 +193,7 @@ describe("onboarding continuation", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Replay the walkthrough" }));
 
     await waitFor(() => expect(queryGuide()).not.toBeNull());
-    expect(within(guide()).getByText("Step 1 of 6")).toBeInTheDocument();
+    expect(within(guide()).getByText("Step 2 of 7")).toBeInTheDocument();
     // Replaying created nothing.
     expect(commandCalls("start_session")).toBe(0);
     expect(commandCalls("submit_label")).toBe(0);
@@ -236,8 +240,10 @@ describe("onboarding continuation", () => {
     await screen.findByText("running");
 
     fireEvent.click(await screen.findByRole("button", { name: "Stop session" }));
+    await screen.findByRole("heading", { name: "Session Recap" });
+    expect(within(guide()).getByRole("button", { name: "Finish walkthrough" })).toBeInTheDocument();
+    fireEvent.click(within(guide()).getByRole("button", { name: "Finish walkthrough" }));
     await waitFor(() => expect(queryGuide()).toBeNull());
-    expect(screen.getByRole("heading", { name: "Session Recap" })).toBeInTheDocument();
 
     // Going to Review and back does not un-finish it, and neither does a relaunch.
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));

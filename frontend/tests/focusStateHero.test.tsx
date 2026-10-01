@@ -67,7 +67,7 @@ describe("FocusStateHero", () => {
     renderHero({ prediction: null });
 
     expect(screen.getByText("Waiting for signal")).toBeInTheDocument();
-    expect(screen.getByText(/capture is warming up/)).toBeInTheDocument();
+    expect(screen.getByText(/move the pointer, scroll, or press a key/)).toBeInTheDocument();
     expect(screen.queryByText(/focus 0/)).not.toBeInTheDocument();
     // Nothing to rate yet, so the control stays out of the way.
     expect(screen.queryByRole("button", { name: /is right/ })).not.toBeInTheDocument();

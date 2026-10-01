@@ -34,7 +34,7 @@ import { FocusFeedbackCard } from "./FocusFeedbackCard";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
-import { useHealth } from "./useHealth";
+import { useHealth, useCaptureWarmupExpired } from "./useHealth";
 import { useLiveData } from "./useLiveData";
 import { useCockpitHistory } from "./useCockpitHistory";
 import { useAppearance } from "./useAppearance";
@@ -128,12 +128,7 @@ export default function App() {
     writeOnboardingComplete();
     setOnboardingComplete(true);
   }, []);
-  const restartOnboarding = useCallback(() => {
-    clearOnboardingComplete();
-    setRecapSeen(false);
-    setOnboardingComplete(false);
-    setSurface("now");
-  }, []);
+  const [onboardingReplay, setOnboardingReplay] = useState(false);
   const feedback = useFeedback();
   const autostart = useAutostart();
   const idleThreshold = useIdleThreshold();
@@ -180,6 +175,7 @@ export default function App() {
     captureProbeConfirmed,
     captureRunning,
     captureStalled,
+    captureWarmupExpired,
     classifierBackend,
     classifierModelId,
     classifierModelPath,
@@ -258,6 +254,16 @@ export default function App() {
     setLabelStatusWarning: feedback.setLabelStatusWarning,
     captureReadiness,
   });
+
+  const restartOnboarding = useCallback(() => {
+    clearOnboardingComplete();
+    setRecapSeen(false);
+    setOnboardingComplete(false);
+    setOnboardingReplay(true);
+    if (!sessionRecord || sessionRecord.endedAtMs !== null) setSessionGoal("");
+    setSurface("now");
+  }, [sessionRecord, setSessionGoal]);
+  useEffect(() => { if (sessionRecord?.endedAtMs === null) setOnboardingReplay(false); }, [sessionRecord]);
 
   // Running or paused: a paused session accrues no attended time (ADR-0005). Derived here
   // because the idle signal lives in useLiveData.
@@ -419,6 +425,9 @@ export default function App() {
 
   // Every input is state the app already tracks; the guide issues nothing. `feedbackGiven` uses
   // labelStatus, set by both a correction and a skip.
+  const readingWarmupExpired = useCaptureWarmupExpired(sessionActive && !live.prediction && recordingStatus.state === "recording", sessionId);
+  const captureDiagnosis = captureFailed ? (captureFailureReason ?? "Input capture stopped. Check Privacy settings.")
+    : captureWarmupExpired || readingWarmupExpired ? "No input reading has arrived after 90 seconds. Check Privacy settings and refresh permissions; capture may be unconfirmed." : null;
   const onboardingState = useMemo(
     () => ({
       captureReady: captureIsReady(captureRunning, captureProbeConfirmed),
@@ -426,12 +435,13 @@ export default function App() {
       sessionActive,
       predictionSeen: live.prediction !== null,
       feedbackGiven: feedback.labelStatus !== null,
-      sessionCompleted: recap !== null,
-      recapSeen,
+      sessionCompleted: recap !== null && !onboardingReplay,
+      recapSeen: recapSeen && !onboardingReplay,
     }),
     [
       captureProbeConfirmed,
       captureRunning,
+      onboardingReplay,
       feedback.labelStatus,
       live.prediction,
       recap,
@@ -454,8 +464,8 @@ export default function App() {
 
   // The last step completes when the recap is seen.
   useEffect(() => {
-    if (recap !== null) setRecapSeen(true);
-  }, [recap]);
+    if (recap !== null && surface === "review" && !onboardingReplay) setRecapSeen(true);
+  }, [recap, surface, onboardingReplay]);
 
   // Finishing is remembered the same way skipping is: the guide has done its job either way.
   useEffect(() => {
@@ -468,6 +478,7 @@ export default function App() {
   useAppEffects({
     refreshHealth,
     captureRunning,
+    captureProbeConfirmed,
     invalidateReview,
     refreshPomodoroStatus,
     refreshAttendedProgress,
@@ -563,6 +574,8 @@ export default function App() {
             step={onboardingStep}
             failure={onboardingFailure({
               captureFailed,
+              captureUnverified: captureWarmupExpired || readingWarmupExpired,
+              permissionBlocked: !permissionCaptureAvailable && healthStatus !== "checking",
               privateMode: privacy.settings?.privateMode ?? false,
             })}
             onSkip={skipOnboarding}
@@ -592,6 +605,9 @@ export default function App() {
 
         {sessionActive && (
           <FocusStateHero
+            captureDiagnosis={captureDiagnosis}
+            recordingPaused={recordingStatus.state === "pausedPrivate" || recordingStatus.state === "pausedIdle"}
+            onOpenPrivacy={() => openSettingsSection("privacy")}
             goal={sessionRecord?.goal ?? null}
             hyperfocusNote={live.hyperfocusNote}
             labelStatus={feedback.labelStatus}
@@ -864,6 +880,7 @@ export default function App() {
               captureProbeConfirmed={captureProbeConfirmed}
               captureRunning={captureRunning}
               captureStalled={captureStalled}
+              captureWarmupExpired={captureWarmupExpired}
               onRefreshPermissions={handleRefreshPermissions}
               onRequestPermissions={handleRequestPermissions}
               permissionMessage={permissionMessage}

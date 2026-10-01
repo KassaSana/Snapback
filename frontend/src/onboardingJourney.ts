@@ -3,6 +3,7 @@
 // changed, and it issues no commands, so it is safe to repeat. Only completion is persisted.
 
 export const ONBOARDING_STEPS = [
+  "capture",
   "goal",
   "start",
   "verdict",
@@ -23,6 +24,10 @@ export type OnboardingCopy = {
 };
 
 export const ONBOARDING_COPY: Record<OnboardingStep, OnboardingCopy> = {
+  capture: {
+    title: "Check input capture",
+    detail: "Move the pointer, scroll, or press a key. If capture stays unconfirmed, open Privacy settings to check permissions and refresh the listener status.",
+  },
   goal: {
     title: "Name what you're working on",
     detail:
@@ -53,7 +58,7 @@ export const ONBOARDING_COPY: Record<OnboardingStep, OnboardingCopy> = {
 };
 
 export type OnboardingState = {
-  /** 1.1's finish line. Nothing here runs until capture actually works. */
+  /** Whether genuine input has confirmed capture. Diagnosis remains reachable without it. */
   captureReady: boolean;
   /** A non-blank goal is typed into the cockpit. */
   goalEntered: boolean;
@@ -82,7 +87,7 @@ export type OnboardingState = {
  * fourth rather than being walked back through work they already did.
  */
 export function currentOnboardingStep(state: OnboardingState): OnboardingStep | null {
-  if (!state.captureReady) return null;
+  if (!state.captureReady) return "capture";
   if (state.recapSeen) return null;
   // Everything below is "the earliest thing not yet true".
   if (!state.goalEntered && !state.sessionActive && !state.sessionCompleted) return "goal";
@@ -117,6 +122,8 @@ export type OnboardingFailure = {
 export function onboardingFailure(input: {
   captureFailed: boolean;
   privateMode: boolean;
+  captureUnverified?: boolean;
+  permissionBlocked?: boolean;
 }): OnboardingFailure | null {
   if (input.captureFailed) {
     return {
@@ -124,6 +131,9 @@ export function onboardingFailure(input: {
         "Capture stopped, so this walkthrough is paused — there is nothing to read until it is running again.",
       actionLabel: "Open permissions",
     };
+  }
+  if (input.permissionBlocked || input.captureUnverified) {
+    return { message: "Input capture is not confirmed. Check Privacy settings, move the pointer or press a key, then refresh permissions. No readings are being claimed.", actionLabel: "Open privacy settings" };
   }
   if (input.privateMode) {
     return {
@@ -192,5 +202,5 @@ export function shouldShowOnboarding(input: {
   completed: boolean;
   step: OnboardingStep | null;
 }): boolean {
-  return input.captureReady && !input.completed && input.step !== null;
+  return !input.completed && input.step !== null;
 }

@@ -1,9 +1,9 @@
 import { act, render, renderHook, screen } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("../src/bridge", () => boundary);
-import { useHealth } from "../src/useHealth";
+import { useHealth, useCaptureWarmupExpired, CAPTURE_WARMUP_MS } from "../src/useHealth";
 import { api } from "../src/api";
 import { ActionErrorBanner } from "../src/ActionErrorBanner";
 
@@ -76,4 +76,21 @@ it("the saving warning stays visible until authoritative recovery clears it", ()
   expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
   rerender(<ActionErrorBanner error={null} />);
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+afterEach(() => vi.useRealTimers());
+it("time-boxes unconfirmed input without resetting on health rerenders and clears on confirmation", () => {
+  vi.useFakeTimers();
+  const { result, rerender, unmount } = renderHook(({ waiting, scope }) => useCaptureWarmupExpired(waiting, scope), { initialProps: { waiting: true, scope: "one" } });
+  act(() => vi.advanceTimersByTime(CAPTURE_WARMUP_MS - 1));
+  rerender({ waiting: true, scope: "one" });
+  expect(result.current).toBe(false);
+  act(() => vi.advanceTimersByTime(1));
+  expect(result.current).toBe(true);
+  rerender({ waiting: false, scope: "one" });
+  expect(result.current).toBe(false);
+  rerender({ waiting: true, scope: "two" });
+  expect(result.current).toBe(false);
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
 });

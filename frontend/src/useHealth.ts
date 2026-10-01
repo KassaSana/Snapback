@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   api,
@@ -6,6 +6,19 @@ import {
   type PersistenceFailurePayload,
 } from "./api";
 import { summarizeAppHealth } from "./healthHints";
+
+export const CAPTURE_WARMUP_MS = 90000;
+
+export function useCaptureWarmupExpired(waiting: boolean, scope: string | null = null) {
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    setExpired(false);
+    if (!waiting) return;
+    const timer = window.setTimeout(() => setExpired(true), CAPTURE_WARMUP_MS);
+    return () => window.clearTimeout(timer);
+  }, [waiting, scope]);
+  return waiting && expired;
+}
 
 export const useHealth = () => {
   const healthGeneration = useRef(0);
@@ -24,6 +37,7 @@ export const useHealth = () => {
   const [persistenceFailureReason, setPersistenceFailureReason] = useState<string | null>(null);
   const [captureEventsDropped, setCaptureEventsDropped] = useState(0);
   const [captureStalled, setCaptureStalled] = useState(false);
+  const captureWarmupExpired = useCaptureWarmupExpired(captureRunning && !captureProbeConfirmed && !captureFailed);
   const [classifierBackend, setClassifierBackend] = useState("heuristic");
   const [classifierOnnxRuntimeEnabled, setClassifierOnnxRuntimeEnabled] = useState(false);
   const [classifierModelPath, setClassifierModelPath] = useState<string | null>(null);
@@ -120,6 +134,7 @@ export const useHealth = () => {
     captureProbeConfirmed,
     captureRunning,
     captureStalled,
+    captureWarmupExpired,
     classifierBackend,
     classifierModelId,
     classifierModelPath,

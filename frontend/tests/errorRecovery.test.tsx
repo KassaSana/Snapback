@@ -121,6 +121,7 @@ describe("Action error surfacing and recovery", () => {
         focusMode: "normal",
       }),
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent(/input capture isn't available/i);
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.some((alert) => /input capture isn't available/i.test(alert.textContent ?? ""))).toBe(true);
   });
 });

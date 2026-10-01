@@ -7,6 +7,7 @@ type PermissionsCardProps = {
   captureProbeConfirmed: boolean;
   captureRunning: boolean;
   captureStalled: boolean;
+  captureWarmupExpired?: boolean;
   onRefreshPermissions: () => void;
   onRequestPermissions: () => void;
   permissionMessage: string | null;
@@ -20,6 +21,7 @@ export const PermissionsCard = memo(function PermissionsCard({
   captureProbeConfirmed,
   captureRunning,
   captureStalled,
+  captureWarmupExpired = false,
   onRefreshPermissions,
   onRequestPermissions,
   permissionMessage,
@@ -33,7 +35,7 @@ export const PermissionsCard = memo(function PermissionsCard({
           {captureFailed
             ? "capture failed"
             : captureRunning
-              ? "listener running"
+              ? (captureProbeConfirmed ? "input confirmed" : "input unverified")
               : captureProbeConfirmed
                 ? "permissions ready"
                 : "listener pending"}
@@ -49,6 +51,9 @@ export const PermissionsCard = memo(function PermissionsCard({
         {permissionMessage ||
           "Snapback runs locally. Grant Accessibility + Input Monitoring on macOS."}
       </p>
+      {captureWarmupExpired ? (
+        <p className="helper-text alert">No genuine input has confirmed capture after 90 seconds. Move the pointer or press a key, check permissions, then refresh. Restart Snapback if it stays unconfirmed.</p>
+      ) : null}
       {captureStalled ? (
         <p className="helper-text alert">
           Capture is running but hasn't received any input events — the listener may be blocked.

@@ -68,6 +68,9 @@ export const summarizePermissions = (permissions: PermissionHealthInput): Permis
     };
   }
 
+  if (permissions.captureRunning && !permissions.captureProbeConfirmed) {
+    return { label: "partial", detail: "listener running, input unverified" };
+  }
   if (permissions.captureRunning && permissions.activeWindowAvailable) {
     return {
       label: "ready",

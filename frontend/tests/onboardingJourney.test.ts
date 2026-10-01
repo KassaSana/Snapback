@@ -30,7 +30,7 @@ const state = (overrides: Partial<OnboardingState> = {}): OnboardingState => ({
 // The journey teaches the product loop the item names, in that order.
 assert.deepEqual(
   [...ONBOARDING_STEPS],
-  ["goal", "start", "verdict", "correct", "stop", "review"],
+  ["capture", "goal", "start", "verdict", "correct", "stop", "review"],
 );
 
 // Every step is explained. A step with a title and no reason is a Next button with extra words.
@@ -45,10 +45,10 @@ for (const step of ONBOARDING_STEPS) {
 
 // Nothing runs before 1.1's finish line — a walkthrough of reading verdicts is nonsense while
 // the OS is still refusing to let us see the active window.
-assert.equal(currentOnboardingStep(state({ captureReady: false })), null);
+assert.equal(currentOnboardingStep(state({ captureReady: false })), "capture");
 assert.equal(
   currentOnboardingStep(state({ captureReady: false, goalEntered: true })),
-  null,
+  "capture",
 );
 
 // The ordinary walk, one step at a time.
@@ -94,10 +94,10 @@ assert.equal(
 );
 
 // Progress reads as "n of 6" and is complete when there is no step left.
-assert.deepEqual(onboardingProgress("goal"), { index: 1, total: 6 });
-assert.deepEqual(onboardingProgress("correct"), { index: 4, total: 6 });
-assert.deepEqual(onboardingProgress("review"), { index: 6, total: 6 });
-assert.deepEqual(onboardingProgress(null), { index: 6, total: 6 });
+assert.deepEqual(onboardingProgress("goal"), { index: 2, total: 7 });
+assert.deepEqual(onboardingProgress("correct"), { index: 5, total: 7 });
+assert.deepEqual(onboardingProgress("review"), { index: 7, total: 7 });
+assert.deepEqual(onboardingProgress(null), { index: 7, total: 7 });
 
 // ---------------------------------------------------------------------------
 // Failures hand off rather than talking over the problem.
@@ -153,6 +153,6 @@ assert.equal(shouldShowOnboarding({ captureReady: true, completed: false, step: 
 assert.equal(shouldShowOnboarding({ captureReady: true, completed: true, step: "goal" }), false);
 // ...as does "no step left" and "capture is not ready yet".
 assert.equal(shouldShowOnboarding({ captureReady: true, completed: false, step: null }), false);
-assert.equal(shouldShowOnboarding({ captureReady: false, completed: false, step: "goal" }), false);
+assert.equal(shouldShowOnboarding({ captureReady: false, completed: false, step: "capture" }), true);
 
 console.log("onboardingJourney.test.ts passed");
