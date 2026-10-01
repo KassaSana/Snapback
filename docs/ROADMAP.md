@@ -632,6 +632,8 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   **Progress 2026-10-01:** Session switch is stop → check-in/discard → start; fragments are excluded from Review totals while remaining visible in Session Explorer.
 
+  **Progress 2026-10-01:** Demo settings (focus mode, idle, Pomodoro, alerts, rules, targets, privacy exclusions) persist to `localStorage`; sessions and predictions stay ephemeral. Demo bridge emits pomodoro ticks with predictions.
+
   Review hydration is already active-surface gated, with inactive-call assertions in
   `frontend/tests/reviewWorkflow.test.tsx`; recording/privacy and session transitions have
   received narrow correctness repairs. Do not rebuild those paths or deleted hooks.

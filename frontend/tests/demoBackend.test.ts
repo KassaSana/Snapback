@@ -253,3 +253,57 @@ console.log("demoBackend.test.ts passed");
   const history = demo.handle("get_session_history", { window: "day" }) as unknown[];
   assert.equal(history.length, 1);
 }
+
+// Demo settings survive a reload (new DemoBackend after localStorage write); sessions do not.
+{
+  const store = new Map<string, string>();
+  const memory = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+  };
+  const previous = globalThis.localStorage;
+  Object.defineProperty(globalThis, "localStorage", { value: memory, configurable: true });
+  try {
+    let now = Date.now();
+    const first = new DemoBackend(now, () => now);
+    first.handle("set_focus_mode", { mode: "recovery" });
+    first.handle("set_idle_threshold", { seconds: 120 });
+    first.handle("set_attended_targets", { dailyMins: 90, weeklyMins: 450 });
+    first.handle("upsert_app_rule", {
+      request: { pattern: "Slack", ruleType: "block", note: "chat" },
+    });
+    first.handle("set_privacy_exclusions", { excludedApps: ["Signal"] });
+    first.handle("set_alert_delivery", {
+      alerts: { snapback: ["native"], hyperfocus: ["overlay"], pomodoro: ["inApp"] },
+    });
+    const session = first.handle("start_session", { goal: "Ephemeral" }) as { sessionId: string };
+    assert.ok(session.sessionId);
+
+    const second = new DemoBackend(now + 1, () => now + 1);
+    const settings = second.handle("get_settings", {}) as {
+      defaultFocusMode: string;
+      idleThresholdSecs: number;
+    };
+    assert.equal(settings.defaultFocusMode, "recovery");
+    assert.equal(settings.idleThresholdSecs, 120);
+    const progress = second.handle("get_attended_progress", {}) as {
+      dailyTargetMins: number;
+      weeklyTargetMins: number;
+    };
+    assert.equal(progress.dailyTargetMins, 90);
+    assert.equal(progress.weeklyTargetMins, 450);
+    const rules = second.handle("get_app_rules", {}) as { pattern: string }[];
+    assert.ok(rules.some((rule) => rule.pattern === "Slack"));
+    const privacy = second.handle("get_privacy_settings", {}) as { excludedApps: string[] };
+    assert.deepEqual(privacy.excludedApps, ["Signal"]);
+    // Sessions stay ephemeral across demo reloads.
+    assert.equal(second.handle("get_active_session", {}), null);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", { value: previous, configurable: true });
+  }
+}

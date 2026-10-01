@@ -47,5 +47,6 @@ export function installDemoBridge(): void {
   window.setInterval(() => {
     const prediction = backend.tick();
     if (prediction) emit("prediction", prediction);
+    emit("pomodoro", backend.handle("get_pomodoro_status", {}));
   }, TICK_MS);
 }

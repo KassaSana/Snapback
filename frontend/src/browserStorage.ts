@@ -19,6 +19,7 @@ export type BrowserStorageKey = {
 };
 
 export const APPEARANCE_STORAGE_KEY = "snapback.appearance";
+export const DEMO_SETTINGS_STORAGE_KEY = "snapback.demoSettings";
 export const FIRST_RUN_ACK_KEY = "snapback.firstRunPermissionsAcknowledged";
 export const ONBOARDING_DONE_KEY = "snapback.onboardingJourneyComplete";
 export const REVIEW_RANGE_STORAGE_KEY = "snapback.reviewRange";
@@ -36,6 +37,12 @@ export const BROWSER_STORAGE_KEYS: readonly BrowserStorageKey[] = [
     key: APPEARANCE_STORAGE_KEY,
     classification: "preference",
     why: "Theme choice. Says nothing about what the user worked on.",
+    label: "",
+  },
+  {
+    key: DEMO_SETTINGS_STORAGE_KEY,
+    classification: "preference",
+    why: "Browser-demo configuration (focus mode, idle, Pomodoro, rules, targets, exclusions). Sessions stay ephemeral; this only mirrors native settings persistence.",
     label: "",
   },
   {

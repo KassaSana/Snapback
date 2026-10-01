@@ -14,6 +14,7 @@ import {
   type DemoPrediction,
   type DemoSession,
 } from "./data";
+import { DEMO_SETTINGS_STORAGE_KEY } from "../src/browserStorage";
 
 type Json = Record<string, unknown>;
 type Range = { window?: string; since?: string; limit?: number };
@@ -24,6 +25,28 @@ const DAY = 24 * HOUR;
 
 /** Not a real path. Shown wherever the app would name one, so nobody reads it as their disk. */
 const DEMO_PATH_NOTE = "unavailable in the browser demo";
+
+type DemoPersistedSettings = {
+  settings: {
+    defaultFocusMode: string;
+    idleThresholdSecs: number;
+    pomodoro: {
+      workMs: number;
+      shortBreakMs: number;
+      longBreakMs: number;
+      intervalsBeforeLongBreak: number;
+      autoStartNextPhase: boolean;
+    };
+    alerts: Json;
+  };
+  privacyExcludedApps: string[];
+  localOnly: boolean;
+  rules: { id: number; pattern: string; ruleType: string; note: string | null }[];
+  nextRuleId: number;
+  targets: { dailyTargetMins: number; weeklyTargetMins: number };
+  goalCategories: { name: string; keywords: string[] }[];
+  autostart: boolean;
+};
 
 export class DemoBackend {
   private data: DemoDataset;
@@ -105,6 +128,80 @@ export class DemoBackend {
     const live = this.data.sessions.find((s) => s.endedAtMs === null);
     this.activeSessionId = live ? live.sessionId : null;
     this.counter = this.data.sessions.length;
+    this.loadPersistedSettings();
+  }
+
+  /** Snapshot of durable demo preferences (not sessions/predictions). */
+  private settingsSnapshot(): DemoPersistedSettings {
+    return JSON.parse(
+      JSON.stringify({
+        settings: this.settings,
+        privacyExcludedApps: this.privacy.excludedApps,
+        localOnly: this.privacy.localOnly,
+        rules: this.rules,
+        nextRuleId: this.nextRuleId,
+        targets: this.targets,
+        goalCategories: this.goalCategories,
+        autostart: this.autostart,
+      }),
+    ) as DemoPersistedSettings;
+  }
+
+  private loadPersistedSettings(): void {
+    try {
+      const raw = globalThis.localStorage?.getItem(DEMO_SETTINGS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<DemoPersistedSettings>;
+      if (parsed.settings && typeof parsed.settings === "object") {
+        this.settings = {
+          ...this.settings,
+          ...parsed.settings,
+          pomodoro: { ...this.settings.pomodoro, ...(parsed.settings.pomodoro ?? {}) },
+          alerts: { ...this.settings.alerts, ...(parsed.settings.alerts ?? {}) },
+        };
+      }
+      if (Array.isArray(parsed.privacyExcludedApps)) {
+        this.privacy.excludedApps = parsed.privacyExcludedApps.map(String);
+      }
+      if (typeof parsed.localOnly === "boolean") {
+        this.privacy.localOnly = parsed.localOnly;
+      }
+      if (Array.isArray(parsed.rules)) {
+        this.rules = parsed.rules.map((rule) => ({
+          id: Number(rule.id),
+          pattern: String(rule.pattern ?? ""),
+          ruleType: String(rule.ruleType ?? "allow"),
+          note: rule.note == null ? null : String(rule.note),
+        }));
+      }
+      if (typeof parsed.nextRuleId === "number") this.nextRuleId = parsed.nextRuleId;
+      if (parsed.targets && typeof parsed.targets === "object") {
+        this.targets = {
+          dailyTargetMins: Number(parsed.targets.dailyTargetMins ?? 0),
+          weeklyTargetMins: Number(parsed.targets.weeklyTargetMins ?? 0),
+        };
+      }
+      if (Array.isArray(parsed.goalCategories)) {
+        this.goalCategories = parsed.goalCategories.map((row) => ({
+          name: String(row.name ?? ""),
+          keywords: Array.isArray(row.keywords) ? row.keywords.map(String) : [],
+        }));
+      }
+      if (typeof parsed.autostart === "boolean") this.autostart = parsed.autostart;
+    } catch {
+      // Corrupt or unavailable storage: keep the seeded defaults.
+    }
+  }
+
+  private persistSettings(): void {
+    try {
+      globalThis.localStorage?.setItem(
+        DEMO_SETTINGS_STORAGE_KEY,
+        JSON.stringify(this.settingsSnapshot()),
+      );
+    } catch {
+      // Quota or disabled storage: demo still runs in memory.
+    }
   }
 
   // --- helpers ------------------------------------------------------------
@@ -482,6 +579,7 @@ export class DemoBackend {
             dailyTargetMins: Number(args.dailyMins ?? 0),
             weeklyTargetMins: Number(args.weeklyMins ?? 0),
           };
+          this.persistSettings();
         }
         const midnight = new Date(this.now());
         midnight.setHours(0, 0, 0, 0);
@@ -548,6 +646,7 @@ export class DemoBackend {
           );
         }
         this.settings.pomodoro = config;
+        this.persistSettings();
         return this.pomodoroStatus();
       }
 
@@ -883,12 +982,15 @@ export class DemoBackend {
         return this.settings as unknown as Json;
       case "set_focus_mode":
         this.settings.defaultFocusMode = String(args.mode ?? "normal");
+        this.persistSettings();
         return null;
       case "set_idle_threshold":
         this.settings.idleThresholdSecs = Number(args.seconds ?? 300);
+        this.persistSettings();
         return this.settings as unknown as Json;
       case "set_alert_delivery":
         this.settings.alerts = { ...this.settings.alerts, ...((args.alerts ?? {}) as Json) };
+        this.persistSettings();
         return this.settings as unknown as Json;
       case "snooze_alerts": {
         // 0 (or absent) means the default 30 minutes, matching the native side.
@@ -910,6 +1012,7 @@ export class DemoBackend {
         this.privacy.excludedApps = Array.isArray(args.excludedApps)
           ? args.excludedApps.map(String)
           : [];
+        this.persistSettings();
         return this.privacy as unknown as Json;
       case "delete_all_activity_data":
         this.data.sessions = [];
@@ -936,6 +1039,7 @@ export class DemoBackend {
               keywords: Array.isArray(row.keywords) ? row.keywords.map(String) : [],
             }))
           : [];
+        this.persistSettings();
         return this.goalCategories;
 
       case "get_app_rules":
@@ -948,6 +1052,7 @@ export class DemoBackend {
         if (existing) {
           existing.ruleType = String(request.ruleType ?? existing.ruleType);
           existing.note = (request.note ?? null) as string | null;
+          this.persistSettings();
           return { ...existing, createdAtMs: now, updatedAtMs: now };
         }
         this.nextRuleId += 1;
@@ -958,16 +1063,19 @@ export class DemoBackend {
           note: (request.note ?? null) as string | null,
         };
         this.rules.push(rule);
+        this.persistSettings();
         return { ...rule, createdAtMs: now, updatedAtMs: now };
       }
       case "delete_app_rule":
         this.rules = this.rules.filter((rule) => rule.id !== Number(args.id));
+        this.persistSettings();
         return null;
 
       case "get_autostart":
         return { enabled: this.autostart, supported: false };
       case "set_autostart":
         this.autostart = Boolean(args.enabled);
+        this.persistSettings();
         return { enabled: this.autostart, supported: false };
 
       case "refresh_permissions":
