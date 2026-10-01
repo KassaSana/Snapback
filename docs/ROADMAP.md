@@ -634,6 +634,8 @@ kept here; already-deep modules and completed performance work were rejected dur
 
   **Progress 2026-10-01:** Demo settings (focus mode, idle, Pomodoro, alerts, rules, targets, privacy exclusions) persist to `localStorage`; sessions and predictions stay ephemeral. Demo bridge emits pomodoro ticks with predictions.
 
+  **Progress 2026-10-01:** Thin polish: pin toggle reads Unpin when already pinned; reflection fields use proportional font without spellcheck and share Done/Next labels with Session Explorer; goal and exclusion inputs opt out of autofill.
+
   Review hydration is already active-surface gated, with inactive-call assertions in
   `frontend/tests/reviewWorkflow.test.tsx`; recording/privacy and session transitions have
   received narrow correctness repairs. Do not rebuild those paths or deleted hooks.

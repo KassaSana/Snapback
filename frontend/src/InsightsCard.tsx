@@ -177,18 +177,22 @@ function SessionManagementList({
             {onSaveReflection && editingId === sessionId ? (
               <div className="reflection-editor">
                 <label className="field-label">
-                  What got done?
+                  Done
                   <textarea
                     value={done}
                     maxLength={1000}
+                    spellCheck={false}
+                    className="reflection-input"
                     onChange={(event) => setDone(event.target.value)}
                   />
                 </label>
                 <label className="field-label">
-                  Next step
+                  Next
                   <textarea
                     value={nextStep}
                     maxLength={1000}
+                    spellCheck={false}
+                    className="reflection-input"
                     onChange={(event) => setNextStep(event.target.value)}
                   />
                 </label>

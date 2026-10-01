@@ -2212,6 +2212,11 @@ h1 {
   padding: 10px;
 }
 
+.reflection-input,
+.reflection-card textarea {
+  font-family: var(--font-sans);
+}
+
 @media (max-width: 760px) {
   .grid-review {
     grid-template-columns: minmax(0, 1fr);

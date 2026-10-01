@@ -48,25 +48,27 @@ export const SessionReflectionCard = memo(function SessionReflectionCard({
       </p>
 
       <label className="field-label" htmlFor="reflection-done">
-        What got done?
+        Done
       </label>
       <textarea
         id="reflection-done"
-        className="text-input"
+        className="text-input reflection-input"
         rows={2}
         maxLength={MAX_LENGTH}
+        spellCheck={false}
         value={done}
         onChange={(event) => setDone(event.target.value)}
       />
 
       <label className="field-label" htmlFor="reflection-next">
-        Next step
+        Next
       </label>
       <textarea
         id="reflection-next"
-        className="text-input"
+        className="text-input reflection-input"
         rows={2}
         maxLength={MAX_LENGTH}
+        spellCheck={false}
         value={nextStep}
         onChange={(event) => setNextStep(event.target.value)}
       />

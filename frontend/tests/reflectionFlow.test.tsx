@@ -127,10 +127,10 @@ describe("Session reflection", () => {
     await runASession();
     const card = reflectionCard();
 
-    fireEvent.change(within(card).getByLabelText("What got done?"), {
+    fireEvent.change(within(card).getByLabelText("Done"), {
       target: { value: "  wired the CSV path  " },
     });
-    fireEvent.change(within(card).getByLabelText("Next step"), {
+    fireEvent.change(within(card).getByLabelText("Next"), {
       target: { value: "add the header row" },
     });
     fireEvent.click(within(card).getByRole("button", { name: "Save reflection" }));
@@ -149,7 +149,7 @@ describe("Session reflection", () => {
     await runASession();
     const card = reflectionCard();
 
-    fireEvent.change(within(card).getByLabelText("Next step"), {
+    fireEvent.change(within(card).getByLabelText("Next"), {
       target: { value: "start the draft" },
     });
     fireEvent.click(within(card).getByRole("button", { name: "Save reflection" }));
@@ -167,7 +167,7 @@ describe("Session reflection", () => {
     const card = reflectionCard();
 
     expect(within(card).getByRole("button", { name: "Save reflection" })).toBeDisabled();
-    fireEvent.change(within(card).getByLabelText("What got done?"), {
+    fireEvent.change(within(card).getByLabelText("Done"), {
       target: { value: "   \t  " },
     });
     expect(within(card).getByRole("button", { name: "Save reflection" })).toBeDisabled();

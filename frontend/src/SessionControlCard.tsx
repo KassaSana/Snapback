@@ -80,6 +80,12 @@ export const SessionControlCard = memo(function SessionControlCard({
     [recentGoals, presets, sessionGoal],
   );
   const suggestionsOpen = showSuggestions && suggestions.length > 0;
+  const goalTrimmed = sessionGoal.trim();
+  const pinnedMatch = presets.find(
+    (preset) =>
+      preset.goal.trim().toLowerCase() === goalTrimmed.toLowerCase() &&
+      preset.focusMode === focusMode,
+  );
 
   const sessionActive = sessionRecord?.status === "ACTIVE";
   // The switch interaction ends with its session (new id or Stop). Reset during render rather
@@ -240,6 +246,9 @@ export const SessionControlCard = memo(function SessionControlCard({
                 type="text"
                 placeholder="Ship the snapback overlay"
                 value={sessionGoal}
+                autoComplete="off"
+                data-1p-ignore
+                data-lpignore="true"
                 onChange={(event) => {
                   setPristine(false);
                   setSessionGoal(event.target.value);
@@ -342,10 +351,16 @@ export const SessionControlCard = memo(function SessionControlCard({
               <button
                 type="button"
                 className="link-button"
-                onClick={() => updatePresets(addSessionPreset(presets, sessionGoal, focusMode))}
+                onClick={() => {
+                  if (pinnedMatch) {
+                    updatePresets(removeSessionPreset(presets, pinnedMatch.id));
+                  } else {
+                    updatePresets(addSessionPreset(presets, sessionGoal, focusMode));
+                  }
+                }}
                 disabled={sessionPending}
               >
-                Pin this goal
+                {pinnedMatch ? "Unpin" : "Pin this goal"}
               </button>
             )}
           </div>

@@ -75,6 +75,9 @@ export const PrivacyCard = memo(function PrivacyCard({
           type="text"
           placeholder="Banking, 1Password"
           value={exclusionInput}
+          autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
           disabled={busy || settings === null}
           onChange={(event) => setExclusionInput(event.target.value)}
           onKeyDown={(event) => {

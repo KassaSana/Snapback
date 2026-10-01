@@ -279,14 +279,14 @@ describe("Session reflection editing from Insights", () => {
     fireEvent.click(screen.getByText("Session management"));
     const editButtons = await screen.findAllByRole("button", { name: "Edit reflection" });
     fireEvent.click(editButtons[0]);
-    fireEvent.change(screen.getByLabelText("What got done?"), {
+    fireEvent.change(screen.getByLabelText("Done"), {
       target: { value: "unsaved result" },
     });
 
     for (const button of screen.getAllByRole("button", { name: /^Delete session/ })) {
       expect(button).toBeDisabled();
     }
-    expect(screen.getByLabelText("What got done?")).toHaveValue("unsaved result");
+    expect(screen.getByLabelText("Done")).toHaveValue("unsaved result");
     expect(boundary.invoke).not.toHaveBeenCalledWith("delete_session", expect.anything());
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -312,7 +312,7 @@ describe("Session reflection editing from Insights", () => {
     await screen.findByRole("button", { name: "Edit reflection" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit reflection" }));
-    fireEvent.change(screen.getByLabelText("What got done?"), { target: { value: "new result" } });
+    fireEvent.change(screen.getByLabelText("Done"), { target: { value: "new result" } });
     fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
 
     await waitFor(() =>
@@ -342,11 +342,11 @@ describe("Session reflection editing from Insights", () => {
 
     fireEvent.click(screen.getByText("Session management"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit reflection" }));
-    fireEvent.change(screen.getByLabelText("What got done?"), { target: { value: "new result" } });
+    fireEvent.change(screen.getByLabelText("Done"), { target: { value: "new result" } });
     fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
 
     expect(await screen.findByText("Could not update that reflection.")).toBeInTheDocument();
-    expect(screen.getByLabelText("What got done?")).toHaveValue("new result");
+    expect(screen.getByLabelText("Done")).toHaveValue("new result");
   });
 });
 
