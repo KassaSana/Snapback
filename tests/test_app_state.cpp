@@ -1041,6 +1041,7 @@ TEST_CASE("a failed attendance transaction retries the idle close without new in
 
     // The failed tick already advanced the idle detector. Retrying with no new input must
     // therefore replay the original attendance decision rather than wait for another edge.
+    clock.advance_ms(1000);
     CHECK(AppStateTestAccess::engine_tick(state) == false);
     CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
 }
@@ -4494,4 +4495,65 @@ TEST_CASE("emit_event pushes through the emit hook with the current activity epo
     state->set_emit_hook(nullptr);
     state->emit_event("training-progress", "{}");
     CHECK(seen.size() == 1);
+}
+
+TEST_CASE("persistence degradation survives backoff and clears only on a recording commit") {
+    for (const int code : {5, 13, 10, 1}) {
+        TempDir temp;
+        ManualClock clock;
+        auto storage = Storage::open(temp.path);
+        REQUIRE(storage);
+        AppState state(std::move(*storage), temp.path, nullptr, &clock);
+        const auto session = state.start_session("saving", FocusMode::Normal);
+        std::vector<std::string> events;
+        state.set_emit_hook([&](const char* name, const std::string& payload, AppState::ActivityEpoch) {
+            if (std::string(name) == "persistence-failed") {
+                const auto category = nlohmann::json::parse(payload).at("reason").get<std::string>();
+                CHECK(category == (code == 5 ? "database_busy" : code == 13 ? "disk_full" :
+                                   code == 10 ? "filesystem_io" : "write_failed"));
+            }
+            events.emplace_back(name);
+        });
+        clock.advance_ms(kDefaultIdleThresholdMs);
+        AppStateTestAccess::persistence_error(state, code);
+        CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+        REQUIRE(state.health().persistence_failure_reason);
+        CHECK(state.health().runtime.persistence_failures == 1);
+        CHECK(std::count(events.begin(), events.end(), "persistence-failed") == 1);
+        clock.advance_ms(999);
+        CHECK_NOTHROW(AppStateTestAccess::engine_tick(state));
+        CHECK(state.health().runtime.persistence_failures == 1);
+        clock.advance_ms(1);
+        CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+        CHECK(std::count(events.begin(), events.end(), "persistence-failed") == 1);
+        AppStateTestAccess::clear_persistence_failure(state);
+        CHECK_NOTHROW(AppStateTestAccess::engine_tick(state));
+        CHECK_FALSE(state.health().persistence_failure_reason);
+        CHECK(std::count(events.begin(), events.end(), "persistence-recovered") == 1);
+        CHECK_FALSE(AppStateTestAccess::has_open_span(state, session.session_id));
+        state.set_emit_hook(nullptr);
+    }
+}
+
+TEST_CASE("capture during persistence backoff is classified and counted as discarded") {
+    TempDir temp;
+    ManualClock clock;
+    auto storage = Storage::open(temp.path);
+    REQUIRE(storage);
+    AppState state(std::move(*storage), temp.path, nullptr, &clock);
+    state.start_session("saving", FocusMode::Normal);
+    clock.advance_ms(kDefaultIdleThresholdMs);
+    AppStateTestAccess::fail_next_persistence_at(state, "write");
+    CHECK_THROWS(AppStateTestAccess::engine_tick(state));
+    OneShotHook hook;
+    AppStateTestAccess::start_capture_only(state, &hook);
+    for (int i = 0; i < 1000 && !hook.emitted(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    REQUIRE(hook.emitted());
+    AppStateTestAccess::stop_capture(state);
+    CHECK_NOTHROW(AppStateTestAccess::engine_tick(state));
+    CHECK(state.latest_prediction().has_value());
+    CHECK(state.health().runtime.persistence_dropped_predictions == 1);
+    CHECK(state.health().runtime.persistence_failures == 1);
+    CHECK(state.health().persistence_failure_reason.has_value());
 }

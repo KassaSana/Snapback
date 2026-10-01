@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   api,
@@ -8,6 +8,7 @@ import {
 import { summarizeAppHealth } from "./healthHints";
 
 export const useHealth = () => {
+  const healthGeneration = useRef(0);
   const [healthStatus, setHealthStatus] = useState<"checking" | "online" | "offline" | "degraded">(
     "checking",
   );
@@ -63,16 +64,18 @@ export const useHealth = () => {
   }, [applyClassifierStatus]);
 
   const applyPersistenceFailure = useCallback((payload: PersistenceFailurePayload) => {
+    ++healthGeneration.current;
     setPersistenceFailureReason(payload.message);
     setHealthStatus("degraded");
   }, []);
 
   const refreshHealth = useCallback(async () => {
+    const generation = ++healthGeneration.current;
     try {
       const health = await api.getHealth();
-      applyHealth(health);
+      if (generation === healthGeneration.current) applyHealth(health);
     } catch {
-      setHealthStatus("offline");
+      if (generation === healthGeneration.current) setHealthStatus("offline");
     }
   }, [applyHealth]);
 

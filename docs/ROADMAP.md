@@ -1139,6 +1139,8 @@ small; the tier is large because nobody has walked that path yet.
   uninstaller at all yet. The command exists and is the single implementation each will use.
 
 - **9.6 — Failure UX: what does the user actually see when it breaks?** `in progress` `M`
+  **Progress 2026-10-01:** Native failure/recovery events, health degradation, capped exponential backoff, discarded-prediction counters, and retained snapback episodes are implemented. Attendance retains its original boundary through backoff; frontend health rejects stale reads. Live Windows/macOS recovery and the Release soak remain unverified; broader capture/permission UX remains open.
+
   The backend reports several rich failure states (7.4, 7.10, 8.1), but there is no designed
   response to any of them. Specify what the UI does when: capture permission is revoked
   *mid-session* (macOS lets the user do this at any time); the hook dies; the disk is full so

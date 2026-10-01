@@ -11,6 +11,8 @@
 namespace snapback::events {
 
 // The engine tick's alert and state stream (`AppState::engine_tick` -> the emit hook).
+inline constexpr const char* kPersistenceFailed = "persistence-failed";
+inline constexpr const char* kPersistenceRecovered = "persistence-recovered";
 inline constexpr const char* kIdle = "idle";
 inline constexpr const char* kPrediction = "prediction";
 inline constexpr const char* kSnapback = "snapback";
@@ -28,8 +30,8 @@ inline constexpr const char* kRecordingStatus = "recording-status";
 inline constexpr const char* kAlertAction = "alert_action";
 
 // Every name this binary may emit. The IPC contract test pins the fixture to exactly this.
-inline constexpr std::array<const char*, 9> kAll = {
-    kIdle,      kPrediction,        kSnapback,          kPomodoro,     kHyperfocus,
+inline constexpr std::array<const char*, 11> kAll = {
+    kPersistenceFailed, kPersistenceRecovered, kIdle,      kPrediction,        kSnapback,          kPomodoro,     kHyperfocus,
     kUntrackedWork, kTrainingProgress, kRecordingStatus, kAlertAction,
 };
 

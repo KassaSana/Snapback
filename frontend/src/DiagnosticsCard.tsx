@@ -46,6 +46,8 @@ export const DiagnosticsCard = memo(function DiagnosticsCard() {
         <strong>{health.status}</strong>
         <span>Version {diagnostics.version}</span>
         <span>{health.captureEventsDropped} dropped capture events</span>
+        <span>{health.runtime.persistenceFailures} failed recording writes</span>
+        <span>{health.runtime.persistenceDroppedPredictions} lost prediction samples</span>
         <span>
           Prediction: {health.lastPredictionAgeSecs == null
             ? `none (${health.predictionSuppressionReason})`

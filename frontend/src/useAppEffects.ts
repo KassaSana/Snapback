@@ -152,6 +152,7 @@ export const useAppEffects = ({
   useEffect(() => {
     const unsubs: Array<Promise<() => void>> = [];
     unsubs.push(
+      api.onPersistenceRecovered(() => { void refreshHealth(); }),
       api.onPersistenceFailed((payload) => {
         applyPersistenceFailure(payload);
       }),

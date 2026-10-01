@@ -187,6 +187,8 @@ TEST_CASE("RuntimeMetrics round-trips every field it publishes") {
     // from good news. Every one is set to something distinct so a copy-paste slip between
     // two similarly named keys fails here.
     RuntimeMetrics metrics;
+    metrics.persistence_failures = 15;
+    metrics.persistence_dropped_predictions = 16;
     metrics.engine_wakeups = 1;
     metrics.process_cpu_ms = 2;
     metrics.capture_ring_high_water = 3;
@@ -209,6 +211,8 @@ TEST_CASE("RuntimeMetrics round-trips every field it publishes") {
     CHECK(j["sqliteBusyMaxWaitMs"] == 14);
 
     const auto back = j.get<RuntimeMetrics>();
+    CHECK(back.persistence_failures == 15);
+    CHECK(back.persistence_dropped_predictions == 16);
     CHECK(back.engine_wakeups == 1);
     CHECK(back.process_cpu_ms == 2);
     CHECK(back.capture_ring_high_water == 3);

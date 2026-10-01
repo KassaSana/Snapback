@@ -276,6 +276,8 @@ export function mapRuntimeMetrics(raw: Record<string, unknown>): RuntimeMetrics 
   // and a 0 contention count is indistinguishable from good news.
   const num = (key: string): number => Number(raw[key] ?? 0);
   return {
+    persistenceFailures: num("persistenceFailures"),
+    persistenceDroppedPredictions: num("persistenceDroppedPredictions"),
     engineWakeups: num("engineWakeups"),
     processCpuMs: num("processCpuMs"),
     captureRingHighWater: num("captureRingHighWater"),

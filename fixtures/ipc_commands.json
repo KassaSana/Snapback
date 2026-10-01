@@ -88,11 +88,12 @@
       "recording-status",
       "snapback",
       "training-progress",
-      "untracked_work"
+      "untracked_work",
+      "persistence-failed",
+      "persistence-recovered"
     ],
     "planned": {
-      "label-hotkey": "12.6",
-      "persistence-failed": "9.6"
+      "label-hotkey": "12.6"
     }
   }
 }

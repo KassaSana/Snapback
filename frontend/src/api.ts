@@ -113,6 +113,8 @@ export type ModelDeploymentHealth = {
  *  values (see `ranked_mutex.hpp`). Anything that ever displays one has to say "<=". The
  *  exact tail is the `...Max...` field beside it. */
 export type RuntimeMetrics = {
+  persistenceFailures: number;
+  persistenceDroppedPredictions: number;
   engineWakeups: number;
   processCpuMs: number;
   captureRingHighWater: number;
@@ -133,6 +135,8 @@ export type RuntimeMetrics = {
  *  get_diagnostics returns. Named rather than spelled out at each use so a field added above
  *  cannot be forgotten in one of them. */
 export const EMPTY_RUNTIME_METRICS: RuntimeMetrics = {
+  persistenceFailures: 0,
+  persistenceDroppedPredictions: 0,
   engineWakeups: 0,
   processCpuMs: 0,
   captureRingHighWater: 0,
@@ -931,6 +935,7 @@ export const api = {
         logTail: String(raw.logTail ?? ""),
       });
     }),
+  onPersistenceRecovered: (handler: () => void) => listen("persistence-recovered", handler),
   onPersistenceFailed: (handler: (payload: PersistenceFailurePayload) => void) =>
     listen<Record<string, unknown>>("persistence-failed", (event) => {
       const raw = event.payload;

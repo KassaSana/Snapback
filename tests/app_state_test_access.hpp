@@ -57,6 +57,10 @@ struct AppStateTestAccess {
     // Returns what the engine loop reads: true if the drain stopped on a budget with events
     // still queued, false if it emptied the ring.
     static bool engine_tick(AppState& state) { return state.engine_tick(); }
+    static void persistence_error(AppState& state, int code) {
+        std::lock_guard lock(state.mutex_);
+        state.persistence_test_hook_ = [code](const char*) { throw SqliteError(code, "fault"); };
+    }
 
     // Starts the capture producer WITHOUT the engine thread. `start_engine_for_test` starts
     // both, which makes "how much does one tick drain" a race against a thread already
@@ -145,6 +149,7 @@ struct AppStateTestAccess {
 
     static void fail_next_persistence_at(AppState& state, std::string stage) {
         std::lock_guard lock(state.mutex_);
+        state.persistence_retry_at_ms_ = 0;
         const auto fired = std::make_shared<bool>(false);
         state.persistence_test_hook_ =
             [stage = std::move(stage), fired](const char* current) {
@@ -158,6 +163,7 @@ struct AppStateTestAccess {
     static void clear_persistence_failure(AppState& state) {
         std::lock_guard lock(state.mutex_);
         state.persistence_test_hook_ = nullptr;
+        state.persistence_retry_at_ms_ = 0;
     }
 
     // The *live* focus mode driving the classifier right now. Not the same

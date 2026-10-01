@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -19,6 +20,14 @@ struct sqlite3;       // forward decl; real sqlite3.h included in the .cpp
 struct sqlite3_stmt;  // forward decl; cached prepared statements are held as pointers
 
 namespace snapback {
+
+class SqliteError : public std::runtime_error {
+public:
+    SqliteError(int code, const std::string& message) : std::runtime_error(message), code_(code) {}
+    int code() const noexcept { return code_; }
+private:
+    int code_;
+};
 
 inline constexpr int kDefaultRetentionDays = 90;
 inline constexpr std::size_t kVacuumMinDeletedRows = 500;

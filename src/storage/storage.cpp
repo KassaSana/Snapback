@@ -56,7 +56,7 @@ constexpr std::array<std::string_view, 31> kFeatureColumns = {
 
 [[noreturn]] void throw_sqlite(sqlite3* db, const char* action) {
     const char* msg = db ? sqlite3_errmsg(db) : "unknown sqlite error";
-    throw std::runtime_error(std::string(action) + ": " + msg);
+    throw SqliteError(db ? sqlite3_errcode(db) : SQLITE_ERROR, std::string(action) + ": " + msg);
 }
 
 // Counting busy handler. Installing it replaces PRAGMA busy_timeout, so it reproduces SQLite's
@@ -103,7 +103,7 @@ void exec(sqlite3* db, const char* sql) {
     if (sqlite3_exec(db, sql, nullptr, nullptr, &raw_error) != SQLITE_OK) {
         std::string error = raw_error ? raw_error : sqlite3_errmsg(db);
         sqlite3_free(raw_error);
-        throw std::runtime_error(error);
+        throw SqliteError(sqlite3_errcode(db), error);
     }
 }
 

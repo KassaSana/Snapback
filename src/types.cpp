@@ -222,7 +222,9 @@ void from_json(const json& j, ModelDeploymentHealth& v) {
 // ---- RuntimeMetrics --------------------------------------------------------
 
 void to_json(json& j, const RuntimeMetrics& v) {
-    j = json{{"engineWakeups", v.engine_wakeups},
+    j = json{{"persistenceFailures", v.persistence_failures},
+             {"persistenceDroppedPredictions", v.persistence_dropped_predictions},
+             {"engineWakeups", v.engine_wakeups},
              {"processCpuMs", v.process_cpu_ms},
              {"captureRingHighWater", v.capture_ring_high_water},
              {"captureRingCapacity", v.capture_ring_capacity},
@@ -238,6 +240,8 @@ void to_json(json& j, const RuntimeMetrics& v) {
              {"sqliteBusyMaxWaitMs", v.sqlite_busy_max_wait_ms}};
 }
 void from_json(const json& j, RuntimeMetrics& v) {
+    v.persistence_failures = get_or<std::uint64_t>(j, "persistenceFailures", 0);
+    v.persistence_dropped_predictions = get_or<std::uint64_t>(j, "persistenceDroppedPredictions", 0);
     v.engine_wakeups = get_or<std::uint64_t>(j, "engineWakeups", 0);
     v.process_cpu_ms = get_or<std::uint64_t>(j, "processCpuMs", 0);
     v.capture_ring_high_water = get_or<std::uint64_t>(j, "captureRingHighWater", 0);

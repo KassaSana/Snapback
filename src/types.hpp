@@ -258,6 +258,8 @@ struct ModelDeploymentHealth {
 // tail is the max_* field.
 struct RuntimeMetrics {
     // Tick-loop iterations; the denominator for the CPU figure.
+    std::uint64_t persistence_failures{};
+    std::uint64_t persistence_dropped_predictions{};
     std::uint64_t engine_wakeups{};
     // User + kernel milliseconds for the whole process since it started. 0 where the platform
     // call failed, or where the process has not yet burned one scheduler tick.

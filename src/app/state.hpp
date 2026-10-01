@@ -271,6 +271,7 @@ private:
         std::optional<std::int64_t> last_prediction_at_ms;
         ClassifierStatus classifier;
         ModelDeploymentHealth model_deployment;
+        std::optional<std::string> persistence_failure_reason;
         bool private_mode{};
         bool idle{};
     };
@@ -352,6 +353,7 @@ private:
         std::int64_t millis_ago{};
         // Resolved from Storage's clock on the first attempt and retained across retries.
         std::optional<std::int64_t> timestamp_ms;
+        std::optional<std::int64_t> decided_at_steady_ms;
     };
     // Span open/close decisions from idle edges, decided under mutex_ and written by the tick
     // under storage_mutex_. Kept until their transaction commits; a deque because a wake can
@@ -360,6 +362,13 @@ private:
     std::uint64_t next_span_transition_id_ = 0;
     // Deterministic transaction-stage fault seam used by AppState tests. Empty in production.
     std::function<void(const char*)> persistence_test_hook_;
+    std::optional<std::string> persistence_failure_reason_;
+    std::string persistence_failure_category_;
+    std::int64_t persistence_retry_at_ms_{};
+    std::int64_t persistence_retry_delay_ms_{};
+    std::optional<SnapbackEpisode> pending_snapback_episode_;
+    std::atomic<std::uint64_t> persistence_failures_{0};
+    std::atomic<std::uint64_t> persistence_dropped_predictions_{0};
     // Desired attendance follows the detector immediately; committed attendance advances
     // only when the corresponding storage transaction commits. Both require mutex_.
     bool session_attended_ = false;

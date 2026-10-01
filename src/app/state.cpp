@@ -3,6 +3,8 @@
 #include "app/events.hpp"
 
 #include <chrono>
+#include <sqlite3.h>
+#include <exception>
 #include <algorithm>
 #include <limits>
 #include <cctype>
@@ -237,6 +239,7 @@ void AppState::publish_live_read_unlocked() {
     snapshot->latest_prediction = latest_prediction_;
     snapshot->latest_snapback = latest_snapback_;
     snapshot->last_prediction_at_ms = last_prediction_at_ms_;
+    snapshot->persistence_failure_reason = persistence_failure_reason_;
     snapshot->private_mode = settings_.private_mode;
     snapshot->idle = idle_;
     snapshot->classifier.backend = classifier_.backend();
@@ -284,7 +287,7 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
             // not slide forward.
             pending_span_transitions_.push_back(PendingSpanTransition{
                 ++next_span_transition_id_, active_session_->session_id, should_attend,
-                should_attend ? 0 : idle_detector_.idle_for_ms(now_ms), std::nullopt});
+                should_attend ? 0 : idle_detector_.idle_for_ms(now_ms), std::nullopt, now_ms});
         }
         session_attended_ = should_attend;
     }
@@ -643,6 +646,7 @@ void AppState::discard_pending_span_unlocked(const std::optional<std::string>& s
 
 void AppState::clear_snapback_unlocked() {
     latest_snapback_.reset();
+    pending_snapback_episode_.reset();
     snapback_emitted_ = false;
     ++snapback_generation_;
 }
@@ -850,11 +854,12 @@ HealthStatus AppState::health() const {
         h.status = "capture_failed";
     } else if (!engine_running) {
         h.status = "offline";
-    } else if (live->model_deployment.state == "degraded") {
+    } else if (live->persistence_failure_reason || live->model_deployment.state == "degraded") {
         h.status = "degraded";
     } else {
         h.status = "online";
     }
+    h.persistence_failure_reason = live->persistence_failure_reason;
     h.capture_running = capture_.running();
     h.capture_failed = capture_failed;
     h.capture_failure_reason = capture_.failure_reason();
@@ -888,6 +893,8 @@ HealthStatus AppState::health() const {
 RuntimeMetrics AppState::runtime_metrics() const {
     // Relaxed atomics and OS calls only: health() is what a stalled app is asked for.
     RuntimeMetrics out;
+    out.persistence_failures = persistence_failures_.load(std::memory_order_relaxed);
+    out.persistence_dropped_predictions = persistence_dropped_predictions_.load(std::memory_order_relaxed);
     out.engine_wakeups = engine_wakeups();
     out.process_cpu_ms = process_cpu_ms();
     out.capture_ring_high_water = static_cast<std::uint64_t>(capture_ring_high_water());
@@ -1912,6 +1919,13 @@ bool AppState::engine_tick() {
     std::vector<PendingSpanTransition> span_transitions;
     // The tick only schedules retention. An owned worker performs bounded storage batches.
     bool prune_due = false;
+    bool backoff = false;
+    bool wrote_data = false;
+    bool recovered = false;
+    bool report_failure = false;
+    std::string failure_category;
+    std::optional<SnapbackEpisode> episode_to_persist;
+    std::exception_ptr persistence_error;
     std::uint64_t tick_activity_epoch = 0;
     std::uint64_t snapback_generation = 0;
     // Whether phase 1 gave up on a budget rather than on an empty ring. Returned to the engine
@@ -1975,6 +1989,8 @@ bool AppState::engine_tick() {
         const auto final_idle_edge = update_idle_unlocked(now_ms, had_input);
         if (final_idle_edge != IdleTransition::None) idle_edge = final_idle_edge;
         // Copy without consuming: a failed transaction must leave the queue intact.
+        backoff = persistence_failure_reason_ && steady_now_ms() < persistence_retry_at_ms_;
+        episode_to_persist = pending_snapback_episode_;
         span_transitions.assign(pending_span_transitions_.begin(),
                                 pending_span_transitions_.end());
         if (now_ms - last_prune_steady_ms_.load(std::memory_order_acquire) >=
@@ -2032,7 +2048,7 @@ bool AppState::engine_tick() {
         if (tick_activity_epoch != activity_epoch_.load(std::memory_order_acquire)) {
             return drain_truncated;
         }
-        if (!jobs.empty() || !span_transitions.empty() || snap_to_emit) {
+        if (!backoff && (!jobs.empty() || !span_transitions.empty() || episode_to_persist || snap_to_emit)) {
             // Announced only while waiting for the lock.
             WriterPriority::Announce announce(storage_priority_);
             std::lock_guard lock(storage_mutex_);
@@ -2042,13 +2058,15 @@ bool AppState::engine_tick() {
             for (auto& transition : span_transitions) {
                 if (!transition.timestamp_ms) {
                     transition.timestamp_ms =
-                        storage_.session_span_timestamp_now(transition.millis_ago);
+                        storage_.session_span_timestamp_now(transition.millis_ago + std::max<std::int64_t>(0,
+                            steady_now_ms() - transition.decided_at_steady_ms.value_or(steady_now_ms())));
                 }
             }
             if (persistence_test_hook) persistence_test_hook("begin");
             Storage::Transaction txn(storage_);  // one commit for the whole drain
             if (persistence_test_hook) persistence_test_hook("write");
             for (const auto& job : jobs) persist(job);
+            if (episode_to_persist) storage_.insert_snapback_episode(*episode_to_persist);
             for (const auto& transition : span_transitions) {
                 if (transition.opens) {
                     storage_.begin_session_span(transition.session_id,
@@ -2060,6 +2078,10 @@ bool AppState::engine_tick() {
             }
             if (persistence_test_hook) persistence_test_hook("commit");
             txn.commit();
+            wrote_data = !span_transitions.empty() || episode_to_persist.has_value() ||
+                std::any_of(jobs.begin(), jobs.end(), [](const PersistJob& job) {
+                    return !job.session_id.empty();
+                });
         }
     } catch (...) {
         // Take the state lock only after releasing the storage and activity locks (ranked
@@ -2073,12 +2095,52 @@ bool AppState::engine_tick() {
                 pending->timestamp_ms = attempted.timestamp_ms;
             }
         }
-        throw;
+        persistence_error = std::current_exception();
+        failure_category = "write_failed";
+        try { std::rethrow_exception(persistence_error); }
+        catch (const SqliteError& error) {
+            switch (error.code() & 0xff) {
+                case SQLITE_BUSY: case SQLITE_LOCKED: failure_category = "database_busy"; break;
+                case SQLITE_FULL: failure_category = "disk_full"; break;
+                case SQLITE_IOERR: case SQLITE_CANTOPEN: case SQLITE_READONLY:
+                case SQLITE_PERM: failure_category = "filesystem_io"; break;
+                default: break;
+            }
+        } catch (...) {}
+        report_failure = !persistence_failure_reason_ || persistence_failure_category_ != failure_category;
+        persistence_failure_category_ = failure_category;
+        persistence_failure_reason_ = "Some activity could not be saved. Retrying automatically; lost samples cannot be restored.";
+        persistence_retry_delay_ms_ = persistence_retry_delay_ms_ == 0 ? 1000 :
+            std::min<std::int64_t>(30000, persistence_retry_delay_ms_ * 2);
+        persistence_retry_at_ms_ = steady_now_ms() + persistence_retry_delay_ms_;
+        persistence_failures_.fetch_add(1, std::memory_order_relaxed);
+        live_read_dirty_ = true;
+        publish_live_read_unlocked();
+    }
+    if (backoff || persistence_error) {
+        const auto lost = std::count_if(jobs.begin(), jobs.end(), [](const PersistJob& job) {
+            return job.prediction.has_value();
+        });
+        persistence_dropped_predictions_.fetch_add(static_cast<std::uint64_t>(lost), std::memory_order_relaxed);
+        snap_to_emit.reset();
     }
 
     {
         std::lock_guard lock(mutex_);
-        for (const auto& committed : span_transitions) {
+        if (wrote_data && !persistence_error) {
+            recovered = persistence_failure_reason_.has_value();
+            persistence_failure_reason_.reset();
+            persistence_failure_category_.clear();
+            persistence_retry_delay_ms_ = 0;
+            persistence_retry_at_ms_ = 0;
+            if (episode_to_persist && pending_snapback_episode_ &&
+                pending_snapback_episode_->started_at_ms == episode_to_persist->started_at_ms &&
+                pending_snapback_episode_->session_id == episode_to_persist->session_id) {
+                pending_snapback_episode_.reset();
+            }
+            if (recovered) { live_read_dirty_ = true; publish_live_read_unlocked(); }
+        }
+        if (!backoff && !persistence_error) for (const auto& committed : span_transitions) {
             const auto pending = std::find_if(
                 pending_span_transitions_.begin(), pending_span_transitions_.end(),
                 [&](const PendingSpanTransition& item) { return item.id == committed.id; });
@@ -2102,7 +2164,17 @@ bool AppState::engine_tick() {
         }
     }
 
-    if (!emit_to_frontend) return drain_truncated;
+    if (!emit_to_frontend) {
+        if (persistence_error) std::rethrow_exception(persistence_error);
+        return drain_truncated;
+    }
+    if (report_failure) {
+        emit_to_frontend(events::kPersistenceFailed,
+            dump_json(nlohmann::json{{"reason", failure_category}, {"message",
+                "Some activity could not be saved. Retrying automatically; lost samples cannot be restored."}}),
+            tick_activity_epoch);
+    }
+    if (recovered) emit_to_frontend(events::kPersistenceRecovered, "{}", tick_activity_epoch);
     if (idle_edge == IdleTransition::WentIdle) {
         emit_to_frontend(events::kIdle, "{\"idle\":true}", tick_activity_epoch);
     }
@@ -2149,6 +2221,7 @@ bool AppState::engine_tick() {
                                                   {"delivery", nlohmann::json(untracked_route)}}),
                          tick_activity_epoch);
     }
+    if (persistence_error) std::rethrow_exception(persistence_error);
     return drain_truncated;
 }
 
@@ -2204,6 +2277,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
             episode.started_at_ms =
                 unix_ms_secs_ago(static_cast<std::int64_t>(snapback->distraction_duration_secs));
             job.snapback_episode = std::move(episode);
+            pending_snapback_episode_ = job.snapback_episode;
 
             // Delivery is decided at the latch, the only place that can also acknowledge a
             // suppressed
