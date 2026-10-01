@@ -1609,6 +1609,8 @@ kept here; already-deep modules and completed performance work were rejected dur
   real handlers. Expand this to the remaining mapped commands before closing the item.
 
 - **14.4 — Move frontend invalidation into workflow modules.** `in progress` `M`
+  **Progress 2026-10-01:** Recording pause controls now name what they pause, with explicit elapsed-versus-attended copy and private/idle session labels. Demo predictions and attendance stop during private pauses, timed resumption counts only post-expiry time, and repeated Stop preserves the original end timestamp. ADR-0005 elapsed semantics remain intact; native desktop interaction still needs live confirmation.
+
 
   `App.tsx` coordinates roughly a dozen feature states and passes 29 values into
   `useAppEffects`; deletion and session actions know which unrelated stores must refresh.

@@ -90,7 +90,12 @@ export class DemoBackend {
   private snoozeUntil = 0;
   private autostart = true;
 
-  constructor(now: number) {
+  private clock: () => number;
+  private attendedUpdatedAtMs: number;
+
+  constructor(now: number, clock: () => number = Date.now) {
+    this.clock = clock;
+    this.attendedUpdatedAtMs = clock();
     this.data = buildDataset(now);
     const live = this.data.sessions.find((s) => s.endedAtMs === null);
     this.activeSessionId = live ? live.sessionId : null;
@@ -100,7 +105,20 @@ export class DemoBackend {
   // --- helpers ------------------------------------------------------------
 
   private now(): number {
-    return Date.now();
+    return this.clock();
+  }
+
+  // Attendance excludes private time, including the portion before a timed pause lapses.
+  private syncAttendance(): void {
+    const now = this.now();
+    const session = this.activeSessionId ? this.session(this.activeSessionId) : undefined;
+    let from = this.attendedUpdatedAtMs;
+    if (this.privacy.privateMode) {
+      from = this.privatePauseUntil > 0 ? Math.max(from, this.privatePauseUntil) : now;
+    }
+    if (session) session.attendedSecs += Math.max(0, now - from) / 1000;
+    this.attendedUpdatedAtMs = now;
+    this.recordingStatus();
   }
 
   private session(id: string): DemoSession | undefined {
@@ -175,7 +193,7 @@ export class DemoBackend {
       sessionId: session.sessionId,
       goal: session.goal,
       durationSecs: Math.round((end - session.startedAtMs) / 1000),
-      activeSecs: session.attendedSecs,
+      activeSecs: Math.round(session.attendedSecs),
       sampleCount: rows.length,
       avgFocusScore: Math.round(avg((r) => r.focusScore)),
       // Stays on the 0-1 scale: the Review cards run it through formatPercent.
@@ -295,6 +313,8 @@ export class DemoBackend {
    * than inventing activity for a session the visitor already stopped.
    */
   tick(): Json | null {
+    this.syncAttendance();
+    if (this.recordingStatus().state !== "recording") return null;
     if (!this.activeSessionId) return null;
     const session = this.session(this.activeSessionId);
     if (!session) return null;
@@ -320,7 +340,6 @@ export class DemoBackend {
       stateSource: "model",
     };
     this.data.predictions.push(prediction);
-    session.attendedSecs += 5;
     if (!onTask) session.snapbackCount += 1;
     return prediction as unknown as Json;
   }
@@ -328,6 +347,7 @@ export class DemoBackend {
   // --- the command table --------------------------------------------------
 
   handle(command: string, args: Json): unknown {
+    this.syncAttendance();
     const range = args as Range;
 
     switch (command) {
@@ -466,9 +486,9 @@ export class DemoBackend {
       case "stop_session": {
         const session = this.session(String(args.sessionId));
         if (!session) throw new Error("No such session");
+        if (session.endedAtMs !== null) return this.sessionJson(session);
         session.status = "COMPLETED";
         session.endedAtMs = this.now();
-        session.attendedSecs = Math.round((session.endedAtMs - session.startedAtMs) / 1000);
         if (this.activeSessionId === session.sessionId) this.activeSessionId = null;
         if (!this.autoLabels.has(session.sessionId) &&
             this.data.predictions.some((row) => row.sessionId === session.sessionId)) {
@@ -770,6 +790,7 @@ export class DemoBackend {
       case "get_privacy_settings":
         return this.privacy as unknown as Json;
       case "set_private_mode":
+        this.privatePauseUntil = 0;
         this.privacy.privateMode = Boolean(args.enabled);
         return this.privacy as unknown as Json;
       case "set_privacy_exclusions":

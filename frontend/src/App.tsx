@@ -268,8 +268,8 @@ export default function App() {
   // Running or paused: a paused session accrues no attended time (ADR-0005). Derived here
   // because the idle signal lives in useLiveData.
   const liveSessionStatusLabel = useMemo(
-    () => sessionStatusLabel(sessionRecord, live.userIdle),
-    [live.userIdle, sessionRecord],
+    () => sessionStatusLabel(sessionRecord, live.userIdle, recordingStatus.state),
+    [live.userIdle, sessionRecord, recordingStatus.state],
   );
   const sessionActive = sessionRecord?.status === "ACTIVE";
   const nowMode = nowSurfaceMode({ sessionActive, recap });

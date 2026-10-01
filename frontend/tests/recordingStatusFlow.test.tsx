@@ -162,7 +162,7 @@ describe("Recording status", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
 
-    fireEvent.click(within(card()).getByRole("button", { name: "Pause 30m" }));
+    fireEvent.click(within(card()).getByRole("button", { name: "Pause recording 30m" }));
     await waitFor(() => expect(boundary.state.pausedWith).not.toBeNull());
     expect(boundary.state.pausedWith).toEqual({ minutes: 30 });
 
@@ -176,10 +176,11 @@ describe("Recording status", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Recording status" });
 
-    fireEvent.click(within(card()).getByRole("button", { name: "Pause until I resume" }));
+    fireEvent.click(within(card()).getByRole("button", { name: "Pause recording until I resume" }));
     await waitFor(() => expect(boundary.state.pausedWith).not.toBeNull());
     expect(boundary.state.pausedWith).toEqual({ minutes: 0 });
     expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
+    expect(within(card()).getByText(/Recording and attended time pause/)).toBeInTheDocument();
     expect(within(card()).queryByText(/left/)).not.toBeInTheDocument();
   });
 
@@ -284,7 +285,7 @@ describe("Recording status stays coherent with native state", () => {
     await waitFor(() => expect(boundary.state.holdStatus).toBeNull());
 
     // ...the user pauses meanwhile, and that answer shows...
-    fireEvent.click(within(card()).getByRole("button", { name: "Pause until I resume" }));
+    fireEvent.click(within(card()).getByRole("button", { name: "Pause recording until I resume" }));
     expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
 
     // ...then the stale refresh lands with the pre-pause answer. It must be ignored.

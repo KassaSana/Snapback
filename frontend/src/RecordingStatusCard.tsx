@@ -32,7 +32,7 @@ export const RECORDING_STATE_LABELS: Record<RecordingStatus["state"], string> = 
 
 const DETAIL: Record<RecordingStatus["state"], string> = {
   recording: "Window titles are being captured for the running session.",
-  pausedIdle: "You are away, so nothing is being captured or counted.",
+  pausedIdle: "You are away, so recording and attended time are paused.",
   pausedPrivate: "Nothing is captured while private mode is on.",
   noSession: "Nothing is being recorded until you start a session.",
   blocked: "Capture cannot run. Check permissions in Settings.",
@@ -69,6 +69,10 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
       </p>
     ) : null;
 
+  const pauseDefinition = status.state === "pausedPrivate" || status.state === "pausedIdle" ? (
+    <p className="meta-sub">Recording and attended time pause; elapsed session time keeps running.</p>
+  ) : null;
+
   const unconfirmedLine = unconfirmed ? (
     <p className="meta-sub status-alert">
       Could not confirm with the app — showing the last known state.
@@ -95,11 +99,11 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
         className={header ? "link-button" : "secondary-button"}
         onClick={() => void onPause(0)}
       >
-        Pause until I resume
+        Pause recording until I resume
       </button>
       {header ? (
         <details className="recording-pause-menu">
-          <summary>Pause for…</summary>
+          <summary>Pause recording for…</summary>
           {PAUSE_CHOICES.map((minutes) => (
             <button
               key={minutes}
@@ -107,14 +111,14 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
               className="link-button"
               onClick={() => void onPause(minutes)}
             >
-              Pause {minutes}m
+              Pause recording {minutes}m
             </button>
           ))}
         </details>
       ) : (
         <div className="pause-choices">
           <span className="meta-label" id="recording-pause-choices-label">
-            Pause for a while
+            Pause recording for a while
           </span>
           <div className="button-row" role="group" aria-labelledby="recording-pause-choices-label">
             {PAUSE_CHOICES.map((minutes) => (
@@ -123,7 +127,7 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
                 className="secondary-button"
                 onClick={() => void onPause(minutes)}
               >
-                Pause {minutes}m
+                Pause recording {minutes}m
               </button>
             ))}
           </div>
@@ -139,6 +143,7 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
         <span className={`status-value${status.state === "blocked" ? " status-alert" : ""}`}>
           {RECORDING_STATE_LABELS[status.state]}
         </span>
+        {pauseDefinition}
         {unconfirmedLine}
         {remaining}
         {snoozeLine}
@@ -155,6 +160,7 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
       </div>
 
       <p className="helper-text">{DETAIL[status.state]}</p>
+      {pauseDefinition}
       {unconfirmedLine}
       {remaining}
       {snoozeLine}

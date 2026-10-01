@@ -91,3 +91,37 @@ console.log("demoBackend.test.ts passed");
   assert.match(logs(), /0 feedback submissions retained/);
   assert.throws(() => demo.handle("submit_label", { request: { ...request, source: "survey" } }), /No such session/);
 }
+
+// A recording pause freezes demo observations and attendance, while elapsed time continues.
+{
+  let now = Date.now();
+  const demo = new DemoBackend(now, () => now);
+  demo.handle("delete_all_activity_data", {});
+  const session = demo.handle("start_session", { goal: "Pause semantics" }) as { sessionId: string };
+  now += 18_000;
+  assert.ok(demo.tick());
+  demo.handle("pause_recording_privately", { minutes: 0 });
+  now += 40_000;
+  assert.equal(demo.tick(), null);
+  const recap = () => demo.handle("get_session_recap", { sessionId: session.sessionId }) as { activeSecs: number; durationSecs: number; sampleCount: number };
+  assert.equal(recap().activeSecs, 18);
+  assert.equal(recap().sampleCount, 1);
+  demo.handle("resume_recording", {});
+  now += 20_000;
+  const stopped = demo.handle("stop_session", { sessionId: session.sessionId }) as { endedAtMs: number };
+  assert.equal(recap().activeSecs, 38);
+  assert.equal(recap().durationSecs, 78);
+  now += 10_000;
+  assert.equal((demo.handle("stop_session", { sessionId: session.sessionId }) as { endedAtMs: number }).endedAtMs, stopped.endedAtMs);
+}
+{
+  let now = Date.now();
+  const demo = new DemoBackend(now, () => now);
+  demo.handle("delete_all_activity_data", {});
+  const session = demo.handle("start_session", { goal: "Timed pause" }) as { sessionId: string };
+  demo.handle("pause_recording_privately", { minutes: 1 });
+  now += 75_000;
+  assert.ok(demo.tick());
+  const recap = demo.handle("get_session_recap", { sessionId: session.sessionId }) as { activeSecs: number };
+  assert.equal(recap.activeSecs, 15);
+}

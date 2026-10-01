@@ -29,3 +29,7 @@ assert.equal(sessionStatusLabel(session("COMPLETED"), true), "completed");
 assert.equal(sessionStatusLabel(session("COMPLETED"), false), "completed");
 
 console.log("sessionStatus.test.ts passed");
+
+assert.equal(sessionStatusLabel(session("ACTIVE"), false, "pausedPrivate"), "recording paused — private");
+assert.equal(sessionStatusLabel(session("ACTIVE"), false, "pausedIdle"), "recording paused — idle");
+assert.equal(sessionStatusLabel(session("COMPLETED"), false, "pausedPrivate"), "completed");

@@ -190,6 +190,7 @@ export const SessionControlCard = memo(function SessionControlCard({
             </div>
             <div className="session-live-timer">
               <p className="metric-label">Elapsed</p>
+              <p className="meta-sub">Includes time while recording is paused.</p>
               <p className="metric-value" aria-label="Elapsed session time">
                 {formatElapsed(sessionRecord?.startedAtMs, nowMs)}
               </p>

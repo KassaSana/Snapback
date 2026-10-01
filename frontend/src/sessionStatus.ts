@@ -1,4 +1,4 @@
-import type { SessionRecord } from "./api";
+import type { RecordingStatus, SessionRecord } from "./api";
 
 /**
  * The label shown for the current session (ADR-0005): running or paused. A paused session
@@ -7,6 +7,7 @@ import type { SessionRecord } from "./api";
 export function sessionStatusLabel(
   record: SessionRecord | null,
   userIdle: boolean,
+  recordingState?: RecordingStatus["state"],
 ): string {
   // Not "idle": that means the user is away, which is independent of having a session.
   if (!record) return "no session";
@@ -14,5 +15,7 @@ export function sessionStatusLabel(
   // Anything already finished keeps its own status; only a live session can be paused.
   if (record.status !== "ACTIVE") return record.status.toLowerCase();
 
+  if (recordingState === "pausedPrivate") return "recording paused — private";
+  if (recordingState === "pausedIdle") return "recording paused — idle";
   return userIdle ? "paused" : "running";
 }
