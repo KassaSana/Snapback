@@ -1,27 +1,14 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 
-import { formatScore, type SessionSummary } from "./api";
+import type { SessionSummary } from "./api";
 import { ChartDataTable } from "./ChartDataTable";
-import { formatFocusStretch } from "./focusStreak";
 import {
   computeInsightsAggregates,
   focusBarHeightPct,
-  sessionRowLabel,
   toChronological,
 } from "./insightsMetrics";
-import { formatTime } from "./utils";
 
 type InsightsCardProps = {
-  deleteError?: string | null;
-  deleteStatus?: string | null;
-  deletingSessionId?: string | null;
-  onDeleteSession?: (sessionId: string) => void | Promise<void>;
-  onSaveReflection?: (
-    sessionId: string,
-    done: string | null,
-    nextStep: string | null,
-  ) => boolean | Promise<boolean>;
-  reflectionStatus?: string | null;
   rangeLabel: string;
   sessionHistory: SessionSummary[];
 };
@@ -99,150 +86,6 @@ function FocusTrendChart({ summaries }: { summaries: SessionSummary[] }) {
 }
 
 // Two-step confirm: there is no undo.
-function SessionManagementList({
-  onSaveReflection,
-  onDelete,
-  deletingSessionId,
-  summaries,
-}: {
-  onDelete?: (sessionId: string) => void | Promise<void>;
-  deletingSessionId: string | null;
-  onSaveReflection?: (
-    sessionId: string,
-    done: string | null,
-    nextStep: string | null,
-  ) => boolean | Promise<boolean>;
-  summaries: SessionSummary[];
-}) {
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [done, setDone] = useState("");
-  const [nextStep, setNextStep] = useState("");
-  const [savingId, setSavingId] = useState<string | null>(null);
-
-  return (
-    <ul className="rules-list session-list">
-      {summaries.map((summary, index) => {
-        const sessionId = summary.record.sessionId;
-        const label = sessionRowLabel(summary);
-        const saving = savingId === sessionId;
-        const busy = saving || deletingSessionId === sessionId;
-        const confirming = confirmingId === sessionId;
-
-        return (
-          <li className="rules-item" key={sessionId || index}>
-            <div className="session-row-detail">
-              <span className="rules-pattern">{label}</span>
-              <p className="rules-note">
-                {formatTime(summary.record.startedAtMs)} ·{" "}
-                {formatFocusStretch(summary.recap.durationSecs)} · focus{" "}
-                {formatScore(summary.recap.avgFocusScore)}
-              </p>
-            </div>
-            {onDelete ? (
-              <>
-                {sessionId === "" ? null : confirming ? (
-                  <div className="button-row">
-                    <button
-                      className="danger-button rules-delete"
-                      disabled={busy}
-                      aria-label={`Confirm delete session ${label}`}
-                      onClick={() => {
-                        setConfirmingId(null);
-                        void onDelete(sessionId);
-                      }}
-                    >
-                      Confirm delete
-                    </button>
-                    <button
-                      className="secondary-button rules-delete"
-                      disabled={busy}
-                      onClick={() => setConfirmingId(null)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    className="secondary-button rules-delete"
-                    disabled={busy || editingId !== null}
-                    aria-label={`Delete session ${label}`}
-                    onClick={() => setConfirmingId(sessionId)}
-                  >
-                    Delete
-                  </button>
-                )}
-              </>
-            ) : null}
-            {onSaveReflection && editingId === sessionId ? (
-              <div className="reflection-editor">
-                <label className="field-label">
-                  Done
-                  <textarea
-                    value={done}
-                    maxLength={1000}
-                    spellCheck={false}
-                    className="reflection-input"
-                    onChange={(event) => setDone(event.target.value)}
-                  />
-                </label>
-                <label className="field-label">
-                  Next
-                  <textarea
-                    value={nextStep}
-                    maxLength={1000}
-                    spellCheck={false}
-                    className="reflection-input"
-                    onChange={(event) => setNextStep(event.target.value)}
-                  />
-                </label>
-                <div className="button-row">
-                  <button
-                    className="primary-button"
-                    disabled={busy}
-                    onClick={async () => {
-                      setSavingId(sessionId);
-                      const saved = await onSaveReflection(
-                        sessionId,
-                        done.trim() || null,
-                        nextStep.trim() || null,
-                      );
-                      setSavingId(null);
-                      if (saved) setEditingId(null);
-                    }}
-                  >
-                    Save reflection
-                  </button>
-                  <button
-                    className="ghost-button"
-                    disabled={busy}
-                    onClick={() => setEditingId(null)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : onSaveReflection && sessionId !== "" ? (
-              <button
-                className="secondary-button"
-                disabled={busy || savingId !== null}
-                onClick={() => {
-                  setConfirmingId(null);
-                  setDone(summary.record.reflectionDone ?? "");
-                  setNextStep(summary.record.reflectionNextStep ?? "");
-                  setEditingId(sessionId);
-                }}
-              >
-                Edit reflection
-              </button>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 export const InsightsCard = memo(function InsightsCard({
   rangeLabel,
   sessionHistory,
@@ -289,53 +132,6 @@ export const InsightsCard = memo(function InsightsCard({
           </p>
         </>
       )}
-    </section>
-  );
-});
-
-export const SessionManagementCard = memo(function SessionManagementCard({
-  deleteError = null,
-  deleteStatus = null,
-  deletingSessionId = null,
-  onDeleteSession,
-  onSaveReflection,
-  reflectionStatus = null,
-  sessionHistory,
-}: Omit<InsightsCardProps, "rangeLabel">) {
-  return (
-    <section className="card session-management-card">
-      <details>
-        <summary>Session management</summary>
-        <p className="helper-text">
-          Edit reflections or delete a session. Deletion permanently removes its predictions,
-          captured window context, and labels, and changes the numbers above.
-        </p>
-        {sessionHistory.length ? (
-          <SessionManagementList
-            summaries={sessionHistory}
-            onSaveReflection={onSaveReflection}
-            onDelete={onDeleteSession}
-            deletingSessionId={deletingSessionId}
-          />
-        ) : (
-          <p className="helper-text">No sessions to manage in this range.</p>
-        )}
-        {reflectionStatus ? (
-          <p className="helper-text" role="status">
-            {reflectionStatus}
-          </p>
-        ) : null}
-        {deleteStatus ? (
-          <p className="helper-text success" role="status">
-            {deleteStatus}
-          </p>
-        ) : null}
-        {deleteError ? (
-          <p className="helper-text alert" role="alert">
-            {deleteError}
-          </p>
-        ) : null}
-      </details>
     </section>
   );
 });

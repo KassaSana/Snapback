@@ -143,7 +143,7 @@ describe("Session explorer", () => {
     expect(await within(newest).findByText(/longest recorded detour lasted 6m/)).toHaveTextContent(
       "You returned to Code.exe.",
     );
-    fireEvent.click(screen.getByRole("button", { name: /Write the explorer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Write the explorer/ }));
     const earlier = screen.getByRole("region", { name: "Session: Write the explorer" });
     expect(await within(earlier).findByText(/longest recorded detour lasted 2m/)).toHaveTextContent(
       "You returned to Writer.",
@@ -174,7 +174,7 @@ describe("Session explorer", () => {
         onStartAgain={() => {}}
       />,
     );
-    const rows = screen.getAllByRole("button", { name: /Review the PR|Write the explorer/ });
+    const rows = screen.getAllByRole("button", { name: /^(Review the PR|Write the explorer)/ });
     expect(rows[0]).toHaveTextContent("Review the PR");
     expect(rows[1]).toHaveTextContent("Write the explorer");
     expect(rows[1]).toHaveTextContent("Strict · 50m · focus 71");
@@ -191,7 +191,7 @@ describe("Session explorer", () => {
         onStartAgain={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Write the explorer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Write the explorer/ }));
     const detail = screen.getByRole("region", { name: "Session: Write the explorer" });
 
     expect(within(detail).getByText("Snapbacks").nextElementSibling).toHaveTextContent("2");
@@ -226,7 +226,7 @@ describe("Session explorer", () => {
         onStartAgain={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Write the explorer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Write the explorer/ }));
     const detail = await screen.findByRole("region", { name: /Session: Write the explorer/ });
     expect(await within(detail).findByText(/Session rating: Productive/)).toBeInTheDocument();
     fireEvent.click(within(detail).getByRole("button", { name: "Rate Drift" }));
@@ -252,7 +252,7 @@ describe("Session explorer", () => {
         onStartAgain={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Review the PR/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Review the PR/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load");
   });
 
@@ -267,10 +267,10 @@ describe("Session explorer", () => {
         onDeleteSession={onDelete}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Review the PR/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete this session…" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Review the PR/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete session Review the PR" }));
     expect(onDelete).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session Review the PR" }));
     expect(onDelete).toHaveBeenCalledWith("b");
   });
 
@@ -283,7 +283,7 @@ describe("Session explorer", () => {
         onStartAgain={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Review the PR/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Review the PR/ }));
     expect(screen.getByRole("button", { name: "Start this again" })).toBeDisabled();
     expect(screen.getByText(/A session is running/)).toBeInTheDocument();
   });
@@ -317,7 +317,7 @@ describe("Session explorer", () => {
     const explorer = (await screen.findByRole("heading", { name: "Sessions" })).closest(
       "section",
     ) as HTMLElement;
-    fireEvent.click(await within(explorer).findByRole("button", { name: /Write the explorer/ }));
+    fireEvent.click(await within(explorer).findByRole("button", { name: /^Write the explorer/ }));
     fireEvent.click(within(explorer).getByRole("button", { name: "Start this again" }));
 
     await waitFor(() =>
