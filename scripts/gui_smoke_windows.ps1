@@ -34,8 +34,8 @@ function Write-WebView2Diagnostics {
     param([string]$UserDataFolder, [int]$Port)
     $clientKey = "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
     foreach ($hive in @("HKLM:", "HKCU:")) {
-        $version = (Get-ItemProperty -Path "$hive\$clientKey" -Name pv -ErrorAction SilentlyContinue).pv
-        if ($version) { Write-Host "WebView2 runtime ($hive): $version" }
+        $item = Get-ItemProperty -Path "$hive\$clientKey" -ErrorAction SilentlyContinue
+        if ($item -and $item.PSObject.Properties["pv"]) { Write-Host "WebView2 runtime ($hive): $($item.pv)" }
     }
     Write-Host "Expected CDP port: $Port; user data folder: $UserDataFolder"
     $portFile = Join-Path $UserDataFolder "EBWebView\DevToolsActivePort"
