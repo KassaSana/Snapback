@@ -42,7 +42,7 @@ assert.deepEqual(
   }),
   {
     label: "partial",
-    detail: "listener not confirmed yet",
+    detail: "not confirmed yet",
   },
 );
 
@@ -58,7 +58,7 @@ assert.deepEqual(
   }),
   {
     label: "partial",
-    detail: "permissions ready, listener idle",
+    detail: "permissions ready, not running",
   },
 );
 
@@ -74,7 +74,7 @@ assert.deepEqual(
   }),
   {
     label: "partial",
-    detail: "listener running, input unverified",
+    detail: "running, no input seen yet",
   },
 );
 
@@ -90,7 +90,7 @@ assert.deepEqual(
   }),
   {
     label: "blocked",
-    detail: "capture listener failed",
+    detail: "capture failed",
   },
 );
 
@@ -119,7 +119,7 @@ assert.deepEqual(
     message: "Partial",
     setupSteps: [],
   }),
-  { label: "partial", detail: "listener running, input unverified" },
+  { label: "partial", detail: "running, no input seen yet" },
 );
 
 // Capture available but unconfirmed and no window access -> "capture unverified".
@@ -222,4 +222,4 @@ assert.equal(
 
 console.log("healthHints.test.ts passed");
 
-assert.deepEqual(summarizePermissions({ captureAvailable: true, captureProbeConfirmed: true, captureFailed: false, captureRunning: true, activeWindowAvailable: false, message: "", setupSteps: [] }), { label: "partial", detail: "listener running only" });
+assert.deepEqual(summarizePermissions({ captureAvailable: true, captureProbeConfirmed: true, captureFailed: false, captureRunning: true, activeWindowAvailable: false, message: "", setupSteps: [] }), { label: "partial", detail: "running, no window access" });

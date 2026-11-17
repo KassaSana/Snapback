@@ -41,9 +41,8 @@ export const DataImportCard = memo(function DataImportCard({
       </div>
 
       <p className="helper-text">
-        Restore a <code>focoflow.db</code> from another machine, a backup, or a reinstall.
-        Snapback keeps everything on this machine, which also means nothing else is holding a
-        copy of your history.
+        Restore your Snapback data from another machine, a backup, or a reinstall. Your
+        history only exists on this machine, so keep a backup if it matters to you.
       </p>
 
       {pending ? (
@@ -85,7 +84,7 @@ export const DataImportCard = memo(function DataImportCard({
                   onClick={onBrowse}
                   disabled={busy}
                 >
-                  Browse...
+                  Browse…
                 </button>
               )}
               <button

@@ -58,7 +58,6 @@ export const AttendedTargetsCard = memo(function AttendedTargetsCard({
     <section className={compact ? "attended-inline" : "card attended-targets-card"}>
       <div className="card-header">
         <h2>Attended time</h2>
-        {compact ? null : <span className="pill">measured, not scored</span>}
       </div>
 
       {compact ? (

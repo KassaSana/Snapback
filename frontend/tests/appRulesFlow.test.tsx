@@ -119,7 +119,7 @@ afterEach(() => {
 describe("App rules add/delete flow", () => {
   it("adds a rule and shows it in the list", async () => {
     renderApp("settings", "focus");
-    await screen.findByRole("heading", { name: "Personal App Rules" });
+    await screen.findByRole("heading", { name: "App rules" });
 
     fireEvent.change(screen.getByPlaceholderText("YouTube"), {
       target: { value: "discord" },
@@ -137,7 +137,7 @@ describe("App rules add/delete flow", () => {
 
   it("does not save when the pattern is empty", async () => {
     renderApp("settings", "focus");
-    await screen.findByRole("heading", { name: "Personal App Rules" });
+    await screen.findByRole("heading", { name: "App rules" });
 
     fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
 

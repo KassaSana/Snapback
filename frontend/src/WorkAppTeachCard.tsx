@@ -34,11 +34,10 @@ export const WorkAppTeachCard = memo(function WorkAppTeachCard({
     <section className="card work-app-teach-card" aria-labelledby="work-app-teach-heading">
       <div className="card-header">
         <h2 id="work-app-teach-heading">Which of these were the work?</h2>
-        <span className="pill">this session</span>
       </div>
       <p className="helper-text">
-        Snapback cannot see the screen. Naming the apps that count is how a quiet window stops
-        looking like Deep work.
+        Snapback can&apos;t see what&apos;s on screen. Marking the apps you were working in helps it
+        tell work from a quiet distraction.
       </p>
       <ul className="work-app-teach-list">
         {candidates.map((candidate) => (

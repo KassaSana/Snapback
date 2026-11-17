@@ -1038,7 +1038,7 @@ export {
   explainPrediction,
   clamp,
   focusStateLabel,
-  sessionCheckInLabel,
+  FOCUS_RATINGS,
   formatPercent,
   formatPercentCoarse,
   formatPomodoroRemaining,

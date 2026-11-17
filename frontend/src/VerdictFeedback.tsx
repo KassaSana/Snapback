@@ -1,11 +1,11 @@
 import { useState } from "react";
 
-import { focusStateLabel, type FocusLabel } from "./api";
+import { FOCUS_RATINGS, focusStateLabel, type FocusLabel } from "./api";
 
 // Quiet correction on Now. "Wrong?" asks for the right answer, so a disagreement becomes a
 // labelled example.
 
-const STATES: FocusLabel[] = ["DEEP_FOCUS", "PRODUCTIVE", "PSEUDO_PRODUCTIVE", "DISTRACTED"];
+const STATES: readonly FocusLabel[] = FOCUS_RATINGS;
 
 type Props = {
   disabled: boolean;

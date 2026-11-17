@@ -239,7 +239,7 @@ describe("data import", () => {
     renderApp("settings", "privacy");
     const card = await importCard();
 
-    fireEvent.click(within(card).getByRole("button", { name: "Browse..." }));
+    fireEvent.click(within(card).getByRole("button", { name: "Browse…" }));
 
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("pick_open_file", {
       options: {

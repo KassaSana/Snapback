@@ -38,12 +38,12 @@ export const PermissionsCard = memo(function PermissionsCard({
               ? (captureProbeConfirmed ? "input confirmed" : "input unverified")
               : captureProbeConfirmed
                 ? "permissions ready"
-                : "listener pending"}
+                : "not started"}
         </span>
       </div>
       {captureFailed ? (
         <p className="helper-text alert">
-          Capture listener stopped
+          Capture stopped
           {captureFailureReason ? `: ${captureFailureReason}` : "."}
         </p>
       ) : null}
@@ -56,14 +56,14 @@ export const PermissionsCard = memo(function PermissionsCard({
       ) : null}
       {captureStalled ? (
         <p className="helper-text alert">
-          Capture is running but hasn't received any input events — the listener may be blocked.
+          Capture is running but hasn't seen any input. Something may be blocking it.
           Try Refresh permissions, or restart Snapback.
         </p>
       ) : null}
       {captureEventsDropped > 0 ? (
         <p className="helper-text alert">
-          {captureEventsDropped} capture event{captureEventsDropped === 1 ? "" : "s"} dropped —
-          the engine loop fell behind. If this keeps growing, restart Snapback.
+          {captureEventsDropped} input event{captureEventsDropped === 1 ? "" : "s"} dropped
+          because Snapback fell behind. If this keeps growing, restart Snapback.
         </p>
       ) : null}
       {permissionSteps.length > 0 ? (

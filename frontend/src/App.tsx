@@ -30,7 +30,6 @@ import { recentGoals } from "./sessionCockpit";
 import { sessionStatusView } from "./sessionStatus";
 import { nowSurfaceMode } from "./nowSurface";
 import { SessionReviewCards } from "./SessionReviewCards";
-import { FocusFeedbackCard } from "./FocusFeedbackCard";
 import { TrainingDeployCard } from "./TrainingDeployCard";
 import { useAppRules } from "./useAppRules";
 import { useFeedback } from "./useFeedback";
@@ -608,7 +607,6 @@ export default function App() {
             sessionPending={sessionPending}
             sessionRecord={sessionRecord}
             sessionStatusLabel={liveSessionStatus.label}
-            sessionStatusReason={liveSessionStatus.reason}
             setSessionGoal={setSessionGoal}
             recentGoals={cockpitRecentGoals}
             untrackedNote={live.untrackedNote}
@@ -796,8 +794,7 @@ export default function App() {
               <h2>Getting started</h2>
             </div>
             <p className="helper-text">
-              A short walkthrough of one real session, from naming a goal to reading the recap.
-              It only points at the controls — it never starts or records anything for you.
+              A short walkthrough of one session, from naming a goal to reading the recap.
             </p>
             <button type="button" className="secondary-button" onClick={restartOnboarding}>
               Replay the walkthrough
@@ -825,13 +822,6 @@ export default function App() {
 
         {settingsSection === "focus" && (
           <>
-            <FocusFeedbackCard
-              sessionActive={sessionActive}
-              handleLabel={handleLabel}
-              labelStatus={feedback.labelStatus}
-              labelStatusWarning={feedback.labelStatusWarning}
-            />
-
             <GoalCategoriesCard />
 
             <RulesCard

@@ -64,24 +64,24 @@ export const summarizePermissions = (permissions: PermissionHealthInput): Permis
   if (permissions.captureFailed) {
     return {
       label: "blocked",
-      detail: "capture listener failed",
+      detail: "capture failed",
     };
   }
 
   if (permissions.captureRunning && !permissions.captureProbeConfirmed) {
-    return { label: "partial", detail: "listener running, input unverified" };
+    return { label: "partial", detail: "running, no input seen yet" };
   }
   if (permissions.captureRunning && permissions.activeWindowAvailable) {
     return {
       label: "ready",
-      detail: "listener running + window access",
+      detail: "running, with window access",
     };
   }
 
   if (permissions.captureRunning) {
     return {
       label: "partial",
-      detail: "listener running only",
+      detail: "running, no window access",
     };
   }
 
@@ -92,14 +92,14 @@ export const summarizePermissions = (permissions: PermissionHealthInput): Permis
   ) {
     return {
       label: "partial",
-      detail: "listener not confirmed yet",
+      detail: "not confirmed yet",
     };
   }
 
   if (permissions.captureAvailable) {
     return {
       label: "partial",
-      detail: permissions.captureProbeConfirmed ? "permissions ready, listener idle" : "capture unverified",
+      detail: permissions.captureProbeConfirmed ? "permissions ready, not running" : "capture unverified",
     };
   }
 

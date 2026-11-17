@@ -72,21 +72,8 @@ export const focusStateLabel = (state: string | null | undefined) => {
   }
 };
 
-/** Check-in button wording — use this when confirming a session rating the user just chose. */
-export const sessionCheckInLabel = (state: string | null | undefined) => {
-  switch (state) {
-    case "DEEP_FOCUS":
-      return "Deep";
-    case "PRODUCTIVE":
-      return "Focused";
-    case "PSEUDO_PRODUCTIVE":
-      return "Drift";
-    case "DISTRACTED":
-      return "Distracted";
-    default:
-      return focusStateLabel(state);
-  }
-};
+/** The four ratings a user can give a moment or a session, best first. */
+export const FOCUS_RATINGS = ["DEEP_FOCUS", "PRODUCTIVE", "PSEUDO_PRODUCTIVE", "DISTRACTED"] as const;
 
 // Colour by the verdict, not the risk (ADR-0004): a Block-rule row at low risk is still
 // Distracted.
@@ -168,10 +155,10 @@ export const displayVerdict = (
   goal?: string | null,
 ): DisplayVerdict => {
   if (!record) {
-    return { label: "Waiting for signal", level: "unknown", uncertain: false };
+    return { label: "Waiting for activity", level: "unknown", uncertain: false };
   }
   if (isUncertainFocusGuess(record, goal)) {
-    return { label: "Settled", level: "unknown", uncertain: true };
+    return { label: "Not sure", level: "unknown", uncertain: true };
   }
   return {
     label: focusStateLabel(record.focusState),
@@ -238,13 +225,9 @@ export const buildSignals = (record: PredictionRecord | null) => {
   ];
 
   if (record.focusState === "PSEUDO_PRODUCTIVE") {
-    signals.push("Drift detected — tab/title churn or scattered typing in a work app.");
+    signals.push("Lots of tab or title changes, or scattered typing, in a work app.");
   } else if (record.thrashScore >= 0.6) {
-    signals.push("Context-switch thrash — jumping between apps/windows rapidly.");
-  } else if (record.focusState === "DEEP_FOCUS") {
-    signals.push("Deep work detected. Hyperfocus guardrail is watching.");
-  } else if (level === "low") {
-    signals.push("Focus is stable. Keep momentum.");
+    signals.push("Switching between apps quickly.");
   }
 
   return signals;

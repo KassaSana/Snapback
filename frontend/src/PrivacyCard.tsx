@@ -49,7 +49,6 @@ export const PrivacyCard = memo(function PrivacyCard({
     <section className="card config-card">
       <div className="card-header">
         <h2>Privacy</h2>
-        <span className="pill">local only</span>
       </div>
       <p className="helper-text">
         Snapback stores activity on this device. Private mode pauses capture processing, and

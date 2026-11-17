@@ -97,7 +97,7 @@ afterEach(() => cleanup());
 const guide = () =>
   screen.getByRole("region", { name: "Getting started" }) as HTMLElement;
 const queryGuide = () => screen.queryByRole("region", { name: "Getting started" });
-const goalField = () => screen.getByPlaceholderText("Ship the snapback overlay");
+const goalField = () => screen.getByPlaceholderText("Write the quarterly report");
 const commandCalls = (name: string) =>
   boundary.invoke.mock.calls.filter(([cmd]) => cmd === name).length;
 
@@ -164,7 +164,7 @@ describe("onboarding continuation", () => {
 
   it("meets a user who ran ahead at the step they actually reached", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
     // Start a session without ever consulting the guide.
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
@@ -185,7 +185,7 @@ describe("onboarding continuation", () => {
     // Survives a relaunch, which is the difference between skipping and dismissing.
     cleanup();
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
     expect(queryGuide()).toBeNull();
 
     // Resumable from the Settings entry point.
@@ -233,14 +233,14 @@ describe("onboarding continuation", () => {
 
   it("finishes for good once the recap has been read", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
 
     fireEvent.click(await screen.findByRole("button", { name: "Stop session" }));
-    await screen.findByRole("heading", { name: "Session Recap" });
+    await screen.findByRole("heading", { name: "Recap" });
     expect(within(guide()).getByRole("button", { name: "Finish walkthrough" })).toBeInTheDocument();
     fireEvent.click(within(guide()).getByRole("button", { name: "Finish walkthrough" }));
     await waitFor(() => expect(queryGuide()).toBeNull());
@@ -252,7 +252,7 @@ describe("onboarding continuation", () => {
 
     cleanup();
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
     expect(queryGuide()).toBeNull();
   });
 });

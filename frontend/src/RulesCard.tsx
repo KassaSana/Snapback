@@ -36,8 +36,7 @@ export const RulesCard = memo(function RulesCard({
   return (
     <section className="card rules-card">
       <div className="card-header">
-        <h2>Personal App Rules</h2>
-        <span className="pill">your overrides</span>
+        <h2>App rules</h2>
       </div>
       <p className="helper-text">
         Match part of an app name or window title — one pattern per rule, so add another
@@ -70,7 +69,7 @@ export const RulesCard = memo(function RulesCard({
         <span>Note (optional)</span>
         <input
           type="text"
-          placeholder="study group server"
+          placeholder="e.g. Discord"
           value={ruleNote}
           onChange={(event) => setRuleNote(event.target.value)}
         />

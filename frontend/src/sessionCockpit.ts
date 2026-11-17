@@ -9,7 +9,7 @@ export type FocusMode = (typeof FOCUS_MODES)[number];
 
 /** Labels for the mode picker. The wire value stays lowercase; this is what people read. */
 export const FOCUS_MODE_LABELS: Record<FocusMode, string> = {
-  deep: "Deep",
+  deep: "Strict",
   normal: "Normal",
   recovery: "Recovery",
 };

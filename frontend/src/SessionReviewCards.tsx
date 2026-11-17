@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { formatFocusStretch } from "./focusStreak";
 
-import { focusStateLabel, formatScore, sessionCheckInLabel, type FocusLabel, type SessionRecap } from "./api";
+import { FOCUS_RATINGS, focusStateLabel, formatScore, type FocusLabel, type SessionRecap } from "./api";
 import { isSessionFragment } from "./sessionFragment";
 import { SessionReflectionCard } from "./SessionReflectionCard";
 
@@ -48,8 +48,8 @@ export const SessionReviewCards = memo(function SessionReviewCards({
       {surveyPending && recap ? (
         <section className="card survey-card">
           <div className="card-header">
-            <h2>Session Check-in</h2>
-            <span className="pill">{fragment ? "short session" : "end of session"}</span>
+            <h2>Check-in</h2>
+            {fragment ? <span className="pill">short session</span> : null}
           </div>
           <p className="helper-text">
             {fragment
@@ -57,7 +57,7 @@ export const SessionReviewCards = memo(function SessionReviewCards({
               : autoLabel
                 ? `Automatic label: ${focusStateLabel(autoLabel)}. Choose a different label if this feels wrong.`
                 : recap.sampleCount === 0
-                  ? "No signal this session — no automatic label recorded. You can add your own rating or skip this check-in."
+                  ? "No activity was recorded, so there's no automatic label. Rate it yourself or skip."
                   : "Automatic label unavailable. Choose a label, or skip this check-in."}
           </p>
           <div className="button-row feedback-row">
@@ -70,21 +70,16 @@ export const SessionReviewCards = memo(function SessionReviewCards({
                 Discard
               </button>
             ) : null}
-            <button className="secondary-button" disabled={labelPending} onClick={() => void handleLabel("DEEP_FOCUS", "survey")}>
-              Deep
-            </button>
-            <button className="secondary-button" disabled={labelPending} onClick={() => void handleLabel("PRODUCTIVE", "survey")}>
-              Focused
-            </button>
-            <button
-              className="secondary-button" disabled={labelPending}
-              onClick={() => void handleLabel("PSEUDO_PRODUCTIVE", "survey")}
-            >
-              Drift
-            </button>
-            <button className="secondary-button" disabled={labelPending} onClick={() => void handleLabel("DISTRACTED", "survey")}>
-              Distracted
-            </button>
+            {FOCUS_RATINGS.map((label) => (
+              <button
+                key={label}
+                className="secondary-button"
+                disabled={labelPending}
+                onClick={() => void handleLabel(label, "survey")}
+              >
+                {focusStateLabel(label)}
+              </button>
+            ))}
             <button className="ghost-button" disabled={labelPending} onClick={() => void handleSkipSurvey()}>
               {fragment ? "Keep & skip rating" : autoLabel ? `Keep ${focusStateLabel(autoLabel)}` : "Skip check-in"}
             </button>
@@ -103,12 +98,11 @@ export const SessionReviewCards = memo(function SessionReviewCards({
       {recap ? (
         <section className="card recap-card">
           <div className="card-header">
-            <h2>Session Recap</h2>
-            <span className="pill">summary</span>
+            <h2>Recap</h2>
           </div>
           {!surveyPending && savedSessionRating && handleChangeSessionRating ? (
             <p role="status" className="helper-text saved-session-rating">
-              Saved: {sessionCheckInLabel(savedSessionRating)}
+              Saved: {focusStateLabel(savedSessionRating)}
               {" — "}
               <button className="link-button" type="button" onClick={handleChangeSessionRating}>
                 Change
@@ -147,7 +141,7 @@ export const SessionReviewCards = memo(function SessionReviewCards({
               <p className="meta-value">{recap.snapbackCount}</p>
             </div>
             <div>
-              <p className="meta-label">Distraction spikes</p>
+              <p className="meta-label">Distracted moments</p>
               <p className="meta-value">{recap.thrashSpikes}</p>
             </div>
           </div>

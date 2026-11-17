@@ -36,7 +36,6 @@ type SessionControlCardProps = {
   sessionId: string | null;
   sessionRecord: SessionRecord | null;
   sessionStatusLabel: string;
-  sessionStatusReason?: string | null;
   setSessionGoal: (value: string) => void;
   /** True while a start/stop request is in flight, so the controls can go quiet. */
   sessionPending: boolean;
@@ -61,7 +60,6 @@ export const SessionControlCard = memo(function SessionControlCard({
   sessionId,
   sessionRecord,
   sessionStatusLabel,
-  sessionStatusReason = null,
   setSessionGoal,
   sessionPending,
   recentGoals,
@@ -169,10 +167,9 @@ export const SessionControlCard = memo(function SessionControlCard({
   return (
     <section className="card session-card">
       <div className="card-header session-card-header">
-        <h2>Session Control</h2>
+        <h2>Session</h2>
         <span className="session-status">{sessionStatusLabel}</span>
       </div>
-      {sessionStatusReason ? <p className="meta-sub session-status-reason">{sessionStatusReason}</p> : null}
       {untrackedNote && (
         <div className="notice notice-untracked" role="status">
           <p>{untrackedNote}</p>
@@ -192,7 +189,7 @@ export const SessionControlCard = memo(function SessionControlCard({
           <div className="session-live-overview">
             <div className="session-live-goal">
               <p className="metric-label">Working on</p>
-              <p className="metric-value">{sessionRecord?.goal || "--"}</p>
+              <p className="metric-value">{sessionRecord?.goal || "—"}</p>
               <p className="session-live-mode">
                 {FOCUS_MODE_LABELS[normalizeFocusMode(sessionRecord?.focusMode || focusMode)]} mode
               </p>
@@ -229,8 +226,8 @@ export const SessionControlCard = memo(function SessionControlCard({
           </div>
           {switching && (
             <p className="helper-text" role="status">
-              Starting a different session stops this one first. Check in (or discard a short
-              fragment) before the new goal starts.
+              Starting a different session stops this one first. You'll be asked to rate it (or
+              discard it, if it was very short) before the new one starts.
             </p>
           )}
         </div>
@@ -244,7 +241,7 @@ export const SessionControlCard = memo(function SessionControlCard({
             <div className="goal-input-wrapper">
               <input
                 type="text"
-                placeholder="Ship the snapback overlay"
+                placeholder="Write the quarterly report"
                 value={sessionGoal}
                 autoComplete="off"
                 data-1p-ignore

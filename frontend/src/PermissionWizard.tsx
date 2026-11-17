@@ -166,7 +166,7 @@ export const PermissionWizard = memo(function PermissionWizard({
           </button>
         </div>
         <p className="helper-text wizard-footnote">
-          You can grant permissions later from the Permissions card.
+          You can grant permissions later in Settings → Privacy & permissions.
         </p>
       </div>
     </div>

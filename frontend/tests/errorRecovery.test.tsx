@@ -65,8 +65,8 @@ const health = (overrides: Record<string, unknown> = {}): Record<string, unknown
 });
 
 const startSessionWithGoal = async (goal: string) => {
-  await screen.findByRole("heading", { name: "Session Control" });
-  fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+  await screen.findByRole("heading", { name: "Session" });
+  fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
     target: { value: goal },
   });
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));

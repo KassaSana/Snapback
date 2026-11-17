@@ -139,19 +139,19 @@ afterEach(() => {
 describe("Pomodoro card", () => {
   it("stays off the idle Now surface until a session is running", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
     expect(screen.queryByRole("heading", { name: "Pomodoro" })).not.toBeInTheDocument();
   });
 
   it("starts and stops the timer once a session is active", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });  // running/paused, not "active"
+    await screen.findAllByText("Running");  // running/paused, not "active"
 
     const card = pomodoroCard();
     fireEvent.click(within(card).getByRole("button", { name: "Start Pomodoro" }));
@@ -175,12 +175,12 @@ describe("Pomodoro card", () => {
     };
 
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    await screen.findByRole("heading", { name: "Session" });
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
     const card = pomodoroCard();
     expect(await within(card).findByText("12:00")).toBeInTheDocument();
   });
@@ -189,12 +189,12 @@ describe("Pomodoro card", () => {
   // so a control that is wired to the wrong command fails here rather than in the app.
   const startSessionAndTimer = async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    await screen.findByRole("heading", { name: "Session" });
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
     const card = pomodoroCard();
     fireEvent.click(within(card).getByRole("button", { name: "Start Pomodoro" }));
     await within(card).findByText("25:00");
@@ -238,13 +238,13 @@ describe("Pomodoro card", () => {
       remainingMs: 0,
     };
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
     // The controls only exist while a session is active -- the timer belongs to a session.
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
     const card = pomodoroCard();
 
     expect(await within(card).findByText("Done")).toBeInTheDocument();
@@ -265,8 +265,8 @@ describe("Pomodoro card", () => {
         intervalsBeforeLongBreak: 4, autoStartNextPhase: true },
     };
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    await screen.findByRole("heading", { name: "Session" });
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
