@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Roadmap 4.12. Emit compile_commands.json so clangd and clang-tidy see the same flags the
+# Emit compile_commands.json so clangd and clang-tidy see the same flags the
 # build uses, and so `.clang-tidy`'s check set applies in every editor rather than each
 # developer's defaults. It is a generator artifact, already gitignored, and costs nothing to
 # produce. Multi-config generators (MSVC) ignore this; Ninja and Make honour it.
@@ -29,7 +29,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # --- Always fetched: header-only deps used by the core lib and the tests. ---
 #
-# ROADMAP 8.6: every GIT_TAG here is a commit SHA, never a tag name. A git tag is a mutable
+# Every GIT_TAG here is a commit SHA, never a tag name. A git tag is a mutable
 # pointer — upstream can move it, and a fetched dependency is source we compile into the
 # shipping binary without review. Dependabot watches our Actions and our npm tree; it does
 # not watch these, so nothing else would notice. `scripts/check_dependency_pins.py` fails CI
@@ -191,11 +191,11 @@ if(WIN32)
     src/snapback/focus_window_windows.cpp
     src/app/file_dialog_windows.cpp
     src/app/window_lifecycle_windows.cpp)
-  # comdlg32: the file dialogs (10.14). advapi32: the activation pipe's per-user DACL (9.15).
+  # comdlg32: the file dialogs. advapi32: the activation pipe's per-user DACL.
   target_link_libraries(snapback_app PUBLIC comdlg32 advapi32)
 
 elseif(APPLE)
-  # ROADMAP 7.6: the file-manager backend is AppKit, so macOS needs the Objective-C++ half.
+  # The file-manager backend is AppKit, so macOS needs the Objective-C++ half.
   # It lives in the library (not the app target like the tray/overlay) because it has no
   # singleton and no window — the tests link it and exercise its refusal paths.
   target_sources(snapback_app PRIVATE
@@ -244,7 +244,7 @@ target_compile_definitions(snapback_tests PRIVATE
   SNAPBACK_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 stage_onnxruntime(snapback_tests)
 
-# ROADMAP 11.1: register every doctest case as its own CTest test rather than the whole
+# Register every doctest case as its own CTest test rather than the whole
 # binary as one.
 #
 # The reason is 6.1. A single SIGSEGV took the process down and CTest could only report the
@@ -276,7 +276,7 @@ target_compile_definitions(snapback_tests PRIVATE
 
 if(SNAPBACK_BUILD_BENCHMARKS)
   add_executable(snapback_benchmarks benchmarks/bench_snapback.cpp)
-  # ROADMAP 7.14: the benchmarks drive the same private event seam the tests do, through the
+  # The benchmarks drive the same private event seam the tests do, through the
   # same AppStateTestAccess friend. `tests/` is on the include path for that one header —
   # benchmarks are non-shipping harness code, same category as tests, and the alternative is
   # putting a test hook back on the production class's public API.
@@ -289,7 +289,7 @@ if(SNAPBACK_BUILD_BENCHMARKS)
   target_include_directories(snapback_hotpath_benchmarks PRIVATE benchmarks tests)
   target_link_libraries(snapback_hotpath_benchmarks PRIVATE snapback_app)
 
-  # ROADMAP 14.11: measured budgets. Unlike the two above it writes a real on-disk database at
+  # Measured budgets. Unlike the two above it writes a real on-disk database at
   # the real persistence cadence across the full retention window, because the WAL cost and the
   # cadence are exactly what an in-memory harness cannot report. Minutes, not seconds, to run.
   add_executable(snapback_budget_benchmarks benchmarks/bench_budgets.cpp)
@@ -309,7 +309,7 @@ endif()
 
 # --- the desktop app (later phases) ---
 if(SNAPBACK_BUILD_APP)
-  # ROADMAP 8.6. Note this is the *commit* the 0.12.0 tag points at, not the tag object:
+  # Note this is the *commit* the 0.12.0 tag points at, not the tag object:
   # webview uses an annotated tag, so `git ls-remote refs/tags/0.12.0` answers 782c12cc,
   # which is the tag object and is not a commit CMake can check out. The peeled ref
   # (`refs/tags/0.12.0^{}`) is the commit below. json and doctest use lightweight tags, where
@@ -330,7 +330,7 @@ if(SNAPBACK_BUILD_APP)
   if(WIN32)
     target_sources(snapback PRIVATE src/snapback/overlay_windows.cpp src/app/tray_windows.cpp)
   elseif(APPLE)
-    # ROADMAP 3.1: a real NSStatusItem tray and a real NSPanel overlay. Both stubs also
+    # A real NSStatusItem tray and a real NSPanel overlay. Both stubs also
     # guard themselves on __APPLE__, so listing one here by mistake cannot produce a
     # duplicate Overlay::instance()/Tray::instance().
     target_sources(snapback PRIVATE
@@ -344,7 +344,7 @@ if(SNAPBACK_BUILD_APP)
   else()
     # Overlay::instance()/Tray::instance() live ONLY in the platform files above, so
     # without these no-op fallbacks the app fails to link (undefined symbols).
-    # Real implementation still to come: ROADMAP 3.2 (Linux).
+    # Linux only, until it gets a real tray and overlay.
     target_sources(snapback PRIVATE src/snapback/overlay_stub.cpp src/app/tray_stub.cpp)
   endif()
   # snapback_app already PUBLIC-links snapback_core (which itself PUBLIC-links sqlite3)

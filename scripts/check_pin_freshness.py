@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
-"""Report when pinned C++ deps fall behind the latest GitHub release.
+"""Report when pinned C++ dependencies fall behind upstream's latest GitHub release.
 
-ROADMAP 4.13. Dependabot watches Actions and npm. It does not watch CMake FetchContent
-or the ONNX Runtime archives in third_party/onnxruntime-pins.json. 8.6/8.9 made those
-pins *trustworthy* (immutable SHA / digest). They did not make them *current*.
-
-This script compares each pin to upstream's latest non-prerelease GitHub release and
-exits 1 when any is behind. It never edits a digest or opens a PR: a bot that computes
-the hash it is meant to be verifying defeats the pin. The human bump is documented in
-docs/dependencies.md.
+Covers the FetchContent pins and the ONNX Runtime manifest, which Dependabot doesn't see. It
+never edits a pin; bumping is manual (docs/dependencies.md).
 
 Usage:
   python3 scripts/check_pin_freshness.py [--verbose] [--offline]
-Exit 0 = every watched pin matches the latest release (or --offline parse-only).
-Exit 1 = at least one pin is behind.
-Exit 2 = the check could not run (parse failure or GitHub API error).
+Exit 0 = up to date (or --offline parse-only), 1 = a pin is behind, 2 = couldn't check.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-// Roadmap 4.12. Measured against the existing tree on 2026-08-19, not chosen:
+// Measured against the existing tree on 2026-08-19, not chosen:
 // 2-space indent, double quotes (820 double-quoted strings in src/*.ts against 3 single),
 // semicolons, trailing commas, and a 100-column width that 9,728 of 9,789 lines already fit.
 //

@@ -22,7 +22,7 @@ export default defineConfig({
       exclude: [
         "src/main.tsx",
         "src/vite-env.d.ts",
-        // Roadmap 11.11. Pure-logic modules whose branches are exercised by the `tsx
+        // Pure-logic modules whose branches are exercised by the `tsx
         // tests/*.test.ts` runner, which does not feed V8's aggregate. Counting them here
         // measured them as near-uncovered while they are, in fact, the most directly tested
         // code in the tree — which made the component number mean less, not more.

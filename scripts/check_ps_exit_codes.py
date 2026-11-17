@@ -1,25 +1,12 @@
 #!/usr/bin/env python3
 """Fail if a PowerShell script runs a native command without checking its exit code.
 
-`$ErrorActionPreference = "Stop"` -- which every script here sets, and which reads like it
-covers everything -- only makes *cmdlets* terminate. A native executable (cmake, ctest, npm,
-cpack, ...) reports failure by setting `$LASTEXITCODE`, and a bare call discards it. The
-script keeps going, reaches its last line, and exits 0.
-
-That is not a hypothetical. `windows_demo.ps1` ran `cmake --build --target snapback`
-unchecked, so when `main.cpp` stopped compiling the Windows CI job still passed. Three
-commits landed on master with a desktop binary that could not be built, and the only reason
-anyone found out is that the macOS and Linux jobs -- which run cmake directly from the
-workflow, where the runner checks the exit code -- went red.
-
-`package_windows.ps1` already had the fix (`Invoke-Native`) and had had it for a while. The
-convention existed; nothing made the other scripts follow it. Hence this guard.
-
-The rule: inside `scripts/*.ps1`, a native tool may only be invoked inside an
-`Invoke-Native { ... }` block. Anything else is an unchecked call.
+`$ErrorActionPreference = "Stop"` only affects cmdlets. A native executable (cmake, ctest, npm,
+cpack, ...) signals failure through `$LASTEXITCODE`, which a bare call ignores, so the script
+carries on and exits 0. In `scripts/*.ps1`, native tools must be called inside an
+`Invoke-Native { ... }` block.
 
 Usage:  python3 scripts/check_ps_exit_codes.py [--verbose]
-Exit 0 = every native invocation in every PowerShell script is exit-code checked.
 """
 
 from __future__ import annotations

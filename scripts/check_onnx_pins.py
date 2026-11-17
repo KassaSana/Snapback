@@ -1,32 +1,15 @@
 #!/usr/bin/env python3
-"""Fail if the ONNX Runtime archives CI downloads are not pinned by SHA-256.
+"""Fail if the ONNX Runtime archives CI downloads aren't pinned by SHA-256.
 
-ROADMAP 8.9. `scripts/check_dependency_pins.py` (8.6) covers the dependencies CMake
-fetches. It does not cover these: the ONNX job in `.github/workflows/deep-checks.yml` downloads
-a prebuilt runtime archive from a GitHub release and extract it into `third_party/`, where
-CMake links it into the test binary. That is executable third-party code entering the build
-by a path 8.6 never looked at, which is why 8.6's broad claim that fetched dependencies are
-immutable was incomplete.
+`third_party/onnxruntime-pins.json` is the source of truth. This checks that:
 
-A release URL is not a pin. GitHub release assets can be deleted and re-uploaded under the
-same name, so `onnxruntime-win-x64-1.20.1.zip` is a mutable pointer in exactly the way a git
-tag is. The digest is the pin; the version number beside it is for humans.
-
-`third_party/onnxruntime-pins.json` is the single source of truth, and both jobs read the
-URL, filename, and expected digest out of it rather than restating any of them. This script
-enforces the properties that make that arrangement actually hold:
-
-  * every platform CI vendors has a 64-hex SHA-256 recorded
-  * each archive filename embeds the manifest's version -- this is what makes a version bump
-    that forgets to re-hash fail loudly instead of silently verifying the old digest against
-    a new file (it cannot: the URL it builds would still point at the old version)
-  * no two platforms share a digest, which is what a copy-paste bump looks like
-  * the ONNX workflow reads the manifest and hardcodes neither a version nor a digest
-  * each vendor step verifies the hash *before* it extracts -- checking afterwards would
-    already have written attacker-controlled paths to disk
+  * every platform has a 64-hex SHA-256
+  * each archive filename contains the manifest's version, so a bump that forgets to re-hash fails
+  * no two platforms share a digest (a copy-paste mistake)
+  * the workflow reads the manifest instead of hardcoding a version or digest
+  * each vendor step verifies the hash before extracting
 
 Usage:  python3 scripts/check_onnx_pins.py [--verbose]
-Exit 0 = CI cannot extract an ONNX archive it has not verified.
 """
 
 from __future__ import annotations

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Local mock/headless test suite -- the macOS/Linux twin of test_local.ps1.
 #
-# Roadmap 12.5: the development host is macOS, and every documented way to run the suite
-# was PowerShell. This is the same pipeline (C++ headless tests, then the frontend) with
+# Same pipeline as the .ps1 (C++ headless tests, then the frontend) with
 # one real difference: MSVC is a *multi-config* generator, so the .ps1 passes --config at
 # build time and finds binaries under build/Release/. Make and Ninja are single-config, so
 # the build type must be chosen at *configure* time via CMAKE_BUILD_TYPE, and binaries land

@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
-"""Every module excluded from the component-coverage gate must be tested somewhere else.
+"""Every module excluded from the Vitest coverage gate must still have a unit test.
 
-Roadmap 11.11. `vite.config.ts` excludes a handful of pure-logic modules from the Vitest
-coverage denominator, because their branches are exercised by the `tsx tests/*.test.ts`
-runner, which does not feed V8's aggregate. Counting them measured the most directly tested
-code in the tree as near-uncovered, which made the component number mean less rather than more.
-
-That exclusion list is one edit away from being a way to silence the gate instead of a way to
-sharpen it. This is the guard that stops it: an entry only earns its place if a dedicated test
-file exists **and** `npm run test:unit` actually runs it. A module dropped from the gate with
-no test anywhere fails the build.
-
-Written as a guard rather than a convention for the reason the rest of scripts/ is: a
-convention holds until the day someone is in a hurry, and this one would fail silently and
-look like an improving coverage number.
+`vite.config.ts` excludes a few pure-logic modules from coverage because their tests run under
+`tsx` (`npm run test:unit`), which doesn't feed V8's coverage. This makes sure each excluded
+module has a test file that `test:unit` actually runs, so the list can't be used to hide
+untested code.
 """
 from __future__ import annotations
 

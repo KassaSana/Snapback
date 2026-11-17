@@ -7,10 +7,6 @@ name: CI
 #   - the Windows desktop app, built and launched through a real-webview acceptance smoke
 #   - the desktop app on macOS, built *and launched*, by the GUI smoke job
 #   - repository, documentation, and supply-chain guards on the Ubuntu core run
-#
-# Anti-hang guarantees: every job has `timeout-minutes`, the riskiest steps have their
-# own step timeout, ctest uses `--timeout`/`--no-tests=error`, GUI launch smokes have
-# bounded waits, and superseded PR runs are cancelled so nothing piles up.
 
 on:
   push:
@@ -21,10 +17,8 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  # Superseded *pull request* runs are cancelled; pushes to master are not. release.yml's
-  # 9.11 gate will only publish a tag whose exact commit already has a successful ci.yml run,
-  # and a cancelled run is not a successful one — so cancelling here on master would quietly
-  # make that commit unreleasable. Nothing piles up regardless: every job has a timeout.
+  # Cancel superseded PR runs, but not master pushes: release.yml only publishes a commit
+  # with a successful ci.yml run, and a cancelled run doesn't count.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -53,10 +47,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          # The Ubuntu entry also runs the attribution guard, which must inspect
-          # history rather than passing against a one-commit shallow checkout.
-          fetch-depth: 0
 
       - name: Configure core
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_APP=OFF -DSNAPBACK_ONNX=OFF
@@ -131,7 +121,7 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
-      # Roadmap 4.12. Correctness rules only -- Prettier owns layout, and the existing tree
+      # Correctness rules only -- Prettier owns layout, and the existing tree
       # was deliberately not reformatted. The React Hooks rules are the reason this earns a
       # job step: a dependency array that lies produces a stale closure, which is a real bug
       # that renders fine and passes every assertion.
@@ -151,23 +141,17 @@ jobs:
         working-directory: frontend
         run: npm run build:demo
 
-      # Roadmap 8.10 is a promise about the *shipped* page, and this is the only job that
-      # produces one. frontend/dist is gitignored, so the repository guard sees only
-      # the source index.html and never the inlined bundle the user actually loads. Running it
-      # here, after the build, is what checks the artifact the promise is about.
+      # The repo-checks step only sees the source index.html; this checks the built bundle
+      # that actually ships.
       - name: The built bundle must not fetch anything
         run: python3 scripts/check_no_remote_subresources.py --verbose
 
   # ---------------------------------------------------------------------------
-  # ---------------------------------------------------------------------------
   # Windows desktop app: build + bounded real-webview acceptance smoke. The app
   # terminates itself after publishing its verdict, and the script kills it on timeout.
   #
-  # Deliberately has NO `needs:` (Roadmap 6.3): with `needs: [cpp-headless,
-  # frontend-mock]` this job was *skipped* whenever those failed — so the one
-  # guard over Windows-only desktop code stopped running exactly when CI was
-  # red, which is when it matters most. A guard that only executes when
-  # everything else is green does not guard the case it exists for.
+  # No `needs:` on purpose: if this waited on the headless jobs, it would be skipped
+  # exactly when CI is red, which is when it matters.
   # ---------------------------------------------------------------------------
   windows-desktop-integration:
     name: Windows desktop integration smoke
@@ -221,9 +205,7 @@ jobs:
   # and Tray::instance() stayed undefined off Windows without anyone noticing.
   # An opt-in build target is an opt-in guarantee; this is the guarantee.
   # ---------------------------------------------------------------------------
-  # Deliberately no `needs:` — same Roadmap 6.3 reasoning as the Windows job
-  # above: this link check depends on the code compiling, not on the headless
-  # suite passing, and gating it on test jobs made it skip while CI was red.
+  # No `needs:`, for the same reason as the Windows job.
   # ---------------------------------------------------------------------------
   # macOS GUI launch smoke — ADR-0002 release blocker.
   #
@@ -237,8 +219,7 @@ jobs:
   # through the shim, webview binding, AppState, and SQLite before requiring the
   # run loop to exit on its own.
   #
-  # No `needs:` for the same Roadmap 6.3 reason as the two jobs above: this
-  # depends on the code compiling, not on the headless suite passing.
+  # No `needs:`, for the same reason as the jobs above.
   # ---------------------------------------------------------------------------
   macos-gui-smoke:
     name: macOS GUI launch smoke

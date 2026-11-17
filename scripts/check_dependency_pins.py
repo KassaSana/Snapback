@@ -1,27 +1,10 @@
 #!/usr/bin/env python3
-"""Fail if a fetched C++ dependency is pinned to anything but an immutable revision.
+"""Fail if a fetched C++ dependency isn't pinned to an immutable revision.
 
-ROADMAP 8.6. Our C++ dependencies arrive through CMake FetchContent, which compiles
-third-party source straight into the shipping binary. Dependabot covers GitHub Actions and
-the frontend npm tree; it does not cover these. So the only thing standing between us and a
-silently different dependency is what CMakeLists.txt says to fetch.
-
-A tag name is not a promise. `v3.11.3` is a mutable pointer that upstream can move at any
-time, including onto a commit we never read, and the next clean build would pick it up with
-no diff on our side to review. A 40-character commit SHA cannot move: git's object names are
-content-derived, so the same hash is the same tree forever.
-
-This makes that policy mechanical rather than a convention someone remembers. Checking it by
-hand is what let the tags sit there in the first place.
-
-What it checks, for every FetchContent_Declare in CMakeLists.txt:
-
-  * a GIT_TAG must be exactly 40 hex characters -- a tag or branch name fails
-  * a URL must be accompanied by a URL_HASH (the SQLite amalgamation takes this route:
-    an upstream release zip verified by SHA256, which is immutable for the same reason)
+For every FetchContent_Declare in CMakeLists.txt, a GIT_TAG must be a 40-character commit SHA
+and a URL must have a URL_HASH. Tags can be moved upstream; commit SHAs can't.
 
 Usage:  python3 scripts/check_dependency_pins.py [--verbose]
-Exit 0 = every dependency is pinned to something that cannot change underneath us.
 """
 
 from __future__ import annotations

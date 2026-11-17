@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
-"""Fail if release legal artifacts are missing or miswired.
+"""Fail if release legal files are missing or not wired into packaging.
 
-ROADMAP 9.12. A public repository without a project license is not open source in any
-usable sense, and CPack was pointing at README.md rather than a real license file.
-This guard makes that state fail CI instead of shipping quietly.
-
-Checks:
-  * LICENSE exists at the repository root
-  * THIRD_PARTY_NOTICES.md exists at the repository root
-  * CMakeLists.txt sets CPACK_RESOURCE_FILE_LICENSE to LICENSE, not README.md
-  * LICENSE is installed into release packages via CMake install(FILES ...)
+Checks that LICENSE and THIRD_PARTY_NOTICES.md exist, that CPACK_RESOURCE_FILE_LICENSE points
+at LICENSE, and that LICENSE is installed into release packages.
 
 Usage:  python3 scripts/check_release_legal.py [--verbose]
-Exit 0 = legal artifacts are present and wired correctly.
 """
 
 from __future__ import annotations

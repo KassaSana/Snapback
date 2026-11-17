@@ -7,7 +7,7 @@ name: Release
 # Trigger it by pushing a version tag:
 #   git tag v0.3.0 && git push origin v0.3.0
 #
-# A tag alone is not enough (9.11). The commit must already be on master with a green
+# A tag alone is not enough. The commit must already be on master with a green
 # ci.yml run, and the tag must name CMake's PROJECT_VERSION exactly. So the order is:
 # merge to master -> wait for CI to go green -> tag that commit.
 #
@@ -39,7 +39,7 @@ defaults:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Roadmap 9.11. A pushed tag is an independent way into this workflow: ci.yml runs on
+  # A pushed tag is an independent way into this workflow: ci.yml runs on
   # pushes and PRs to main/master, so a `v*` tag can point at *any* commit — one that never
   # passed the macOS/Linux/sanitizer/ONNX matrix, or that was never on master at all.
   # Branch protection does not help; it protects branches, and a tag is not a branch.
@@ -53,7 +53,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      actions: read # reads the tagged commit's ci.yml conclusion (9.11)
+      actions: read # reads the tagged commit's ci.yml conclusion
     steps:
       - name: Checkout
         uses: actions/checkout@v7
