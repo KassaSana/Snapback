@@ -20,6 +20,7 @@ import { ContextTimeline } from "./ActivityCards";
 import { ChartDataTable } from "./ChartDataTable";
 import { formatFocusStretch } from "./focusStreak";
 import { FOCUS_MODE_LABELS, normalizeFocusMode, type FocusMode } from "./sessionCockpit";
+import { sessionRowLabel } from "./insightsMetrics";
 import { isSessionFragment } from "./sessionFragment";
 
 /** How many context rows the detail reads to rank apps. The native cap, so it is one call. */
@@ -35,7 +36,17 @@ type SessionExplorerCardProps = {
   onCreateAppRule?: (appName: string, kind: AppRuleKind) => void | Promise<void>;
   deletingSessionId?: string | null;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
+  deleteStatus?: string | null;
+  deleteError?: string | null;
+  onSaveReflection?: SaveReflection;
+  reflectionStatus?: string | null;
 };
+
+type SaveReflection = (
+  sessionId: string,
+  done: string | null,
+  nextStep: string | null,
+) => boolean | Promise<boolean>;
 
 type Detail =
   | { state: "loading"; sessionId?: string }
@@ -72,10 +83,15 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
   onCreateAppRule,
   deletingSessionId,
   onDeleteSession,
+  deleteStatus = null,
+  deleteError = null,
+  onSaveReflection,
+  reflectionStatus = null,
 }: SessionExplorerCardProps) {
   const [selection, setSelection] = useState<{ rangeLabel: string; id: string } | null>(null);
   const [detail, setDetail] = useState<Detail>({ state: "loading" });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editingReflection, setEditingReflection] = useState(false);
   const [ratingPending, setRatingPending] = useState(false);
 
   // Newest first, grouped by the local day each session started on.
@@ -109,6 +125,7 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
   const select = (id: string) => {
     setSelection({ rangeLabel, id });
     setConfirmingDelete(false);
+    setEditingReflection(false);
     setDetail({ state: "loading", sessionId: id });
   };
 
@@ -198,7 +215,7 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
                           onClick={() => select(id)}
                         >
                           <span className="session-explorer-goal">
-                            {summary.record.goal || "Untitled session"}
+                            {sessionRowLabel(summary)}
                           </span>
                           <span className="session-explorer-meta">
                             {formatTime(summary.record.startedAtMs)} · {FOCUS_MODE_LABELS[mode]} ·{" "}
@@ -229,6 +246,9 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
               onDeleteSession={onDeleteSession}
               ratingPending={ratingPending}
               onReRate={handleReRate}
+              onSaveReflection={onSaveReflection}
+              editingReflection={editingReflection}
+              setEditingReflection={setEditingReflection}
             />
           ) : (
             <p className="helper-text session-explorer-empty">
@@ -237,6 +257,21 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
           )}
         </div>
       )}
+      {reflectionStatus ? (
+        <p className="helper-text" role="status">
+          {reflectionStatus}
+        </p>
+      ) : null}
+      {deleteStatus ? (
+        <p className="helper-text success" role="status">
+          {deleteStatus}
+        </p>
+      ) : null}
+      {deleteError ? (
+        <p className="helper-text alert" role="alert">
+          {deleteError}
+        </p>
+      ) : null}
     </section>
   );
 });
@@ -254,6 +289,9 @@ function SessionDetail({
   onDeleteSession,
   ratingPending,
   onReRate,
+  onSaveReflection,
+  editingReflection,
+  setEditingReflection,
 }: {
   summary: SessionSummary;
   detail: Detail;
@@ -267,10 +305,13 @@ function SessionDetail({
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
   ratingPending: boolean;
   onReRate: (label: FocusLabel) => void | Promise<void>;
+  onSaveReflection?: SaveReflection;
+  editingReflection: boolean;
+  setEditingReflection: (value: boolean) => void;
 }) {
   const { record, recap } = summary;
   const mode = normalizeFocusMode(record.focusMode);
-  const goal = record.goal || "Untitled session";
+  const goal = sessionRowLabel(summary);
 
   return (
     <div className="session-detail" role="region" aria-label={`Session: ${goal}`}>
@@ -345,7 +386,16 @@ function SessionDetail({
         </div>
       ) : null}
 
-      {record.reflectionDone || record.reflectionNextStep ? (
+      {editingReflection && onSaveReflection ? (
+        <ReflectionEditor
+          key={record.sessionId}
+          sessionId={record.sessionId}
+          initialDone={record.reflectionDone ?? ""}
+          initialNext={record.reflectionNextStep ?? ""}
+          onSave={onSaveReflection}
+          onClose={() => setEditingReflection(false)}
+        />
+      ) : (
         <div className="session-detail-reflection">
           {record.reflectionDone ? (
             <p>
@@ -357,8 +407,23 @@ function SessionDetail({
               <strong>Next:</strong> {record.reflectionNextStep}
             </p>
           ) : null}
+          {onSaveReflection ? (
+            <button
+              type="button"
+              className="link-button"
+              disabled={deleting}
+              onClick={() => {
+                setConfirmingDelete(false);
+                setEditingReflection(true);
+              }}
+            >
+              {record.reflectionDone || record.reflectionNextStep
+                ? "Edit reflection"
+                : "Add a reflection"}
+            </button>
+          ) : null}
         </div>
-      ) : null}
+      )}
 
       {detail.state === "loading" ? (
         <p className="helper-text" role="status">
@@ -437,6 +502,7 @@ function SessionDetail({
                 type="button"
                 className="danger-button"
                 disabled={deleting}
+                aria-label={`Confirm delete session ${goal}`}
                 onClick={() => {
                   setConfirmingDelete(false);
                   void onDeleteSession(record.sessionId);
@@ -456,7 +522,8 @@ function SessionDetail({
             <button
               type="button"
               className="link-button"
-              disabled={deleting}
+              disabled={deleting || editingReflection}
+              aria-label={`Delete session ${goal}`}
               onClick={() => setConfirmingDelete(true)}
             >
               Delete this session…
@@ -524,5 +591,61 @@ function FocusCurve({ curve }: { curve: FocusCurvePoint[] }) {
         );
       })}
     </svg>
+  );
+}
+
+function ReflectionEditor({
+  sessionId,
+  initialDone,
+  initialNext,
+  onSave,
+  onClose,
+}: {
+  sessionId: string;
+  initialDone: string;
+  initialNext: string;
+  onSave: SaveReflection;
+  onClose: () => void;
+}) {
+  const [done, setDone] = useState(initialDone);
+  const [nextStep, setNextStep] = useState(initialNext);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    const saved = await onSave(sessionId, done.trim() || null, nextStep.trim() || null);
+    setSaving(false);
+    if (saved) onClose();
+  };
+
+  return (
+    <div className="reflection-editor">
+      <label className="field-label">
+        Done
+        <textarea
+          value={done}
+          maxLength={1000}
+          className="reflection-input"
+          onChange={(event) => setDone(event.target.value)}
+        />
+      </label>
+      <label className="field-label">
+        Next
+        <textarea
+          value={nextStep}
+          maxLength={1000}
+          className="reflection-input"
+          onChange={(event) => setNextStep(event.target.value)}
+        />
+      </label>
+      <div className="button-row">
+        <button type="button" className="primary-button" disabled={saving} onClick={() => void save()}>
+          Save reflection
+        </button>
+        <button type="button" className="ghost-button" disabled={saving} onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }

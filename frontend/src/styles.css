@@ -2084,7 +2084,6 @@ h1 {
 .grid-review > .review-range-bar,
 .grid-review > .review-overview,
 .grid-review > .session-chart-card,
-.grid-review > .session-management-card,
 .grid-review > .helper-text {
   grid-column: 1 / -1;
 }
@@ -2105,16 +2104,14 @@ h1 {
 }
 
 .grid-review .history-list,
-.grid-review .timeline-list,
-.session-management-card .session-list {
+.grid-review .timeline-list {
   max-height: 320px;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
 .grid-review .history-item,
-.grid-review .timeline-body,
-.session-row-detail {
+.grid-review .timeline-body {
   overflow-wrap: anywhere;
 }
 
@@ -2124,20 +2121,6 @@ h1 {
   min-width: 0;
 }
 
-.session-management-card summary {
-  cursor: pointer;
-  font-family: var(--font-serif);
-  font-size: 1.25rem;
-  font-weight: 700;
-}
-
-.session-management-card details[open] > summary {
-  margin-bottom: 16px;
-}
-
-.session-management-card .rules-item {
-  flex-wrap: wrap;
-}
 
 .reflection-editor {
   flex-basis: 100%;

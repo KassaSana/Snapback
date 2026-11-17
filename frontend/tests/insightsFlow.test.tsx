@@ -154,10 +154,6 @@ describe("Insights card", () => {
     const card = insightsCard();
     const insights = within(card);
     expect(insights.getByText(/30% deep focus.*5 snapbacks/)).toBeInTheDocument();
-    expect(screen.getAllByText("Session management")).toHaveLength(1);
-    const manager = screen.getByText("Session management").closest("details");
-    expect(manager).not.toHaveAttribute("open");
-    expect(manager?.querySelectorAll("li")).toHaveLength(2);
     // One bar per session.
     expect(card.querySelectorAll("rect.chart-bar")).toHaveLength(2);
   });
@@ -175,27 +171,31 @@ describe("Insights card", () => {
   });
 });
 
-// The native `delete_session` command has been tested since 2026-07-29; what was
-// missing was any way for a user to reach it. These tests are about the reachable path.
-describe("Session deletion from Insights", () => {
+// Deleting and editing a session happen in the session explorer's detail panel.
+describe("Session deletion from the explorer", () => {
   const goalSummary = (id: string, goal: string) => {
     const base = rawSummary(id, 50, 0, 0);
     return { record: { ...base.record, goal }, recap: { ...base.recap, goal } };
   };
 
+  const row = (goal: string) => screen.queryByRole("button", { name: new RegExp(`^${goal}`) });
+
   const loadTwoSessions = async () => {
     boundary.state.history = [goalSummary("a", "alpha"), goalSummary("b", "bravo")];
     renderApp("review");
-    await screen.findByRole("heading", { name: "Focus per session" });
-    await waitFor(() =>
-      expect(boundary.invoke).toHaveBeenCalledWith("get_session_history", { limit: 20 }),
-    );
-    fireEvent.click(screen.getByText("Session management"));
+    await waitFor(() => expect(row("alpha")).not.toBeNull());
+    fireEvent.click(row("alpha")!);
   };
 
-  it("names each session on its delete button rather than a bare 'Delete'", async () => {
+  const deleteAlpha = () => {
+    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
+  };
+
+  it("names the selected session on its delete button", async () => {
     await loadTwoSessions();
     expect(screen.getByRole("button", { name: "Delete session alpha" })).toBeInTheDocument();
+    fireEvent.click(row("bravo")!);
     expect(screen.getByRole("button", { name: "Delete session bravo" })).toBeInTheDocument();
   });
 
@@ -211,8 +211,8 @@ describe("Session deletion from Insights", () => {
     );
 
     await waitFor(() => expect(screen.getByText("Session deleted.")).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "Delete session alpha" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Delete session bravo" })).toBeInTheDocument();
+    expect(row("alpha")).toBeNull();
+    expect(row("bravo")).not.toBeNull();
   });
 
   it("cancelling leaves the session and never reaches the backend", async () => {
@@ -225,93 +225,71 @@ describe("Session deletion from Insights", () => {
     expect(screen.getByRole("button", { name: "Delete session alpha" })).toBeInTheDocument();
   });
 
-  // The native command returns false when no row matched. Saying "deleted" there would claim
-  // work SQLite did not do, so the wording has to differ even though the row goes either way.
+  // The native command returns false when no row matched, so the wording must not claim a delete.
   it("reports a stale row honestly instead of claiming a delete", async () => {
     await loadTwoSessions();
     // Something else removed it between the list load and the click.
     boundary.state.history = [goalSummary("b", "bravo")];
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
+    deleteAlpha();
 
     await waitFor(() =>
       expect(screen.getByText("That session was already gone.")).toBeInTheDocument(),
     );
     expect(screen.queryByText("Session deleted.")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete session alpha" })).toBeNull();
+    expect(row("alpha")).toBeNull();
   });
 
-  // The delete is authoritative once it returns, so a failed refetch must not resurrect the
-  // row on screen. `refreshInsights` keeps its last good data by design, which is exactly the
-  // trap: without the local prune, this test shows a session the database no longer has.
+  // The delete is authoritative once it returns, so a failed refetch must not bring the row back.
   it("keeps the row gone even when the follow-up refresh fails", async () => {
     await loadTwoSessions();
     boundary.state.historyThrows = true;
+    deleteAlpha();
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
-
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Delete session alpha" })).toBeNull(),
-    );
-    expect(screen.getByRole("button", { name: "Delete session bravo" })).toBeInTheDocument();
+    await waitFor(() => expect(row("alpha")).toBeNull());
+    expect(row("bravo")).not.toBeNull();
   });
 
   it("surfaces a failed delete and keeps the session listed", async () => {
     await loadTwoSessions();
     boundary.state.deleteThrows = true;
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete session alpha" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm delete session alpha" }));
+    deleteAlpha();
 
     await waitFor(() =>
       expect(screen.getByText("Could not delete that session.")).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: "Delete session alpha" })).toBeInTheDocument();
+    expect(row("alpha")).not.toBeNull();
   });
 });
 
-describe("Session reflection editing from Insights", () => {
+describe("Session reflection editing from the explorer", () => {
+  const withReflection = () => {
+    const summary = rawSummary("a", 50, 0, 0);
+    return {
+      ...summary,
+      record: { ...summary.record, reflectionDone: "old result", reflectionNextStep: "old next" },
+    };
+  };
+
   it("keeps an unsaved reflection until it is saved or cancelled before deletion", async () => {
     boundary.state.history = [rawSummary("a", 50, 0, 0), rawSummary("b", 60, 0, 0)];
     renderApp("review");
-    fireEvent.click(screen.getByText("Session management"));
-    const editButtons = await screen.findAllByRole("button", { name: "Edit reflection" });
-    fireEvent.click(editButtons[0]);
-    fireEvent.change(screen.getByLabelText("Done"), {
-      target: { value: "unsaved result" },
-    });
+    fireEvent.click(await screen.findByRole("button", { name: "Add a reflection" }));
+    fireEvent.change(screen.getByLabelText("Done"), { target: { value: "unsaved result" } });
 
-    for (const button of screen.getAllByRole("button", { name: /^Delete session/ })) {
-      expect(button).toBeDisabled();
-    }
+    expect(screen.getByRole("button", { name: /^Delete session/ })).toBeDisabled();
     expect(screen.getByLabelText("Done")).toHaveValue("unsaved result");
     expect(boundary.invoke).not.toHaveBeenCalledWith("delete_session", expect.anything());
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    for (const button of screen.getAllByRole("button", { name: /^Delete session/ })) {
-      expect(button).toBeEnabled();
-    }
+    expect(screen.getByRole("button", { name: /^Delete session/ })).toBeEnabled();
   });
 
   it("prefills and updates an existing reflection", async () => {
-    const summary = rawSummary("a", 50, 0, 0);
-    boundary.state.history = [
-      {
-        ...summary,
-        record: {
-          ...summary.record,
-          reflectionDone: "old result",
-          reflectionNextStep: "old next",
-        },
-      },
-    ];
+    boundary.state.history = [withReflection()];
     renderApp("review");
-    fireEvent.click(screen.getByText("Session management"));
-    await screen.findByRole("button", { name: "Edit reflection" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit reflection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit reflection" }));
+    expect(screen.getByLabelText("Done")).toHaveValue("old result");
     fireEvent.change(screen.getByLabelText("Done"), { target: { value: "new result" } });
     fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));
 
@@ -327,20 +305,9 @@ describe("Session reflection editing from Insights", () => {
 
   it("keeps the editor open when a reflection update fails", async () => {
     boundary.state.reflectionThrows = true;
-    const summary = rawSummary("a", 50, 0, 0);
-    boundary.state.history = [
-      {
-        ...summary,
-        record: {
-          ...summary.record,
-          reflectionDone: "old result",
-          reflectionNextStep: "old next",
-        },
-      },
-    ];
+    boundary.state.history = [withReflection()];
     renderApp("review");
 
-    fireEvent.click(screen.getByText("Session management"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit reflection" }));
     fireEvent.change(screen.getByLabelText("Done"), { target: { value: "new result" } });
     fireEvent.click(screen.getByRole("button", { name: "Save reflection" }));

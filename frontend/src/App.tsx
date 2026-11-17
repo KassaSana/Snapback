@@ -12,7 +12,7 @@ import { DiagnosticsCard } from "./DiagnosticsCard";
 import { GoalCategoriesCard } from "./GoalCategoriesCard";
 import { ActionErrorBanner } from "./ActionErrorBanner";
 import { AppHeader } from "./AppHeader";
-import { InsightsCard, SessionManagementCard } from "./InsightsCard";
+import { InsightsCard } from "./InsightsCard";
 import { FocusStateHero } from "./FocusStateHero";
 import { SignalsCard } from "./SignalsCard";
 import { RulesCard } from "./RulesCard";
@@ -730,6 +730,10 @@ export default function App() {
               }}
               deletingSessionId={deletingSessionId}
               onDeleteSession={handleDeleteSession}
+              deleteStatus={sessionDeleteStatus}
+              deleteError={sessionDeleteError}
+              onSaveReflection={handleEditReflection}
+              reflectionStatus={reflectionStatus}
             />
 
             <InsightsCard
@@ -753,16 +757,6 @@ export default function App() {
               dailySummary={dailySummary}
               rangePreset={reviewRange.preset}
               rangeLabel={reviewRangeLabelText}
-            />
-
-            <SessionManagementCard
-              deleteError={sessionDeleteError}
-              deleteStatus={sessionDeleteStatus}
-              deletingSessionId={deletingSessionId}
-              onDeleteSession={handleDeleteSession}
-              onSaveReflection={handleEditReflection}
-              reflectionStatus={reflectionStatus}
-              sessionHistory={sessionHistory}
             />
           </>
         )}
