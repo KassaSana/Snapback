@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include "time_literals.hpp"
 
@@ -322,20 +323,6 @@ std::string utc_days_ago(int days) {
     return out.str();
 }
 
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_cpp_app_state_" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
-
 std::string read_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     std::ostringstream out;
@@ -619,7 +606,7 @@ TEST_CASE("sustained work with no session raises one nudge") {
     // ADR-0005. Without a session AppState records nothing at all, so someone
     // who forgets to press Start gets no data and no warning. This asks, once, rather than
     // auto-starting -- an auto-started session has no declared goal, and goal_alignment is a
-    // real model input that Tier 13 trains on.
+    // real model input.
     ManualClock clock;
     clock.set_steady_ms(0);
     auto storage = Storage::open_memory();
@@ -990,7 +977,7 @@ TEST_CASE("the idle threshold is a setting, applied live and persisted") {
 TEST_CASE("an out-of-range idle threshold is rejected and changes nothing") {
     // Rejected rather than clamped: a clamped value looks like a setting someone chose. The
     // check runs before any mutation, so both the live detector and settings.json are
-    // untouched -- 7.26's guarantee, applied to the one setter that could reach it first.
+    // untouched -- the same guarantee, applied to the one setter that could reach it first.
     TempDir temp;
     auto storage = Storage::open(temp.path);
     REQUIRE(storage.has_value());
@@ -1145,10 +1132,9 @@ TEST_CASE("wake during a failed idle close preserves both transitions in order")
 }
 
 TEST_CASE("a failed start leaves the previous session exactly as it was") {
-    // Start_session used to change focus mode and reset the extractor, tracker,
-    // and Pomodoro *before* the storage write that can throw. A failed insert therefore left
-    // the old database session running underneath brand-new in-memory state: the app believed
-    // it was recording a session that did not exist.
+    // start_session must not touch focus mode, the extractor, the tracker or Pomodoro until
+    // the storage write that can throw has succeeded. Otherwise a failed insert leaves the old
+    // session running underneath new in-memory state, recording a session that doesn't exist.
     //
     // The failure here is real rather than injected. A second connection holds a write
     // transaction; after waiting out kSqliteBusyTimeoutMs the insert gets SQLITE_BUSY --
@@ -1284,11 +1270,8 @@ TEST_CASE("a backwards clock between runs resumes at zero rather than counting d
 }
 
 TEST_CASE("AppState binds Pomodoro to an active session and exposes transition edges") {
-    // This used to call `start_pomodoro_for_test(100)`, a public method on the
-    // shipping class whose only reason to exist was passing `now_ms` in by hand. 11.4's
-    // injected clock made it redundant — `start_pomodoro()` reads the clock, so setting the
-    // clock and calling the *real* API is now strictly better: it exercises the production
-    // path rather than a parallel one that could drift from it.
+    // Drives the real start_pomodoro() through the injected clock rather than a test-only
+    // entry point, so it exercises the production path.
     ManualClock clock;
     clock.set_steady_ms(100);
     auto storage = Storage::open_memory();
@@ -1608,9 +1591,8 @@ struct BlockSettingsWrite {
 }  // namespace
 
 TEST_CASE("a settings write that fails changes neither disk nor live behaviour") {
-    // Every setter used to mutate settings_ -- and in some cases live state --
-    // *before* the save that can throw. IPC then reported failure while the process kept the
-    // new behaviour, so the error message and the running app disagreed.
+    // Setters must save before mutating settings_ or live state. Otherwise IPC reports a failure
+    // while the process keeps the new behaviour, and the error and the running app disagree.
     TempDir temp;
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -2425,7 +2407,7 @@ bool wait_for_maintenance(AppState& state) {
 }  // namespace
 
 TEST_CASE("periodic retention waits for an inactive session and runs off the tick thread") {
-    // AUD-07. Storage::open was the only caller of the prune, and Snapback closes to the
+    // Storage::open was the only caller of the prune, and Snapback closes to the
     // tray: a user who never restarts kept every row past the 90-day window until their
     // next reboot -- on the same storage_mutex_ the tick's persist phase needs.
     ManualClock clock;
@@ -2573,10 +2555,9 @@ TEST_CASE("periodic retention completes multiple batches without VACUUM") {
     Logger logger(log_out, LogLevel::Info);
     AppState state(std::move(*storage), std::filesystem::path{}, &logger, &clock);
 
-    // More than both the batch size and the old VACUUM threshold exercises multiple yields
-    // and proves periodic reclamation no longer rewrites the database.
+    // More rows than one batch, so the worker has to yield and resume.
     const auto session = state.start_session("aged", FocusMode::Normal);
-    for (std::size_t i = 0; i < kVacuumMinDeletedRows; ++i) {
+    for (std::size_t i = 0; i < 500; ++i) {
         AppStateTestAccess::insert_prediction_at(state, session.session_id,
                                                  ms("2000-01-01T00:00:00Z"));
     }
@@ -2594,7 +2575,7 @@ TEST_CASE("periodic retention completes multiple batches without VACUUM") {
 }
 
 TEST_CASE("stopping a session discards a span decision the tick has not drained") {
-    // AUD-04b. The tick decides span changes under mutex_ and writes them under
+    // The tick decides span changes under mutex_ and writes them under
     // storage_mutex_, holding neither in between. A Stop landing in that gap used to leave
     // the decision standing: the write went ahead and opened an attendance span on a
     // session that had just completed, and since every attendance query measures an open
@@ -2623,7 +2604,7 @@ TEST_CASE("stopping a session discards a span decision the tick has not drained"
 }
 
 TEST_CASE("stopping the active session by the no-arg overload discards a pending span too") {
-    // The same AUD-04b interleave, through the other Stop. The two overloads share no
+    // The same interleave, through the other Stop. The two overloads share no
     // implementation, and only the by-id one was given the drop -- so the no-arg one, which
     // is the documented "stop the active session" entry point, still wrote the stale
     // decision. Nothing in product code reaches it today (main.cpp and commands.hpp both
@@ -2693,7 +2674,7 @@ TEST_CASE("the summary report says when its session cap was binding") {
 }
 
 TEST_CASE("the tick emits a snapback once and leaves it restorable") {
-    // AUD-01. engine_tick used to move the payload out of latest_snapback_ as it emitted, so
+    // engine_tick used to move the payload out of latest_snapback_ as it emitted, so
     // the field behind "Take me back" was empty ~100 ms after the card appeared -- long
     // before a human could reach it, which made the product's namesake action a silent
     // no-op. Emission and lifetime are separate now: emitted once, cleared only by dismiss,
@@ -2829,7 +2810,7 @@ TEST_CASE("a failed restore keeps its target for a retry and still re-arms the t
     state->set_emit_hook(nullptr);
 }
 
-// AUD-01 made the snapback payload outlive the tick that emits it, so "Take me back" is still
+// The snapback payload must outlive the tick that emits it, so "Take me back" is still
 // there when the user reaches for it. These four cases pin the other end of that lifetime: it
 // must not outlive the *session* it describes. The payload names a window, and the only thing
 // that makes that window meaningful is the session it was recorded during.
@@ -3140,9 +3121,9 @@ TEST_CASE("AppState destruction stops a running engine") {
 }
 
 TEST_CASE("one tick drains a bounded slice of the ring and reports the backlog") {
-    // The drain used to be `while (capture_.next_event())`, which ends only when the consumer
-    // outruns the producer -- so a user who keeps typing keeps mutex_ held, and every command,
-    // every persistence flush, and every UI emission waits for them to stop.
+    // An unbounded `while (capture_.next_event())` only ends when the consumer outruns the
+    // producer, so a user who keeps typing would hold mutex_ and stall every command, flush and
+    // UI emission until they stop.
     auto state = make_state();
     BurstHook hook(kEngineDrainBudget + 512);
     fill_capture_ring(*state, hook);
@@ -3165,8 +3146,8 @@ TEST_CASE("one tick drains a bounded slice of the ring and reports the backlog")
 }
 
 TEST_CASE("a truncated drain still runs the rest of the tick") {
-    // The point of bounding the drain: phases 2 and 3 -- persistence and emission -- used to be
-    // unreachable while the ring kept refilling. One tick that stops on the budget must still
+    // The point of bounding the drain: phases 2 and 3 (persistence and emission) must still run
+    // while the ring keeps refilling. One tick that stops on the budget must still
     // publish what it computed rather than deferring it until input stops.
     auto state = make_state();
     const auto session = state->start_session("bounded drain", FocusMode::Normal);
@@ -3382,7 +3363,7 @@ TEST_CASE("AppState health explains prediction freshness and suppression") {
 
     auto health = state->health();
     CHECK_FALSE(health.last_prediction_age_secs.has_value());
-    // AUD-19: without a session the engine still predicts; only persistence is skipped.
+    // Without a session the engine still predicts; only persistence is skipped.
     CHECK(health.prediction_suppression_reason == "not_recorded");
 
     const auto session = state->start_session("Explain prediction health", FocusMode::Normal);
@@ -3409,7 +3390,7 @@ TEST_CASE("AppState health explains prediction freshness and suppression") {
     CHECK(state->health().prediction_suppression_reason == "not_recorded");
 }
 
-// AUD-19 / P0-08. Pins the decision that no-session predictions are an intended live preview:
+// Pins the decision that no-session predictions are an intended live preview:
 // the engine keeps scoring so the Now surface has something to show before the user hits
 // record, and health says "not_recorded" rather than claiming suppression. The two genuinely
 // suppressing reasons are asserted above; this proves the third one is not suppression at all.
@@ -3632,7 +3613,7 @@ TEST_CASE("the ownership export contains every session and window, past the old 
     }
     CHECK(count_occurrences(markdown, "| window 0 |") == 1);
     CHECK(count_occurrences(markdown, "| window 504 |") == 1);
-    // The row that used to be dropped, and the session that used to be dropped.
+    // The last row and the last session both make it into the export.
     CHECK(markdown.find("window 500") != std::string::npos);
     CHECK(markdown.find("goal 204") != std::string::npos);
 }
@@ -4134,7 +4115,7 @@ TEST_CASE("a snapback delivered outside quiet hours carries its route") {
 }
 
 TEST_CASE("snoozing alerts does not move the recording state") {
-    // 2.16's sharpest line: silencing an intervention is not privacy mode. If a snooze moved
+    // Silencing an intervention is not privacy mode. If a snooze moved
     // `state`, the header and the tray would both tell the user they had stopped being
     // recorded, which is false and is the exact confusion the item forbids.
     //
@@ -4267,7 +4248,7 @@ TEST_CASE("the close-to-tray explanation is claimed once and stays claimed acros
 
 TEST_CASE("the close-to-tray notice is unclaimed on a fresh install") {
     // The absent key means "not yet shown", which is also the right answer for a settings.json
-    // written before 9.15: close-to-tray is new behaviour for someone upgrading too.
+    // written before close-to-tray existed: it is new behaviour for someone upgrading too.
     TempDir temp;
     auto storage = Storage::open(temp.path);
     REQUIRE(storage.has_value());

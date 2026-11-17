@@ -242,6 +242,7 @@ ImportOutcome import_database(const std::filesystem::path& incoming,
                               const std::filesystem::path& db_path, Logger* logger) {
     ImportOutcome outcome;
 
+    // Step 1. Validate the incoming file.
     const ImportCandidate candidate = inspect_import_candidate(incoming, db_path);
     if (!candidate.acceptable) {
         outcome.ok = false;
@@ -275,7 +276,7 @@ ImportOutcome import_database(const std::filesystem::path& incoming,
         }
     }
 
-    // Step 3: snapshot the incoming file beside the destination. A byte copy would drop a live
+    // Step 3. Snapshot the incoming file beside the destination. A byte copy would drop a live
     // source's -wal.
     try {
         RawDb source(incoming, SQLITE_OPEN_READONLY);
@@ -311,7 +312,7 @@ ImportOutcome import_database(const std::filesystem::path& incoming,
         return outcome;
     }
 
-    // Step 5: Storage::open migrates older imports, with its own pre-migration backup.
+    // Step 5. Storage::open migrates older imports, with its own pre-migration backup.
     outcome.schema_version = candidate.schema_version;
     outcome.session_count = candidate.session_count;
     outcome.backup_path = backup;

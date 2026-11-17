@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -13,20 +14,6 @@ using namespace snapback;
 using nlohmann::json;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_acceptance_" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 }  // namespace
 

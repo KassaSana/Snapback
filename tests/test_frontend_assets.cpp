@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -9,20 +10,6 @@
 using namespace snapback;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_frontend_assets_" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 void write_file(const std::filesystem::path& path) {
     std::filesystem::create_directories(path.parent_path());

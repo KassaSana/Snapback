@@ -1,4 +1,5 @@
 #include "app/training_deploy.hpp"
+#include "util/env.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -146,19 +147,6 @@ bool program_runs(std::vector<std::string> argv) {
     request.argv = std::move(argv);
     const auto result = subprocess::run(request, nullptr);
     return result.started && result.exit_code == 0;
-}
-
-std::optional<std::string> get_env_var(const char* name) {
-#if defined(_WIN32)
-    char* value = nullptr;
-    std::size_t len = 0;
-    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr) return std::nullopt;
-    std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
-    return std::string(owned.get());
-#else
-    if (const char* value = std::getenv(name)) return std::string(value);
-    return std::nullopt;
-#endif
 }
 
 // The interpreter as the leading argv elements of a training run: `py -3` on Windows (the
@@ -651,7 +639,7 @@ bool is_training_repo(const std::filesystem::path& path) {
 
 std::optional<std::filesystem::path> read_training_repo_path(
     const std::filesystem::path& app_data_dir) {
-    if (auto env = get_env_var("SNAPBACK_REPO")) {
+    if (auto env = env_var("SNAPBACK_REPO")) {
         std::filesystem::path path(*env);
         if (is_training_repo(path)) return path;
     }

@@ -1,5 +1,6 @@
 // What uninstall removes, and the promise behind the choice.
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -12,20 +13,6 @@
 using namespace snapback;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-    TempDir()
-        : path(std::filesystem::temp_directory_path() /
-               ("snapback-uninstall-" + std::to_string(
-                    std::chrono::steady_clock::now().time_since_epoch().count()))) {
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code error;
-        std::filesystem::remove_all(path, error);
-    }
-};
 
 void touch(const std::filesystem::path& file, const std::string& contents = "x") {
     std::filesystem::create_directories(file.parent_path());
@@ -135,7 +122,7 @@ TEST_CASE("uninstall leaves files it did not create, and the folder holding them
 
 TEST_CASE("an empty data directory reports a failure rather than silently succeeding") {
     // "Nowhere to look" is not "nothing to remove": an uninstall that says it cleaned up when
-    // it never found the data is the exact false belief 9.5 is about.
+    // it never found the data is exactly the false belief to avoid.
     const auto result = purge_app_data({});
     CHECK_FALSE(result.complete());
     CHECK(result.deleted.empty());

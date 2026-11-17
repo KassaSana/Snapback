@@ -53,8 +53,8 @@ std::set<std::string> load_expected_commands() {
     return out;
 }
 
-// Events the binary actually emits, and events the frontend is allowed to
-// listen for ahead of an emitter because an open roadmap item owns the other half.
+// Events the binary actually emits, and planned events the frontend may listen for before
+// anything emits them.
 std::set<std::string> load_emitted_events() {
     const auto fixture = load_fixture();
     std::set<std::string> out;
@@ -212,11 +212,8 @@ TEST_CASE("IPC contract: no emit site names an event with a raw string") {
 }
 
 TEST_CASE("IPC contract: every frontend listener has an emitter or a named owner") {
-    // The rule this file exists to enforce, extended to events: a `listen(...)` for a name
-    // nothing emits fails the build, unless the fixture records the roadmap item that owns
-    // the missing half. 9.6 (persistence-failed) and 12.6 (label-hotkey) each deliberately
-    // shipped the frontend scaffolding first and say so; `capture-failed` and `overlay-failed`
-    // had no such owner and were deleted.
+    // A `listen(...)` for a name nothing emits fails the build, unless the fixture lists it
+    // under `planned` with the feature it's waiting on.
     const auto emitted = load_emitted_events();
     const auto planned = load_planned_events();
     const auto source =
@@ -227,11 +224,10 @@ TEST_CASE("IPC contract: every frontend listener has an emitter or a named owner
         CAPTURE(name);
         const bool claimed = emitted.count(name) == 1 || planned.count(name) == 1;
         CHECK_MESSAGE(claimed,
-                      "listened for but never emitted, and no roadmap item claims it");
+                      "listened for but never emitted, and not listed as planned");
     }
 
-    // A planned event that has since gained an emitter must move to `emitted`, or the fixture
-    // keeps advertising an open item that is actually closed.
+    // A planned event that now has an emitter must move to `emitted`.
     for (const auto& [name, owner] : planned) {
         CAPTURE(name);
         CAPTURE(owner);
@@ -241,14 +237,6 @@ TEST_CASE("IPC contract: every frontend listener has an emitter or a named owner
 }
 
 TEST_CASE("IPC contract: canonical set has 79 handler commands") {
-    // 61 -> 65 with import path; 66 with Roadmap 2.8; 68 with file
-    // dialogs; 71 with alert snooze, resume, and delivery preferences; 72 with
-    // the daily focus series behind the Review trend surfaces; 73 with cancel_training once
-    // a run could actually be stopped; 74 is the test-build-only acceptance
-    // verdict sink that proves the page crossed the real webview bridge; 75
-    // with the session explorer's per-session focus curve.
-    // 76 reads the saved automatic label for the end-of-session check-in; 77 reads the
-    // selected session's longest snapback for Review; 78 acknowledges the painted frontend;
-    // 79 reads the effective session rating (survey, else auto).
+    // Bump this when a command is added or removed, alongside the fixture.
     CHECK(load_expected_commands().size() == 79);
 }

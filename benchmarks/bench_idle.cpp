@@ -136,7 +136,7 @@ int main() {
         auto storage = Storage::open(dir);
         if (!storage) throw std::runtime_error("failed to open the benchmark database");
 
-        std::cout << "Snapback idle cost (Roadmap 14.11)\n"
+        std::cout << "Snapback idle cost\n"
                   << "Engine + capture thread running, no session, fake input hook.\n"
                   << "The real OS hook's cost is NOT here -- see the header.\n\n"
                   << "  idle_seconds=" << idle_seconds

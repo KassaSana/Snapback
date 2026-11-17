@@ -53,8 +53,8 @@ inline const char* alert_suppression_as_str(AlertSuppression s) noexcept {
 // Where a click on the alert goes, decided here rather than at each delivery site.
 enum class AlertAction {
     None,                 // nothing to open -- see the note on a suppressed route below
-    ReturnToWork,         // 2.8's "Take me back": raise the window the snapback recorded
-    OpenSessionComposer,  // 2.7's nudge: offer to start a session, never start one
+    ReturnToWork,         // "Take me back": raise the window the snapback recorded
+    OpenSessionComposer,  // untracked-work nudge: offer to start a session, never start one
     OpenPomodoro,         // the running phase, or the break it just moved into
 };
 

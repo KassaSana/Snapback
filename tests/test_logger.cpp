@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -17,22 +18,6 @@ namespace {
 Logger::Clock fixed_clock() {
     return [] { return std::string("2026-07-18T00:00:00Z"); };
 }
-
-struct TempDir {
-    std::filesystem::path path;
-
-    TempDir() {
-        const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_cpp_logger_test_" + std::to_string(ticks));
-        std::filesystem::create_directories(path);
-    }
-
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 std::string read_file(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);

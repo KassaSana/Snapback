@@ -357,10 +357,6 @@ void to_json(json& j, const AppRuleRecord& v) {
 
 // ---- UpsertAppRuleRequest --------------------------------------------------
 
-void to_json(json& j, const UpsertAppRuleRequest& v) {
-    j = json{{"pattern", v.pattern}, {"ruleType", v.rule_type}};
-    put_opt(j, "note", v.note);
-}
 void from_json(const json& j, UpsertAppRuleRequest& v) {
     v.pattern = get_or<std::string>(j, "pattern", "");
     v.rule_type = get_or<AppRuleKind>(j, "ruleType", AppRuleKind::Allow);

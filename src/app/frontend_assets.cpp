@@ -1,4 +1,5 @@
 #include "app/frontend_assets.hpp"
+#include "util/env.hpp"
 
 #include <array>
 #include <cctype>
@@ -37,16 +38,8 @@ std::string percent_encode_path(std::string value) {
 }
 
 bool env_flag_set(const char* name) {
-#if defined(_WIN32)
-    char* value = nullptr;
-    std::size_t len = 0;
-    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr) return false;
-    std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
-    return owned.get()[0] != '\0';
-#else
-    if (const char* value = std::getenv(name)) return value[0] != '\0';
-    return false;
-#endif
+    const auto value = env_var(name);
+    return value && !value->empty();
 }
 
 }  // namespace

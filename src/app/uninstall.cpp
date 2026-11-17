@@ -5,6 +5,7 @@
 
 #include "app/autostart.hpp"
 #include "app/settings.hpp"
+#include "storage/storage.hpp"
 
 namespace snapback {
 namespace {
@@ -35,7 +36,7 @@ std::vector<UninstallArtifact> uninstall_artifacts(const std::filesystem::path& 
     std::vector<UninstallArtifact> targets{
         // The database first in the list because it is first in importance: it is the file that
         // makes "I uninstalled it" true or false.
-        {app_data_dir / "focoflow.db", "your recorded window titles and sessions", false},
+        {app_data_dir / kDatabaseFileName, "your recorded window titles and sessions", false},
         {app_data_dir / kSettingsFileName, "your settings", false},
         {app_data_dir / kSettingsBackupFileName, "the settings backup", false},
         {app_data_dir / kSettingsTempFileName, "a partially written settings file", false},

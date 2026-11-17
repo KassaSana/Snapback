@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -12,22 +13,6 @@
 using namespace snapback;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-
-    TempDir() {
-        const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_cpp_settings_test_" + std::to_string(ticks));
-        std::filesystem::create_directories(path);
-    }
-
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 void write_file(const std::filesystem::path& path, const std::string& contents) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -225,7 +210,7 @@ TEST_CASE("a failed replace does not leave the staging file behind") {
 }
 
 TEST_CASE("settings.json is never left truncated by a partial write") {
-    // The window 7.19 exists to close: the destination is only ever replaced by a rename of
+    // The window this closes: the destination is only ever replaced by a rename of
     // a fully written file, so it is either the old contents or the new contents and never
     // an empty file in between. Asserting the temp file is gone afterwards is what shows the
     // rename happened rather than a copy.

@@ -12,6 +12,8 @@
 #define _UNICODE
 #endif
 #include <windows.h>
+
+#include "util/win_text.hpp"
 #include <psapi.h>
 
 #include <algorithm>
@@ -22,15 +24,6 @@
 
 namespace snapback {
 namespace {
-
-std::wstring to_wide(const std::string& s) {
-    if (s.empty()) return std::wstring();
-    const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                                      nullptr, 0);
-    std::wstring w(static_cast<std::size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
-    return w;
-}
 
 std::wstring lower_copy(std::wstring value) {
     std::transform(value.begin(), value.end(), value.begin(), [](wchar_t c) {

@@ -3,6 +3,7 @@
 // seam the bridge tests could not reach -- they re-created handler lambdas by hand, so a
 // wrongly wired real command passed them.
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -25,20 +26,6 @@ using namespace snapback;
 using nlohmann::json;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_cpp_registry_" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 struct App {
     TempDir data_dir;
@@ -98,7 +85,7 @@ TEST_CASE("CommandRegistry::invoke frames a call exactly as the bridge does") {
     const auto unknown = json::parse(registry.invoke("nope", "[{}]"));
     CHECK(unknown.contains(detail::kErrorKey));
     CHECK(unknown.at(detail::kErrorKey).get<std::string>().find("nope") != std::string::npos);
-    // The token check applies here too; the seam must not be a way around Roadmap 8.14.
+    // The token check applies here too; the seam must not be a way around the token.
     const auto refused = json::parse(registry.invoke("echo", R"([{"x": 7}])", "secret"));
     CHECK(refused.contains(detail::kErrorKey));
     CHECK(json::parse(registry.invoke("echo", R"([{"x": 7, "__snapbackToken": "secret"}])",

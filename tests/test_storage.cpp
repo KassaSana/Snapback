@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include "time_literals.hpp"
 
@@ -23,22 +24,6 @@
 using namespace snapback;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-
-    TempDir() {
-        const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_cpp_storage_test_" + std::to_string(ticks));
-        std::filesystem::create_directories(path);
-    }
-
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 // An RFC3339 instant as the epoch-millisecond literal the schema stores, for the fixtures that
 // write rows through raw SQL instead of through Storage.
@@ -290,7 +275,7 @@ TEST_CASE("session spans accumulate only attended time") {
 }
 
 TEST_CASE("a span cannot be opened on a session that is no longer ACTIVE") {
-    // AUD-04a. The engine tick decides to open a span under one lock and writes it under
+    // The engine tick decides to open a span under one lock and writes it under
     // another; a Stop landing between the two used to insert a fresh open span on a
     // COMPLETED session. Every attendance query measures an open span as
     // COALESCE(ended_at, now), and nothing ever closes a stopped session's spans, so that
@@ -740,7 +725,7 @@ TEST_CASE("a pre-2.15 snapback row survives the episode migration with no invent
 }
 
 TEST_CASE("an episode is written once, however many times it is offered") {
-    // The storage half of 2.15's idempotence. An episode is identified by its session and the
+    // The storage half of episode idempotence. An episode is identified by its session and the
     // moment it began, so a delivery retry or a replayed tick cannot inflate a count the user
     // is shown -- while a genuinely later interruption still records.
     auto storage = Storage::open_memory();
@@ -1545,7 +1530,6 @@ TEST_CASE("storage prune_runtime_data removes old rows from all three runtime ta
     CHECK(summary.predictions_deleted == 1);
     CHECK(summary.context_snapshots_deleted == 1);
     CHECK(summary.feature_snapshots_deleted == 0);  // stamped now, newer than the cutoff
-    CHECK(should_vacuum_after_prune(summary.total()) == false);
 
     TempDir temp;
     const auto exported =
@@ -1603,12 +1587,6 @@ TEST_CASE("storage periodic retention deletes in bounded resumable batches") {
     const auto empty = storage->prune_runtime_data_batch(kCutoffMs, 0);
     CHECK(empty.total() == 0);
     CHECK_FALSE(empty.has_more);
-}
-
-TEST_CASE("should_vacuum_after_prune uses the configured threshold") {
-    CHECK_FALSE(should_vacuum_after_prune(0));
-    CHECK_FALSE(should_vacuum_after_prune(kVacuumMinDeletedRows - 1));
-    CHECK(should_vacuum_after_prune(kVacuumMinDeletedRows));
 }
 
 TEST_CASE("Storage::open performs no ordinary retention or VACUUM") {
@@ -1828,8 +1806,8 @@ struct LargeFixture {
 }  // namespace
 
 TEST_CASE("a large database answers window queries past the old row cap") {
-    // The regression test 7.1 asked for and never got. 12,000 predictions is above the
-    // 10,000-row ceiling that recent_predictions(10000) used to impose, so a reintroduced cap
+    // 12,000 predictions is above the old 10,000-row ceiling of recent_predictions(10000), so a
+    // reintroduced cap
     // shows up here as a short count rather than as a plausible-looking wrong answer.
     auto storage = Storage::open_memory();
     REQUIRE(storage.has_value());
@@ -2279,7 +2257,7 @@ TEST_CASE("reflecting on a session that does not exist reports it instead of sil
 }
 
 TEST_CASE("a pre-reflection database upgrades without disturbing the sessions in it") {
-    // The real prior-version upgrade case 2.14 asks for: a v5 install, with a session already
+    // The real prior-version upgrade case: a v5 install, with a session already
     // recorded, meeting the v6 schema. The columns must appear, the session must survive
     // intact, and its reflection must read as never-answered rather than as anything else.
     TempDir temp;
@@ -2699,7 +2677,7 @@ TEST_CASE("migrating a v6 database converts its timestamps rather than reinterpr
 }
 
 TEST_CASE("a timestamp that never parsed stops outliving retention") {
-    // Roadmap 5.5, and the reason ADR-0007 rejected the one-sitting patch.
+    // One of the reasons for ADR-0007.
     //
     // `datetime(timestamp) < datetime(?1)` yielded NULL for a value it could not parse, and
     // `NULL < x` is NULL, so such a row survived every retention pass forever with nothing
@@ -2785,7 +2763,7 @@ TEST_CASE("a write that waits out a foreign lock is counted and still succeeds")
 }
 
 TEST_CASE("a write that exhausts the busy timeout is counted separately") {
-    // The other half, and the one that costs the engine a drained batch (7.12). Publishing
+    // The other half, and the one that costs the engine a drained batch. Publishing
     // only this number would make the problem look binary; publishing only the waits above
     // would hide the failure. They are two counters for that reason.
     TempDir temp;

@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -15,20 +16,6 @@ using namespace snapback;
 using namespace std::chrono_literals;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_cpp_subprocess_" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 std::string read_text(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);

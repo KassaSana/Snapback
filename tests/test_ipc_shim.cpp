@@ -20,7 +20,7 @@ TEST_CASE("build_ipc_shim_script embeds the trusted URL, token, and debug flag")
 }
 
 TEST_CASE("the click interceptor opens external links through the tokened invoke path") {
-    // AUD-03. The interceptor called window.open_external_url({ url }) directly, with no
+    // The interceptor called window.open_external_url({ url }) directly, with no
     // capability token, so run_json_command refused it and the click -- already
     // preventDefault()ed -- went nowhere. Routing through invoke() is what attaches the
     // token.
