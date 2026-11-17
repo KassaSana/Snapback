@@ -1,143 +1,95 @@
-# ADR-0004 — The state is the policy verdict, the scores are the model's opinion
+# ADR-0004: The state is the policy verdict, the scores are the model's opinion
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Roadmap item:** 7.7, 7.18, 5.3, 5.4, 1.2 (Decision session A)
-- **Decided by:** Kassa
 
 ## Question
 
-A stored prediction carries continuous scores and a discrete `focus_state`, and the
-guardrails can make them contradict each other. Who owns `focus_state`, what is policy
-allowed to overrule, and what does the user actually see?
+A prediction has continuous scores and a discrete `focus_state`, and the guardrails can make
+them contradict each other. Who owns `focus_state`, what can policy overrule, and what does the
+user see?
 
 ## Context
 
 The classifier produces two kinds of output that were never named as different things:
 
-- **Scores** — `focus_score`, `distraction_risk`, `thrash_score`, `drift_score`,
-  `goal_alignment`. Continuous, computed from the class probabilities and behavioral
-  signals (`classifier.cpp`, `scores_from_probas`).
-- **State** — `focus_state`, the argmax class, which `apply_focus_guardrails` then
-  overwrites: risk over `risk_threshold(mode)`, thrash over 0.75, or a Block rule forces
-  `DISTRACTED`; high drift rewrote anything but `DEEP_FOCUS` to `PSEUDO_PRODUCTIVE`.
+- **Scores:** `focus_score`, `distraction_risk`, `thrash_score`, `drift_score` and
+  `goal_alignment`, computed from the class probabilities and behaviour
+  (`classifier.cpp:scores_from_probas`).
+- **State:** `focus_state`, the argmax class, which `apply_focus_guardrails` then overrides.
+  High risk (above `risk_threshold(mode)`), thrash above 0.75 or a Block rule forces
+  `DISTRACTED`. High drift rewrote anything except `DEEP_FOCUS` to `PSEUDO_PRODUCTIVE`.
 
-Five open items were all frictions at this one seam:
+That caused several problems:
 
-- **7.7** — a Block-rule row could read `focus_state = 'DISTRACTED', focus_score = 95`,
-  and every surface mixed the two channels without comment. The Now hero even colored the
-  state word by `riskLevel(distraction_risk)`, so a blocked-app verdict rendered
-  "Distracted" painted calm.
-- **7.18** — the drift branch excluded only `DEEP_FOCUS`, so it *upgraded* a
-  model-DISTRACTED row (risk under the mode threshold, drift ≥ 0.55) to
-  `PSEUDO_PRODUCTIVE` — a guardrail making a distracted user look better. Found by 11.2's
-  property tests; pinned by a characterization test until this decision.
-- **5.4** — `thrash_spikes` counted `distraction_risk >= 0.7 AND focus_state =
-  'DISTRACTED'`: an absolute opinion bar AND'd with the mode-dependent verdict, so
-  Recovery rows in the 0.70–0.85 band were never counted — defeating the stated reason
-  the 0.7 is absolute (mode-independent session metrics feeding auto-labels).
-- **5.3** — `confidence.hpp` was a stillborn policy layer: dead code, `[0,100]` units
-  against a `[0,1]` producer, and no risk-driven nag anywhere for `should_nag` to gate.
-  The debounce it promised already exists in `ContextTracker` (30s of continuous off-task
-  before a snapback fires).
-- **1.2** — "distraction sensitivity" was unanswerable while nobody could say which
-  numbers are policy and which are structure. 7.15 sorted the constants by role; the
-  policy group plus `risk_threshold(mode)` is the whole answer space.
+- A Block-rule row could read `DISTRACTED` with `focus_score = 95`, and the UI coloured the
+  state word by risk, so "Distracted" showed up painted calm.
+- The drift rule could **upgrade** a model-`DISTRACTED` moment to `PSEUDO_PRODUCTIVE`, so a
+  guardrail made a distracted user look better. Property tests found it.
+- The thrash-spike count required both `distraction_risk >= 0.7` and a `DISTRACTED` state, so
+  Recovery mode (threshold 0.85) never counted spikes in the 0.70–0.85 band.
+- A `confidence.hpp` gating layer was dead code, written on a `[0,100]` scale while the
+  classifier produces `[0,1]`.
 
-Forces pulling in opposite directions: the contradiction is user-visible and looks like a
-bug; but `focus_score` feeds back into the feature vector as `focus_momentum`
-(`state.cpp`), so "fixing" the contradiction by clamping the score would leak policy into
-the model's own inputs. And the model's argmax is not stored — once the guardrail
-overwrites `focus_state`, nothing can reconstruct what the model believed.
+The forces pull against each other. The contradiction looks like a bug to a user. But
+`focus_score` feeds back into the features as `focus_momentum`, so clamping it would leak
+policy into the model's own inputs. And once the guardrail overwrites the state, nothing
+records what the model thought.
 
-## Options considered
+## Options
 
 | Option | Upside | Downside |
 |--------|--------|----------|
-| A. Clamp the scores when policy overrides the state | No visible contradiction | Poisons the `focus_momentum` feedback loop; destroys the model-vs-policy disagreement signal 2.3 needs; splits `avg_focus_score`'s meaning across a migration boundary |
-| B. Two named channels; policy demote-only; provenance column (chosen) | Contradiction becomes a sentence; momentum stays model-pure; the UI can explain a Block-rule verdict | One new nullable column; the channels must be labeled wherever they meet |
-| C. Drop the score from every state-bearing surface | No contradiction, no schema change | Throws away the evidence line ADR-0003 built; hides real information to avoid explaining it |
+| A. Clamp the scores when policy overrides the state | No visible contradiction | Corrupts `focus_momentum`, and loses the model-vs-policy disagreement that retraining needs |
+| B. Two named channels; policy can only demote; record which rule decided | The contradiction becomes explainable; scores stay pure | One new column; the UI has to label both channels |
+| C. Hide the score wherever the state is shown | No contradiction, no schema change | Hides real information instead of explaining it |
 
 ## Decision
 
-**Two channels.** The scores are the **model's opinion** and policy never edits them. The
-`focus_state` is the **policy verdict** — the single value the app acts on (the snapback
-tracker, distracted counts, streaks, the hero word).
+**Two channels.** The scores are the model's opinion, and policy never edits them. The
+`focus_state` is the policy verdict, the one value the app acts on: snapbacks, distracted
+counts, streaks and the Now headline.
 
-**Policy is demote-only.** A guardrail may move the state toward distraction, never away
-from it. Concretely, the drift branch fires only on `PRODUCTIVE` (7.18 fixed); the
-`DEEP_FOCUS` exemption stays; `DISTRACTED` is never softened.
+**Policy only demotes.** A guardrail can move the state toward distraction, never away from it.
+The drift rule only fires on `PRODUCTIVE`; `DEEP_FOCUS` stays exempt; `DISTRACTED` is never
+softened.
 
-**Verdicts carry provenance.** `predictions.state_source` (migration 3, nullable TEXT)
-records which rule decided the state: `model`, `risk`, `thrash`, `block`, or `drift`.
-NULL means "written before provenance existed" — unknown, not `model`; nothing backfills
-it, because nothing can.
+**Verdicts record their source.** `predictions.state_source` (migration 3, nullable) is
+`model`, `risk`, `thrash`, `block` or `drift`. NULL means the row predates the column; nothing
+backfills it.
 
-**The UI labels the channels.** The hero's word and color both come from the verdict
-(`verdictLevel`); the score and risk stay on the evidence line as the opinion; a policy
-override is stated as the leading reason ("a blocked app is open") and suppresses the
-contradictory calm-behavior phrases.
+**The UI labels the channels.** The headline word and its colour come from the verdict. Score
+and risk are shown as supporting evidence. When policy overrode the model, the reason is shown
+first ("a blocked app is open").
 
-**`thrash_spikes` is pure opinion:** `distraction_risk >= 0.7`, no state conjunct. The
-absolute bar keeps meaning "strong distraction moment" in every mode. The Review tile is
-labeled "Distraction spikes"; the wire name stays.
+**Thrash spikes are opinion only:** `distraction_risk >= 0.7`, regardless of state.
 
-**Sensitivity is the mode.** Deep / Normal / Recovery *are* the user-facing sensitivity
-control (`risk_threshold` = 0.55 / 0.70 / 0.85). v1 ships no additional tunable (1.2
-closed). If evidence ever demands finer control, it is a per-mode threshold override in
-`AppSettings` — an offset to policy, never a transform on the opinion.
+**The focus mode is the sensitivity setting.** Deep, Normal and Recovery map to
+`risk_threshold` 0.55, 0.70 and 0.85. There's no separate slider in v1. If finer control is
+ever needed, it should be a per-mode threshold override, never a transform on the scores.
 
-**`confidence.hpp` is deleted** (5.3), and the Done archive's 2.4 "confidence gating"
-claim is retracted.
-
-**Existing rows are left as written.** No rewriting migration exists that would not
-fabricate data; this ADR dates the semantics change, and the 90-day retention window ages
-the mixed-era rows out.
+`confidence.hpp` is deleted. Existing rows are left as written and age out with retention.
 
 ## Why
 
-B wins because the contradiction was never the defect — the *silence* about it was. A row
-saying "the model thought you were deep in; policy says the app is blocked" is useful
-exactly because both halves survive. A (clamping) reads as the obvious fix and is the
-trap: `update_focus_score` feeds the score back into `focus_momentum`, so clamped scores
-would drag the model's own features toward whatever policy said, a feedback loop nobody
-designed — and it would erase the disagreement signal that tells 2.3 where the heuristic
-and the user's rules part ways. C avoids the loop but answers a communication problem by
-hiding information.
+The contradiction was never the bug; the silence about it was. "The model thought you were
+focused; policy says that app is blocked" is useful precisely because both halves survive.
+Clamping is the obvious fix and the trap: it feeds policy back into `focus_momentum` and erases
+the disagreement signal.
 
-Demote-only is what makes "guardrail" a true name: rule 1 was already demote-only in
-effect, and the drift branch's `!= "DEEP_FOCUS"` was an oversight, not a considered
-asymmetry — the author was thinking about exemptions and missed `DISTRACTED`. The
-property "guardrails never raise the state" failed on 246 of 188,502 assertions before
-this change; it is now asserted.
-
-For A to have been right, `focus_score` would have to stop feeding `focus_momentum` and
-the model's raw argmax would have to be stored separately — at which point clamping would
-be relabeling, not destroying. Neither is true today.
+Demote-only is what makes "guardrail" an accurate name. Before this change the property
+"guardrails never raise the state" failed on 246 of 188,502 generated cases. It's now asserted
+in `test_classifier_properties.cpp`.
 
 ## Consequences
 
-- `apply_focus_guardrails` branches record `state_source`; the drift branch fires only on
-  `PRODUCTIVE`. Weakly-distracted high-drift moments are now off-task for the snapback
-  tracker — the guardrail doing its job.
-- Migration 3 adds `predictions.state_source`; `kSchemaVersion` is 3.
-- The characterization test in `test_classifier_properties.cpp` became the demote-only
-  property. The recap fixtures pin the new spike predicate, including a Recovery-band row
-  the old predicate missed.
-- `thrash_spikes` counts rise slightly for Recovery-mode sessions, so auto-labels via
-  `infer_session_label` shift toward Distracted/Pseudo for those sessions — a correction
-  in the training corpus, not drift.
-- Old rows may contain drift-softened DISTRACTED states; they are dated by this ADR and
-  age out with retention. `state_source` NULL marks them.
-- Forecloses: policy rules that rescale or clamp scores; a user-facing sensitivity slider
-  in v1.
-- Unblocks: the last decision on the ADR-0002 v1 blocker list. 2.3's label corpus keeps
-  the model-vs-policy disagreement signal.
+- `apply_focus_guardrails` records `state_source`, and the schema version is 3.
+- Spike counts rise slightly for Recovery-mode sessions, which shifts their auto-labels.
+- Rules this out: policy that rescales or clamps scores, and a separate sensitivity slider in
+  v1.
 
 ## Revisit if
 
-2.3 replaces the heuristic with a trained model whose calibrated probabilities make the
-opinion trustworthy enough to *be* the verdict — then the guardrail layer shrinks to user
-rules only and this split should be re-argued. Or a real user reads "Distracted · focus
-95" with the labels in place and still files it as a bug: that would mean labeling lost
-to intuition, and C (dropping the score from state surfaces) deserves a second look.
+A trained model's calibrated output is trustworthy enough to be the verdict itself; then
+guardrails shrink to user rules. Or users still read "Distracted · focus 95" as a bug even with
+the labels; then option C deserves another look.

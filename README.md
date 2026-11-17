@@ -1,88 +1,79 @@
 [![CI](https://github.com/KassaSana/Snapback/actions/workflows/ci.yml/badge.svg)](https://github.com/KassaSana/Snapback/actions/workflows/ci.yml)
 [![Release](https://github.com/KassaSana/Snapback/actions/workflows/release.yml/badge.svg)](https://github.com/KassaSana/Snapback/actions/workflows/release.yml)
 
-# Snapback (C++)
+# Snapback
 
-**[Live demo](https://kassasana.github.io/Snapback/)** — interactive dashboard with generated
-sample data (no install required).
+A desktop focus tracker. You say what you're working on, Snapback watches keyboard, mouse and
+window activity while you work, and when you drift off it shows a small overlay that takes you
+back to where you were. Afterwards you can review where the time actually went.
 
-Snapback is a native C++ desktop app that watches for focus drift and helps you
-return to the work you were doing. Its pipeline is input capture → feature
-extraction → classification → SQLite → webview UI, with native overlay and tray
-support on Windows and macOS.
+Everything stays on your machine: no account, no network calls, one SQLite file.
 
-The React frontend is plain TypeScript and React. It uses the project-owned
-`frontend/src/bridge.ts` module to call native commands and subscribe to events.
+**[Try the live demo](https://kassasana.github.io/Snapback/)**. It's the real dashboard
+running on generated sample data, so there's nothing to install.
 
-## What works today
-
-| Capability | Status |
-| --- | --- |
-| Core pipeline: capture → features → classifier → SQLite → IPC → React UI | ✅ |
-| Lock-free SPSC ring buffer | ✅ Stress-tested under ASan/TSan |
-| SQLite storage, sessions, predictions, recaps, and CSV export | ✅ |
-| Versioned schema migrations with a downgrade guard | ✅ |
-| Heuristic classifier and optional ONNX Runtime backend | ✅ |
-| Windows input hooks, active-window enrichment, overlay, and tray | ✅ |
-| macOS capture: `CGEventTap`, active-window and browser-tab enrichment | ✅ Needs Accessibility permission |
-| macOS `NSStatusItem` tray and native `NSPanel` overlay | ✅ |
-| Native notifications | ✅ Windows · ❌ macOS — needs a bundle id from [Roadmap 3.3](docs/ROADMAP.md) |
-| Linux capture with polling fallback | ✅ |
-| Linux tray and overlay | ❌ Stubbed — [Roadmap 3.2](docs/ROADMAP.md) |
-| Packaging and signing | ⚠️ Windows package builds; packaged signing is incomplete ([Roadmap 0.4b](docs/ROADMAP.md)) · ❌ macOS and Linux |
-| C++ feature-vector golden fixtures and IPC contract tests | ✅ |
-| CI on Windows, macOS, and Linux plus sanitizer jobs | ✅ |
-| CI launches the app, not just links it | ✅ Windows · ✅ macOS · ❌ Linux |
-
-The desktop app is gated behind `SNAPBACK_BUILD_APP=ON`; the headless core builds
-and tests without it.
-
-What has changed, and what is not in a release yet, is in [CHANGELOG.md](CHANGELOG.md).
-The latest release is **[`v0.3.0`](https://github.com/KassaSana/Snapback/releases/tag/v0.3.0)**
-(2026-08-29): a Windows installer and ZIP. **They are not code-signed yet** ([Roadmap 0.4b](docs/ROADMAP.md)),
-so Windows SmartScreen warns on first run; choose *More info → Run anyway* only for a file you
-downloaded from that release page. An older `v0.2.0` tag points at a commit no longer on any
-branch and is not a release.
-
-## Layout
+## How it works
 
 ```
-src/
-├── app/       state, commands, bridge, tray, settings
-├── capture/   OS hooks, active window, permissions, ring buffer
-├── engine/    features, classifier, ONNX, focus modes
-├── storage/   SQLite persistence and schema migrations
-├── snapback/  context recovery and overlay
-└── util/      logging, clocks, and shared system utilities
-tests/         doctest unit and contract tests
-fixtures/      model and feature-vector scenarios/golden data
-frontend/      React dashboard and native bridge adapter
-scripts/       local test and packaging helpers
+OS input hooks → ring buffer → feature extraction → classifier → SQLite → webview UI
+                                                         ↓
+                                              overlay + tray (native)
 ```
 
-## Build and test
+- **Capture** (`src/capture/`): low-level input hooks and active-window tracking per OS.
+  Events go through a lock-free SPSC ring buffer to the engine thread.
+- **Engine** (`src/engine/`): turns the event stream into rolling feature windows and
+  classifies each moment as deep work, productive, drifting or distracted. There's a tuned
+  heuristic by default, and an optional ONNX Runtime model.
+- **Storage** (`src/storage/`): SQLite with versioned migrations and a downgrade guard.
+- **App** (`src/app/`): the webview host, IPC commands, tray, settings, import/export.
+- **Frontend** (`frontend/`): a React + TypeScript dashboard bundled into the binary.
 
-Requires C++20, CMake ≥ 3.20, Python 3, and Node/npm for the frontend.
+There's more detail in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Platforms
+
+- **Windows:** everything works. Installer and ZIP on the
+  [releases page](https://github.com/KassaSana/Snapback/releases); they aren't code-signed
+  yet, so SmartScreen will warn on first run.
+- **macOS:** capture, tray and overlay all work (needs Accessibility permission). Native
+  notifications and a packaged `.app` aren't there yet.
+- **Linux:** capture works; tray and overlay are stubbed.
+
+CI builds and tests on all three. It also launches the real app on Windows and macOS, and runs
+ASan/UBSan and TSan jobs.
+
+## Build
+
+Needs a C++20 compiler, CMake 3.20+, Python 3 and Node.
 
 ```text
 python scripts/verify.py
 ```
 
-This builds/tests the headless core and frontend and runs repository guards. For
-prerequisites, per-platform commands, and desktop launch instructions, see
-[Running Snapback](docs/running.md).
-
-Before your first change, read [CONTRIBUTING.md](CONTRIBUTING.md) — the conventions here are
-enforced by CI and several of them are not guessable (commit attribution, how code is cited
-in docs, and which of the hand-maintained lists your change has to appear in).
-
-See the [documentation index](docs/README.md) for architecture, platform, testing,
-benchmarking, packaging, and roadmap references.
-
-For the full end-to-end Windows walkthrough, see
+That builds and tests the headless core and the frontend. To build and run the desktop app,
+see [docs/running.md](docs/running.md); for a one-command Windows demo, see
 [docs/windows_demo.md](docs/windows_demo.md).
+
+## Repo layout
+
+```
+src/
+├── app/       webview host, IPC commands, tray, settings
+├── capture/   OS input hooks, active window, ring buffer
+├── engine/    features, classifier, ONNX backend
+├── storage/   SQLite persistence and migrations
+├── snapback/  the return-to-work overlay
+└── util/      logging, clocks, small system helpers
+tests/         doctest unit and contract tests
+benchmarks/    replay and hot-path benchmarks
+fixtures/      golden feature vectors, IPC contract, test model
+frontend/      React dashboard and the hosted demo
+scripts/       build, packaging and repo checks
+```
+
+[Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## License
 
-Snapback is released under the [MIT License](LICENSE). Third-party component licenses are
-listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT. Third-party licenses are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

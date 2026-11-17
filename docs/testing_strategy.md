@@ -1,7 +1,7 @@
 # Testing strategy
 
-Snapback uses separate layers because no single test environment can exercise deterministic
-engine behavior, three native platforms, and real desktop permissions at once.
+No single environment can cover deterministic engine behaviour, three native platforms and
+real desktop permissions at once, so testing is split into layers.
 
 ## Local headless suite
 
@@ -18,7 +18,7 @@ It calls the existing platform wrapper, which runs:
 - frontend unit and component tests; and
 - the frontend production build.
 
-The entry point also runs frontend lint and the repository guards used by the Ubuntu CI job.
+It also runs frontend lint and the repo checks from the Ubuntu CI job.
 Use `python scripts/verify.py native <CTest name regex>` for a focused native build and test,
 or `frontend-unit <file.test.ts>` / `frontend-component <file.test.tsx>` for a frontend file.
 The older wrappers still accept `--skip-frontend` (shell) and `-SkipFrontend` (PowerShell).
@@ -35,8 +35,7 @@ before platform smoke tests are involved.
   no emitter — and an emit site that names an event with a raw string — fail the build.
 - Storage fixtures cover new, historical, malformed, downgraded, and large databases.
 - Ranked-mutex and concurrency tests protect the capture/engine/storage lock boundaries.
-- Hostile-title pipeline tests, stack-size assertions, and the dead-header guard cover
-  the automated checks referenced by the roadmap's recurring checklist.
+- Hostile window-title tests push malformed and oversized titles through the whole pipeline.
 
 The frontend CI command is `npm run test:ci`. It runs TypeScript unit scripts and the Vitest
 component suite with V8 coverage floors of 76% statements, 66% branches, 74% functions, and
@@ -44,13 +43,12 @@ component suite with V8 coverage floors of 76% statements, 66% branches, 74% fun
 
 ## Main CI workflow
 
-`.github/workflows/ci.yml` has five job definitions. The headless matrix expands across
-Windows, macOS, and Linux, yielding seven hosted jobs. Costlier and optional checks run weekly
-or on demand in `.github/workflows/deep-checks.yml`.
+`.github/workflows/ci.yml` runs on every push and PR. The headless job runs on Windows,
+macOS and Linux, so there are seven jobs in total.
 
 | Job | What it proves |
 | --- | --- |
-| `cpp-headless` | CMake + CTest on Windows, macOS, and Linux; its Ubuntu entry also runs documentation, repository, and supply-chain guards |
+| `cpp-headless` | CMake + CTest on Windows, macOS, and Linux; the Ubuntu run also runs the repo checks |
 | `sanitizers` | ASan + UBSan over memory/lifetime-sensitive paths |
 | `frontend-mock` | Frontend install, typecheck, lint, tests, coverage, and build |
 | `windows-desktop-integration` | Windows app launches; page-side acceptance crosses the real bridge, then a CDP driver clicks navigation and session controls in the real WebView2 UI |
@@ -58,50 +56,42 @@ or on demand in `.github/workflows/deep-checks.yml`.
 
 ## Weekly and on-demand deep checks
 
-`.github/workflows/deep-checks.yml` keeps slower or optional coverage without charging every
-push for it:
+`.github/workflows/deep-checks.yml` runs the slower checks weekly and on demand:
 
 | Job | What it proves |
 | --- | --- |
 | `security-audit` | The committed frontend lockfile has no high/critical npm advisory |
-| `windows-gcc` | The portable core builds and tests under MinGW-w64 GCC, which previously exposed a file-replacement defect |
+| `windows-gcc` | The portable core builds and tests under MinGW-w64 GCC |
 | `thread-sanitizer` | TSan over capture and engine concurrency |
 | `onnx-linux` | Optional ONNX build and fixture inference |
 
-The two desktop jobs intentionally do not depend on the headless suite: a broken core must
-not hide whether the platform shell still builds or launches.
+The desktop jobs don't depend on the headless job, so a broken core doesn't hide whether the
+desktop app still builds and launches.
 
 ## Other workflows
 
 - `.github/workflows/production-smoke.yml` builds and validates an unsigned Windows package
   on demand and weekly.
-- `.github/workflows/deep-checks.yml` runs the slower compiler, concurrency, ONNX, and npm
-  advisory checks weekly and on demand.
 - `.github/workflows/benchmarks.yml` runs manual, parameterized benchmarks and uploads the
   raw output. See [benchmarking.md](benchmarking.md).
 - `.github/workflows/release.yml` builds the tag-driven Windows package and publishes a
-  GitHub release; signing remains conditional on certificate provisioning.
+  GitHub release. Signing runs only when a certificate is configured.
+- `.github/workflows/demo-pages.yml` builds the hosted demo and publishes it to GitHub Pages.
+- `.github/workflows/pin-freshness.yml` checks weekly whether pinned dependencies have newer
+  releases and opens an issue if so.
 
 For the interactive Windows path, use [windows_demo.md](windows_demo.md). For per-platform
 build and launch commands, use [running.md](running.md).
 
 ## Performance evidence
 
-Workloads, reproduction commands, dated measurements, and unmeasured performance
-boundaries live in [Benchmarking — measured budgets](benchmarking.md#measured-budgets).
-These are manual measurements, not hosted CI performance ceilings.
+Workloads, commands and results are in [benchmarking.md](benchmarking.md). They're manual
+measurements; CI doesn't enforce performance limits.
 
-## Deliberate coverage boundaries
+## What CI doesn't cover
 
-Headless CI does not prove:
-
-- real macOS Accessibility/Input Monitoring permission prompts;
-- sustained real input capture on every desktop environment;
-- Linux tray/overlay behavior, which is still stubbed; or
-- browser-driven clicking remains open on WebKitGTK, but Windows now drives the real WebView2
-  UI through CDP. Both Windows and macOS also run a page-side acceptance program through the
-  real shim, `webview.bind()`, command registry, async worker, and error envelope (Roadmap
-  10.1).
-
-Those gaps belong in [ROADMAP.md](ROADMAP.md), not in a second task list here. When a new
-test layer lands, update this document to describe what it actually proves.
+- Real macOS Accessibility and Input Monitoring permission prompts.
+- Sustained real input capture on every desktop environment.
+- Linux tray and overlay, which are stubs.
+- Clicking through the UI on WebKitGTK. Windows drives the real WebView2 UI over CDP, and
+  Windows and macOS both run a page-side acceptance script through the real IPC bridge.

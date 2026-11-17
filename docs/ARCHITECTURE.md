@@ -1,21 +1,14 @@
-# Snapback architecture
+# Architecture
 
-This document describes the current native application.
+## Snapback doesn't block
 
-## Principles
-
-**Snapback reflects; it does not block.** Every intervention the product makes is a mirror
-held up to the user: a verdict on the hero, a snapback card offering the way back to the work
-they left, a nudge to take a break or to start a session. Nothing prevents an app from
-opening, a site from loading, or a session from continuing. A Block rule in `app_rules`
-forces the verdict to `DISTRACTED` ([ADR-0004](adr/0004-verdict-and-opinion.md)); it does not
-touch the window. This is a position, not a gap. Blockers compete on enforcement, and
-enforcement is what users learn to route around; Snapback competes on recovery, which only
-works while the user trusts that the app is describing them rather than fighting them. A
-proposal to add blocking is a proposal for a different product and needs its own ADR. The same
-stance is why a session is declared rather than detected
-([ADR-0005](adr/0005-a-session-is-declared-and-attended.md)) and why the untracked-work nudge
-asks instead of acting.
+Everything the app does is feedback: the focus state on the Now screen, the overlay that
+offers the way back to the window you left, a break or start-a-session nudge. Nothing stops an
+app from opening or a session from continuing. A Block rule in `app_rules` forces the focus
+state to `DISTRACTED` ([ADR-0004](adr/0004-verdict-and-opinion.md)); it never touches the
+window. Blockers get routed around; Snapback is built around recovering quickly instead. For
+the same reason a session is started by the user, not detected
+([ADR-0005](adr/0005-a-session-is-declared-and-attended.md)).
 
 ## Runtime shape
 
@@ -44,9 +37,7 @@ webview when the desktop target is enabled.
 | `src/util/` | Shared infrastructure: logging, clocks, ranked locks, subprocess ownership, private-directory handling, and writer priority |
 | `frontend/src/` | React views, API mappers, and the project-owned native bridge |
 
-`src/main.cpp` is deliberately absent from the table: it is not a module but the single
-translation unit that wires them together, and it is the only place that knows about all of
-them at once.
+`src/main.cpp` wires the modules together and is the only file that knows about all of them.
 
 ## Threading
 
@@ -64,7 +55,7 @@ the separate storage seam below.
 The UI thread and the engine thread take the *same* storage mutex, so a slow read
 answering the UI blocks the tick's persist phase — and a bounded ring turns a long
 enough block into dropped events. That is why the history and analytics read paths
-aggregate in SQL rather than looping over sessions (Roadmap 7.12): the cost of a
+aggregate in SQL rather than looping over sessions: the cost of a
 query here is paid in capture fidelity, not just latency.
 
 The storage mutex is not fair, and a Review load is five commands back to back on the UI
@@ -72,8 +63,8 @@ thread, so without help the reader retakes the lock between commands and a waiti
 sits out the whole load. The engine also emits only after it persists, so the alert waits
 with it. `util/writer_priority.hpp` closes that: the persist announces itself while it
 waits, and the Review commands yield to it before taking the lock, so a persist waits for
-at most the command in progress (Roadmap 14.1). There is still one connection. A separate
-read connection was measured against this and not built.
+at most the command in progress. There is still one connection; a separate
+read connection was measured and didn't help enough to justify it.
 
 ## Schema versioning
 
@@ -96,13 +87,11 @@ downgrade cannot write rows a later build considers malformed.
 against an in-memory `AppState` and invoke real handlers by name (`test_command_registry`);
 the IPC contract test compares the registry's names to `fixtures/ipc_commands.json`.
 
-Host-to-frontend **events** are held to the same contract (Roadmap 11.13).
-[`src/app/events.hpp`](../src/app/events.hpp) is the registry: every emit site spells its name
-from a constant there, and the contract test pins that set to the fixture's `events.emitted`,
-refuses a raw string literal at an emit site, and requires every `listen(...)` in
-`frontend/src/api.ts` to be either emitted or listed under `events.planned` with the roadmap
-item that owns the missing emitter. Before this, four listeners existed for names nothing
-emitted.
+Host-to-frontend **events** follow the same contract.
+[`src/app/events.hpp`](../src/app/events.hpp) defines every event name; emit sites use those
+constants, and the contract test checks them against the fixture's `events.emitted` and checks
+that every `listen(...)` in `frontend/src/api.ts` has an emitter.
+
 `src/app/ipc_shim.hpp` injects
 `window.__snapback` before page scripts run:
 
@@ -116,14 +105,14 @@ envelope; the bridge turns that envelope into a rejected promise.
 Alert events (`snapback`, `hyperfocus`, `pomodoro`, `untracked_work`) carry a
 `delivery` object — the routing decision `src/app/alert_routing.hpp` already
 took, as `{inApp, overlay, native, preview}`. Delivery sites read those flags
-and decide nothing (Roadmap 2.16). `pomodoro` is annotated but **never
+and decide nothing. `pomodoro` is annotated but **never
 suppressed**: it is also how the frontend timer card learns the phase changed,
 so gating it would freeze the card for anyone who turned Pomodoro alerts off.
 
 `recording-status` carries the same object `get_recording_status` returns and is emitted
 by every native write that can change it — a tray pause or snooze, the Settings private-mode
 toggle, a resume. The page applies it directly; it never polls the countdown, only re-asks
-once at the earliest deadline and on each `idle` transition (Roadmap 2.10).
+once at the earliest deadline and on each `idle` transition.
 
 `settings.json` carries the preferences behind that decision under `alerts`:
 per-event channel arrays, `preview`, the quiet-hours range as **local minutes
@@ -133,7 +122,7 @@ recurring reading of the local clock.
 
 ### Two decisions the command surface encodes
 
-Both look like inconsistencies from the outside. Both are deliberate (P0-08).
+Both look like inconsistencies. Both are deliberate.
 
 **Predictions run without an active session.** `compute_event` classifies and publishes
 `latest_prediction_` whether or not a session exists; what the missing session costs is
@@ -180,7 +169,7 @@ picking the wrong one is the most common way to fetch the right numbers for the 
 | --- | --- | --- | --- |
 | `SessionRecap` | `get_session_recap` | **One session** | How did *that* session go — duration, attended `active_secs`, avg focus, distraction spikes, deep-focus % |
 | `SessionSummary` | `get_session_history` | **One session, plus its record** | `SessionRecord` + `SessionRecap` — the shape one row of the history list needs |
-| `FocusCurvePoint` | `get_session_focus_curve` | **One session, over its own span** | That session's focus folded into up to 240 equal time slices — the curve the Review session explorer draws (Roadmap 2.9) |
+| `FocusCurvePoint` | `get_session_focus_curve` | **One session, over its own span** | That session's focus folded into up to 240 equal time slices — the curve the Review session explorer draws |
 | `FocusSummary` | `get_focus_summary` | **A time window, by focus metrics** | SQL `Storage::prediction_stats` supplies average/peak score, distracted fraction, and longest focus stretch; the AppState mapper uses the same aggregate as SummaryReport |
 | `AnalyticsSummary` | `get_analytics` | **A time window, by shape** | The chart data — hourly buckets and top apps, plus a session streak |
 | `SummaryReport` | `get_summary_report` | **A time window, by total** | The Review headline — session counts, focus seconds, distracted fraction, attended vs planned |
@@ -193,8 +182,7 @@ never take a window at all.
 `Storage::recent_session_summaries` computes the same thing for many sessions in one query,
 with the aggregate expressions copied verbatim between them. They are held in agreement by a
 field-by-field parity test rather than by sharing code — so a change to one is a change to
-both, and the parity test is what tells you if you forgot. This is storage-query parity;
-Roadmap 14.3 instead owns command argument/result contracts.
+both, and the parity test is what tells you if you forgot.
 
 ## Platform boundaries
 
@@ -208,17 +196,17 @@ Platform-specific code is isolated behind small interfaces:
   unit stays plain C++. Native **notifications** remain absent —
   `Tray::show_notification()` still returns `false` without calling the OS, because
   `UNUserNotificationCenter` needs a bundle identifier that arrives with packaging
-  (Roadmap 3.3).
+.
 - Linux input capture and desktop stubs where native UI support is pending.
 
-**Start-on-login and revealing the data folder are split differently**, and deliberately so.
+**Start-on-login and revealing the data folder are split differently.**
 `src/app/autostart.cpp` chooses a backend per OS, but the backends themselves —
 `autostart_launchd.cpp` (macOS plist) and `autostart_systemd.cpp` (Linux user unit) — compile
 on **every** platform and take their target directory as an argument. So does
 `src/app/data_export.cpp`. The rule these follow: *the platform decides where, portable code
 decides what*. It buys two things a `#if` around the whole module does not — the plist and unit
 text are covered by all three CI jobs, and the tests can drive a temp directory instead of the
-developer's real login items (Roadmap 11.7). `src/app/reveal_path.cpp` follows the same shape
+developer's real login items. `src/app/reveal_path.cpp` follows the same shape
 with one exception: its macOS backend needs AppKit, so it lives in `reveal_path_macos.mm` and
 is the only per-OS file linked into `snapback_app` rather than the executable target.
 
@@ -236,10 +224,8 @@ The headless core remains buildable without the webview or ONNX runtime.
 
 Keyboard presses (including repeats) and releases are distinct; mouse clicks count button-down
 only. Pointer movement includes dragging. Scroll is `MouseScroll`, serialized as `mouse_scroll`;
-it counts as input/attendance but does not contribute typing, click, or motion features. Existing
-capture-event wire names and numeric codes are unchanged, and the model still uses 31 features.
-Developer capture readers must recognize the new scroll name; no external trainer is bundled
-here, so compatibility with a separately configured trainer must be verified before release.
+it counts as input/attendance but does not contribute typing, click, or motion features. The model
+uses 31 features.
 
 Windows and macOS calculate finite, clamped speed in desktop-coordinate units per second;
 different display scaling does not imply physical-distance equivalence. Linux evdev motion

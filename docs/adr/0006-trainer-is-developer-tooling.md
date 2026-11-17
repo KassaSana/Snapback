@@ -1,72 +1,55 @@
-# ADR-0006 — Training tooling is developer-only
+# ADR-0006: Training tooling is developer-only
 
 - **Status:** Accepted
 - **Date:** 2026-08-07
-- **Roadmap item:** 13.7
-- **Decided by:** Kassa
 
 ## Question
 
-Is in-app model training a consumer product feature, or repository tooling that must not
-appear in a normal install?
+Is in-app model training a user feature, or repository tooling that shouldn't appear in a
+normal install?
 
 ## Context
 
-Settings leads with a "Train the model" card that asks for a Snapback repository path and
-reports readiness only when that path contains `ml/pipeline_cli.py`. Help text tells the
-user to install `ml/requirements-train.txt`. **This checkout has no `ml/` directory**, and a
-packaged application would not ship a source tree. The first Settings card therefore
-advertises a workflow neither this tree nor an installed build can satisfy.
+Settings opened with a "Train the model" card. It asked for a path to a Snapback checkout and
+only reported ready if that path contained `ml/pipeline_cli.py`, and its help text told the user
+to install Python training dependencies. An installed app has no source tree, so the first card
+in Settings advertised something no user could complete.
 
-Two real products were confused into one UI:
+Two different things had been mixed together:
 
-- **Focus feedback labels** — a session user marking Deep / Focused / Drift / Distracted.
-  That is product data capture and stays.
-- **Train / deploy / repo-path / CLI** — a developer loop that requires a checkout, Python
-  training deps, and optional ONNX packaging. That is not a consumer feature today.
+- **Focus feedback:** the user marking a moment as Deep work, Productive, Drift or Distracted.
+  That's product data and stays.
+- **Train, deploy, repo path, CLI:** a developer loop that needs a checkout and Python. Not a
+  user feature.
 
-## Options considered
+## Options
 
 | Option | Upside | Downside |
 |--------|--------|----------|
-| A. Packaged on-device training | Honest end-user personalization | Needs restoring/packaging `ml/`, licences, progress IPC (**14.6**), and installed-artifact smoke — an `L` project with no pipeline in tree |
-| B. Developer-only model tooling | Stops lying in Settings immediately; keeps export/deploy for people with a repo | Personalization stays out of the consumer path until A is rebuilt for real |
+| A. Ship on-device training | Real personalisation | Needs a packaged pipeline, licences, progress reporting and install tests. A large project |
+| B. Make it developer-only | Settings stops promising something it can't do; export and deploy still work for developers | Personalisation stays out of the user-facing app for now |
 
 ## Decision
 
-**Training, repo-path configuration, in-app train-from-export, and the CLI copy surface are
-developer tooling.** They appear only in Debug builds, or in a Release build when
-`SNAPBACK_DEV_TRAINING` is set. A normal Release install shows focus-feedback labels and
-does not mention the missing `ml/` tree.
-
-Consumer Settings must not instruct users to install training deps or point at a repo path.
+**Training, the repo-path setting, train-from-export and the CLI instructions are developer
+tools.** They appear only in Debug builds, or in Release when `SNAPBACK_DEV_TRAINING` is set. A
+normal install shows focus feedback and nothing about training.
 
 ## Why
 
-Option A is the better long-term product, but accepting it *now* without a packageable
-pipeline recreates the third state 13.7 forbids: a prominent path that cannot complete.
-Option B is the only honest answer given the tree that exists. It does not reject A — it
-requires A to ship as a real packaged feature before Settings may advertise it again.
-
-Focus labels stay visible because they are not training UI: they are the user's verdict on a
-moment, and they remain useful even when no trainer is present (Review, future data export,
-eventual A).
+Option A is the better product eventually, but shipping it without a packaged pipeline would
+leave a prominent feature that can't complete. Option B doesn't rule A out; it just means A has
+to really work before Settings advertises it again.
 
 ## Consequences
 
-- Normal Release UI: Focus Feedback labels only; no train readiness, repo path, Train button,
-  or `ml/` help text.
-- Debug / `SNAPBACK_DEV_TRAINING`: the existing Training Deploy card remains for repo work.
-- Native commands that start training or write a repo path refuse when developer tools are
-  off (defense in depth — the capability token is not enough if a hostile page somehow
-  reached them).
-- **2.3** and further Tier 13 trainer work become repository tooling until a packaged
-  pipeline lands.
-- **13.8** startup recovery stays: optional ONNX debris must still not brick the core app,
-  whether or not the consumer UI offers train/deploy.
+- In a normal Release build, Settings shows focus feedback only.
+- The native commands that start training or set a repo path refuse to run when developer tools
+  are off, not just hide in the UI.
+- Recovering from a bad model is still available to everyone. Rollback isn't gated, because
+  someone whose model was broken by a deployment shouldn't need a developer build to fix it.
 
 ## Revisit if
 
-A packaged install ships a working trainer with no repo-path requirement and an installed
-smoke that proves train → quality gate → activate without a developer checkout. Then write
-a new ADR choosing option A and restore consumer training UI deliberately.
+A packaged install can train, check quality and activate a model with no checkout. Then write a
+new ADR choosing option A.
