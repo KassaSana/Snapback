@@ -39,8 +39,7 @@ TEST_CASE("an injected clock supplies the timestamps AppState stamps") {
     // is a finding worth stating: **sessions are stamped by Storage, not by AppState.** The
     // first draft of this test asserted on `started_at` and failed with today's real date.
     // Storage has its own `utc_now_rfc3339()` plus two SQL `CURRENT_TIMESTAMP` uses, and
-    // injecting there means changing how Storage is constructed — see the note on 11.4 in
-    // ROADMAP. This seam covers AppState; the claim is scoped to that and no wider.
+    // injecting there means changing how Storage is constructed. This seam covers AppState; the claim is scoped to that and no wider.
     Harness harness;
 
     const auto report = harness.state->summary_report("day");

@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -15,22 +16,6 @@
 using namespace snapback;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-    TempDir() {
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_private_dir_" +
-                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-        std::filesystem::create_directories(path);
-    }
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::permissions(path, std::filesystem::perms::owner_all,
-                                     std::filesystem::perm_options::add, ignored);
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 #if !defined(_WIN32)
 // The permission bits actually on disk, so an assertion reads as "what the filesystem says"

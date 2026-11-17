@@ -155,7 +155,7 @@ TEST_CASE("calendar features come from the wall clock rather than the uptime clo
 TEST_CASE("an event with no wall clock falls back to the monotonic value") {
     // The fallback is what keeps the feature-parity contract exact: golden.json supplies
     // epoch-shaped timestamps through timestamp_secs and no wall clock, so the extractor must
-    // behave exactly as it did before 7.24 for those inputs. Removing this fallback would
+    // behave exactly as it always has for those inputs. Removing this fallback would
     // silently rewrite every golden hour_of_day to whatever "now" is when the suite runs.
     constexpr double kEpochShaped = 1700000000.0;
 

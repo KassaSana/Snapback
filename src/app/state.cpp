@@ -283,9 +283,8 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     const bool should_attend = active_session_.has_value() && !now_idle;
     if (should_attend != session_attended_) {
         if (active_session_) {
-            // Resolved against Storage's clock in phase 2, then kept across retries so the
-            // boundary does
-            // not slide forward.
+            // Resolved against Storage's clock in phase 2, then kept across retries so the boundary
+            // does not slide forward.
             pending_span_transitions_.push_back(PendingSpanTransition{
                 ++next_span_transition_id_, active_session_->session_id, should_attend,
                 should_attend ? 0 : idle_detector_.idle_for_ms(now_ms), std::nullopt, now_ms});
@@ -307,9 +306,8 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
         const auto minutes = (now_ms - *untracked_since_ms_) / (60 * 1000);
         const bool dismissal_active = now_unix_ms() < settings_.untracked_nudge_until_wall_ms;
         if (!dismissal_active && !untracked_latched_ && minutes >= kUntrackedNudgeMinutes) {
-            // Latched even when suppressed: one stretch earns one prompt, and quiet hours must
-            // not queue
-            // one to fire when they end.
+            // Latched even when suppressed: one stretch earns one prompt, and quiet hours must not
+            // queue one to fire when they end.
             untracked_latched_ = true;
             if (alert_route_unlocked(AlertEvent::UntrackedWork).visible()) {
                 untracked_minutes_ = static_cast<std::uint64_t>(minutes);
@@ -322,10 +320,8 @@ IdleTransition AppState::update_idle_unlocked(std::int64_t now_ms, bool had_inpu
     if (idle_ != was_idle) live_read_dirty_ = true;
 
     // Hand the idle stretch to the feature extractor as one IdleEnd carrying the whole duration
-    // (the shape fixtures/feature_parity describes), so minutes_since_last_break resets on a
-    // real
-    // break. Stamped with the event clock, which the extractor's windows use. Only while a
-    // session
+    // (the shape fixtures/feature_parity describes), so minutes_since_last_break resets on a real
+    // break. Stamped with the event clock, which the extractor's windows use. Only while a session
     // is running.
     const double wake_event_secs = waking_event ? waking_event->timestamp_secs : last_event_secs_;
     if (edge == IdleTransition::WokeUp && active_session_ && wake_event_secs > 0.0) {
@@ -529,14 +525,11 @@ void AppState::start_engine_impl(InputHook* hook) {
     try {
         capture_.start(hook);
         engine_thread_ = std::thread([this] {
-            // True when the last tick stopped on a budget; the backlog is then worked off
-            // across short
-            // ticks. On shutdown the loop keeps going while the ring still has events (the
-            // producer is
-            // already stopped, so it terminates). do-while so one tick always runs even if
-            // stop_engine()
-            // flipped the flag first. The exit check asks the ring, not `backlog`, which can be
-            // stale.
+            // True when the last tick stopped on a budget; the backlog is then worked off across
+            // short ticks. On shutdown the loop keeps going while the ring still has events (the
+            // producer is already stopped, so it terminates). do-while so one tick always runs even
+            // if stop_engine() flipped the flag first. The exit check asks the ring, not `backlog`,
+            // which can be stale.
             bool backlog = false;
             // Bound consecutive failed ticks only, so a healthy drain of a full ring always
             // finishes.
@@ -584,8 +577,7 @@ void AppState::start_engine_impl(InputHook* hook) {
                     shutdown_failures = 0;
                 }
                 // Only shutdown consults the ring. Pacing uses `backlog`, or a few leftover
-                // keystrokes would
-                // spin the loop at 1 ms.
+                // keystrokes would spin the loop at 1 ms.
                 if (stopping && !backlog && !capture_.has_pending_events()) break;
                 if (backlog || stopping) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(kEngineBacklogTickIntervalMs));
@@ -701,8 +693,7 @@ SessionRecord AppState::start_session(const std::string& goal, FocusMode mode) {
     std::lock_guard state_lock(mutex_);
 
     // Persist first, mutate second: everything before release() below is undone as a unit on
-    // failure; everything after is in-memory and cannot fail. Replacing a running session
-    // closes
+    // failure; everything after is in-memory and cannot fail. Replacing a running session closes
     // its span inside the same savepoint, so a rolled-back replacement leaves the old session
     // running and attended.
     const std::optional<std::string> replaced =
@@ -764,9 +755,8 @@ void AppState::stop_session() {
     if (active_session_) {
         const std::string session_id = active_session_->session_id;
         {
-            // Close the span and end the session together, so a failure cannot leave a
-            // completed session
-            // accruing attended time.
+            // Close the span and end the session together, so a failure cannot leave a completed
+            // session accruing attended time.
             Storage::Savepoint savepoint(storage_, "app_stop_session");
             storage_.close_session_span_now(session_id);
             storage_.end_session(session_id);
@@ -860,8 +850,7 @@ bool AppState::delete_session(const std::string& session_id) {
     // Deleting the session being filled: reset what stop_session() resets, plus prediction
     // state, so nothing persists against the missing row.
     if (active_session_ && active_session_->session_id == session_id) {
-        // Queued events belong to the erased session. Only here: another session's deletion
-        // must
+        // Queued events belong to the erased session. Only here: another session's deletion must
         // leave the live queue alone.
         capture_.discard_pending_events();
         pomodoro_.reset();
@@ -1036,8 +1025,7 @@ FocusTargetResult AppState::restore_snapback_target() {
 
     {
         std::lock_guard lock(mutex_);
-        // The tracker leaves Recovering either way (dismiss_recovery() is its only exit). A
-        // failed
+        // The tracker leaves Recovering either way (dismiss_recovery() is its only exit). A failed
         // activation keeps the payload so "Take me back" can be retried.
         if (result.ok) clear_snapback_unlocked(false);
         context_tracker_.dismiss_recovery(last_event_secs_);
@@ -1331,10 +1319,9 @@ PersonalArchiveExport AppState::export_personal_data(const std::filesystem::path
 
 void AppState::commit_settings_unlocked(AppSettings candidate,
                                         const std::function<void()>& publish) {
-    // Persist the candidate, then commit and publish it. Requires mutex_. The write takes a
-    // copy, so a throw leaves settings_ and every live field untouched -- e.g. a failed
-    // "private
-    // mode off" must not resume recording. Nothing after the write can fail.
+    // Persist the candidate, then commit and publish it. Requires mutex_. The write takes a copy,
+    // so a throw leaves settings_ and every live field untouched -- e.g. a failed "private mode
+    // off" must not resume recording. Nothing after the write can fail.
     if (!app_data_dir_.empty()) save_app_settings(app_data_dir_, candidate);
     settings_ = std::move(candidate);
     if (publish) publish();
@@ -1460,8 +1447,7 @@ RecordingStatus AppState::pause_privately_for(std::int64_t minutes) {
         std::lock_guard lock(mutex_);
         AppSettings candidate = settings_;
         candidate.private_mode = true;
-        // 0 means indefinite. A timed pause stores its end instant, so closing the window does
-        // not
+        // 0 means indefinite. A timed pause stores its end instant, so closing the window does not
         // restart it.
         candidate.private_until_wall_ms = minutes > 0 ? now_unix_ms() + minutes * 60 * 1000 : 0;
         commit_settings_unlocked(std::move(candidate), [] {});
@@ -2050,9 +2036,8 @@ bool AppState::engine_tick() {
         std::lock_guard lock(mutex_);
         tick_activity_epoch = activity_epoch_.load(std::memory_order_acquire);
         bool had_input = false;
-        // Bounded so sustained input cannot hold mutex_ indefinitely. Leftovers stay in the
-        // ring for
-        // the next tick.
+        // Bounded so sustained input cannot hold mutex_ indefinitely. Leftovers stay in the ring
+        // for the next tick.
         std::size_t drained = 0;
         const auto drain_started_ms = steady_now_ms();
         while (drained < kEngineDrainBudget) {
@@ -2061,18 +2046,16 @@ bool AppState::engine_tick() {
             ++drained;
             if (is_input_event(ev->event_type)) {
                 had_input = true;
-                // Apply the wake edge before compute_event so the waking event is not dropped
-                // by the AFK
-                // freeze.
+                // Apply the wake edge before compute_event so the waking event is not dropped by
+                // the AFK freeze.
                 if (idle_) {
                     if (!is_private_event_unlocked(*ev)) idle_foreground_context_ = *ev;
                     idle_edge = update_idle_unlocked(steady_now_ms(), true, &*ev);
                 }
             }
             if (auto job = compute_event(*ev)) jobs.push_back(std::move(*job));
-            // The count budget needs no clock (keeps ManualClock ticks deterministic); this
-            // covers heavy
-            // per-event work.
+            // The count budget needs no clock (keeps ManualClock ticks deterministic); this covers
+            // heavy per-event work.
             if (drained % kEngineDrainClockCheckStride == 0 &&
                 steady_now_ms() - drain_started_ms >= kEngineDrainBudgetMs) {
                 drain_truncated = true;
@@ -2084,9 +2067,8 @@ bool AppState::engine_tick() {
             drain_truncated = true;
         }
         if (drain_truncated) {
-            // Throttled. Decided under mutex_, written after release so a slow log sink does
-            // not extend
-            // the critical section.
+            // Throttled. Decided under mutex_, written after release so a slow log sink does not
+            // extend the critical section.
             const auto log_now_ms = steady_now_ms();
             // 0 is a valid steady-clock reading, hence the optional.
             if (!last_drain_backlog_log_ms_ ||
@@ -2137,9 +2119,8 @@ bool AppState::engine_tick() {
             pred_to_emit = latest_prediction_;
             prediction_dirty_ = false;
         }
-        // Emit once but keep the payload: "Take me back" reads it later. Only arm the one-shot
-        // once a
-        // listener exists; the engine starts before main installs the hook.
+        // Emit once but keep the payload: "Take me back" reads it later. Only arm the one-shot once
+        // a listener exists; the engine starts before main installs the hook.
         if (emit_to_frontend && latest_snapback_ && !snapback_emitted_) {
             snap_to_emit = *latest_snapback_;
             snap_route = latest_snapback_route_;
@@ -2299,8 +2280,8 @@ bool AppState::engine_tick() {
     }
     if (report_failure) {
         emit_to_frontend(events::kPersistenceFailed,
-            dump_json(nlohmann::json{{"reason", failure_category}, {"message",
-                "Some activity could not be saved. Retrying automatically; lost samples cannot be restored."}}),
+            dump_json(nlohmann::json(PersistenceFailurePayload{failure_category,
+                "Some activity could not be saved. Retrying automatically; lost samples cannot be restored."})),
             tick_activity_epoch);
     }
     if (recovered) emit_to_frontend(events::kPersistenceRecovered, "{}", tick_activity_epoch);
@@ -2355,16 +2336,14 @@ bool AppState::engine_tick() {
 }
 
 std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& event) {
-    // Requires mutex_. In-memory only: advances features/classifier/tracker and returns the
-    // rows
-    // to persist. The foreground app is remembered even for dropped events so excluded-app time
-    // cannot earn an untracked nudge.
+    // Requires mutex_. In-memory only: advances features/classifier/tracker and returns the rows to
+    // persist. The foreground app is remembered even for dropped events so excluded-app time cannot
+    // earn an untracked nudge.
     last_capture_app_ = event.app_name;
     if (is_private_event_unlocked(event)) return std::nullopt;
     last_event_secs_ = event.timestamp_secs;
 
-    // Foreground edges while AFK stay out of the rolling windows; keep their context to
-    // reconcile
+    // Foreground edges while AFK stay out of the rolling windows; keep their context to reconcile
     // once after wake.
     if (idle_) idle_foreground_context_ = event;
     if (!idle_ && foreground_context_needs_resync_) {
@@ -2414,8 +2393,7 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
                 pending_snapback_episode_ = job.snapback_episode;
 
                 // Delivery is decided at the latch, the only place that can also acknowledge a
-                // suppressed
-                // snapback.
+                // suppressed snapback.
                 const auto route = alert_route_unlocked(AlertEvent::Snapback);
                 if (route.visible()) {
                     latest_snapback_ = *snapback;
@@ -2425,12 +2403,9 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
                     live_read_dirty_ = true;
                 } else {
                     // A suppressed card can never be dismissed, and dismiss_recovery() is the
-                    // tracker's only exit
-                    // from Recovering; skipping this would disable every later snapback. The
-                    // episode is still
-                    // persisted (the alert was suppressed, not the recording); the stale restore
-                    // target is
-                    // dropped.
+                    // tracker's only exit from Recovering; skipping this would disable every later
+                    // snapback. The episode is still persisted (the alert was suppressed, not the
+                    // recording); the stale restore target is dropped.
                     context_tracker_.dismiss_recovery(event.timestamp_secs);
                     log().info(std::string("alerts: snapback suppressed (") +
                                alert_suppression_as_str(route.suppressed_by) + ")");
@@ -2470,9 +2445,8 @@ std::optional<AppState::PersistJob> AppState::compute_event(const CaptureEvent& 
         const auto minutes = static_cast<std::uint64_t>(features.minutes_since_last_break());
         if (evaluate_hyperfocus(focus_mode_, minutes)) {
             if (!hyperfocus_latched_) {
-                // Latched even when suppressed, so quiet hours cannot queue a nudge. Clears
-                // when a break
-                // resets minutes_since_last_break.
+                // Latched even when suppressed, so quiet hours cannot queue a nudge. Clears when a
+                // break resets minutes_since_last_break.
                 hyperfocus_latched_ = true;
                 if (alert_route_unlocked(AlertEvent::Hyperfocus).visible()) {
                     hyperfocus_minutes_ = minutes;

@@ -12,6 +12,8 @@
 #define _UNICODE
 #endif
 #include <windows.h>
+
+#include "util/win_text.hpp"
 #include <commdlg.h>
 
 #include <filesystem>
@@ -20,25 +22,6 @@
 
 namespace snapback {
 namespace {
-
-std::wstring to_wide(const std::string& s) {
-    if (s.empty()) return std::wstring();
-    const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                                      nullptr, 0);
-    std::wstring w(static_cast<std::size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
-    return w;
-}
-
-std::string to_utf8(const std::wstring& w) {
-    if (w.empty()) return std::string();
-    const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                                      nullptr, 0, nullptr, nullptr);
-    std::string s(static_cast<std::size_t>(n), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), n,
-                        nullptr, nullptr);
-    return s;
-}
 
 std::vector<wchar_t> build_filter_buffer(const std::vector<FileDialogFilter>& filters) {
     std::vector<wchar_t> buf;

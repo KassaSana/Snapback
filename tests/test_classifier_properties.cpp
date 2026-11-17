@@ -176,7 +176,7 @@ TEST_CASE("the classifier is a pure function of its inputs") {
 TEST_CASE("thrash never falls when context switching rises") {
     // The one monotonicity the heuristic genuinely claims: thrash_score is a convex combination
     // of three non-decreasing terms, so adding switches cannot reduce it. Stated as a property
-    // because 7.15's static_asserts pin that the weights sum to 1 but nothing pinned the
+    // because the static_asserts pin that the weights sum to 1 but nothing pinned the
     // *direction* — a sign flip on one weight would still sum correctly.
     FeatureGenerator generator(kSeed);
     Classifier classifier;
@@ -289,7 +289,7 @@ TEST_CASE("guardrails never raise the state — policy is demote-only") {
         }
     }
 
-    // The exact counterexample 11.2's property run found: model-DISTRACTED under the mode
+    // The counterexample the property run found: model-DISTRACTED under the mode
     // threshold with high drift used to come out PSEUDO_PRODUCTIVE. It must stay DISTRACTED,
     // and the verdict is the model's own, so state_source stays "model".
     auto before = scores_from_probabilities({0.30, 0.25, 0.25, 0.20}, 0.0, 0.0, 0.5);

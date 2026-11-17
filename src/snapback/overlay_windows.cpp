@@ -15,6 +15,8 @@
 #define _UNICODE
 #endif
 #include <windows.h>
+
+#include "util/win_text.hpp"
 #include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
 
 namespace snapback {
@@ -97,15 +99,6 @@ OverlayRect placement() {
     return overlay_rect({work.left, work.top},
                         {work.right - work.left, work.bottom - work.top},
                         static_cast<int>(monitor_dpi(nullptr)));
-}
-
-std::wstring to_wide(const std::string& s) {
-    if (s.empty()) return std::wstring();
-    const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                                      nullptr, 0);
-    std::wstring w(static_cast<std::size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
-    return w;
 }
 
 // Defined below WindowsOverlay; declared here because overlay_proc uses it.

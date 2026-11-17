@@ -115,7 +115,7 @@ TEST_CASE("a detailed preview is the copy this app already sent") {
 
 TEST_CASE("the close-to-tray notice names nothing about the user's work") {
     // It rides the same OS notification history and lock screen as everything
-    // else here, so it holds to 2.16's rule even though it has no preview mode: the whole
+    // else here, so it follows the one-intervention rule even though it has no preview mode: the whole
     // content is that Snapback is still running. It also has to say where to stop it, or the
     // user who wanted to quit is left with a process and no instruction.
     const auto notice = build_close_to_tray_notification();

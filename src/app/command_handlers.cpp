@@ -413,7 +413,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
     registry.add("inspect_data_import", [data_dir](const json& a) {
         const auto candidate = inspect_import_candidate(
             std::filesystem::path(detail::opt_string(a, "path").value_or("")),
-            data_dir / "focoflow.db");
+            data_dir / kDatabaseFileName);
         return json{{"acceptable", candidate.acceptable},
                     {"message", candidate.message},
                     {"schemaVersion", candidate.schema_version},
@@ -427,7 +427,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         [data_dir](const json& a) {
             const auto staged = stage_import(
                 std::filesystem::path(detail::opt_string(a, "path").value_or("")),
-                data_dir / "focoflow.db", nullptr);
+                data_dir / kDatabaseFileName, nullptr);
             return json{{"ok", staged.ok},
                         {"message", staged.message},
                         {"schemaVersion", staged.schema_version},
@@ -441,7 +441,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         if (import_staging_active->load(std::memory_order_acquire)) {
             throw std::runtime_error("a data import is still being staged; wait for it to finish");
         }
-        const auto db_path = data_dir / "focoflow.db";
+        const auto db_path = data_dir / kDatabaseFileName;
         const bool cancelled = cancel_staged_import(db_path);
         return json{{"cancelled", cancelled}, {"pending", has_staged_import(db_path)}};
     });
@@ -450,7 +450,7 @@ void register_command_handlers(CommandRegistry& registry, AppState& state,
         // A stage in progress has already created the file; it is not pending until the copy
         // has finished, and reporting it early would invite a restart onto a half-written one.
         const bool staging = import_staging_active->load(std::memory_order_acquire);
-        return json{{"pending", !staging && has_staged_import(data_dir / "focoflow.db")}};
+        return json{{"pending", !staging && has_staged_import(data_dir / kDatabaseFileName)}};
     });
 
     // Personal export: everything recorded about the user, as Markdown, on the worker.

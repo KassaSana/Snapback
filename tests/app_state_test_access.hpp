@@ -89,13 +89,11 @@ struct AppStateTestAccess {
         return state.extract_features_for_test(now_secs);
     }
 
-    // One synchronous turn of the real engine tick — the same function the engine thread
-    // runs, not a reimplementation. needed it because session pause/resume is
-    // driven by the tick's idle edges, so testing it through `update_idle_for_test` alone
-    // would exercise the detector and skip everything that acts on it. Points the same way
-    // as 14.2.
-    // Returns what the engine loop reads: true if the drain stopped on a budget with events
-    // still queued, false if it emptied the ring.
+    // One synchronous turn of the real engine tick: the same function the engine thread runs, not
+    // a reimplementation. Session pause/resume is driven by the tick's idle edges, so testing it
+    // through `update_idle_for_test` alone would exercise the detector and skip everything that
+    // acts on it. Returns what the engine loop reads: true if the drain stopped on a budget with
+    // events still queued, false if it emptied the ring.
     static void idle_threshold(AppState& state, std::int64_t ms) { state.idle_detector_.set_threshold_ms(ms); }
     static std::optional<std::int64_t> next_delay(AppState& state) { return state.next_engine_delay_ms(); }
     static bool engine_tick(AppState& state) { return state.engine_tick(); }
@@ -166,7 +164,7 @@ struct AppStateTestAccess {
     }
 
     // Stages the span decision phase 1 of the tick records when the user comes back from
-    // idle, without having to drive a real idle cycle. The interleave AUD-04b describes --
+    // idle, without having to drive a real idle cycle. The interleave being tested --
     // decision recorded, session stopped, decision drained -- is a race between two lock
     // regions, so reproducing it by timing would be flaky by construction; staging the
     // decision makes the same sequence deterministic.
@@ -272,7 +270,7 @@ struct AppStateTestAccess {
         state.publish_live_read_unlocked();
     }
 
-    // Sets the alert delivery preferences directly. Roadmap 2.16.
+    // Sets the alert delivery preferences directly.
     //
     // The production path for these is a settings command plus a settings.json write, and
     // neither is what a delivery case is about: driving them would put a filesystem in the way
@@ -283,7 +281,7 @@ struct AppStateTestAccess {
         state.settings_.alerts = alerts;
     }
 
-    // Moves the activity boundary the way a delete does, and nothing else. AUD-07's failure
+    // Moves the activity boundary the way a delete does, and nothing else. The failure
     // needs the epoch to change *between* the tick latching it and the tick checking it --
     // a window with no lock held, which is why reproducing it with a second thread would be
     // a race dressed as a test. Called from a clock the tick reads inside that window, this

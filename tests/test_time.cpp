@@ -146,7 +146,7 @@ TEST_CASE("unix_ms_from_rfc3339 parses a well-formed UTC timestamp") {
 TEST_CASE("unix_ms_from_rfc3339 returns nullopt for input that does not parse") {
     // The defect ADR-0007 closes: `datetime()` yields NULL for an unparseable value and
     // `NULL < x` is NULL, so such a row outlives every retention pass with nothing surfaced.
-    // 9.14's import path is what made those rows reachable. nullopt rather than a sentinel
+    // Data import is what makes those rows reachable. nullopt rather than a sentinel
     // instant means a caller has to decide what to do instead of comparing against garbage.
     CHECK_FALSE(unix_ms_from_rfc3339("not a timestamp").has_value());
     CHECK_FALSE(unix_ms_from_rfc3339("").has_value());

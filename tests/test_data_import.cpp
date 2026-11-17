@@ -1,4 +1,5 @@
 #include "doctest_wrapper.hpp"
+#include "temp_dir.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -15,22 +16,6 @@
 using namespace snapback;
 
 namespace {
-
-struct TempDir {
-    std::filesystem::path path;
-
-    TempDir() {
-        const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
-        path = std::filesystem::temp_directory_path() /
-               ("snapback_cpp_import_test_" + std::to_string(ticks));
-        std::filesystem::create_directories(path);
-    }
-
-    ~TempDir() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path, ignored);
-    }
-};
 
 std::ostream& discard() {
     static std::ostream sink(nullptr);
@@ -126,7 +111,7 @@ TEST_CASE("inspect_import_candidate refuses a database from a newer Snapback") {
     TempDir live;
     const auto candidate = inspect_import_candidate(incoming, live.path / "focoflow.db");
 
-    // 7.3's downgrade guard, enforced *before* the swap. Letting this through is exactly how
+    // The downgrade guard, enforced *before* the swap. Letting this through is exactly how
     // the hand-copy workaround strands people: the file lands, and then the app refuses to open
     // its own database with no route back from inside the product.
     CHECK_FALSE(candidate.acceptable);

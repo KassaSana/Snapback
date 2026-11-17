@@ -30,7 +30,8 @@ private:
 };
 
 inline constexpr int kDefaultRetentionDays = 90;
-inline constexpr std::size_t kVacuumMinDeletedRows = 500;
+// The project's original name, kept so existing installs keep their data.
+inline constexpr const char* kDatabaseFileName = "focoflow.db";
 // How long a writer waits on SQLITE_BUSY before failing, so brief contention (a backup tool
 // opening the file) does not discard a drained persistence batch.
 inline constexpr int kSqliteBusyTimeoutMs = 500;
@@ -107,10 +108,6 @@ struct PruneSummary {
 struct PruneBatchSummary : PruneSummary {
     bool has_more = false;
 };
-
-inline bool should_vacuum_after_prune(std::size_t rows_deleted) {
-    return rows_deleted >= kVacuumMinDeletedRows;
-}
 
 class Storage {
 public:
@@ -410,7 +407,6 @@ public:
     // The same prune against the retention window, in one transaction, with the cutoff
     // computed here.
     PruneSummary prune_to_retention(int retention_days = kDefaultRetentionDays);
-    void vacuum();
 
     // Busy-wait counters for this connection, for `get_diagnostics` and the benchmarks.
     SqliteBusySnapshot busy_stats() const;

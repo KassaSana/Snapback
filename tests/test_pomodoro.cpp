@@ -83,7 +83,7 @@ TEST_CASE("PomodoroTimer reset clears progress for a new focus session") {
 
 TEST_CASE("PomodoroStatus serializes the stable camelCase IPC contract") {
     // Designated initializers rather than positional: this is the wire contract's test, and
-    // the positional form silently reinterpreted every field when 2.13 added two flags.
+    // the positional form silently reinterpreted every field when two flags were added.
     PomodoroStatus status;
     status.running = true;
     status.paused = false;
@@ -184,7 +184,7 @@ TEST_CASE("a relaunch inside a phase resumes the time genuinely left") {
 }
 
 TEST_CASE("a deadline that passed while the app was closed waits rather than advancing") {
-    // 2.13's relaunch policy, and the reason it exists: silently chaining through the phases
+    // The relaunch policy, and why: silently chaining through the phases
     // that "would have" elapsed credits work intervals nobody worked and hands out a long
     // break for an afternoon the app spent shut.
     PomodoroTimer before;

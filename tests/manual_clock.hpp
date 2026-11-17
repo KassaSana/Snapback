@@ -1,8 +1,7 @@
-// A clock a test drives by hand. ROADMAP 11.4.
+// A clock a test drives by hand.
 //
-// Lives under tests/ rather than src/ deliberately: 7.14's complaint is test-only API
-// compiled into the shipping binary, and it would be a poor answer to that to ship a fake
-// clock in the production tree.
+// Lives under tests/ rather than src/ so a fake clock never ships in the
+// production binary.
 #pragma once
 
 #include <atomic>

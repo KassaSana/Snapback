@@ -1,12 +1,13 @@
 // Entry point for the native application.
 //
 // Boot order:
-//   1. resolve the app data directory
-//   2. acquire the single-instance lock
-//   3. optionally load the ONNX model
-//   4. open SQLite storage
-//   5. build AppState and start the engine
-//   6. create the webview, bind IPC, load the React build, run the loop
+//   1. resolve the app data directory (or handle --purge and exit)
+//   2. lock down the data directory's permissions
+//   3. acquire the single-instance lock, then open the log
+//   4. recover any half-finished model deployment, optionally load the ONNX model
+//   5. apply a staged data import, then open SQLite storage
+//   6. build AppState and start the engine
+//   7. create the webview, bind IPC, load the React build, run the loop
 #include "app/webview_compat.hpp"  // webview.h + X11 macro scrub — never include webview.h raw
 
 #include <cstdint>
@@ -23,6 +24,7 @@
 #include <nlohmann/json.hpp>
 
 #include "app/activation_channel.hpp"
+#include "util/env.hpp"
 #include "app/acceptance_harness.hpp"
 #include "app/commands.hpp"
 #include "app/data_import.hpp"
@@ -54,6 +56,8 @@
 
 namespace {
 
+using snapback::env_var;
+
 class EngineLifetime {
 public:
     explicit EngineLifetime(snapback::AppState& state) : state_(&state) {}
@@ -69,19 +73,6 @@ public:
 private:
     snapback::AppState* state_;
 };
-
-std::optional<std::string> env_var(const char* name) {
-#if defined(_WIN32)
-    char* value = nullptr;
-    std::size_t len = 0;
-    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr) return std::nullopt;
-    std::unique_ptr<char, decltype(&std::free)> owned(value, &std::free);
-    return std::string(owned.get());
-#else
-    if (const char* value = std::getenv(name)) return std::string(value);
-    return std::nullopt;
-#endif
-}
 
 // Where the data lives. Fails closed rather than falling back to a shared temp directory anyone
 // could read.
@@ -266,7 +257,7 @@ int main(int argc, char** argv) {
     }
 
     // Apply a staged import before anything opens the database: the swap replaces the file.
-    if (const auto imported = apply_staged_import(data_dir / "focoflow.db", &logger)) {
+    if (const auto imported = apply_staged_import(data_dir / kDatabaseFileName, &logger)) {
         if (imported->ok) {
             logger.info("startup: applied staged import — " + imported->message);
         } else {
@@ -282,7 +273,7 @@ int main(int argc, char** argv) {
             logger.error("failed to open storage at startup");
             return 1;
         }
-        logger.info("storage opened: " + (data_dir / "focoflow.db").string());
+        logger.info("storage opened: " + (data_dir / kDatabaseFileName).string());
 
     // Heap-owned so callbacks below can borrow a stable address.
     auto state = std::make_unique<AppState>(
@@ -401,6 +392,35 @@ int main(int argc, char** argv) {
         return true;
     };
 
+#if defined(_WIN32) || defined(__APPLE__)
+    // Installs the tray with the shared menu actions. Close-to-tray is only enabled once the
+    // icon is installed, or the window could vanish unreachably.
+    const auto install_tray = [&](std::function<void()> on_quit) {
+        TrayCallbacks callbacks;
+        callbacks.on_show = raise_window;
+        callbacks.on_quit = std::move(on_quit);
+        callbacks.recording_status = [state = state.get(), &logger] {
+            return tray_recording_status(*state, logger);
+        };
+        callbacks.on_pause_recording = [state = state.get(), &logger] {
+            run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
+        };
+        callbacks.on_resume_recording = [state = state.get(), &logger] {
+            run_tray_action(logger, "resume recording",
+                            [state] { state->resume_from_private_pause(); });
+        };
+        callbacks.on_snooze_alerts = [state = state.get(), &logger] {
+            run_tray_action(logger, "snooze alerts",
+                            [state] { state->snooze_alerts_for(kDefaultAlertSnoozeMins); });
+        };
+        callbacks.on_resume_alerts = [state = state.get(), &logger] {
+            run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
+        };
+        callbacks.on_notification_click = route_alert_click;
+        return Tray::instance().install(std::move(callbacks));
+    };
+#endif
+
 #if defined(_WIN32)
     if (auto win = w.window(); win.ok()) {
         HWND main_hwnd = reinterpret_cast<HWND>(win.value());
@@ -408,33 +428,11 @@ int main(int argc, char** argv) {
             ShowWindow(main_hwnd, SW_SHOW);
             SetForegroundWindow(main_hwnd);
         };
-        TrayCallbacks callbacks;
-        callbacks.on_show = raise_window;
-        callbacks.on_quit = [&w, main_hwnd] {
+        const bool installed = install_tray([&w, main_hwnd] {
             prepare_app_exit(main_hwnd);
             w.terminate();
-        };
-        callbacks.recording_status = [state = state.get(), &logger] {
-            return tray_recording_status(*state, logger);
-        };
-        callbacks.on_pause_recording = [state = state.get(), &logger] {
-            run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
-        };
-        callbacks.on_resume_recording = [state = state.get(), &logger] {
-            run_tray_action(logger, "resume recording",
-                            [state] { state->resume_from_private_pause(); });
-        };
-        callbacks.on_snooze_alerts = [state = state.get(), &logger] {
-            run_tray_action(logger, "snooze alerts",
-                            [state] { state->snooze_alerts_for(kDefaultAlertSnoozeMins); });
-        };
-        callbacks.on_resume_alerts = [state = state.get(), &logger] {
-            run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
-        };
-        callbacks.on_notification_click = route_alert_click;
-        // Close-to-tray only once the icon is installed, or the window could vanish
-        // unreachably.
-        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_hwnd, explain_close_to_tray);
+        });
+        if (installed) enable_close_to_tray(main_hwnd, explain_close_to_tray);
     }
 #elif defined(__APPLE__)
     // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
@@ -442,33 +440,11 @@ int main(int argc, char** argv) {
     if (auto win = w.window(); win.ok()) {
         void* main_window = win.value();
         raise_window = [main_window] { mac::bring_window_to_front(main_window); };
-        TrayCallbacks callbacks;
-        callbacks.on_show = raise_window;
-        callbacks.on_quit = [&w, main_window] {
+        const bool installed = install_tray([&w, main_window] {
             prepare_app_exit(main_window);
             w.terminate();
-        };
-        callbacks.recording_status = [state = state.get(), &logger] {
-            return tray_recording_status(*state, logger);
-        };
-        callbacks.on_pause_recording = [state = state.get(), &logger] {
-            run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
-        };
-        callbacks.on_resume_recording = [state = state.get(), &logger] {
-            run_tray_action(logger, "resume recording",
-                            [state] { state->resume_from_private_pause(); });
-        };
-        callbacks.on_snooze_alerts = [state = state.get(), &logger] {
-            run_tray_action(logger, "snooze alerts",
-                            [state] { state->snooze_alerts_for(kDefaultAlertSnoozeMins); });
-        };
-        callbacks.on_resume_alerts = [state = state.get(), &logger] {
-            run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
-        };
-        callbacks.on_notification_click = route_alert_click;
-        // Close-to-tray only once the icon is installed, or the window could vanish
-        // unreachably.
-        if (Tray::instance().install(std::move(callbacks))) enable_close_to_tray(main_window, explain_close_to_tray);
+        });
+        if (installed) enable_close_to_tray(main_window, explain_close_to_tray);
     }
 #endif
 

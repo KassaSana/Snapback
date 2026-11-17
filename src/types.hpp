@@ -3,8 +3,8 @@
 // Frontend-facing DTOs use camelCase (e.g. focusScore, sessionId). Internal-only
 // CaptureEvent values stay snake_case and never cross to the frontend.
 //
-// Enums serialize to fixed strings: EventType/FocusLabel = SCREAMING_SNAKE_CASE,
-// FocusMode/AppRuleKind = lowercase.
+// Enums serialize to fixed strings: EventType/FocusLabel = SCREAMING_SNAKE_CASE (except
+// MouseScroll, which shipped as "mouse_scroll"), FocusMode/AppRuleKind = lowercase.
 #pragma once
 
 #include <cstddef>
@@ -75,8 +75,8 @@ NLOHMANN_JSON_SERIALIZE_ENUM(FocusLabel, {
 
 // FocusMode (lowercase on the wire).
 enum class FocusMode { Deep, Normal, Recovery };
-// Normal is listed first so nlohmann's enum from_json falls back to it on an
-// unknown string maps to Normal.
+// Normal is listed first because nlohmann's enum from_json maps an unknown string to the
+// first entry.
 NLOHMANN_JSON_SERIALIZE_ENUM(FocusMode, {
     {FocusMode::Normal, "normal"},
     {FocusMode::Deep, "deep"},
@@ -122,7 +122,6 @@ inline const char* app_rule_kind_to_string(AppRuleKind k) {
 }
 std::optional<AppRuleKind> app_rule_kind_from_string(const std::string& s);
 
-// LabelSource. It round-trips through as_str/parse.
 enum class LabelSource { Manual, Hotkey, Survey, Auto };
 const char* label_source_as_str(LabelSource s);
 LabelSource label_source_parse(const std::optional<std::string>& value);
@@ -166,7 +165,6 @@ struct CaptureEvent {
     }
 };
 
-// PredictionRecord (camelCase).
 struct PredictionRecord {
     std::string session_id;
     double focus_score{};
@@ -199,7 +197,6 @@ struct SessionRecord {
     std::optional<std::string> reflection_next_step;
 };
 
-// SessionRecap.
 struct SessionRecap {
     std::string session_id;
     std::string goal;
@@ -222,7 +219,6 @@ struct SessionSummary {
     SessionRecap recap;
 };
 
-// PermissionStatus.
 struct PermissionStatus {
     bool capture_available{};
     bool capture_probe_confirmed{};
@@ -231,7 +227,6 @@ struct PermissionStatus {
     std::vector<std::string> setup_steps;
 };
 
-// ClassifierStatus.
 struct ClassifierStatus {
     // The backend that made the most recent prediction; a failed ONNX inference falls back to
     // the heuristic and reports "heuristic".
@@ -260,9 +255,9 @@ struct ModelDeploymentHealth {
 // Percentiles are histogram upper bounds (see ranked_mutex.hpp), not exact values; the exact
 // tail is the max_* field.
 struct RuntimeMetrics {
-    // Tick-loop iterations; the denominator for the CPU figure.
     std::uint64_t persistence_failures{};
     std::uint64_t persistence_dropped_predictions{};
+    // Tick-loop iterations; the denominator for the CPU figure.
     std::uint64_t engine_wakeups{};
     std::uint64_t engine_max_drain_ms{};
     bool maintenance_pending{};
@@ -273,8 +268,8 @@ struct RuntimeMetrics {
     // User + kernel milliseconds for the whole process since it started. 0 where the platform
     // call failed, or where the process has not yet burned one scheduler tick.
     std::uint64_t process_cpu_ms{};
-    // How deep the capture ring ever got, against what it holds. `capture_events_dropped`
-    // above says it overflowed; this says how much margin there was before it did.
+    // How deep the capture ring ever got, against what it holds. HealthStatus's
+    // `capture_events_dropped` says it overflowed; this says how much margin there was before it did.
     std::uint64_t capture_ring_high_water{};
     std::uint64_t capture_ring_capacity{};
     // storage_mutex_, shared by storage-backed UI reads and the engine's persist phase.
@@ -337,7 +332,6 @@ struct SnapbackPayload {
     std::uint32_t distraction_duration_secs{};
 };
 
-// ContextSnapshotDto.
 struct ContextSnapshotDto {
     std::string app_name;
     std::string window_title;
@@ -347,7 +341,6 @@ struct ContextSnapshotDto {
     std::int64_t timestamp_ms{};
 };
 
-// AppRuleRecord.
 struct AppRuleRecord {
     std::int64_t id{};
     std::string pattern;
@@ -357,7 +350,6 @@ struct AppRuleRecord {
     std::int64_t updated_at_ms{};
 };
 
-// UpsertAppRuleRequest.
 struct UpsertAppRuleRequest {
     std::string pattern;
     AppRuleKind rule_type{AppRuleKind::Allow};
@@ -372,7 +364,6 @@ struct LabelRequest {
     std::optional<std::string> source;
 };
 
-// ExportTrainingResult.
 struct ExportTrainingResult {
     std::string output_dir;
     std::string features_path;
@@ -442,8 +433,7 @@ struct AlertDeliverySettings {
     std::int64_t snoozed_until_wall_ms{};
 };
 
-// New C++ settings DTO. Persisted in app-data/settings.json and exposed to the
-// frontend with camelCase keys.
+// Persisted in app-data/settings.json and exposed to the frontend with camelCase keys.
 struct AppSettings {
     FocusMode default_focus_mode{FocusMode::Normal};
     bool private_mode{};
@@ -505,7 +495,7 @@ enum class RecordingState {
     Blocked,        // capture cannot run at all: permissions, a failed hook
     PausedPrivate,  // the user said no, indefinitely or until private_until
     NoSession,      // nothing declared, so nothing is being attributed to anything
-    PausedIdle,     // a session is running but the user is away (7.23's paused state)
+    PausedIdle,     // a session is running but the user is away (paused)
     Recording,      // actually observing
 };
 
@@ -642,7 +632,7 @@ struct DiagnosticsSnapshot {
     std::vector<std::string> recent_logs;
 };
 
-// Reserved for the planned `persistence-failed` event (see fixtures/ipc_commands.json).
+// Payload of the `persistence-failed` event.
 struct PersistenceFailurePayload {
     std::string reason;
     std::string message;
@@ -683,8 +673,8 @@ struct FileDialogResult {
 };
 
 
-// --------------------------------------------------------------------------- JSON
-// (de)serialization -- camelCase keys. Defined in types.cpp.
+// ---------------------------------------------------------------------------
+// JSON (de)serialization, camelCase keys. Defined in types.cpp.
 // ---------------------------------------------------------------------------
 void to_json(json& j, const CaptureEvent& v);
 void to_json(json& j, const PredictionRecord& v);
@@ -707,7 +697,6 @@ void to_json(json& j, const SnapbackPayload& v);
 void from_json(const json& j, SnapbackPayload& v);
 void to_json(json& j, const ContextSnapshotDto& v);
 void to_json(json& j, const AppRuleRecord& v);
-void to_json(json& j, const UpsertAppRuleRequest& v);
 void from_json(const json& j, UpsertAppRuleRequest& v);
 void to_json(json& j, const LabelRequest& v);
 void from_json(const json& j, LabelRequest& v);

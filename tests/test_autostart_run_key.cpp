@@ -28,7 +28,7 @@ constexpr wchar_t kScratchRoot[] = L"Software\\SnapbackTests";
 bool process_still_running(DWORD pid) {
     // PROCESS_QUERY_LIMITED_INFORMATION is enough to learn STILL_ACTIVE vs exited, and is
     // what a sibling test process is willing to grant us. A missing pid is the stale case
-    // 11.10 exists to clean up.
+    // this cleans up.
     HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!handle) return false;
     DWORD status = 0;
@@ -128,7 +128,7 @@ struct ScratchKey {
     ~ScratchKey() {
         run_key::delete_key(path);
         // Creating the leaf also created this parent, so removing only the leaf would still
-        // leave a key behind on the machine — the exact class of residue 11.7 is about.
+        // leave a key behind on the machine — exactly the residue to avoid.
         // RegDeleteKey refuses a key that still has subkeys, so a concurrent case's scratch
         // key is never destroyed by this: it simply fails and the last one out succeeds.
         run_key::delete_key(kScratchRoot);

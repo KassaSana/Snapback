@@ -8,7 +8,7 @@
 #include "app/single_instance.hpp"
 
 int main(int argc, char** argv) {
-    // ROADMAP 9.15. The activation channel is a promise between two *processes*: an in-process
+    // The activation channel is a promise between two *processes*: an in-process
     // listener and client would still pass if the endpoint were somehow process-local, which is
     // exactly the property under test. This mode is the second process.
     if (argc == 4 && std::string_view(argv[1]) == "activate") {

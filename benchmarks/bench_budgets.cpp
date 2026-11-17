@@ -370,7 +370,7 @@ int main() {
                               std::chrono::steady_clock::now().time_since_epoch().count()));
         std::filesystem::create_directories(dir);
 
-        std::cout << "Snapback measured budgets (Roadmap 14.11)\n"
+        std::cout << "Snapback measured budgets\n"
                   << "On-disk database, real persistence cadence: at most one prediction per\n"
                   << "attended second, one feature_snapshots row per prediction.\n\n"
                   << "  days=" << days << "  attended_hours/day=" << attended_hours
@@ -454,7 +454,7 @@ int main() {
             }
 
             // --- Concurrency: the writer alone, then under report load (14.1) ----------
-            std::cout << "Writer delay under concurrent reads (Roadmap 14.1)" "\n"
+            std::cout << "Writer delay under concurrent reads" "\n"
                       << "  one Storage behind one LockRank::Storage mutex, exactly as" "\n"
                       << "  AppState holds it. Two loads: one realistic Review reader," "\n"
                       << "  and the hot loop kept beside it as the ceiling." "\n\n";

@@ -52,9 +52,11 @@ bool wait_for_raised(const std::atomic<int>& raised, int want) {
 bool run_activation_probe(const std::filesystem::path& data_dir, const char* expected) {
 #if defined(_WIN32)
     const auto probe = std::filesystem::path(SNAPBACK_INSTANCE_PROBE).wstring();
-    const auto data_wide = data_dir.wstring();
+    // _wspawnl joins argv with spaces and doesn't quote, so a path with a space would split.
+    const auto probe_arg = L"\"" + probe + L"\"";
+    const auto data_arg = L"\"" + data_dir.wstring() + L"\"";
     const auto expected_wide = std::filesystem::path(expected).wstring();
-    return _wspawnl(_P_WAIT, probe.c_str(), probe.c_str(), L"activate", data_wide.c_str(),
+    return _wspawnl(_P_WAIT, probe.c_str(), probe_arg.c_str(), L"activate", data_arg.c_str(),
                     expected_wide.c_str(), static_cast<wchar_t*>(nullptr)) == 0;
 #else
     const pid_t child = fork();

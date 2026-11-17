@@ -12,6 +12,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+
+#include "util/win_text.hpp"
 #else
 #include <cerrno>
 #include <fcntl.h>
@@ -83,15 +85,6 @@ constexpr int kKilledExitCode = 128 + 9;
 #if defined(_WIN32)
 
 namespace {
-
-std::wstring to_wide(const std::string& s) {
-    if (s.empty()) return {};
-    const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                                      nullptr, 0);
-    std::wstring w(static_cast<std::size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
-    return w;
-}
 
 std::string last_error_text(const char* what) {
     return std::string(what) + " failed (error " + std::to_string(GetLastError()) + ")";

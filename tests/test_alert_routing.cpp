@@ -24,8 +24,8 @@ int at(int hour, int minute = 0) {
 }  // namespace
 
 TEST_CASE("route_alert defaults deliver exactly one channel per event") {
-    // 2.16's rule: one visible intervention per logical event. A snapback firing both the
-    // overlay and a native toast for the same moment is the duplication the item names.
+    // One visible intervention per logical event. A snapback firing both the
+    // overlay and a native toast for the same moment is the duplication this prevents.
     const AlertDeliverySettings defaults;
 
     const auto snapback = route_alert(AlertEvent::Snapback, defaults, kNow, at(12));

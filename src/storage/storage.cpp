@@ -354,7 +354,7 @@ std::optional<Storage> Storage::open(const std::filesystem::path& app_data_dir,
     // Declared outside the try so the catch blocks below can actually report the cause.
     Logger local_logger(std::cerr);
     Logger& log = logger ? *logger : local_logger;
-    const auto db_path = (app_data_dir / "focoflow.db").string();
+    const auto db_path = (app_data_dir / kDatabaseFileName).string();
     try {
         std::filesystem::create_directories(app_data_dir);
         sqlite3* db = nullptr;
@@ -2702,10 +2702,6 @@ PruneSummary Storage::prune_to_retention(int retention_days) {
     const PruneSummary summary = prune_runtime_data(retention_cutoff_unix_ms(retention_days));
     savepoint.release();
     return summary;
-}
-
-void Storage::vacuum() {
-    exec(db_, "VACUUM");
 }
 
 void Storage::install_busy_handler() {

@@ -20,6 +20,9 @@
 #include "capture/input_context.hpp"
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
@@ -136,9 +139,8 @@ std::size_t drain(CaptureThread& capture) {
 
 }  // namespace
 
-// Regression guard for RingBuffer used to hold its 65,536-slot array inline,
-// making sizeof(CaptureThread) ~6 MB — every stack-allocated instance (this file's tests,
-// any future AppState local) overflowed Windows' 1 MB default thread stack. The storage now
+// RingBuffer's 65,536 slots must live on the heap. Inline, they make sizeof(CaptureThread)
+// ~6 MB, and any stack-allocated instance overflows Windows' 1 MB default thread stack. The storage now
 // lives on the heap; if someone inlines it again, this fails at compile time instead of
 // SIGSEGV-ing only on Windows CI.
 static_assert(sizeof(CaptureThread) < 4096,
