@@ -184,14 +184,18 @@ jobs:
           $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
           $before = (Get-ItemProperty -Path $key).pv
           $updater = Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe"
-          Start-Process -FilePath $updater -ArgumentList "/ua /installsource scheduler" -Wait
-          $deadline = (Get-Date).AddMinutes(4)
-          do {
-            $after = (Get-ItemProperty -Path $key).pv
-            if ($after -ne $before) { break }
-            Start-Sleep -Seconds 10
-          } while ((Get-Date) -lt $deadline)
-          Write-Host "WebView2 runtime: $before -> $after"
+          if (Test-Path -LiteralPath $updater) {
+            Start-Process -FilePath $updater -ArgumentList "/ua /installsource scheduler" -Wait
+            $deadline = (Get-Date).AddMinutes(4)
+            do {
+              $after = (Get-ItemProperty -Path $key).pv
+              if ($after -ne $before) { break }
+              Start-Sleep -Seconds 10
+            } while ((Get-Date) -lt $deadline)
+            Write-Host "WebView2 runtime: $before -> $after"
+          } else {
+            Write-Warning "EdgeUpdate client not found at $updater; testing installed WebView2 $before."
+          }
 
       - name: Run Windows real-webview acceptance smoke
         shell: pwsh
