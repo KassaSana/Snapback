@@ -104,7 +104,7 @@ export const InsightsCard = memo(function InsightsCard({
     <section className="card insights-card session-chart-card">
       <div className="card-header">
         <h2>Focus per session</h2>
-        <span className="pill">{rangeLabel}</span>
+        <span className="review-period">{rangeLabel}</span>
       </div>
       {sessionHistory.length === 0 ? (
         <p className="helper-text">

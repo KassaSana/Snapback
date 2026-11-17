@@ -18,6 +18,7 @@ export default defineConfig({
   plugins: [react()],
   base: "./",
   build: {
+    assetsInlineLimit: 100000,
     target: "safari13",
     minify: "esbuild",
     sourcemap: false,

@@ -114,11 +114,11 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             HDC dc = BeginPaint(hwnd, &ps);
             RECT rc{};
             GetClientRect(hwnd, &rc);
-            HBRUSH bg = CreateSolidBrush(RGB(24, 24, 32));
+            HBRUSH bg = CreateSolidBrush(RGB(28, 32, 37));
             FillRect(dc, &rc, bg);
             DeleteObject(bg);
             SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, RGB(235, 235, 245));
+            SetTextColor(dc, RGB(230, 232, 235));
             auto* text = reinterpret_cast<std::wstring*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
             // The inner padding scales with DPI too.
             const int dpi = static_cast<int>(monitor_dpi(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)));
@@ -138,10 +138,10 @@ LRESULT CALLBACK overlay_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             // The button. Drawn from the same rect the hit test uses, so the thing the user
             // aims at and the thing that responds cannot drift apart.
             RECT button{action.x, action.y, action.x + action.width, action.y + action.height};
-            HBRUSH fill = CreateSolidBrush(RGB(58, 58, 78));
+            HBRUSH fill = CreateSolidBrush(RGB(224, 165, 74));
             FillRect(dc, &button, fill);
             DeleteObject(fill);
-            SetTextColor(dc, RGB(245, 245, 255));
+            SetTextColor(dc, RGB(28, 32, 37));
             const auto label = to_wide(overlay_action_label());
             DrawTextW(dc, label.c_str(), -1, &button,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);

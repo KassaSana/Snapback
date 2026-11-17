@@ -51,7 +51,7 @@ export const SummaryCard = memo(function SummaryCard({
       <div className="card-header">
         <h2>Summary</h2>
         <div className="button-row">
-          <span className="pill">{rangeLabel}</span>
+          <span className="review-period">{rangeLabel}</span>
           <button className="secondary-button" disabled={!hasHistory} onClick={onExport}>
             Export summary
           </button>

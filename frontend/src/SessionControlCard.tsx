@@ -165,9 +165,10 @@ export const SessionControlCard = memo(function SessionControlCard({
 
 
   return (
-    <section className="card session-card">
+    <section className={sessionActive ? "card session-card" : "card session-card session-card-idle"}>
       <div className="card-header session-card-header">
-        <h2>Session</h2>
+        <h2 className="visually-hidden">Session</h2>
+        {sessionActive ? <span className="session-status-dot" aria-hidden="true" /> : null}
         <span className="session-status">{sessionStatusLabel}</span>
       </div>
       {untrackedNote && (
@@ -187,29 +188,16 @@ export const SessionControlCard = memo(function SessionControlCard({
       {sessionActive && (
         <div className="session-live">
           <div className="session-live-overview">
-            <div className="session-live-goal">
-              <p className="metric-label">Mode</p>
+            <div className="session-live-timer">
+              <p className="metric-value" aria-label="Elapsed session time">
+                {formatElapsed(sessionRecord?.startedAtMs, nowMs)}
+              </p>
               <p className="session-live-mode">
                 {FOCUS_MODE_LABELS[normalizeFocusMode(sessionRecord?.focusMode || focusMode)]} mode
               </p>
             </div>
-            <div className="session-live-timer">
-              <p className="metric-label">Elapsed</p>
-              <p className="meta-sub">Includes time while recording is paused.</p>
-              <p className="metric-value" aria-label="Elapsed session time">
-                {formatElapsed(sessionRecord?.startedAtMs, nowMs)}
-              </p>
-            </div>
           </div>
           <div className="button-row">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={handleStopSession}
-              disabled={!stoppable}
-            >
-              {sessionPending ? "Working…" : "Stop session"}
-            </button>
             <button
               type="button"
               className="link-button"
@@ -222,7 +210,16 @@ export const SessionControlCard = memo(function SessionControlCard({
             >
               {switching ? "Keep this session" : "Start a different session"}
             </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleStopSession}
+              disabled={!stoppable}
+            >
+              {sessionPending ? "Working…" : "Stop session"}
+            </button>
           </div>
+          <p className="meta-sub session-live-note">Elapsed includes time while recording is paused.</p>
           {switching && (
             <p className="helper-text" role="status">
               Starting a different session stops this one first. You'll be asked to rate it (or
@@ -233,11 +230,10 @@ export const SessionControlCard = memo(function SessionControlCard({
       )}
 
       {(!sessionActive || switching) && (
-        <form onSubmit={onSubmit}>
-          <div className="session-start-fields">
-          <label className="field">
-            <span>Focus goal</span>
-            <div className="goal-input-wrapper">
+        <form className="session-goal-form" onSubmit={onSubmit}>
+          <div className="session-goal-row">
+            <label className="goal-input-wrapper">
+              <span className="visually-hidden">Focus goal</span>
               <input
                 type="text"
                 placeholder="Write the quarterly report"
@@ -303,35 +299,7 @@ export const SessionControlCard = memo(function SessionControlCard({
                   ))}
                 </ul>
               )}
-            </div>
-          </label>
-
-          <label className="field">
-            <span>Focus mode</span>
-            <select
-              value={focusMode}
-              onChange={(event) => setDraftFocusMode(event.target.value as FocusMode)}
-              disabled={sessionPending}
-              aria-describedby="focus-mode-hint"
-            >
-              {FOCUS_MODES.map((mode) => (
-                <option key={mode} value={mode}>
-                  {FOCUS_MODE_LABELS[mode]}
-                </option>
-              ))}
-            </select>
-          </label>
-          </div>
-          {validation.message && (
-            <p className="helper-text helper-error" id="session-goal-error" role="alert">
-              {validation.message}
-            </p>
-          )}
-          <p className="helper-text" id="focus-mode-hint">
-            {FOCUS_MODE_HINT}
-          </p>
-
-          <div className="button-row">
+            </label>
             <button
               type="submit"
               className="primary-button"
@@ -343,6 +311,32 @@ export const SessionControlCard = memo(function SessionControlCard({
                   ? "Stop and start this one"
                   : "Start session"}
             </button>
+          </div>
+          {validation.message && (
+            <p className="helper-text helper-error" id="session-goal-error" role="alert">
+              {validation.message}
+            </p>
+          )}
+
+          <div className="session-goal-options">
+            <label className="session-mode-field">
+              <span>Focus mode</span>
+              <select
+                value={focusMode}
+                onChange={(event) => setDraftFocusMode(event.target.value as FocusMode)}
+                disabled={sessionPending}
+                aria-describedby="focus-mode-hint"
+              >
+                {FOCUS_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {FOCUS_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="helper-text" id="focus-mode-hint">
+              {FOCUS_MODE_HINT}
+            </p>
             {validateSessionGoal(sessionGoal).valid && (
               <button
                 type="button"
@@ -360,26 +354,6 @@ export const SessionControlCard = memo(function SessionControlCard({
               </button>
             )}
           </div>
-
-          {recentGoals.length > 0 && (
-            <div className="recent-goals">
-              <p className="meta-label">Recent goals</p>
-              <ul className="chip-list">
-                {recentGoals.map((entry) => (
-                  <li key={entry.goal}>
-                    <button
-                      type="button"
-                      className="chip"
-                      onClick={() => applyGoal(entry.goal, entry.focusMode)}
-                      disabled={sessionPending}
-                    >
-                      {entry.goal}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {presets.length > 0 && (
             <div className="session-presets">
@@ -430,9 +404,28 @@ export const SessionControlCard = memo(function SessionControlCard({
               </p>
             </div>
           )}
+
+          {recentGoals.length > 0 && (
+            <div className="recent-goals">
+              <p className="meta-label">Recent goals</p>
+              <ul className="chip-list">
+                {recentGoals.map((entry) => (
+                  <li key={entry.goal}>
+                    <button
+                      type="button"
+                      className="chip"
+                      onClick={() => applyGoal(entry.goal, entry.focusMode)}
+                      disabled={sessionPending}
+                    >
+                      {entry.goal}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </form>
       )}
-
     </section>
   );
 });

@@ -4,7 +4,7 @@ import type { RecordingStatus } from "./api";
 import { snoozeRemainingLabel } from "./alertDelivery";
 import type { SessionStatusView } from "./sessionStatus";
 
-// The header's "am I being recorded?" chip, with pause and resume beside it. The state comes
+// The rail's "am I being recorded?" block, with pause and resume beside it. The state comes
 // from the backend, so this and the tray can't disagree.
 type RecordingStatusCardProps = {
   status: RecordingStatus;
@@ -58,8 +58,20 @@ export const RecordingStatusCard = memo(function RecordingStatusCard({
   return (
     <section className="recording-status-header" aria-labelledby="recording-status-heading">
       <h2 id="recording-status-heading">Session status</h2>
-      <span className={`status-value${status.state === "blocked" ? " status-alert" : ""}`}>
-        {label}
+      <span className="recording-state">
+        <span
+          className={`recording-dot${
+            status.state === "recording"
+              ? " recording-dot-recording"
+              : status.state === "blocked"
+                ? " recording-dot-blocked"
+                : ""
+          }`}
+          aria-hidden="true"
+        />
+        <span className={`status-value${status.state === "blocked" ? " status-alert" : ""}`}>
+          {label}
+        </span>
       </span>
       {reason ? <p className="meta-sub">{reason}</p> : null}
       {unconfirmed ? (

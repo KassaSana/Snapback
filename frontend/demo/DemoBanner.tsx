@@ -2,26 +2,27 @@
  * The note above the hosted demo saying the data is generated.
  *
  * Styles are inline because styles.css ships inside the desktop app, and this only exists for
- * the demo. Colours follow the app palette (cream background, terracotta accent).
+ * the demo. Colours follow the app palette (cool neutrals, pine accent).
  */
 
 const wrap: React.CSSProperties = {
-  background: "#f1ece1",
-  borderBottom: "1px solid #e2d9c8",
-  color: "#2b2a26",
+  background: "var(--rail)",
+  borderBottom: "1px solid var(--border)",
+  color: "var(--ink)",
   padding: "10px 20px",
-  font: "13px/1.5 system-ui, -apple-system, Segoe UI, sans-serif",
+  font: "13px/1.5 var(--font-sans)",
+  flex: "none",
   display: "flex",
   flexWrap: "wrap",
   gap: "4px 14px",
   alignItems: "baseline",
 };
 
-const label: React.CSSProperties = { fontWeight: 600, color: "#c65d44" };
+const label: React.CSSProperties = { fontWeight: 600, color: "var(--accent)" };
 
-const muted: React.CSSProperties = { color: "#6b665c" };
+const muted: React.CSSProperties = { color: "var(--muted)" };
 
-const link: React.CSSProperties = { color: "#2b2a26", textDecoration: "underline" };
+const link: React.CSSProperties = { color: "var(--ink)", textDecoration: "underline" };
 
 export default function DemoBanner() {
   return (

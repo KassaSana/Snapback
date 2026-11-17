@@ -11,7 +11,7 @@ import { DailyTrendCard } from "./DailyTrendCard";
 import { DiagnosticsCard } from "./DiagnosticsCard";
 import { GoalCategoriesCard } from "./GoalCategoriesCard";
 import { ActionErrorBanner } from "./ActionErrorBanner";
-import { AppHeader } from "./AppHeader";
+import { AppHeader, AppStatus } from "./AppHeader";
 import { InsightsCard } from "./InsightsCard";
 import { FocusStateHero } from "./FocusStateHero";
 import { SignalsCard } from "./SignalsCard";
@@ -25,6 +25,7 @@ import { PermissionWizard } from "./PermissionWizard";
 import { AttendedTargetsCard } from "./AttendedTargetsCard";
 import { PomodoroCard } from "./PomodoroCard";
 import { SessionControlCard } from "./SessionControlCard";
+import { SessionRibbon } from "./SessionRibbon";
 import { SessionTechnicalDetails } from "./SessionTechnicalDetails";
 import { recentGoals } from "./sessionCockpit";
 import { sessionStatusView } from "./sessionStatus";
@@ -528,28 +529,46 @@ export default function App() {
         onFocusModeChange={handleFocusModeChange}
       />
 
-      <AppHeader
-        surface={surface}
-        activeWindowAvailable={activeWindowAvailable}
-        captureFailed={captureFailed}
-        captureProbeConfirmed={captureProbeConfirmed}
-        captureRunning={captureRunning}
-        healthStatus={healthStatus}
-        modelDeploymentDegraded={modelDeploymentDegraded}
-        permissionCaptureAvailable={permissionCaptureAvailable}
-        permissionMessage={permissionMessage}
-        permissionSteps={permissionSteps}
-        onOpenTechnicalDetails={openSettingsSection}
-        recordingStatus={recordingStatus}
-        recordingStatusUnconfirmed={recordingStatusUnconfirmed}
-        onPauseRecording={handlePausePrivately}
-        onResumeRecording={handleResumeRecording}
-        onResumeAlerts={handleResumeAlerts}
-        sessionActive={sessionActive}
-        sessionStatus={liveSessionStatus}
-        activeGoal={sessionRecord?.goal ?? null}
-      />
+      {/* The rail: where you are, and whether Snapback is recording. Same on every surface. */}
+      <aside className="app-rail">
+        <div className="app-brand">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+            <rect className="app-brand-mark" width="20" height="20" rx="5" />
+            <path
+              className="app-brand-arrow"
+              d="M13.5 7.5H8a3 3 0 0 0 0 6h4.5M10.5 5 8 7.5 10.5 10"
+              fill="none"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Snapback
+        </div>
+        <SurfaceNav active={surface} onChange={setSurface} />
+        <div className="app-rail-spacer" />
+        <AppStatus
+          activeWindowAvailable={activeWindowAvailable}
+          captureFailed={captureFailed}
+          captureProbeConfirmed={captureProbeConfirmed}
+          captureRunning={captureRunning}
+          healthStatus={healthStatus}
+          modelDeploymentDegraded={modelDeploymentDegraded}
+          permissionCaptureAvailable={permissionCaptureAvailable}
+          permissionMessage={permissionMessage}
+          permissionSteps={permissionSteps}
+          onOpenTechnicalDetails={openSettingsSection}
+          recordingStatus={recordingStatus}
+          recordingStatusUnconfirmed={recordingStatusUnconfirmed}
+          onPauseRecording={handlePausePrivately}
+          onResumeRecording={handleResumeRecording}
+          onResumeAlerts={handleResumeAlerts}
+          sessionStatus={sessionActive ? liveSessionStatus : null}
+        />
+      </aside>
 
+      <div className="app-main">
+      <div className="app-content">
       <ActionErrorBanner
         error={feedback.actionError ?? overlayFailureReason}
         onDismiss={() => {
@@ -560,7 +579,21 @@ export default function App() {
 
       <ActionErrorBanner error={persistenceFailureReason} />
 
-      <SurfaceNav active={surface} onChange={setSurface} />
+      <AppHeader
+        surface={surface}
+        sessionActive={sessionActive}
+        activeGoal={sessionRecord?.goal ?? null}
+      >
+        {sessionActive ? (
+          <SessionRibbon
+            sessionId={sessionId}
+            startedAtMs={sessionRecord?.startedAtMs}
+            goal={sessionRecord?.goal ?? null}
+            prediction={live.prediction}
+            predictionHistory={live.predictionHistory}
+          />
+        ) : null}
+      </AppHeader>
 
       {/* One panel element, swapped content — ADR-0003. Cards move between surfaces by
           composition; none of them were rewritten to get here. */}
@@ -570,7 +603,7 @@ export default function App() {
             ? "grid grid-now"
             : surface === "review"
               ? "grid grid-review"
-              : "grid"
+              : "grid grid-settings"
         }
         role="tabpanel"
         id={surfacePanelId(surface)}
@@ -593,6 +626,26 @@ export default function App() {
             onRecover={() => openSettingsSection("privacy")}
           />
         )}
+
+        {nowMode === "stopped" ? (
+          <SessionReviewCards
+            autoLabel={autoLabel}
+            handleLabel={handleLabel}
+            handleSkipSurvey={handleSkipSurvey}
+            handleDiscardFragment={handleDiscardFragment}
+            handleChangeSessionRating={handleChangeSessionRating}
+            labelPending={labelPending}
+            labelStatus={feedback.labelStatus}
+            labelStatusWarning={feedback.labelStatusWarning}
+            savedSessionRating={savedSessionRating}
+            recap={recap}
+            surveyPending={surveyPending}
+            reflectionPending={reflectionPending}
+            reflectionSaved={reflectionSaved}
+            handleSaveReflection={handleSaveReflection}
+            handleSkipReflection={handleSkipReflection}
+          />
+        ) : null}
 
         <div data-alert-region="session">
           <SessionControlCard
@@ -648,25 +701,6 @@ export default function App() {
           />
         ) : null}
 
-        {nowMode === "stopped" ? (
-          <SessionReviewCards
-            autoLabel={autoLabel}
-            handleLabel={handleLabel}
-            handleSkipSurvey={handleSkipSurvey}
-            handleDiscardFragment={handleDiscardFragment}
-            handleChangeSessionRating={handleChangeSessionRating}
-            labelPending={labelPending}
-            labelStatus={feedback.labelStatus}
-            labelStatusWarning={feedback.labelStatusWarning}
-            savedSessionRating={savedSessionRating}
-            recap={recap}
-            surveyPending={surveyPending}
-            reflectionPending={reflectionPending}
-            reflectionSaved={reflectionSaved}
-            handleSaveReflection={handleSaveReflection}
-            handleSkipReflection={handleSkipReflection}
-          />
-        ) : null}
 
         {nowMode === "running" ? (
           <>
@@ -708,13 +742,6 @@ export default function App() {
               onRetry={() => void refreshReview()}
             />
 
-            <SummaryCard
-              focusSummary={focusSummary}
-              exportStatus={exportStatus}
-              onExport={() => void exportSummary()}
-              rangeLabel={reviewRangeLabelText}
-              report={summaryReport}
-            />
             {/* "Start this again" fills the start form on Now and goes there; the
                 session still begins only when the user presses Start (ADR-0005). */}
             <SessionExplorerCard
@@ -736,6 +763,16 @@ export default function App() {
               reflectionStatus={reflectionStatus}
             />
 
+            <SummaryCard
+              focusSummary={focusSummary}
+              exportStatus={exportStatus}
+              onExport={() => void exportSummary()}
+              rangeLabel={reviewRangeLabelText}
+              report={summaryReport}
+            />
+            <details className="review-details">
+              <summary>Details</summary>
+              <div className="review-details-grid">
             <InsightsCard
               rangeLabel={reviewRangeLabelText}
               sessionHistory={sessionHistory}
@@ -758,6 +795,8 @@ export default function App() {
               rangePreset={reviewRange.preset}
               rangeLabel={reviewRangeLabelText}
             />
+              </div>
+            </details>
           </>
         )}
 
@@ -943,6 +982,8 @@ export default function App() {
           </>
         )}
       </main>
+      </div>
+      </div>
     </div>
   );
 }

@@ -18,5 +18,6 @@ append-only: to change a decision, write a new ADR and mark the old one
 | [0007](0007-time-is-integer-milliseconds-utc.md) | Time is UTC milliseconds since the epoch, stored as INTEGER | Accepted |
 | [0008](0008-protect-master-from-red-ci.md) | Protect `master` from red CI | Accepted |
 | [0009](0009-local-first-threat-model.md) | Local-first threat model for v1 | Accepted |
+| [0010](0010-workspace-visual-direction.md) | A workspace look instead of cream and cards | Accepted |
 
 Open questions are listed in the [roadmap](../ROADMAP.md#open-questions).

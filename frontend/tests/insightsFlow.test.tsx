@@ -142,9 +142,19 @@ afterEach(() => {
 });
 
 describe("Insights card", () => {
+  it("keeps charts in Details until opened", () => {
+    renderApp("review");
+    const details = screen.getByText("Details").closest("details");
+    expect(details).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText("Details"));
+    expect(details).toHaveAttribute("open");
+    expect(screen.getByRole("heading", { name: "Focus per session" })).toBeVisible();
+  });
+
   it("renders one bar per session and a concise session aggregate", async () => {
     boundary.state.history = [rawSummary("a", 60, 40, 2), rawSummary("b", 80, 20, 3)];
     renderApp("review");
+    fireEvent.click(screen.getByText("Details"));
 
     await screen.findByRole("heading", { name: "Focus per session" });
     await waitFor(() =>
@@ -161,6 +171,7 @@ describe("Insights card", () => {
   it("shows an empty state when there are no sessions", async () => {
     boundary.state.history = [];
     renderApp("review");
+    fireEvent.click(screen.getByText("Details"));
 
     const card = insightsCard();
     await waitFor(() =>
@@ -408,6 +419,7 @@ describe("Review interval provenance", () => {
     expect(screen.queryByRole("heading", { name: "Recent readings" })).not.toBeInTheDocument();
     expect(screen.getByText(/selected session’s insight and context describe that session/)).toBeInTheDocument();
     // The per-session chart reads the same capped list the report does, and says so.
+    fireEvent.click(screen.getByText("Details"));
     const chart = screen
       .getByRole("heading", { name: "Focus per session" })
       .closest("section") as HTMLElement;
@@ -439,6 +451,7 @@ describe("Review first-run states", () => {
     };
     boundary.state.focusSummary = { sampleCount: 0 };
     renderApp("review");
+    fireEvent.click(screen.getByText("Details"));
 
     expect(await screen.findByText(/No completed sessions yet/i)).toBeInTheDocument();
     expect(screen.getByText(/No prediction data yet/i)).toBeInTheDocument();

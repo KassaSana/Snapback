@@ -10,13 +10,13 @@
       (which then fetches font files from a second origin). Offline launches silently got
       different typography, so the bug was invisible to anyone developing on a plane.
 
-      Typography now uses a system stack (see --font-sans / --font-serif in styles.css), which
-      also avoids bundling font files that would need their licences inventoried under 9.12.
+      IBM Plex Sans is bundled locally and inlined into the built page; its license is
+      included with the font and listed in THIRD_PARTY_NOTICES.md.
       scripts/check_no_remote_subresources.py fails the build if any remote origin returns.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:;"
     />
     <title>Snapback Dashboard</title>
   </head>

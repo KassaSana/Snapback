@@ -99,6 +99,11 @@ describe("Settings second-level navigation", () => {
 
     fireEvent.keyDown(sectionTab("Advanced"), { key: "Home" });
     expect(sectionTab("General")).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(sectionTab("General"), { key: "ArrowDown" });
+    expect(sectionTab("Focus")).toHaveFocus();
+    fireEvent.keyDown(sectionTab("Focus"), { key: "ArrowUp" });
+    expect(sectionTab("General")).toHaveFocus();
   });
 
   it("keeps exactly one section tab in the tab order and labels its panel", async () => {

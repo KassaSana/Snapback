@@ -55,6 +55,7 @@ export default defineConfig({
   },
   envPrefix: ["VITE_"],
   build: {
+    assetsInlineLimit: 100000,
     target: "safari13",
     minify: "esbuild",
     sourcemap: false,
