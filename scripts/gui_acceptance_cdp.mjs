@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Dependency-free WebView2 driver for Roadmap 10.1. WebView2 exposes the Chromium DevTools
+// Dependency-free WebView2 driver for the Windows GUI smoke. WebView2 exposes the Chromium DevTools
 // Protocol when the smoke process supplies --remote-debugging-port. Node 22 supplies fetch
 // and WebSocket, so CI does not need a browser download merely to attach to the app's browser.
 

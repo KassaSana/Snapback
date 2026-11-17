@@ -1,31 +1,16 @@
 #!/usr/bin/env python3
 """Fail if any shipped HTML would fetch something over the network.
 
-ROADMAP 8.10. The Privacy card tells the user "Nothing leaves this device", and
-`frontend/scripts/inline-bundle.mjs` states the shipped page "makes ZERO subresource
-requests". Both were false: `frontend/index.html` linked a Google Fonts stylesheet, which in
-turn fetches font files from a second origin, and the CSP was widened to permit both.
+The app promises that nothing leaves the device. In every shipped HTML file this rejects:
 
-That failure had two properties worth designing against. It was **invisible offline** — with
-no network the page silently rendered with fallback typography and looked fine — so nobody
-developing on a plane would notice. And it was **a promise in prose contradicted by markup**,
-which is the exact class of drift Tier 12 exists for.
+  * `src`/`href` pointing at http:, https: or `//host`
+  * remote `@import` and `url(http...)` in inline CSS
+  * preconnect / dns-prefetch / prefetch / preload hints
+  * remote origins in the Content-Security-Policy
 
-So this is mechanical. It rejects, in every HTML file that ships:
-
-  * `src`/`href` attributes pointing at http:, https:, or protocol-relative `//host`
-  * `@import` of a remote stylesheet, and `url(http...)` inside inline CSS
-  * `preconnect`/`dns-prefetch`/`prefetch`/`preload` hints, which fetch or open connections
-    without being a subresource of their own
-  * remote origins anywhere in a Content-Security-Policy, since a permitted origin is a
-    standing invitation even when nothing currently uses it
-
-`data:` URIs are allowed: they are inline bytes, not a request. An explicit, disclosed user
-action such as a future update check (3.5) is a separate policy question and would not live
-in page markup.
+`data:` URIs are allowed.
 
 Usage:  python3 scripts/check_no_remote_subresources.py [--verbose]
-Exit 0 = the shipped page cannot talk to anything.
 """
 
 from __future__ import annotations

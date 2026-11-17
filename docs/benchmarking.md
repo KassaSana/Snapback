@@ -13,7 +13,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run_benchmarks.ps1
 ```
 
 ```sh
-# macOS / Linux (Roadmap 12.5)
+# macOS / Linux
 ./scripts/run_benchmarks.sh
 ```
 
@@ -218,11 +218,9 @@ on the engine side where every event is ingested.
 
 ## Measured budgets
 
-Roadmap **14.11**. **14.1**, **14.5**, **14.7** and **9.10** each begin with "measure first",
-and for a long time none of them had a number. These are the numbers. There is deliberately
-**no CI ceiling** on any of them: hosted runners are too noisy to carry a performance gate, and
-a flaky gate gets disabled within a month and then lies by omission for as long as it stays
-off. Reproduce them by hand and re-record them when the host changes.
+How much disk the database uses and how long the heavy Review queries take on a large
+database. CI doesn't enforce any of these; hosted runners are too noisy for a performance
+gate. Re-run by hand when the host changes.
 
 ```sh
 cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release -DSNAPBACK_BUILD_BENCHMARKS=ON
@@ -257,9 +255,8 @@ every persisted prediction carries exactly one `feature_snapshots` row. The ceil
 | bytes per day | 8.80 MB | 5.26 MB |
 | **database at the 90-day retention limit** | **792 MB** | **473 MB** |
 
-The per-attended-hour figure confirms the estimate 14.11 was opened with (~1.5 MB). The
-steady-state total is the number nobody had: a heavy user's database settles near **0.8 GB**,
-not a few tens of megabytes.
+So a heavy user's database settles near **0.8 GB** at the retention limit, not a few tens of
+megabytes.
 
 The table above was taken before the fixture wrote any title history. With one
 `context_snapshots` row every 24 attended seconds (81,000 rows over the 90 days) the ceiling
@@ -269,19 +266,9 @@ error beside the per-second prediction and feature rows.
 ### Read latency, p50 (p95), against that database
 
 Every one of these runs under `storage_mutex_` — the same lock the engine takes to persist.
-Measured after **14.13** made the window predicates index-seekable; the "before" column for the
-two queries that changed is in that item. Re-run on 2026-09-22 alongside the concurrency
-measurement below and unchanged within noise, so the figures are one database's, not two.
-
-**Correction, 2026-09-22.** Until then the fixture dated every *prediction* correctly but
-stamped every *session* with the wall clock at generation, so all 180 sessions fell inside
-every window. Rows that filter on `predictions.timestamp` were unaffected. Rows that filter on
-`sessions.started_at` measured the whole history for every window, and read as flat across
-windows — a property of the fixture, not of the query. `recent_session_summaries` below is
-re-measured on the corrected fixture, and the rows after it are new.
 
 The Review presets are **today / 7d / 30d / all** (`frontend/src/reviewRange.ts`). `all` passes
-no cutoff at all, so it is the unfiltered scan and 14.13 did not change it. The 90-day column
+no cutoff, so it scans everything. The 90-day column
 below is not a preset — it is there because it is the retention limit, and so it is the shape
 of the most expensive thing the storage layer can be asked for.
 
@@ -297,29 +284,21 @@ of the most expensive thing the storage layer can be asked for.
 `storage.cpp:Storage::session_window_totals` and `storage.cpp:Storage::attended_secs_since`
 are under 0.1 ms in every window and are left out of the table for that reason.
 
-**Three things this says that reading the code did not.**
+What this shows:
 
-1. **Cost is now proportional to the window, and it was not before.** Until 14.13 every one of
-   these read the whole table whichever window was asked for, so `day` on a mature database
-   cost nearly what `30d` did. It now costs what a day should.
-2. **The `sessions`-windowed reads scale with the window too** — once the fixture dates its
-   sessions (see the correction above). `productive_session_streak` grows 150× from `day` to
-   `90d` and `context_app_counts` 12×. Their `(?N IS NULL OR started_at >= ?N)` spelling costs
-   a scan of `sessions`, which is 180 rows; the work is the per-session join into
-   `predictions`, which already seeks `idx_predictions_session_ts`. So **14.14**'s bar is not
-   met: rewriting the idiom would buy nothing. `recent_session_summaries` has a ~0.29 s floor
-   at `day` (two sessions) that the row counts do not explain; it is recorded, not diagnosed.
-3. **The wide windows still cost seconds, and they hold `storage_mutex_` while doing it.**
-   `daily_summary` at the retention limit is 6.8 s and overtakes `prediction_stats` past 30
-   days; its per-day recursive axis is what grows. This is the contention **14.1** asks to have
-   measured before deciding whether to build a separate read lane, and "immaterial" is not what
-   it says.
+1. **Cost is proportional to the window.** A `day` query on a mature database costs what a day
+   should, since the window predicates use an index.
+2. **Session-windowed reads scale with the window too.** `productive_session_streak` grows 150×
+   from `day` to `90d`. The cost is the per-session join into `predictions`, which already uses
+   `idx_predictions_session_ts`, so rewriting the `(?N IS NULL OR started_at >= ?N)` idiom
+   wouldn't help. `recent_session_summaries` has an unexplained ~0.29 s floor at `day`.
+3. **Wide windows still take seconds while holding `storage_mutex_`.** `daily_summary` at the
+   retention limit is 6.8 s.
 
 ### What a report in flight costs a persist
 
 `storage_mutex_` serializes every storage-backed UI report against the engine's persist
-phase. **14.1** proposes a separate read lane and forbids building it from structure alone,
-so `benchmarks/bench_budgets.cpp` runs Review's reads concurrently with a paced writer (one
+phase. `benchmarks/bench_budgets.cpp` runs Review's reads concurrently with a paced writer (one
 persist every 100 ms), in the shape `state.cpp:AppState::health` and the engine really use:
 one `Storage`, one lock. It runs the writer three times, against three loads:
 
@@ -359,9 +338,9 @@ overstated the Review column by the ~2 s of whole-history session reads it could
 The per-command holds sum to the load time (2,534 ms against 2,552 ms), and each matches the
 read-latency table's 7-day column, so nothing here is unaccounted for. **The same
 `prediction_stats` over the same window is ~1.3 s of the 2.55 s** — three commands compute it
-independently. That is **14.12**, and on this fixture it is the largest single share of a load.
+independently; on this fixture that's the largest single share of a load.
 
-**The middle column is the answer to 14.1, and it is a tail, not a load.** Eight of 635
+**The cost shows up in the tail, not the average.** Eight of 635
 acquisitions of the storage lock were contended in that phase — about one per Review load.
 Every other persist took the lock for free, which is why p50 and p95 do not move in any
 column; an average, or a p95-only report, would call all three immaterial and be wrong. What
@@ -383,7 +362,7 @@ the whole load.**
 - **Measured on the ceiling fixture.** 90 days with every attended second written; a
   duty-cycled day holds fewer rows and reads proportionally faster over a window.
 
-**With the writer let through first (14.1's fix).** `util/writer_priority.hpp` is the gate
+**With writer priority.** `util/writer_priority.hpp` is the gate
 `AppState` now uses: the engine announces its persist while it waits for the lock, and each
 of the five Review commands yields to an announced persist before taking the lock. The
 benchmark runs the Review phase twice in one run, without and with the gate, so the
@@ -472,51 +451,19 @@ counter exists in the field rather than in a benchmark.
   closes with a support bundle, not with code.
 - **The real input hook's idle cost**, per the caveat above.
 
-### Deadline scheduling measurement (2026-10-01)
+### Idle and startup
 
-Same Windows host, GCC/MinGW Release headless harness, 60 seconds each. The silent
-fake capture hook wakes every 5 ms, so process CPU includes that harness cost and
-is not engine-only CPU or shipped desktop CPU. Before: 548 engine ticks (9.12/s),
-125 ms process CPU (0.21% of one core). After: 2 ticks (initial/coalesced startup),
-126 ms CPU (0.21%); no periodic 100 ms ticks. With input every 1100 ms, 55 samples:
-p95 capture-to-prediction emission fell from 107975 us to 271 us, p50 from 58192 us
-to 171 us. Process CPU fell from 155 ms to 77 ms in that paced run. These are single
-runs, not statistical equivalence or an instrumentation-overhead measurement.
+Measured on the same Windows host with a GCC/MinGW Release build, 60-second runs:
 
-MinGW libstdc++ 16 timed semaphore waits spun on this host despite only two engine
-ticks. The Windows libstdc++ path therefore retains the C++20 semaphore token but
-uses an owned OS event for the blocking timeout. Other standard libraries use the
-semaphore wait directly. Real desktop CPU, release soak, statistical latency checks,
-and the less-than-1% instrumentation gate remain unverified.
+- **Deadline-driven engine.** With no input, the engine went from ~9 wakeups a second to two
+  in total. With input every 1.1 s, p95 capture-to-prediction latency fell from 108 ms to
+  0.27 ms. Whole-process CPU is dominated by the test harness and timer granularity at this
+  scale, so no CPU improvement is claimed.
+- **Startup.** `snapback_startup_benchmarks` measures `Storage::open` on aged fixtures (1,000
+  predictions a day, all past retention). p95 went from 81 ms to 3.2 ms at 30 days and from
+  352 ms to 3.9 ms at 90 days, after moving retention cleanup off the open path.
+- MinGW's libstdc++ timed semaphore waits spin on Windows, so that build uses an OS event for
+  the blocking timeout instead.
 
-### Startup/open measurement (2026-10-01)
-
-The `snapback_startup_benchmarks` target measures `Storage::open`, with 21 freshly
-copied aged fixtures and a warm OS cache. Argument 30 or 90 seeds 1000 predictions
-per day (30000 or 90000 rows), all outside retention. These simplified prediction-only
-fixtures exercise startup pruning/VACUUM; they do not reproduce a full activity archive.
-Same Windows/MinGW Release host: 30-day fixture p95 80637 us before, 3158 us after
-(96.1% reduction); 90-day p95 351694 us before, 3943 us after (98.9%).
-
-The measured interval ends when database open returns, before the React view or its
-readiness acknowledgement. Full desktop startup-to-ready p95, representative month/90-day
-archives, and the roadmap's 80% UI readiness gate remain unverified. Automatic VACUUM
-is deferred: background DELETE leaves reusable pages and may not shrink the file.
-
-### Engine CPU and instrumentation calibration (2026-10-01)
-
-The idle harness now reads engine-thread CPU separately on Windows/Linux, before join;
-shutdown is excluded. A serial 60-second comparison used an archived build of commit
-`1a08ef3` and the current scheduler with the same harness and compiler/dependencies.
-The old engine made 540 ticks and used 15 ms thread CPU; the new engine made 2 ticks
-and reported 0 ms (below the Windows accounting granularity, not zero cost). Whole
-process CPU was 30 ms before and 47 ms after. Other runs varied considerably: fake
-capture wakes, host scheduling, and timer granularity dominate this small process
-measurement. No statistically meaningful whole-process CPU improvement is established.
-
-Separate component calibration (one million iterations, outside the measured idle
-window) recorded 0.29 ns per drain-counter loop update and 37.09 ns per latency-observer
-sample (clock, atomic, vector). These are isolated microbenchmarks, not a complete engine
-cycle with instrumentation toggled off/on. They do not close the less-than-1% overhead
-gate; that gate and statistical latency equivalence still require controlled profiling.
-On platforms without the thread CPU reader, the harness reports unavailable explicitly.
+Not yet measured: real desktop CPU over a working day, full launch-to-ready time, and the
+overhead of the engine's own instrumentation.

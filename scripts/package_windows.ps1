@@ -70,7 +70,7 @@ function Sign-ReleaseBinary {
     Write-Host "Signed $Path"
 }
 
-# Roadmap 0.4b. Signing the build-tree exe proves nothing about what we upload: the ZIP and
+# Signing the build-tree exe proves nothing about what we upload: the ZIP and
 # the installer carry their own copies, taken at the moment they were packaged. This opens
 # the artifact we actually ship and checks the signature on the binary inside it.
 function Assert-PackagedBinarySigned {
@@ -144,7 +144,7 @@ Invoke-Native { cmake --build $BuildPath --config $Config --target snapback_test
 Invoke-Native { ctest --test-dir $BuildPath -C $Config --output-on-failure }
 Invoke-Native { cmake --build $BuildPath --config $Config --target snapback }
 
-# Roadmap 0.4b. Sign here — after the build, BEFORE anything packages the result.
+# Sign here — after the build, BEFORE anything packages the result.
 #
 # This used to happen at the end of the script, which looked equivalent and was not: CPack had
 # already copied the *unsigned* snapback.exe into both the ZIP and the installer. Only the

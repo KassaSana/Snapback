@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Benchmark replay -- the macOS/Linux twin of run_benchmarks.ps1 (Roadmap 12.5).
+# Benchmark replay -- the macOS/Linux twin of run_benchmarks.ps1.
 #
 # Note the baseline in docs/benchmarking.md was measured on Windows (i5-12500H, MSVC).
 # Numbers from this script are NOT comparable to that table; compare like-for-like.

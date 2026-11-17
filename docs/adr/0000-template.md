@@ -1,32 +1,17 @@
-# ADR-NNNN — <short imperative title>
+# ADR-NNNN: <short title>
 
-- **Status:** Proposed | Accepted | Superseded by ADR-NNNN (link it) | Rejected
-- **Applied:** Yes | **No — see *Implementation status*** (omit this line only when the code
-  landed with the decision, which is the normal case)
+- **Status:** Proposed | Accepted | Superseded by ADR-NNNN | Rejected
 - **Date:** YYYY-MM-DD
-- **Roadmap item:** <e.g. 5.3, or "none">
-- **Decided by:** Kassa
-
-<!--
-If the code does NOT yet match this decision, add an `## Implementation status` section here
-saying what is true in the tree today and which roadmap item carries the rest. The rest of
-this document is present tense, so without that section it reads as a description of code
-that does not exist. ADR-0007 is the worked example.
--->
-
 
 ## Question
 
-One or two sentences. State the question that was actually open, not the solution.
-If you cannot phrase it as a question, this is not a decision — it is a task.
+The question that was actually open, in a sentence or two.
 
 ## Context
 
-What forces made this a real choice? Include the ones that pull in opposite
-directions. Cite current code with `path:symbol` where useful. Historical findings should name
-the inspected date or commit, without a live-looking citation to changed code.
+What made this a real choice. Cite code as `path:symbol` where useful.
 
-## Options considered
+## Options
 
 | Option | Upside | Downside |
 |--------|--------|----------|
@@ -35,20 +20,16 @@ the inspected date or commit, without a live-looking citation to changed code.
 
 ## Decision
 
-The chosen option, stated flatly. Present tense: "Scores are `[0,1]` everywhere."
+The chosen option, stated plainly in the present tense.
 
 ## Why
 
-The reasoning that made this option win. **This is the part that stops the next
-audit from re-deriving the question and reverting the answer.** Name the option
-you rejected and what would have to change for that to flip.
+Why it won, and what would have to change for a rejected option to win instead.
 
 ## Consequences
 
-- What code has to change, and what stops being true.
-- What this forecloses.
-- Any roadmap items this unblocks or invalidates.
+What changes in the code, and what this rules out.
 
 ## Revisit if
 
-The concrete signal that should reopen this. If nothing would, say so.
+The signal that should reopen this.

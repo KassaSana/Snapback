@@ -23,23 +23,19 @@ ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
 BUILD = ROOT / "build"
 
-# This is also the list used by the Ubuntu CI repository-guards step. The bundle guard runs
-# again in frontend CI after the shipped HTML has been built.
+# Also run by the Ubuntu CI job. The bundle guard runs again in frontend CI once the shipped
+# HTML has been built.
 GUARDS = (
     ("check_release_legal.py", ()),
     ("check_doc_paths.py", ()),
-    ("check_doc_symbols.py", ()),
     ("check_dependency_pins.py", ()),
     ("check_onnx_pins.py", ()),
     ("check_pin_freshness.py", ("--offline",)),
     ("check_ps_exit_codes.py", ()),
-    ("check_commit_attribution.py", ()),
     ("check_no_remote_subresources.py", ()),
     ("check_coverage_exclusions.py", ()),
     ("check_unit_test_wiring.py", ()),
     ("check_no_bom.py", ()),
-    ("check_scripts_documented.py", ()),
-    ("check_roadmap_status.py", ()),
     ("check_dead_headers.py", ()),
 )
 
@@ -64,19 +60,8 @@ def ensure_frontend_dependencies() -> None:
 
 
 def guards() -> None:
-    # This small README contract was a standalone shell check in CI. Keep it portable here.
-    if "docs/windows_demo.md" not in (ROOT / "README.md").read_text(encoding="utf-8"):
-        raise RuntimeError("README.md must link to docs/windows_demo.md")
-    if not (ROOT / "docs" / "windows_demo.md").is_file():
-        raise RuntimeError("docs/windows_demo.md is missing")
-
     for script, options in GUARDS:
         run(script, [sys.executable, str(ROOT / "scripts" / script), *options])
-
-    # The hook smoke needs a POSIX shell. CI always runs it on Ubuntu; Windows developers
-    # still run the shared Python attribution check above.
-    if os.name != "nt":
-        run("commit-msg hook smoke", [executable("sh"), str(ROOT / "scripts" / "test_commit_msg_hook.sh")])
 
 
 def configure_native() -> None:

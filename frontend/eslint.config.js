@@ -1,4 +1,4 @@
-// Roadmap 4.12. Flat config (ESLint 9+ format).
+// Flat config (ESLint 9+ format).
 //
 // Scope is deliberately narrow: correctness rules that catch real defects, plus the React
 // Hooks rules, which are the ones this codebase can actually get wrong in a way tests miss --

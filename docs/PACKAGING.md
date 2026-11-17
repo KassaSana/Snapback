@@ -1,4 +1,4 @@
-# Packaging and release decisions
+# Packaging and releases
 
 ## Current state
 
@@ -13,35 +13,24 @@
 
 ## Why NSIS and not IExpress
 
-The installer used to be an IExpress self-extractor wrapping the CPack ZIP plus
-`scripts/install_windows_package.ps1`. **It never built once on a GitHub-hosted runner.**
-`iexpress.exe` exits 1 there and says nothing else — proven against four SED variants on the
-`windows-2025-vs2026` image, with a license page and without, with one source directory and
-with two. All four failed identically, so the SED content was never the problem.
-
-IExpress is an undocumented IE-era GUI tool with no error output, so there is nothing to debug.
-CPack's NSIS generator replaces it: `CMakeLists.txt` already configured it, it produces a real
-uninstaller, and when it fails it says why. `release.yml` installs NSIS on the runner because
-the image does not carry it. `package_windows.ps1` now *requires* `makensis` rather than
-warning past a missing one — the warning is how a packaging step that had never produced
-anything survived as far as a release tag.
+The first installer was an IExpress self-extractor. `iexpress.exe` exits 1 on GitHub's
+Windows runners with no error output, whatever the SED file says, so it never built in CI.
+CPack's NSIS generator replaced it: it produces a real uninstaller and reports why it failed.
+`release.yml` installs NSIS on the runner, and `package_windows.ps1` fails if `makensis` is
+missing.
 
 ## Cutting a release
 
-ROADMAP 9.11. A `v*` tag is its own way into `release.yml`, and `ci.yml` does not run for
-tag pushes — it runs on pushes and PRs to `main`/`master`. Without a gate, a tag could
-publish a commit that never saw the required current CI checks, or was never on
-master at all. **Branch protection does not cover this: a tag is not a branch.**
-
-So the order matters:
+A `v*` tag triggers `release.yml`, and `ci.yml` doesn't run on tag pushes. Branch protection
+doesn't cover tags either, so the release workflow checks that the tagged commit passed CI.
+The order:
 
 1. **Bump `project(... VERSION x.y.z)` in `CMakeLists.txt`** for the candidate and update
    release notes before merging.
 2. **Merge the final candidate to `master`** and wait for `ci.yml` to finish **green on
    that exact commit**. Any subsequent version/documentation fix requires its own green run.
-3. **Tag that verified commit** with its matching `vX.Y.Z` version. Push the tag only when
-   the owner authorizes publication; the workflow publishes a release for tag pushes.
-   A manual workflow run builds artifacts without publishing a release.
+3. **Tag that commit** `vX.Y.Z` and push the tag; that publishes the release. A manual
+   workflow run builds artifacts without publishing.
 
 The `verify-tag` job refuses to build unless all three hold:
 
@@ -51,20 +40,16 @@ The `verify-tag` job refuses to build unless all three hold:
 | `git merge-base --is-ancestor` | the tagged commit is not reachable from `origin/master` |
 | `gh api .../ci.yml/runs?head_sha=…` | that commit has no completed, successful `ci.yml` run |
 
-The third check reads CI's conclusion rather than re-running the matrix, because a copy of
-the matrix here would drift from the real one. It fails closed: an API error or an
-unexpected response is treated as unproven, not as a pass.
+The third check reads CI's result instead of re-running the matrix. An API error counts as a
+failure.
 
-## Pre-release checklist (external, not code)
+## Outside the repo
 
-The unsigned Windows v0.3.0 release is recorded in the changelog. These are remaining
-external prerequisites or one-time configuration checks; they do not all gate an unsigned tag:
-
-| Item | Roadmap | What to do |
-| --- | --- | --- |
-| Apple Developer account | **3.3** | Enroll; longest lead time for macOS notarization and notifications |
-| Code-signing certificate | **0.4b** | Choose/provision the certificate and set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` on its release runner |
-| GitHub Pages source | **3.6** | Repo → Settings → Pages → Source: **GitHub Actions** (one-time; required for the live demo URL) |
+| Item | What to do |
+| --- | --- |
+| Apple Developer account | Needed for macOS notarization and notifications |
+| Code-signing certificate | Provision it and set `SNAPBACK_SIGN_CERTIFICATE_THUMBPRINT` on the release runner |
+| GitHub Pages | Settings → Pages → Source: **GitHub Actions** (one-time, for the live demo) |
 
 ## Authenticode signing
 
@@ -98,17 +83,11 @@ When `-SignCertificate` is set, the script signs:
 The ZIP package itself is not Authenticode-signed; Windows trust is established by signing
 the executable content and installer executable.
 
-### Order matters (ROADMAP 0.4b)
+### Order matters
 
-Signing used to run at the *end* of the script. That looked equivalent and was not: CPack had
-already copied the unsigned `snapback.exe` into both the ZIP and the installer. Only the loose
-build-tree binary and the outer installer got signatures, so
-**every uploaded artifact still contained an unsigned executable** while the build log
-cheerfully reported "Signed …".
-
-The fix is ordering, and the guard against it regressing is verification of the *artifact*
-rather than the build tree. After packaging, the script extracts the ZIP it is about to
-upload and requires the `snapback.exe` inside it to be:
+`snapback.exe` has to be signed before CPack runs, because CPack copies it into both the ZIP
+and the installer. After packaging, the script extracts the ZIP it's about to upload and
+requires the `snapback.exe` inside it to be:
 
 1. `Get-AuthenticodeSignature` status `Valid`, and
 2. signed by the **same thumbprint** that was passed in.
@@ -139,24 +118,13 @@ still builds and uploads unsigned artifacts.
 - ONNX Runtime DLL (third-party; ship as-is)
 - Frontend static assets (not executables)
 
-## Auto-update (v1 decision)
+## Auto-update
 
-**Decision: defer auto-update for v1.**
-
-Rationale:
-
-- Replicating secure delta updates is a full subsystem (signing, channels, rollback).
-- The intended v1 path is a signed installer and manual upgrade; the recorded v0.3.0 artifacts are unsigned.
-- Revisit when installer signing and CI release artifacts are stable.
-
-Alternatives if needed later:
-
-1. **Manual download** — link from README / GitHub Releases (simplest)
-2. **In-app "check for updates"** — requires a new ADR amending network silence before an HTTP manifest fetch is scheduled (Roadmap 3.5)
-3. **Full updater** — also requires that ADR, plus signed manifests, channels, and rollback (high effort)
+Not in v1. Upgrades are a manual download from GitHub Releases. Even an update check is a
+network call, which the app doesn't make ([ADR-0009](adr/0009-local-first-threat-model.md)),
+and a real updater needs signed manifests, channels and rollback.
 
 ## macOS / Linux packaging
 
-macOS `.app`/DMG packaging and notarization are the remaining external v1 release blocker
-([Roadmap 3.3](ROADMAP.md)); they require an Apple Developer account, bundle identifier, and
-signing/notarization credentials. Linux AppImage or distro packaging remains a post-v1 item.
+macOS `.app`/DMG packaging and notarization are the main thing left for v1. They need an Apple Developer account, bundle identifier, and
+signing/notarization credentials. Linux packaging comes after v1.

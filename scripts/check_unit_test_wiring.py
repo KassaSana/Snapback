@@ -1,23 +1,8 @@
 #!/usr/bin/env python3
-"""Every `frontend/tests/*.test.ts` file must actually be run by `npm run test:unit`.
+"""Every `frontend/tests/*.test.ts` must be run by `npm run test:unit`.
 
-`test:unit` is a hand-chained string of `tsx tests/<name>.test.ts && ...` invocations, one
-per file. There is no glob: a test file is run because somebody remembered to add it to that
-chain, and a file nobody added is a file nobody runs. It still typechecks, it still looks
-like a test, and the suite still reports green -- which is the worst possible combination,
-because the missing coverage is invisible in exactly the situation where it matters.
-
-`check_coverage_exclusions.py` already guards the *other* direction: a module dropped from
-the Vitest coverage denominator must have a test that `test:unit` runs. That leaves this
-direction open -- a brand-new test file, excluded from nothing, silently never executed.
-
-Vitest owns `tests/**/*.test.tsx` through its own `include` glob (see the comment in
-`vite.config.ts`), so `.tsx` files are deliberately not checked here: they are discovered,
-not listed. Only the `tsx`-runner's `.test.ts` files need a registration to exist.
-
-Written as a guard rather than a convention for the reason the rest of scripts/ is: a
-convention holds until the day someone is in a hurry, and this one fails silently and looks
-like a passing suite.
+`test:unit` lists its files by hand, so a new test file that isn't added to it never runs.
+`.test.tsx` files are found by Vitest's own glob and aren't checked here.
 """
 from __future__ import annotations
 

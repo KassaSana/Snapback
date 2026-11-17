@@ -3,9 +3,8 @@
 Snapback is a local-first desktop application. It records window titles, application names,
 input timing, and session goals on the user's own machine, and release builds open no network
 connections for product features. The threat model that defines what the project defends
-against, and what it explicitly does not, is
-[ADR-0009](docs/adr/0009-local-first-threat-model.md). Read it before reporting: several
-things that look like findings are recorded there as accepted v1 limits.
+against, and what it doesn't, is [ADR-0009](docs/adr/0009-local-first-threat-model.md).
+Some things that look like findings are listed there as accepted limits.
 
 ## Reporting a vulnerability
 
@@ -24,8 +23,7 @@ downstream distributors to coordinate.
 ## What is in scope
 
 - Any way for a release build to send recorded data off the machine. Release builds are
-  meant to be network-silent; a socket, beacon, or remote subresource is a bug
-  (Roadmap 8.10, enforced by `scripts/check_no_remote_subresources.py`).
+  meant to be network-silent; a socket, beacon, or remote subresource is a bug.
 - Any way for a page other than the bundled frontend to invoke a native command through the
   webview bridge, including after a redirect or navigation.
 - Any path by which "Delete all activity" or "Export my data" leaves out, or silently
@@ -37,11 +35,10 @@ downstream distributors to coordinate.
 
 ## What is out of scope for v1
 
-These are decided limits, not oversights. Reports about them will be acknowledged and
-closed with a pointer to the decision.
+These are known, accepted limits.
 
 - **Other software running as the same OS user** can read `focoflow.db` and exports. The
-  database is not encrypted at rest (ADR-0009; Roadmap 4.5 is the optional follow-up).
+  database is not encrypted at rest.
 - **Physical access to an unlocked session** is the user's responsibility, mitigated only
   by OS login, screen lock, and the lock-screen notification redaction setting.
 - **Windows profile isolation** between OS accounts is relied on, not hardened beyond it.

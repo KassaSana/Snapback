@@ -1,12 +1,8 @@
-# dependencies.md — what we fetch, and how to change it
+# C++ dependencies
 
-ROADMAP 8.6. This is the update process for Snapback's C++ dependencies. The frontend's
-dependencies are a separate story handled by npm and Dependabot; see
-[running.md](running.md) for building either half.
-
-The shipped license inventory for release packages lives in
-[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) at the repository root. This file
-records how to bump pins; the notices file is the legal artifact installers carry.
+How Snapback's C++ dependencies are pinned and updated. Frontend dependencies are handled by
+npm and Dependabot. License notices for release packages are in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 
 ## The rule
 
@@ -25,9 +21,8 @@ tag name fails the build.
 
 A git tag is a mutable pointer. Upstream can move `v3.11.3` onto a different commit at any
 time — accidentally, or because a release was re-cut, or because the account was compromised
-— and our next clean build would compile the new tree with **no diff on our side to review**.
-Nothing else would catch it: Dependabot watches our GitHub Actions and our npm tree, not
-`FetchContent`. A commit SHA cannot move, because git object names are derived from content.
+— and the next clean build would compile different code with no diff on this side to review.
+Dependabot doesn't watch `FetchContent`. A commit SHA can't move.
 
 The same argument applies to a downloaded archive, which is why the SQLite amalgamation
 carries a `URL_HASH` rather than just a URL.
@@ -77,8 +72,7 @@ any way.
 
 ## ONNX Runtime is pinned separately
 
-ROADMAP 8.9. The ONNX Runtime does not arrive through `FetchContent`, so the guard above
-never saw it. The two ONNX CI jobs download a **prebuilt** runtime archive from a GitHub
+ONNX Runtime doesn't come through `FetchContent`. The two ONNX CI jobs download a **prebuilt** runtime archive from a GitHub
 release and extract it into `third_party/`, where CMake links it into the test binary.
 
 A release URL is not a pin, for the same reason a git tag is not: GitHub release assets can
@@ -107,20 +101,13 @@ and restate none of them, and `scripts/check_onnx_pins.py` enforces that arrange
 
 3. **Run the guard**: `python3 scripts/check_onnx_pins.py --verbose`.
 
-The guard also fails if a job extracts before verifying, hardcodes a version or digest that
-the manifest already holds, or renames the vendor step out from under the parser. That last
-one matters: a guard that silently stops finding anything reports success forever.
+The guard also fails if a job extracts before verifying, or hardcodes a version or digest
+that the manifest already holds.
 
-## What is deliberately not covered
+## Not covered
 
-- **No advisory monitoring.** Nothing watches these four projects for CVEs today; pinning
-  makes builds reproducible, which is a different property from being current. Pinning
-  arguably makes staleness *more* likely, since there is no longer a tag quietly pulling in
-  patch releases. **New upstream releases** are watched: `.github/workflows/pin-freshness.yml`
-  compares the ONNX manifest and the three git `FetchContent` pins to each project's latest
-  GitHub release and opens an issue when any is behind. It does not open a PR and must not
-  edit digests — that human step is the process above. Revisit CVE response under 8.5 once
-  there is a threat model to weigh it against.
-- **Vendored SQLite.** `third_party/sqlite/` is preferred over the fetch when present, so
-  offline builds work. That copy is checked in and reviewable, which is a stronger guarantee
-  than either mechanism above.
+- **CVE monitoring.** Nothing watches these projects for advisories. Pinning makes builds
+  reproducible, not current. `.github/workflows/pin-freshness.yml` does check weekly for
+  newer upstream releases and opens an issue when a pin falls behind; bumping is still manual.
+- **Local SQLite override.** If `third_party/sqlite/` exists it's used instead of the fetch,
+  which helps offline builds. It's gitignored, so it's whatever you put there.

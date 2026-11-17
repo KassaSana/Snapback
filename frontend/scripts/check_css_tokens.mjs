@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Roadmap 10.10. Fails CI when styles.css references a custom property that is never
+/** Fails CI when styles.css references a custom property that is never
  *  defined — the bug that made --border, --card, and --text silently invalid. */
 
 const here = dirname(fileURLToPath(import.meta.url));

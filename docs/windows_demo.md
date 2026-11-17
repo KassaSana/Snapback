@@ -52,9 +52,9 @@ platform applicability are indexed in [scripts](../scripts/README.md).
 5. Stop; inspect the recap and the selected session in Review. Recording starts only on Start.
 6. Use `-OverlayTest` to inspect a native overlay without staging a distraction.
 
-For release verification, run **P0-09** in the [roadmap](ROADMAP.md): stage a real
-distraction, verify Take me back, open an external link, and verify stopped attendance
-does not grow. A sample overlay alone does not prove recovery works.
+Before a release, also test a real distraction: switch away, check that "Take me back"
+returns you to the right window, open an external link, and check that attended time stops
+growing once the session is stopped. The sample overlay alone doesn't prove recovery works.
 
 ## Automated desktop checks
 

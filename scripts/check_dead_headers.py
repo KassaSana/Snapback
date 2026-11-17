@@ -1,36 +1,10 @@
 #!/usr/bin/env python3
 """Every header in src/ must be included by product code, not only by its own tests.
 
-Automates the monthly dead-code sweep. The sweep's rule is that every `.hpp` in `src/` should
-have a caller outside its own test; `confidence.hpp` was the known offender, deleted under 5.3
-and ADR-0004, and the sweep exists because nobody expects to find the *next* one by reading.
-
-A header that only its tests include is worse than unused code. It compiles, it has tests, and
-those tests pass -- so every signal a reviewer looks at says the code is live, while nothing in
-the shipped app has ever called it. That is the shape 2.4 had: a subsystem with green tests and
-no production caller, which survived long enough to be reasoned about as if it worked.
-
-What counts as product code: everything tracked under `src/` and `tools/`. `tools/` is included
-because its binaries are real consumers -- `snapback_feature_parity_export` is the only non-test
-caller of `feature_parity.hpp`, and dropping `tools/` from the scan would report that header as
-dead when it is exactly as live as the fixtures it regenerates.
-
-A header's own translation unit does not count as a caller. `foo.cpp` including `foo.hpp` is
-how C++ is written, not evidence that anything uses `foo` -- counting it would leave the check
-catching only header-only files, which is the narrowest possible reading of the sweep and would
-miss a `.hpp`/`.cpp` pair that nothing else calls.
-
-Includes are resolved rather than substring-matched: `#include "engine/features.hpp"` is tried
-against `src/`, then against the including file's own directory. Two headers sharing a basename
-in different directories therefore cannot cover for each other, which a basename match would
-allow.
-
-The scan is textual and deliberately platform-blind. A `#include` inside a `#if defined(_WIN32)`
-block still counts, because the Windows sources are tracked on every platform and a header
-reached only on one OS is not dead -- it is conditional. Running this on Linux must not report
-`tray_windows.hpp`.
-
-Exit codes: 0 = every header has a product caller, 1 = at least one does not.
+Product code is everything tracked under `src/` and `tools/`. A header's own `.cpp` doesn't
+count as a caller. Includes are resolved against `src/` and the including file's directory,
+so two headers with the same basename can't cover for each other. The scan is textual and
+platform-blind.
 """
 from __future__ import annotations
 

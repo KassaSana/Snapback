@@ -1,27 +1,10 @@
 #!/usr/bin/env python3
-"""Fail if a doc names a file that does not exist.
+"""Fail if a doc names a repo path or links to a file that doesn't exist.
 
-Tier 12 of the roadmap exists because docs here repeatedly asserted paths that were
-never created, or that moved. Auditing that by hand is what let it rot; this makes it
-mechanical.
-
-What it checks, for every `*.md` under `docs/` plus the tracked root/readme files:
-
-  * inline-code paths -- `src/app/state.cpp`, `scripts/test_local.ps1`, `frontend/dist`
-  * the same with a `:symbol` anchor -- `state.cpp:health`. That the *symbol* still exists
-    is `check_doc_symbols.py`'s job; this one only has to reach the file.
-  * relative markdown links -- [text](adr/README.md)
-
-Deliberately NOT checked:
-
-  * anything containing a glob (`input_hook_*.cpp`) -- these are shorthand for a real
-    set, so we glob them and require at least one match instead
-  * URLs, and bare words that merely look path-ish (no slash, or no known extension)
-  * build outputs listed in GENERATED -- a doc naming `frontend/dist` is describing what a
-    build produces, which is a correct claim even though a fresh checkout lacks it
+Checks inline-code paths (optionally with a `:symbol` suffix) and relative markdown links in
+every `*.md` under `docs/` plus the root and package READMEs. Globs must match at least one file.
 
 Usage:  python3 scripts/check_doc_paths.py [--verbose]
-Exit 0 = every referenced path resolves.
 """
 
 from __future__ import annotations
@@ -41,55 +24,30 @@ ROOTS = ("src/", "tests/", "docs/", "scripts/", "frontend/", "tools/", "benchmar
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCED_BLOCK = re.compile(r"```.*?```", re.S)
-# Strip the anchor off `src/app/state.cpp:health` or `storage.hpp:kSchemaVersion` so what is
-# left is a path this script can look for.
-#
-# Both forms are accepted here, but only one is legal in a doc. Line numbers rot silently --
-# the file keeps existing, so this guard stays quiet while the number drifts onto unrelated
-# code -- which is why citations name a symbol instead. `check_doc_symbols.py` is what rejects
-# a leftover line number and what proves the symbol is still there.
+# Strip a `:symbol` or `:line` anchor so what's left is a path.
 LINE_SUFFIX = re.compile(r":(?:\d+(?:-\d+)?|[A-Za-z_][A-Za-z0-9_:~]*)$")
 # ADR filenames are written as a naming convention, not a claim that a file exists.
 PLACEHOLDER = re.compile(r"NNNN")
 
-# Paths a doc names on purpose while saying they are absent. Each needs a reason, so an
-# entry can be re-checked rather than becoming a permanent excuse.
+# Build outputs that docs mention but a fresh checkout doesn't have.
 GENERATED = {
-    "frontend/dist": "vite build output, .gitignore:10 -- docs name it as a build product",
-    "frontend/dist/index.html": "same; running.md tells you to build it before the app",
-    "frontend/coverage": "istanbul report from `npm run test:coverage`; untracked 2026-07-24",
-    "frontend/coverage/": "same",
+    "frontend/dist": "vite build output",
+    "frontend/dist/index.html": "vite build output",
+    "frontend/coverage": "`npm run test:coverage` output",
+    "frontend/coverage/": "`npm run test:coverage` output",
 }
 
-# Paths a doc must not cite, even when the file happens to exist on the author's machine.
-# CLAUDE.md is gitignored; a clone never has it, so a link that "works for Kassa" is a
-# broken citation for everyone else. Roadmap 12.7: restate the fact inline instead.
+# Gitignored local files: a link to one works on the author's machine and nowhere else.
 FORBIDDEN_CLONE_ABSENT = {
-    "CLAUDE.md": "gitignored local agent file; restating the fact inline is the citation",
+    "CLAUDE.md": "gitignored local file",
 }
 
+# Optional paths the docs describe but that aren't checked in.
 EXPECTED_ABSENT = {
-    "third_party/onnxruntime": "optional vendored ONNX Runtime; CI vendors it, absent locally",
-    "third_party/onnxruntime/": "same",
-    "third_party/onnxruntime/lib": "same -- the lib subdir docs tell you to populate",
-    "third_party/sqlite/": "optional vendored SQLite override; docs say it is not checked in",
-    "docs/TODO.md": "deleted 2026-07-20; ROADMAP.md names it to say so",
-    "docs/scratch/": "deleted 2026-08-19; a session-notes directory that went stale and "
-                     "contradicted the accepted ADR. CONTRIBUTING.md names it to say why "
-                     "notes like that do not belong in the tree",
-    "frontend/public/snapback.html": "deleted 2026-08-05 by ROADMAP 8.10 — a pre-3.1 webview "
-                                     "overlay nothing loaded, which shipped in every build "
-                                     "and fetched webfonts; the item names it to say so",
-    "docs/DECISIONS.md": "a rejected option in ADR-0001, never created",
-    # ADR-0002 and ADR-0003 both cite this header as the live example of "the scores are
-    # undecided". ADRs are append-only, so those references cannot be edited away — the
-    # entry is required, not a convenience.
-    "src/engine/confidence.hpp": "deleted 2026-08-03 by ADR-0004; ADR-0002/0003 and "
-                                 "ROADMAP 5.3 name it to say it is gone",
-    "tests/test_confidence.cpp": "deleted with it; ROADMAP 5.3 names it to say so",
-    "frontend/src/FocusSummaryCard.tsx": "deleted 2026-09-29; 2a68501 folded its tiles into "
-                                          "SummaryCard and nothing rendered it after. The "
-                                          "archived 7.33 entry names it as history",
+    "third_party/onnxruntime": "optional vendored ONNX Runtime",
+    "third_party/onnxruntime/": "optional vendored ONNX Runtime",
+    "third_party/onnxruntime/lib": "optional vendored ONNX Runtime",
+    "third_party/sqlite/": "optional local SQLite override",
 }
 
 

@@ -1,24 +1,8 @@
 #!/usr/bin/env python3
 """No tracked file may start with a UTF-8 byte-order mark.
 
-A BOM is three invisible bytes (`EF BB BF`) in front of the first real character. Nothing in
-this project needs one -- every file here is UTF-8 already, and UTF-8 has no byte order to
-mark. What a BOM does instead is break tools that expect the first byte to be the first byte:
-
-- a shell script whose `#!` is preceded by a BOM is not executable ("bad interpreter"),
-- a `.json` file with one is rejected by strict parsers,
-- a C++ or TypeScript file with one shows a stray `` at the top of a diff, and
-- a `git blame` on the first line attributes it to whoever last saved from an editor that
-  added it, not to whoever wrote the code.
-
-Five files had picked one up (`frontend/src/main.tsx`, `frontend/src/utils.ts`,
-`frontend/tests/utils.test.ts`, `frontend/tsconfig.json`, `frontend/vite.config.ts`) with no
-pattern to it beyond "a Windows editor touched this file." That is the tell: BOMs arrive by
-accident, from tooling, without anyone deciding. So this is checked rather than agreed.
-
-Related but separate: `.gitattributes` pins line endings for the files where CRLF would
-break something. Line endings are a *storage* question git can normalise; a BOM is content,
-and git will faithfully preserve it forever unless something objects.
+A BOM breaks shebangs ("bad interpreter"), strict JSON parsers, and shows up as noise in diffs.
+They creep in from Windows editors.
 """
 from __future__ import annotations
 

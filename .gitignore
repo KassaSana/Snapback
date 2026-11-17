@@ -14,14 +14,12 @@ third_party/sqlite/
 third_party/onnxruntime/
 .cache/
 compile_commands.json
-# AGENTS.md is committed: it is the tool-neutral entry point every clone and every agent
-# (Codex, Cursor, Gemini, Claude Code) reads. Personal agent files stay local:
+__pycache__/
+
+# Local editor and tool config
+.cursor/
+.claude/
+.playwright-mcp/
+AGENTS.md
 CLAUDE.md
 CLAUDE.local.md
-# Personal attribution-guard tooling stays on the machine that installs it; the tracked
-# scripts/hooks + check_commit_attribution.py are the project's mechanism.
-scripts/githooks/
-scripts/install_githooks.py
-scripts/strip_commit_attribution.py
-scripts/sole-author-lockdown/
-__pycache__/

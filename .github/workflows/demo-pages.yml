@@ -1,4 +1,4 @@
-# Publishes the hosted dashboard demo (Roadmap 3.6) to GitHub Pages.
+# Publishes the hosted dashboard demo to GitHub Pages.
 #
 # The demo is a second Vite entry point (`npm run build:demo`) that outputs a self-contained
 # page under frontend/dist-demo/. That directory is gitignored; only this workflow builds and

@@ -1,515 +1,87 @@
 # Changelog
 
-All notable changes to Snapback are recorded here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-**The version lives in `CMakeLists.txt`** (`project(... VERSION x.y.z)`) and is compiled into
-the binary. A release tag must name it exactly — `scripts/check_release_tag.py` enforces that,
-and [docs/PACKAGING.md](docs/PACKAGING.md) documents the order to cut a release in.
-
----
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is set in
+`CMakeLists.txt` and a release tag has to match it.
 
 ## [Unreleased]
 
-Landed on `master` since `v0.3.0` and **not in a published release yet**.
-
 ### Added
 
-- **The recording line stays true when the change came from somewhere else (2.10).** A pause
-  or snooze from the tray, the private-mode toggle in Settings, walking away from the
-  keyboard, or a timed pause running out all update the header now, and the header and the
-  Settings toggle keep each other current. When the app cannot be reached to confirm, the
-  header says so beside the last state it knew rather than presenting it as current.
-
-- **Starting a different session tells the truth about both halves (2.11).** If the running
-  session stops but the replacement cannot start, the card now shows the stopped session and
-  its recap instead of a session that no longer exists, and the start form works straight
-  away rather than after a reload. Choosing a mode or goal while preparing the next session
-  no longer changes the running session's mode; Start is what commits the choice, and "Keep
-  this session" puts the form back to what is running.
-
-- **Review cards say which interval their numbers came from (10.11).** Picking a new time
-  range no longer relabels the numbers already on screen: each card's pill names the interval
-  it is actually showing, the range bar explains when that differs from the pressed button,
-  and a failed load offers Retry instead of leaving old data under a new name. Recent
-  Predictions and Context Timeline are marked as live views outside the selected range, and
-  the per-session chart says when it is showing only the latest 500 sessions.
-
-- **The permission dialog behaves as a dialog (10.3).** It takes keyboard focus when it opens,
-  keeps Tab inside it, leaves the dashboard behind it inert, and hands focus back when it
-  closes. In a short window or at large text it scrolls, so every button stays reachable.
-  Settings sections now contain their own controls, so a screen reader announces them.
-
-- **Every Review chart has its numbers as a table (10.3).** "Show data" under each chart opens
-  the same values the bars are drawn from, so they can be read by a screen reader or reached
-  from the keyboard.
+- The recording status in the header now updates when a pause, snooze, idle timeout or
+  private-mode toggle comes from the tray or Settings, and says so when the app can't be
+  reached to confirm.
+- Starting a new session while one is running is now two explicit steps. If the replacement
+  fails to start, you see the stopped session and its recap instead of a ghost.
+- Review cards show which time range their numbers came from, and offer Retry when a load
+  fails.
+- The permission dialog traps focus and restores it on close.
+- Every Review chart has a "Show data" table for screen readers and keyboard users.
 
 ### Fixed
 
-- **Opening Review no longer holds back the engine (14.1).** A Review load is five reads in a
-  row, and a save that arrived during one used to wait for all five, taking the prediction and
-  any snapback alert with it. The save now goes ahead between reads, so it waits for at most
-  the one in progress.
+- Loading Review no longer delays the engine's writes. A save now waits for at most one read,
+  not all five.
+- `install_windows_package.ps1` copied nothing from the ZIP: it passed a wildcard to
+  `-LiteralPath`. It now copies each entry explicitly.
 
-- **Installing from the ZIP works at all (9.4).** `scripts/install_windows_package.ps1` passed
-  `<extracted-root>\*` to `Copy-Item -LiteralPath` — the one parameter that does not expand a
-  wildcard. It looked for a file literally named `*`, found none, and copied nothing, so every
-  install died on the script's own "Installed package is missing snapback.exe" check. It now
-  enumerates the extracted root and copies each entry literally, which also avoids `-Path`
-  reading a `[` in the temp path as a character class. CI validates the ZIP but never installs
-  it, which is how a script that could not have worked once went unnoticed; 9.4 carries the
-  smoke test.
+## [0.3.0] - 2026-08-29
 
----
-
-## [0.3.0] — 2026-08-29
-
-The first published release: a GitHub release with an unsigned Windows installer and ZIP,
-built by the release workflow. What follows is this file's `[Unreleased]` section as it stood
-at the `v0.3.0` tag.
+First published release: a Windows installer and ZIP (unsigned).
 
 ### Added
 
-- **Now is a cockpit, not a card feed.** Idle Now is a start screen (goal, Start, Repeat last). A running session shows the state, elapsed time, a compact attended line, and Pomodoro. Stopping puts the recap and check-in on Now. The header is a recording line when healthy instead of four status pills, and Repeat last starts that session.
-
-- **Honest “Settled” when the model is guessing.** A quiet screen with no goal match no longer
-  prints Deep work or Productive on the Now hero. The stored verdict is unchanged (snapbacks
-  still use it); the card says Settled, leads with “I cannot tell whether this is work,” and
-  asks whether you were actually working. A Block rule or a matching goal still earns the
-  real word.
-
-- **“Which of these were the work?”** During a session, unlabeled apps from the context
-  timeline appear on Now with The work / Not the work / Skip. That writes the same Allow/Block
-  rules as the Review timeline, so teaching the classifier is no longer a Settings chore.
-
-- **Version baseline for the first release (9.13).** `project(... VERSION 0.3.0)` in
-  `CMakeLists.txt` and the frontend package version now match the tag the first GitHub Release
-  will use. The dangling `v0.2.0` tag is not retagged or deleted.
-
-- **MIT license and third-party notices (9.12).** The repository now ships a root `LICENSE`
-  (MIT) and `THIRD_PARTY_NOTICES.md` inventory. Release packages install both beside
-  `snapback.exe`, CPack points at the real license file, and CI verifies the wiring.
-
-- **Hosted demo on GitHub Pages (3.6).** `npm run build:demo` is exercised in CI; pushes to
-  `master` that touch `frontend/` deploy `dist-demo/` via GitHub Actions.
-
-- **Review Insights avg focus matches Summary (10.11).** The Insights headline tile now uses
-  the same sample-weighted range aggregate as Summary and Trends, instead of averaging
-  per-session recap scores.
-
-- **v1 threat model (8.5).** [ADR-0009](docs/adr/0009-local-first-threat-model.md) records
-  adversaries, data sensitivity, and what "local-only" promises for v1.
-
-- **Alerts you can click (2.16).** A snapback card now offers **Take me back** beside its
-  click-to-dismiss, and system notifications respond to a click instead of being something you
-  could only read. Whatever you click, the window comes forward first — then a snapback returns
-  you to the window it recorded, a "start a session" nudge takes you to where you start one, and
-  a Pomodoro or break alert takes you to the timer. Clicking the same alert twice does the thing
-  once, and clicking one the system kept around from an hour ago brings the app forward without
-  acting on a moment that has passed. Alerts silenced by quiet hours or a snooze are not
-  clickable at all.
-
-- **A second launch brings the running window back (9.15).** Double-clicking Snapback while it
-  is hidden in the tray now raises the window it already has, instead of printing "already
-  running" to a stream a desktop app does not own. The second process asks over a per-user,
-  per-data-directory channel and exits without opening the database, starting capture, or
-  installing a tray; when the owner cannot be reached it says which of the four reasons applied
-  rather than leaving a double-click that did nothing. Closing the window also explains itself
-  **once** — Snapback is in the tray, still recording, and Quit is there — because a window that
-  closes into nothing reads as a crash. And close-to-tray now switches on only after a tray icon
-  really exists: hiding the only window into a tray that failed to install left a running
-  process with no way back to it.
-
-- **Control over when and how Snapback interrupts (2.16).** Settings > General now chooses,
-  per event, whether coming back from a distraction, a break reminder, or a Pomodoro phase
-  change shows up in the app, as an overlay card, as a system notification, or not at all.
-  Quiet hours silence alerts between two local times and may cross midnight. The tray gains
-  **Snooze alerts for 30 minutes**, with the remaining time and a Resume control on the
-  recording card. A "Hide details on the lock screen" toggle makes system notifications say
-  only that something happened, keeping filenames and project names out of OS notification
-  history. **Recording continues throughout** — silencing an alert is not privacy mode, and
-  the status keeps saying Recording.
-
-- **Interactive goal history dropdown & auto-complete (2.11).** Starting focus sessions now provides
-  an interactive auto-complete suggestions dropdown anchored to the goal input with full keyboard
-  navigation (`↑`, `↓`, `Enter`, `Escape`) and click selection. Pinned presets and distinct recent
-  goals are ranked and filtered in real time, automatically preserving each goal's preferred focus mode.
-- **Close-to-tray desktop lifecycle (9.15).** Closing the main window (`X` or Alt+F4 on Windows,
-
-  `windowShouldClose:` on macOS) now hides the window to the system tray rather than killing the
-  process. Background input capture, focus tracking, active sessions, and tray controls remain
-  active. Clean termination occurs exclusively when selecting "Quit Snapback" from the tray menu.
-- **One-click contextual app rules from timeline and top apps (2.18).** Creating an Allow (Always
-
-  productive) or Block (Always distracting) override rule no longer requires switching to Settings
-  and typing process names into a text input. The Context Timeline on Now and the Top Apps breakdown
-  on Review show one-click `+ Allow` and `+ Block` action buttons beside observed apps, and display
-  active status badges for apps that already match an established rule.
-- **A native file-dialog seam, used by database restore (10.14, partial).** Restoring a
-  `focoflow.db` database now supports a native **Browse...** button using Win32 Common Dialogs on
-  Windows and AppKit panels on macOS, rather than requiring users to manually type raw filesystem
-  paths. Non-throwing cancellation semantics return a clean cancellation result when dismissed.
-  This is the adapter and the **9.14** import half only: `export_my_data`, `export_summary_report`
-  and `export_support_bundle` still choose a folder under the app-data directory and print the
-  path, which is the behaviour 10.14 exists to replace. That item stays open.
-- **Planned-versus-actual attended time on Review (2.19).** The Summary card for the shared
-
-  Review range now leads with attended minutes from durable session spans, and — when a daily
-  or weekly target applies — the planned total and percentage. Longer ranges still show
-  attended time without inventing a prorated plan. Targets stay editable on Now.
-- **`snapback --purge` removes everything the app created (9.5).** The database of window
-  titles, settings, logs and rotations, exports, the model, SQLite's side files, every
-  pre-migration backup, and the start-on-login entry. The decision behind it: someone who
-  uninstalls an app that recorded their window titles believes they removed what it recorded,
-  so leaving the database behind is the one outcome this product cannot afford. It reports what
-  went and what did not, and exits non-zero on a partial removal rather than claiming a clean
-  one. Files it did not create are left alone, as is the folder holding them.
-- **One answer to "am I being recorded right now?" (2.10).** A Recording status card states
-  one of five things — Recording, Paused for idle, Paused privately, No session, or Blocked —
-  decided in one place in the backend so two surfaces cannot disagree about it. Privacy pause
-  is one click, with 15/30/60-minute options that show the time left and end on their own. A
-  timed pause is stored as a deadline rather than a countdown, so closing and reopening the
-  window does not quietly restart or extend it.
-- **Optional attended-time targets (2.19).** Set a daily or weekly goal in minutes and the Now
-  surface shows how today and this week compare — or just what you attended, if you set no
-  target. Off by default, and the copy stays flat: no streaks, no encouragement, no notification
-  telling you that you are behind. The number counts durable attended spans only, never how long
-  a session was left open or what the classifier thought of it, and a stretch that runs past
-  midnight is split across the days it actually covered.
-- **A Pomodoro timer you can actually drive (2.13).** The card now carries the controls: pause and resume, skip a phase, restart
-  the one you are in, and configurable work/break lengths, long-break cadence, and whether the
-  next phase begins on its own. The rhythm is a setting now rather than the app's opinion, and
-  changing it applies from the next phase instead of restarting the one under way. **The timer
-  survives a relaunch:** its phase and deadline are written down against the wall clock, so a
-  deadline still in the future resumes with the time genuinely left — while one that passed
-  while the app was closed restores at zero and waits for you, rather than silently running
-  through the breaks and work blocks you were not there for. A skipped work block does not
-  count toward the long break; that is a reward for work done.
-- **An optional end-of-session reflection (2.14).** A card appears with the end-of-session check-in asking two free-text questions — what got done, and
-  the next step — stored per session and carried into the readable personal export, so the
-  thing that makes tomorrow's restart easier survives the session that produced it. Skipping
-  costs nothing and records nothing: blank, whitespace, and never-asked are the same absent
-  state, and clearing an answer returns it to that state. Kept out of the label table and out
-  of training data on purpose; a label is a signal for the model, this is a note to yourself.
-- **Pinned C++ deps are watched for new upstream releases (4.13).** A weekly workflow
-  compares ONNX Runtime and the three git FetchContent pins to each latest GitHub release
-  and opens an issue when any is behind. It never edits a digest.
-- **macOS support.** Native `NSStatusItem` tray and a Cocoa `NSPanel` snapback overlay, a
-  live `CGEventTap` capture path, and a hosted CI launch smoke that starts and quits the real
-  app. Start-on-login via a launchd user agent.
-- **Linux start-on-login** via a systemd user unit. (Tray and overlay remain Windows/macOS.)
-- **Dashboard split into Now, Review and Settings surfaces**, with the Now surface led by
-  focus *state* rather than a raw score, an explanation of each verdict, and a control to rate
-  it.
-- **Analytics and reporting.** Trends dashboard with hourly aggregates and top context apps,
-  daily/weekly summary reports, an Insights card with stat tiles and a focus-trend chart, and
-  a session history backend.
-- **Pomodoro timer**, wired through app state, the engine tick, and the UI.
-- **Privacy controls.** A global private mode, per-app exclusions, editable goal categories,
-  a local-only statement, and privacy-scoped support bundles.
-- **Data ownership.** Delete all locally collected activity, or a single session and
-  everything captured during it.
-- **Diagnostics panel** exposing capture and prediction health, plus a one-click JSON support
-  bundle.
-- **Native notifications** (Win32 toast) fired on snapback recovery, and a hyperfocus break
-  nudge.
-- **First-run onboarding wizard**, including the macOS Accessibility permission prompt and
-  picking a default focus mode.
-- **Model lifecycle.** Predictions stamped with a model identity, deployment gated on a
-  held-out quality metric, and rollback to the previous model with its metadata.
-- **Single-instance enforcement** — a second launch refuses to start rather than racing the
-  first over the database.
-- **Structured logging** with levels and a rotating file sink.
-- **Storage schema versioning**: `user_version`, an ordered migration list, and a downgrade
-  guard that refuses a database written by a newer build.
-- **90-day retention** pruned on startup, with a `VACUUM` after a large prune to reclaim disk.
-- **Attended session time.** A session's headline duration is now the time you were actually
-  present, summed from durable spans that pause when you go idle and resume when you come
-  back. Elapsed wall-clock time is still shown beneath it, and sessions recorded before this
-  existed report "not measured" rather than a fabricated zero.
-- **A configurable away threshold.** How long without keyboard or mouse input counts as away
-  is a setting (30 seconds to 1 hour, five minutes by default) rather than a constant.
-- **Interruptions are recorded.** When you drift away from focused work and come back, the
-  episode is stored with when it started, how long you were away, and the way back — so the
-  Snapback count in a session recap is a real number, and your data export lists the
-  interruptions behind it.
+- **Three surfaces: Now, Review and Settings.** Now is the live session. Review covers
+  history, trends and per-session detail. Settings holds privacy, rules and preferences.
+- **Sessions** have a goal, a focus mode and attended time (time you were actually present).
+  An optional reflection at the end, optional daily targets, and a planned-vs-actual view on
+  Review.
+- **Overlay and alerts.** Click an alert to jump back to the window you were working in.
+  Choose when and how Snapback interrupts you, and get quiet hours.
+- **App rules.** Mark an app as allowed or blocked in one click from the timeline or the top
+  apps list, or teach Snapback which apps count as work from inside a session.
+- **Pomodoro timer** that runs alongside a session.
+- **Recording status.** A single indicator for whether you're being recorded, with pause,
+  snooze and private mode.
+- **Desktop lifecycle.** Close to tray, start on login (Windows, macOS, Linux), and a second
+  launch brings the running window back.
+- **Your data.** Export everything, import a backup through a native file dialog, delete
+  activity, and `snapback --purge` to remove every file the app created. Retention is 90 days.
+- **macOS support:** event tap capture, browser-tab enrichment, a menu-bar item and a native
+  overlay panel.
+- Diagnostics panel, structured logs, first-run onboarding, and a support-bundle export.
+- Optional ONNX model with safe deploy and rollback (developer tooling).
+- Hosted demo on GitHub Pages, MIT license, third-party notices and a written threat model.
 
 ### Changed
 
-- **A snapback now shows the overlay only, not the overlay *and* a system notification
-  (2.16).** The two fired together for the same moment; the overlay is always-on-top and
-  reaches you whether or not the app window has focus, while the notification additionally
-  copied what you were working on into OS notification history. Set the snapback event to both
-  channels in Settings > General to restore the old behaviour.
-
-
-- **The planning documents collapsed from four to two, and the parallel backlogs are gone.**
-  `BACKLOG.md`, `ROADMAP.md`, and `TODO.md` had appeared at the repository root, each
-  restating the layer above it — `TODO.md`'s "Done when" text was verbatim `ROADMAP.md`'s
-  Phase 0 exit criterion. That is the arrangement `CONTRIBUTING.md` and `docs/ROADMAP.md`
-  both forbid in as many words, and the one that made `docs/TODO.md` drift out of sync before
-  it was deleted in July.
-
-  - The six-month phase sequence and its task breakdown are now a **The six-month sequence**
-    section inside [docs/ROADMAP.md](docs/ROADMAP.md), which stays the only backlog. Task ids
-    moved from `M1-xx` to `P0-xx` so they name the phase they belong to.
-  - The audit findings became [docs/audit-2026-08-19.md](docs/audit-2026-08-19.md) — a dated
-    point-in-time record rather than a competing list of open work.
-  - Completed items moved to [docs/roadmap_archive.md](docs/roadmap_archive.md).
-
-  The move also put those 60 KB **under `check_doc_paths.py` for the first time**: the guard
-  walks `docs/` plus four named READMEs, so root-level planning files were never opened by it.
-  It immediately found a broken citation to a `scripts/` helper that does not exist — exactly
-  the "guard with a hole in it" the script's own comment warns about.
-
-- **Training tooling is developer-only (ADR-0006 / 13.7).** Consumer Settings keeps Focus
-  Feedback labels and no longer advertises repo-path / `ml/` train-from-export. Debug builds,
-  or Release with `SNAPBACK_DEV_TRAINING`, still expose Model tooling; native train/repo
-  commands refuse when the gate is off.
-
-- Analytics windows are bucketed by the user's local hour rather than UTC.
-- Recent-focus, insights, trends and summary reports all read from the same aggregates.
-- Hot live reads are served from an immutable snapshot, so opening a history view no longer
-  contends with capture writes.
-- Session recap aggregation moved into SQL — three queries instead of `1 + 5N` round trips.
-- Analytics and summary reports are aggregated entirely in SQL. Opening them no longer reads
-  every stored prediction into memory while holding the lock the capture pipeline needs to
-  write, so a long history no longer costs you dropped events.
-- The hourly focus chart is drawn on a fixed 0–100 scale. It previously scaled every bar to
-  the best hour in the data, so a poor day looked like a perfect one.
-- Hours with no data are drawn distinctly from hours measured at zero, and each bar reports
-  its sample count and distraction rate.
-- The top-apps list says "samples" rather than "switches", which is what the underlying
-  number has always counted.
-- "Focus streak" is now a **duration** — the longest unbroken stretch of focused work — instead
-  of a count of prediction rows shown under a time-like label. Two people doing identical work
-  previously got different numbers depending on how much they typed.
-- The trends tile that counts productive sessions is now labelled "Sessions in a row", so it
-  cannot be mistaken for the duration above.
-- **"Export my data" contains everything.** It previously stopped at 200 sessions and 500
-  windows per session while the file itself said it held every session, and it could report a
-  complete export after dropping windows. The file now ends with a manifest stating exactly
-  what it holds, plus a checksum so a cut-short copy is detectable.
-- Release builds no longer expose the webview developer tools or honour
-  `SNAPBACK_FRONTEND_URL`; both are Debug-only.
+- A snapback shows the overlay only, not the overlay plus a system notification.
+- Model training tooling is developer-only and not part of the shipped app.
+- "Export my data" includes every table.
 
 ### Fixed
 
-- **The release workflow can actually produce an installer.** Every `Release` run since the
-  workflow was written failed at the same step: `iexpress.exe` exits 1 on the GitHub-hosted
-  Windows image and prints nothing else. The `v0.3.0` tag push died there, with the ZIP and all
-  629 tests already green. Four SED variants were tried on the runner — no license page, the
-  raw `LICENSE`, a staged `LICENSE.txt`, a single source directory — and all four failed
-  identically, so the SED was never the cause. The IExpress path had no successful baseline to
-  begin with: the one earlier green `Release` run built a different, Tauri-based workflow.
-  Packaging now uses CPack's NSIS generator, which `CMakeLists.txt` already configured, and
-  `release.yml` installs NSIS on the runner. A missing `makensis` is now a hard failure rather
-  than a warning — warning past it is how a step that had never produced an artifact reached a
-  release tag. `-SkipIExpress`/`-TryNsis` are replaced by a single `-SkipInstaller`.
-
-- **The test suite compiles on MSVC and libc++ again.** `focus_window_windows.cpp` called
-  `std::towlower` with only `<cctype>` included; the wide-character functions live in
-  `<cwctype>`. libstdc++ happens to pull it in transitively, so the one Windows job added to
-  catch toolchain divergence — `windows-gcc` — was the only Windows job that could not see
-  this, while `windows-latest` and every macOS job failed to build.
-- **`focus_window` refuses whitespace-only targets on every platform.** Its input validation
-  had been written three times, once per platform file, and the copies disagreed: Windows
-  trimmed before checking for emptiness, macOS and the stub did not. `focus_window("   ", "")`
-  was therefore refused on Windows and treated as a real search target everywhere else, which
-  failed CTest on Linux under the plain, sanitizer, and ONNX jobs. The shared half now lives
-  once in `snapback/focus_window.cpp`; the platform files implement only
-  `focus_window_supported()` and `detail::focus_window_native()`, which is the split
-  `focus_window.hpp` already described. Its test no longer asserts the Windows "could not
-  find" wording on platforms where no search ever runs.
-- **The desktop app compiles again.** Two unqualified names, in the only translation unit no
-  test compiles: `main.cpp` used `DataDirChoice` / `choose_data_dir` from an anonymous
-  namespace while both live in `namespace snapback`, and `commands.hpp` used `JsonHandler`
-  from `namespace snapback` while it lives in `snapback::detail`. Nothing outside `main.cpp`
-  includes `commands.hpp` — `test_ipc_contract` reads it as text — so the app had been
-  unbuildable on every platform with no test able to say so.
-- **A failing native command fails the PowerShell script that ran it.** `cmake`, `ctest` and
-  `npm` report failure through `$LASTEXITCODE`, which `$ErrorActionPreference = "Stop"` does
-  not cover — so `windows_demo.ps1` built a broken binary and exited 0, keeping the Windows
-  job green over the compile error above. Every native call now goes through `Invoke-Native`,
-  and `scripts/check_ps_exit_codes.py` fails CI if one does not.
-- **The Windows app target builds.** webview reaches WebView2, which reaches `windows.h`,
-  which defines `min`/`max` as macros unless `NOMINMAX` is set — so every `std::max(a, b)`
-  afterwards expanded to `std::((a) > (b) ? ...)` and MSVC rejected it (C2589) at
-  `focus_summary.hpp` and `logger.hpp`. `webview_compat.hpp`, which exists to contain exactly
-  this kind of pollution, now sets `NOMINMAX` before the include and scrubs both macros after.
-  Only MSVC ever saw it: libstdc++ `#undef`s them itself, which is why the windows-gcc job
-  stayed green throughout.
-- **Windows builds no longer name a Visual Studio version.** `windows_demo.ps1` and
-  `package_windows.ps1` asked CMake for "Visual Studio 17 2022"; once `windows-latest` stopped
-  shipping it, configure failed with "could not find any instance of Visual Studio" — which
-  would have broken packaging and releases too, not just the demo smoke. Both now let CMake
-  pick the installed toolchain, as every other Windows CI job already did, and keep `-A x64`
-  so the `win64` artifact name stays an assertion rather than an assumption.
-- **Two high-severity advisories in the frontend lockfile.** `nanoid` (via `postcss`/`vite`)
-  and `undici` (via `jsdom`) bumped to patched versions; both are devDependencies, so nothing
-  shipped was affected. `npm audit` is clean again.
-- **Excluded apps no longer earn the missed-session nudge (2.7).** Time in an excluded app
-  resets the untracked stretch the same way private mode does, so leaving Slack does not
-  immediately ask you to start recording.
-- **Capture failure/running contradiction is observed from a second thread (11.9).** The
-  old same-thread sample could not see inverted stores on MinGW; a paired sampler now fails
-  that bug and stays quiet when the stores are ordered correctly.
-- **Autostart scratch tests no longer leave registry keys after a crash (11.10).** The
-  fixture sweeps `test-<pid>-*` orphans whose process is gone and leaves live concurrent
-  cases untouched.
-- **ADRs no longer cite a file that clones do not have (12.7).** The Darwin-dev fact lives
-  inline; the doc-path guard rejects a link or relative path to the gitignored local agent
-  file even when it exists on the author's machine.
-- **Privileged webview commands require a trusted document (8.14).** A per-launch capability
-  token is handed only to the packaged UI; external links open in the system browser.
-- **Model deployment recovery no longer bricks startup (13.8).** Cleanup debris degrades
-  health and offers Retry cleanup instead of exiting before the window opens.
-- **Settings survive power loss after a reported save (7.21).** The atomic rename from 7.19
-  is now followed by a durable flush of the temp file and of the parent directory, so a
-  successful save is not only tear-free but also on disk.
-- **Session replacement is atomic.** Starting a session while one is running could previously
-  close the old session and then fail to create the new one, leaving no active session at all.
-- **A failed start no longer half-happens.** Focus mode and the feature extractor were reset
-  before the database write that could fail, so a failed start left the app recording against
-  a session that did not exist.
-- **Replacing a session records a verdict for it**, the same automatic label an explicit stop
-  writes. Previously that depended on whether you pressed Stop or just started the next thing.
-- **Stopping twice no longer writes two contradictory automatic labels.**
-- **Reopening restores the session you were in**: its saved focus mode (so a Deep session is
-  not silently continued under Normal's rules) and its elapsed time, which used to restart from
-  zero while the recap beside it reported hours.
-- **A crash no longer counts the time the app was closed as time you were present.** A session
-  span left open by a dead process is closed at the last activity that session recorded.
-- **A settings change that cannot be saved no longer takes effect anyway.** Turning private
-  mode off could previously resume recording while the app reported that the change had
-  failed. Settings are written to disk before anything changes in the running app.
-- **"Delete all activity" removes every copy.** It missed the readable personal export and the
-  database backups taken before each schema upgrade, and one file it could not remove used to
-  stop it clearing the database at all. It now attempts every target, and reports what was
-  deleted, what could not be, and what was deliberately kept.
-- **Settings are written crash-safely** via a temp file and an atomic rename, with a
-  last-known-good backup and a log line when a settings file cannot be parsed. Previously a
-  partial write left an empty file that silently became defaults.
-- ONNX inference no longer discards user rules, thrash and drift; an ONNX failure no longer
-  writes an empty `focus_state`.
-- `Storage::open` reports why it failed instead of collapsing every error into "no database".
-- CSV export checks for write failure instead of reporting success on a full disk.
-- Privacy exclusions match whole app-name words, so "Slack" no longer excludes "Slackline".
-- Capture health reports a returned hook as failed, and never reports "failed" and "running"
-  at the same time.
-- Automatic session labels are saved on shutdown, including the no-argument stop path.
-- File replacement is portable across toolchains (`copy_options::overwrite_existing` is
-  ignored by libstdc++ on MinGW, which silently left stale backups and broke model rollback).
-
-### Internal
-
-- **A repository audit for things that mislead a reader, and guards so they cannot come
-  back.** The theme is documentation confident enough to be trusted while being wrong in
-  load-bearing places — the failure mode where sparse docs make you read the code and these
-  docs made you not bother.
-
-  - **`CONTRIBUTING.md` now exists.** The commit-attribution rule was written down in exactly
-    one place, `.cursor/rules/commit-attribution.mdc`, so Cursor knew it and nothing else did.
-    Agent-guidance files are gitignored here by policy, which left a clone with no entry point
-    at all and a 4,555-line roadmap as the only orientation.
-  - **Code citations name a symbol, not a line number.** An audit found 84 line-number
-    citations, a large fraction already pointing at blank lines, a closing brace, or past the
-    end of a 20-line file — the file still exists, so the path guard stayed green while the
-    number drifted. All 84 are converted; `check_doc_symbols.py` fails the build on a bare
-    line number or a symbol that no longer exists. Quoted historical code says "as it stood
-    on `<date>`" instead of carrying a live-looking pointer.
-  - **ADR-0007 says it is not implemented yet.** It is `Accepted` and written in the present
-    tense — "a point in time **is** UTC milliseconds" — while the schema still stores ten TEXT
-    columns and one REAL. It now carries an `## Implementation status` section, and the ADR
-    template and index gained the `Applied:` distinction so an ADR settled ahead of its code
-    cannot read as a description of the tree again.
-  - **Three dead React hooks deleted** — `useInsights`, `useAnalytics`, `useFocusSummary`,
-    superseded by `useReviewWorkflow` and imported by nothing. `useInsights` carried three
-    pieces of design rationale the live file lacked; those comments were ported before it was
-    removed. Deleting them raised measured frontend coverage (79.9% statements against a 76%
-    floor) because the uncovered code left the denominator. Two roadmap items that described
-    them as live were corrected, one of which was scheduling future work on a dead file.
-  - **`VITE_API_BASE` and `frontend/.env.example` deleted.** Nothing read them, and they
-    described an HTTP backend on port 8080 that this project has never had, in the first file
-    a reader opens to learn how to configure the frontend.
-  - **New guards, all with a negative test:** `check_doc_symbols.py`,
-    `check_unit_test_wiring.py` (every `frontend/tests/*.test.ts` must appear in the
-    hand-chained `test:unit`, so a new test file cannot be silently unrun),
-    `check_no_bom.py`, and `check_scripts_documented.py`. `check_doc_paths.py` now walks
-    `docs/` recursively rather than listing two directories by hand — the hand-written version
-    had never opened `docs/scratch/`, which is where 27 of the worst citations were sitting.
-    It also covers `frontend/README.md` now, which immediately surfaced that the file used
-    `src/` to mean two different directories in adjacent sentences.
-  - **Documentation corrected against reality:** the CI job table was missing `windows-gcc`
-    and now matches `ci.yml` exactly; `scripts/README.md` was missing five scripts that CI
-    runs as gates; `docs/ARCHITECTURE.md` gained a glossary for the five different types
-    called a "summary" and a table for the two JSON boundaries, which do not share a casing
-    convention.
-  - **Version and count literals that rot are gone.** "361 commits ahead" had been wrong for
-    94 commits; the packaging and validation scripts no longer hardcode
-    `Snapback-0.2.0-win64.zip` and discover the built ZIP instead.
-  - **Removed:** UTF-8 BOMs from five files, two stray blank lines from
-    `fixtures/ipc_commands.json`, and the unused `event`/`id` fields from the host-to-frontend
-    event envelope — Tauri's envelope shape, carried across the IPC boundary long after the
-    port, read by nothing.
-  - `docs/scratch/decision-a.md` deleted: session notes that `docs/README.md`'s own rule
-    forbids, whose content was superseded by ADR-0004 and whose claims had gone stale.
-
-- **A formatter and a static-analysis config, without reformatting the tree (4.12).**
-  `.clang-format`, `.clang-tidy`, `frontend/eslint.config.js`, and
-  `frontend/prettier.config.js`, every value measured against the existing code rather than
-  chosen. CI enforces formatting on **added** files and reports it on pre-existing ones: "format
-  what you touch" collapses on a large legacy file, where a one-line edit to `App.tsx` would
-  demand a 606-line reflow or a red build. ESLint runs in CI and is error-clean; the eleven
-  genuinely unused imports it found were removed. `CMAKE_EXPORT_COMPILE_COMMANDS` is on so
-  clangd and clang-tidy read the same flags as the build. CI does not run `clang-tidy` yet,
-  and the file says so rather than implying otherwise.
-
-- **A `commit-msg` hook removes AI attribution before the commit exists.**
-  `check_commit_attribution.py` already rejected those trailers, but only in CI — by which
-  point fixing one means rewriting history and invalidating every downstream SHA. The hook
-  strips trailer-shaped boilerplate silently, then re-checks what survived by calling that
-  same script's new `--message-file` mode, so the hook and the gate cannot drift apart on what
-  counts as attribution. Enable it per clone with `git config core.hooksPath scripts/hooks`.
-  CI runs `scripts/test_commit_msg_hook.sh`, which executes the real hook against real
-  messages; each forbidden pattern has a case that fails when only that pattern is removed.
-- CI builds and tests the portable core with MinGW-w64 GCC on Windows, the one toolchain
-  combination that was previously never built — and the one a shipped file-replacement bug
-  lived in.
+- Replacing, starting and stopping sessions are atomic. A failure no longer leaves a
+  half-started session or writes two conflicting labels.
+- After a crash, the time the app was closed isn't counted as attended time.
+- Settings are written crash-safely, and a setting that fails to save doesn't take effect.
+- "Delete all activity" removes every copy, including derived tables.
+- Privileged webview commands only run from the trusted bundled page.
+- A failed model deployment can no longer stop the app from starting.
+- The release workflow produces an installer, and a failing native command now fails the
+  PowerShell script that ran it.
+- Builds on MSVC and libc++ again; two high-severity frontend advisories patched.
 
 ### Security
 
-- The bundled dashboard declares a Content Security Policy, and host events cross into the
-  webview as escaped strings.
-- Every fetched C++ dependency is pinned to an immutable revision (commit SHA or `URL_HASH`),
-  enforced in CI.
-- Vendored ONNX Runtime archives are verified against a recorded SHA-256 **before** extraction.
-- Releases are gated on the tag naming `PROJECT_VERSION`, the tagged commit being reachable
-  from `master`, and that commit having a green CI run.
-- The Windows executable is signed **before** it is packaged, and the signature is verified
-  inside the artifact that gets uploaded. (Signing itself still needs a certificate — see
-  [ROADMAP 0.4b](docs/ROADMAP.md).)
+- Content Security Policy on the bundled dashboard; host events reach the webview as escaped
+  strings.
+- C++ dependencies pinned to commit SHAs or hashes; ONNX Runtime archives are checked against
+  a SHA-256 before extraction.
+- Releases only publish a tag whose commit is on `master` and passed CI.
 
 ### Known gaps
 
-- **No macOS packaging.** No signed `.app`, notarization, or DMG yet — the one remaining
-  formal v1 blocker.
-- **Windows artifacts are unsigned** until a code-signing certificate is provisioned.
-- No Linux tray or overlay, and no Linux packaging.
-
----
-
-## [0.2.0] — tagged 2026-07-05, not a published baseline
-
-A `v0.2.0` tag exists and points at commit `ba4050f`, but **that commit is not reachable from
-`master` or any other branch** — history was rewritten underneath it, leaving the tag
-orphaned. `master` moved hundreds of commits past it while still declaring version `0.2.0`,
-until `v0.3.0` (above) became the first published release. (`git rev-list --count v0.2.0..master` gives the exact figure; it is deliberately
-not written down here, because a number that changes with every commit is wrong the moment
-it is committed -- this one sat at "361" for 94 commits.)
-
-It is recorded here so the gap is visible rather than mysterious, not because it describes
-shipped software. Before cutting a real release: bump `project(... VERSION …)`, then tag the
-commit on `master` that CI has proven green. The `verify-tag` job will refuse the current tag
-precisely because it is unreachable from `master`, which is the check working as intended.
+- No macOS packaging (signed `.app`, notarization, DMG) yet.
+- Windows artifacts are unsigned.
+- No Linux tray, overlay or packaging.
