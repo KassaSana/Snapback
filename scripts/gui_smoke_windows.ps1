@@ -28,6 +28,27 @@ function Invoke-Native {
     }
 }
 
+# When the CDP driver can't attach, say why: which runtime ran, whether the browser process got
+# the debugging flags, and whether it ever opened a port.
+function Write-WebView2Diagnostics {
+    param([string]$UserDataFolder, [int]$Port)
+    $clientKey = "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    foreach ($hive in @("HKLM:", "HKCU:")) {
+        $version = (Get-ItemProperty -Path "$hive\$clientKey" -Name pv -ErrorAction SilentlyContinue).pv
+        if ($version) { Write-Host "WebView2 runtime ($hive): $version" }
+    }
+    Write-Host "Expected CDP port: $Port; user data folder: $UserDataFolder"
+    $portFile = Join-Path $UserDataFolder "EBWebView\DevToolsActivePort"
+    if (Test-Path -LiteralPath $portFile) {
+        Write-Host "DevToolsActivePort: $((Get-Content -Raw -LiteralPath $portFile).Trim() -replace '\s+', ' ')"
+    } else {
+        Write-Host "DevToolsActivePort: missing (folder exists: $(Test-Path -LiteralPath $UserDataFolder))"
+    }
+    Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -notmatch '--type=' -and $_.CommandLine -match 'webview-exe-name=snapback' } |
+        ForEach-Object { Write-Host "browser process $($_.ProcessId): $($_.CommandLine)" }
+}
+
 function Find-SnapbackExe {
     $candidates = @(
         (Join-Path $BuildPath "$Config\snapback.exe"),
@@ -118,7 +139,12 @@ try {
 
     if ($Driven) {
         $driver = Join-Path $ScriptDir "gui_acceptance_cdp.mjs"
-        Invoke-Native { node $driver --port $cdpPort --timeout-ms ($TimeoutSeconds * 1000) }
+        try {
+            Invoke-Native { node $driver --port $cdpPort --timeout-ms ($TimeoutSeconds * 1000) }
+        } catch {
+            Write-WebView2Diagnostics -UserDataFolder $env:WEBVIEW2_USER_DATA_FOLDER -Port $cdpPort
+            throw
+        }
     }
 
     if ($Acceptance -or $Driven) {
