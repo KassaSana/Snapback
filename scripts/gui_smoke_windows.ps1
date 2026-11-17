@@ -84,10 +84,6 @@ $sessionMarker = Join-Path $DemoDataDir "gui_session_smoke.ok"
 $acceptanceVerdict = Join-Path $DemoDataDir "acceptance-verdict.json"
 $previousWebViewArguments = [Environment]::GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
 $previousWebViewUserDataFolder = [Environment]::GetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER")
-$policySet = $false
-$policyKey = $null
-$policyName = $null
-$previousPolicy = $null
 Remove-Item -LiteralPath $sessionMarker, $acceptanceVerdict -Force -ErrorAction SilentlyContinue
 if ($OverlayTest) {
     $env:SNAPBACK_OVERLAY_TEST = "1"
@@ -111,22 +107,7 @@ if ($OverlayTest) {
     # arguments are fixed when that shared process starts, so it would not begin listening on
     # this run's CDP port. A unique temporary profile gives the driven smoke its own process.
     $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $DemoDataDir "webview2-cdp-$cdpPort"
-    $cdpArguments = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=$cdpPort"
-    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $cdpArguments
-    # Some WebView2 runtimes ignore the environment variable here, so also set the documented
-    # per-exe policy. It needs write access to the policy key (CI has it); the original value,
-    # if any, is restored in the finally block below.
-    $policyKey = "HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
-    $policyName = Split-Path -Leaf $exe
-    $existing = Get-ItemProperty -Path $policyKey -ErrorAction SilentlyContinue
-    if ($existing -and $existing.PSObject.Properties[$policyName]) { $previousPolicy = $existing.$policyName }
-    try {
-        if (-not (Test-Path $policyKey)) { New-Item -Path $policyKey -Force -ErrorAction Stop | Out-Null }
-        New-ItemProperty -Path $policyKey -Name $policyName -Value $cdpArguments -PropertyType String -Force -ErrorAction Stop | Out-Null
-        $policySet = $true
-    } catch {
-        Write-Host "Could not set the WebView2 policy ($($_.Exception.Message)); relying on the environment variable."
-    }
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=$cdpPort"
 } else {
     Remove-Item Env:\SNAPBACK_OVERLAY_TEST -ErrorAction SilentlyContinue
     Remove-Item Env:\SNAPBACK_ACCEPTANCE_SCRIPT -ErrorAction SilentlyContinue
@@ -231,13 +212,6 @@ try {
         Remove-Item Env:\WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
     } else {
         $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $previousWebViewArguments
-    }
-    if ($policySet) {
-        if ($null -eq $previousPolicy) {
-            Remove-ItemProperty -Path $policyKey -Name $policyName -ErrorAction SilentlyContinue
-        } else {
-            Set-ItemProperty -Path $policyKey -Name $policyName -Value $previousPolicy
-        }
     }
     if ($null -eq $previousWebViewUserDataFolder) {
         Remove-Item Env:\WEBVIEW2_USER_DATA_FOLDER -ErrorAction SilentlyContinue

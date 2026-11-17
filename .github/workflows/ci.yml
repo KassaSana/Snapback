@@ -178,6 +178,32 @@ jobs:
         timeout-minutes: 5
         run: .\scripts\gui_smoke_windows.ps1 -BuildDir build-windows-demo -Config Debug -NoBuild -Acceptance
 
+      # The webview library talks to the WebView2 runtime directly, and older runtimes then
+      # ignore WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so CDP never opens. Microsoft's own loader
+      # applies it on every runtime; webview uses it when the DLL sits beside the exe. Test-only:
+      # the DLL is never packaged. Bump the version and hash together.
+      - name: Use Microsoft's WebView2 loader for the CDP smoke
+        shell: pwsh
+        timeout-minutes: 3
+        env:
+          WEBVIEW2_SDK_VERSION: 1.0.4314.35
+          WEBVIEW2_SDK_SHA256: 90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4
+        run: |
+          $pkg = Join-Path $env:RUNNER_TEMP "microsoft.web.webview2.nupkg"
+          $url = "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$env:WEBVIEW2_SDK_VERSION/microsoft.web.webview2.$env:WEBVIEW2_SDK_VERSION.nupkg"
+          Invoke-WebRequest -Uri $url -OutFile $pkg
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $pkg).Hash.ToLowerInvariant()
+          if ($hash -ne $env:WEBVIEW2_SDK_SHA256) { throw "WebView2 SDK hash mismatch: $hash" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($pkg)
+          try {
+            $entry = $zip.GetEntry("build/native/x64/WebView2Loader.dll")
+            if (-not $entry) { throw "WebView2Loader.dll not found in the package" }
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, "build-windows-demo\Debug\WebView2Loader.dll", $true)
+          } finally {
+            $zip.Dispose()
+          }
+
       - name: Drive the Windows UI through WebView2 CDP
         shell: pwsh
         timeout-minutes: 5
