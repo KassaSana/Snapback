@@ -94,53 +94,73 @@ const DISTRACTIONS = [
   { app: "Chrome", title: "Hacker News", file: "" },
   { app: "Slack", title: "#general — 3 unread", file: "" },
   { app: "Chrome", title: "YouTube — Watch Later", file: "" },
-  { app: "Discord", title: "gamedev — general", file: "" },
+  { app: "Discord", title: "book club — general", file: "" },
+  { app: "Chrome", title: "Reddit — r/buildapc", file: "" },
+  { app: "Messages", title: "Mum", file: "" },
+  { app: "Chrome", title: "Amazon — Your cart", file: "" },
 ];
 
 const WORK_KINDS: WorkKind[] = [
   {
-    goal: "Ship the storage migration",
+    goal: "Draft the grant proposal",
     focusMode: "deep",
-    centre: 82,
-    project: "snapback",
+    centre: 80,
+    project: "grant",
     apps: [
-      {
-        app: "Code",
-        titles: ["storage.cpp — snapback", "storage.hpp — snapback", "migrations.md — snapback"],
-        onTask: true,
-      },
-      { app: "Windows Terminal", titles: ["ctest — snapback"], onTask: true },
-      { app: "Chrome", titles: ["SQLite — ALTER TABLE"], onTask: true },
+      { app: "Word", titles: ["Proposal draft v4.docx", "Budget justification.docx"], onTask: true },
+      { app: "Chrome", titles: ["Funder guidelines — PDF"], onTask: true },
     ],
   },
   {
-    goal: "Write the architecture decision record",
-    focusMode: "normal",
-    centre: 71,
-    project: "docs",
-    apps: [
-      { app: "Code", titles: ["0008-protect-master.md — docs", "ROADMAP.md — docs"], onTask: true },
-      { app: "Chrome", titles: ["GitHub — branch protection docs"], onTask: true },
-    ],
-  },
-  {
-    goal: "Review the pull request queue",
-    focusMode: "normal",
-    centre: 58,
-    project: "review",
-    apps: [
-      { app: "Chrome", titles: ["Pull requests — Snapback", "Files changed — #48"], onTask: true },
-      { app: "Slack", titles: ["#snapback-dev"], onTask: true },
-    ],
-  },
-  {
-    goal: "Redesign the Review surface",
+    goal: "Fix the checkout bug",
     focusMode: "deep",
-    centre: 77,
-    project: "frontend",
+    centre: 76,
+    project: "shop-api",
     apps: [
-      { app: "Figma", titles: ["Review — charts v3"], onTask: true },
-      { app: "Code", titles: ["AnalyticsCard.tsx — frontend"], onTask: true },
+      { app: "Code", titles: ["cart.ts — shop-api", "checkout.test.ts — shop-api"], onTask: true },
+      { app: "Windows Terminal", titles: ["npm test — shop-api"], onTask: true },
+      { app: "Chrome", titles: ["Stripe docs — PaymentIntents"], onTask: true },
+    ],
+  },
+  {
+    goal: "Study for the stats exam",
+    focusMode: "normal",
+    centre: 66,
+    project: "stats",
+    apps: [
+      { app: "Acrobat", titles: ["Chapter 7 — Regression.pdf"], onTask: true },
+      { app: "Notion", titles: ["Stats notes"], onTask: true },
+      { app: "Chrome", titles: ["Khan Academy — Confidence intervals"], onTask: true },
+    ],
+  },
+  {
+    goal: "Q3 budget review",
+    focusMode: "normal",
+    centre: 61,
+    project: "finance",
+    apps: [
+      { app: "Excel", titles: ["Q3 budget.xlsx", "Vendor spend.xlsx"], onTask: true },
+      { app: "Outlook", titles: ["RE: Q3 numbers"], onTask: true },
+    ],
+  },
+  {
+    goal: "Onboarding flow mockups",
+    focusMode: "deep",
+    centre: 74,
+    project: "design",
+    apps: [
+      { app: "Figma", titles: ["Onboarding — v2", "Components"], onTask: true },
+      { app: "Chrome", titles: ["Mobbin — onboarding patterns"], onTask: true },
+    ],
+  },
+  {
+    goal: "Read the attention residue paper",
+    focusMode: "normal",
+    centre: 64,
+    project: "reading",
+    apps: [
+      { app: "Zotero", titles: ["Leroy 2009 — Attention residue"], onTask: true },
+      { app: "Obsidian", titles: ["Reading notes"], onTask: true },
     ],
   },
   {
@@ -149,17 +169,21 @@ const WORK_KINDS: WorkKind[] = [
     centre: 49,
     project: "admin",
     apps: [
+      { app: "Outlook", titles: ["Inbox (23)"], onTask: true },
       { app: "Notion", titles: ["Weekly plan"], onTask: true },
-      { app: "Chrome", titles: ["Mail — Inbox (12)"], onTask: true },
     ],
   },
 ];
 
 const REFLECTIONS: [string, string][] = [
-  ["Landed the migration and its backup path", "Write the downgrade test"],
-  ["Drafted the ADR end to end", "Get the required-check list confirmed"],
-  ["Reviewed four PRs", "Follow up on the flaky sanitizer case"],
-  ["Charts now read honestly at zero data", "Pick the empty-state copy"],
+  ["Finished the methods section", "Ask Priya to read it"],
+  ["Found the rounding bug in the cart total", "Add a test for zero-quantity items"],
+  ["Got through two chapters", "Redo the practice set for ch. 7"],
+  ["Most of the variance is in contractors", "Check the September invoices"],
+  ["Settled on the three-step version", "Prototype the skip button"],
+  ["Took decent notes, lost focus near the end", "Start earlier tomorrow"],
+  ["Inbox to zero, week is planned", "Book the dentist"],
+  ["Slow start, better after lunch", "Phone in the other room next time"],
 ];
 
 function pad(value: number): string {
@@ -183,7 +207,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
 
   let counter = 0;
 
-  for (let dayOffset = 13; dayOffset >= 0; dayOffset -= 1) {
+  for (let dayOffset = 34; dayOffset >= 0; dayOffset -= 1) {
     const dayStart = todayStart - dayOffset * DAY;
     const weekday = new Date(dayStart).getDay();
     const isWeekend = weekday === 0 || weekday === 6;
@@ -203,7 +227,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
 
       counter += 1;
       const sessionId = `demo-${pad(counter)}`;
-      const reflection = REFLECTIONS[counter % REFLECTIONS.length];
+      const reflection = REFLECTIONS[Math.floor(random() * REFLECTIONS.length)];
 
       // Attended time is always less than wall clock.
       const attendedFraction = 0.78 + random() * 0.18;
@@ -215,7 +239,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
       let sampleIndex = 0;
       let score = kind.centre + (random() - 0.5) * 10;
 
-      for (let t = startedAtMs; t < effectiveEnd; t += 2 * MINUTE) {
+      for (let t = startedAtMs; t < effectiveEnd; t += 2 * MINUTE + Math.floor(random() * 40) * 1000) {
         sampleIndex += 1;
         // A slow wander around the centre, with occasional dips into distraction.
         const dip = random() < 0.12;
@@ -229,7 +253,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
           episodes.push({
             sessionId,
             durationSecs: Math.round((t - detourStart) / 1000),
-            returnAppName: kind.apps[0].app,
+            returnAppName: kind.apps[Math.floor(random() * kind.apps.length)].app,
             startedAtMs: detourStart,
           });
           snapbackCount += 1;
@@ -240,8 +264,8 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
         const source =
           state === "DISTRACTED" && random() < 0.4
             ? "risk"
-            : state === "DEEP_FOCUS" && random() < 0.2
-              ? "thrash"
+            : state === "PSEUDO_PRODUCTIVE" && random() < 0.3
+              ? "drift"
               : "model";
 
         predictions.push({
@@ -268,7 +292,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
               windowTitle: title,
               fileHint: file,
               projectHint: kind.project,
-              summary: `${choice.app} · ${title}`,
+              summary: title,
               timestampMs: t,
               sessionId,
             });
@@ -279,7 +303,7 @@ export function buildDataset(now: number, seed = 20260827): DemoDataset {
               windowTitle: off.title,
               fileHint: off.file,
               projectHint: "",
-              summary: `${off.app} · ${off.title}`,
+              summary: off.title,
               timestampMs: t,
               sessionId,
             });

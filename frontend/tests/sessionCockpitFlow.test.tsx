@@ -412,7 +412,7 @@ describe("session cockpit", () => {
     // what it was started with.
     expect(boundary.invoke).not.toHaveBeenCalledWith("set_focus_mode", expect.anything());
     const metrics = card.querySelector(".session-live") as HTMLElement;
-    expect(within(metrics).getByText("Write tests")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Write tests" })).toBeInTheDocument();
     expect(within(metrics).getByText("Normal mode")).toBeInTheDocument();
 
     fireEvent.click(within(card).getByRole("button", { name: "Keep this session" }));
@@ -472,7 +472,7 @@ describe("session cockpit", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Stop and start this one" }));
     await screen.findByRole("heading", { name: "Check-in" });
     fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
-    await within(card).findByText("Review the PR");
+    await screen.findByRole("heading", { level: 1, name: "Review the PR" });
     // The switch form closed on its own once the new session was running.
     await waitFor(() =>
       expect(screen.queryByPlaceholderText("Write the quarterly report")).toBeNull(),
@@ -517,7 +517,7 @@ describe("session cockpit", () => {
         focusMode: "normal",
       }),
     );
-    await within(card).findByText("Review the PR");
+    await screen.findByRole("heading", { level: 1, name: "Review the PR" });
   });
 
   it("navigates and selects goal suggestions via keyboard and mouse", async () => {

@@ -3,13 +3,10 @@ import { memo, useState } from "react";
 import type { AttendedProgress } from "./api";
 import { formatLiveTodayMins } from "./liveAttended";
 
-// Opt-in attended-minute targets. Deliberately flat copy: two numbers and a ratio, no
-// encouragement or streaks. Targets are on attendance, not the focus score.
+// Today's attended time on Now, with optional daily and weekly targets.
 type AttendedTargetsCardProps = {
   progress: AttendedProgress;
   onSave: (dailyMins: number, weeklyMins: number) => void | Promise<void>;
-  /** One-line metric on a running Now. Edit still lives behind the same control. */
-  compact?: boolean;
   /** True while attended time is accruing — unlocks the under-one-minute "<1m" label. */
   accruing?: boolean;
 };
@@ -20,34 +17,9 @@ const formatMinutes = (mins: number): string => {
   return hours > 0 ? `${hours}h ${rest}m` : `${rest}m`;
 };
 
-const Row = ({
-  label,
-  actual,
-  target,
-}: {
-  label: string;
-  actual: number;
-  target: number;
-}) => (
-  <div className="metric">
-    <p className="metric-label">{label}</p>
-    <p className="metric-value">{formatMinutes(actual)}</p>
-    {target > 0 ? (
-      <p className="meta-sub">
-        of {formatMinutes(target)} planned ({Math.round((actual / target) * 100)}%)
-      </p>
-    ) : (
-      // No target set: the attendance is still worth showing, so the number stands alone
-      // rather than being hidden behind an opt-in.
-      <p className="meta-sub">no target set</p>
-    )}
-  </div>
-);
-
 export const AttendedTargetsCard = memo(function AttendedTargetsCard({
   progress,
   onSave,
-  compact = false,
   accruing = false,
 }: AttendedTargetsCardProps) {
   const [editing, setEditing] = useState(false);
@@ -55,32 +27,15 @@ export const AttendedTargetsCard = memo(function AttendedTargetsCard({
   const [weekly, setWeekly] = useState(String(progress.weeklyTargetMins));
 
   return (
-    <section className={compact ? "attended-inline" : "card attended-targets-card"}>
+    <section className="attended-inline">
       <div className="card-header">
         <h2>Attended time</h2>
       </div>
 
-      {compact ? (
-        <p className="attended-inline-line">
-          Today {formatLiveTodayMins(progress.dailyActualMins, accruing)}
-          {progress.dailyTargetMins > 0
-            ? ` of ${formatMinutes(progress.dailyTargetMins)} planned`
-            : ""}
-        </p>
-      ) : (
-        <div className="metrics">
-          <Row
-            label="Today"
-            actual={progress.dailyActualMins}
-            target={progress.dailyTargetMins}
-          />
-          <Row
-            label="This week"
-            actual={progress.weeklyActualMins}
-            target={progress.weeklyTargetMins}
-          />
-        </div>
-      )}
+      <p className="attended-inline-line">
+        Today {formatLiveTodayMins(progress.dailyActualMins, accruing)}
+        {progress.dailyTargetMins > 0 ? ` of ${formatMinutes(progress.dailyTargetMins)} planned` : ""}
+      </p>
 
       {editing ? (
         <>

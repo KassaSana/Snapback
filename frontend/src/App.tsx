@@ -671,7 +671,6 @@ export default function App() {
         {nowMode === "running" ? (
           <>
             <AttendedTargetsCard
-              compact
               progress={attendedProgress}
               accruing={attendedAccruing}
               onSave={handleSaveAttendedTargets}

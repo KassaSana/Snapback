@@ -85,11 +85,9 @@ export const SummaryCard = memo(function SummaryCard({
           </div>
           <p className="helper-text">
             {focusSummary && focusSummary.sampleCount > 0 ? (
-              <span>Peak focus {Math.round(focusSummary.peakFocusScore)}</span>
+              <span>Peak focus {Math.round(focusSummary.peakFocusScore)}.</span>
             ) : null}{" "}
-            {report.topContextApp
-              ? `Most common context: ${report.topContextApp}.`
-              : "No context leader yet."}
+            {report.topContextApp ? `Most used app: ${report.topContextApp}.` : null}
             {hasHistory
               ? ` ${Math.round(report.distractedFraction * 100)}% of the time looked distracted.`
               : ""}

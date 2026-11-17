@@ -15,7 +15,7 @@ export const FOCUS_MODE_LABELS: Record<FocusMode, string> = {
 };
 
 export const FOCUS_MODE_HINT =
-  "Deep is stricter about drift. Recovery is looser after a break.";
+  "Strict flags drift sooner. Recovery is more forgiving after a break.";
 
 /** Coerce an arbitrary backend/stored string to a focus mode, falling back rather than throwing. */
 export const normalizeFocusMode = (

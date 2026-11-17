@@ -99,7 +99,6 @@ export const AppHeader = memo(function AppHeader({
       </div>
       <div className="status-stack">
         <RecordingStatusCard
-          variant="header"
           status={recordingStatus}
           unconfirmed={recordingStatusUnconfirmed}
           onPause={onPauseRecording}

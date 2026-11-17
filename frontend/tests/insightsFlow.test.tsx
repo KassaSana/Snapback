@@ -377,7 +377,7 @@ describe("Focus summary card", () => {
     const card = focusSummaryCard();
     const tiles = within(card);
     expect(tiles.getByText("72")).toBeInTheDocument();
-    expect(tiles.getByText("Peak focus 95")).toBeInTheDocument();
+    expect(tiles.getByText("Peak focus 95.")).toBeInTheDocument();
     expect(tiles.getByText(/15% of the time looked distracted/)).toBeInTheDocument();
     // A duration, not a bare row count: 18 seconds reads as "18s". The tile
     // used to show the number of consecutive non-distracted prediction rows under a

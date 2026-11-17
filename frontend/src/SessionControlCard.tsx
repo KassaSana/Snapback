@@ -188,8 +188,7 @@ export const SessionControlCard = memo(function SessionControlCard({
         <div className="session-live">
           <div className="session-live-overview">
             <div className="session-live-goal">
-              <p className="metric-label">Working on</p>
-              <p className="metric-value">{sessionRecord?.goal || "—"}</p>
+              <p className="metric-label">Mode</p>
               <p className="session-live-mode">
                 {FOCUS_MODE_LABELS[normalizeFocusMode(sessionRecord?.focusMode || focusMode)]} mode
               </p>

@@ -1,5 +1,4 @@
-/* Semantic tokens are the public API; palette tokens are the implementation.
-   Components should prefer --text, --border, and --card so light/dark can swap underneath. */
+/* Components use the semantic tokens below; the palette values swap for dark mode. */
 
 :root,
 :root[data-appearance="light"] {
@@ -18,10 +17,6 @@
   --text: var(--ink);
   --text-muted: var(--muted);
   --canvas: #f8f6f0;
-  --canvas-stop-1: #f8f6f0;
-  --canvas-stop-2: #f8f6f0;
-  --canvas-stop-3: #f8f6f0;
-  --canvas-stop-4: #f8f6f0;
   --border: rgba(36, 41, 35, 0.13);
   --border-strong: rgba(36, 41, 35, 0.32);
   --card: var(--surface-strong);
@@ -29,7 +24,6 @@
   --control-border: rgba(36, 41, 35, 0.2);
   --nav-shell: transparent;
   --settings-nav-shell: transparent;
-  --glow-accent: rgba(198, 93, 68, 0.18);
   --error-bg: #fff1ee;
   --error-border: #f3b5a8;
   --error-text: #8a2f1f;
@@ -73,16 +67,11 @@
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
   --on-accent: #20251f;
   --canvas: #171d19;
-  --canvas-stop-1: #171d19;
-  --canvas-stop-2: #171d19;
-  --canvas-stop-3: #171d19;
-  --canvas-stop-4: #171d19;
   --border: rgba(235, 236, 229, 0.13);
   --border-strong: rgba(235, 236, 229, 0.34);
   --control-border: rgba(235, 236, 229, 0.22);
   --nav-shell: transparent;
   --settings-nav-shell: transparent;
-  --glow-accent: rgba(226, 154, 128, 0.14);
   --error-bg: #3a1f1c;
   --error-border: #7a3f36;
   --error-text: #ffb4a8;
@@ -250,14 +239,6 @@ h1 {
   gap: 8px;
 }
 
-/* Card variant: the timed choices sit apart from "Pause until I resume" under their
-   own label, so the row of durations scans as one decision rather than four. */
-.pause-choices {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
-}
 
 .attended-inline {
   background: var(--surface-strong);
@@ -292,9 +273,7 @@ h1 {
   font-size: 0.78rem;
 }
 
-/* The Now surface's hero (ADR-0003). Spans the grid so it reads as the primary element
-   rather than one card among peers, and the state is set in the display serif at a size
-   that is legible from across the room. */
+/* The focus state on Now: full width, large serif. */
 .hero-card {
   grid-column: 1 / -1;
   gap: 10px;
@@ -363,8 +342,7 @@ h1 {
   padding: 0 8px;
 }
 
-/* The evidence line. Set in the sans at body size so it reads as reasoning rather than
-   another metric — the verdict above is the claim, this is the argument for it. */
+/* The "because …" line under the focus state. */
 .hero-because {
   font-size: 1.05rem;
   color: var(--ink);
@@ -379,9 +357,7 @@ h1 {
   margin-right: 10px;
 }
 
-/* Where the design takes its one deliberate risk: the app says out loud what it cannot
-   see. Bordered rather than tinted, so it reads as a margin note in the product's own
-   voice instead of a warning banner. */
+/* "Snapback can't tell yet": bordered, not tinted, so it doesn't read as a warning. */
 .hero-caveat {
   margin: 6px 0 0;
   padding-left: 14px;
@@ -447,15 +423,6 @@ h1 {
   gap: 8px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .verdict-option,
-  .surface-tab,
-  .card {
-    transition: none;
-    animation: none;
-    opacity: 1;
-  }
-}
 
 /* Surface navigation (ADR-0003). A clear baseline connects the tabs to the panel below. */
 .surface-nav {
@@ -530,7 +497,7 @@ h1 {
   z-index: 1;
 }
 
-/* Now is a cockpit, not a mosaic of peer cards (ADR-0003). */
+/* Now: one column, in the order you use it. */
 .grid-now {
   grid-template-columns: 1fr;
   max-width: 720px;
@@ -540,9 +507,7 @@ h1 {
   margin-top: 20px;
 }
 
-/* A wide desktop window is not a phone: let the cockpit breathe rather than pinning a
-   narrow column to the left edge with a void beside it. Single column is kept — the
-   order is the journey — only the measure grows. */
+/* Wider windows widen the column rather than leaving empty space beside it. */
 @media (min-width: 1100px) {
   .grid-now {
     max-width: 880px;
@@ -705,9 +670,7 @@ h1 {
   color: var(--muted);
 }
 
-/* The "you are working untracked" notice on the session card. Deliberately
-   quiet: it is a prompt, not an error, and the app is telling the user about something it
-   chose not to do for them. */
+/* The "working without a session" notice. Quiet: it's a prompt, not an error. */
 .notice {
   display: flex;
   align-items: center;
@@ -740,8 +703,7 @@ h1 {
   white-space: nowrap;
 }
 
-/* Secondary line under a meta value — currently the elapsed time a session was open, shown
-   beneath the attended time that now leads it. */
+/* Secondary line under a meta value. */
 .meta-sub {
   margin: 0.15rem 0 0;
   font-size: 0.75rem;
@@ -782,12 +744,6 @@ h1 {
 .secondary-button {
   background: var(--surface);
   color: var(--ink);
-}
-
-.ghost-button:hover:not(:disabled),
-.primary-button:hover:not(:disabled),
-.secondary-button:hover:not(:disabled) {
-  transform: translateY(-1px);
 }
 
 .primary-button:disabled {
@@ -854,6 +810,23 @@ h1 {
   align-items: end;
 }
 
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 12px 16px;
+}
+
+.text-input,
+.field-label textarea,
+.field-label input,
 .field select,
 .field input {
   width: 100%;
@@ -1037,7 +1010,7 @@ h1 {
   background: var(--surface-strong);
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .mini-action-button:hover {
@@ -1642,12 +1615,6 @@ h1 {
   font-size: 0.86rem;
 }
 
-@media (max-width: 760px) {
-  .session-explorer {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 /* Text for assistive tech only: in the accessibility tree, not on screen. */
 .visually-hidden {
   position: absolute;
@@ -1990,22 +1957,6 @@ h1 {
   padding: 4px 7px;
 }
 
-/* The session UUID lives here now: reachable for support, no longer the headline. */
-.technical-details {
-  margin-top: 14px;
-  font-size: 0.78rem;
-}
-
-.technical-details summary {
-  cursor: pointer;
-  color: var(--muted);
-}
-
-.technical-details code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
-  user-select: all;
-}
 
 /* One shared range for every Review card. */
 
@@ -2133,7 +2084,6 @@ h1 {
 .grid-review > .review-range-bar,
 .grid-review > .review-overview,
 .grid-review > .session-chart-card,
-.grid-review > .timeline-card,
 .grid-review > .session-management-card,
 .grid-review > .helper-text {
   grid-column: 1 / -1;
@@ -2218,7 +2168,8 @@ h1 {
 }
 
 @media (max-width: 760px) {
-  .grid-review {
+  .grid-review,
+  .session-explorer {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2315,5 +2266,9 @@ h1 {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+
+  .card {
+    opacity: 1;
   }
 }

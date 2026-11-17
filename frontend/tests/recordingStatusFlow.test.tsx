@@ -150,7 +150,7 @@ describe("Session status", () => {
     boundary.state.recording = { state: "pausedIdle", privatePauseRemainingMs: 0 };
     render(<App />);
     await screen.findByRole("heading", { name: "Session status" });
-    expect(await within(card()).findByText("Paused for idle")).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (away)")).toBeInTheDocument();
     // Idle is not a privacy pause, so it is not offering to resume from one.
     expect(
       within(card()).queryByRole("button", { name: "Resume recording" }),
@@ -166,9 +166,9 @@ describe("Session status", () => {
     await waitFor(() => expect(boundary.state.pausedWith).not.toBeNull());
     expect(boundary.state.pausedWith).toEqual({ minutes: 30 });
 
-    expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (private)")).toBeInTheDocument();
     expect(await within(card()).findByText(/30m left/)).toBeInTheDocument();
-    expect(await within(card()).findByText(/resumes on its own/)).toBeInTheDocument();
+    expect(await within(card()).findByText(/then recording resumes/)).toBeInTheDocument();
   });
 
   it("pauses indefinitely without promising a resume time", async () => {
@@ -179,8 +179,8 @@ describe("Session status", () => {
     fireEvent.click(within(card()).getByRole("button", { name: "Pause recording until I resume" }));
     await waitFor(() => expect(boundary.state.pausedWith).not.toBeNull());
     expect(boundary.state.pausedWith).toEqual({ minutes: 0 });
-    expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
-    expect(within(card()).getByText(/Recording and attended time pause/)).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (private)")).toBeInTheDocument();
+    expect(within(card()).getByText(/Not counting toward attended time/)).toBeInTheDocument();
     expect(within(card()).queryByText(/left/)).not.toBeInTheDocument();
   });
 
@@ -218,7 +218,7 @@ describe("Session status stays coherent with native state", () => {
     // The user walks away. The engine says so; nothing on this side clicked anything.
     boundary.state.recording = { state: "pausedIdle", privatePauseRemainingMs: 0 };
     act(() => boundary.emit("idle", { idle: true }));
-    expect(await within(card()).findByText("Paused for idle")).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (away)")).toBeInTheDocument();
 
     boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     act(() => boundary.emit("idle", { idle: false }));
@@ -235,7 +235,7 @@ describe("Session status stays coherent with native state", () => {
     act(() =>
       boundary.emit("recording-status", { state: "pausedPrivate", privatePauseRemainingMs: 0 }),
     );
-    expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (private)")).toBeInTheDocument();
     // Applied, not re-fetched: the event carried the answer.
     expect(recordingCalls()).toBe(before);
   });
@@ -249,7 +249,7 @@ describe("Session status stays coherent with native state", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      expect(within(card()).getByText("Paused privately")).toBeInTheDocument();
+      expect(within(card()).getByText("Paused (private)")).toBeInTheDocument();
 
       // Natively the pause lapses on the read that finds the deadline passed.
       boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
@@ -259,7 +259,7 @@ describe("Session status stays coherent with native state", () => {
       });
       // Not yet: nothing polls a running countdown.
       expect(recordingCalls()).toBe(asked);
-      expect(within(card()).getByText("Paused privately")).toBeInTheDocument();
+      expect(within(card()).getByText("Paused (private)")).toBeInTheDocument();
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000 + DEADLINE_SLACK_MS);
@@ -286,14 +286,14 @@ describe("Session status stays coherent with native state", () => {
 
     // ...the user pauses meanwhile, and that answer shows...
     fireEvent.click(within(card()).getByRole("button", { name: "Pause recording until I resume" }));
-    expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (private)")).toBeInTheDocument();
 
     // ...then the stale refresh lands with the pre-pause answer. It must be ignored.
     await act(async () => {
       release({ state: "recording", privatePauseRemainingMs: 0 });
       await Promise.resolve();
     });
-    expect(within(card()).getByText("Paused privately")).toBeInTheDocument();
+    expect(within(card()).getByText("Paused (private)")).toBeInTheDocument();
     expect(within(card()).queryByText("Recording")).not.toBeInTheDocument();
   });
 
@@ -301,19 +301,19 @@ describe("Session status stays coherent with native state", () => {
     boundary.state.recording = { state: "recording", privatePauseRemainingMs: 0 };
     render(<App />);
     expect(await within(card()).findByText("Recording")).toBeInTheDocument();
-    expect(within(card()).queryByText(/Could not confirm/)).not.toBeInTheDocument();
+    expect(within(card()).queryByText(/Couldn.t reach the app/)).not.toBeInTheDocument();
 
     boundary.state.statusFails = true;
     act(() => boundary.emit("idle", { idle: true }));
-    expect(await within(card()).findByText(/Could not confirm/)).toBeInTheDocument();
+    expect(await within(card()).findByText(/Couldn.t reach the app/)).toBeInTheDocument();
     // The last known state is still shown rather than replaced with a guess.
     expect(within(card()).getByText("Recording")).toBeInTheDocument();
 
     boundary.state.statusFails = false;
     boundary.state.recording = { state: "pausedIdle", privatePauseRemainingMs: 0 };
     act(() => boundary.emit("idle", { idle: true }));
-    expect(await within(card()).findByText("Paused for idle")).toBeInTheDocument();
-    expect(within(card()).queryByText(/Could not confirm/)).not.toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (away)")).toBeInTheDocument();
+    expect(within(card()).queryByText(/Couldn.t reach the app/)).not.toBeInTheDocument();
   });
 
   it("keeps the Settings toggle and the header in agreement in both directions", async () => {
@@ -326,7 +326,7 @@ describe("Session status stays coherent with native state", () => {
 
     // Settings -> header.
     fireEvent.click(toggle());
-    expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (private)")).toBeInTheDocument();
     await waitFor(() => expect(toggle().checked).toBe(true));
 
     // Header -> Settings.
@@ -339,7 +339,7 @@ describe("Session status stays coherent with native state", () => {
     act(() =>
       boundary.emit("recording-status", { state: "pausedPrivate", privatePauseRemainingMs: 0 }),
     );
-    expect(await within(card()).findByText("Paused privately")).toBeInTheDocument();
+    expect(await within(card()).findByText("Paused (private)")).toBeInTheDocument();
     await waitFor(() => expect(toggle().checked).toBe(true));
   });
 });
