@@ -1,51 +1,36 @@
 /**
- * The standing disclosure above the demo.
+ * The note above the hosted demo saying the data is generated.
  *
- * It is not decoration. Snapback's whole claim is that it measures *your* real activity
- * locally, and this page measures nothing — a visitor who assumes otherwise would read invented
- * numbers as evidence. So the banner says what the data is, and why a browser cannot produce
- * the real thing, before they scroll into a dashboard that looks convincing.
- *
- * Styles are inline rather than in `styles.css`: that stylesheet is shipped inside the desktop
- * app, and nothing that exists only for the demo belongs in it.
+ * Styles are inline because styles.css ships inside the desktop app, and this only exists for
+ * the demo. Colours follow the app palette (cream background, terracotta accent).
  */
 
 const wrap: React.CSSProperties = {
-  background: "linear-gradient(90deg, #1f2937, #111827)",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.28)",
-  color: "#e2e8f0",
+  background: "#f1ece1",
+  borderBottom: "1px solid #e2d9c8",
+  color: "#2b2a26",
   padding: "10px 20px",
-  font: "500 13px/1.5 system-ui, -apple-system, Segoe UI, sans-serif",
+  font: "13px/1.5 system-ui, -apple-system, Segoe UI, sans-serif",
   display: "flex",
   flexWrap: "wrap",
-  gap: "6px 14px",
+  gap: "4px 14px",
   alignItems: "baseline",
 };
 
-const tag: React.CSSProperties = {
-  background: "#38bdf8",
-  color: "#082f49",
-  borderRadius: "999px",
-  padding: "2px 9px",
-  fontSize: "11px",
-  fontWeight: 700,
-  letterSpacing: "0.04em",
-  textTransform: "uppercase",
-};
+const label: React.CSSProperties = { fontWeight: 600, color: "#c65d44" };
 
-const muted: React.CSSProperties = { color: "#94a3b8" };
+const muted: React.CSSProperties = { color: "#6b665c" };
 
-const link: React.CSSProperties = { color: "#7dd3fc", textDecoration: "underline" };
+const link: React.CSSProperties = { color: "#2b2a26", textDecoration: "underline" };
 
 export default function DemoBanner() {
   return (
     <div style={wrap}>
-      <span style={tag}>Demo</span>
-      <span>Every number on this page is generated sample data.</span>
-      <span style={muted}>Demo sessions and feedback reset on reload.</span>
+      <span style={label}>Demo</span>
+      <span>Everything here is generated sample data, and it resets when you reload.</span>
       <span style={muted}>
-        Snapback reads the active window and input idle time from the operating system, which a
-        browser tab cannot do — so the real app is a desktop build.
+        The real app reads the active window and input activity from the OS, which a browser
+        can&apos;t do.
       </span>
       <a style={link} href="https://github.com/KassaSana/Snapback">
         Source on GitHub

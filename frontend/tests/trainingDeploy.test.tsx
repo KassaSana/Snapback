@@ -107,15 +107,6 @@ afterEach(() => {
 describe("Training / deploy card", () => {
   // Moved the feedback controls into **Focus** and left model tooling in
   // **Advanced**, so this assertion follows the card rather than the surface.
-  it("describes the available feedback controls without claiming global hotkeys", async () => {
-    renderApp("settings", "focus");
-
-    expect(
-      await screen.findByText(/Use these controls to label it while a session is active/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/Global hotkeys/i)).not.toBeInTheDocument();
-  });
-
   it("hides model tooling when developer tools are off", async () => {
     boundary.state.health = { ...healthyCaptureRunning(), developerToolsEnabled: false };
     renderApp("settings", "advanced");

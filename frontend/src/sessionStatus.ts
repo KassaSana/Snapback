@@ -17,35 +17,19 @@ export function sessionStatusView(
   recordingState?: RecordingStatus["state"],
 ): SessionStatusView {
   // Not "idle": that means the user is away, which is independent of having a session.
-  if (!record) return { label: "no session", reason: null };
+  if (!record) return { label: "No session", reason: null };
 
   // Anything already finished keeps its own status; only a live session can be paused.
   if (record.status !== "ACTIVE") {
-    return { label: record.status.toLowerCase(), reason: null };
+    const status = record.status.toLowerCase();
+    return { label: status.charAt(0).toUpperCase() + status.slice(1), reason: null };
   }
 
-  if (recordingState === "pausedPrivate") {
-    return {
-      label: "Paused — private",
-      reason: "Elapsed keeps running; attended and recording do not.",
-    };
-  }
-  if (recordingState === "pausedIdle") {
-    return {
-      label: "Paused — idle",
-      reason: "Elapsed keeps running; attended and recording do not.",
-    };
-  }
-  if (userIdle) {
-    return {
-      label: "Paused — no input",
-      reason: "Elapsed keeps running; attended does not.",
-    };
-  }
-  return {
-    label: "running",
-    reason: "Elapsed and attended are both counting.",
-  };
+  const paused = "Not counting toward attended time.";
+  if (recordingState === "pausedPrivate") return { label: "Paused (private)", reason: paused };
+  if (recordingState === "pausedIdle") return { label: "Paused (away)", reason: paused };
+  if (userIdle) return { label: "Paused (no input)", reason: paused };
+  return { label: "Running", reason: null };
 }
 
 /** Label-only helper for callers that have not moved to the reason yet. */

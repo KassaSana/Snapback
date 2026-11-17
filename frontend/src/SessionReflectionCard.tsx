@@ -40,11 +40,9 @@ export const SessionReflectionCard = memo(function SessionReflectionCard({
     <section className="card reflection-card">
       <div className="card-header">
         <h2>Reflection</h2>
-        <span className="pill">optional</span>
       </div>
       <p className="helper-text">
-        Two lines now make tomorrow&apos;s restart easier. This is for you — it is never used to
-        train the model.
+        A couple of notes for next time. Only you see these; they aren&apos;t used for training.
       </p>
 
       <label className="field-label" htmlFor="reflection-done">

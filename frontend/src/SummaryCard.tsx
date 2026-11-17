@@ -67,7 +67,7 @@ export const SummaryCard = memo(function SummaryCard({
                 detail={[
                   report.plannedMins > 0
                     ? `of ${formatMinutes(report.plannedMins)} planned (${Math.round((attendedSeconds / (report.plannedMins * 60)) * 100)}%)`
-                    : "measured, not scored",
+                    : "time you were active",
                   attendedPeriod,
                 ]
                   .filter(Boolean)
@@ -85,13 +85,11 @@ export const SummaryCard = memo(function SummaryCard({
           </div>
           <p className="helper-text">
             {focusSummary && focusSummary.sampleCount > 0 ? (
-              <span>Peak focus {Math.round(focusSummary.peakFocusScore)}</span>
+              <span>Peak focus {Math.round(focusSummary.peakFocusScore)}.</span>
             ) : null}{" "}
-            {report.topContextApp
-              ? `Most common context: ${report.topContextApp}.`
-              : "No context leader yet."}
+            {report.topContextApp ? `Most used app: ${report.topContextApp}.` : null}
             {hasHistory
-              ? ` ${Math.round(report.distractedFraction * 100)}% of predictions were distracted.`
+              ? ` ${Math.round(report.distractedFraction * 100)}% of the time looked distracted.`
               : ""}
           </p>
         </>

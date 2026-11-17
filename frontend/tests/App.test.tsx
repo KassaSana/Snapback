@@ -121,7 +121,7 @@ describe("App first-run permission wizard", () => {
     render(<App />);
 
     // ADR-0003: Now is the default surface, and it holds the session, not the config.
-    expect(await screen.findByRole("heading", { name: "Session Control" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Session" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Now" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: "What are you working on?" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Pomodoro" })).not.toBeInTheDocument();
@@ -240,7 +240,7 @@ describe("App first-run permission wizard", () => {
     // Wait for the Now surface to settle, then assert the wizard never appears. (Was
     // waiting on the Permissions heading, which ADR-0003 moved to the Settings surface —
     // the wait was incidental to this test, not the thing under assertion.)
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -249,7 +249,7 @@ describe("App first-run permission wizard", () => {
     window.localStorage.setItem(FIRST_RUN_ACK_KEY, "true");
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

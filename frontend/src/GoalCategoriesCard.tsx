@@ -8,8 +8,7 @@ export const GoalCategoriesCard = memo(function GoalCategoriesCard() {
   return (
     <section className="card config-card">
       <div className="card-header">
-        <h2>Goal Categories</h2>
-        <span className="pill">editable keywords</span>
+        <h2>Goal categories</h2>
       </div>
       <p className="helper-text">Keywords connect session goals to the work contexts that matter to you.</p>
       {categories.map((category, index) => (

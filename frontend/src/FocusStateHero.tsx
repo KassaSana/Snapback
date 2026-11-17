@@ -14,7 +14,7 @@ import { VerdictFeedback } from "./VerdictFeedback";
 // answer looks wrong.
 //
 // Display-only exception: a quiet screen with no goal match is a guess from absence, so "Deep
-// work" reads as "Settled" here; the stored verdict is unchanged.
+// work" reads as "Not sure" here; the stored verdict is unchanged.
 
 type Props = {
   goal: string | null;
@@ -85,7 +85,7 @@ export function FocusStateHero({
         <>
           {uncertain ? (
             <p className="hero-because" aria-live="polite">
-              I cannot tell whether this is work.
+              Snapback can't tell yet whether this is work.
             </p>
           ) : reasons.length > 0 ? (
             <p className="hero-because" aria-live="polite">

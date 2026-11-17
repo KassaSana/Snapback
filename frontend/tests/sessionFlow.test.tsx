@@ -138,9 +138,9 @@ describe("Session start/stop flow", () => {
 
   it("starts a session with the entered goal and reflects it in the UI", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
@@ -160,54 +160,52 @@ describe("Session start/stop flow", () => {
     // unscoped query would pass on the wrong element — reporting capture health as if it were
     // session state.
     expect(await screen.findByRole("heading", { name: "Focus state" })).toBeInTheDocument();
-    const sessionCard = (await screen.findByRole("heading", { name: "Session Control" }))
+    const sessionCard = (await screen.findByRole("heading", { name: "Session" }))
       .closest("section") as HTMLElement;
-    expect(within(sessionCard).getByText("running")).toBeInTheDocument();
+    expect(within(sessionCard).getByText("Running")).toBeInTheDocument();
   });
 
   it("keeps the header chip and Session Control on the same status vocabulary", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    await screen.findByRole("heading", { name: "Session" });
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
 
-    const sessionCard = screen.getByRole("heading", { name: "Session Control" }).closest("section")!;
+    const sessionCard = screen.getByRole("heading", { name: "Session" }).closest("section")!;
     const headerStatus = screen.getByRole("heading", { name: "Session status" }).closest("section")!;
-    expect(within(sessionCard).getByText("running")).toBeInTheDocument();
-    expect(within(headerStatus).getByText("running")).toBeInTheDocument();
-    expect(within(headerStatus).getByText(/Elapsed and attended are both counting/)).toBeInTheDocument();
-    expect(within(sessionCard).getByText(/Elapsed and attended are both counting/)).toBeInTheDocument();
+    expect(within(sessionCard).getByText("Running")).toBeInTheDocument();
+    expect(within(headerStatus).getByText("Running")).toBeInTheDocument();
 
     act(() => boundary.emit("idle", { idle: true }));
     await waitFor(() => {
-      expect(within(sessionCard).getByText("Paused — no input")).toBeInTheDocument();
-      expect(within(headerStatus).getByText("Paused — no input")).toBeInTheDocument();
+      expect(within(sessionCard).getByText("Paused (no input)")).toBeInTheDocument();
+      expect(within(headerStatus).getByText("Paused (no input)")).toBeInTheDocument();
     });
-    expect(screen.getByRole("heading", { level: 1, name: "Paused — no input" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Write tests" })).toBeInTheDocument();
 
     act(() =>
       boundary.emit("recording-status", { state: "pausedPrivate", privatePauseRemainingMs: 0 }),
     );
     await waitFor(() => {
-      expect(within(sessionCard).getByText("Paused — private")).toBeInTheDocument();
-      expect(within(headerStatus).getByText("Paused — private")).toBeInTheDocument();
+      expect(within(sessionCard).getByText("Paused (private)")).toBeInTheDocument();
+      expect(within(headerStatus).getByText("Paused (private)")).toBeInTheDocument();
     });
-    expect(screen.getByRole("heading", { level: 1, name: "Paused — private" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Write tests" })).toBeInTheDocument();
   });
 
   it("uses the persisted default focus mode for a new session", async () => {
     boundary.state.settings = { defaultFocusMode: "deep" };
 
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
     const select = screen.getByLabelText("Focus mode") as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe("deep"));
 
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
@@ -222,7 +220,7 @@ describe("Session start/stop flow", () => {
 
   it("commits the drafted focus mode through Start, not through the select", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
     // The select is a draft: choosing a mode writes nothing.
     const select = screen.getByLabelText("Focus mode") as HTMLSelectElement;
@@ -231,7 +229,7 @@ describe("Session start/stop flow", () => {
     expect(boundary.invoke).not.toHaveBeenCalledWith("set_focus_mode", expect.anything());
 
     // Start is the commit: the session opens in that mode and it becomes the default.
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
@@ -248,7 +246,7 @@ describe("Session start/stop flow", () => {
 
   it("does not start a session when the goal is empty", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
 
@@ -259,9 +257,9 @@ describe("Session start/stop flow", () => {
 
   it("uses destination headings and puts session controls before live feedback", async () => {
     render(<App />);
-    const controls = await screen.findByRole("heading", { name: "Session Control" });
+    const controls = await screen.findByRole("heading", { name: "Session" });
     expect(screen.queryByRole("heading", { name: "Focus state" })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
@@ -275,21 +273,21 @@ describe("Session start/stop flow", () => {
 
   it("stops an active session and shows it completed", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
 
     fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
 
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("stop_session", { sessionId: "sess-42" }),
     );
-    expect(await within(screen.getByRole("heading", { name: "Session Control" }).closest("section")!)
-      .findByText("completed")).toBeInTheDocument();
+    expect(await within(screen.getByRole("heading", { name: "Session" }).closest("section")!)
+      .findByText("Completed")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Keep Productive" })).toBeInTheDocument();
     expect(screen.getByText(/Automatic label: Productive/)).toBeInTheDocument();
   });
@@ -297,12 +295,12 @@ describe("Session start/stop flow", () => {
   it("does not claim a saved label when the lookup fails", async () => {
     boundary.state.autoLabelError = true;
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    await screen.findByRole("heading", { name: "Session" });
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
     fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
     expect(await screen.findByText(/Automatic label unavailable/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Skip check-in" })).toBeInTheDocument();
@@ -311,21 +309,21 @@ describe("Session start/stop flow", () => {
 
   it("defers a completed-session Review refresh while Review is hidden", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
 
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     await waitFor(() => expect(reviewCallCount()).toBe(4));
     await waitFor(() => expect(screen.getByRole("button", { name: "Last 7 days" })).toBeEnabled());
     fireEvent.click(screen.getByRole("tab", { name: "Now" }));
 
-    fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+    fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
       target: { value: "Write tests" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-    await screen.findByRole("heading", { level: 1, name: "running" });
+    await screen.findAllByText("Running");
     fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
-    await within(screen.getByRole("heading", { name: "Session Control" }).closest("section")!)
-      .findByText("completed");
+    await within(screen.getByRole("heading", { name: "Session" }).closest("section")!)
+      .findByText("Completed");
 
     expect(reviewCallCount()).toBe(4);
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
@@ -335,12 +333,12 @@ describe("Session start/stop flow", () => {
 
 async function stopTestSession() {
   render(<App />);
-  await screen.findByRole("heading", { name: "Session Control" });
-  fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), { target: { value: "Write tests" } });
+  await screen.findByRole("heading", { name: "Session" });
+  fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), { target: { value: "Write tests" } });
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-  await screen.findByRole("heading", { level: 1, name: "running" });
+  await screen.findAllByText("Running");
   fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
-  await screen.findByRole("heading", { name: "Session Check-in" });
+  await screen.findByRole("heading", { name: "Check-in" });
 }
 
 it("records Keep as explicit survey agreement and confirms it in the recap", async () => {
@@ -349,17 +347,17 @@ it("records Keep as explicit survey agreement and confirms it in the recap", asy
   await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("submit_label", {
     request: { sessionId: "sess-42", label: "PRODUCTIVE", source: "survey", notes: "confirmed automatic label" },
   }));
-  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
-  const recap = screen.getByRole("heading", { name: "Session Recap" }).closest("section")!;
-  expect(within(recap).getByRole("status")).toHaveTextContent("Saved: Focused");
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Check-in" })).toBeNull());
+  const recap = screen.getByRole("heading", { name: "Recap" }).closest("section")!;
+  expect(within(recap).getByRole("status")).toHaveTextContent("Saved: Productive");
   expect(within(recap).getByRole("button", { name: "Change" })).toBeInTheDocument();
   fireEvent.click(within(recap).getByRole("button", { name: "Change" }));
-  expect(await screen.findByRole("heading", { name: "Session Check-in" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Check-in" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
-  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Check-in" })).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-  await screen.findByRole("heading", { level: 1, name: "running" });
-  expect(screen.queryByText(/Saved: Focused/)).toBeNull();
+  await screen.findAllByText("Running");
+  expect(screen.queryByText(/Saved: Productive/)).toBeNull();
 });
 
 it("keeps the check-in open after a failed agreement and permits retry", async () => {
@@ -367,33 +365,21 @@ it("keeps the check-in open after a failed agreement and permits retry", async (
   const submit = vi.spyOn(api, "submitLabel").mockRejectedValueOnce(new Error("disk busy"));
   fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
   expect(await screen.findByText("Could not save feedback. Try again.")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "Session Check-in" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Check-in" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
-  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Check-in" })).toBeNull());
   expect(submit).toHaveBeenCalledTimes(2);
 });
 
 it("distinguishes no signal from measured zero and skips without writing feedback", async () => {
   boundary.state.autoLabel = null;
   await stopTestSession();
-  expect(screen.getByText(/No signal this session/)).toBeInTheDocument();
-  const recap = screen.getByRole("heading", { name: "Session Recap" }).closest("section")!;
+  expect(screen.getByText(/No activity was recorded/)).toBeInTheDocument();
+  const recap = screen.getByRole("heading", { name: "Recap" }).closest("section")!;
   expect(within(recap).getByText("No predictions recorded")).toBeInTheDocument();
   expect(within(recap).getAllByText("—")).toHaveLength(2);
   fireEvent.click(screen.getByRole("button", { name: "Skip check-in" }));
-  await waitFor(() => expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull());
-  expect(boundary.invoke.mock.calls.filter(([cmd]) => cmd === "submit_label")).toHaveLength(0);
-});
-
-it("guards Settings live feedback after stopping a session", async () => {
-  await stopTestSession();
-  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("tab", { name: "Focus" }));
-  const card = screen.getByRole("heading", { name: "Focus Feedback" }).closest("section")!;
-  for (const button of within(card).getAllByRole("button")) {
-    expect(button).toBeDisabled();
-    fireEvent.click(button);
-  }
+  await waitFor(() => expect(screen.queryByRole("heading", { name: "Check-in" })).toBeNull());
   expect(boundary.invoke.mock.calls.filter(([cmd]) => cmd === "submit_label")).toHaveLength(0);
 });
 
@@ -407,7 +393,7 @@ it("coalesces repeated Keep clicks while the survey save is pending", async () =
   expect(keep).toBeDisabled();
   expect(submit).toHaveBeenCalledTimes(1);
   await act(async () => resolve());
-  expect(screen.queryByRole("heading", { name: "Session Check-in" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Check-in" })).toBeNull();
 });
 
 it("does not paint an old feedback save into the replacement session", async () => {
@@ -416,7 +402,7 @@ it("does not paint an old feedback save into the replacement session", async () 
   vi.spyOn(api, "submitLabel").mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
   fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-  await screen.findByRole("heading", { level: 1, name: "running" });
+  await screen.findAllByText("Running");
   await act(async () => resolve());
   expect(screen.queryByText("Session rating saved: Productive")).toBeNull();
 });

@@ -155,11 +155,11 @@ afterEach(() => {
 });
 
 const sessionCard = async () =>
-  (await screen.findByRole("heading", { name: "Session Control" })).closest(
+  (await screen.findByRole("heading", { name: "Session" })).closest(
     "section",
   ) as HTMLElement;
 
-const goalField = () => screen.getByPlaceholderText("Ship the snapback overlay");
+const goalField = () => screen.getByPlaceholderText("Write the quarterly report");
 
 const startedSessions = () =>
   boundary.invoke.mock.calls.filter(([cmd]) => cmd === "start_session").length;
@@ -230,7 +230,7 @@ describe("session cockpit", () => {
     fireEvent.submit(goalField().closest("form") as HTMLFormElement);
 
     release();
-    await waitFor(() => expect(within(card).getByText("running")).toBeInTheDocument());
+    await waitFor(() => expect(within(card).getByText("Running")).toBeInTheDocument());
     expect(startedSessions()).toBe(1);
   });
 
@@ -343,7 +343,7 @@ describe("session cockpit", () => {
 
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
-    await within(card).findByText("running");
+    await within(card).findByText("Running");
 
     // Elapsed is derived from the backend's started_at, not from a counter that began at zero
     // when this component mounted.
@@ -363,10 +363,10 @@ describe("session cockpit", () => {
 
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
-    await within(card).findByText("running");
+    await within(card).findByText("Running");
 
     // While running there is exactly one Stop and no second start form.
-    expect(screen.queryByPlaceholderText("Ship the snapback overlay")).toBeNull();
+    expect(screen.queryByPlaceholderText("Write the quarterly report")).toBeNull();
 
     fireEvent.click(within(card).getByRole("button", { name: "Start a different session" }));
     // The consequence is stated before the user commits to it.
@@ -379,7 +379,7 @@ describe("session cockpit", () => {
       expect(boundary.invoke).toHaveBeenCalledWith("stop_session", { sessionId: "sess-42" }),
     );
     // Two-phase: check-in before the replacement starts.
-    expect(await screen.findByRole("heading", { name: "Session Check-in" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Check-in" })).toBeInTheDocument();
     expect(boundary.invoke).not.toHaveBeenCalledWith(
       "start_session",
       expect.objectContaining({ goal: "Review the PR" }),
@@ -401,7 +401,7 @@ describe("session cockpit", () => {
     const card = await sessionCard();
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
-    await within(card).findByText("running");
+    await within(card).findByText("Running");
     boundary.invoke.mockClear();
 
     fireEvent.click(within(card).getByRole("button", { name: "Start a different session" }));
@@ -412,12 +412,12 @@ describe("session cockpit", () => {
     // what it was started with.
     expect(boundary.invoke).not.toHaveBeenCalledWith("set_focus_mode", expect.anything());
     const metrics = card.querySelector(".session-live") as HTMLElement;
-    expect(within(metrics).getByText("Write tests")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Write tests" })).toBeInTheDocument();
     expect(within(metrics).getByText("Normal mode")).toBeInTheDocument();
 
     fireEvent.click(within(card).getByRole("button", { name: "Keep this session" }));
     await waitFor(() =>
-      expect(screen.queryByPlaceholderText("Ship the snapback overlay")).toBeNull(),
+      expect(screen.queryByPlaceholderText("Write the quarterly report")).toBeNull(),
     );
     expect(boundary.invoke).not.toHaveBeenCalledWith("set_focus_mode", expect.anything());
 
@@ -432,14 +432,14 @@ describe("session cockpit", () => {
     const card = await sessionCard();
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
-    await within(card).findByText("running");
+    await within(card).findByText("Running");
 
     boundary.state.failStart = true;
     fireEvent.click(within(card).getByRole("button", { name: "Start a different session" }));
     fireEvent.change(goalField(), { target: { value: "Review the PR" } });
     fireEvent.click(within(card).getByRole("button", { name: "Stop and start this one" }));
 
-    await screen.findByRole("heading", { name: "Session Check-in" });
+    await screen.findByRole("heading", { name: "Check-in" });
     fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
 
     // Storage completed the old session; the replacement start is what failed.
@@ -465,22 +465,22 @@ describe("session cockpit", () => {
     const card = await sessionCard();
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
-    await within(card).findByText("running");
+    await within(card).findByText("Running");
 
     fireEvent.click(within(card).getByRole("button", { name: "Start a different session" }));
     fireEvent.change(goalField(), { target: { value: "Review the PR" } });
     fireEvent.click(within(card).getByRole("button", { name: "Stop and start this one" }));
-    await screen.findByRole("heading", { name: "Session Check-in" });
+    await screen.findByRole("heading", { name: "Check-in" });
     fireEvent.click(screen.getByRole("button", { name: "Keep Productive" }));
-    await within(card).findByText("Review the PR");
+    await screen.findByRole("heading", { level: 1, name: "Review the PR" });
     // The switch form closed on its own once the new session was running.
     await waitFor(() =>
-      expect(screen.queryByPlaceholderText("Ship the snapback overlay")).toBeNull(),
+      expect(screen.queryByPlaceholderText("Write the quarterly report")).toBeNull(),
     );
     expect(within(card).getByRole("button", { name: "Start a different session" })).toBeEnabled();
 
     fireEvent.click(within(card).getByRole("button", { name: "Stop session" }));
-    await within(card).findByText("completed");
+    await within(card).findByText("Completed");
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("stop_session", { sessionId: "sess-43" }),
     );
@@ -500,7 +500,7 @@ describe("session cockpit", () => {
     const card = await sessionCard();
     fireEvent.change(goalField(), { target: { value: "Write tests" } });
     fireEvent.click(within(card).getByRole("button", { name: "Start session" }));
-    await within(card).findByText("running");
+    await within(card).findByText("Running");
 
     fireEvent.click(within(card).getByRole("button", { name: "Start a different session" }));
     fireEvent.change(goalField(), { target: { value: "Review the PR" } });
@@ -517,7 +517,7 @@ describe("session cockpit", () => {
         focusMode: "normal",
       }),
     );
-    await within(card).findByText("Review the PR");
+    await screen.findByRole("heading", { level: 1, name: "Review the PR" });
   });
 
   it("navigates and selects goal suggestions via keyboard and mouse", async () => {

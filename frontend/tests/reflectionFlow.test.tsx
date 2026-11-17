@@ -92,14 +92,14 @@ const reflectionCard = () =>
 // this card appears.
 const runASession = async () => {
   render(<App />);
-  await screen.findByRole("heading", { name: "Session Control" });
-  fireEvent.change(screen.getByPlaceholderText("Ship the snapback overlay"), {
+  await screen.findByRole("heading", { name: "Session" });
+  fireEvent.change(screen.getByPlaceholderText("Write the quarterly report"), {
     target: { value: "Write tests" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Start session" }));
-  await screen.findByRole("heading", { level: 1, name: "running" });
+  await screen.findAllByText("Running");
   fireEvent.click(screen.getByRole("button", { name: "Stop session" }));
-  await screen.findByText("completed");
+  await screen.findByText("Completed");
   await screen.findByRole("heading", { name: "Reflection" });
 };
 
@@ -118,7 +118,7 @@ afterEach(() => {
 describe("Session reflection", () => {
   it("is not offered until a session has ended", async () => {
     render(<App />);
-    await screen.findByRole("heading", { name: "Session Control" });
+    await screen.findByRole("heading", { name: "Session" });
     fireEvent.click(screen.getByRole("tab", { name: "Review" }));
     expect(screen.queryByRole("heading", { name: "Reflection" })).not.toBeInTheDocument();
   });

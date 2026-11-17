@@ -75,18 +75,8 @@ export const AppHeader = memo(function AppHeader({
   });
 
   const degraded = badge.warning;
-  const nowHeadline = sessionActive
-    ? (sessionStatus?.label ?? "running")
-    : "What are you working on?";
-  const nowSubtitle = sessionActive
-    ? sessionStatus?.reason
-      ? activeGoal
-        ? `${sessionStatus.reason} Working on ${activeGoal}.`
-        : sessionStatus.reason
-      : activeGoal
-        ? `Working on ${activeGoal}.`
-        : "Recording your focus."
-    : "Name a goal and start.";
+  const nowHeadline = sessionActive ? activeGoal || "Session running" : "What are you working on?";
+  const nowSubtitle = sessionActive ? null : "Name a goal and start.";
 
   return (
     <header className="app-header">
@@ -99,17 +89,16 @@ export const AppHeader = memo(function AppHeader({
               ? "Settings"
               : nowHeadline}
         </h1>
-        <p className="subtitle">
-          {surface === "review"
-            ? "See how your sessions went."
-            : surface === "settings"
-              ? "Choose how Snapback works for you."
-              : nowSubtitle}
-        </p>
+        {surface === "review" ? (
+          <p className="subtitle">See how your sessions went.</p>
+        ) : surface === "settings" ? (
+          <p className="subtitle">Choose how Snapback works for you.</p>
+        ) : nowSubtitle ? (
+          <p className="subtitle">{nowSubtitle}</p>
+        ) : null}
       </div>
       <div className="status-stack">
         <RecordingStatusCard
-          variant="header"
           status={recordingStatus}
           unconfirmed={recordingStatusUnconfirmed}
           onPause={onPauseRecording}

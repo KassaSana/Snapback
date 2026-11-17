@@ -68,7 +68,7 @@ describe("Health degradation visibility", () => {
 
     const card = within(permissionsCard());
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
-    expect(await card.findByText(/5 capture events dropped/i)).toBeInTheDocument();
+    expect(await card.findByText(/5 input events dropped/i)).toBeInTheDocument();
   });
 
   it("shows the capture-failed state with its reason", async () => {
@@ -84,7 +84,7 @@ describe("Health degradation visibility", () => {
 
     const card = within(permissionsCard());
     expect(await card.findByText("capture failed")).toBeInTheDocument();
-    expect(card.getByText(/Capture listener stopped/i)).toHaveTextContent("listener died");
+    expect(card.getByText(/Capture stopped/i)).toHaveTextContent("listener died");
   });
 
   it("warns when capture is running but receiving no events (stalled)", async () => {
@@ -93,7 +93,7 @@ describe("Health degradation visibility", () => {
 
     const card = within(permissionsCard());
     await waitFor(() => expect(boundary.invoke).toHaveBeenCalledWith("get_health"));
-    expect(await card.findByText(/hasn't received any input events/i)).toBeInTheDocument();
+    expect(await card.findByText(/hasn't seen any input/i)).toBeInTheDocument();
   });
 
   it("recovers the UI when capture comes up after launch", async () => {
@@ -118,7 +118,7 @@ describe("Health degradation visibility", () => {
       });
 
       const card = within(permissionsCard());
-      expect(card.getByText("listener pending")).toBeInTheDocument();
+      expect(card.getByText("not started")).toBeInTheDocument();
 
       // Capture comes up after launch; the background health poll should notice.
       boundary.state.health = health({ captureRunning: true });
@@ -144,7 +144,7 @@ describe("Health degradation visibility", () => {
       });
 
       const card = within(permissionsCard());
-      expect(card.queryByText(/hasn't received any input events/i)).not.toBeInTheDocument();
+      expect(card.queryByText(/hasn't seen any input/i)).not.toBeInTheDocument();
 
       // Backend now reports the listener stalled (grace elapsed, still no events).
       boundary.state.health = health({ captureRunning: true, captureStalled: true });
@@ -152,7 +152,7 @@ describe("Health degradation visibility", () => {
         await vi.advanceTimersByTimeAsync(CAPTURE_STALL_RECHECK_MS);
       });
 
-      expect(card.getByText(/hasn't received any input events/i)).toBeInTheDocument();
+      expect(card.getByText(/hasn't seen any input/i)).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

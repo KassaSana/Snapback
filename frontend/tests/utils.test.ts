@@ -109,19 +109,19 @@ assert.ok(sigs.some((s) => s.includes("Focus score")));
 
 const pseudo = { ...base, focusState: "PSEUDO_PRODUCTIVE" };
 const p = buildSignals(pseudo as any);
-assert.ok(p.some((s) => s.includes("Drift detected")));
+assert.ok(p.some((s) => s.includes("tab or title changes")));
 
 const thrashy = { ...base, thrashScore: 0.7 };
 const t = buildSignals(thrashy as any);
-assert.ok(t.some((s) => s.includes("thrash")));
+assert.ok(t.some((s) => s.includes("Switching between apps")));
 
 const deep = { ...base, focusState: "DEEP_FOCUS" };
 const d = buildSignals(deep as any);
 assert.ok(d.some((s) => s.includes("Deep work")));
 
+// No pep talk for calm moments: only the measured lines.
 const low = { ...base, distractionRisk: 0.1 };
-const l = buildSignals(low as any);
-assert.ok(l.some((s) => s.includes("Keep momentum")));
+assert.equal(buildSignals(low as any).length, sigs.length);
 
 assert.equal(formatPomodoroRemaining(0), "0:00");
 assert.equal(formatPomodoroRemaining(59_000), "0:59");
@@ -144,7 +144,7 @@ assert.ok(quiet.caveat, "a quiet screen with no goal signal must carry the cavea
 assert.equal(quiet.uncertain, true);
 assert.equal(isUncertainFocusGuess(quietProductive), true);
 assert.deepEqual(displayVerdict(quietProductive), {
-  label: "Settled",
+  label: "Not sure",
   level: "unknown",
   uncertain: true,
 });
@@ -212,7 +212,7 @@ assert.equal(legacy.uncertain, true);
 
 assert.deepEqual(explainPrediction(null), { reasons: [], caveat: null, uncertain: false });
 assert.deepEqual(displayVerdict(null), {
-  label: "Waiting for signal",
+  label: "Waiting for activity",
   level: "unknown",
   uncertain: false,
 });

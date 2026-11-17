@@ -26,34 +26,34 @@ export type OnboardingCopy = {
 export const ONBOARDING_COPY: Record<OnboardingStep, OnboardingCopy> = {
   capture: {
     title: "Check input capture",
-    detail: "Move the pointer, scroll, or press a key. If capture stays unconfirmed, open Privacy settings to check permissions and refresh the listener status.",
+    detail: "Move the pointer, scroll, or press a key. If capture stays unconfirmed, check permissions under Settings → Privacy & permissions.",
   },
   goal: {
     title: "Name what you're working on",
     detail:
-      "A session is something you declare. Type a goal in Session Control — it is the label the rest of the app hangs off.",
+      "Type a goal in the Session card. Everything Snapback records is filed under it.",
   },
   start: {
     title: "Start the session",
-    detail: "Snapback only records while a session is running. Nothing before this is kept.",
+    detail: "Snapback only records while a session is running.",
   },
   verdict: {
     title: "Wait for your first reading",
     detail:
-      "Work normally for a moment. Snapback reads the active window and says whether it looks like focused work.",
+      "Work normally for a moment. Snapback watches the active window and says whether it looks like focused work.",
   },
   correct: {
     title: "Correct it if it's wrong",
     detail:
-      "The first reading is a guess from a heuristic. Telling it what the moment actually was is how it learns your work.",
+      "Early readings are rough guesses. Correcting them teaches Snapback what your work looks like.",
   },
   stop: {
     title: "Stop the session",
-    detail: "Stopping writes the recap and asks how the session felt overall.",
+    detail: "Stopping shows a recap and asks how the session went.",
   },
   review: {
     title: "Read how the session went",
-    detail: "This is the payoff: what the session actually contained, in your own terms.",
+    detail: "See where the time went.",
   },
 };
 

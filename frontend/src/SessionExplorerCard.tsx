@@ -6,7 +6,8 @@ import {
   api,
   formatScore,
   formatTime,
-  sessionCheckInLabel,
+  FOCUS_RATINGS,
+  focusStateLabel,
   type AppRuleKind,
   type AppRuleRecord,
   type ContextSnapshot,
@@ -202,7 +203,7 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
                           <span className="session-explorer-meta">
                             {formatTime(summary.record.startedAtMs)} · {FOCUS_MODE_LABELS[mode]} ·{" "}
                             {isSessionFragment(summary.recap)
-                              ? "fragment"
+                              ? "under a minute"
                               : `${formatFocusStretch(attendedSecs(summary))} · focus ${Math.round(summary.recap.avgFocusScore)}`}
                           </span>
                         </button>
@@ -323,18 +324,11 @@ function SessionDetail({
         <div className="session-detail-rating">
           <p className="helper-text" role="status">
             {detail.rating
-              ? `Session rating: ${sessionCheckInLabel(detail.rating)}`
+              ? `Session rating: ${focusStateLabel(detail.rating)}`
               : "No session rating saved yet."}
           </p>
           <div className="button-row feedback-row">
-            {(
-              [
-                ["DEEP_FOCUS", "Deep"],
-                ["PRODUCTIVE", "Focused"],
-                ["PSEUDO_PRODUCTIVE", "Drift"],
-                ["DISTRACTED", "Distracted"],
-              ] as const
-            ).map(([label, text]) => (
+            {FOCUS_RATINGS.map((label) => (
               <button
                 key={label}
                 type="button"
@@ -342,7 +336,9 @@ function SessionDetail({
                 disabled={ratingPending}
                 onClick={() => void onReRate(label)}
               >
-                {detail.rating === label ? `${text} ✓` : `Rate ${text}`}
+                {detail.rating === label
+                  ? `${focusStateLabel(label)} ✓`
+                  : `Rate ${focusStateLabel(label)}`}
               </button>
             ))}
           </div>
@@ -376,7 +372,7 @@ function SessionDetail({
         <>
           <h4>Focus over the session</h4>
           {detail.curve.length === 0 ? (
-            <p className="helper-text">No predictions were recorded in this session.</p>
+            <p className="helper-text">Nothing was recorded in this session.</p>
           ) : (
             <>
               <FocusCurve curve={detail.curve} />

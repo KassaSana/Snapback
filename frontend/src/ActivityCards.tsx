@@ -26,7 +26,7 @@ export function PredictionHistoryCard({
   return (
     <section className="card history-card">
       <div className="card-header">
-        <h2>Recent Predictions</h2>
+        <h2>Recent readings</h2>
         <span className="pill">live · recent</span>
       </div>
       <ul className="history-list">

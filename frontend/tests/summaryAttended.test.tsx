@@ -73,7 +73,7 @@ describe("SummaryCard attended comparison", () => {
         report={baseReport({ window: "30d", plannedMins: 0 })}
       />,
     );
-    expect(screen.getByText("measured, not scored")).toBeTruthy();
+    expect(screen.getByText("time you were active")).toBeTruthy();
     expect(screen.queryByText(/since midnight|calendar week/)).toBeNull();
   });
 
@@ -88,7 +88,7 @@ describe("SummaryCard attended comparison", () => {
     );
     expect(screen.getByText("Attended")).toBeTruthy();
     expect(screen.getByText("1h 30m")).toBeTruthy();
-    expect(screen.getByText("measured, not scored")).toBeTruthy();
+    expect(screen.getByText("time you were active")).toBeTruthy();
     expect(screen.queryByText(/planned/)).toBeNull();
   });
 });

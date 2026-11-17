@@ -81,7 +81,6 @@ export const TrainingDeployCard = memo(function TrainingDeployCard({
     <section className="card feedback-card">
       <div className="card-header">
         <h2>Model tooling</h2>
-        <span className="pill">developer</span>
       </div>
       <p className="helper-text">
         Repository training loop for a Snapback checkout that contains{" "}

@@ -13,16 +13,10 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   advanced: "Advanced",
 };
 
-/**
- * What each group is for, shown under its heading.
- *
- * The Advanced blurb says "developer" outright. A section that hides model training behind a
- * neutral word is how the console creeps back: the user should be able to tell from the label
- * alone that nothing in here is required to use the product.
- */
+/** Shown under each section heading. Advanced says "developer" so nobody thinks they need it. */
 export const SETTINGS_SECTION_BLURBS: Record<SettingsSection, string> = {
-  general: "How Snapback starts and when it counts you as away.",
-  focus: "What counts as focused work, and the rules that correct it.",
+  general: "Startup, appearance, when you count as away, and interruptions.",
+  focus: "Goal categories and app rules.",
   privacy: "What is recorded, what leaves this machine, and what the OS has allowed.",
   advanced: "Developer tooling and raw diagnostics. Nothing here is needed for normal use.",
 };

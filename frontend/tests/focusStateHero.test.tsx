@@ -43,7 +43,7 @@ function renderHero(overrides: Overrides = {}) {
 
 describe("FocusStateHero", () => {
   it("leads with the focus state, not the score (ADR-0003)", () => {
-    // Corroborated so this is a real verdict word, not the quiet-guess Settled path.
+    // Corroborated so this is a real verdict word, not the "Not sure" path.
     renderHero({
       goal: "fix the overlay",
       prediction: prediction({ goalAlignment: 0.9 }),
@@ -66,7 +66,7 @@ describe("FocusStateHero", () => {
   it("says it is waiting rather than showing a fake zero before the first prediction", () => {
     renderHero({ prediction: null });
 
-    expect(screen.getByText("Waiting for signal")).toBeInTheDocument();
+    expect(screen.getByText("Waiting for activity")).toBeInTheDocument();
     expect(screen.getByText(/move the pointer, scroll, or press a key/)).toBeInTheDocument();
     expect(screen.queryByText(/focus 0/)).not.toBeInTheDocument();
     // Nothing to rate yet, so the control stays out of the way.
@@ -119,9 +119,9 @@ describe("FocusStateHero", () => {
   it("refuses to print Deep work when the guess is stillness alone", () => {
     renderHero({ prediction: prediction({ focusState: "DEEP_FOCUS", goalAlignment: 0.5 }) });
 
-    expect(screen.getByText("Settled")).toBeInTheDocument();
+    expect(screen.getByText("Not sure")).toBeInTheDocument();
     expect(screen.queryByText("Deep work")).not.toBeInTheDocument();
-    expect(screen.getByText("I cannot tell whether this is work.")).toBeInTheDocument();
+    expect(screen.getByText("Snapback can't tell yet whether this is work.")).toBeInTheDocument();
     expect(screen.getByText(/quiet screen looks the same/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "This reading is wrong" })).toHaveTextContent("Wrong?");
   });
@@ -134,7 +134,7 @@ describe("FocusStateHero", () => {
 
     expect(screen.getByText("Deep work")).toBeInTheDocument();
     expect(screen.queryByText(/quiet screen looks the same/)).not.toBeInTheDocument();
-    expect(screen.queryByText("Settled")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not sure")).not.toBeInTheDocument();
   });
 
   it("does not caveat a negative verdict", () => {

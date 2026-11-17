@@ -301,8 +301,10 @@ console.log("demoBackend.test.ts passed");
     assert.ok(rules.some((rule) => rule.pattern === "Slack"));
     const privacy = second.handle("get_privacy_settings", {}) as { excludedApps: string[] };
     assert.deepEqual(privacy.excludedApps, ["Signal"]);
-    // Sessions stay ephemeral across demo reloads.
-    assert.equal(second.handle("get_active_session", {}), null);
+    // Sessions stay ephemeral across demo reloads. The generated data may include a live
+    // session of its own depending on the time of day, so check for the one started above.
+    const active = second.handle("get_active_session", {}) as { goal: string } | null;
+    assert.notEqual(active?.goal, "Ephemeral");
   } finally {
     Object.defineProperty(globalThis, "localStorage", { value: previous, configurable: true });
   }

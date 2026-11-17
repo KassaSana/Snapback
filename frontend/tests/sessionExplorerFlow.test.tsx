@@ -177,7 +177,7 @@ describe("Session explorer", () => {
     const rows = screen.getAllByRole("button", { name: /Review the PR|Write the explorer/ });
     expect(rows[0]).toHaveTextContent("Review the PR");
     expect(rows[1]).toHaveTextContent("Write the explorer");
-    expect(rows[1]).toHaveTextContent("Deep · 50m · focus 71");
+    expect(rows[1]).toHaveTextContent("Strict · 50m · focus 71");
     expect(rows[0]).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelectorAll(".session-explorer-day h3")).toHaveLength(2);
   });
@@ -228,7 +228,7 @@ describe("Session explorer", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /Write the explorer/ }));
     const detail = await screen.findByRole("region", { name: /Session: Write the explorer/ });
-    expect(await within(detail).findByText(/Session rating: Focused/)).toBeInTheDocument();
+    expect(await within(detail).findByText(/Session rating: Productive/)).toBeInTheDocument();
     fireEvent.click(within(detail).getByRole("button", { name: "Rate Drift" }));
     await waitFor(() =>
       expect(boundary.invoke).toHaveBeenCalledWith("submit_label", {
@@ -323,7 +323,7 @@ describe("Session explorer", () => {
     await waitFor(() =>
       expect(screen.getByRole("tab", { name: "Now" })).toHaveAttribute("aria-selected", "true"),
     );
-    expect(screen.getByPlaceholderText("Ship the snapback overlay")).toHaveValue(
+    expect(screen.getByPlaceholderText("Write the quarterly report")).toHaveValue(
       "Write the explorer",
     );
     expect((screen.getByLabelText("Focus mode") as HTMLSelectElement).value).toBe("deep");

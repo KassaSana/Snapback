@@ -16,23 +16,23 @@ const session = (status: string): SessionRecord => ({
 
 // No session and "the user is away" are independent states, so the empty case must not
 // borrow the word "idle" from the other one.
-assert.equal(sessionStatusLabel(null, false), "no session");
-assert.equal(sessionStatusLabel(null, true), "no session");
+assert.equal(sessionStatusLabel(null, false), "No session");
+assert.equal(sessionStatusLabel(null, true), "No session");
 
-// The distinction 7.23 exists for: a live session that is not accruing attended time says so.
-assert.equal(sessionStatusLabel(session("ACTIVE"), false), "running");
-assert.equal(sessionStatusLabel(session("ACTIVE"), true), "Paused — no input");
-assert.match(sessionStatusView(session("ACTIVE"), true).reason ?? "", /attended does not/);
+// A live session that is not accruing attended time says so.
+assert.equal(sessionStatusLabel(session("ACTIVE"), false), "Running");
+assert.equal(sessionStatusLabel(session("ACTIVE"), true), "Paused (no input)");
+assert.match(sessionStatusView(session("ACTIVE"), true).reason ?? "", /Not counting toward attended time/);
 
 // A finished session cannot be "paused" — idle state is irrelevant once it has stopped, and
 // reporting otherwise would make a completed session look resumable.
-assert.equal(sessionStatusLabel(session("COMPLETED"), true), "completed");
-assert.equal(sessionStatusLabel(session("COMPLETED"), false), "completed");
+assert.equal(sessionStatusLabel(session("COMPLETED"), true), "Completed");
+assert.equal(sessionStatusLabel(session("COMPLETED"), false), "Completed");
 
-assert.equal(sessionStatusLabel(session("ACTIVE"), false, "pausedPrivate"), "Paused — private");
-assert.equal(sessionStatusLabel(session("ACTIVE"), false, "pausedIdle"), "Paused — idle");
+assert.equal(sessionStatusLabel(session("ACTIVE"), false, "pausedPrivate"), "Paused (private)");
+assert.equal(sessionStatusLabel(session("ACTIVE"), false, "pausedIdle"), "Paused (away)");
 assert.equal(sessionStatusView(session("ACTIVE"), false, "pausedPrivate").reason,
-  "Elapsed keeps running; attended and recording do not.");
-assert.equal(sessionStatusLabel(session("COMPLETED"), false, "pausedPrivate"), "completed");
+  "Not counting toward attended time.");
+assert.equal(sessionStatusLabel(session("COMPLETED"), false, "pausedPrivate"), "Completed");
 
 console.log("sessionStatus.test.ts passed");
