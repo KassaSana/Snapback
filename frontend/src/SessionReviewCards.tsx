@@ -148,7 +148,6 @@ export const SessionReviewCards = memo(function SessionReviewCards({
           saved={reflectionSaved}
         />
       ) : null}
-
     </>
   );
 });

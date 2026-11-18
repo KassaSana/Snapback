@@ -34,15 +34,16 @@ type Props = {
 };
 
 export const SurfaceNav = memo(function SurfaceNav({ active, onChange }: Props) {
-  // Left/Right move between tabs, Home/End jump to the ends — the standard tablist
+  // Arrow keys move between tabs, Home/End jump to the ends — the standard tablist
   // contract. Without this, a keyboard user can reach the tabs but not traverse them.
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const current = SURFACES.indexOf(active);
     let next: number | null = null;
 
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown")
       next = (current + 1) % SURFACES.length;
-    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + SURFACES.length) % SURFACES.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
+      next = (current - 1 + SURFACES.length) % SURFACES.length;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = SURFACES.length - 1;
 

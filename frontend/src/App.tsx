@@ -529,7 +529,6 @@ export default function App() {
         onFocusModeChange={handleFocusModeChange}
       />
 
-      {/* The rail: where you are, and whether Snapback is recording. Same on every surface. */}
       <aside className="app-rail">
         <div className="app-brand">
           <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
@@ -568,421 +567,420 @@ export default function App() {
       </aside>
 
       <div className="app-main">
-      <div className="app-content">
-      <ActionErrorBanner
-        error={feedback.actionError ?? overlayFailureReason}
-        onDismiss={() => {
-          feedback.setActionError(null);
-          setOverlayFailureReason(null);
-        }}
-      />
-
-      <ActionErrorBanner error={persistenceFailureReason} />
-
-      <AppHeader
-        surface={surface}
-        sessionActive={sessionActive}
-        activeGoal={sessionRecord?.goal ?? null}
-      >
-        {sessionActive ? (
-          <SessionRibbon
-            sessionId={sessionId}
-            startedAtMs={sessionRecord?.startedAtMs}
-            goal={sessionRecord?.goal ?? null}
-            prediction={live.prediction}
-            predictionHistory={live.predictionHistory}
-          />
-        ) : null}
-      </AppHeader>
-
-      {/* One panel element, swapped content — ADR-0003. Cards move between surfaces by
-          composition; none of them were rewritten to get here. */}
-      <main
-        className={
-          surface === "now"
-            ? "grid grid-now"
-            : surface === "review"
-              ? "grid grid-review"
-              : "grid grid-settings"
-        }
-        role="tabpanel"
-        id={surfacePanelId(surface)}
-        aria-labelledby={surfaceTabId(surface)}
-        tabIndex={-1}
-      >
-        {surface === "now" && (
-          <>
-        {/* Above the cockpit, where every step but the last happens. */}
-        {onboardingVisible && onboardingStep && (
-          <OnboardingGuide
-            step={onboardingStep}
-            failure={onboardingFailure({
-              captureFailed,
-              captureUnverified: captureWarmupExpired || readingWarmupExpired,
-              permissionBlocked: !permissionCaptureAvailable && healthStatus !== "checking",
-              privateMode: privacy.settings?.privateMode ?? false,
-            })}
-            onSkip={skipOnboarding}
-            onRecover={() => openSettingsSection("privacy")}
-          />
-        )}
-
-        {nowMode === "stopped" ? (
-          <SessionReviewCards
-            autoLabel={autoLabel}
-            handleLabel={handleLabel}
-            handleSkipSurvey={handleSkipSurvey}
-            handleDiscardFragment={handleDiscardFragment}
-            handleChangeSessionRating={handleChangeSessionRating}
-            labelPending={labelPending}
-            labelStatus={feedback.labelStatus}
-            labelStatusWarning={feedback.labelStatusWarning}
-            savedSessionRating={savedSessionRating}
-            recap={recap}
-            surveyPending={surveyPending}
-            reflectionPending={reflectionPending}
-            reflectionSaved={reflectionSaved}
-            handleSaveReflection={handleSaveReflection}
-            handleSkipReflection={handleSkipReflection}
-          />
-        ) : null}
-
-        <div data-alert-region="session">
-          <SessionControlCard
-            focusMode={focusMode}
-            setDraftFocusMode={setDraftFocusMode}
-            cancelSwitch={cancelSwitch}
-            handleStartSession={handleStartSession}
-            handleStopSession={handleStopSession}
-            handleSwitchSession={handleSwitchSession}
-            sessionGoal={sessionGoal}
-            sessionId={sessionId}
-            sessionPending={sessionPending}
-            sessionRecord={sessionRecord}
-            sessionStatusLabel={liveSessionStatus.label}
-            setSessionGoal={setSessionGoal}
-            recentGoals={cockpitRecentGoals}
-            untrackedNote={live.untrackedNote}
-            dismissUntrackedNote={live.clearUntrackedNote}
-          />
-        </div>
-
-        {sessionActive && (
-          <FocusStateHero
-            captureDiagnosis={captureDiagnosis}
-            recordingPaused={recordingStatus.state === "pausedPrivate" || recordingStatus.state === "pausedIdle"}
-            onOpenPrivacy={() => openSettingsSection("privacy")}
-            goal={sessionRecord?.goal ?? null}
-            hyperfocusNote={live.hyperfocusNote}
-            labelStatus={feedback.labelStatus}
-            onCorrectVerdict={(label) => {
-              // Record the classifier's verdict alongside the correction, in notes.
-              const predicted = live.prediction?.focusState ?? "unknown";
-              void handleLabel(label, "manual", `corrected:${predicted}`);
-            }}
-            onDismissSnapback={live.handleDismissSnapback}
-            onRestoreSnapbackTarget={live.handleRestoreSnapbackTarget}
-            prediction={live.prediction}
-            sessionActive={sessionActive}
-            snapbackNote={live.snapbackNote}
-          />
-        )}
-
-        {nowMode === "running" ? (
-          <WorkAppTeachCard
-            appRules={appRules}
-            contextTimeline={live.contextTimeline}
-            dismissed={workAppTeachDone}
-            onCreateAppRule={handleCreateQuickRule}
+        <div className="app-content">
+          <ActionErrorBanner
+            error={feedback.actionError ?? overlayFailureReason}
             onDismiss={() => {
-              writeWorkAppTeachComplete();
-              setWorkAppTeachDone(true);
+              feedback.setActionError(null);
+              setOverlayFailureReason(null);
             }}
           />
-        ) : null}
 
+          <ActionErrorBanner error={persistenceFailureReason} />
 
-        {nowMode === "running" ? (
-          <>
-            <AttendedTargetsCard
-              progress={attendedProgress}
-              accruing={attendedAccruing}
-              onSave={handleSaveAttendedTargets}
-            />
+          <AppHeader
+            surface={surface}
+            sessionActive={sessionActive}
+            activeGoal={sessionRecord?.goal ?? null}
+          >
+            {sessionActive ? (
+              <SessionRibbon
+                sessionId={sessionId}
+                startedAtMs={sessionRecord?.startedAtMs}
+                goal={sessionRecord?.goal ?? null}
+                prediction={live.prediction}
+                predictionHistory={live.predictionHistory}
+              />
+            ) : null}
+          </AppHeader>
 
-            <div data-alert-region="pomodoro">
-            <PomodoroCard
-              pomodoroStatus={pomodoroStatus}
-              pomodoroConfig={pomodoroConfig}
-              sessionActive={sessionActive}
-              onStart={handleStartPomodoro}
-              onStop={handleStopPomodoro}
-              onPause={handlePausePomodoro}
-              onResume={handleResumePomodoro}
-              onSkip={handleSkipPomodoroPhase}
-              onRestart={handleRestartPomodoroPhase}
-              onAcknowledge={handleAcknowledgePomodoroPhase}
-              onSaveConfig={handleSavePomodoroConfig}
-            />
-            </div>
-          </>
-        ) : null}
-          </>
-        )}
+          {/* One panel element, swapped content — ADR-0003. Cards move between surfaces by
+              composition; none of them were rewritten to get here. */}
+          <main
+            className={
+              surface === "now"
+                ? "grid grid-now"
+                : surface === "review"
+                  ? "grid grid-review"
+                  : "grid grid-settings"
+            }
+            role="tabpanel"
+            id={surfacePanelId(surface)}
+            aria-labelledby={surfaceTabId(surface)}
+            tabIndex={-1}
+          >
+            {surface === "now" && (
+              <>
+            {/* Above the cockpit, where every step but the last happens. */}
+            {onboardingVisible && onboardingStep && (
+              <OnboardingGuide
+                step={onboardingStep}
+                failure={onboardingFailure({
+                  captureFailed,
+                  captureUnverified: captureWarmupExpired || readingWarmupExpired,
+                  permissionBlocked: !permissionCaptureAvailable && healthStatus !== "checking",
+                  privateMode: privacy.settings?.privateMode ?? false,
+                })}
+                onSkip={skipOnboarding}
+                onRecover={() => openSettingsSection("privacy")}
+              />
+            )}
 
-        {surface === "review" && (
-          <>
-            <ReviewRangeBar
-              disabled={reviewLoading}
-              loading={reviewLoading}
-              range={reviewRange}
-              onChange={setReviewRange}
-              showingLabel={reviewStaleInterval ? reviewRangeLabelText : null}
-              error={reviewError}
-              onRetry={() => void refreshReview()}
-            />
-
-            {/* "Start this again" fills the start form on Now and goes there; the
-                session still begins only when the user presses Start (ADR-0005). */}
-            <SessionExplorerCard
-              sessionHistory={sessionHistory}
-              rangeLabel={reviewRangeLabelText}
-              sessionActive={sessionActive}
-              appRules={appRules}
-              onCreateAppRule={handleCreateQuickRule}
-              onStartAgain={(goal, mode) => {
-                setSessionGoal(goal);
-                setDraftFocusMode(mode);
-                setSurface("now");
-              }}
-              deletingSessionId={deletingSessionId}
-              onDeleteSession={handleDeleteSession}
-              deleteStatus={sessionDeleteStatus}
-              deleteError={sessionDeleteError}
-              onSaveReflection={handleEditReflection}
-              reflectionStatus={reflectionStatus}
-            />
-
-            <SummaryCard
-              focusSummary={focusSummary}
-              exportStatus={exportStatus}
-              onExport={() => void exportSummary()}
-              rangeLabel={reviewRangeLabelText}
-              report={summaryReport}
-            />
-            <details className="review-details">
-              <summary>Details</summary>
-              <div className="review-details-grid">
-            <InsightsCard
-              rangeLabel={reviewRangeLabelText}
-              sessionHistory={sessionHistory}
-              truncationNote={
-                summaryReport.sessionsTruncated
-                  ? `latest ${summaryReport.sessionLimit} sessions only`
-                  : null
-              }
-            />
-
-            <AnalyticsCard
-              analytics={analytics}
-              appRules={appRules}
-              onCreateAppRule={handleCreateQuickRule}
-              rangeLabel={reviewRangeLabelText}
-            />
-
-            <DailyTrendCard
-              dailySummary={dailySummary}
-              rangePreset={reviewRange.preset}
-              rangeLabel={reviewRangeLabelText}
-            />
-              </div>
-            </details>
-          </>
-        )}
-
-        {surface === "settings" && (
-          <>
-        {/* Only the active Settings group renders (ADR-0003's surfaces are unchanged). */}
-        <SettingsNav active={settingsSection} onChange={setSettingsSection} />
-        <div
-          className="settings-section"
-          role="tabpanel"
-          id={settingsPanelId(settingsSection)}
-          aria-labelledby={settingsTabId(settingsSection)}
-        >
-        {/* The panel holds the section's controls; a subgrid keeps the surface's columns. */}
-        <div className="settings-section-intro">
-          <h2 className="settings-section-title">
-            {SETTINGS_SECTION_LABELS[settingsSection]}
-          </h2>
-          <p className="helper-text">{SETTINGS_SECTION_BLURBS[settingsSection]}</p>
-        </div>
-
-        {settingsSection === "general" && (
-          <>
-          {/* Replaying the guide is always safe: it reads state and creates nothing. */}
-          <section className="settings-help">
-            <div className="card-header">
-              <h2>Getting started</h2>
-            </div>
-            <p className="helper-text">
-              A short walkthrough of one session, from naming a goal to reading the recap.
-            </p>
-            <button type="button" className="secondary-button" onClick={restartOnboarding}>
-              Replay the walkthrough
-            </button>
-          </section>
-
-          <SettingsCard
-            appearanceMode={appearanceMode}
-            onAppearanceChange={setAppearanceMode}
-            busy={autostart.busy}
-            error={autostart.error}
-            onAutostartChange={autostart.setEnabled}
-            status={autostart.status}
-            idleThresholdSecs={idleThreshold.seconds}
-            idleThresholdBusy={idleThreshold.busy}
-            idleThresholdError={idleThreshold.error}
-            onIdleThresholdChange={idleThreshold.update}
-            alerts={alertDelivery.alerts}
-            alertsBusy={alertDelivery.busy}
-            alertsError={alertDelivery.error}
-            onAlertsChange={alertDelivery.update}
-          />
-          </>
-        )}
-
-        {settingsSection === "focus" && (
-          <>
-            <GoalCategoriesCard />
-
-            <RulesCard
-              appRules={appRules}
-              handleAddAppRule={handleAddAppRule}
-              handleDeleteAppRule={handleDeleteAppRule}
-              ruleKind={ruleKind}
-              ruleKindLabel={ruleKindLabel}
-              ruleKinds={ruleKinds}
-              ruleNote={ruleNote}
-              rulePattern={rulePattern}
-              rulePreview={rulePreview}
-              rulesStatus={rulesStatus}
-              setRuleKind={setRuleKind}
-              setRuleNote={setRuleNote}
-              setRulePattern={setRulePattern}
-            />
-          </>
-        )}
-
-        {settingsSection === "privacy" && (
-          <>
-            <PrivacyCard
-              busy={privacy.busy}
-              dataFolderStatus={privacy.dataFolderStatus}
-              error={privacy.error}
-              exclusionWarning={privacy.exclusionWarning}
-              exclusionInput={privacy.exclusionInput}
-              exportStatus={privacy.exportStatus}
-              deletionStatus={privacy.deletionStatus}
-              deletionWarning={privacy.deletionWarning}
-              deletionRetained={privacy.deletionRetained}
-              onAddExclusion={privacy.addExclusion}
-              onDeleteAllActivityData={privacy.deleteAllActivityData}
-              onExportMyData={privacy.exportMyData}
-              onOpenDataFolder={privacy.openDataFolder}
-              onPrivateModeChange={privacy.setPrivateMode}
-              onRemoveExclusion={privacy.removeExclusion}
-              setExclusionInput={privacy.setExclusionInput}
-              settings={privacy.settings}
-            />
-
-            <DataImportCard
-              busy={dataImport.busy}
-              candidate={dataImport.candidate}
-              path={dataImport.path}
-              pending={dataImport.pending}
-              status={dataImport.status}
-              warning={dataImport.warning}
-              setPath={dataImport.setPath}
-              onBrowse={dataImport.browseAndInspect}
-              onInspect={dataImport.inspect}
-              onConfirm={dataImport.confirm}
-              onCancel={dataImport.cancel}
-              onDismissCandidate={dataImport.dismissCandidate}
-            />
-
-
-            <PermissionsCard
-              captureEventsDropped={captureEventsDropped}
-              captureFailed={captureFailed}
-              captureFailureReason={captureFailureReason}
-              captureProbeConfirmed={captureProbeConfirmed}
-              captureRunning={captureRunning}
-              captureStalled={captureStalled}
-              captureWarmupExpired={captureWarmupExpired}
-              onRefreshPermissions={handleRefreshPermissions}
-              onRequestPermissions={handleRequestPermissions}
-              permissionMessage={permissionMessage}
-              permissionSteps={permissionSteps}
-            />
-          </>
-        )}
-
-        {/* Advanced: training, raw signals, and logs, collapsed by default. */}
-        {settingsSection === "advanced" && (
-          <>
-            {developerToolsEnabled ? (
-              <details className="settings-disclosure">
-                <summary>Model training</summary>
-                <TrainingDeployCard
-            canTrainFromExport={canTrainFromExport}
-            cancelRequested={cancelRequested}
-            classifierBackend={classifierBackend}
-            classifierModelId={classifierModelId}
-            classifierModelPath={classifierModelPath}
-            copyStatus={copyStatus}
-            deployMessage={deployMessage}
-            deployMessageWarning={deployMessageWarning}
-            deployStatus={deployStatus}
-            exportInProgress={exportInProgress}
-            handleCopyTrainingCommand={handleCopyTrainingCommand}
-            handleExportTrainingData={handleExportTrainingData}
-            handleReloadClassifierModel={handleReloadClassifierModel}
-            handleRollbackClassifierModel={handleRollbackClassifierModel}
-            handleCancelTraining={handleCancelTraining}
-            handleSaveRepoPath={handleSaveRepoPath}
-            handleTrainFromExport={handleTrainFromExport}
-            modelReloadStatus={modelReloadStatus}
-            repoPathInput={repoPathInput}
-            setRepoPathInput={setRepoPathInput}
-            setShowAdvancedCommand={setShowAdvancedCommand}
-            showAdvancedCommand={showAdvancedCommand}
-            trainFromExportHint={trainFromExportHint}
-                  trainingCommand={trainingCommand}
-                  trainingInProgress={trainingInProgress}
-                  trainingProgress={trainingProgress}
-                />
-              </details>
+            {nowMode === "stopped" ? (
+              <SessionReviewCards
+                autoLabel={autoLabel}
+                handleLabel={handleLabel}
+                handleSkipSurvey={handleSkipSurvey}
+                handleDiscardFragment={handleDiscardFragment}
+                handleChangeSessionRating={handleChangeSessionRating}
+                labelPending={labelPending}
+                labelStatus={feedback.labelStatus}
+                labelStatusWarning={feedback.labelStatusWarning}
+                savedSessionRating={savedSessionRating}
+                recap={recap}
+                surveyPending={surveyPending}
+                reflectionPending={reflectionPending}
+                reflectionSaved={reflectionSaved}
+                handleSaveReflection={handleSaveReflection}
+                handleSkipReflection={handleSkipReflection}
+              />
             ) : null}
 
-            <details className="settings-disclosure">
-              <summary>Logs and diagnostics</summary>
-              <DiagnosticsCard />
-              <SessionTechnicalDetails sessionId={sessionId} sessionRecord={sessionRecord} />
-              <PredictionHistoryCard predictionHistory={live.predictionHistory} />
-            </details>
+            <div data-alert-region="session">
+              <SessionControlCard
+                focusMode={focusMode}
+                setDraftFocusMode={setDraftFocusMode}
+                cancelSwitch={cancelSwitch}
+                handleStartSession={handleStartSession}
+                handleStopSession={handleStopSession}
+                handleSwitchSession={handleSwitchSession}
+                sessionGoal={sessionGoal}
+                sessionId={sessionId}
+                sessionPending={sessionPending}
+                sessionRecord={sessionRecord}
+                sessionStatusLabel={liveSessionStatus.label}
+                setSessionGoal={setSessionGoal}
+                recentGoals={cockpitRecentGoals}
+                untrackedNote={live.untrackedNote}
+                dismissUntrackedNote={live.clearUntrackedNote}
+              />
+            </div>
 
-            <details className="settings-disclosure">
-              <summary>Raw signals</summary>
-              <SignalsCard signals={live.signals} />
-            </details>
-          </>
-        )}
+            {sessionActive && (
+              <FocusStateHero
+                captureDiagnosis={captureDiagnosis}
+                recordingPaused={recordingStatus.state === "pausedPrivate" || recordingStatus.state === "pausedIdle"}
+                onOpenPrivacy={() => openSettingsSection("privacy")}
+                goal={sessionRecord?.goal ?? null}
+                hyperfocusNote={live.hyperfocusNote}
+                labelStatus={feedback.labelStatus}
+                onCorrectVerdict={(label) => {
+                  // Record the classifier's verdict alongside the correction, in notes.
+                  const predicted = live.prediction?.focusState ?? "unknown";
+                  void handleLabel(label, "manual", `corrected:${predicted}`);
+                }}
+                onDismissSnapback={live.handleDismissSnapback}
+                onRestoreSnapbackTarget={live.handleRestoreSnapbackTarget}
+                prediction={live.prediction}
+                sessionActive={sessionActive}
+                snapbackNote={live.snapbackNote}
+              />
+            )}
+
+            {nowMode === "running" ? (
+              <WorkAppTeachCard
+                appRules={appRules}
+                contextTimeline={live.contextTimeline}
+                dismissed={workAppTeachDone}
+                onCreateAppRule={handleCreateQuickRule}
+                onDismiss={() => {
+                  writeWorkAppTeachComplete();
+                  setWorkAppTeachDone(true);
+                }}
+              />
+            ) : null}
+
+            {nowMode === "running" ? (
+              <>
+                <AttendedTargetsCard
+                  progress={attendedProgress}
+                  accruing={attendedAccruing}
+                  onSave={handleSaveAttendedTargets}
+                />
+
+                <div data-alert-region="pomodoro">
+                <PomodoroCard
+                  pomodoroStatus={pomodoroStatus}
+                  pomodoroConfig={pomodoroConfig}
+                  sessionActive={sessionActive}
+                  onStart={handleStartPomodoro}
+                  onStop={handleStopPomodoro}
+                  onPause={handlePausePomodoro}
+                  onResume={handleResumePomodoro}
+                  onSkip={handleSkipPomodoroPhase}
+                  onRestart={handleRestartPomodoroPhase}
+                  onAcknowledge={handleAcknowledgePomodoroPhase}
+                  onSaveConfig={handleSavePomodoroConfig}
+                />
+                </div>
+              </>
+            ) : null}
+              </>
+            )}
+
+            {surface === "review" && (
+              <>
+                <ReviewRangeBar
+                  disabled={reviewLoading}
+                  loading={reviewLoading}
+                  range={reviewRange}
+                  onChange={setReviewRange}
+                  showingLabel={reviewStaleInterval ? reviewRangeLabelText : null}
+                  error={reviewError}
+                  onRetry={() => void refreshReview()}
+                />
+
+                {/* "Start this again" fills the start form on Now and goes there; the
+                    session still begins only when the user presses Start (ADR-0005). */}
+                <SessionExplorerCard
+                  sessionHistory={sessionHistory}
+                  rangeLabel={reviewRangeLabelText}
+                  sessionActive={sessionActive}
+                  appRules={appRules}
+                  onCreateAppRule={handleCreateQuickRule}
+                  onStartAgain={(goal, mode) => {
+                    setSessionGoal(goal);
+                    setDraftFocusMode(mode);
+                    setSurface("now");
+                  }}
+                  deletingSessionId={deletingSessionId}
+                  onDeleteSession={handleDeleteSession}
+                  deleteStatus={sessionDeleteStatus}
+                  deleteError={sessionDeleteError}
+                  onSaveReflection={handleEditReflection}
+                  reflectionStatus={reflectionStatus}
+                />
+
+                <SummaryCard
+                  focusSummary={focusSummary}
+                  exportStatus={exportStatus}
+                  onExport={() => void exportSummary()}
+                  rangeLabel={reviewRangeLabelText}
+                  report={summaryReport}
+                />
+                <details className="review-details">
+                  <summary>Details</summary>
+                  <div className="review-details-grid">
+                    <InsightsCard
+                      rangeLabel={reviewRangeLabelText}
+                      sessionHistory={sessionHistory}
+                      truncationNote={
+                        summaryReport.sessionsTruncated
+                          ? `latest ${summaryReport.sessionLimit} sessions only`
+                          : null
+                      }
+                    />
+
+                    <AnalyticsCard
+                      analytics={analytics}
+                      appRules={appRules}
+                      onCreateAppRule={handleCreateQuickRule}
+                      rangeLabel={reviewRangeLabelText}
+                    />
+
+                    <DailyTrendCard
+                      dailySummary={dailySummary}
+                      rangePreset={reviewRange.preset}
+                      rangeLabel={reviewRangeLabelText}
+                    />
+                  </div>
+                </details>
+              </>
+            )}
+
+            {surface === "settings" && (
+              <>
+            {/* Only the active Settings group renders (ADR-0003's surfaces are unchanged). */}
+            <SettingsNav active={settingsSection} onChange={setSettingsSection} />
+            <div
+              className="settings-section"
+              role="tabpanel"
+              id={settingsPanelId(settingsSection)}
+              aria-labelledby={settingsTabId(settingsSection)}
+            >
+            {/* The panel holds the section's controls; a subgrid keeps the surface's columns. */}
+            <div className="settings-section-intro">
+              <h2 className="settings-section-title">
+                {SETTINGS_SECTION_LABELS[settingsSection]}
+              </h2>
+              <p className="helper-text">{SETTINGS_SECTION_BLURBS[settingsSection]}</p>
+            </div>
+
+            {settingsSection === "general" && (
+              <>
+              {/* Replaying the guide is always safe: it reads state and creates nothing. */}
+              <section className="settings-help">
+                <div className="card-header">
+                  <h2>Getting started</h2>
+                </div>
+                <p className="helper-text">
+                  A short walkthrough of one session, from naming a goal to reading the recap.
+                </p>
+                <button type="button" className="secondary-button" onClick={restartOnboarding}>
+                  Replay the walkthrough
+                </button>
+              </section>
+
+              <SettingsCard
+                appearanceMode={appearanceMode}
+                onAppearanceChange={setAppearanceMode}
+                busy={autostart.busy}
+                error={autostart.error}
+                onAutostartChange={autostart.setEnabled}
+                status={autostart.status}
+                idleThresholdSecs={idleThreshold.seconds}
+                idleThresholdBusy={idleThreshold.busy}
+                idleThresholdError={idleThreshold.error}
+                onIdleThresholdChange={idleThreshold.update}
+                alerts={alertDelivery.alerts}
+                alertsBusy={alertDelivery.busy}
+                alertsError={alertDelivery.error}
+                onAlertsChange={alertDelivery.update}
+              />
+              </>
+            )}
+
+            {settingsSection === "focus" && (
+              <>
+                <GoalCategoriesCard />
+
+                <RulesCard
+                  appRules={appRules}
+                  handleAddAppRule={handleAddAppRule}
+                  handleDeleteAppRule={handleDeleteAppRule}
+                  ruleKind={ruleKind}
+                  ruleKindLabel={ruleKindLabel}
+                  ruleKinds={ruleKinds}
+                  ruleNote={ruleNote}
+                  rulePattern={rulePattern}
+                  rulePreview={rulePreview}
+                  rulesStatus={rulesStatus}
+                  setRuleKind={setRuleKind}
+                  setRuleNote={setRuleNote}
+                  setRulePattern={setRulePattern}
+                />
+              </>
+            )}
+
+            {settingsSection === "privacy" && (
+              <>
+                <PrivacyCard
+                  busy={privacy.busy}
+                  dataFolderStatus={privacy.dataFolderStatus}
+                  error={privacy.error}
+                  exclusionWarning={privacy.exclusionWarning}
+                  exclusionInput={privacy.exclusionInput}
+                  exportStatus={privacy.exportStatus}
+                  deletionStatus={privacy.deletionStatus}
+                  deletionWarning={privacy.deletionWarning}
+                  deletionRetained={privacy.deletionRetained}
+                  onAddExclusion={privacy.addExclusion}
+                  onDeleteAllActivityData={privacy.deleteAllActivityData}
+                  onExportMyData={privacy.exportMyData}
+                  onOpenDataFolder={privacy.openDataFolder}
+                  onPrivateModeChange={privacy.setPrivateMode}
+                  onRemoveExclusion={privacy.removeExclusion}
+                  setExclusionInput={privacy.setExclusionInput}
+                  settings={privacy.settings}
+                />
+
+                <DataImportCard
+                  busy={dataImport.busy}
+                  candidate={dataImport.candidate}
+                  path={dataImport.path}
+                  pending={dataImport.pending}
+                  status={dataImport.status}
+                  warning={dataImport.warning}
+                  setPath={dataImport.setPath}
+                  onBrowse={dataImport.browseAndInspect}
+                  onInspect={dataImport.inspect}
+                  onConfirm={dataImport.confirm}
+                  onCancel={dataImport.cancel}
+                  onDismissCandidate={dataImport.dismissCandidate}
+                />
+
+
+                <PermissionsCard
+                  captureEventsDropped={captureEventsDropped}
+                  captureFailed={captureFailed}
+                  captureFailureReason={captureFailureReason}
+                  captureProbeConfirmed={captureProbeConfirmed}
+                  captureRunning={captureRunning}
+                  captureStalled={captureStalled}
+                  captureWarmupExpired={captureWarmupExpired}
+                  onRefreshPermissions={handleRefreshPermissions}
+                  onRequestPermissions={handleRequestPermissions}
+                  permissionMessage={permissionMessage}
+                  permissionSteps={permissionSteps}
+                />
+              </>
+            )}
+
+            {/* Advanced: training, raw signals, and logs, collapsed by default. */}
+            {settingsSection === "advanced" && (
+              <>
+                {developerToolsEnabled ? (
+                  <details className="settings-disclosure">
+                    <summary>Model training</summary>
+                    <TrainingDeployCard
+                canTrainFromExport={canTrainFromExport}
+                cancelRequested={cancelRequested}
+                classifierBackend={classifierBackend}
+                classifierModelId={classifierModelId}
+                classifierModelPath={classifierModelPath}
+                copyStatus={copyStatus}
+                deployMessage={deployMessage}
+                deployMessageWarning={deployMessageWarning}
+                deployStatus={deployStatus}
+                exportInProgress={exportInProgress}
+                handleCopyTrainingCommand={handleCopyTrainingCommand}
+                handleExportTrainingData={handleExportTrainingData}
+                handleReloadClassifierModel={handleReloadClassifierModel}
+                handleRollbackClassifierModel={handleRollbackClassifierModel}
+                handleCancelTraining={handleCancelTraining}
+                handleSaveRepoPath={handleSaveRepoPath}
+                handleTrainFromExport={handleTrainFromExport}
+                modelReloadStatus={modelReloadStatus}
+                repoPathInput={repoPathInput}
+                setRepoPathInput={setRepoPathInput}
+                setShowAdvancedCommand={setShowAdvancedCommand}
+                showAdvancedCommand={showAdvancedCommand}
+                trainFromExportHint={trainFromExportHint}
+                      trainingCommand={trainingCommand}
+                      trainingInProgress={trainingInProgress}
+                      trainingProgress={trainingProgress}
+                    />
+                  </details>
+                ) : null}
+
+                <details className="settings-disclosure">
+                  <summary>Logs and diagnostics</summary>
+                  <DiagnosticsCard />
+                  <SessionTechnicalDetails sessionId={sessionId} sessionRecord={sessionRecord} />
+                  <PredictionHistoryCard predictionHistory={live.predictionHistory} />
+                </details>
+
+                <details className="settings-disclosure">
+                  <summary>Raw signals</summary>
+                  <SignalsCard signals={live.signals} />
+                </details>
+              </>
+            )}
+            </div>
+              </>
+            )}
+          </main>
         </div>
-          </>
-        )}
-      </main>
-      </div>
       </div>
     </div>
   );

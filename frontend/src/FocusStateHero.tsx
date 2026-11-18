@@ -51,16 +51,12 @@ export function FocusStateHero({
   // Idle Now is a start screen. A leftover (or demo) prediction is not the session, so it
   // does not get the full verdict + scores + caveat — that is what made idle a second Review.
   const idle = !sessionActive;
+  const drifting = Boolean(snapbackNote) || display.level === "high" || display.level === "medium";
+  const variant = idle ? " hero-card-idle" : drifting ? " hero-card-drifting" : "";
 
   return (
     <section
-      className={
-        idle
-          ? "card hero-card hero-card-idle"
-          : snapbackNote || display.level === "high" || display.level === "medium"
-            ? "card hero-card hero-card-drifting"
-            : "card hero-card"
-      }
+      className={`card hero-card${variant}`}
       aria-labelledby="focus-state-heading"
     >
       <h2 id="focus-state-heading" className="hero-eyebrow">
@@ -126,7 +122,6 @@ export function FocusStateHero({
       )}
 
       {hyperfocusNote ? <p className="helper-text alert">{hyperfocusNote}</p> : null}
-      {/* The one thing on Now that asks for attention: where you were, and a way back. */}
       {snapbackNote ? (
         <div className="snapback-row" role="status">
           <p className="snapback-row-text">{snapbackNote}</p>
