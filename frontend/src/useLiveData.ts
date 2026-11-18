@@ -148,7 +148,7 @@ export const useLiveData = () => {
     const summary = snapbackSummaryRef.current;
     const failed = (reason: string) => {
       setSnapbackNote(
-        `Snapback: ${summary ?? ""} — couldn't bring it back (${reason}). Try again or dismiss.`,
+        `Snapback: ${summary ?? ""}. Couldn't bring it back (${reason}). Try again or dismiss.`,
       );
     };
     try {

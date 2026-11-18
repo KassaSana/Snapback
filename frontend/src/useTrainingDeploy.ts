@@ -107,7 +107,7 @@ export const useTrainingDeploy = ({
         buildExportSummary(result.featureCount, result.labelCount, result.outputDir),
       );
       setLabelStatusWarning(false);
-      setDeployMessage("Export ready — train from export or reload if you already trained.");
+      setDeployMessage("Export ready. Train from the export, or reload the model if you already trained.");
       await refreshDeployStatus();
     } catch {
       setLabelStatus("Could not export training data.");
@@ -171,7 +171,7 @@ export const useTrainingDeploy = ({
           onClassifierStatusChange(status);
           setModelReloadStatus(buildModelReloadStatus(status));
         } catch {
-          setModelReloadStatus("Training succeeded but reload failed — click Reload model.");
+          setModelReloadStatus("Training succeeded, but the reload failed. Click Reload model.");
         }
       }
     } catch (err) {

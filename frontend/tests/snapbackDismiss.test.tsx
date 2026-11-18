@@ -148,7 +148,7 @@ describe("Snapback note dismiss and restore", () => {
     fireEvent.click(screen.getByRole("button", { name: "Take me back" }));
 
     expect(
-      await screen.findByText(/couldn't bring it back \(Could not find a window matching the target\)/),
+      await screen.findByText(/Couldn't bring it back \(Could not find a window matching the target\)/),
     ).toBeInTheDocument();
     // The original summary survives in the rewritten note, and both actions stay available.
     expect(screen.getByText(/Snapback: Return to auth\.ts/)).toBeInTheDocument();
@@ -162,7 +162,7 @@ describe("Snapback note dismiss and restore", () => {
         boundary.invoke.mock.calls.filter(([cmd]) => cmd === "restore_snapback_target"),
       ).toHaveLength(2),
     );
-    expect(screen.getAllByText(/couldn't bring it back/)).toHaveLength(1);
+    expect(screen.getAllByText(/Couldn't bring it back/)).toHaveLength(1);
 
     // And the retry succeeding clears the note the way a first-try success does.
     boundary.state.restore = async () => ({ ok: true, message: "Window activated successfully" });
@@ -186,7 +186,7 @@ describe("Snapback note dismiss and restore", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Take me back" }));
 
-    expect(await screen.findByText(/couldn't bring it back \(ipc unavailable\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn't bring it back \(ipc unavailable\)/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Take me back" })).toBeInTheDocument();
   });
 });

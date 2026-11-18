@@ -148,7 +148,7 @@ describe("Session explorer", () => {
     expect(await within(earlier).findByText(/longest recorded detour lasted 2m/)).toHaveTextContent(
       "You returned to Writer.",
     );
-    expect(within(earlier).getByText("Context Timeline")).toBeInTheDocument();
+    expect(within(earlier).getByText("Context timeline")).toBeInTheDocument();
     expect(screen.queryByText(/distracting app/i)).not.toBeInTheDocument();
   });
 

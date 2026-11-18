@@ -100,7 +100,7 @@ export const AnalyticsCard = memo(function AnalyticsCard({
               ))}
             </svg>
             <p className="insights-caption">
-              Average focus by hour of day, 0–100. Ticks below the line are hours with no data.
+              Average focus by hour of day, on a 0 to 100 scale. Ticks below the line are hours with no data.
             </p>
             <ChartDataTable
               caption={`Focus by hour, ${rangeLabel}`}

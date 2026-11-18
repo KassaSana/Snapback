@@ -163,7 +163,7 @@ assert.equal(mondayOf("2026-08-08"), "2026-08-03"); // Saturday too
     today,
     "Last 7 days",
   );
-  assert.equal(more, "1h 30m of deep work this week — about 30m more than last week.");
+  assert.equal(more, "1h 30m of deep work this week, about 30m more than last week.");
 
   const less = trendHeadline(
     [lastWeek, day("2026-08-04", { attendedSecs: 3600, deepFocusSecs: 1800, sampleCount: 9 })],

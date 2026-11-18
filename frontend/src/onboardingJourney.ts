@@ -128,7 +128,7 @@ export function onboardingFailure(input: {
   if (input.captureFailed) {
     return {
       message:
-        "Capture stopped, so this walkthrough is paused — there is nothing to read until it is running again.",
+        "Capture stopped, so this walkthrough is paused until capture runs again.",
       actionLabel: "Open permissions",
     };
   }

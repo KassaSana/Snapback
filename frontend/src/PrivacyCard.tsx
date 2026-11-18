@@ -108,7 +108,7 @@ export const PrivacyCard = memo(function PrivacyCard({
         <div className="privacy-inspect-zone">
           <h3>Your data on this device</h3>
           <p className="helper-text">
-            Everything Snapback records lives in one folder — the database, exported CSVs, and
+            Snapback keeps everything it records in one folder: the database, exported CSVs, and
             logs. Nothing leaves this device.
           </p>
           <div className="button-row">

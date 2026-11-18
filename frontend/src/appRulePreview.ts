@@ -37,7 +37,7 @@ export const buildAppRulePreview = (
   // Guardrail (warn, don't block): a very short pattern matches by substring
   // against every window, so it likely catches far more than intended.
   if (isBroadAppRulePattern(trimmedPattern)) {
-    return `${withNote} Heads up: "${trimmedPattern}" is very short and may match many unrelated windows — consider a more specific pattern.`;
+    return `${withNote} "${trimmedPattern}" is very short and may match many unrelated windows. Try a more specific pattern.`;
   }
 
   return withNote;

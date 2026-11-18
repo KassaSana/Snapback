@@ -17,7 +17,7 @@ export function myDataExportMessage(result: MyDataExportResult): string {
   if (!result.truncated) {
     // Said explicitly. "Complete" is the whole point of the feature, and a message that only
     // reports counts leaves the reader to wonder what is missing.
-    return `Wrote ${contents} to ${result.outputPath}. This is your complete history — nothing was left out.`;
+    return `Wrote ${contents} to ${result.outputPath}. This is your complete history. Nothing was left out.`;
   }
 
   // Named per record type, because "some data was omitted" is not something a user can act on.
