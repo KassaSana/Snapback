@@ -11,7 +11,6 @@ type AppHeaderProps = {
   surface: Surface;
   /** True while a session runs, so the title is the goal itself. */
   sessionActive?: boolean;
-  /** The running session's goal. */
   activeGoal?: string | null;
   /** Drawn above the title on Now (the session ribbon while a session runs). */
   children?: ReactNode;

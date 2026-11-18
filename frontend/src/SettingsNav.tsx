@@ -20,7 +20,8 @@ export const SettingsNav = memo(function SettingsNav({ active, onChange }: Props
     const current = SETTINGS_SECTIONS.indexOf(active);
     let next: number | null = null;
 
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % SETTINGS_SECTIONS.length;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown")
+      next = (current + 1) % SETTINGS_SECTIONS.length;
     else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
       next = (current - 1 + SETTINGS_SECTIONS.length) % SETTINGS_SECTIONS.length;
     else if (event.key === "Home") next = 0;
