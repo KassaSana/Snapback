@@ -295,305 +295,307 @@ int main(int argc, char** argv) {
         }
         logger.info("storage opened: " + (data_dir / kDatabaseFileName).string());
 
-    // Heap-owned so callbacks below can borrow a stable address.
-    auto state = std::make_unique<AppState>(
-        std::move(*storage), data_dir, &logger, nullptr,
-        training_deploy::to_model_deployment_health(model_recovery));
-    state->start_engine();
+        // Heap-owned so callbacks below can borrow a stable address.
+        auto state = std::make_unique<AppState>(
+            std::move(*storage), data_dir, &logger, nullptr,
+            training_deploy::to_model_deployment_health(model_recovery));
+        state->start_engine();
 
-    // Read-only probe (never prompts), logged once: did the OS let us capture?
-    const auto permissions = check_capture_permissions(/*capture_running=*/true);
-    logger.info(std::string("engine started; capture permission: ") +
-                (permissions.capture_available ? "granted" : "DENIED") +
-                ", probe confirmed: " + (permissions.capture_probe_confirmed ? "yes" : "no") +
-                ", active window: " + (permissions.active_window_available ? "yes" : "no"));
-    if (!permissions.capture_available) {
-        logger.warn("capture permission missing — " + permissions.message);
-    }
+        // Read-only probe (never prompts), logged once: did the OS let us capture?
+        const auto permissions = check_capture_permissions(/*capture_running=*/true);
+        logger.info(std::string("engine started; capture permission: ") +
+                    (permissions.capture_available ? "granted" : "DENIED") +
+                    ", probe confirmed: " + (permissions.capture_probe_confirmed ? "yes" : "no") +
+                    ", active window: " + (permissions.active_window_available ? "yes" : "no"));
+        if (!permissions.capture_available) {
+            logger.warn("capture permission missing — " + permissions.message);
+        }
 
-    // Route every overlay dismiss (timeout, click) back into state: dismiss_recovery() is the
-    // tracker's only exit from Recovering.
-    Overlay::instance().set_dismiss_callback(
-        [state = state.get()] { state->dismiss_snapback(); });
+        // Route every overlay dismiss (timeout, click) back into state: dismiss_recovery() is the
+        // tracker's only exit from Recovering.
+        Overlay::instance().set_dismiss_callback(
+            [state = state.get()] { state->dismiss_snapback(); });
 
-    // The overlay's "Take me back" action is registered below, once the window exists.
+        // The overlay's "Take me back" action is registered below, once the window exists.
 
-    webview::webview w(/*debug=*/kWebviewDebugEnabled, nullptr);
-    // This guard is declared after the webview, so exception unwinding stops
-    // capture and event dispatch before the webview itself is destroyed.
-    EngineLifetime engine_lifetime(*state);
-    w.set_title("Snapback");
-    w.set_size(1100, 760, WEBVIEW_HINT_NONE);
+        webview::webview w(/*debug=*/kWebviewDebugEnabled, nullptr);
+        // This guard is declared after the webview, so exception unwinding stops
+        // capture and event dispatch before the webview itself is destroyed.
+        EngineLifetime engine_lifetime(*state);
+        w.set_title("Snapback");
+        w.set_size(1100, 760, WEBVIEW_HINT_NONE);
 
-    // Resolve the trusted document first: the shim and every native bind share one canonical
-    // URL and one per-launch capability token.
+        // Resolve the trusted document first: the shim and every native bind share one canonical
+        // URL and one per-launch capability token.
 #if defined(NDEBUG)
-    const auto frontend_url = resolve_frontend_url(executable_dir(), std::nullopt, false, false);
+        const auto frontend_url =
+            resolve_frontend_url(executable_dir(), std::nullopt, false, false);
 #else
-    const auto frontend_url =
-        resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL"), true);
+        const auto frontend_url =
+            resolve_frontend_url(executable_dir(), env_var("SNAPBACK_FRONTEND_URL"), true);
 #endif
-    const auto trusted_url = canonical_document_url(frontend_url);
-    const auto capability_token = generate_capability_token();
+        const auto trusted_url = canonical_document_url(frontend_url);
+        const auto capability_token = generate_capability_token();
 
-    // Inject the IPC shim BEFORE any page script runs (init scripts run on every navigation,
-    // ahead of the bundle), then register the command binds it calls.
-    w.init(build_ipc_shim_script(trusted_url, capability_token, kWebviewDebugEnabled));
+        // Inject the IPC shim BEFORE any page script runs (init scripts run on every navigation,
+        // ahead of the bundle), then register the command binds it calls.
+        w.init(build_ipc_shim_script(trusted_url, capability_token, kWebviewDebugEnabled));
 
-    // Only GUI-smoke builds can load an acceptance script, so the env var is never a capability
-    // in a packaged binary.
-    std::optional<std::string> acceptance_script;
+        // Only GUI-smoke builds can load an acceptance script, so the env var is never a capability
+        // in a packaged binary.
+        std::optional<std::string> acceptance_script;
 #if defined(SNAPBACK_ENABLE_ACCEPTANCE_HARNESS)
-    if (const auto path = env_var("SNAPBACK_ACCEPTANCE_SCRIPT")) {
-        acceptance_script = load_acceptance_script(*path);
-        w.init(*acceptance_script);
-        logger.info("desktop acceptance script loaded: " + *path);
-    }
+        if (const auto path = env_var("SNAPBACK_ACCEPTANCE_SCRIPT")) {
+            acceptance_script = load_acceptance_script(*path);
+            w.init(*acceptance_script);
+            logger.info("desktop acceptance script loaded: " + *path);
+        }
 #endif
-    // Declared after the webview and AppState, so it is joined before either can be destroyed.
-    detail::AsyncCommandRunner async_commands;
-    NativeUiHooks native_ui{[] { Overlay::instance().dismiss(); }, {}};
-    if (acceptance_script) {
-        native_ui.report_acceptance_verdict = [data_dir, &w](const nlohmann::json& verdict) {
-            write_acceptance_verdict(data_dir / "acceptance-verdict.json", verdict);
-            // Let the binding resolve before ending the same run loop that delivered it.
-            w.dispatch([&w] { w.terminate(); });
+        // Declared after the webview and AppState, so it is joined before either can be destroyed.
+        detail::AsyncCommandRunner async_commands;
+        NativeUiHooks native_ui{[] { Overlay::instance().dismiss(); }, {}};
+        if (acceptance_script) {
+            native_ui.report_acceptance_verdict = [data_dir, &w](const nlohmann::json& verdict) {
+                write_acceptance_verdict(data_dir / "acceptance-verdict.json", verdict);
+                // Let the binding resolve before ending the same run loop that delivered it.
+                w.dispatch([&w] { w.terminate(); });
+            };
+        }
+        register_commands(w, *state, data_dir, async_commands, capability_token,
+                          std::move(native_ui));
+
+        // Tray: click or "Show" raises the window, "Quit" ends the run loop. Closing the window
+        // hides it to the tray. The native window handle is read once here, on the UI thread.
+        //
+        // Explain close-to-tray once (claim_tray_close_notice persists that it was shown).
+        const auto explain_close_to_tray = [state = state.get(), &logger] {
+            run_tray_action(logger, "close-to-tray notice", [state] {
+                if (state->claim_tray_close_notice()) {
+                    Tray::instance().show_notification(build_close_to_tray_notification());
+                }
+            });
         };
-    }
-    register_commands(w, *state, data_dir, async_commands, capability_token,
-                      std::move(native_ui));
 
-    // Tray: click or "Show" raises the window, "Quit" ends the run loop. Closing the window
-    // hides it to the tray. The native window handle is read once here, on the UI thread.
-    //
-    // Explain close-to-tray once (claim_tray_close_notice persists that it was shown).
-    const auto explain_close_to_tray = [state = state.get(), &logger] {
-        run_tray_action(logger, "close-to-tray notice", [state] {
-            if (state->claim_tray_close_notice()) {
-                Tray::instance().show_notification(build_close_to_tray_notification());
-            }
-        });
-    };
+        std::function<void()> raise_window;
 
-    std::function<void()> raise_window;
-
-    // One click handler for both native surfaces. Raising the window comes first and is
-    // unconditional; then the claim decides whether the destination is still live (false means
-    // already acted on or superseded). Returns whether an action ran, so the overlay knows
-    // whether its dismiss callback still has work. `raise_window` is assigned below; both
-    // outlive w.run().
-    const auto route_alert_click = [&w, state = state.get(), &logger, &raise_window](
-                                       AlertEvent event, std::int64_t alert_id) {
-        if (raise_window) raise_window();
-        if (!state->claim_alert_action(event, alert_id)) {
-            logger.info(std::string("alert click: nothing to act on for ") +
-                        std::to_string(alert_id) + " (already used, stale, or not actionable)");
-            return false;
-        }
-        const auto action = alert_action_for(event);
-        logger.info(std::string("alert click: ") + alert_action_as_str(action));
-        switch (action) {
-            case AlertAction::ReturnToWork:
-                // Raises the recorded window and unlatches the tracker. Failures are logged
-                // here, since nothing else on this path sees them.
-                return run_tray_action(logger, "return to work", [state, &logger] {
-                    const auto result = state->restore_snapback_target();
-                    if (!result.ok) logger.warn("return to work: " + result.message);
-                });
-            case AlertAction::OpenSessionComposer:
-            case AlertAction::OpenPomodoro:
-                // The frontend owns surfaces; this side only names the destination.
-                emit(w, events::kAlertAction,
-                     dump_alert_action_event(action, alert_id));
-                break;
-            case AlertAction::None:
+        // One click handler for both native surfaces. Raising the window comes first and is
+        // unconditional; then the claim decides whether the destination is still live (false means
+        // already acted on or superseded). Returns whether an action ran, so the overlay knows
+        // whether its dismiss callback still has work. `raise_window` is assigned below; both
+        // outlive w.run().
+        const auto route_alert_click = [&w, state = state.get(), &logger, &raise_window](
+                                           AlertEvent event, std::int64_t alert_id) {
+            if (raise_window) raise_window();
+            if (!state->claim_alert_action(event, alert_id)) {
+                logger.info(std::string("alert click: nothing to act on for ") +
+                            std::to_string(alert_id) + " (already used, stale, or not actionable)");
                 return false;
-        }
-        return true;
-    };
+            }
+            const auto action = alert_action_for(event);
+            logger.info(std::string("alert click: ") + alert_action_as_str(action));
+            switch (action) {
+                case AlertAction::ReturnToWork:
+                    // Raises the recorded window and unlatches the tracker. Failures are logged
+                    // here, since nothing else on this path sees them.
+                    return run_tray_action(logger, "return to work", [state, &logger] {
+                        const auto result = state->restore_snapback_target();
+                        if (!result.ok) logger.warn("return to work: " + result.message);
+                    });
+                case AlertAction::OpenSessionComposer:
+                case AlertAction::OpenPomodoro:
+                    // The frontend owns surfaces; this side only names the destination.
+                    emit(w, events::kAlertAction,
+                         dump_alert_action_event(action, alert_id));
+                    break;
+                case AlertAction::None:
+                    return false;
+            }
+            return true;
+        };
 
 #if defined(_WIN32) || defined(__APPLE__)
-    // Installs the tray with the shared menu actions. Close-to-tray is only enabled once the
-    // icon is installed, or the window could vanish unreachably.
-    const auto install_tray = [&](std::function<void()> on_quit) {
-        TrayCallbacks callbacks;
-        callbacks.on_show = raise_window;
-        callbacks.on_quit = std::move(on_quit);
-        callbacks.recording_status = [state = state.get(), &logger] {
-            return tray_recording_status(*state, logger);
+        // Installs the tray with the shared menu actions. Close-to-tray is only enabled once the
+        // icon is installed, or the window could vanish unreachably.
+        const auto install_tray = [&](std::function<void()> on_quit) {
+            TrayCallbacks callbacks;
+            callbacks.on_show = raise_window;
+            callbacks.on_quit = std::move(on_quit);
+            callbacks.recording_status = [state = state.get(), &logger] {
+                return tray_recording_status(*state, logger);
+            };
+            callbacks.on_pause_recording = [state = state.get(), &logger] {
+                run_tray_action(logger, "pause recording",
+                                [state] { state->pause_privately_for(0); });
+            };
+            callbacks.on_resume_recording = [state = state.get(), &logger] {
+                run_tray_action(logger, "resume recording",
+                                [state] { state->resume_from_private_pause(); });
+            };
+            callbacks.on_snooze_alerts = [state = state.get(), &logger] {
+                run_tray_action(logger, "snooze alerts",
+                                [state] { state->snooze_alerts_for(kDefaultAlertSnoozeMins); });
+            };
+            callbacks.on_resume_alerts = [state = state.get(), &logger] {
+                run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
+            };
+            callbacks.on_notification_click = route_alert_click;
+            return Tray::instance().install(std::move(callbacks));
         };
-        callbacks.on_pause_recording = [state = state.get(), &logger] {
-            run_tray_action(logger, "pause recording", [state] { state->pause_privately_for(0); });
-        };
-        callbacks.on_resume_recording = [state = state.get(), &logger] {
-            run_tray_action(logger, "resume recording",
-                            [state] { state->resume_from_private_pause(); });
-        };
-        callbacks.on_snooze_alerts = [state = state.get(), &logger] {
-            run_tray_action(logger, "snooze alerts",
-                            [state] { state->snooze_alerts_for(kDefaultAlertSnoozeMins); });
-        };
-        callbacks.on_resume_alerts = [state = state.get(), &logger] {
-            run_tray_action(logger, "resume alerts", [state] { state->resume_alerts(); });
-        };
-        callbacks.on_notification_click = route_alert_click;
-        return Tray::instance().install(std::move(callbacks));
-    };
 #endif
 
 #if defined(_WIN32)
-    if (auto win = w.window(); win.ok()) {
-        HWND main_hwnd = reinterpret_cast<HWND>(win.value());
-        raise_window = [main_hwnd] {
-            ShowWindow(main_hwnd, SW_SHOW);
-            SetForegroundWindow(main_hwnd);
-        };
-        const bool installed = install_tray([&w, main_hwnd] {
-            prepare_app_exit(main_hwnd);
-            w.terminate();
-        });
-        if (installed) enable_close_to_tray(main_hwnd, explain_close_to_tray);
-    }
+        if (auto win = w.window(); win.ok()) {
+            HWND main_hwnd = reinterpret_cast<HWND>(win.value());
+            raise_window = [main_hwnd] {
+                ShowWindow(main_hwnd, SW_SHOW);
+                SetForegroundWindow(main_hwnd);
+            };
+            const bool installed = install_tray([&w, main_hwnd] {
+                prepare_app_exit(main_hwnd);
+                w.terminate();
+            });
+            if (installed) enable_close_to_tray(main_hwnd, explain_close_to_tray);
+        }
 #elif defined(__APPLE__)
-    // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
-    // it becomes AppKit again, so main.cpp stays plain C++ (see mac_ui.hpp).
-    if (auto win = w.window(); win.ok()) {
-        void* main_window = win.value();
-        raise_window = [main_window] { mac::bring_window_to_front(main_window); };
-        const bool installed = install_tray([&w, main_window] {
-            prepare_app_exit(main_window);
-            w.terminate();
-        });
-        if (installed) enable_close_to_tray(main_window, explain_close_to_tray);
-    }
+        // webview's window() hands back the NSWindow* as an opaque void*; mac_ui.mm is where
+        // it becomes AppKit again, so main.cpp stays plain C++ (see mac_ui.hpp).
+        if (auto win = w.window(); win.ok()) {
+            void* main_window = win.value();
+            raise_window = [main_window] { mac::bring_window_to_front(main_window); };
+            const bool installed = install_tray([&w, main_window] {
+                prepare_app_exit(main_window);
+                w.terminate();
+            });
+            if (installed) enable_close_to_tray(main_window, explain_close_to_tray);
+        }
 #endif
 
-    // The overlay card's action. The overlay has no alert id of its own and only shows the
-    // newest card, so the outstanding id is read from state.
-    Overlay::instance().set_action_callback([state = state.get(), &route_alert_click] {
-        return route_alert_click(AlertEvent::Snapback,
-                                 state->outstanding_alert_id(AlertEvent::Snapback));
-    });
-
-    // The owner's half of the activation channel. on_activate runs on the listener thread, so
-    // it only dispatches to the UI thread.
-    std::optional<ActivationListener> activation_listener;
-    if (raise_window) {
-        activation_listener = ActivationListener::start(data_dir, [&w, raise_window, &logger] {
-            logger.info("activation: a second launch asked for the window");
-            w.dispatch([raise_window] { raise_window(); });
+        // The overlay card's action. The overlay has no alert id of its own and only shows the
+        // newest card, so the outstanding id is read from state.
+        Overlay::instance().set_action_callback([state = state.get(), &route_alert_click] {
+            return route_alert_click(AlertEvent::Snapback,
+                                     state->outstanding_alert_id(AlertEvent::Snapback));
         });
-        if (!activation_listener) {
-            // Not fatal, but logged.
-            logger.warn("activation channel unavailable — a second launch cannot raise this "
-                        "window and will report that it could not");
-        } else {
-            logger.info("activation channel listening on " + activation_listener->endpoint());
+
+        // The owner's half of the activation channel. on_activate runs on the listener thread, so
+        // it only dispatches to the UI thread.
+        std::optional<ActivationListener> activation_listener;
+        if (raise_window) {
+            activation_listener = ActivationListener::start(data_dir, [&w, raise_window, &logger] {
+                logger.info("activation: a second launch asked for the window");
+                w.dispatch([raise_window] { raise_window(); });
+            });
+            if (!activation_listener) {
+                // Not fatal, but logged.
+                logger.warn("activation channel unavailable — a second launch cannot raise this "
+                            "window and will report that it could not");
+            } else {
+                logger.info("activation channel listening on " + activation_listener->endpoint());
+            }
         }
-    }
 
-    // Engine events arrive off-thread; webview.eval and the overlay need the UI thread, so
-    // dispatch. Copy event/payload by value.
-    state->set_emit_hook([&w, state = state.get()](const char* event,
-                                                   const std::string& payload,
-                                                   AppState::ActivityEpoch activity_epoch) {
-        std::string ev = event;
-        w.dispatch([&w, state, ev, payload, activity_epoch] {
-            // Reject stale ticks right before any user-visible side effect: a delete may have
-            // run on the UI thread since this was queued.
-            // Recorder health survives session replacement/deletion; activity alerts do not.
-            if (!state->frontend_event_is_current(ev, activity_epoch)) return;
-            emit(w, ev.c_str(), payload);
-            // Channels come from app/alert_routing.hpp on the payload; nothing is decided here.
-            // The overlay is topmost and non-activating, so it reaches the user without a
-            // toast.
-            if (ev == events::kSnapback) {
-                try {
-                    const auto parsed = nlohmann::json::parse(payload);
-                    const auto snap = parsed.get<SnapbackPayload>();
-                    // A missing delivery block is a bug; fall back to defaults rather than
-                    // going silent.
-                    const auto route =
-                        parsed.contains("delivery")
-                            ? parsed["delivery"].get<AlertRoute>()
-                            : route_alert(AlertEvent::Snapback, AlertDeliverySettings{}, 0,
-                                          std::nullopt);
-                    if (route.channels.overlay) Overlay::instance().show(snap);
-                    if (route.channels.native) {
-                        Tray::instance().show_notification(
-                            build_snapback_notification(snap, route.preview));
+        // Engine events arrive off-thread; webview.eval and the overlay need the UI thread, so
+        // dispatch. Copy event/payload by value.
+        state->set_emit_hook([&w, state = state.get()](const char* event,
+                                                       const std::string& payload,
+                                                       AppState::ActivityEpoch activity_epoch) {
+            std::string ev = event;
+            w.dispatch([&w, state, ev, payload, activity_epoch] {
+                // Reject stale ticks right before any user-visible side effect: a delete may have
+                // run on the UI thread since this was queued.
+                // Recorder health survives session replacement/deletion; activity alerts do not.
+                if (!state->frontend_event_is_current(ev, activity_epoch)) return;
+                emit(w, ev.c_str(), payload);
+                // Channels come from app/alert_routing.hpp on the payload; nothing is decided here.
+                // The overlay is topmost and non-activating, so it reaches the user without a
+                // toast.
+                if (ev == events::kSnapback) {
+                    try {
+                        const auto parsed = nlohmann::json::parse(payload);
+                        const auto snap = parsed.get<SnapbackPayload>();
+                        // A missing delivery block is a bug; fall back to defaults rather than
+                        // going silent.
+                        const auto route =
+                            parsed.contains("delivery")
+                                ? parsed["delivery"].get<AlertRoute>()
+                                : route_alert(AlertEvent::Snapback, AlertDeliverySettings{}, 0,
+                                              std::nullopt);
+                        if (route.channels.overlay) Overlay::instance().show(snap);
+                        if (route.channels.native) {
+                            Tray::instance().show_notification(
+                                build_snapback_notification(snap, route.preview));
+                        }
+                    } catch (...) {
+                        // A malformed payload must never take down the UI thread.
                     }
-                } catch (...) {
-                    // A malformed payload must never take down the UI thread.
                 }
-            }
-            // Hyperfocus defaults to a toast, not the overlay, to avoid interrupting deep work.
-            if (ev == events::kHyperfocus) {
-                try {
-                    const auto parsed = nlohmann::json::parse(payload);
-                    const auto minutes = parsed.at("minutes").get<std::uint64_t>();
-                    const auto route =
-                        parsed.contains("delivery")
-                            ? parsed["delivery"].get<AlertRoute>()
-                            : route_alert(AlertEvent::Hyperfocus, AlertDeliverySettings{}, 0,
-                                          std::nullopt);
-                    if (route.channels.native) {
-                        Tray::instance().show_notification(
-                            build_hyperfocus_notification(minutes, route.preview));
+                // Hyperfocus defaults to a toast, not the overlay, to avoid interrupting deep work.
+                if (ev == events::kHyperfocus) {
+                    try {
+                        const auto parsed = nlohmann::json::parse(payload);
+                        const auto minutes = parsed.at("minutes").get<std::uint64_t>();
+                        const auto route =
+                            parsed.contains("delivery")
+                                ? parsed["delivery"].get<AlertRoute>()
+                                : route_alert(AlertEvent::Hyperfocus, AlertDeliverySettings{}, 0,
+                                              std::nullopt);
+                        if (route.channels.native) {
+                            Tray::instance().show_notification(
+                                build_hyperfocus_notification(minutes, route.preview));
+                        }
+                        if (route.channels.overlay) {
+                            SnapbackPayload nudge;
+                            nudge.summary = build_hyperfocus_notification(minutes).body;
+                            Overlay::instance().show(nudge);
+                        }
+                    } catch (...) {
                     }
-                    if (route.channels.overlay) {
-                        SnapbackPayload nudge;
-                        nudge.summary = build_hyperfocus_notification(minutes).body;
-                        Overlay::instance().show(nudge);
-                    }
-                } catch (...) {
                 }
-            }
+            });
         });
-    });
 
-    // Manual-QA hook: SNAPBACK_OVERLAY_TEST=1 pops a sample overlay on launch so the
-    // window can be eyeballed without staging a real distraction. No-op otherwise.
-    if (env_var("SNAPBACK_OVERLAY_TEST")) {
-        w.dispatch([] {
-            SnapbackPayload demo;
-            demo.summary = "Return to overlay_windows.cpp";
-            demo.app_name = "Cursor";
-            demo.file_hint = "overlay_windows.cpp";
-            demo.distraction_duration_secs = 37;
-            Overlay::instance().show(demo);
-        });
-    }
+        // Manual-QA hook: SNAPBACK_OVERLAY_TEST=1 pops a sample overlay on launch so the
+        // window can be eyeballed without staging a real distraction. No-op otherwise.
+        if (env_var("SNAPBACK_OVERLAY_TEST")) {
+            w.dispatch([] {
+                SnapbackPayload demo;
+                demo.summary = "Return to overlay_windows.cpp";
+                demo.app_name = "Cursor";
+                demo.file_hint = "overlay_windows.cpp";
+                demo.distraction_duration_secs = 37;
+                Overlay::instance().show(demo);
+            });
+        }
 
-    // Manual-QA hook: SNAPBACK_NOTIFICATION_TEST=1 sends a sample native balloon through
-    // the already-installed tray icon. This exercises the Win32 delivery path without
-    // fabricating a distraction in the capture stream.
-    if (env_var("SNAPBACK_NOTIFICATION_TEST")) {
-        w.dispatch([] {
-            Tray::instance().show_notification(build_distraction_notification("YouTube"));
-        });
-    }
+        // Manual-QA hook: SNAPBACK_NOTIFICATION_TEST=1 sends a sample native balloon through
+        // the already-installed tray icon. This exercises the Win32 delivery path without
+        // fabricating a distraction in the capture stream.
+        if (env_var("SNAPBACK_NOTIFICATION_TEST")) {
+            w.dispatch([] {
+                Tray::instance().show_notification(build_distraction_notification("YouTube"));
+            });
+        }
 
-    // Log the URL: a malformed file URL and a missing bundle both render a blank window.
-    logger.info("navigating webview to: " + frontend_url);
-    if (frontend_url == "about:blank") {
-        logger.error("no frontend bundle next to the executable (" + executable_dir().string() +
-                     "/frontend/index.html) — the window will be empty. Build it with "
-                     "`npm run build` in frontend/ and rebuild.");
-    }
-    w.navigate(frontend_url);
+        // Log the URL: a malformed file URL and a missing bundle both render a blank window.
+        logger.info("navigating webview to: " + frontend_url);
+        if (frontend_url == "about:blank") {
+            logger.error("no frontend bundle next to the executable (" + executable_dir().string() +
+                         "/frontend/index.html) — the window will be empty. Build it with "
+                         "`npm run build` in frontend/ and rebuild.");
+        }
+        w.navigate(frontend_url);
 
-    if (env_var("SNAPBACK_GUI_SESSION_SMOKE")) {
-        w.dispatch([state = state.get(), data_dir, &w]() {
-            const auto session = state->start_session("GUI session smoke", FocusMode::Normal);
-            state->stop_session(session.session_id);
-            std::ofstream marker(data_dir / "gui_session_smoke.ok");
-            marker << session.session_id;
-            w.terminate();
-        });
-    }
+        if (env_var("SNAPBACK_GUI_SESSION_SMOKE")) {
+            w.dispatch([state = state.get(), data_dir, &w]() {
+                const auto session = state->start_session("GUI session smoke", FocusMode::Normal);
+                state->stop_session(session.session_id);
+                std::ofstream marker(data_dir / "gui_session_smoke.ok");
+                marker << session.session_id;
+                w.terminate();
+            });
+        }
 
-    w.run();
+        w.run();
 
         async_commands.shutdown();
         engine_lifetime.stop();
