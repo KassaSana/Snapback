@@ -54,6 +54,26 @@
 #include <mach-o/dyld.h>  // _NSGetExecutablePath — see executable_dir()
 #endif
 
+#if defined(WEBVIEW_EDGE_ENV_OPTIONS)
+#include <wrl.h>
+
+#include "WebView2EnvironmentOptions.h"
+
+// Smoke builds only (see cmake/patch_webview.cmake). WebView2 156 ignores
+// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so the driven smoke passes its CDP flags here.
+ICoreWebView2EnvironmentOptions* webview_edge_env_options() {
+    static Microsoft::WRL::ComPtr<CoreWebView2EnvironmentOptions> options;
+    if (!options) {
+        wchar_t args[512];
+        const DWORD n = GetEnvironmentVariableW(L"SNAPBACK_WEBVIEW2_ARGS", args, 512);
+        if (n == 0 || n >= 512) return nullptr;
+        options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+        options->put_AdditionalBrowserArguments(args);
+    }
+    return options.Get();
+}
+#endif
+
 namespace {
 
 using snapback::env_var;

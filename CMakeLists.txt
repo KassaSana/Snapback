@@ -316,7 +316,9 @@ if(SNAPBACK_BUILD_APP)
   # the distinction does not arise — which is exactly why it is easy to get wrong here.
   FetchContent_Declare(webview
     GIT_REPOSITORY https://github.com/webview/webview
-    GIT_TAG        3ab4b5d722438fc8a13e6ca830c5e2372d19a01d)  # 0.12.0
+    GIT_TAG        3ab4b5d722438fc8a13e6ca830c5e2372d19a01d  # 0.12.0
+    PATCH_COMMAND  ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_webview.cmake)
   FetchContent_MakeAvailable(webview)
 
   add_executable(snapback
@@ -326,6 +328,10 @@ if(SNAPBACK_BUILD_APP)
     # Explicitly opt-in per smoke build. Normal Debug and Release packages both omit the
     # arbitrary-JavaScript loader; an environment variable alone can never turn it on.
     target_compile_definitions(snapback PRIVATE SNAPBACK_ENABLE_ACCEPTANCE_HARNESS=1)
+    if(WIN32)
+      # Lets the driven smoke hand WebView2 its CDP flags (see cmake/patch_webview.cmake).
+      target_compile_definitions(snapback PRIVATE WEBVIEW_EDGE_ENV_OPTIONS=1)
+    endif()
   endif()
   if(WIN32)
     target_sources(snapback PRIVATE src/snapback/overlay_windows.cpp src/app/tray_windows.cpp)

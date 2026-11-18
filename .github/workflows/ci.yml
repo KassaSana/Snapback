@@ -173,30 +173,6 @@ jobs:
         timeout-minutes: 30
         run: .\scripts\windows_demo.ps1 -UseVite -EnableAcceptanceHarness -NoLaunch
 
-      # The image's WebView2 runtime can lag behind. On 156, the browser ignores the
-      # remote-debugging flags the driven smoke passes through WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,
-      # so CDP never opens; current runtimes apply them. Update with the EdgeUpdate client that
-      # ships on the image, then report the version either way.
-      - name: Update the WebView2 runtime
-        shell: pwsh
-        timeout-minutes: 6
-        run: |
-          $key = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
-          $before = (Get-ItemProperty -Path $key).pv
-          $updater = Join-Path ${env:ProgramFiles(x86)} "Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe"
-          if (Test-Path -LiteralPath $updater) {
-            Start-Process -FilePath $updater -ArgumentList "/ua /installsource scheduler" -Wait
-            $deadline = (Get-Date).AddMinutes(4)
-            do {
-              $after = (Get-ItemProperty -Path $key).pv
-              if ($after -ne $before) { break }
-              Start-Sleep -Seconds 10
-            } while ((Get-Date) -lt $deadline)
-            Write-Host "WebView2 runtime: $before -> $after"
-          } else {
-            Write-Warning "EdgeUpdate client not found at $updater; testing installed WebView2 $before."
-          }
-
       - name: Run Windows real-webview acceptance smoke
         shell: pwsh
         timeout-minutes: 5
