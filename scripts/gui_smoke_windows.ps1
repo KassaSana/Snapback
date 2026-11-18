@@ -28,6 +28,27 @@ function Invoke-Native {
     }
 }
 
+# When the CDP driver can't attach, say why: which runtime ran, whether the browser process got
+# the debugging flags, and whether it ever opened a port.
+function Write-WebView2Diagnostics {
+    param([string]$UserDataFolder, [int]$Port)
+    $clientKey = "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    foreach ($hive in @("HKLM:", "HKCU:")) {
+        $item = Get-ItemProperty -Path "$hive\$clientKey" -ErrorAction SilentlyContinue
+        if ($item -and $item.PSObject.Properties["pv"]) { Write-Host "WebView2 runtime ($hive): $($item.pv)" }
+    }
+    Write-Host "Expected CDP port: $Port; user data folder: $UserDataFolder"
+    $portFile = Join-Path $UserDataFolder "EBWebView\DevToolsActivePort"
+    if (Test-Path -LiteralPath $portFile) {
+        Write-Host "DevToolsActivePort: $((Get-Content -Raw -LiteralPath $portFile).Trim() -replace '\s+', ' ')"
+    } else {
+        Write-Host "DevToolsActivePort: missing (folder exists: $(Test-Path -LiteralPath $UserDataFolder))"
+    }
+    Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -notmatch '--type=' -and $_.CommandLine -match 'webview-exe-name=snapback' } |
+        ForEach-Object { Write-Host "browser process $($_.ProcessId): $($_.CommandLine)" }
+}
+
 function Find-SnapbackExe {
     $candidates = @(
         (Join-Path $BuildPath "$Config\snapback.exe"),
@@ -64,6 +85,7 @@ $acceptanceVerdict = Join-Path $DemoDataDir "acceptance-verdict.json"
 $previousWebViewArguments = [Environment]::GetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
 $previousWebViewUserDataFolder = [Environment]::GetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER")
 Remove-Item -LiteralPath $sessionMarker, $acceptanceVerdict -Force -ErrorAction SilentlyContinue
+Remove-Item Env:\SNAPBACK_WEBVIEW2_ARGS -ErrorAction SilentlyContinue
 if ($OverlayTest) {
     $env:SNAPBACK_OVERLAY_TEST = "1"
     Remove-Item Env:\SNAPBACK_GUI_SESSION_SMOKE -ErrorAction SilentlyContinue
@@ -86,7 +108,11 @@ if ($OverlayTest) {
     # arguments are fixed when that shared process starts, so it would not begin listening on
     # this run's CDP port. A unique temporary profile gives the driven smoke its own process.
     $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $DemoDataDir "webview2-cdp-$cdpPort"
-    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=$cdpPort"
+    $cdpArguments = "--remote-debugging-address=127.0.0.1 --remote-debugging-port=$cdpPort"
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $cdpArguments
+    # Newer runtimes ignore the variable above; smoke builds also pass this through WebView2's
+    # environment options (see cmake/patch_webview.cmake).
+    $env:SNAPBACK_WEBVIEW2_ARGS = $cdpArguments
 } else {
     Remove-Item Env:\SNAPBACK_OVERLAY_TEST -ErrorAction SilentlyContinue
     Remove-Item Env:\SNAPBACK_ACCEPTANCE_SCRIPT -ErrorAction SilentlyContinue
@@ -118,7 +144,12 @@ try {
 
     if ($Driven) {
         $driver = Join-Path $ScriptDir "gui_acceptance_cdp.mjs"
-        Invoke-Native { node $driver --port $cdpPort --timeout-ms ($TimeoutSeconds * 1000) }
+        try {
+            Invoke-Native { node $driver --port $cdpPort --timeout-ms ($TimeoutSeconds * 1000) }
+        } catch {
+            Write-WebView2Diagnostics -UserDataFolder $env:WEBVIEW2_USER_DATA_FOLDER -Port $cdpPort
+            throw
+        }
     }
 
     if ($Acceptance -or $Driven) {
@@ -182,6 +213,7 @@ try {
     if (-not $process.HasExited) {
         Stop-Process -Id $process.Id -Force
     }
+    Remove-Item Env:\SNAPBACK_WEBVIEW2_ARGS -ErrorAction SilentlyContinue
     if ($null -eq $previousWebViewArguments) {
         Remove-Item Env:\WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
     } else {

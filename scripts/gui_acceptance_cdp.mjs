@@ -153,7 +153,7 @@ const driverProgram = String.raw`
     now.click();
     await waitFor("the Now panel", () => now.getAttribute("aria-selected") === "true");
     const input = await waitFor("the focus goal input", () =>
-      document.querySelector('input[placeholder="Ship the snapback overlay"]'),
+      document.querySelector(".goal-input-wrapper input"),
     );
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
     valueSetter.call(input, "Driven desktop acceptance");
