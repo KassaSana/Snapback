@@ -20,8 +20,8 @@ export const SettingsNav = memo(function SettingsNav({ active, onChange }: Props
     const current = SETTINGS_SECTIONS.indexOf(active);
     let next: number | null = null;
 
-    if (event.key === "ArrowRight") next = (current + 1) % SETTINGS_SECTIONS.length;
-    else if (event.key === "ArrowLeft")
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % SETTINGS_SECTIONS.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
       next = (current - 1 + SETTINGS_SECTIONS.length) % SETTINGS_SECTIONS.length;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = SETTINGS_SECTIONS.length - 1;
@@ -35,7 +35,7 @@ export const SettingsNav = memo(function SettingsNav({ active, onChange }: Props
 
   return (
     <nav className="settings-nav" aria-label="Settings sections">
-      <div role="tablist" aria-label="Settings sections" onKeyDown={handleKeyDown}>
+      <div role="tablist" aria-label="Settings sections" aria-orientation="vertical" onKeyDown={handleKeyDown}>
         {SETTINGS_SECTIONS.map((section) => {
           const selected = section === active;
           return (

@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 
 import { summarizePermissions } from "./healthHints";
 import { settingsHealthBadge, type SettingsSection } from "./settingsSections";
@@ -9,6 +9,41 @@ import type { Surface } from "./SurfaceNav";
 
 type AppHeaderProps = {
   surface: Surface;
+  /** True while a session runs, so the title is the goal itself. */
+  sessionActive?: boolean;
+  /** The running session's goal. */
+  activeGoal?: string | null;
+  /** Drawn above the title on Now (the session ribbon while a session runs). */
+  children?: ReactNode;
+};
+
+/** The page title for each surface. On Now it is either the question or the running goal. */
+export const AppHeader = memo(function AppHeader({
+  surface,
+  sessionActive = false,
+  activeGoal = null,
+  children,
+}: AppHeaderProps) {
+  const running = surface === "now" && sessionActive;
+  const title =
+    surface === "review"
+      ? "Review your sessions"
+      : surface === "settings"
+        ? "Settings"
+        : running
+          ? activeGoal || "Session running"
+          : "What are you working on?";
+
+  return (
+    <header className="app-header">
+      {surface === "now" ? children : null}
+      <h1 className={running ? "app-title-goal" : undefined}>{title}</h1>
+      {surface === "review" ? <p className="subtitle">See how your sessions went.</p> : null}
+    </header>
+  );
+});
+
+type AppStatusProps = {
   activeWindowAvailable: boolean;
   captureFailed: boolean;
   captureProbeConfirmed: boolean;
@@ -26,16 +61,15 @@ type AppHeaderProps = {
   onPauseRecording: (minutes: number) => void | Promise<void>;
   onResumeRecording: () => void | Promise<void>;
   onResumeAlerts: () => void | Promise<void>;
-  /** True while a session runs, so the headline reads as an active state. */
-  sessionActive?: boolean;
   /** Shared session/recording vocabulary — same source as Session Control. */
   sessionStatus?: SessionStatusView | null;
-  /** The running session's goal, named in the subtitle while it runs. */
-  activeGoal?: string | null;
 };
 
-export const AppHeader = memo(function AppHeader({
-  surface,
+/**
+ * The bottom of the rail: whether Snapback is recording, how to pause it, and (only when
+ * something is wrong) which part is unhealthy. Visible on every surface.
+ */
+export const AppStatus = memo(function AppStatus({
   activeWindowAvailable,
   captureFailed,
   captureProbeConfirmed,
@@ -51,10 +85,8 @@ export const AppHeader = memo(function AppHeader({
   onPauseRecording,
   onResumeRecording,
   onResumeAlerts,
-  sessionActive = false,
   sessionStatus = null,
-  activeGoal = null,
-}: AppHeaderProps) {
+}: AppStatusProps) {
   const permissionHealth = summarizePermissions({
     captureAvailable: permissionCaptureAvailable,
     captureFailed,
@@ -74,77 +106,52 @@ export const AppHeader = memo(function AppHeader({
     modelFailed: modelDeploymentDegraded,
   });
 
-  const degraded = badge.warning;
-  const nowHeadline = sessionActive ? activeGoal || "Session running" : "What are you working on?";
-  const nowSubtitle = sessionActive ? null : "Name a goal and start.";
-
   return (
-    <header className="app-header">
-      <div>
-        <p className="eyebrow">Snapback</p>
-        <h1>
-          {surface === "review"
-            ? "Review your sessions"
-            : surface === "settings"
-              ? "Settings"
-              : nowHeadline}
-        </h1>
-        {surface === "review" ? (
-          <p className="subtitle">See how your sessions went.</p>
-        ) : surface === "settings" ? (
-          <p className="subtitle">Choose how Snapback works for you.</p>
-        ) : nowSubtitle ? (
-          <p className="subtitle">{nowSubtitle}</p>
-        ) : null}
-      </div>
-      <div className="status-stack">
-        <RecordingStatusCard
-          status={recordingStatus}
-          unconfirmed={recordingStatusUnconfirmed}
-          onPause={onPauseRecording}
-          onResume={onResumeRecording}
-          onResumeAlerts={onResumeAlerts}
-          sessionStatus={sessionActive ? sessionStatus : null}
-        />
-        {degraded ? (
-          <>
-            <div className="status-pill">
-              <span className="status-label">App</span>
-              <span className={`status-value${healthStatus === "online" ? "" : " status-alert"}`}>
-                {healthStatus}
-              </span>
-            </div>
-            <div className="status-pill">
-              <span className="status-label">Capture</span>
-              <span className={`status-value${captureFailed ? " status-alert" : ""}`}>
-                {captureFailed ? "failed" : captureRunning ? "running" : "idle"}
-              </span>
-            </div>
-            <div className="status-pill status-pill-stack">
-              <span className="status-label">Permissions</span>
-              <span
-                className={`status-value${permissionHealth.label === "blocked" ? " status-alert" : ""}`}
-              >
-                {permissionHealth.label}
-              </span>
-              <span className="status-detail">{permissionHealth.detail}</span>
-            </div>
-            <div className="status-pill status-pill-stack">
-              <span className="status-label">System</span>
-              <span className={`status-value${badge.warning ? " status-alert" : ""}`}>
-                {badge.label}
-              </span>
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => onOpenTechnicalDetails(badge.section)}
-              >
-                Technical details
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
-    </header>
+    <>
+      {badge.warning ? (
+        <div className="status-stack">
+          <div className="status-pill">
+            <span className="status-label">App</span>
+            <span className={`status-value${healthStatus === "online" ? "" : " status-alert"}`}>
+              {healthStatus}
+            </span>
+          </div>
+          <div className="status-pill">
+            <span className="status-label">Capture</span>
+            <span className={`status-value${captureFailed ? " status-alert" : ""}`}>
+              {captureFailed ? "failed" : captureRunning ? "running" : "idle"}
+            </span>
+          </div>
+          <div className="status-pill status-pill-stack">
+            <span className="status-label">Permissions</span>
+            <span
+              className={`status-value${permissionHealth.label === "blocked" ? " status-alert" : ""}`}
+            >
+              {permissionHealth.label}
+            </span>
+            <span className="status-detail">{permissionHealth.detail}</span>
+          </div>
+          <div className="status-pill status-pill-stack">
+            <span className="status-label">System</span>
+            <span className="status-value status-alert">{badge.label}</span>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => onOpenTechnicalDetails(badge.section)}
+            >
+              Technical details
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <RecordingStatusCard
+        status={recordingStatus}
+        unconfirmed={recordingStatusUnconfirmed}
+        onPause={onPauseRecording}
+        onResume={onResumeRecording}
+        onResumeAlerts={onResumeAlerts}
+        sessionStatus={sessionStatus}
+      />
+    </>
   );
 });

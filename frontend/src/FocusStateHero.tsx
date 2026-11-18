@@ -54,7 +54,13 @@ export function FocusStateHero({
 
   return (
     <section
-      className={idle ? "card hero-card hero-card-idle" : "card hero-card"}
+      className={
+        idle
+          ? "card hero-card hero-card-idle"
+          : snapbackNote || display.level === "high" || display.level === "medium"
+            ? "card hero-card hero-card-drifting"
+            : "card hero-card"
+      }
       aria-labelledby="focus-state-heading"
     >
       <h2 id="focus-state-heading" className="hero-eyebrow">
@@ -120,21 +126,21 @@ export function FocusStateHero({
       )}
 
       {hyperfocusNote ? <p className="helper-text alert">{hyperfocusNote}</p> : null}
+      {/* The one thing on Now that asks for attention: where you were, and a way back. */}
       {snapbackNote ? (
-        <p className="helper-text snapback">
-          {snapbackNote}{" "}
-          {onRestoreSnapbackTarget ? (
-            <>
-              <button className="link-button" onClick={onRestoreSnapbackTarget}>
+        <div className="snapback-row" role="status">
+          <p className="snapback-row-text">{snapbackNote}</p>
+          <div className="snapback-row-actions">
+            {onRestoreSnapbackTarget ? (
+              <button type="button" className="primary-button" onClick={onRestoreSnapbackTarget}>
                 Take me back
-              </button>{" "}
-              ·{" "}
-            </>
-          ) : null}
-          <button className="link-button" onClick={onDismissSnapback}>
-            Dismiss
-          </button>
-        </p>
+              </button>
+            ) : null}
+            <button type="button" className="link-button" onClick={onDismissSnapback}>
+              Dismiss
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {idle || waiting ? null : (

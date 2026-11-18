@@ -1,5 +1,5 @@
 // Navigation between the three surfaces (ADR-0003): a real tablist, since the panel is swapped
-// in place, with arrow-key movement.
+// in place, with arrow-key movement. It sits vertically in the left rail, so Up/Down move too.
 
 import { memo } from "react";
 
@@ -13,10 +13,11 @@ const LABELS: Record<Surface, string> = {
   settings: "Settings",
 };
 
+// 16px line icons: a target for the live session, rows for history, sliders for settings.
 const ICON_PATHS: Record<Surface, string> = {
-  now: "M9 5 19 12 9 19Z",
-  review: "M5 19V13M12 19V5M19 19V9",
-  settings: "M4 7h16M4 17h16M9 4v6M15 14v6",
+  now: "M8 2.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11ZM8 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z",
+  review: "M3 4h10M3 8h7M3 12h9",
+  settings: "M3 5h6M12 5h1M3 11h1M7 11h6M10.5 3.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM5.5 9.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Z",
 };
 
 export function surfaceTabId(surface: Surface): string {
@@ -39,8 +40,9 @@ export const SurfaceNav = memo(function SurfaceNav({ active, onChange }: Props) 
     const current = SURFACES.indexOf(active);
     let next: number | null = null;
 
-    if (event.key === "ArrowRight") next = (current + 1) % SURFACES.length;
-    else if (event.key === "ArrowLeft") next = (current - 1 + SURFACES.length) % SURFACES.length;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      next = (current + 1) % SURFACES.length;
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + SURFACES.length) % SURFACES.length;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = SURFACES.length - 1;
 
@@ -53,7 +55,12 @@ export const SurfaceNav = memo(function SurfaceNav({ active, onChange }: Props) 
 
   return (
     <nav className="surface-nav" aria-label="Sections">
-      <div role="tablist" aria-label="Sections" onKeyDown={handleKeyDown}>
+      <div
+        role="tablist"
+        aria-label="Sections"
+        aria-orientation="vertical"
+        onKeyDown={handleKeyDown}
+      >
         {SURFACES.map((surface) => {
           const selected = surface === active;
           return (
@@ -71,11 +78,11 @@ export const SurfaceNav = memo(function SurfaceNav({ active, onChange }: Props) 
             >
               <svg
                 className="surface-icon"
-                viewBox="0 0 24 24"
+                viewBox="0 0 16 16"
                 aria-hidden="true"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1.7"
+                strokeWidth="1.4"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >

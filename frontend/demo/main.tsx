@@ -27,7 +27,9 @@ if (!root) {
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <DemoBanner />
-    <App />
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", minHeight: 0 }}>
+      <DemoBanner />
+      <App />
+    </div>
   </React.StrictMode>,
 );

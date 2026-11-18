@@ -45,6 +45,8 @@ and risk are secondary and shown without decimals. Debug telemetry moves to Diag
 The visual direction stays: cream background, serif headings, rounded cards, coral accent.
 What changes is hierarchy, spacing and wording.
 
+*The visual direction was later replaced by [ADR-0010](0010-workspace-visual-direction.md).*
+
 ## Why
 
 The two modes really are different jobs, and every cheaper option leaves them fused. Option B

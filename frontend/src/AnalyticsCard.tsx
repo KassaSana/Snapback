@@ -34,7 +34,7 @@ export const AnalyticsCard = memo(function AnalyticsCard({
       <section className="card insights-card analytics-card">
         <div className="card-header">
           <h2>Focus by hour</h2>
-          <span className="pill">{rangeLabel}</span>
+        <span className="review-period">{rangeLabel}</span>
         </div>
         {analytics.sampleCount === 0 ? (
           <p className="helper-text">No prediction data yet. Start a session to build trends.</p>
@@ -121,7 +121,7 @@ export const AnalyticsCard = memo(function AnalyticsCard({
       <section className="card top-apps-card">
         <div className="card-header">
           <h2>Top apps</h2>
-          <span className="pill">{rangeLabel}</span>
+        <span className="review-period">{rangeLabel}</span>
         </div>
         <ul className="history-list">
           {analytics.topApps.length === 0 ? (

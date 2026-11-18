@@ -18,11 +18,10 @@
 
 namespace {
 
-// Matches the Windows card: RGB(24,24,32) on RGB(235,235,245).
-constexpr double kCardRed = 24.0 / 255.0;
-constexpr double kCardGreen = 24.0 / 255.0;
-constexpr double kCardBlue = 32.0 / 255.0;
-constexpr double kTextLevel = 235.0 / 255.0;
+// Match the dark workspace palette and its ochre drift signal.
+constexpr double kCardRed = 28.0 / 255.0;
+constexpr double kCardGreen = 32.0 / 255.0;
+constexpr double kCardBlue = 37.0 / 255.0;
 
 // Same 9s self-dismiss as the Windows overlay, and the same click-to-dismiss alongside it.
 constexpr double kAutoDismissSeconds = 9.0;
@@ -155,7 +154,12 @@ private:
         view.wantsLayer = YES;
         view.layer.backgroundColor =
             [NSColor colorWithSRGBRed:kCardRed green:kCardGreen blue:kCardBlue alpha:1.0].CGColor;
-        view.layer.cornerRadius = 12.0;
+        view.layer.cornerRadius = 8.0;
+        view.layer.borderWidth = 1.0;
+        view.layer.borderColor = [NSColor colorWithSRGBRed:224.0 / 255.0
+                                                       green:165.0 / 255.0
+                                                        blue:74.0 / 255.0
+                                                       alpha:1.0].CGColor;
         panel_.contentView = view;
         view_ = view;
 
@@ -166,9 +170,9 @@ private:
         label_.selectable = NO;  // a selectable field would show an I-beam over a button
         label_.bordered = NO;
         label_.drawsBackground = NO;
-        label_.textColor = [NSColor colorWithSRGBRed:kTextLevel
-                                               green:kTextLevel
-                                                blue:245.0 / 255.0
+        label_.textColor = [NSColor colorWithSRGBRed:230.0 / 255.0
+                                               green:232.0 / 255.0
+                                                blue:235.0 / 255.0
                                                alpha:1.0];
         label_.font = [NSFont systemFontOfSize:13.0];
         label_.cell.wraps = YES;

@@ -45,6 +45,60 @@ export const SessionReviewCards = memo(function SessionReviewCards({
 
   return (
     <>
+      {recap ? (
+        <section className="card recap-card">
+          <div className="card-header">
+            <h2>Recap</h2>
+          </div>
+          {!surveyPending && savedSessionRating && handleChangeSessionRating ? (
+            <p role="status" className="helper-text saved-session-rating">
+              Saved: {focusStateLabel(savedSessionRating)}
+              {" — "}
+              <button className="link-button" type="button" onClick={handleChangeSessionRating}>
+                Change
+              </button>
+            </p>
+          ) : labelStatus && (!surveyPending || labelStatusWarning) ? (
+            <p role={labelStatusWarning ? "alert" : "status"} className={`helper-text${labelStatusWarning ? " alert" : ""}`}>
+              {labelStatus}
+            </p>
+          ) : null}
+
+          <div className="meta">
+            <div>
+              {/*
+                Attended time leads when known (ADR-0005). Older sessions have activeSecs ===
+                null and fall back to elapsed rather than claiming zero.
+              */}
+              <p className="meta-label">{recap.activeSecs === null ? "Duration" : "Attended"}</p>
+              <p className="meta-value">
+                {formatFocusStretch(recap.activeSecs ?? recap.durationSecs)}
+              </p>
+              {recap.activeSecs !== null && recap.activeSecs < recap.durationSecs && (
+                <p className="meta-sub">of {formatFocusStretch(recap.durationSecs)} open</p>
+              )}
+            </div>
+            <div>
+              <p className="meta-label">Avg focus</p>
+              <p className="meta-value">{recap.sampleCount === 0 ? "—" : formatScore(recap.avgFocusScore)}</p>
+              {recap.sampleCount === 0 ? <p className="meta-sub">No predictions recorded</p> : null}
+            </div>
+            <div>
+              <p className="meta-label">Deep work</p>
+              <p className="meta-value">{recap.sampleCount === 0 ? "—" : `${recap.deepFocusPct.toFixed(0)}%`}</p>
+            </div>
+            <div>
+              <p className="meta-label">Snapbacks</p>
+              <p className="meta-value">{recap.snapbackCount}</p>
+            </div>
+            <div>
+              <p className="meta-label">Distracted moments</p>
+              <p className="meta-value">{recap.thrashSpikes}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {surveyPending && recap ? (
         <section className="card survey-card">
           <div className="card-header">
@@ -95,58 +149,6 @@ export const SessionReviewCards = memo(function SessionReviewCards({
         />
       ) : null}
 
-      {recap ? (
-        <section className="card recap-card">
-          <div className="card-header">
-            <h2>Recap</h2>
-          </div>
-          {!surveyPending && savedSessionRating && handleChangeSessionRating ? (
-            <p role="status" className="helper-text saved-session-rating">
-              Saved: {focusStateLabel(savedSessionRating)}
-              {" — "}
-              <button className="link-button" type="button" onClick={handleChangeSessionRating}>
-                Change
-              </button>
-            </p>
-          ) : labelStatus && (!surveyPending || labelStatusWarning) ? (
-            <p role={labelStatusWarning ? "alert" : "status"} className={`helper-text${labelStatusWarning ? " alert" : ""}`}>
-              {labelStatus}
-            </p>
-          ) : null}
-          <div className="meta">
-            <div>
-              {/*
-                Attended time leads when known (ADR-0005). Older sessions have activeSecs ===
-                null and fall back to elapsed rather than claiming zero.
-              */}
-              <p className="meta-label">{recap.activeSecs === null ? "Duration" : "Attended"}</p>
-              <p className="meta-value">
-                {formatFocusStretch(recap.activeSecs ?? recap.durationSecs)}
-              </p>
-              {recap.activeSecs !== null && recap.activeSecs < recap.durationSecs && (
-                <p className="meta-sub">of {formatFocusStretch(recap.durationSecs)} open</p>
-              )}
-            </div>
-            <div>
-              <p className="meta-label">Avg focus</p>
-              <p className="meta-value">{recap.sampleCount === 0 ? "—" : formatScore(recap.avgFocusScore)}</p>
-              {recap.sampleCount === 0 ? <p className="meta-sub">No predictions recorded</p> : null}
-            </div>
-            <div>
-              <p className="meta-label">Deep work</p>
-              <p className="meta-value">{recap.sampleCount === 0 ? "—" : `${recap.deepFocusPct.toFixed(0)}%`}</p>
-            </div>
-            <div>
-              <p className="meta-label">Snapbacks</p>
-              <p className="meta-value">{recap.snapbackCount}</p>
-            </div>
-            <div>
-              <p className="meta-label">Distracted moments</p>
-              <p className="meta-value">{recap.thrashSpikes}</p>
-            </div>
-          </div>
-        </section>
-      ) : null}
     </>
   );
 });

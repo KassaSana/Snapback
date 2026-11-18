@@ -41,3 +41,7 @@ bundle contains only the runtime libraries listed above (React and React DOM).
 To regenerate or audit the npm tree, run `npm ci` in `frontend/` and inspect
 `package-lock.json`. Bump process for C++ dependencies is in
 [docs/dependencies.md](docs/dependencies.md).
+
+## IBM Plex Sans
+
+IBM Plex Sans is distributed under the SIL Open Font License 1.1. The license is included at `frontend/src/fonts/OFL.txt`.

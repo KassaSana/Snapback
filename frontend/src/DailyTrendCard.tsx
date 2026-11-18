@@ -41,7 +41,7 @@ export const DailyTrendCard = memo(function DailyTrendCard({
     <section className="card insights-card daily-trend-card">
       <div className="card-header">
         <h2>Deep work</h2>
-        <span className="pill">{rangeLabel}</span>
+        <span className="review-period">{rangeLabel}</span>
       </div>
       {days.length === 0 ? (
         <p className="helper-text">

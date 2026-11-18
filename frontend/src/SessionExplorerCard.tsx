@@ -192,7 +192,7 @@ export const SessionExplorerCard = memo(function SessionExplorerCard({
     <section className="card session-explorer-card">
       <div className="card-header">
         <h2>Sessions</h2>
-        <span className="pill">{rangeLabel}</span>
+        <span className="review-period">{rangeLabel}</span>
       </div>
       {days.length === 0 ? (
         <p className="helper-text">No sessions in this range.</p>
