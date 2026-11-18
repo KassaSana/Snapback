@@ -39,9 +39,9 @@ export const RulesCard = memo(function RulesCard({
         <h2>App rules</h2>
       </div>
       <p className="helper-text">
-        Match part of an app name or window title — one pattern per rule, so add another
+        Match part of an app name or window title. Each rule has one pattern, so add another
         rule for a second app. Allow marks matching windows as on-task for
-        you. Block raises distraction scoring for matches — it does not close or block apps.
+        you. Block raises the distraction score for matches. It does not close or block apps.
       </p>
       <label className="field">
         <span>Pattern</span>

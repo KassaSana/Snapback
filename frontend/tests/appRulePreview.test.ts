@@ -47,6 +47,6 @@ assert.equal(isBroadAppRulePattern("   "), false);
 
 // A specific (3+ char) pattern gets no guardrail — regression guard so we
 // don't start nagging on normal patterns.
-assert.ok(!buildAppRulePreview("slack", "allow")?.includes("Heads up"));
+assert.ok(!buildAppRulePreview("slack", "allow")?.includes("may match many unrelated windows"));
 
 console.log("appRulePreview.test.ts passed");

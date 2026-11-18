@@ -114,7 +114,7 @@ export const InsightsCard = memo(function InsightsCard({
         <>
           <FocusTrendChart summaries={chronological} />
           <p className="insights-caption">
-            Avg focus score (0–100) per session · oldest → newest
+            Average focus score per session, 0 to 100, oldest first
             {truncationNote ? ` · ${truncationNote}` : ""}
           </p>
           <ChartDataTable

@@ -24,7 +24,7 @@ const result = (over: Partial<MyDataExportResult> = {}): MyDataExportResult => (
   assert.ok(message.includes("340 captured windows"));
   assert.ok(message.includes("7 interruptions"));
   assert.ok(message.includes("complete history"));
-  assert.ok(message.includes("nothing was left out"));
+  assert.ok(message.includes("Nothing was left out"));
 }
 
 // THE BUG. Omitting windows from an included session used to report as complete, because the
@@ -33,7 +33,7 @@ const result = (over: Partial<MyDataExportResult> = {}): MyDataExportResult => (
   const windowsOnly = result({ omittedWindows: 42, truncated: true });
   const message = myDataExportMessage(windowsOnly);
   assert.ok(!message.includes("complete history"));
-  assert.ok(!message.includes("nothing was left out"));
+  assert.ok(!message.includes("Nothing was left out"));
   assert.ok(message.includes("42 captured windows could not be included"));
 }
 

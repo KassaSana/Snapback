@@ -26,10 +26,10 @@ export const sessionStartCaptureWarning = (
   readiness: SessionCaptureReadiness,
 ): string | null => {
   if (readiness.captureFailed) {
-    return "Session started, but input capture has failed — it won't record activity until you fix permissions and restart Snapback.";
+    return "Session started, but input capture has failed. Snapback won't record activity until you fix permissions and restart it.";
   }
   if (!readiness.permissionCaptureAvailable) {
-    return "Session started, but input capture isn't available (check permissions — e.g. a Wayland-only Linux session needs X11/XWayland). It may not record activity.";
+    return "Session started, but input capture isn't available, so it may not record activity. Check permissions. A Wayland-only Linux session needs X11 or XWayland.";
   }
   if (!readiness.activeWindowAvailable) {
     return "Session started, but active-window access isn't available. It may not record which apps and files you work in.";

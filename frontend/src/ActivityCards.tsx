@@ -74,10 +74,10 @@ export function ContextTimeline({
   return (
     <section className="timeline-card">
       <div className="card-header">
-        <h4>Context Timeline</h4>
+        <h4>Context timeline</h4>
       </div>
       <p className="helper-text">
-        Where you were working during this session — apps, files, and parsed summaries.
+        The apps, files, and parsed summaries from this session.
       </p>
       <ol className="timeline-list">
         {contextTimeline.length === 0 ? (

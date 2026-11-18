@@ -234,7 +234,7 @@ describe("legible data export", () => {
     expect(
       await screen.findByText(/Wrote 0 sessions, 0 captured windows, 0 interruptions/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/nothing was left out/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing was left out/)).toBeInTheDocument();
   });
 
   // The export no longer caps history, so this covers the *reporting* contract

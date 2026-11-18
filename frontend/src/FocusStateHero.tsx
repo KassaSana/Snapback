@@ -78,14 +78,14 @@ export function FocusStateHero({
       {captureDiagnosis && onOpenPrivacy ? (
         <div role="alert"><p>{captureDiagnosis}</p><button className="link-button" onClick={onOpenPrivacy}>Open privacy settings</button></div>
       ) : null}
-      {recordingPaused && prediction ? <p className="helper-text">Recording paused — this is the last reading, held until recording resumes.</p> : null}
+      {recordingPaused && prediction ? <p className="helper-text">Recording is paused. This is the last reading, held until recording resumes.</p> : null}
       {idle ? (
         <p className="hero-secondary" aria-live="polite">
           Start a session to see whether you are still on it.
         </p>
       ) : waiting ? (
         <p className="hero-secondary" aria-live="polite">
-          {recordingPaused ? "Recording is paused. Readings resume with recording." : captureDiagnosis ?? "No reading yet — move the pointer, scroll, or press a key to confirm capture."}
+          {recordingPaused ? "Recording is paused. Readings resume with recording." : captureDiagnosis ?? "No reading yet. Move the pointer, scroll, or press a key to confirm capture."}
         </p>
       ) : (
         <>

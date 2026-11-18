@@ -53,7 +53,7 @@ export const SessionReviewCards = memo(function SessionReviewCards({
           {!surveyPending && savedSessionRating && handleChangeSessionRating ? (
             <p role="status" className="helper-text saved-session-rating">
               Saved: {focusStateLabel(savedSessionRating)}
-              {" — "}
+              {" · "}
               <button className="link-button" type="button" onClick={handleChangeSessionRating}>
                 Change
               </button>

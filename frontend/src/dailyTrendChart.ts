@@ -268,10 +268,10 @@ export function trendHeadline(
     const deep = formatFocusStretch(comparison.thisWeekDeepSecs);
     const delta = comparison.thisWeekDeepSecs - comparison.lastWeekDeepSecs;
     if (Math.abs(delta) < SAME_DELTA_SECS) {
-      return `${deep} of deep work this week — about the same as last week.`;
+      return `${deep} of deep work this week, about the same as last week.`;
     }
     const direction = delta > 0 ? "more" : "less";
-    return `${deep} of deep work this week — about ${formatFocusStretch(
+    return `${deep} of deep work this week, about ${formatFocusStretch(
       Math.abs(delta),
     )} ${direction} than last week.`;
   }

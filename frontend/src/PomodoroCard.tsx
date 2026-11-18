@@ -79,7 +79,7 @@ export const PomodoroCard = memo(function PomodoroCard({
       ) : null}
       {awaitingAcknowledgement && running ? (
         <p className="helper-text">
-          {PHASE_LABELS[phase]} is ready when you are — it will not start on its own.
+          {PHASE_LABELS[phase]} is ready when you are. It will not start on its own.
         </p>
       ) : null}
 

@@ -148,7 +148,7 @@ export const DailyTrendCard = memo(function DailyTrendCard({
           ) : null}
           {capped ? (
             <p className="insights-caption">
-              Showing the retention window — older days are no longer stored.
+              Showing only the retention window. Older days are no longer stored.
             </p>
           ) : null}
         </>
